@@ -27,9 +27,11 @@ Explicitly OUT for v1: sync/atproto/lexicons, TUI, web dashboard, editor
 extensions, >2 trust policies, enforcement hooks, incremental fold.
 
 ## House rules
-- Rust. Prefer the `atproto-repo` crate for MST/CAR/CID so local-only and future
-  atproto are the same on-disk artifact (evaluate build-on vs roll-own; note the
-  decision).
+- Rust. Use the `atrium-rs` crate family (`atrium-repo`, `atrium-crypto`,
+  `atrium-identity`) for MST/CAR/CID/signing, so local-only and future atproto
+  are the same on-disk artifact — see `docs/DECISIONS.md` ADR-1 for why this
+  was chosen over `atproto-repo`, and Open Question Q1 in `.design/kan-spine.md`
+  for the still-unverified API-fit spike.
 - Correctness before performance. The reference fold recomputes; caching and
   incremental folds are follow-ups, optimized only against passing fixtures.
 - The fold is a pure, deterministic function of (claim set, enrichment). Guard this.
