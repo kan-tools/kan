@@ -1,0 +1,9 @@
+[package]
+name = "kan"
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+description = "Local reasoning, global coherence — memory for AI agents."
+repository = "https://github.com/kan-tools/kan"
+
+[dependencies]

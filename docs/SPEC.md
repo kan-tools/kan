@@ -1,0 +1,345 @@
+# Design Spec — Agent Memory Substrate (crosslink rewrite)
+
+*Working name TBD (see §11). A local-first, provenance-preserving claim log for multi-agent development. Rust. This spec fixes the hard data-model and algorithmic decisions; two mechanical choices are flagged OPEN for the design flow to resolve (§9).*
+
+---
+
+## 0. Why this exists / what killed v1
+
+v1 (crosslink) treated the **issue as the primitive** and knowledge as a bolted-on subsystem, with **two sources of truth** (SQLite + git coordination branches) reconciled by **distributed locks over an eventually-consistent log**. The result: sync pain, integrity/hydration/compaction machinery, clock-skew hacks, lock-stealing policy. All of it is the tax paid for maintaining **shared mutable state** across actors.
+
+**The rewrite deletes shared mutable state.** Each actor writes only to its own append-only signed log. Nothing is ever mutated by anyone else. Therefore: nothing to lock, no write conflicts, no clock reconciliation. **Conflicts stop being write-time errors and become read-time information.** The intelligence moves entirely into the *fold* — a deterministic reduction from (logs + subscriptions + trust policy) to a view.
+
+**v1's core sin, named:** it computed identity and status by **quotient** — collapsing "these are the same" and "this is the status" to flat values, discarding the witnesses. This rewrite refuses the quotient: identity and status are **objects** (path-spaces / posets), collapsed to flat values only at the *display boundary*, never in the store.
+
+---
+
+## 1. Primitives
+
+The only primitive is the **signed, content-addressed Claim**. Everything else (issues, sessions, knowledge pages, status) is a *view* computed by folding claims.
+
+```rust
+struct Claim {
+    // identity of this assertion:
+    //   (implicit) global address = repo DID + record key. No explicit id field.
+
+    // authorship / provenance
+    author: AuthorId,          // = (Did, Option<AgentKey>)  — see §2
+    sig: Signature,            // signs the CID (see §3)
+
+    // scope
+    workspace: Anchor,         // the project scope; an Anchor (§5), coordination-free
+
+    // subject
+    subject: SubjectRef,       // Local | Anchor  (§4, §5)
+
+    // the assertion
+    kind: ClaimKind,           // §7
+    body: Body,                // §7, kind-tagged
+
+    // the mesh — the ONLY graph structure beyond per-author logs
+    cites: Vec<Cid>,           // references to concrete prior claim CIDs
+    artifacts: Vec<ArtifactRef>, // commit sha, file@sha, line-range@sha, tool-output hash
+}
+```
+
+**Write-time primitives are exactly two:** `append claim to my own log`, and (as a kind of claim) `cite`. There is no `assign`, `close`, `lock`, or `merge`. Everything social/stateful is computed in the fold from `cites`, typed `Relation` claims, and subscription/trust.
+
+---
+
+## 2. Identity of actors
+
+```rust
+type AuthorId = (Did, Option<AgentKey>);
+```
+
+- **`Did`** = the *publishing container* (the human account whose PDS/log carries the claim). The "driver," in crosslink terms.
+- **`AgentKey`** = the signing key of the agent that authored the claim; `None` for a human acting directly.
+- Agents sign their own claims; the human's log publishes them. Per-agent attribution + non-repudiation without per-agent DID provisioning.
+
+**Ordering/supersession keys on the full `AuthorId`.** Two agents under one human are *different authors* and may legitimately **contest** each other (correct — they might disagree). A human-direct claim `(did, None)` and an agent claim `(did, Some(k))` are different authors.
+
+---
+
+## 3. Content addressing (CID)
+
+- The CID is over the **canonical CBOR of the claim content, excluding the signature and the CID itself**. Author, workspace, subject, kind, body, cites, artifacts are all IN. Signature signs the CID (so it's OUT of the hashed bytes). Mirrors atproto's content→CID→sign layering.
+- **Canonicalization: adopt atproto's DAG-CBOR** (map-key ordering etc.) wholesale. Makes the future atproto transport a serialization no-op. (Rust: `atproto-repo` crate provides MST/CAR/CID.)
+- **`cites` holds CIDs of already-finalized claims** ⇒ citation edges point strictly backward ⇒ **the CID-DAG is strictly acyclic**, even though the *subject graph* may cycle (mutual `SameAs`, §4). Do not conflate: acyclic at CID level, cyclic at subject level.
+
+---
+
+## 4. Subjects & the identity model (HARD — fully specified)
+
+### 4.1 SubjectRef
+
+```rust
+enum SubjectRef {
+    Local(Rkey),     // resolves within THIS log only; cheap, no consensus
+    Anchor(Anchor),  // content-addressed fact about the substrate; see §5
+}
+```
+
+- **`Local`** ids are shared freely among an actor's own agents (one trust domain, coordination free). A `Local` ref is **meaningless outside its origin log** and MUST NEVER appear as a cross-log reference.
+- **Cross-log linkage is exclusively via `cites` (to CIDs) and typed `Relation` claims.** The fold never resolves a *foreign* `Local` ref.
+
+### 4.2 Identity is a morphism, not a predicate
+
+The v1 quotient is banned. Identity between subjects is carried by a **directed, authored `Relation::SameAs` morphism**:
+
+```
+sameAs : subjectA ⟶ subjectB      (authored, witnessed, contestable, retractable)
+```
+
+- **`SameAs` is the ONLY identity-conferring edge.** `cites`, `About`, `Blocks`, `DependsOn`, `Accepts`, `Rejects` never merge subjects. (This is the guard against the transitive "mega-merge" collapse: non-identity relations live in different hom-sets and simply do not compose into identity.)
+- A **single** `SameAs` = a *situated* identity claim (one perspective). A fold may honor it if it trusts the author (directed, trust-gated merge).
+- A **mutual** `SameAs` (A→B and B→A) = a **weak equivalence**: invertible up to coherence, NOT on-the-nose equality. The two subjects remain distinct objects with a distinguished iso.
+
+### 4.3 The identity object M(A,B) — categorical, witness-retaining
+
+Identity between A and B is **not a boolean** but **M(A,B): the path-space of attested `SameAs` equivalences between them**, retaining witnesses.
+
+- **π₀(M)** = distinct grounds for identity (independent `SameAs` chains).
+- **higher structure** = how those chains cohere.
+- **weak-through-weak stays weak:** a transitive identity A↔C via B is itself only a weak equivalence, and **the fold must carry its factorization + witness set** (which authors, which arrows, chain length). NEVER silently promote a long weak chain to strict identity.
+- **Trust structure = the enriching base** (Lawvere). Per-viewer, per-fold:
+  - enrich over `Bool` → "any trusted path?" → flat merge (SoloTrust).
+  - enrich over `[0,1]`/quantale → trust-weighted confidence (tropical composition: min along path, max across paths). *This is Willerton's semi-tropical nucleus as the merge algorithm.*
+  - enrich over spaces → full witness homotopy type retained.
+- **Same `SameAs` set + different trust base ⇒ different identity.** Individuation is viewer-relative by construction.
+
+### 4.4 Fold identity algorithm (NOT plain union-find)
+
+Plain union-find is the quotient (loses witnesses, can't un-merge). Instead:
+
+```
+- Maintain a directed graph of TRUSTED SameAs arrows: nodes = subjects, edges = witnessed arrows.
+- A "merge-class" = a connected structure in this graph, BUT retain per class:
+    * direction of each arrow
+    * author + CID of each witnessing claim
+    * per-pair: mutually-witnessed (weak equiv) vs one-directional (situated)
+    * factorization/witness chain for transitive identities
+- Merge is a VIEW-LEVEL interpretation of the arrow graph, never a rewrite of subjects.
+- Un-merge = retraction/removal of a witnessing arrow → re-derive components from the
+  RETAINED edge set (union-find can't delete; keep the edge list, re-run component-finding
+  on the affected component only).
+```
+
+**INVARIANT: the fold reads morphisms; it never mutates objects. Subjects in logs are immutable and forever distinct. "Sameness" lives entirely in the morphism layer + the fold's reading of it.** This is what makes v1's hole structurally unreachable: no operation destroys a subject.
+
+### 4.5 Caching & performance (HARD — specified)
+
+Two-tier invalidation:
+
+```
+tier 1 (identity / M-objects): invalidated ONLY by Δ(SameAs ∪ trust ∪ their retractions)
+tier 2 (per-subject state):    invalidated by any claim on subjects in that merge-class
+```
+
+- The `SameAs` graph is empirically **sparse and clique-separating** (disjoint small dense clusters). A `SameAs` change recomputes **only its connected component**; path-space enumeration is bounded by **component size, not graph size**.
+- A `SameAs` bridging two components → recompute the union. A retraction may **split** a component → re-derive from retained witness edges (per §4.4).
+- **Guardrail:** component size > N (config, default ~25) → **flag to user as probable erroneous identity assertion; do not silently enumerate.** (The perf cliff and the correctness smell are the same event; the cost function is the anomaly detector.)
+
+---
+
+## 5. Anchors (HARD — fully specified)
+
+An **Anchor** is a subject named by a **content-addressed fact about the shared substrate**, constructed identically and independently by every actor.
+
+```rust
+enum Anchor {
+    Workspace(GenesisCid),          // hash of git genesis / origin — the project scope
+    Commit(Sha),
+    Blob(Cid),
+    FileAt(Path, Sha),
+    LineRangeAt(Path, Sha, Span),
+}
+```
+
+### 5.1 Admissibility INVARIANT
+
+> A subject may be an Anchor **iff** its identity is a pure function of the shared substrate, requiring **zero attestation**. Anchor equality is **DECIDED (computed), never ASSERTED.**
+
+- **Anchors carry STRICT identity:** M(anchor, anchor') is a point, no witnesses.
+- **Rationale (safety, not just semantics):** strict identity has **no witness layer to absorb error** — a wrong strict identification is welded into the global topology and cannot be retracted. Therefore strict identity is permitted **only where error is impossible by construction** (computed from bytes). Everything requiring a *judgment* stays Local + weak + retractable.
+- **`SameAs` between two anchors is a TYPE ERROR, not a claim.** Anchor identity is settled by construction.
+
+### 5.2 Fact vs. interpretation cut
+
+- **Anchors = computable facts** about the substrate (git objects). Strict identity.
+- **Interpretive subjects** (bugs, tasks, ideas) = `Local`, weak identity.
+- Interpretive subjects **ATTACH to anchors** via relations (`About` / `ManifestsAt`), **never via `SameAs`** (different kinds; you relate across kinds, `SameAs` only within the interpretive kind).
+- Anchors thus serve as the **stable spine** interpretive subjects hang off of, AND as a **conduit** (§6).
+
+---
+
+## 6. Computable relations (HARD — specified; high-value)
+
+Relational structure has **two sources**, and the fold consumes their union:
+
+```
+Relational inputs = Attested ⊔ Computable
+```
+
+1. **Attested** — `cites`, `SameAs`, `About`, … deliberately authored. Carries intent; can be wrong.
+2. **Computable** — edges *derivable from the shared substrate with zero attestation*. Free, correct-by-construction, abundant.
+
+### 6.1 Provider interface (pluggable, default-on)
+
+```
+trait RelationProvider {
+    fn relations(&self, claims, substrate) -> Vec<ComputedEdge>;
+}
+```
+
+v1 providers:
+- **GitAncestry** — claims anchored to git objects inherit git's DAG ordering ⇒ supplies **causal/supersession edges for the Status poset that attestation left concurrent.**
+- **GitSameFile / GitBlameOverlap** — claims touching the same file/lines are auto-related (`About`-strength), linking otherwise-disconnected cross-author work.
+- (future) call-graph, type-graph, etc.
+
+### 6.2 How it plugs in
+
+- **The anchor layer pipes git's computable structure UP into the interpretive graph:** interpretive claims anchored to git objects inherit computable relations among those objects for free. ⇒ **Client norm: agents should anchor claims to the tightest git object they can.** (State this in the doc as a client-side behavior.)
+- Computed edges carry provenance "computed by provider P"; they are **high-trust by default** (decided, not asserted) but remain a **named input** a policy can down-weight/disable.
+- **`trust` records can weight computable providers exactly like authors.** Attested and computed relations live in ONE graph, weighted by ONE enrichment mechanism. ("We trust git-ancestry for supersession" is structurally identical to "we trust Ada's SameAs.")
+
+---
+
+## 7. Kinds & bodies
+
+```rust
+enum ClaimKind {
+    Subject,      // declares a subject exists (title, subject-kind)
+    Observation,  // a finding
+    Plan,         // intended approach
+    Decision,     // a choice made
+    Blocker,      // impediment
+    Resolution,   // claims a subject resolved
+    Result,       // outcome / artifact
+    Status,       // explicit state assertion
+    Relation,     // typed edge: SameAs | Blocks | About | ManifestsAt | DependsOn | Accepts | Rejects
+    Retraction,   // supersedes a prior claim of the SAME author (§8)
+}
+```
+
+**`Relation` subtypes** are the semantic edges. Only `SameAs` confers identity (§4.2).
+
+**Body typing — RECOMMENDED default, flagged OPEN in §9:**
+- **Closed typed union** for *structural* kinds the fold must read: `Subject`, `Status`, `Relation`, `Retraction`.
+- **Opaque markdown/text payload** for *narrative* kinds: `Observation`, `Plan`, `Decision`, `Result`, `Blocker`.
+- Rationale: the fold only needs to *understand* the handful of kinds that affect view state; everything else is attributed prose. Keeps the fold small.
+
+---
+
+## 8. Retraction (RECOMMENDED default, flagged OPEN in §9)
+
+**Option B — retraction-as-claim (palimpsest):**
+- A `Retraction` claim **cites the CID it supersedes**.
+- In the fold, a superseded claim is **excluded from state reduction but retained in history** (status computed as if gone; a view CAN show "X retracted Y").
+- **Self-retraction is global** (an author supersedes their *own* prior claim — keyed on full `AuthorId`, §2).
+- **Cross-author "retraction" is NOT possible** (you can't write to another's log). Instead, `Relation::Rejects` citing the target = a **local suppression** honored only by folds that trust the rejecter.
+- True hard-delete (atproto record delete leaves *no tombstone*) remains available for genuine erasure; folds tolerate **dangling cites** (normal; handled at view layer). Distinction preserved: *overwriting* (retraction, legible) vs *erasing* (delete, gone).
+
+---
+
+## 9. The fold (HARD — core algorithm)
+
+```
+fold(claims: Set<Claim>, enrichment: TrustBase) -> View
+```
+
+**Properties (INVARIANTS):**
+- **Deterministic:** same claim set + same enrichment ⇒ same view. (Makes SQLite index disposable, fold testable against fixtures.)
+- **Input is a set (unordered); ordering is derived internally.** Intra-author order = log rev (strict, free). Cross-author order = policy over attested ⊔ computable edges (NOT an imposed global clock).
+- **Reads morphisms, never mutates objects** (§4.4).
+
+**Composition order (CORRECTNESS-CRITICAL): identity fold FIRST, then state fold over the merged class, BOTH under the SAME enrichment.**
+
+```
+render(enrichment E):
+  1. IDENTITY FOLD under E → merge-classes (M-objects), cached per §4.5
+  2. for each merge-class:
+       STATE FOLD under E over all status-bearing claims attached to the class:
+         a. order per-AuthorId by log rev
+         b. build causal poset across authors:
+              edges = (attested cites among status claims) ⊔ (computable edges, §6)
+         c. live-set = maximal antichain (elements unsuperseded under E)
+         d. classify: Settled{x} | Confirmed{x, by:[...]} | Contested{resolved:[…], open:[…]}
+  3. DECATEGORIFY → FlatView for display  (late, lossy, policy-controlled;
+     NEVER collapses the store — only the render)
+```
+
+**Status is an object (a poset → antichain), not a value.** Contested-vs-settled is **relative to the viewer's enrichment** (SoloTrust linearizes ⇒ never contested; PeerContested surfaces disagreement). Store keeps the full poset; render collapses under policy.
+
+**Supersession vs contestation (from Q1/Q2 resolution):**
+- **Intra-`AuthorId`:** later claim supersedes earlier (mind-changed). Strict.
+- **Cross-author:** three policy tiers over the SAME poset, none intrinsic —
+  1. **Contest** (default): symmetric, surface both.
+  2. **Computably-ordered**: git-ancestry says one is later on the relevant object ⇒ ordered (high-trust-by-default, disableable).
+  3. **Trust-ranked supersession** (opt-in): a privileged trust network lets high-trust dominate. Never baked in.
+
+**Decategorification caching:** re-render only on `Δ(SameAs ∪ trust)` (identity) or a status-bearing claim on the class (state). Recompute is **per-merge-class, local.** Reference impl: categorical fold + late render, correctness-first; caching per above; incremental optimization is post-correctness.
+
+---
+
+## 10. Storage & transport
+
+- **Source of truth:** per-author signed claim log = an atproto-style **signed MST over CBOR records**. Your own on local disk; others' arrive read-only via sync. *Local-only and atproto-ready are the SAME on-disk artifact* — not two backends.
+- **SQLite = pure disposable projection** of the union of subscribed logs, folded. Delete and rebuild anytime. **This deletes v1's integrity/hydrate/compact entirely** — there is one truth and the index isn't it.
+- **Transport trait (build order matters):**
+  ```
+  trait Transport { fn publish(&self, &[Claim]); fn subscribe(&self, &[Did]) -> Stream<Claim>; }
+  ```
+  - `LocalOnly` (no-op) — **BUILD FIRST, SHIP FIRST.** Sync killed v1; do not start there.
+  - `HostedRelay` — private teams, E2E-able. The monetizable one.
+  - `AtProto` — PDS + firehose; public ecosystem; lexicons = evangelism.
+- **AppView = the fold.** Choosing which actors to index = choosing the covering family = the Grothendieck topology. Different AppViews over the same claims = different topoi.
+
+### 10.1 Lexicon separation (when atproto lands)
+Three independent lexicons — separability is the ecosystem contribution:
+1. `*.claim` — base claim record (kind, body, subject, cites, artifacts). No trust semantics.
+2. `*.relation.sameAs` (+ other relations) — the directed morphisms. Pure arrows, no weight.
+3. `*.trust.*` — **separate** record type expressing a user's enrichment base (which authors/agents/computable-providers they weight, how). Publishable, forkable, subscribable. *This is the covering/enrichment made a first-class shareable artifact* (para-institutional infra).
+
+---
+
+## 11. v1 scope fence
+
+**BUILD (the spine):**
+- Claim model, CID/DAG-CBOR, signing.
+- `LocalOnly` transport. One human, one or more local agents, one repo.
+- Categorical identity fold (M-objects, witness-retaining, clique-cached) + `SoloTrust` and `PeerContested` reference enrichments.
+- Anchors (git-derived) + admissibility invariant.
+- `GitAncestry` + `GitSameFile` computable providers.
+- State fold (poset → antichain → classify) + late decategorify render.
+- CLI + MCP server. **Budgeted context assembly** (the actual product: query the claim graph under a token budget → maximal-value claim set for an agent's window).
+- SQLite disposable index.
+
+**DO NOT BUILD (yet):**
+- Sync of any kind (HostedRelay, AtProto), lexicons, firehose.
+- TUI, web dashboard, VS Code extension.
+- >2 trust policies. Language rule-files. Config presets. Enforcement hooks (prefer affordance over control — legibility, not blocking).
+- Incremental/streaming fold (reference recompute first).
+
+**Paradigm note:** replace v1's **enforcement** (hooks that BLOCK actions without an issue) with **affordance** (let agents act; make the record complete and legible; surface drift in the graph as data). Control-for-stability is the freeze.
+
+---
+
+## 12. Two OPEN choices for the design flow
+
+1. **Body typing (§7):** closed union for {Subject, Status, Relation, Retraction} + opaque markdown for narrative kinds. *Recommended; confirm or override.*
+2. **Retraction (§8):** Option B (retraction-as-claim, palimpsest; self-retraction global; cross-author = local Rejects), hard-delete reserved for true erasure. *Recommended; confirm or override.*
+
+---
+
+## 13. Glossary of the load-bearing invariants (for review scanning)
+
+- **No shared mutable state.** Each actor appends only to its own log.
+- **Conflicts are read-time information, not write-time errors.**
+- **The fold reads morphisms; never mutates objects.** No operation destroys a subject.
+- **Identity is a witnessed weak-equivalence object M(A,B), enriched by per-viewer trust.** Never a quotient.
+- **Strict identity (anchors) only where error is impossible by construction.**
+- **Attested ⊔ Computable relations; git structure is a free, high-trust, default-on input.**
+- **Identity fold before state fold, same enrichment; decategorify only at the render boundary.**
+- **One source of truth (the signed log); SQLite is a disposable projection.**
+- **Local-only first. Sync never reintroduces shared mutable state.**
