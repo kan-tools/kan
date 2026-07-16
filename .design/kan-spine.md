@@ -265,41 +265,44 @@ No `kan forget`/delete verb in v1 (REQ-11).
 - a claim-append tool parameterized by kind (mirrors the CLI verbs above),
 - a budgeted-context tool implementing REQ-14/AC-7.
 
-## Open Questions
+## Resolved (formerly Open Questions)
 
-<!-- OPEN: Q1 -->
-### Q1: `atrium-repo`/`atrium-crypto`/`atrium-identity` API fit
-This design pass picked the `atrium-rs` family over `atproto-repo` on
-maturity/bus-factor grounds (420★, active, org-maintained; `atproto-repo` main
-is tagged `0.15.0-alpha.2`, single-maintainer) — but neither crate's actual API
-surface was exercised, only its crates.io/GitHub metadata. `atrium-repo`
-specifically is the youngest crate in either family (v0.1.8). It's unverified
-whether it exposes local, from-scratch MST/CAR construction (what kan needs) as
-cleanly as reading an existing Bluesky-hosted repo (what most of its current
-users do).
-**To resolve**: spike against the real API before writing `store/log.rs` and
-`sign.rs` in Phase 3 (Task #3). If `atrium-repo` doesn't fit, fall back to the
-"roll our own for the spine" option raised earlier: `serde_ipld_dagcbor` +
-`ed25519-dalek`/`atrium-crypto` directly, deferring MST/CAR shape until sync.
-<!-- /OPEN -->
+### Q1: `atrium-repo`/`atrium-crypto`/`atrium-identity` API fit — RESOLVED, fits
+Spiked against the real source (not just crates.io metadata) on 2026-07-16.
+Confirmed:
+- `atrium_repo::Repository::create(db, did)` builds a **new** repo from
+  scratch (not just reading a hosted one) — returns a `RepoBuilder`.
+- `Repository::add`/`Tree::add`/`update`/`delete` operate directly on the MST.
+- Signing is **external**: `CommitBuilder::finalize(sig: Vec<u8>)` and
+  `RepoBuilder::finalize(sig: Vec<u8>)` take a raw signature — no
+  atproto-network dependency, plugs directly into an `atrium_crypto::Keypair`.
+- `blockstore::CarStore` persists to a single on-disk CAR file over any
+  `AsyncRead + AsyncSeek (+ AsyncWrite)` — exactly the "same on-disk artifact"
+  local-only-and-future-sync property `docs/SPEC.md` §10 wants. `.kan/log/`
+  is one CAR file.
+- `atrium_crypto::keypair::Keypair::create(rng)` + `.sign(msg)` + the `Did`
+  trait's `.did()` give did:key generation and signing directly — REQ-8/ADR-4
+  implementable with no extra crate.
+No roll-own fallback needed. See ADR-8.
 
-<!-- OPEN: Q2 -->
-### Q2: Token-budget estimation for `kan context --budget N`
-`docs/SPEC.md`/`docs/HANDOFF.md` call budgeted context assembly "the actual
-product" but don't specify a token-counting method.
-**To resolve**: during Phase 3, start with a tokenizer crate (e.g.
-`tiktoken-rs` cl100k as a stand-in estimate) behind a trait so it can be swapped
-per-model later; not worth blocking the design pass on.
-<!-- /OPEN -->
+### Q2: Token-budget estimation — RESOLVED, tiktoken-rs behind a trait
+`tiktoken-rs` (v0.12.0, MIT) confirmed real and usable — BPE cl100k/o200k
+encodings. Not model-exact for every consumer, but a consistent estimator is
+sufficient for a soft budget. Wrapped behind a `TokenEstimator` trait so the
+concrete tokenizer is swappable per-model later without touching call sites.
+See ADR-9.
 
-<!-- OPEN: Q3 -->
-### Q3: MCP tool surface shape
-One generic `append_claim(kind, body, cites, subject)` tool vs. one tool per
-verb (`observe`, `plan`, ...) mirroring the CLI 1:1.
-**To resolve**: lean toward one generic tool + a kind enum parameter (less
-`rmcp` tool-registration boilerplate, same semantics as the CLI dispatch), but
-confirm during Phase 3 once `rmcp`'s tool-macro ergonomics are in hand.
-<!-- /OPEN -->
+### Q3: MCP tool surface shape — RESOLVED, one tool per CLI verb
+`rmcp`'s `#[tool]` + `#[tool_router]` macros make each tool a doc-commented
+async method with a typed `Parameters<T: JsonSchema>` struct — boilerplate
+per tool is near zero, which changes the calculus from what this doc originally
+assumed. Went with one `#[tool]` per CLI verb (10 tools total), mirroring
+REQ-13's CLI vocabulary 1:1: schema-typed params catch malformed `cites`/
+`subject` before execution rather than after (protects the "provenance is
+sacred" invariant on the write verbs), and kan's surface is deliberately
+capped small enough (~10 verbs) that this isn't the regime where narrow-tool
+sprawl becomes a problem. See ADR-10 for the alternatives considered
+(query-tool consolidation for reads only; single CLI-passthrough tool).
 
 ## Out of Scope
 
