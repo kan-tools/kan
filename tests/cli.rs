@@ -2,6 +2,10 @@
 //! library calls), proving the CLI wiring — argument parsing, `.kan/`
 //! resolution, and persistence across separate process invocations — works
 //! end to end, not just the library code it calls into.
+//!
+//! M4b's workspace anchor is a real git-genesis hash (`crate::git`), so
+//! every fixture needs an actual git repo with at least one commit — `kan`
+//! now genuinely requires running inside one (`docs/SPEC.md` §5).
 
 use std::process::Command;
 
@@ -18,9 +22,34 @@ fn kan(dir: &std::path::Path, args: &[&str]) -> (String, String, bool) {
     )
 }
 
+fn git_repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let run = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(dir.path())
+            .status()
+            .expect("failed to run git");
+        assert!(status.success(), "git {args:?} failed");
+    };
+    run(&["init", "-q"]);
+    run(&[
+        "-c",
+        "user.email=kan-test@example.com",
+        "-c",
+        "user.name=kan-test",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "init",
+    ]);
+    dir
+}
+
 #[test]
 fn golden_path_across_separate_invocations() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = git_repo();
 
     let (cid_a, _, ok) = kan(
         dir.path(),
@@ -65,7 +94,7 @@ fn golden_path_across_separate_invocations() {
 
 #[test]
 fn session_start_and_end() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = git_repo();
     let (_, _, ok) = kan(dir.path(), &["session", "start"]);
     assert!(ok);
     let (_, _, ok) = kan(
@@ -82,7 +111,7 @@ fn session_start_and_end() {
 
 #[test]
 fn show_on_unknown_subject_is_not_an_error() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = git_repo();
     let (out, _, ok) = kan(dir.path(), &["show", "does-not-exist"]);
     assert!(ok);
     assert!(out.contains("no claims"));
@@ -90,7 +119,7 @@ fn show_on_unknown_subject_is_not_an_error() {
 
 #[test]
 fn invalid_cites_is_a_clean_error() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = git_repo();
     let (_, err, ok) = kan(dir.path(), &["observe", "x", "--cites", "not-a-cid"]);
     assert!(!ok);
     assert!(err.contains("invalid --cites"));
@@ -98,7 +127,7 @@ fn invalid_cites_is_a_clean_error() {
 
 #[test]
 fn same_merges_two_subjects_into_one_view() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = git_repo();
     let (_, _, ok) = kan(
         dir.path(),
         &["observe", "crashes on startup", "--subject", "bug-42"],

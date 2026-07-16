@@ -1,8 +1,9 @@
 //! The CLI (`docs/HANDOFF.md`'s vocabulary table). M3 wired up `observe`,
-//! `plan`, `decide`, `show`, `status`, `session`. M4a adds `same` — it needs
-//! the real identity fold (`fold::identity`), the rest of that milestone
-//! (`resolve`, git anchors, `RelationProvider`s) lands in M4b.
-//! `issues`/`context` need budgeted context assembly (M5); `kan mcp` is M5.
+//! `plan`, `decide`, `show`, `status`, `session`. M4a added `same` (the
+//! identity fold). M4b adds `resolve`, git-genesis anchors
+//! (`context::Workspace::open`), and `RelationProvider`s feeding
+//! `status`'s state-fold classification. `issues`/`context` need budgeted
+//! context assembly (M5); `kan mcp` is M5.
 
 mod context;
 mod session;
@@ -48,6 +49,8 @@ pub enum Command {
     Status { subject: Option<String> },
     /// Assert that `a` and `b` are the same subject (Relation::SameAs).
     Same { a: String, b: String },
+    /// Record that a subject has been resolved.
+    Resolve { subject: String, text: String },
     /// Session lifecycle.
     Session {
         #[command(subcommand)]
@@ -94,6 +97,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         Command::Show { subject } => show::show(&mut ws, &subject).await,
         Command::Status { subject } => status::status(&mut ws, subject.as_deref()).await,
         Command::Same { a, b } => same(&mut ws, &a, &b).await,
+        Command::Resolve { subject, text } => resolve(&mut ws, &subject, &text).await,
         Command::Session { action } => match action {
             SessionAction::Start => session::start(&mut ws).await,
             SessionAction::End { notes } => session::end(&mut ws, notes).await,
@@ -117,21 +121,7 @@ async fn append_narrative(
         cites.push(cid);
     }
 
-    let content = ClaimContent {
-        author: ws.my_author(),
-        workspace: ws.anchor.clone(),
-        subject,
-        body: make_body(args.text),
-        cites,
-        artifacts: vec![],
-    };
-
-    let claim_cid = ws.log.append(content, &ws.identity).await?;
-    let claims = ws.log.iter_all().await?;
-    ws.index.rebuild(&claims)?;
-
-    println!("{claim_cid}");
-    Ok(())
+    append(ws, subject, make_body(args.text), cites).await
 }
 
 /// `kan same <a> <b>` — a directed, situated identity claim (`docs/SPEC.md`
@@ -140,15 +130,37 @@ async fn append_narrative(
 /// merge-class computation, not an immediate, unconditional merge — whether
 /// it's honored depends on the viewer's `TrustBase`.
 async fn same(ws: &mut Workspace, a: &str, b: &str) -> Result<(), Error> {
+    let body = ClaimBody::Relation {
+        kind: RelationKind::SameAs,
+        target: SubjectRef::Local(Rkey::from(b)),
+    };
+    append(ws, SubjectRef::Local(Rkey::from(a)), body, vec![]).await
+}
+
+/// `kan resolve <subject> "<text>"` — asserts a subject is resolved
+/// (`ClaimBody::Resolution`). Distinct from `ClaimBody::Status { value:
+/// Resolved }`: this is a narrative claim (the fold never needs to reduce
+/// or contest it), while `Status` is the structural, poset-classified kind
+/// `fold::state` reduces (`docs/SPEC.md` §7).
+async fn resolve(ws: &mut Workspace, subject: &str, text: &str) -> Result<(), Error> {
+    let body = ClaimBody::Resolution {
+        text: text.to_string(),
+    };
+    append(ws, SubjectRef::Local(Rkey::from(subject)), body, vec![]).await
+}
+
+async fn append(
+    ws: &mut Workspace,
+    subject: SubjectRef,
+    body: ClaimBody,
+    cites: Vec<Cid>,
+) -> Result<(), Error> {
     let content = ClaimContent {
         author: ws.my_author(),
         workspace: ws.anchor.clone(),
-        subject: SubjectRef::Local(Rkey::from(a)),
-        body: ClaimBody::Relation {
-            kind: RelationKind::SameAs,
-            target: SubjectRef::Local(Rkey::from(b)),
-        },
-        cites: vec![],
+        subject,
+        body,
+        cites,
         artifacts: vec![],
     };
 
