@@ -1,0 +1,97 @@
+//! M3 golden path: the `kan` binary, invoked as a real subprocess (not
+//! library calls), proving the CLI wiring — argument parsing, `.kan/`
+//! resolution, and persistence across separate process invocations — works
+//! end to end, not just the library code it calls into.
+
+use std::process::Command;
+
+fn kan(dir: &std::path::Path, args: &[&str]) -> (String, String, bool) {
+    let output = Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .expect("failed to run kan binary");
+    (
+        String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        output.status.success(),
+    )
+}
+
+#[test]
+fn golden_path_across_separate_invocations() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let (cid_a, _, ok) = kan(
+        dir.path(),
+        &["observe", "the build is green", "--subject", "ci"],
+    );
+    assert!(ok);
+    assert!(!cid_a.is_empty());
+
+    let (_, _, ok) = kan(
+        dir.path(),
+        &[
+            "plan",
+            "add a retry wrapper",
+            "--subject",
+            "ci",
+            "--cites",
+            &cid_a,
+        ],
+    );
+    assert!(ok);
+
+    let (_, _, ok) = kan(
+        dir.path(),
+        &["decide", "use 3x retry with backoff", "--subject", "ci"],
+    );
+    assert!(ok);
+
+    // Each invocation above was a separate process — persistence across
+    // process boundaries, not just within one long-lived run.
+    let (show_out, _, ok) = kan(dir.path(), &["show", "ci"]);
+    assert!(ok);
+    assert!(show_out.contains("3 live claim(s)"));
+    assert!(show_out.contains("the build is green"));
+    assert!(show_out.contains("add a retry wrapper"));
+    assert!(show_out.contains("use 3x retry with backoff"));
+
+    let (status_out, _, ok) = kan(dir.path(), &["status", "ci"]);
+    assert!(ok);
+    assert!(status_out.contains("Decision"));
+    assert!(status_out.contains("use 3x retry with backoff"));
+}
+
+#[test]
+fn session_start_and_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, _, ok) = kan(dir.path(), &["session", "start"]);
+    assert!(ok);
+    let (_, _, ok) = kan(
+        dir.path(),
+        &["session", "end", "--notes", "wrapped up for the day"],
+    );
+    assert!(ok);
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "session"]);
+    assert!(ok);
+    assert!(show_out.contains("session started"));
+    assert!(show_out.contains("session ended: wrapped up for the day"));
+}
+
+#[test]
+fn show_on_unknown_subject_is_not_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let (out, _, ok) = kan(dir.path(), &["show", "does-not-exist"]);
+    assert!(ok);
+    assert!(out.contains("no claims"));
+}
+
+#[test]
+fn invalid_cites_is_a_clean_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, err, ok) = kan(dir.path(), &["observe", "x", "--cites", "not-a-cid"]);
+    assert!(!ok);
+    assert!(err.contains("invalid --cites"));
+}

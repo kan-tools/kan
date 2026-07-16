@@ -4,6 +4,7 @@
 
 pub mod cid;
 pub mod claim;
+pub mod cli;
 pub mod fold;
 pub mod sign;
 pub mod store;
