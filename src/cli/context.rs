@@ -4,21 +4,16 @@
 //! M3 resolves `.kan/` relative to the current directory rather than
 //! searching upward for a repo root the way `git` does — a real but small
 //! gap, fine for now since dogfooding runs from the repo root anyway; worth
-//! revisiting once `kan` is used from subdirectories.
-//!
-//! The workspace anchor is a placeholder: a hash of the repo root's
-//! canonical path, not the real git-genesis algorithm `docs/SPEC.md` §5
-//! describes (that's M4's `RelationProvider`/anchor work). It's honest about
-//! being provisional — good enough for a single checkout, not yet portable
-//! across clones the way a true genesis hash would be.
+//! revisiting once `kan` is used from subdirectories. `git` itself walks
+//! upward to find `.git/`, so `GitSubstrate`/the workspace anchor below
+//! aren't affected by that gap even though `.kan/` resolution is (issue #3).
 
 use std::path::{Path, PathBuf};
 
-use sha2::Digest;
-
 use crate::{
-    claim::{Anchor, AuthorId, GenesisCid},
+    claim::{Anchor, AuthorId},
     fold::TrustBase,
+    git::GitSubstrate,
     sign::Identity,
     store::{index::Index, log::Log},
 };
@@ -31,6 +26,8 @@ pub enum Error {
     Log(#[from] crate::store::log::Error),
     #[error("index error: {0}")]
     Index(#[from] crate::store::index::Error),
+    #[error("git error: {0}")]
+    Git(#[from] crate::git::Error),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -40,6 +37,7 @@ pub struct Workspace {
     pub log: Log,
     pub index: Index,
     pub anchor: Anchor,
+    pub git: GitSubstrate,
 }
 
 impl Workspace {
@@ -56,12 +54,14 @@ impl Workspace {
         let claims = log.iter_all().await?;
         index.rebuild(&claims)?;
 
-        let anchor = Anchor::Workspace(workspace_anchor(cwd));
+        let git = GitSubstrate::open(cwd)?;
+        let anchor = Anchor::Workspace(git.genesis()?);
         Ok(Self {
             identity,
             log,
             index,
             anchor,
+            git,
         })
     }
 
@@ -80,14 +80,6 @@ impl Workspace {
     pub fn solo_trust(&self) -> TrustBase {
         TrustBase::solo(self.my_author())
     }
-}
-
-fn workspace_anchor(repo_root: &Path) -> GenesisCid {
-    let canonical = repo_root
-        .canonicalize()
-        .unwrap_or_else(|_| repo_root.to_path_buf());
-    let digest = sha2::Sha256::digest(canonical.to_string_lossy().as_bytes());
-    format!("{digest:x}")
 }
 
 pub fn cwd() -> Result<PathBuf, Error> {

@@ -1,15 +1,15 @@
 //! The fold (`docs/SPEC.md` §9): identity fold first, then group each
 //! merge-class's live, trusted claims — chronological order, retraction
 //! handled once (shared with the identity fold via
-//! `identity::excluded_by_retraction`). State-fold classification
-//! (poset -> antichain -> `Settled | Confirmed | Contested`) over
-//! `Status`-kind claims specifically is M4b — this stage still treats every
-//! live claim as a flat append-only log, which is correct for the narrative
-//! kinds (`Observation`/`Plan`/`Decision`/…) regardless; only `Status`
-//! claims need the poset machinery, since only they assert something that
-//! can conflict.
+//! `identity::excluded_by_retraction`). This stage treats every live claim
+//! as a flat append-only log, which is correct for the narrative kinds
+//! (`Observation`/`Plan`/`Decision`/…) regardless; `state` (M4b) layers the
+//! poset -> antichain -> `Settled | Confirmed | Contested` classification
+//! on top, specifically over each class's `Status`-kind claims, since only
+//! those assert something that can conflict.
 
 pub mod identity;
+pub mod state;
 pub mod trust;
 
 use atproto_dasl::Cid;
