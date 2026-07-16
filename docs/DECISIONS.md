@@ -93,6 +93,17 @@ which is all ADR-1 had). `Repository::create` builds a repo from scratch,
 (no atproto-network coupling), and `CarStore` gives exactly the "local-only
 and future-sync are the same on-disk artifact" property `docs/SPEC.md` §10
 wants. Closes Open Question Q1 in `.design/kan-spine.md`.
+**Known gap, revisit trigger:** `atrium-repo`'s `Commit` type exposes `rev()`
+but not `prev()`, so commit-chain history can't be walked through the public
+API — `store/log.rs` works around this by capturing each claim's `Tid` in the
+stored record envelope at append time rather than deriving order from the
+commit graph after the fact. If a future milestone needs real commit-graph
+operations (e.g. diffing between two historical roots, walking `prev` chains,
+anything `blockstore::DiffBlockStore` seems aimed at but isn't fully explored
+yet) and `atrium-repo` doesn't expose it, `atproto-repo` (ADR-1's rejected
+alternative — single-maintainer, but more actively hands-on with exactly this
+kind of repo-internals surface) is worth a second look for that specific gap,
+not necessarily a wholesale swap back.
 
 ## ADR-9 — Token-budget estimation: `tiktoken-rs` behind a `TokenEstimator` trait
 **Date:** 2026-07-16

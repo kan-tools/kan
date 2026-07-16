@@ -4,5 +4,6 @@
 
 pub mod cid;
 pub mod claim;
+pub mod fold;
 pub mod sign;
 pub mod store;
