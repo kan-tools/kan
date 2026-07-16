@@ -87,7 +87,7 @@ async fn log_round_trip_reads_back_a_verified_claim() {
     let claim_cid = log.append(content.clone(), &identity).await.unwrap();
 
     let fetched = log
-        .get(claim_cid)
+        .get(claim_cid.clone())
         .await
         .unwrap()
         .expect("claim should be present");
@@ -112,7 +112,7 @@ async fn log_reopens_and_preserves_prior_claims() {
             .unwrap()
     };
 
-    // Reopen as a fresh Log instance, backed by the same on-disk CAR + HEAD.
+    // Reopen as a fresh Log instance, backed by the same on-disk CAR file.
     let mut log = Log::open_or_create(&log_path, &identity).await.unwrap();
     let fetched = log
         .get(claim_cid)

@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use ipld_core::cid::Cid;
+use atproto_dasl::Cid;
 
 use crate::store::log::StoredClaim;
 
@@ -14,11 +14,11 @@ pub enum Error {
     #[error("sqlite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
     #[error("DAG-CBOR encode error: {0}")]
-    Encode(#[from] serde_ipld_dagcbor::EncodeError<std::collections::TryReserveError>),
+    Encode(#[from] atproto_dasl::EncodeError),
     #[error("DAG-CBOR decode error: {0}")]
-    Decode(#[from] serde_ipld_dagcbor::DecodeError<std::convert::Infallible>),
+    Decode(#[from] atproto_dasl::DecodeError),
     #[error("stored CID is not valid: {0}")]
-    InvalidCid(#[from] ipld_core::cid::Error),
+    InvalidCid(#[from] atproto_dasl::DaslCidError),
 }
 
 pub struct Index {
@@ -54,7 +54,7 @@ impl Index {
         for (cid, stored) in claims {
             let subject_key = format!("{:?}", stored.claim.content.subject);
             let kind = format!("{:?}", stored.claim.content.body.kind());
-            let raw = serde_ipld_dagcbor::to_vec(stored)?;
+            let raw = atproto_dasl::to_vec(stored)?;
             tx.execute(
                 "INSERT INTO claims (content_cid, rev, author_did, subject_key, kind, raw)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -88,7 +88,7 @@ impl Index {
         for row in rows {
             let (cid_str, raw) = row?;
             let cid: Cid = cid_str.parse()?;
-            let stored: StoredClaim = serde_ipld_dagcbor::from_slice(&raw)?;
+            let stored: StoredClaim = atproto_dasl::from_slice(&raw)?;
             out.push((cid, stored));
         }
         Ok(out)

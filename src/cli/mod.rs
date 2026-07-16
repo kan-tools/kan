@@ -9,8 +9,8 @@ mod session;
 mod show;
 mod status;
 
+use atproto_dasl::Cid;
 use clap::{Parser, Subcommand};
-use ipld_core::cid::Cid;
 
 use crate::claim::{AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef};
 pub use context::Workspace;
@@ -24,7 +24,7 @@ pub enum Error {
     #[error(transparent)]
     Index(#[from] crate::store::index::Error),
     #[error("invalid --cites value {0:?}: {1}")]
-    InvalidCites(String, ipld_core::cid::Error),
+    InvalidCites(String, atproto_dasl::DecodeError),
 }
 
 #[derive(Debug, Parser)]
