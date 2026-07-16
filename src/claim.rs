@@ -34,7 +34,7 @@ pub struct Span {
     pub end: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AuthorId {
     pub did: Did,
     pub agent: Option<AgentKey>,

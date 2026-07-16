@@ -1,8 +1,8 @@
-//! The CLI (`docs/HANDOFF.md`'s vocabulary table). M3 wires up the subset
-//! needed to dogfood kan on its own further development: `observe`, `plan`,
-//! `decide`, `show`, `status`, `session`. `same`/`resolve`/`issues`/`context`
-//! need the real identity/contest fold (M4) or budgeted context assembly
-//! (M5) and land there; `kan mcp` is M5.
+//! The CLI (`docs/HANDOFF.md`'s vocabulary table). M3 wired up `observe`,
+//! `plan`, `decide`, `show`, `status`, `session`. M4a adds `same` — it needs
+//! the real identity fold (`fold::identity`), the rest of that milestone
+//! (`resolve`, git anchors, `RelationProvider`s) lands in M4b.
+//! `issues`/`context` need budgeted context assembly (M5); `kan mcp` is M5.
 
 mod context;
 mod session;
@@ -12,7 +12,7 @@ mod status;
 use atproto_dasl::Cid;
 use clap::{Parser, Subcommand};
 
-use crate::claim::{AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef};
+use crate::claim::{ClaimBody, ClaimContent, RelationKind, Rkey, SubjectRef};
 pub use context::Workspace;
 
 #[derive(Debug, thiserror::Error)]
@@ -46,6 +46,8 @@ pub enum Command {
     Show { subject: String },
     /// Show status: one subject, or every subject if omitted.
     Status { subject: Option<String> },
+    /// Assert that `a` and `b` are the same subject (Relation::SameAs).
+    Same { a: String, b: String },
     /// Session lifecycle.
     Session {
         #[command(subcommand)]
@@ -91,6 +93,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Show { subject } => show::show(&mut ws, &subject).await,
         Command::Status { subject } => status::status(&mut ws, subject.as_deref()).await,
+        Command::Same { a, b } => same(&mut ws, &a, &b).await,
         Command::Session { action } => match action {
             SessionAction::Start => session::start(&mut ws).await,
             SessionAction::End { notes } => session::end(&mut ws, notes).await,
@@ -115,14 +118,37 @@ async fn append_narrative(
     }
 
     let content = ClaimContent {
-        author: AuthorId {
-            did: ws.identity.did(),
-            agent: None,
-        },
+        author: ws.my_author(),
         workspace: ws.anchor.clone(),
         subject,
         body: make_body(args.text),
         cites,
+        artifacts: vec![],
+    };
+
+    let claim_cid = ws.log.append(content, &ws.identity).await?;
+    let claims = ws.log.iter_all().await?;
+    ws.index.rebuild(&claims)?;
+
+    println!("{claim_cid}");
+    Ok(())
+}
+
+/// `kan same <a> <b>` — a directed, situated identity claim (`docs/SPEC.md`
+/// §4.2): asserts `a` and `b` are the same subject from this author's
+/// perspective. A single `SameAs` is one witness in the identity fold's
+/// merge-class computation, not an immediate, unconditional merge — whether
+/// it's honored depends on the viewer's `TrustBase`.
+async fn same(ws: &mut Workspace, a: &str, b: &str) -> Result<(), Error> {
+    let content = ClaimContent {
+        author: ws.my_author(),
+        workspace: ws.anchor.clone(),
+        subject: SubjectRef::Local(Rkey::from(a)),
+        body: ClaimBody::Relation {
+            kind: RelationKind::SameAs,
+            target: SubjectRef::Local(Rkey::from(b)),
+        },
+        cites: vec![],
         artifacts: vec![],
     };
 

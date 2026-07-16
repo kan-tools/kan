@@ -6,7 +6,7 @@
 //! real decision later (its own kind vs. staying a convention) once there's
 //! a use case that needs to query "all sessions" structurally.
 
-use crate::claim::{AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef};
+use crate::claim::{ClaimBody, ClaimContent, Rkey, SubjectRef};
 
 use super::{Error, Workspace};
 
@@ -26,10 +26,7 @@ pub async fn end(ws: &mut Workspace, notes: Option<String>) -> Result<(), Error>
 
 async fn record(ws: &mut Workspace, text: String) -> Result<(), Error> {
     let content = ClaimContent {
-        author: AuthorId {
-            did: ws.identity.did(),
-            agent: None,
-        },
+        author: ws.my_author(),
         workspace: ws.anchor.clone(),
         subject: SubjectRef::Local(Rkey::from(SESSION_SUBJECT)),
         body: ClaimBody::Observation { text },

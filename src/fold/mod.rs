@@ -1,86 +1,84 @@
-//! The fold (`docs/SPEC.md` §9) — M2 implements only the trivial local-only
-//! path: no identity fold (each `SubjectRef` is its own class; real
-//! `SameAs`-witnessed merge-classes are `fold::identity`, landing in M4),
-//! and a state fold that's just retraction-exclusion plus chronological
-//! ordering — no poset/antichain/contest classification yet (also M4). This
-//! is deliberately the "one log, all subjects Local, no SameAs, latest-wins"
-//! case from `CLAUDE.md`'s smell test, not a partial version of the full
-//! fold.
+//! The fold (`docs/SPEC.md` §9): identity fold first, then group each
+//! merge-class's live, trusted claims — chronological order, retraction
+//! handled once (shared with the identity fold via
+//! `identity::excluded_by_retraction`). State-fold classification
+//! (poset -> antichain -> `Settled | Confirmed | Contested`) over
+//! `Status`-kind claims specifically is M4b — this stage still treats every
+//! live claim as a flat append-only log, which is correct for the narrative
+//! kinds (`Observation`/`Plan`/`Decision`/…) regardless; only `Status`
+//! claims need the poset machinery, since only they assert something that
+//! can conflict.
 
+pub mod identity;
 pub mod trust;
-
-use std::collections::{HashMap, HashSet};
 
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{Claim, ClaimBody, SubjectRef},
+    claim::{Claim, SubjectRef},
     store::log::StoredClaim,
 };
+pub use trust::TrustBase;
 
-/// A subject's live (non-retracted) claims, oldest first.
+/// One merge-class's live, trusted claims, oldest first. `subjects` has more
+/// than one entry once a trusted `SameAs` has merged distinct `SubjectRef`s.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubjectView {
-    pub subject: SubjectRef,
+    pub subjects: Vec<SubjectRef>,
     pub claims: Vec<(Cid, Claim)>,
+    /// Set when this class bridges more than
+    /// `identity::COMPONENT_SIZE_GUARDRAIL` subjects — a probable erroneous
+    /// `SameAs` assertion rather than a real large merge (`docs/SPEC.md`
+    /// §4.5). Surfaced, not silently enumerated: callers should warn on
+    /// this rather than just rendering a big class as if it were normal.
+    pub flagged_oversized: bool,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct FoldedView {
-    pub subjects: HashMap<SubjectRef, SubjectView>,
+    pub classes: Vec<SubjectView>,
 }
 
 impl FoldedView {
     pub fn subject(&self, subject: &SubjectRef) -> Option<&SubjectView> {
-        self.subjects.get(subject)
+        self.classes.iter().find(|c| c.subjects.contains(subject))
     }
 }
 
-/// Fold `claims` under `SoloTrust`. Retraction handling: a live `Retraction`
-/// excludes its `supersedes` target from the result; retracting a
-/// `Retraction` un-excludes that target again (ADR-6's undo mechanism —
-/// exclusion composes correctly over the strictly-backward `cites`/
-/// `supersedes` DAG with no special-casing).
-pub fn fold(claims: Vec<(Cid, StoredClaim)>, _trust: &trust::SoloTrust) -> FoldedView {
+pub fn fold(claims: Vec<(Cid, StoredClaim)>, trust: &TrustBase) -> FoldedView {
+    let excluded = identity::excluded_by_retraction(&claims);
+    let classes = identity::merge_classes(&claims, trust);
+
     let mut ordered = claims;
     ordered.sort_by(|a, b| a.1.rev.cmp(&b.1.rev));
 
-    let mut live: HashSet<Cid> = HashSet::new();
-    let mut excluded: HashSet<Cid> = HashSet::new();
-    // Maps a currently-active Retraction's CID to the CID it's suppressing,
-    // so a later claim retracting *that* retraction can undo its effect.
-    let mut active_retraction_target: HashMap<Cid, Cid> = HashMap::new();
-
-    for (cid, stored) in &ordered {
-        live.insert(cid.clone());
-        if let ClaimBody::Retraction { supersedes } = &stored.claim.content.body {
-            if live.contains(supersedes) {
-                live.remove(supersedes);
-                excluded.insert(supersedes.clone());
-                active_retraction_target.insert(cid.clone(), supersedes.clone());
+    let mut view_classes = Vec::with_capacity(classes.len());
+    for class in classes {
+        let mut class_claims = Vec::new();
+        for (cid, stored) in &ordered {
+            if excluded.contains(cid) {
+                continue;
             }
-            if let Some(undone) = active_retraction_target.remove(supersedes) {
-                live.insert(undone.clone());
-                excluded.remove(&undone);
+            if !trust.trusts(&stored.claim.content.author) {
+                continue;
             }
+            if class.contains(&stored.claim.content.subject) {
+                class_claims.push((cid.clone(), stored.claim.clone()));
+            }
+        }
+        // A class with subjects but zero trusted live claims (every mention
+        // of it came from an untrusted author) isn't meaningfully part of
+        // this view.
+        if !class_claims.is_empty() {
+            view_classes.push(SubjectView {
+                subjects: class.subjects,
+                claims: class_claims,
+                flagged_oversized: class.flagged_oversized,
+            });
         }
     }
 
-    let mut subjects: HashMap<SubjectRef, SubjectView> = HashMap::new();
-    for (cid, stored) in ordered {
-        if !live.contains(&cid) {
-            continue;
-        }
-        let subject = stored.claim.content.subject.clone();
-        subjects
-            .entry(subject.clone())
-            .or_insert_with(|| SubjectView {
-                subject,
-                claims: Vec::new(),
-            })
-            .claims
-            .push((cid, stored.claim));
+    FoldedView {
+        classes: view_classes,
     }
-
-    FoldedView { subjects }
 }

@@ -1,0 +1,295 @@
+//! M4a: the real identity fold. AC-5 from `.design/kan-spine.md` (a `SameAs`
+//! merge followed by retraction of the `SameAs` claim re-derives the split
+//! component from the retained witness edge set, not a stale cache), plus
+//! trust gating (the "Settled under Solo trust" half of AC-4 — the
+//! "Contested under PeerContested" half needs classify(), M4b) and the
+//! component-size guardrail.
+
+use std::collections::HashMap;
+
+use kan::{
+    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, RelationKind, Rkey, SubjectRef},
+    fold::{self, TrustBase},
+    sign::Identity,
+    store::log::Log,
+};
+
+fn content(author: &AuthorId, subject: &str, body: ClaimBody) -> ClaimContent {
+    ClaimContent {
+        author: author.clone(),
+        workspace: Anchor::Workspace("test-workspace".to_string()),
+        subject: SubjectRef::Local(Rkey::from(subject)),
+        body,
+        cites: vec![],
+        artifacts: vec![],
+    }
+}
+
+fn observation(text: &str) -> ClaimBody {
+    ClaimBody::Observation {
+        text: text.to_string(),
+    }
+}
+
+fn same_as(target: &str) -> ClaimBody {
+    ClaimBody::Relation {
+        kind: RelationKind::SameAs,
+        target: SubjectRef::Local(target.to_string()),
+    }
+}
+
+#[tokio::test]
+async fn ac5_sameas_merges_then_retraction_resplits() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = Identity::generate();
+    let author = AuthorId {
+        did: identity.did(),
+        agent: None,
+    };
+    let trust = TrustBase::solo(author.clone());
+    let mut log = Log::open_or_create(&dir.path().join("log"), &identity)
+        .await
+        .unwrap();
+
+    log.append(
+        content(&author, "bug-42", observation("crashes on startup")),
+        &identity,
+    )
+    .await
+    .unwrap();
+    log.append(
+        content(&author, "issue-7", observation("reported by a user")),
+        &identity,
+    )
+    .await
+    .unwrap();
+
+    // Initially separate classes.
+    let claims = log.iter_all().await.unwrap();
+    let view = fold::fold(claims, &trust);
+    assert_eq!(view.classes.len(), 2);
+
+    // Merge them.
+    let same_as_cid = log
+        .append(content(&author, "bug-42", same_as("issue-7")), &identity)
+        .await
+        .unwrap();
+
+    let claims = log.iter_all().await.unwrap();
+    let view = fold::fold(claims, &trust);
+    assert_eq!(
+        view.classes.len(),
+        1,
+        "SameAs should merge the two subjects into one class"
+    );
+    let merged = view
+        .subject(&SubjectRef::Local("bug-42".to_string()))
+        .unwrap();
+    assert!(merged
+        .subjects
+        .contains(&SubjectRef::Local("issue-7".to_string())));
+    // 2 narrative claims + the SameAs claim itself, all live.
+    assert_eq!(merged.claims.len(), 3);
+
+    // Retract the SameAs claim.
+    log.append(
+        content(
+            &author,
+            "bug-42",
+            ClaimBody::Retraction {
+                supersedes: same_as_cid,
+            },
+        ),
+        &identity,
+    )
+    .await
+    .unwrap();
+
+    let claims = log.iter_all().await.unwrap();
+    let view = fold::fold(claims, &trust);
+    assert_eq!(
+        view.classes.len(),
+        2,
+        "retracting the SameAs should re-split into two classes, re-derived from the \
+         retained witness edges — not a stale cached union-find state"
+    );
+    let bug42 = view
+        .subject(&SubjectRef::Local("bug-42".to_string()))
+        .unwrap();
+    let issue7 = view
+        .subject(&SubjectRef::Local("issue-7".to_string()))
+        .unwrap();
+    assert!(!bug42
+        .subjects
+        .contains(&SubjectRef::Local("issue-7".to_string())));
+    assert_ne!(bug42.subjects, issue7.subjects);
+}
+
+/// An untrusted author's SameAs claim doesn't merge anything — trust gates
+/// which witnesses even enter the identity-fold graph.
+#[tokio::test]
+async fn untrusted_sameas_is_not_honored() {
+    let dir = tempfile::tempdir().unwrap();
+    let owner = Identity::generate();
+    let owner_author = AuthorId {
+        did: owner.did(),
+        agent: None,
+    };
+    let stranger = Identity::generate();
+    let stranger_author = AuthorId {
+        did: stranger.did(),
+        agent: None,
+    };
+
+    let mut log = Log::open_or_create(&dir.path().join("log"), &owner)
+        .await
+        .unwrap();
+    log.append(
+        content(&owner_author, "bug-42", observation("owner's claim")),
+        &owner,
+    )
+    .await
+    .unwrap();
+    // The stranger asserts bug-42 is the same as issue-7, but nobody trusts them.
+    log.append(
+        content(&stranger_author, "bug-42", same_as("issue-7")),
+        &stranger,
+    )
+    .await
+    .unwrap();
+
+    let claims = log.iter_all().await.unwrap();
+    let trust = TrustBase::solo(owner_author);
+    let view = fold::fold(claims, &trust);
+
+    // Only bug-42 shows up (the stranger's claims are entirely untrusted,
+    // including the SameAs witness), and it isn't merged with issue-7.
+    assert_eq!(view.classes.len(), 1);
+    let bug42 = view
+        .subject(&SubjectRef::Local("bug-42".to_string()))
+        .unwrap();
+    assert_eq!(
+        bug42.subjects,
+        vec![SubjectRef::Local("bug-42".to_string())]
+    );
+}
+
+/// AC-4 (Solo half): two AgentKeys under one Did each make a claim about the
+/// same subject. Under Solo trust restricted to one of them, only that
+/// agent's claim is visible — trivially "Settled" since there's only one
+/// timeline. (The PeerContested "Contested" half needs classify(), M4b.)
+#[tokio::test]
+async fn solo_trust_sees_only_the_trusted_author() {
+    let dir = tempfile::tempdir().unwrap();
+    let human = Identity::generate();
+    let agent_a = AuthorId {
+        did: human.did(),
+        agent: Some(vec![1, 2, 3]),
+    };
+    let agent_b = AuthorId {
+        did: human.did(),
+        agent: Some(vec![4, 5, 6]),
+    };
+
+    let mut log = Log::open_or_create(&dir.path().join("log"), &human)
+        .await
+        .unwrap();
+    log.append(
+        content(&agent_a, "issue-1", observation("agent A says: flaky")),
+        &human,
+    )
+    .await
+    .unwrap();
+    log.append(
+        content(&agent_b, "issue-1", observation("agent B says: fixed")),
+        &human,
+    )
+    .await
+    .unwrap();
+
+    let claims = log.iter_all().await.unwrap();
+    let trust = TrustBase::solo(agent_a.clone());
+    let view = fold::fold(claims, &trust);
+
+    let issue1 = view
+        .subject(&SubjectRef::Local("issue-1".to_string()))
+        .unwrap();
+    assert_eq!(issue1.claims.len(), 1);
+    assert_eq!(issue1.claims[0].1.content.author, agent_a);
+}
+
+/// PeerContested trusts both agents — both claims are visible in the same
+/// class (contest *classification* is M4b; this just proves both are seen).
+#[tokio::test]
+async fn peer_contested_sees_all_weighted_authors() {
+    let dir = tempfile::tempdir().unwrap();
+    let human = Identity::generate();
+    let agent_a = AuthorId {
+        did: human.did(),
+        agent: Some(vec![1, 2, 3]),
+    };
+    let agent_b = AuthorId {
+        did: human.did(),
+        agent: Some(vec![4, 5, 6]),
+    };
+
+    let mut log = Log::open_or_create(&dir.path().join("log"), &human)
+        .await
+        .unwrap();
+    log.append(
+        content(&agent_a, "issue-1", observation("agent A says: flaky")),
+        &human,
+    )
+    .await
+    .unwrap();
+    log.append(
+        content(&agent_b, "issue-1", observation("agent B says: fixed")),
+        &human,
+    )
+    .await
+    .unwrap();
+
+    let claims = log.iter_all().await.unwrap();
+    let weights = HashMap::from([(agent_a, 1.0), (agent_b, 0.5)]);
+    let trust = TrustBase::PeerContested { weights };
+    let view = fold::fold(claims, &trust);
+
+    let issue1 = view
+        .subject(&SubjectRef::Local("issue-1".to_string()))
+        .unwrap();
+    assert_eq!(issue1.claims.len(), 2);
+}
+
+#[tokio::test]
+async fn oversized_component_is_flagged() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = Identity::generate();
+    let author = AuthorId {
+        did: identity.did(),
+        agent: None,
+    };
+    let trust = TrustBase::solo(author.clone());
+    let mut log = Log::open_or_create(&dir.path().join("log"), &identity)
+        .await
+        .unwrap();
+
+    // Chain subject-0 -> subject-1 -> ... -> subject-30 via SameAs: one
+    // connected component of 31 subjects, past the guardrail of 25.
+    for i in 0..30 {
+        log.append(
+            content(
+                &author,
+                &format!("subject-{i}"),
+                same_as(&format!("subject-{}", i + 1)),
+            ),
+            &identity,
+        )
+        .await
+        .unwrap();
+    }
+
+    let claims = log.iter_all().await.unwrap();
+    let view = fold::fold(claims, &trust);
+    assert_eq!(view.classes.len(), 1);
+    assert!(view.classes[0].flagged_oversized);
+}

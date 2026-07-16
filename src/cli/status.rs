@@ -1,18 +1,19 @@
-//! `kan status` — M3's version is deliberately thin: the trivial fold never
-//! contests (`SoloTrust`), so "status" here just means "the most recent live
-//! claim." Real `Settled | Confirmed | Contested` classification is M4's
-//! state fold, once there's more than one author's timeline to reconcile.
+//! `kan status` — M4a's version is still thin: `Solo` trust never contests
+//! (nothing to reconcile against a single timeline), so "status" here still
+//! just means "the most recent live claim." Real `Settled | Confirmed |
+//! Contested` classification over `Status`-kind claims is M4b's state fold.
 
 use crate::{
     claim::{Rkey, SubjectRef},
-    fold::{self, trust::SoloTrust},
+    fold,
 };
 
 use super::{Error, Workspace};
 
 pub async fn status(ws: &mut Workspace, subject: Option<&str>) -> Result<(), Error> {
     let claims = ws.index.all_stored_claims()?;
-    let view = fold::fold(claims, &SoloTrust);
+    let trust = ws.solo_trust();
+    let view = fold::fold(claims, &trust);
 
     match subject {
         Some(subject) => {
@@ -29,14 +30,14 @@ pub async fn status(ws: &mut Workspace, subject: Option<&str>) -> Result<(), Err
             }
         }
         None => {
-            if view.subjects.is_empty() {
+            if view.classes.is_empty() {
                 println!("no subjects yet");
             }
-            for subject_view in view.subjects.values() {
+            for subject_view in &view.classes {
                 if let Some((cid, claim)) = subject_view.claims.last() {
                     println!(
                         "{:?}: {:?} — {:?}  ({cid})",
-                        subject_view.subject,
+                        subject_view.subjects,
                         claim.content.body.kind(),
                         claim.content.body
                     );

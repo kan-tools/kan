@@ -3,10 +3,17 @@
 
 use kan::{
     claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
-    fold::{self, trust::SoloTrust},
+    fold::{self, TrustBase},
     sign::Identity,
     store::{index::Index, log::Log},
 };
+
+fn solo(did: &str) -> TrustBase {
+    TrustBase::solo(AuthorId {
+        did: did.to_string(),
+        agent: None,
+    })
+}
 
 fn content(did: &str, subject: &str, body: ClaimBody) -> ClaimContent {
     ClaimContent {
@@ -59,9 +66,9 @@ async fn ac3_local_only_smell_test() {
     .unwrap();
 
     let claims = log.iter_all().await.unwrap();
-    let view = fold::fold(claims, &SoloTrust);
+    let view = fold::fold(claims, &solo(&identity.did()));
 
-    assert_eq!(view.subjects.len(), 2);
+    assert_eq!(view.classes.len(), 2);
     let issue1 = view
         .subject(&SubjectRef::Local("issue-1".to_string()))
         .unwrap();
@@ -105,7 +112,7 @@ async fn retract_a_retraction_restores_the_original() {
         .unwrap();
 
     let claims = log.iter_all().await.unwrap();
-    let view = fold::fold(claims.clone(), &SoloTrust);
+    let view = fold::fold(claims.clone(), &solo(&identity.did()));
     let issue1 = view
         .subject(&SubjectRef::Local("issue-1".to_string()))
         .unwrap();
@@ -128,7 +135,7 @@ async fn retract_a_retraction_restores_the_original() {
     .unwrap();
 
     let claims = log.iter_all().await.unwrap();
-    let view = fold::fold(claims, &SoloTrust);
+    let view = fold::fold(claims, &solo(&identity.did()));
     let issue1 = view
         .subject(&SubjectRef::Local("issue-1".to_string()))
         .unwrap();
@@ -191,7 +198,7 @@ async fn ac6_index_is_disposable() {
 
     // And the fold over the rebuilt index's claims matches the fold over the
     // log directly.
-    let view_from_index = fold::fold(second_pass, &SoloTrust);
-    let view_from_log = fold::fold(claims_from_log, &SoloTrust);
-    assert_eq!(view_from_index.subjects.len(), view_from_log.subjects.len());
+    let view_from_index = fold::fold(second_pass, &solo(&identity.did()));
+    let view_from_log = fold::fold(claims_from_log, &solo(&identity.did()));
+    assert_eq!(view_from_index.classes.len(), view_from_log.classes.len());
 }

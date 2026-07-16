@@ -95,3 +95,31 @@ fn invalid_cites_is_a_clean_error() {
     assert!(!ok);
     assert!(err.contains("invalid --cites"));
 }
+
+#[test]
+fn same_merges_two_subjects_into_one_view() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, _, ok) = kan(
+        dir.path(),
+        &["observe", "crashes on startup", "--subject", "bug-42"],
+    );
+    assert!(ok);
+    let (_, _, ok) = kan(
+        dir.path(),
+        &["observe", "reported by a user", "--subject", "issue-7"],
+    );
+    assert!(ok);
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("1 live claim(s)"));
+
+    let (_, _, ok) = kan(dir.path(), &["same", "bug-42", "issue-7"]);
+    assert!(ok);
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("merged with"));
+    assert!(show_out.contains("crashes on startup"));
+    assert!(show_out.contains("reported by a user"));
+}
