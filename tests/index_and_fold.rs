@@ -96,7 +96,7 @@ async fn retract_a_retraction_restores_the_original() {
                 &identity.did(),
                 "issue-1",
                 ClaimBody::Retraction {
-                    supersedes: original,
+                    supersedes: original.clone(),
                 },
             ),
             &identity,
@@ -119,7 +119,7 @@ async fn retract_a_retraction_restores_the_original() {
             &identity.did(),
             "issue-1",
             ClaimBody::Retraction {
-                supersedes: retraction,
+                supersedes: retraction.clone(),
             },
         ),
         &identity,
@@ -132,7 +132,7 @@ async fn retract_a_retraction_restores_the_original() {
     let issue1 = view
         .subject(&SubjectRef::Local("issue-1".to_string()))
         .unwrap();
-    let live_cids: Vec<_> = issue1.claims.iter().map(|(cid, _)| *cid).collect();
+    let live_cids: Vec<_> = issue1.claims.iter().map(|(cid, _)| cid.clone()).collect();
     assert!(
         live_cids.contains(&original),
         "original claim should be live again"

@@ -11,7 +11,7 @@ pub mod trust;
 
 use std::collections::{HashMap, HashSet};
 
-use ipld_core::cid::Cid;
+use atproto_dasl::Cid;
 
 use crate::{
     claim::{Claim, ClaimBody, SubjectRef},
@@ -52,15 +52,15 @@ pub fn fold(claims: Vec<(Cid, StoredClaim)>, _trust: &trust::SoloTrust) -> Folde
     let mut active_retraction_target: HashMap<Cid, Cid> = HashMap::new();
 
     for (cid, stored) in &ordered {
-        live.insert(*cid);
+        live.insert(cid.clone());
         if let ClaimBody::Retraction { supersedes } = &stored.claim.content.body {
             if live.contains(supersedes) {
                 live.remove(supersedes);
-                excluded.insert(*supersedes);
-                active_retraction_target.insert(*cid, *supersedes);
+                excluded.insert(supersedes.clone());
+                active_retraction_target.insert(cid.clone(), supersedes.clone());
             }
             if let Some(undone) = active_retraction_target.remove(supersedes) {
-                live.insert(undone);
+                live.insert(undone.clone());
                 excluded.remove(&undone);
             }
         }

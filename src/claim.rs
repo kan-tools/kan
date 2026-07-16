@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use ipld_core::cid::Cid;
+use atproto_dasl::Cid;
 use serde::{Deserialize, Serialize};
 
 /// `did:key:...` for local-only v1 (ADR-4); upgradeable to `did:plc` later

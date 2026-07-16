@@ -27,11 +27,14 @@ Explicitly OUT for v1: sync/atproto/lexicons, TUI, web dashboard, editor
 extensions, >2 trust policies, enforcement hooks, incremental fold.
 
 ## House rules
-- Rust. Use the `atrium-rs` crate family (`atrium-repo`, `atrium-crypto`,
-  `atrium-identity`) for MST/CAR/CID/signing, so local-only and future atproto
-  are the same on-disk artifact — see `docs/DECISIONS.md` ADR-1 for why this
-  was chosen over `atproto-repo`, and ADR-8 for the confirmed API fit plus a
-  known gap (no public commit-chain walking) worth revisiting if it bites again.
+- Rust. Use `atproto-repo` + `atproto-dasl` for MST/CAR/CID (`atrium-crypto`
+  for signing), so local-only and future atproto are the same on-disk
+  artifact. **Not** `atrium-repo` — ADR-1 originally picked it, but ADR-11
+  found a confirmed data-loss bug in its MST (filed upstream:
+  atrium-rs/atrium#343) and ADR-12 records the switch. Before trusting any
+  storage-layer crate here again: stress-test it the way ADR-11/12 did
+  (sequential inserts, check full reachability after every single one, not
+  just at the end) before building on it, not after.
 - Correctness before performance. The reference fold recomputes; caching and
   incremental folds are follow-ups, optimized only against passing fixtures.
 - The fold is a pure, deterministic function of (claim set, enrichment). Guard this.
