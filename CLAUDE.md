@@ -30,8 +30,8 @@ extensions, >2 trust policies, enforcement hooks, incremental fold.
 - Rust. Use the `atrium-rs` crate family (`atrium-repo`, `atrium-crypto`,
   `atrium-identity`) for MST/CAR/CID/signing, so local-only and future atproto
   are the same on-disk artifact — see `docs/DECISIONS.md` ADR-1 for why this
-  was chosen over `atproto-repo`, and Open Question Q1 in `.design/kan-spine.md`
-  for the still-unverified API-fit spike.
+  was chosen over `atproto-repo`, and ADR-8 for the confirmed API fit plus a
+  known gap (no public commit-chain walking) worth revisiting if it bites again.
 - Correctness before performance. The reference fold recomputes; caching and
   incremental folds are follow-ups, optimized only against passing fixtures.
 - The fold is a pure, deterministic function of (claim set, enrichment). Guard this.
@@ -58,3 +58,11 @@ crosslink-free descendant of that workflow, adapted to record into kan's own log
 ## Provenance
 Clean-room successor to `crosslink`. Build forward from SPEC.md; consult crosslink
 only as lessons-learned (its sync model is what we're fixing), not a codebase to port.
+
+## Workflow: one PR per milestone
+Each spine milestone (see `.design/kan-spine.md`'s M1–M6 roadmap) is its own
+branch and PR, not a direct commit to `main` — branch off `main`, commit, push,
+`gh pr create`, wait for CI (`.github/workflows/ci.yml`) to go green, then
+`gh pr merge --merge --delete-branch` (regular merge, not squash, so the
+milestone's internal commits stay visible in history). Keeps each PR's diff
+scoped to exactly one milestone.
