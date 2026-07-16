@@ -28,7 +28,7 @@ pub type Sha = String;
 /// work (M4); this is just the value type.
 pub type GenesisCid = String;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Span {
     pub start: u32,
     pub end: u32,
@@ -42,7 +42,12 @@ pub struct AuthorId {
 
 /// §4.1 — `Local` never crosses log boundaries; `Anchor` is content-addressed
 /// and computed identically by every actor.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `Hash` is derived so a fold can group claims by subject in a `HashMap`
+/// without a full identity fold — the M2 trivial fold's "each subject is its
+/// own class, no `SameAs` yet" case (`fold::identity` builds the real
+/// witness-graph merge-classes in M4).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SubjectRef {
     Local(Rkey),
     Anchor(Anchor),
@@ -52,7 +57,7 @@ pub enum SubjectRef {
 /// between two `Anchor`s is a type error, not a claim (§5.1) — enforced by
 /// `Anchor` simply not being a valid `RelationKind::SameAs` target in the
 /// fold, not by the type system here.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Anchor {
     Workspace(GenesisCid),
     Commit(Sha),
