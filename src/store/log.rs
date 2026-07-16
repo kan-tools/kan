@@ -1,46 +1,51 @@
 //! The local append-only signed log — source of truth (`docs/SPEC.md` §10;
-//! ADR-3 for the `.kan/log/` location; ADR-12 for the `atproto-repo` switch).
+//! ADR-3 for the `.kan/log/` location; ADR-12 for the `atproto-repo` switch;
+//! ADR-13 for incremental append).
 //!
 //! Claims are stored content-addressed, keyed by their own `content_cid`
 //! (`crate::cid::content_cid`) under the `dev.kan.claim` collection (matching
 //! `docs/SPEC.md` §10.1's future lexicon namespace), inside a single on-disk
 //! CAR file — this is the same on-disk artifact atproto sync would use later.
 //!
-//! Unlike `atrium-repo` (ADR-1's original pick, dropped after ADR-11's
-//! confirmed data-loss bug), `atproto-repo`'s `CarWriter` doesn't support
-//! incremental append — writing means serializing the *entire* reachable
-//! block set fresh. `Log::append` therefore keeps everything in one
-//! in-memory `MemoryStorage` for the lifetime of the `Log`, and does a full
-//! CAR rewrite on every append. This is O(n) per append rather than O(1) —
-//! a deliberate, documented tradeoff (`docs/DECISIONS.md` ADR-12): simple
-//! and obviously correct beats fast-but-unverified, and it's what let this
-//! whole rewrite be validated by construction rather than by trusting the
-//! crate's shape the way ADR-8 did. A nice side effect: since the CAR
-//! header's `roots` are rewritten fresh every time (unlike `atrium-repo`'s
-//! fixed-at-creation header), there's no `HEAD` sidecar file to maintain —
-//! `CarReader::root()` on open is simply correct.
+//! `atproto-repo`'s `CarWriter` always writes a fresh header at construction
+//! time, and there's no public "resume writing an existing file" mode. But
+//! `CarBlock::to_bytes()` (length-prefix + CID + data, the exact wire format
+//! `atproto_dasl::car`'s own module doc documents) is public, so
+//! `Log::append` writes *only the new blocks* — the new record, whatever
+//! `Mst` internal nodes changed along the insertion path (not the whole
+//! tree — MST is a persistent structure, most nodes are unchanged and
+//! shared across versions), and the new commit — directly to the end of the
+//! file. This is genuinely incremental, not O(n) per append.
+//!
+//! The tradeoff: since the CAR header's `roots` field is fixed at whatever
+//! it was when the file was first created, it goes stale after the first
+//! append and is never consulted for real logic. A sibling `HEAD` file
+//! (the same pattern ADR-8 used for `atrium-repo`, dropped when ADR-12
+//! switched crates because full-rewrite made it briefly unnecessary — now
+//! back) tracks the actual current root commit's CID.
 //!
 //! Two `Cid` types are in play, and the split isn't consistent, so every
 //! call site converts explicitly rather than relying on inference: `Mst`'s
 //! `root`/`from_root` speak the *raw* `cid` crate type (aliased here as
 //! `RawCid`), but `insert`/`get` — on the same `Mst` — speak
 //! `atproto_dasl::Cid`, the DAG-CBOR-serialization-friendly wrapper that
-//! `Commit` and `BlockStorage` also use. This asymmetry isn't a kan design
-//! choice; it's the crate's actual shape, found via compiler error rather
-//! than assumed from its docs (see ADR-11/12's whole point: verify, don't
-//! trust the shape). Kan's own types (`crate::claim::*`) standardize on the
-//! wrapper.
+//! `Commit` and `BlockStorage` also use; `CarBlock` splits the same way
+//! (`CarBlock::new` takes raw; `CarHeader::with_root` takes wrapped). This
+//! asymmetry isn't a kan design choice; it's the crate's actual shape, found
+//! via compiler error rather than assumed from its docs (see ADR-11/12's
+//! whole point: verify, don't trust the shape). Kan's own types
+//! (`crate::claim::*`) standardize on the wrapper.
 
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 
 use atproto_dasl::{
-    car::{CarReader, CarWriter},
+    car::{CarBlock, CarHeader, CarReader},
     storage::{BlockStorage, MemoryStorage},
     Cid, CidCore as RawCid,
 };
 use atproto_repo::{compute_cid, Commit, Mst, RecordPath, RepoConfig};
 use serde::{Deserialize, Serialize};
-use tokio::fs;
+use tokio::{fs, io::AsyncWriteExt};
 
 use crate::{
     cid::content_cid,
@@ -71,6 +76,8 @@ pub enum Error {
     BadSignature,
     #[error("log exists but its CAR file has no root")]
     MissingRoot,
+    #[error("log exists but HEAD is missing or unreadable")]
+    MissingHead,
     #[error("record key is not a valid CID: {0}")]
     InvalidCid(#[from] atproto_dasl::errors::DecodeError),
 }
@@ -86,6 +93,7 @@ pub struct StoredClaim {
 
 pub struct Log {
     car_path: std::path::PathBuf,
+    head_path: std::path::PathBuf,
     mst: Mst<MemoryStorage>,
     /// `None` until the first claim is appended — `Mst::new` starts with no
     /// root at all (unlike `atrium-repo`, which eagerly computed an
@@ -93,6 +101,10 @@ pub struct Log {
     /// nothing" to create up front. The CAR file itself doesn't exist yet
     /// either in this state; both come into being together on first append.
     commit_cid: Option<Cid>,
+    /// Every CID already durably written to `car_path` — `append` diffs
+    /// against this to find only the new blocks to write, instead of
+    /// re-serializing everything `mst.storage()` has ever seen.
+    persisted: HashSet<Cid>,
     did: String,
     tid: TidGenerator,
 }
@@ -101,14 +113,20 @@ impl Log {
     pub async fn open_or_create(dir: &Path, identity: &Identity) -> Result<Self, Error> {
         fs::create_dir_all(dir).await?;
         let car_path = dir.join("repo.car");
+        let head_path = dir.join("HEAD");
         let did = identity.did();
 
         if car_path.exists() {
             let bytes = fs::read(&car_path).await?;
             let mut storage = MemoryStorage::new();
             let reader = CarReader::new(std::io::Cursor::new(&bytes)).await?;
-            let root = reader.root().cloned().ok_or(Error::MissingRoot)?;
             reader.stream_to_storage(&mut storage).await?;
+            let persisted: HashSet<Cid> = storage.cids().map(Cid::from).collect();
+
+            let head = fs::read_to_string(&head_path)
+                .await
+                .map_err(|_| Error::MissingHead)?;
+            let root: Cid = head.trim().parse().map_err(|_| Error::MissingHead)?;
 
             let commit_bytes = storage.get(&root).await?.ok_or(Error::MissingRoot)?;
             let commit = Commit::from_bytes(&commit_bytes)?;
@@ -116,8 +134,10 @@ impl Log {
 
             Ok(Self {
                 car_path,
+                head_path,
                 mst,
                 commit_cid: Some(root),
+                persisted,
                 did,
                 tid: TidGenerator::new(),
             })
@@ -125,22 +145,53 @@ impl Log {
             let mst = Mst::new(MemoryStorage::new(), RepoConfig::default());
             Ok(Self {
                 car_path,
+                head_path,
                 mst,
                 commit_cid: None,
+                persisted: HashSet::new(),
                 did,
                 tid: TidGenerator::new(),
             })
         }
     }
 
-    async fn write_car(&self, root: &Cid) -> Result<(), Error> {
-        let mut bytes = Vec::new();
-        {
-            let mut writer = CarWriter::new(&mut bytes, vec![root.clone()]).await?;
-            writer.write_from_storage(self.mst.storage()).await?;
-            writer.finish().await?;
+    /// Append every block in `mst.storage()` not already in `persisted` to
+    /// the end of the CAR file (writing the header first if this is the
+    /// file's first-ever write), then update `HEAD`.
+    async fn persist_new_blocks(&mut self, root: &Cid) -> Result<(), Error> {
+        let file_is_new = !self.car_path.exists();
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.car_path)
+            .await?;
+
+        if file_is_new {
+            let header = CarHeader::with_root(root.clone());
+            file.write_all(&header.to_bytes()?).await?;
         }
-        fs::write(&self.car_path, bytes).await?;
+
+        let new_cids: Vec<Cid> = self
+            .mst
+            .storage()
+            .cids()
+            .map(Cid::from)
+            .filter(|c| !self.persisted.contains(c))
+            .collect();
+        for cid in new_cids {
+            let data = self
+                .mst
+                .storage()
+                .get(&cid)
+                .await?
+                .expect("cid came from this storage's own cids() iterator");
+            let block = CarBlock::new(RawCid::from(cid.clone()), data);
+            file.write_all(&block.to_bytes()?).await?;
+            self.persisted.insert(cid);
+        }
+        file.flush().await?;
+
+        fs::write(&self.head_path, root.to_string()).await?;
         Ok(())
     }
 
@@ -186,7 +237,7 @@ impl Log {
         let new_commit_cid = write_commit(&mut self.mst, &commit).await?;
         self.commit_cid = Some(new_commit_cid.clone());
 
-        self.write_car(&new_commit_cid).await?;
+        self.persist_new_blocks(&new_commit_cid).await?;
         Ok(claim_cid)
     }
 
