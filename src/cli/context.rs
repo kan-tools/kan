@@ -17,7 +17,8 @@ use std::path::{Path, PathBuf};
 use sha2::Digest;
 
 use crate::{
-    claim::{Anchor, GenesisCid},
+    claim::{Anchor, AuthorId, GenesisCid},
+    fold::TrustBase,
     sign::Identity,
     store::{index::Index, log::Log},
 };
@@ -62,6 +63,22 @@ impl Workspace {
             index,
             anchor,
         })
+    }
+
+    /// This CLI's own human-direct `AuthorId` (`agent: None`).
+    pub fn my_author(&self) -> AuthorId {
+        AuthorId {
+            did: self.identity.did(),
+            agent: None,
+        }
+    }
+
+    /// Trust only this CLI's own author — the default for `show`/`status`
+    /// today, since M3's CLI never writes with an agent key. Once agent-key
+    /// support exists, callers needing `PeerContested` will construct that
+    /// `TrustBase` directly rather than through this helper.
+    pub fn solo_trust(&self) -> TrustBase {
+        TrustBase::solo(self.my_author())
     }
 }
 

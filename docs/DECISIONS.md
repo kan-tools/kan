@@ -104,6 +104,12 @@ yet) and `atrium-repo` doesn't expose it, `atproto-repo` (ADR-1's rejected
 alternative — single-maintainer, but more actively hands-on with exactly this
 kind of repo-internals surface) is worth a second look for that specific gap,
 not necessarily a wholesale swap back.
+**Superseded by ADR-11:** the API-fit spike didn't catch it because it only
+checked shape, not correctness under repeated writes — `atrium-repo`'s
+`mst::Tree` had a confirmed silent data-loss bug at ordinary scale. ADR-11
+covers this in full; it doesn't change the API-fit reasoning above, but it
+did mean the M1–M3 `store/log.rs` built on top of it was unsafe, resolved
+by ADR-12's switch.
 
 ## ADR-9 — Token-budget estimation: `tiktoken-rs` behind a `TokenEstimator` trait
 **Date:** 2026-07-16
@@ -135,6 +141,39 @@ open-ended command surfaces, but kan's vocabulary is deliberately capped small
 narrow-tool-sprawl critique applies to, and schema-typed params protect the
 "provenance is sacred" invariant on write verbs in a way free-text CLI
 arguments can't. Closes Open Question Q3.
+
+## ADR-11 — CONFIRMED: `atrium-repo`'s MST silently loses data at ordinary scale
+**Date:** 2026-07-16
+**Status:** Filed upstream as
+[atrium-rs/atrium#343](https://github.com/atrium-rs/atrium/issues/343).
+Resolved by ADR-12 (switch to `atproto-repo`) the same day.
+**Finding:** `mst::Tree::add` followed later by `get` could silently and
+permanently lose a previously-inserted entry. Confirmed via a minimal,
+deterministic repro (`salt="salt-2"` failed at exactly 18 sequential
+inserts, every time; never failed at 17) plus an aggregate: ~24% of
+independent random key sequences lost data within 20 sequential inserts
+using realistic, CID-shaped keys.
+**Ruled out as causes** (each independently verified, not assumed):
+- Missing `CommitBuilder::prev()` — a real bug in `store/log.rs`'s original
+  usage (fixed), but fixing it did **not** fix the data loss.
+  `atrium-repo`'s own `test_extract_complex` doesn't call `.prev()` either
+  and passes, confirming it isn't required.
+- Blockstore backend — identical failure rate (72/300) with
+  `MemoryBlockStore` and `CarStore`.
+- Tree lifecycle — identical failure rate with one long-lived `Tree` vs.
+  reopening `Tree::open` from the root CID per insert (the pattern
+  `Repository::add_raw` uses internally).
+- `Repository`/`CommitBuilder`/signing — bug reproduced at the raw
+  `mst::Tree` layer alone, no higher-level API involved.
+- Key shape was likely the actual trigger: `atrium-repo`'s own test (short,
+  fixed-13-char `Tid`-based keys) didn't reproduce even scaled to 50×30
+  runs; failures correlated with longer, hash-derived (CID-shaped) keys —
+  exactly what a content-addressed application keying by `add_raw` would
+  naturally use.
+**Practical impact:** every claim `store/log.rs` had appended since M1
+(including dogfooding claims recorded after M3) carried this risk once a
+`.kan/log/` accumulated on the order of 15-20+ claims. M1–M3 were already
+merged; this wasn't a pre-merge catch. See ADR-12 for the resolution.
 
 ## ADR-12 — Switch `store/log.rs` from `atrium-repo` to `atproto-repo`
 **Date:** 2026-07-17
