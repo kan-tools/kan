@@ -59,25 +59,38 @@ impl MergeClass {
 /// Claim CIDs currently excluded by a live `Retraction` (`docs/SPEC.md` §8,
 /// ADR-6). Shared between the identity fold and the state fold — retraction
 /// is a claim-level concept, not specific to either stage.
+///
+/// Self-retraction only: a `Retraction` claim only takes effect against a
+/// claim authored by the exact same `AuthorId`. `docs/SPEC.md` §8 states this
+/// as a structural impossibility ("you can't write to another's log"), not a
+/// trust decision — an other-author `Retraction` is simply inert here,
+/// unconditionally, regardless of whether the acting viewer trusts that
+/// author. (Trust-gated cross-author suppression is `Relation::Rejects`,
+/// honored only downstream, by folds that trust the rejecter — a completely
+/// separate mechanism from this one.) This function deliberately takes no
+/// `TrustBase` at all: that absence is the fix, not an oversight.
 pub fn excluded_by_retraction(claims: &[(Cid, StoredClaim)]) -> HashSet<Cid> {
     let mut ordered: Vec<&(Cid, StoredClaim)> = claims.iter().collect();
     ordered.sort_by(|a, b| a.1.rev.cmp(&b.1.rev));
 
-    let mut seen: HashSet<Cid> = HashSet::new();
+    let mut authors: HashMap<Cid, AuthorId> = HashMap::new();
     let mut excluded: HashSet<Cid> = HashSet::new();
     let mut active_retraction_target: HashMap<Cid, Cid> = HashMap::new();
 
     for (cid, stored) in ordered {
-        seen.insert(cid.clone());
+        let author = stored.claim.content.author.clone();
         if let ClaimBody::Retraction { supersedes } = &stored.claim.content.body {
-            if seen.contains(supersedes) {
+            if authors.get(supersedes) == Some(&author) {
                 excluded.insert(supersedes.clone());
                 active_retraction_target.insert(cid.clone(), supersedes.clone());
+                if let Some(undone) = active_retraction_target.remove(supersedes) {
+                    excluded.remove(&undone);
+                }
             }
-            if let Some(undone) = active_retraction_target.remove(supersedes) {
-                excluded.remove(&undone);
-            }
+            // else: a cross-author "retraction" attempt -- not honored,
+            // structurally inert, never added to `excluded`.
         }
+        authors.insert(cid.clone(), author);
     }
     excluded
 }

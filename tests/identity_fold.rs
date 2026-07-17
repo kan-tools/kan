@@ -174,6 +174,68 @@ async fn untrusted_sameas_is_not_honored() {
     );
 }
 
+/// `docs/SPEC.md` §8: "Cross-author 'retraction' is NOT possible (you can't
+/// write to another's log)." A `Retraction` only takes effect against a claim
+/// from the exact same author — structurally, not as a trust decision. Uses
+/// `PeerContested` trusting *both* authors equally to prove the point: even a
+/// fully-trusted stranger's `Retraction` of someone else's claim is inert,
+/// which a `SoloTrust`-only test (never trusting the stranger at all) can't
+/// distinguish from ordinary trust gating.
+#[tokio::test]
+async fn cross_author_retraction_is_not_honored_even_when_fully_trusted() {
+    let dir = tempfile::tempdir().unwrap();
+    let owner = Identity::generate();
+    let owner_author = AuthorId {
+        did: owner.did(),
+        agent: None,
+    };
+    let stranger = Identity::generate();
+    let stranger_author = AuthorId {
+        did: stranger.did(),
+        agent: None,
+    };
+
+    let mut log = Log::open_or_create(&dir.path().join("log"), &owner)
+        .await
+        .unwrap();
+    let original = log
+        .append(
+            content(&owner_author, "bug-42", observation("owner's claim")),
+            &owner,
+        )
+        .await
+        .unwrap();
+    // The stranger tries to retract the owner's claim -- not their own log.
+    log.append(
+        content(
+            &stranger_author,
+            "bug-42",
+            ClaimBody::Retraction {
+                supersedes: original.clone(),
+            },
+        ),
+        &stranger,
+    )
+    .await
+    .unwrap();
+
+    let claims = log.iter_all().await.unwrap();
+    let trust = TrustBase::PeerContested {
+        weights: HashMap::from([(owner_author, 1.0), (stranger_author, 1.0)]),
+    };
+    let view = fold::fold(claims, &trust);
+
+    let bug42 = view
+        .subject(&SubjectRef::Local("bug-42".to_string()))
+        .unwrap();
+    let live_cids: Vec<_> = bug42.claims.iter().map(|(cid, _)| cid.clone()).collect();
+    assert!(
+        live_cids.contains(&original),
+        "the owner's claim must stay live -- a stranger can't retract it, \
+         no matter how much the viewer trusts that stranger"
+    );
+}
+
 /// AC-4 (Solo half): two AgentKeys under one Did each make a claim about the
 /// same subject. Under Solo trust restricted to one of them, only that
 /// agent's claim is visible — trivially "Settled" since there's only one
