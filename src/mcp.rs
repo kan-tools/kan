@@ -34,6 +34,25 @@ pub async fn serve(cwd: PathBuf) -> Result<(), Error> {
     Ok(())
 }
 
+/// `kan mcp install` — prints, never mutates, both current/documented
+/// Claude Code registration mechanisms (confirmed via research, not
+/// guessed): a bare `claude mcp add` command, and (once this repo's
+/// `.claude-plugin/plugin.json` + `.mcp.json` exist) the plugin path.
+pub fn install_instructions() -> String {
+    let exe = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "kan".to_string());
+
+    let mut out = String::new();
+    out.push_str("Register kan as an MCP server -- either path works:\n\n");
+    out.push_str("1. Directly:\n");
+    out.push_str(&format!("     claude mcp add kan -- {exe} mcp\n\n"));
+    out.push_str("2. As a Claude Code plugin (this repo ships .claude-plugin/plugin.json\n");
+    out.push_str("   and .mcp.json declaring the same server):\n");
+    out.push_str("     /plugin install <path to this repo, or its marketplace entry>\n");
+    out
+}
+
 fn to_error(e: actions::Error) -> ErrorData {
     ErrorData::internal_error(e.to_string(), None)
 }
@@ -84,13 +103,6 @@ struct StatusParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
-struct SessionEndParams {
-    /// Optional closing notes.
-    #[serde(default)]
-    notes: Option<String>,
-}
-
-#[derive(Debug, Deserialize, JsonSchema)]
 struct ContextParams {
     /// Token budget (default: 4096).
     #[serde(default)]
@@ -124,7 +136,7 @@ impl KanServer {
         let p = params.0;
         actions::observe(&mut ws, p.text, p.subject, p.cites)
             .await
-            .map(|cid| cid.to_string())
+            .map(|r| r.confirmation())
             .map_err(to_error)
     }
 
@@ -134,7 +146,7 @@ impl KanServer {
         let p = params.0;
         actions::plan(&mut ws, p.text, p.subject, p.cites)
             .await
-            .map(|cid| cid.to_string())
+            .map(|r| r.confirmation())
             .map_err(to_error)
     }
 
@@ -144,7 +156,7 @@ impl KanServer {
         let p = params.0;
         actions::decide(&mut ws, p.text, p.subject, p.cites)
             .await
-            .map(|cid| cid.to_string())
+            .map(|r| r.confirmation())
             .map_err(to_error)
     }
 
@@ -153,7 +165,7 @@ impl KanServer {
         let mut ws = self.workspace().await?;
         actions::same(&mut ws, &params.0.a, &params.0.b)
             .await
-            .map(|cid| cid.to_string())
+            .map(|r| r.confirmation())
             .map_err(to_error)
     }
 
@@ -162,7 +174,7 @@ impl KanServer {
         let mut ws = self.workspace().await?;
         actions::resolve(&mut ws, &params.0.subject, &params.0.text)
             .await
-            .map(|cid| cid.to_string())
+            .map(|r| r.confirmation())
             .map_err(to_error)
     }
 
@@ -184,24 +196,6 @@ impl KanServer {
         actions::issues(&ws).map_err(to_error)
     }
 
-    #[tool(description = "Start a session.")]
-    async fn session_start(&self) -> Result<String, ErrorData> {
-        let mut ws = self.workspace().await?;
-        actions::session_start(&mut ws)
-            .await
-            .map(|cid| cid.to_string())
-            .map_err(to_error)
-    }
-
-    #[tool(description = "End a session, optionally with closing notes.")]
-    async fn session_end(&self, params: Parameters<SessionEndParams>) -> Result<String, ErrorData> {
-        let mut ws = self.workspace().await?;
-        actions::session_end(&mut ws, params.0.notes)
-            .await
-            .map(|cid| cid.to_string())
-            .map_err(to_error)
-    }
-
     #[tool(description = "Assemble the maximal-value claim set that fits under a token budget.")]
     async fn context(&self, params: Parameters<ContextParams>) -> Result<String, ErrorData> {
         let ws = self.workspace().await?;
@@ -211,11 +205,25 @@ impl KanServer {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for KanServer {
+    /// Factual, not prescriptive: describes what a subject is and what
+    /// each tool does, deliberately without recommending an order of
+    /// operations or a workflow — that's process, and kan's scope is the
+    /// durable claim log and reads over it, not opinions about when an
+    /// agent should call which tool (`docs/DECISIONS.md`'s
+    /// kan/companion-tool boundary rule).
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
-            "kan: an append-only, provenance-preserving claim log for this repo. \
-                 Use observe/plan/decide/resolve/same to record; show/status/issues/context \
-                 to read.",
+            "kan is an append-only, signed, content-addressed claim log for this repo. \
+             A \"subject\" is a freely-chosen name (e.g. \"bug-42\") that claims are \
+             about; the same subject name always refers to the same thing within one \
+             log. observe/plan/decide/resolve/same each append one claim of a \
+             different kind (finding, intended approach, choice made, resolution, or \
+             an identity assertion that two subjects are the same). show returns one \
+             subject's full live claim history; status returns Settled/Confirmed/ \
+             Contested classification for one subject, or a one-line summary for \
+             every subject if none is given. issues lists subjects that aren't \
+             resolved yet. context returns the highest-value claims that fit under a \
+             token budget.",
         )
     }
 }

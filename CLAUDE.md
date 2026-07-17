@@ -50,7 +50,18 @@ If it isn't, the abstraction is wrong — stop and reconsider.
 
 ## CLI vocabulary (git-like, verb-first)
 kan observe | plan | decide | resolve | same | show | issues | status |
-session start/end | context [--budget N]
+context [--budget N] | mcp [install]
+
+## Scope boundary: kan vs. a future companion tool
+kan owns a feature iff it needs a new/existing `ClaimBody`/`ClaimKind`/
+`Anchor`/`RelationKind` variant, or is a pure read/fold over the claim graph
+that needs no memory of *when* or *why* to call it. If a feature is buildable
+entirely as a calling convention over existing primitives (subject naming,
+`cites`, `artifacts`) with no data-model change, it's process/workflow and
+belongs in a future, separate companion tool that consumes kan via CLI/MCP —
+not a new mode of kan itself. Full rationale and worked examples (why `kan
+session start/end` was removed, why a proposed vector index still belongs in
+kan): `docs/DECISIONS.md` ADR-18.
 
 ## Design docs
 Feature-level design work goes through `/design` (see `.claude/commands/design.md`)
