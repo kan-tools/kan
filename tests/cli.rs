@@ -152,3 +152,28 @@ fn same_merges_two_subjects_into_one_view() {
     assert!(show_out.contains("crashes on startup"));
     assert!(show_out.contains("reported by a user"));
 }
+
+/// Issue #3: `kan` walks upward to find the repo root (`.git/`), the same
+/// search `git` itself does, so `.kan/` always lands beside `.git/`
+/// (ADR-3) regardless of which subdirectory it's invoked from.
+#[test]
+fn kan_dir_resolves_upward_from_a_subdirectory() {
+    let dir = git_repo();
+    let nested = dir.path().join("src").join("deep");
+    std::fs::create_dir_all(&nested).unwrap();
+
+    let (cid, _, ok) = kan(&nested, &["observe", "found from a subdirectory"]);
+    assert!(ok);
+    assert!(!cid.is_empty());
+
+    assert!(
+        dir.path().join(".kan").is_dir(),
+        ".kan/ should be created at the repo root, not the invoking subdirectory"
+    );
+    assert!(!nested.join(".kan").exists());
+
+    // And it's visible from the root too — same workspace, same claim.
+    let (show_out, _, ok) = kan(dir.path(), &["show", "general"]);
+    assert!(ok);
+    assert!(show_out.contains("found from a subdirectory"));
+}
