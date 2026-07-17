@@ -85,6 +85,11 @@ scoped to exactly one milestone.
 Bump `Cargo.toml`'s `version` on `main`, then push a tag matching `v*.*.*`
 (e.g. `v0.1.1-beta.1`) — `.github/workflows/release.yml` re-verifies
 build/test/clippy/fmt, checks the tag matches `Cargo.toml`'s version, and
-publishes to crates.io. Requires a `CARGO_REGISTRY_TOKEN` repo secret (never
-add this through a chat session — it's a credential Claude Code should never
-see). See ADR-19 for the version-scheme and trigger rationale.
+publishes to crates.io via the `crates-io` GitHub Environment (tag-restricted
+to `v*.*.*` as a second guard beyond the workflow's own trigger filter).
+Requires a `CARGO_REGISTRY_TOKEN` secret scoped to that environment (`gh
+secret set CARGO_REGISTRY_TOKEN --env crates-io`, never through a chat
+session — it's a credential Claude Code should never see). See ADR-19 for
+the version-scheme/trigger rationale and ADR-20 for the environment (and the
+required-reviewer gate that isn't available on `kan-tools`'s current GitHub
+plan).
