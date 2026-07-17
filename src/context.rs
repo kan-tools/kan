@@ -17,7 +17,7 @@
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{Claim, ClaimKind},
+    claim::{Claim, ClaimBody, ClaimKind},
     fold::FoldedView,
 };
 
@@ -53,9 +53,29 @@ impl TokenEstimator for TiktokenEstimator {
 
 /// The text an agent would actually see for this claim — what gets token-
 /// counted and what `context` output renders, kept as one function so the
-/// two never drift apart.
+/// two never drift apart. Prose, not a `{:?}` Debug dump: extracts each
+/// variant's actual content instead of printing Rust's struct/enum syntax,
+/// since this is meant to read like something worth putting in an agent's
+/// context window, not a debug log line.
 pub fn render_claim(claim: &Claim) -> String {
-    format!("{:?}: {:?}", claim.content.subject, claim.content.body)
+    let subject = format!("{:?}", claim.content.subject);
+    let kind = claim.content.body.kind();
+    let detail = match &claim.content.body {
+        ClaimBody::Subject {
+            title,
+            subject_kind,
+        } => format!("{subject_kind:?} \"{title}\""),
+        ClaimBody::Observation { text }
+        | ClaimBody::Plan { text }
+        | ClaimBody::Decision { text }
+        | ClaimBody::Blocker { text }
+        | ClaimBody::Resolution { text }
+        | ClaimBody::Result { text } => text.clone(),
+        ClaimBody::Status { value } => format!("{value:?}"),
+        ClaimBody::Relation { kind, target } => format!("{kind:?} {target:?}"),
+        ClaimBody::Retraction { supersedes } => format!("supersedes {supersedes}"),
+    };
+    format!("[{subject}] {kind:?}: {detail}")
 }
 
 fn kind_value(kind: ClaimKind) -> i64 {

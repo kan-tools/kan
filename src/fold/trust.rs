@@ -3,6 +3,18 @@
 //! `PeerContested` ([0,1]/quantale: trust-weighted) — never the full
 //! witness-homotopy-type enrichment the spec names as a third option; that's
 //! out of v1 scope (`docs/SPEC.md` §11 caps trust policies at 2).
+//!
+//! `PeerContested` is fully implemented and tested (`tests/state_fold.rs`,
+//! `tests/identity_fold.rs`) but intentionally unreachable from the CLI/MCP
+//! surface today — every `crate::actions` read hardcodes
+//! `Workspace::solo_trust()`. Not an oversight: v1's real scope is "one
+//! human, one-or-more local agents" (`docs/HANDOFF.md`), where the human
+//! operating the CLI/MCP locally has no occasion to construct a
+//! multi-weighted trust policy for themselves — there's no second human to
+//! weigh against. A CLI/MCP surface for selecting `PeerContested` (which
+//! authors, what weights) is real design work belonging to whatever
+//! multi-actor feature actually needs it, not a speculative flag added
+//! ahead of a concrete use case.
 
 use std::collections::HashMap;
 

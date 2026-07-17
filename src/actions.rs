@@ -203,7 +203,10 @@ pub fn status(ws: &Workspace, subject: Option<&str>) -> Result<String, Error> {
             let subject_ref = SubjectRef::Local(Rkey::from(subject));
             match view.subject(&subject_ref) {
                 None => out.push_str(&format!("{subject}: no claims\n")),
-                Some(subject_view) => write_state(ws, &mut out, subject, subject_view),
+                Some(subject_view) => {
+                    let state = classify_subject(ws, subject_view);
+                    write_state(&mut out, subject, subject_view, state);
+                }
             }
         }
         None => {
@@ -212,16 +215,26 @@ pub fn status(ws: &Workspace, subject: Option<&str>) -> Result<String, Error> {
             }
             for subject_view in &view.classes {
                 let label = format!("{:?}", subject_view.subjects);
-                write_state(ws, &mut out, &label, subject_view);
+                let state = classify_subject(ws, subject_view);
+                write_state(&mut out, &label, subject_view, state);
             }
         }
     }
     Ok(out)
 }
 
-fn write_state(ws: &Workspace, out: &mut String, label: &str, subject_view: &SubjectView) {
+/// `fold::state::classify` needs the computed `Ancestry`/`SameFile` edges
+/// for `subject_view`'s own claims — shared by `status`/`issues` so each
+/// subject's edges are computed exactly once per call, not once per
+/// caller-and-purpose (`issues` used to call this twice: once to check
+/// "is this done," once more to render it).
+fn classify_subject(ws: &Workspace, subject_view: &SubjectView) -> StateView {
     let edges = relations::compute_default(&subject_view.claims, &ws.git);
-    match fold::state::classify(&subject_view.claims, &edges) {
+    fold::state::classify(&subject_view.claims, &edges)
+}
+
+fn write_state(out: &mut String, label: &str, subject_view: &SubjectView, state: StateView) {
+    match state {
         StateView::Unclassified => match subject_view.claims.last() {
             None => out.push_str(&format!("{label}: no claims\n")),
             Some((cid, claim)) => out.push_str(&format!(
@@ -269,35 +282,36 @@ pub fn issues(ws: &Workspace) -> Result<String, Error> {
     let mut out = String::new();
     let mut shown = 0usize;
     for subject_view in &view.classes {
-        if subject_view.subjects == [session.clone()] || is_done(ws, subject_view) {
+        // `.contains`, not `==` against a single-element vec: if "session"
+        // ever gets merged into another subject via `kan same`, the whole
+        // resulting class is still bookkeeping, not an issue.
+        if subject_view.subjects.contains(&session) {
+            continue;
+        }
+        let has_resolution = subject_view
+            .claims
+            .iter()
+            .any(|(_, c)| matches!(c.content.body, ClaimBody::Resolution { .. }));
+        let state = classify_subject(ws, subject_view);
+        let done = has_resolution
+            || matches!(
+                state,
+                StateView::Settled {
+                    value: StatusValue::Resolved | StatusValue::Closed,
+                    ..
+                }
+            );
+        if done {
             continue;
         }
         shown += 1;
         let label = format!("{:?}", subject_view.subjects);
-        write_state(ws, &mut out, &label, subject_view);
+        write_state(&mut out, &label, subject_view, state);
     }
     if shown == 0 {
         out.push_str("no open issues\n");
     }
     Ok(out)
-}
-
-fn is_done(ws: &Workspace, subject_view: &SubjectView) -> bool {
-    let has_resolution = subject_view
-        .claims
-        .iter()
-        .any(|(_, c)| matches!(c.content.body, ClaimBody::Resolution { .. }));
-    if has_resolution {
-        return true;
-    }
-    let edges = relations::compute_default(&subject_view.claims, &ws.git);
-    matches!(
-        fold::state::classify(&subject_view.claims, &edges),
-        StateView::Settled {
-            value: StatusValue::Resolved | StatusValue::Closed,
-            ..
-        }
-    )
 }
 
 /// Budgeted context assembly (`crate::context`, REQ-14/AC-7): the

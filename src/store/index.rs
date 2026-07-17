@@ -19,6 +19,8 @@ pub enum Error {
     Decode(#[from] atproto_dasl::DecodeError),
     #[error("stored CID is not valid: {0}")]
     InvalidCid(#[from] atproto_dasl::DaslCidError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
 pub struct Index {
@@ -28,7 +30,7 @@ pub struct Index {
 impl Index {
     pub fn open(path: &Path) -> Result<Self, Error> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).ok();
+            std::fs::create_dir_all(parent)?;
         }
         let conn = rusqlite::Connection::open(path)?;
         conn.execute_batch(

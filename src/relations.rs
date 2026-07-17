@@ -62,6 +62,16 @@ fn file_of(claim: &Claim) -> Option<&Path> {
 }
 
 /// Claims anchored to git objects inherit git's DAG ordering (§6.1).
+///
+/// O(n²) in the number of commit-anchored claims per merge-class, and each
+/// comparison can spawn up to two real `git` subprocesses
+/// (`GitSubstrate::is_ancestor`) — like `fold::identity`'s own recompute
+/// cost, this is a known, accepted v1 characteristic (correctness before
+/// performance, `CLAUDE.md`), not something to silently let scale badly.
+/// Fine at real class sizes (a handful to a few dozen commit-anchored
+/// claims); revisit if a class's claim count grows enough for this to be
+/// felt, e.g. by caching `is_ancestor` results across calls within one
+/// `compute_all` pass rather than only within a single pairwise comparison.
 pub struct GitAncestry;
 
 impl RelationProvider for GitAncestry {

@@ -132,6 +132,12 @@ impl Log {
             let commit = Commit::from_bytes(&commit_bytes)?;
             let mst = Mst::from_root(RawCid::from(commit.data), storage, RepoConfig::default());
 
+            // Seed from the reopened log's last commit rev, not a fresh
+            // zero baseline -- kan's real usage is a fresh process per
+            // command, so strict monotonicity has to hold across process
+            // restarts, not just within one generator's lifetime.
+            let tid = TidGenerator::seeded(&commit.rev);
+
             Ok(Self {
                 car_path,
                 head_path,
@@ -139,7 +145,7 @@ impl Log {
                 commit_cid: Some(root),
                 persisted,
                 did,
-                tid: TidGenerator::new(),
+                tid,
             })
         } else {
             let mst = Mst::new(MemoryStorage::new(), RepoConfig::default());
@@ -277,6 +283,14 @@ impl Log {
     /// Enumerate every claim currently in the log, each with the CID it's
     /// keyed by and its log-revision TID. Order is not guaranteed; sort by
     /// `rev` for chronological order.
+    ///
+    /// A record that fails signature verification is skipped (with a
+    /// warning), not fatal to the whole log — `docs/SPEC.md` §8's "folds
+    /// tolerate dangling cites (normal; handled at view layer)" philosophy
+    /// applies here too: one bad record shouldn't make every other command
+    /// fail. Any other error (storage/IO genuinely broken, not just one
+    /// record's content) still propagates — this only tolerates the
+    /// specific, legible "this one record doesn't verify" case.
     pub async fn iter_all(&mut self) -> Result<Vec<(Cid, StoredClaim)>, Error> {
         let entries = self.mst.entries().await?;
         let mut out = Vec::with_capacity(entries.len());
@@ -286,8 +300,16 @@ impl Log {
                 continue;
             }
             let claim_cid: Cid = path.rkey.parse().map_err(Error::InvalidCid)?;
-            if let Some(stored) = self.get_stored(claim_cid.clone()).await? {
-                out.push((claim_cid, stored));
+            match self.get_stored(claim_cid.clone()).await {
+                Ok(Some(stored)) => out.push((claim_cid, stored)),
+                Ok(None) => {}
+                Err(Error::BadSignature) => {
+                    eprintln!(
+                        "warning: claim {claim_cid} failed signature verification and was \
+                         excluded from this fold (docs/SPEC.md §8)"
+                    );
+                }
+                Err(e) => return Err(e),
             }
         }
         Ok(out)

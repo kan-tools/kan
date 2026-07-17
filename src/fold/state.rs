@@ -120,6 +120,20 @@ pub fn classify(class_claims: &[(Cid, Claim)], computed_edges: &[ComputedEdge]) 
         };
     }
 
+    // Domination can resolve a disagreement down to 2+ survivors who no
+    // longer actually disagree (the dissenting position was the one that
+    // got dominated away) -- that's agreement, not a live contest, even
+    // though the *original* live set disagreed before ordering was applied.
+    if let Some((_, first_open)) = open.first() {
+        let open_value = value_of(first_open);
+        if open.iter().all(|(_, c)| value_of(c) == open_value) {
+            return StateView::Confirmed {
+                value: open_value,
+                by: open,
+            };
+        }
+    }
+
     StateView::Contested { resolved, open }
 }
 

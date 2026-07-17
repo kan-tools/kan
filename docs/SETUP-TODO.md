@@ -43,7 +43,7 @@
   - [x] state fold (poset → maximal antichain → `Settled | Confirmed | Contested`) (M4b)
   - [x] identity-before-state, same enrichment; decategorify only at `render` (M4a/M4b)
 - [x] Anchors (git: Workspace/Commit/Blob/FileAt/LineRangeAt) + admissibility invariant (M4b, ADR-14)
-- [x] Computable relation providers: `GitAncestry` + `GitSameFile` (default-on, disableable) (M4b)
+- [x] Computable relation providers: `GitAncestry` + `GitSameFile` (default-on) (M4b) — wired up and default-on; per-provider trust down-weighting/disabling (`docs/SPEC.md` §6.2) isn't built yet, see `src/relations.rs`'s doc comment
 - [x] CLI (git-like verbs: `kan observe|plan|decide|resolve|same|show|issues|status|session|context`) (M3/M4b/M5)
 - [x] MCP server: claim-append + **budgeted context assembly** (the actual product) (M5, ADR-15)
 
