@@ -22,6 +22,13 @@ pub enum Error {
     Failed(String, i32, String),
     #[error("`git {0}` produced non-UTF8 output")]
     NonUtf8(String),
+    #[error(
+        "this is a shallow clone — the workspace anchor must be computed identically by \
+         every actor (docs/SPEC.md §5), which a shallow clone's truncated history can't \
+         guarantee (its root commit is wherever the clone was truncated, not the repo's \
+         real genesis); run `git fetch --unshallow` first"
+    )]
+    ShallowClone,
 }
 
 pub struct GitSubstrate {
@@ -44,7 +51,19 @@ impl GitSubstrate {
     /// root commit SHA(s), sorted so histories with multiple roots (grafts,
     /// merged-unrelated histories) still hash deterministically regardless
     /// of enumeration order.
+    ///
+    /// `--max-parents=0` only walks history reachable from `HEAD` — a
+    /// shallow clone's truncated history would silently produce a
+    /// *different* genesis than a full clone of "the same" repo, violating
+    /// the "computed identically by every actor" invariant this exists to
+    /// satisfy. Checked and rejected explicitly (`Error::ShallowClone`)
+    /// rather than left to silently produce a wrong-but-different hash.
     pub fn genesis(&self) -> Result<GenesisCid, Error> {
+        let shallow = self.run(&["rev-parse", "--is-shallow-repository"])?;
+        if shallow.trim() == "true" {
+            return Err(Error::ShallowClone);
+        }
+
         let out = self.run(&["rev-list", "--max-parents=0", "HEAD"])?;
         let mut roots: Vec<&str> = out.lines().filter(|l| !l.is_empty()).collect();
         roots.sort_unstable();
@@ -55,6 +74,15 @@ impl GitSubstrate {
     /// Does `ancestor` reach `descendant` by following parent edges — i.e.
     /// is `ancestor` causally earlier? (`git merge-base --is-ancestor`:
     /// exit 0 = yes, exit 1 = no, anything else = a real error.)
+    ///
+    /// Deliberately *not* real git's own reflexive semantics (`merge-base
+    /// --is-ancestor X X` exits 0 — every commit is trivially its own
+    /// ancestor) — this early-returns `false` instead, because the only
+    /// caller (`relations::GitAncestry`) has already filtered out
+    /// equal-sha pairs before calling this, and "is X causally *after*
+    /// itself" should read as false for that ordering use, not true. Kept
+    /// as an explicit branch (not relied on implicitly) so this deviation
+    /// from git's own contract is visible here, not just at the call site.
     pub fn is_ancestor(&self, ancestor: &Sha, descendant: &Sha) -> Result<bool, Error> {
         if ancestor == descendant {
             return Ok(false);

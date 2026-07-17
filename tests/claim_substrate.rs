@@ -4,7 +4,7 @@
 
 use kan::{
     cid,
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, ClaimKind, Rkey, SubjectKind, SubjectRef},
     sign,
     sign::Identity,
     store::log::Log,
@@ -97,6 +97,88 @@ async fn log_round_trip_reads_back_a_verified_claim() {
         &claim_cid.to_bytes(),
         &fetched.sig
     ));
+}
+
+/// One record failing signature verification shouldn't make the whole log
+/// unreadable — `docs/SPEC.md` §8's "folds tolerate dangling cites"
+/// philosophy applies to a corrupt/forged record too, not just a missing
+/// cite target.
+#[tokio::test]
+async fn iter_all_skips_a_signature_invalid_record_but_returns_the_rest() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = Identity::generate();
+    let other = Identity::generate();
+    let mut log = Log::open_or_create(&dir.path().join("log"), &identity)
+        .await
+        .unwrap();
+
+    let good_cid = log
+        .append(
+            sample_content(identity.did(), "a perfectly good claim"),
+            &identity,
+        )
+        .await
+        .unwrap();
+
+    // Content claims to be authored by `identity`, but is actually signed
+    // by `other` -- fails verification, simulating a corrupt/forged record.
+    let forged_cid = log
+        .append(sample_content(identity.did(), "a forged claim"), &other)
+        .await
+        .unwrap();
+
+    let claims = log.iter_all().await.unwrap();
+    let cids: Vec<_> = claims.iter().map(|(cid, _)| cid.clone()).collect();
+    assert!(cids.contains(&good_cid), "the good claim should survive");
+    assert!(
+        !cids.contains(&forged_cid),
+        "the forged claim should be skipped, not fatal to the whole log"
+    );
+    assert_eq!(claims.len(), 1);
+}
+
+/// `ClaimBody::Subject`/`SubjectKind` (`docs/SPEC.md` §7) have no CLI/MCP
+/// verb constructing them yet — v1's vocabulary never needed one — but the
+/// data model defines them as real, and they deserve the same round-trip
+/// coverage every other structural kind gets.
+#[tokio::test]
+async fn subject_claim_round_trips_through_the_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = Identity::generate();
+    let mut log = Log::open_or_create(&dir.path().join("log"), &identity)
+        .await
+        .unwrap();
+
+    let content = ClaimContent {
+        author: AuthorId {
+            did: identity.did(),
+            agent: None,
+        },
+        workspace: Anchor::Workspace("test-workspace".to_string()),
+        subject: SubjectRef::Local(Rkey::from("bug-42")),
+        body: ClaimBody::Subject {
+            title: "crashes on startup".to_string(),
+            subject_kind: SubjectKind::Issue,
+        },
+        cites: vec![],
+        artifacts: vec![],
+    };
+    assert_eq!(content.body.kind(), ClaimKind::Subject);
+
+    let claim_cid = log.append(content.clone(), &identity).await.unwrap();
+    let fetched = log
+        .get(claim_cid)
+        .await
+        .unwrap()
+        .expect("claim should be present");
+    assert_eq!(fetched.content, content);
+    assert_eq!(
+        fetched.content.body,
+        ClaimBody::Subject {
+            title: "crashes on startup".to_string(),
+            subject_kind: SubjectKind::Issue,
+        }
+    );
 }
 
 #[tokio::test]

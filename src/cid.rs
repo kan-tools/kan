@@ -14,12 +14,6 @@ pub enum Error {
     Encode(#[from] atproto_dasl::EncodeError),
 }
 
-/// Canonical DAG-CBOR bytes of `content`. Excludes any signature — callers
-/// sign the *CID* of these bytes, not the bytes themselves (§3).
-pub fn canonical_bytes<T: Serialize>(content: &T) -> Result<Vec<u8>, Error> {
-    Ok(atproto_dasl::to_vec(content)?)
-}
-
 /// The content-addressed identity of `content` — what other claims cite, and
 /// what a claim's signature signs.
 pub fn content_cid<T: Serialize>(content: &T) -> Result<Cid, Error> {

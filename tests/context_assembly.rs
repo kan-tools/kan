@@ -79,6 +79,30 @@ fn fixture() -> fold::FoldedView {
     fold::fold(stored, &trust)
 }
 
+/// `render_claim` extracts actual claim content, not a `{:?}` Debug dump —
+/// no stray `ClaimBody::Observation { text: ... }`-shaped syntax in the
+/// rendered text.
+#[test]
+fn render_claim_produces_prose_not_a_debug_dump() {
+    let (_, claim) = claim(
+        "bug-42",
+        ClaimBody::Observation {
+            text: "crashes on startup".to_string(),
+        },
+    );
+    let rendered = context::render_claim(&claim);
+    assert!(rendered.contains("crashes on startup"));
+    assert!(rendered.contains("bug-42"));
+    assert!(
+        !rendered.contains("ClaimBody"),
+        "rendered text should not leak Rust type syntax: {rendered:?}"
+    );
+    assert!(
+        !rendered.contains("{ text:"),
+        "rendered text should not leak struct-literal syntax: {rendered:?}"
+    );
+}
+
 #[test]
 fn ac7_stays_within_budget() {
     let view = fixture();

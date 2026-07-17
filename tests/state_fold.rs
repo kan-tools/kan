@@ -148,6 +148,35 @@ fn attested_cites_resolves_disagreement_to_settled() {
     }
 }
 
+/// Domination can resolve a 3-way disagreement down to 2+ survivors who no
+/// longer actually disagree with each other -- the dissenting position was
+/// the one dominated away. That's agreement (`Confirmed`), not a live
+/// contest, even though the *original* live set (before ordering) disagreed.
+#[test]
+fn domination_down_to_agreeing_survivors_is_confirmed_not_contested() {
+    let a = author("did:key:a", None);
+    let b = author("did:key:b", None);
+    let c = author("did:key:c", None);
+    let claim_a = status_claim(&a, "issue-1", StatusValue::Open, vec![], vec![]);
+    // b cites (and so dominates) a, and agrees with c.
+    let claim_b = status_claim(
+        &b,
+        "issue-1",
+        StatusValue::Resolved,
+        vec![claim_a.0.clone()],
+        vec![],
+    );
+    let claim_c = status_claim(&c, "issue-1", StatusValue::Resolved, vec![], vec![]);
+
+    match fold::state::classify(&[claim_a, claim_b, claim_c], &[]) {
+        StateView::Confirmed { value, by } => {
+            assert_eq!(value, StatusValue::Resolved);
+            assert_eq!(by.len(), 2);
+        }
+        other => panic!("expected Confirmed, got {other:?}"),
+    }
+}
+
 /// AC-4: two `AgentKey`s under one `Did` disagree on a subject's status.
 /// Under `PeerContested` (both trusted), the disagreement is genuinely
 /// contested. Under `SoloTrust` restricted to one of them, only that

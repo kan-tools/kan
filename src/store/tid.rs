@@ -25,6 +25,18 @@ fn encode(mut value: u64) -> String {
     String::from_utf8(chars.to_vec()).expect("ASCII alphabet")
 }
 
+fn decode(s: &str) -> Option<u64> {
+    if s.len() != 13 {
+        return None;
+    }
+    let mut value: u64 = 0;
+    for byte in s.bytes() {
+        let digit = ENCODE_ALPHABET.iter().position(|&a| a == byte)?;
+        value = (value << 5) | digit as u64;
+    }
+    Some(value)
+}
+
 /// Generates strictly-increasing TIDs for one log's append sequence.
 #[derive(Debug, Default)]
 pub struct TidGenerator {
@@ -34,6 +46,21 @@ pub struct TidGenerator {
 impl TidGenerator {
     pub fn new() -> Self {
         Self { last: 0 }
+    }
+
+    /// Seeds from a previously-produced TID (a reopened log's last commit
+    /// `rev`), so strict monotonicity holds across process restarts, not
+    /// just within one generator's lifetime — kan's real usage is a fresh
+    /// process per command (`docs/DECISIONS.md` ADR-15), so `new()` alone
+    /// only guaranteed monotonicity for a single append within one call.
+    /// Falls back to `new()`'s zero baseline if `last_rev` doesn't parse as
+    /// a TID (defensive, not expected in practice) — `next()`'s own
+    /// wall-clock floor still protects against a bad seed producing
+    /// something smaller than "now."
+    pub fn seeded(last_rev: &str) -> Self {
+        Self {
+            last: decode(last_rev).unwrap_or(0),
+        }
     }
 
     /// The next TID, guaranteed strictly greater than every prior value
@@ -70,5 +97,42 @@ mod tests {
             assert!(cur > prev, "{cur:?} should sort after {prev:?}");
             prev = cur;
         }
+    }
+
+    #[test]
+    fn seeded_generator_stays_strictly_after_the_seed() {
+        let seed = TidGenerator::new().next();
+        let mut gen = TidGenerator::seeded(&seed);
+        let next = gen.next();
+        assert!(next > seed, "{next:?} should sort after the seed {seed:?}");
+    }
+
+    #[test]
+    fn a_backward_clock_step_still_stays_monotonic_after_reseeding() {
+        // Simulates two separate process invocations where the second
+        // process's wall clock is momentarily behind the first's last
+        // emitted rev (NTP correction, VM snapshot restore) -- the exact
+        // scenario `TidGenerator::seeded`'s doc comment describes.
+        let mut first_process = TidGenerator::new();
+        let mut last = String::new();
+        for _ in 0..5 {
+            last = first_process.next();
+        }
+
+        let mut second_process = TidGenerator::seeded(&last);
+        let next = second_process.next();
+        assert!(
+            next > last,
+            "{next:?} should sort after the previous process's last rev {last:?}, \
+             even though this generator has never called next() before"
+        );
+    }
+
+    #[test]
+    fn seeded_falls_back_to_zero_baseline_on_an_unparseable_seed() {
+        let mut gen = TidGenerator::seeded("not-a-valid-tid");
+        // Still produces a well-formed, present-day TID -- the wall-clock
+        // floor in `next()` covers for the bad seed.
+        assert_eq!(gen.next().len(), 13);
     }
 }
