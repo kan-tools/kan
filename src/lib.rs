@@ -2,11 +2,15 @@
 //!
 //! See `docs/SPEC.md` (authoritative) and `docs/HANDOFF.md` (orientation).
 
+pub mod actions;
 pub mod cid;
 pub mod claim;
 pub mod cli;
+pub mod context;
 pub mod fold;
 pub mod git;
+pub mod mcp;
 pub mod relations;
 pub mod sign;
 pub mod store;
+pub mod workspace;

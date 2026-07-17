@@ -1,5 +1,7 @@
-//! Shared setup for every CLI command: resolve `.kan/` (ADR-3, sibling to
-//! `.git/`), load or create the local identity, and open the log + index.
+//! Shared setup for every action (`crate::actions`), used by both surfaces
+//! (`CLAUDE.md`'s "one surface: CLI + MCP" — this is the plumbing both sit
+//! on top of): resolve `.kan/` (ADR-3, sibling to `.git/`), load or create
+//! the local identity, and open the log + index.
 //!
 //! M3 resolves `.kan/` relative to the current directory rather than
 //! searching upward for a repo root the way `git` does — a real but small
@@ -41,6 +43,11 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    /// Reopens from disk every call, by design: the CLI is one process per
+    /// invocation, and `kan mcp` (one long-lived process) mirrors that by
+    /// calling `open` fresh per tool call rather than holding one `Workspace`
+    /// across calls — cheap at today's scale, and avoids any question of
+    /// staleness or concurrent-mutation safety (`docs/DECISIONS.md` ADR-15).
     pub async fn open(cwd: &Path) -> Result<Self, Error> {
         let kan_dir = cwd.join(".kan");
         let identity = Identity::load_or_create(&kan_dir.join("identity"))?;
@@ -73,10 +80,10 @@ impl Workspace {
         }
     }
 
-    /// Trust only this CLI's own author — the default for `show`/`status`
-    /// today, since M3's CLI never writes with an agent key. Once agent-key
-    /// support exists, callers needing `PeerContested` will construct that
-    /// `TrustBase` directly rather than through this helper.
+    /// Trust only this actor's own author — the default for read views
+    /// today, since neither surface writes with an agent key yet. Once
+    /// agent-key support exists, callers needing `PeerContested` will
+    /// construct that `TrustBase` directly rather than through this helper.
     pub fn solo_trust(&self) -> TrustBase {
         TrustBase::solo(self.my_author())
     }

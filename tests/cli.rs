@@ -122,7 +122,7 @@ fn invalid_cites_is_a_clean_error() {
     let dir = git_repo();
     let (_, err, ok) = kan(dir.path(), &["observe", "x", "--cites", "not-a-cid"]);
     assert!(!ok);
-    assert!(err.contains("invalid --cites"));
+    assert!(err.contains("invalid CID"));
 }
 
 #[test]
