@@ -80,3 +80,11 @@ branch and PR, not a direct commit to `main` — branch off `main`, commit, push
 `gh pr merge --merge --delete-branch` (regular merge, not squash, so the
 milestone's internal commits stay visible in history). Keeps each PR's diff
 scoped to exactly one milestone.
+
+## Workflow: release
+Bump `Cargo.toml`'s `version` on `main`, then push a tag matching `v*.*.*`
+(e.g. `v0.1.1-beta.1`) — `.github/workflows/release.yml` re-verifies
+build/test/clippy/fmt, checks the tag matches `Cargo.toml`'s version, and
+publishes to crates.io. Requires a `CARGO_REGISTRY_TOKEN` repo secret (never
+add this through a chat session — it's a credential Claude Code should never
+see). See ADR-19 for the version-scheme and trigger rationale.
