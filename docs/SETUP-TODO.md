@@ -9,10 +9,10 @@
 - [x] Confirm crate name free (`cargo search kan`)
 - [x] Reserve crate name (`cargo publish` a `0.0.0` stub)
 - [ ] Create GitHub repos on a clean namespace (no `forecast-bio` / Kira):
-  - [ ] `kan` — the crate (public)
+  - [x] `kan` — the crate (public) — `github.com/kan-tools/kan`
   - [ ] `kan-infra` — Railway/atproto ops (**private**)
-- [ ] Push stub `lib.rs` + real `README.md` so the parked repo reads as WIP, not abandoned
-- [ ] Pick license (`MIT` or `MIT OR Apache-2.0`) and add `LICENSE`
+- [x] Push stub `lib.rs` + real `README.md` so the parked repo reads as WIP, not abandoned
+- [x] Pick license (`MIT`) and add `LICENSE`
 
 ## Phase 1 — Domains
 
