@@ -92,21 +92,15 @@ fn golden_path_across_separate_invocations() {
     assert!(status_out.contains("use 3x retry with backoff"));
 }
 
+/// AC-1 (`.design/agent-ax-and-tool-boundary.md`): `session` was removed
+/// from kan's CLI vocabulary entirely (ADR-18) — it's now the companion
+/// tool's job to build a session convention on top of `observe`/`cites`.
 #[test]
-fn session_start_and_end() {
+fn session_is_not_a_recognized_subcommand() {
     let dir = git_repo();
-    let (_, _, ok) = kan(dir.path(), &["session", "start"]);
-    assert!(ok);
-    let (_, _, ok) = kan(
-        dir.path(),
-        &["session", "end", "--notes", "wrapped up for the day"],
-    );
-    assert!(ok);
-
-    let (show_out, _, ok) = kan(dir.path(), &["show", "session"]);
-    assert!(ok);
-    assert!(show_out.contains("session started"));
-    assert!(show_out.contains("session ended: wrapped up for the day"));
+    let (_, err, ok) = kan(dir.path(), &["session", "start"]);
+    assert!(!ok);
+    assert!(err.contains("session") || err.to_lowercase().contains("unrecognized"));
 }
 
 #[test]
@@ -115,6 +109,64 @@ fn show_on_unknown_subject_is_not_an_error() {
     let (out, _, ok) = kan(dir.path(), &["show", "does-not-exist"]);
     assert!(ok);
     assert!(out.contains("no claims"));
+}
+
+/// AC-5: a subject-lookup miss lists the subjects that actually exist,
+/// instead of just "no claims" — the concrete fix for a silent typo
+/// silently reading as "never mentioned."
+#[test]
+fn show_on_unknown_subject_hints_at_real_subjects() {
+    let dir = git_repo();
+    kan(dir.path(), &["observe", "x", "--subject", "bug-42"]);
+    kan(dir.path(), &["observe", "y", "--subject", "issue-7"]);
+
+    let (out, _, ok) = kan(dir.path(), &["show", "bug-43"]);
+    assert!(ok);
+    assert!(out.contains("bug-42"));
+    assert!(out.contains("issue-7"));
+
+    let (out, _, ok) = kan(dir.path(), &["status", "bug-43"]);
+    assert!(ok);
+    assert!(out.contains("bug-42"));
+    assert!(out.contains("issue-7"));
+}
+
+/// AC-6: bare stdout stays exactly the CID (load-bearing for `--cites`
+/// piping); `--verbose` switches to a human-readable confirmation that
+/// still contains the CID.
+#[test]
+fn verbose_flag_changes_stdout_default_stays_bare_cid() {
+    let dir = git_repo();
+    let (cid, _, ok) = kan(dir.path(), &["observe", "x", "--subject", "bug-42"]);
+    assert!(ok);
+    assert!(
+        !cid.contains(' '),
+        "default stdout should be exactly the bare CID: {cid:?}"
+    );
+
+    let (verbose_out, _, ok) = kan(
+        dir.path(),
+        &["observe", "y", "--subject", "bug-42", "--verbose"],
+    );
+    assert!(ok);
+    assert!(verbose_out.contains("bug-42"));
+    assert!(verbose_out.contains("Observation"));
+    assert!(
+        verbose_out.len() > cid.len(),
+        "--verbose output should be more than just the bare CID: {verbose_out:?}"
+    );
+}
+
+/// AC-4: `kan mcp install` prints both registration paths without mutating
+/// any config.
+#[test]
+fn mcp_install_prints_both_registration_paths() {
+    let dir = git_repo();
+    let (out, _, ok) = kan(dir.path(), &["mcp", "install"]);
+    assert!(ok);
+    assert!(out.contains("claude mcp add"));
+    assert!(out.contains(env!("CARGO_BIN_EXE_kan")));
+    assert!(out.contains("/plugin install"));
 }
 
 #[test]

@@ -6,9 +6,9 @@
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{ClaimBody, ClaimContent, RelationKind, Rkey, StatusValue, SubjectRef},
+    claim::{ClaimBody, ClaimContent, ClaimKind, RelationKind, Rkey, StatusValue, SubjectRef},
     context::{self, TiktokenEstimator, TokenEstimator},
-    fold::{self, state::StateView, SubjectView},
+    fold::{self, state::StateView, FoldedView, SubjectView},
     relations,
     workspace::Workspace,
 };
@@ -26,7 +26,26 @@ pub enum Error {
 }
 
 const GENERAL_SUBJECT: &str = "general";
-const SESSION_SUBJECT: &str = "session";
+
+/// What a write verb actually did — enough for both surfaces to render
+/// their own confirmation without a second fold pass: the CLI's default is
+/// still a bare CID (`{cid}` — see `cli::run`'s `--verbose` handling, which
+/// needs the scripting-compatible bare form kept separate from this), but
+/// `--verbose` and every MCP write tool render `confirmation()`.
+pub struct AppendResult {
+    pub cid: Cid,
+    pub subject: SubjectRef,
+    pub kind: ClaimKind,
+}
+
+impl AppendResult {
+    pub fn confirmation(&self) -> String {
+        format!(
+            "recorded {:?} on {:?}  ({})",
+            self.kind, self.subject, self.cid
+        )
+    }
+}
 
 fn parse_cids(raw: Vec<String>) -> Result<Vec<Cid>, Error> {
     let mut cites = Vec::with_capacity(raw.len());
@@ -42,19 +61,20 @@ async fn append(
     subject: SubjectRef,
     body: ClaimBody,
     cites: Vec<Cid>,
-) -> Result<Cid, Error> {
+) -> Result<AppendResult, Error> {
+    let kind = body.kind();
     let content = ClaimContent {
         author: ws.my_author(),
         workspace: ws.anchor.clone(),
-        subject,
+        subject: subject.clone(),
         body,
         cites,
         artifacts: vec![],
     };
-    let claim_cid = ws.log.append(content, &ws.identity).await?;
+    let cid = ws.log.append(content, &ws.identity).await?;
     let claims = ws.log.iter_all().await?;
     ws.index.rebuild(&claims)?;
-    Ok(claim_cid)
+    Ok(AppendResult { cid, subject, kind })
 }
 
 async fn narrative(
@@ -63,7 +83,7 @@ async fn narrative(
     subject: Option<String>,
     cites: Vec<String>,
     make_body: impl FnOnce(String) -> ClaimBody,
-) -> Result<Cid, Error> {
+) -> Result<AppendResult, Error> {
     let subject = SubjectRef::Local(Rkey::from(
         subject.unwrap_or_else(|| GENERAL_SUBJECT.to_string()),
     ));
@@ -76,7 +96,7 @@ pub async fn observe(
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
-) -> Result<Cid, Error> {
+) -> Result<AppendResult, Error> {
     narrative(ws, text, subject, cites, |text| ClaimBody::Observation {
         text,
     })
@@ -88,7 +108,7 @@ pub async fn plan(
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
-) -> Result<Cid, Error> {
+) -> Result<AppendResult, Error> {
     narrative(ws, text, subject, cites, |text| ClaimBody::Plan { text }).await
 }
 
@@ -97,7 +117,7 @@ pub async fn decide(
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
-) -> Result<Cid, Error> {
+) -> Result<AppendResult, Error> {
     narrative(ws, text, subject, cites, |text| ClaimBody::Decision {
         text,
     })
@@ -109,7 +129,7 @@ pub async fn decide(
 /// `SameAs` is one witness in the identity fold's merge-class computation,
 /// not an immediate, unconditional merge — whether it's honored depends on
 /// the viewer's `TrustBase`.
-pub async fn same(ws: &mut Workspace, a: &str, b: &str) -> Result<Cid, Error> {
+pub async fn same(ws: &mut Workspace, a: &str, b: &str) -> Result<AppendResult, Error> {
     let body = ClaimBody::Relation {
         kind: RelationKind::SameAs,
         target: SubjectRef::Local(Rkey::from(b)),
@@ -122,33 +142,11 @@ pub async fn same(ws: &mut Workspace, a: &str, b: &str) -> Result<Cid, Error> {
 /// fold never needs to reduce or contest it), while `Status` is the
 /// structural, poset-classified kind `fold::state` reduces (`docs/SPEC.md`
 /// §7). `issues` treats a live `Resolution` as "done" too — see its doc.
-pub async fn resolve(ws: &mut Workspace, subject: &str, text: &str) -> Result<Cid, Error> {
+pub async fn resolve(ws: &mut Workspace, subject: &str, text: &str) -> Result<AppendResult, Error> {
     let body = ClaimBody::Resolution {
         text: text.to_string(),
     };
     append(ws, SubjectRef::Local(Rkey::from(subject)), body, vec![]).await
-}
-
-pub async fn session_start(ws: &mut Workspace) -> Result<Cid, Error> {
-    session_record(ws, "session started".to_string()).await
-}
-
-pub async fn session_end(ws: &mut Workspace, notes: Option<String>) -> Result<Cid, Error> {
-    let text = match notes {
-        Some(notes) => format!("session ended: {notes}"),
-        None => "session ended".to_string(),
-    };
-    session_record(ws, text).await
-}
-
-async fn session_record(ws: &mut Workspace, text: String) -> Result<Cid, Error> {
-    append(
-        ws,
-        SubjectRef::Local(Rkey::from(SESSION_SUBJECT)),
-        ClaimBody::Observation { text },
-        vec![],
-    )
-    .await
 }
 
 /// A single subject's live claims, rendered — `fold` + `render` for one
@@ -160,7 +158,7 @@ pub fn show(ws: &Workspace, subject: &str) -> Result<String, Error> {
 
     let mut out = String::new();
     match view.subject(&subject_ref) {
-        None => out.push_str(&format!("{subject}: no claims\n")),
+        None => out.push_str(&format!("{subject}: no claims{}\n", subject_hint(&view))),
         Some(subject_view) => {
             if subject_view.subjects.len() > 1 {
                 out.push_str(&format!(
@@ -202,7 +200,7 @@ pub fn status(ws: &Workspace, subject: Option<&str>) -> Result<String, Error> {
         Some(subject) => {
             let subject_ref = SubjectRef::Local(Rkey::from(subject));
             match view.subject(&subject_ref) {
-                None => out.push_str(&format!("{subject}: no claims\n")),
+                None => out.push_str(&format!("{subject}: no claims{}\n", subject_hint(&view))),
                 Some(subject_view) => {
                     let state = classify_subject(ws, subject_view);
                     write_state(&mut out, subject, subject_view, state);
@@ -221,6 +219,23 @@ pub fn status(ws: &Workspace, subject: Option<&str>) -> Result<String, Error> {
         }
     }
     Ok(out)
+}
+
+/// A same-fold-pass "did you mean one of these" hint for a subject lookup
+/// that missed — no extra fold, no fuzzy matching, just the subjects that
+/// actually exist, so a typo doesn't silently read as "this subject has
+/// never been mentioned" when it's actually "you spelled it differently
+/// last time."
+fn subject_hint(view: &FoldedView) -> String {
+    if view.classes.is_empty() {
+        return String::new();
+    }
+    let names: Vec<String> = view
+        .classes
+        .iter()
+        .map(|c| format!("{:?}", c.subjects))
+        .collect();
+    format!(" (existing subjects: {})", names.join(", "))
 }
 
 /// `fold::state::classify` needs the computed `Ancestry`/`SameFile` edges
@@ -273,21 +288,16 @@ fn write_state(out: &mut String, label: &str, subject_view: &SubjectView, state:
 /// or the class has a live `ClaimBody::Resolution` — the narrative signal
 /// `kan resolve` writes, and in practice the only one most subjects will
 /// ever have, since v1's CLI has no verb for authoring `Status` claims
-/// directly. The bookkeeping "session" subject is never an issue.
+/// directly. No subject is special-cased here (there's no more built-in
+/// "session" bookkeeping subject, `docs/DECISIONS.md`'s boundary-rule ADR) —
+/// every subject is judged purely on whether it's done, the same way.
 pub fn issues(ws: &Workspace) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let view = fold::fold(claims, &ws.solo_trust());
-    let session = SubjectRef::Local(Rkey::from(SESSION_SUBJECT));
 
     let mut out = String::new();
     let mut shown = 0usize;
     for subject_view in &view.classes {
-        // `.contains`, not `==` against a single-element vec: if "session"
-        // ever gets merged into another subject via `kan same`, the whole
-        // resulting class is still bookkeeping, not an issue.
-        if subject_view.subjects.contains(&session) {
-            continue;
-        }
         let has_resolution = subject_view
             .claims
             .iter()

@@ -1,8 +1,12 @@
 //! AC-8 (`.design/kan-spine.md`): `kan mcp` serves over stdio; a client can
-//! list tools and successfully call the claim-append tool. Speaks raw
-//! line-delimited JSON-RPC to the real `kan` binary (not a library call)
-//! since this is proving the actual `kan mcp` subprocess wiring, matching
-//! `tests/cli.rs`'s "real subprocess, not library calls" spirit.
+//! list tools and successfully call the claim-append tool. Also covers
+//! `.design/agent-ax-and-tool-boundary.md`'s AC-1 (session tools removed),
+//! AC-7 (write tools return rich confirmation text), and AC-8 (factual,
+//! non-prescriptive `get_info()` instructions) — same file, unrelated
+//! design docs' AC numbering happens to collide. Speaks raw line-delimited
+//! JSON-RPC to the real `kan` binary (not a library call) since this is
+//! proving the actual `kan mcp` subprocess wiring, matching `tests/cli.rs`'s
+//! "real subprocess, not library calls" spirit.
 
 use std::process::Stdio;
 
@@ -90,6 +94,20 @@ async fn ac8_lists_tools_and_calls_the_observe_tool() {
     assert_eq!(init["id"], 1);
     assert!(init["result"]["capabilities"]["tools"].is_object());
 
+    // AC-8: get_info()'s instructions are factual, not a prescribed
+    // workflow order -- a cheap guardrail against sequencing language
+    // creeping back in.
+    let instructions = init["result"]["instructions"]
+        .as_str()
+        .expect("server should advertise instructions")
+        .to_lowercase();
+    for word in ["first", "then", "before starting"] {
+        assert!(
+            !instructions.contains(word),
+            "instructions should not prescribe an order of operations, found {word:?} in {instructions:?}"
+        );
+    }
+
     stdin
         .write_all(
             send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"})).as_bytes(),
@@ -107,21 +125,19 @@ async fn ac8_lists_tools_and_calls_the_observe_tool() {
         .expect("tools/list should return an array");
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     for expected in [
-        "observe",
-        "plan",
-        "decide",
-        "resolve",
-        "same",
-        "show",
-        "issues",
-        "status",
-        "session_start",
-        "session_end",
-        "context",
+        "observe", "plan", "decide", "resolve", "same", "show", "issues", "status", "context",
     ] {
         assert!(
             names.contains(&expected),
             "missing tool {expected:?} in {names:?}"
+        );
+    }
+    // AC-1: session lifecycle was removed from kan's CLI+MCP vocabulary
+    // entirely (ADR-18) -- no session_start/session_end tool should exist.
+    for removed in ["session_start", "session_end"] {
+        assert!(
+            !names.contains(&removed),
+            "{removed:?} should have been removed, found in {names:?}"
         );
     }
 
@@ -143,10 +159,15 @@ async fn ac8_lists_tools_and_calls_the_observe_tool() {
     let call = recv!();
     assert_eq!(call["id"], 3);
     assert_eq!(call["result"]["isError"], false);
-    let cid = call["result"]["content"][0]["text"]
+    // AC-7: MCP write tools always return the richer confirmation text
+    // (subject + kind), not just the bare CID -- unlike the CLI, MCP
+    // results aren't shell-composed, so there's no bare-CID contract to
+    // preserve here.
+    let text = call["result"]["content"][0]["text"]
         .as_str()
-        .expect("observe tool should return the appended claim's CID as text");
-    assert!(!cid.is_empty());
+        .expect("observe tool should return confirmation text");
+    assert!(text.contains("mcp-ac8"));
+    assert!(text.contains("Observation"));
 
     drop(stdin);
     let _ = child.kill().await;

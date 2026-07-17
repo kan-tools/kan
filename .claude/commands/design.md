@@ -3,6 +3,14 @@ allowed-tools: Bash(kan *), Bash(git *), Bash(gh *), Bash(ls *), Bash(mkdir *), 
 description: Interactive, iterative design document authoring grounded in codebase exploration (kan-native, no crosslink dependency)
 ---
 
+> **Tech debt (`docs/DECISIONS.md` ADR-18):** this command is itself an
+> instance of the workflow/AX creep ADR-18's kan/companion-tool boundary
+> rule identifies — it's process (interactive, multi-turn authoring), not
+> durable fact-recording, so by that rule it doesn't belong in kan's own
+> repo. It stays here, working as-is, until a separate companion tool
+> exists to receive it — no functional change, just flagged so this doesn't
+> get treated as settled architecture.
+
 ## Context
 
 - Current repo root: !`git rev-parse --show-toplevel`
