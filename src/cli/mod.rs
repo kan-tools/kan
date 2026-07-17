@@ -1,31 +1,22 @@
-//! The CLI (`docs/HANDOFF.md`'s vocabulary table). M3 wired up `observe`,
-//! `plan`, `decide`, `show`, `status`, `session`. M4a added `same` (the
-//! identity fold). M4b adds `resolve`, git-genesis anchors
-//! (`context::Workspace::open`), and `RelationProvider`s feeding
-//! `status`'s state-fold classification. `issues`/`context` need budgeted
-//! context assembly (M5); `kan mcp` is M5.
+//! The CLI (`docs/HANDOFF.md`'s vocabulary table): argument parsing and
+//! printing only — every command dispatches straight to `crate::actions`,
+//! the one action layer this surface shares with `kan mcp`
+//! (`CLAUDE.md`'s "one surface: CLI + MCP").
 
-mod context;
-mod session;
-mod show;
-mod status;
-
-use atproto_dasl::Cid;
 use clap::{Parser, Subcommand};
 
-use crate::claim::{ClaimBody, ClaimContent, RelationKind, Rkey, SubjectRef};
-pub use context::Workspace;
+use crate::{actions, context::DEFAULT_BUDGET, workspace::Workspace};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
-    Context(#[from] context::Error),
+    Workspace(#[from] crate::workspace::Error),
     #[error(transparent)]
-    Log(#[from] crate::store::log::Error),
+    Actions(#[from] actions::Error),
+    // Boxed to match `mcp::Error::Initialize`'s own boxing — see that
+    // variant's comment.
     #[error(transparent)]
-    Index(#[from] crate::store::index::Error),
-    #[error("invalid --cites value {0:?}: {1}")]
-    InvalidCites(String, atproto_dasl::DecodeError),
+    Mcp(#[from] Box<crate::mcp::Error>),
 }
 
 #[derive(Debug, Parser)]
@@ -51,11 +42,20 @@ pub enum Command {
     Same { a: String, b: String },
     /// Record that a subject has been resolved.
     Resolve { subject: String, text: String },
+    /// List open (not-yet-resolved) subjects.
+    Issues,
     /// Session lifecycle.
     Session {
         #[command(subcommand)]
         action: SessionAction,
     },
+    /// Assemble the maximal-value claim set that fits under a token budget.
+    Context {
+        #[arg(long)]
+        budget: Option<usize>,
+    },
+    /// Start the MCP server over stdio.
+    Mcp,
 }
 
 #[derive(Debug, clap::Args)]
@@ -78,96 +78,56 @@ pub enum SessionAction {
     },
 }
 
-const GENERAL_SUBJECT: &str = "general";
-
 pub async fn run(cli: Cli) -> Result<(), Error> {
-    let cwd = context::cwd()?;
-    let mut ws = Workspace::open(&cwd).await?;
+    let cwd = crate::workspace::cwd()?;
 
+    // `kan mcp` doesn't open a single `Workspace` up front — it's a
+    // long-lived process serving many tool calls, each of which opens its
+    // own (`crate::workspace::Workspace::open`'s doc comment).
+    if let Command::Mcp = cli.command {
+        crate::mcp::serve(cwd).await.map_err(Box::new)?;
+        return Ok(());
+    }
+
+    let mut ws = Workspace::open(&cwd).await?;
     match cli.command {
         Command::Observe(args) => {
-            append_narrative(&mut ws, args, |text| ClaimBody::Observation { text }).await
+            let cid = actions::observe(&mut ws, args.text, args.subject, args.cites).await?;
+            println!("{cid}");
         }
         Command::Plan(args) => {
-            append_narrative(&mut ws, args, |text| ClaimBody::Plan { text }).await
+            let cid = actions::plan(&mut ws, args.text, args.subject, args.cites).await?;
+            println!("{cid}");
         }
         Command::Decide(args) => {
-            append_narrative(&mut ws, args, |text| ClaimBody::Decision { text }).await
+            let cid = actions::decide(&mut ws, args.text, args.subject, args.cites).await?;
+            println!("{cid}");
         }
-        Command::Show { subject } => show::show(&mut ws, &subject).await,
-        Command::Status { subject } => status::status(&mut ws, subject.as_deref()).await,
-        Command::Same { a, b } => same(&mut ws, &a, &b).await,
-        Command::Resolve { subject, text } => resolve(&mut ws, &subject, &text).await,
-        Command::Session { action } => match action {
-            SessionAction::Start => session::start(&mut ws).await,
-            SessionAction::End { notes } => session::end(&mut ws, notes).await,
-        },
+        Command::Show { subject } => print!("{}", actions::show(&ws, &subject)?),
+        Command::Status { subject } => print!("{}", actions::status(&ws, subject.as_deref())?),
+        Command::Same { a, b } => {
+            let cid = actions::same(&mut ws, &a, &b).await?;
+            println!("{cid}");
+        }
+        Command::Resolve { subject, text } => {
+            let cid = actions::resolve(&mut ws, &subject, &text).await?;
+            println!("{cid}");
+        }
+        Command::Issues => print!("{}", actions::issues(&ws)?),
+        Command::Session { action } => {
+            let cid = match action {
+                SessionAction::Start => actions::session_start(&mut ws).await?,
+                SessionAction::End { notes } => actions::session_end(&mut ws, notes).await?,
+            };
+            println!("{cid}");
+        }
+        Command::Context { budget } => {
+            print!(
+                "{}",
+                actions::context(&ws, budget.unwrap_or(DEFAULT_BUDGET))?
+            );
+        }
+        Command::Mcp => unreachable!("handled above"),
     }
-}
-
-async fn append_narrative(
-    ws: &mut Workspace,
-    args: NarrativeArgs,
-    make_body: impl FnOnce(String) -> ClaimBody,
-) -> Result<(), Error> {
-    let subject = SubjectRef::Local(Rkey::from(
-        args.subject.unwrap_or_else(|| GENERAL_SUBJECT.to_string()),
-    ));
-    let mut cites = Vec::with_capacity(args.cites.len());
-    for raw in args.cites {
-        let cid: Cid = raw
-            .parse()
-            .map_err(|e| Error::InvalidCites(raw.clone(), e))?;
-        cites.push(cid);
-    }
-
-    append(ws, subject, make_body(args.text), cites).await
-}
-
-/// `kan same <a> <b>` — a directed, situated identity claim (`docs/SPEC.md`
-/// §4.2): asserts `a` and `b` are the same subject from this author's
-/// perspective. A single `SameAs` is one witness in the identity fold's
-/// merge-class computation, not an immediate, unconditional merge — whether
-/// it's honored depends on the viewer's `TrustBase`.
-async fn same(ws: &mut Workspace, a: &str, b: &str) -> Result<(), Error> {
-    let body = ClaimBody::Relation {
-        kind: RelationKind::SameAs,
-        target: SubjectRef::Local(Rkey::from(b)),
-    };
-    append(ws, SubjectRef::Local(Rkey::from(a)), body, vec![]).await
-}
-
-/// `kan resolve <subject> "<text>"` — asserts a subject is resolved
-/// (`ClaimBody::Resolution`). Distinct from `ClaimBody::Status { value:
-/// Resolved }`: this is a narrative claim (the fold never needs to reduce
-/// or contest it), while `Status` is the structural, poset-classified kind
-/// `fold::state` reduces (`docs/SPEC.md` §7).
-async fn resolve(ws: &mut Workspace, subject: &str, text: &str) -> Result<(), Error> {
-    let body = ClaimBody::Resolution {
-        text: text.to_string(),
-    };
-    append(ws, SubjectRef::Local(Rkey::from(subject)), body, vec![]).await
-}
-
-async fn append(
-    ws: &mut Workspace,
-    subject: SubjectRef,
-    body: ClaimBody,
-    cites: Vec<Cid>,
-) -> Result<(), Error> {
-    let content = ClaimContent {
-        author: ws.my_author(),
-        workspace: ws.anchor.clone(),
-        subject,
-        body,
-        cites,
-        artifacts: vec![],
-    };
-
-    let claim_cid = ws.log.append(content, &ws.identity).await?;
-    let claims = ws.log.iter_all().await?;
-    ws.index.rebuild(&claims)?;
-
-    println!("{claim_cid}");
     Ok(())
 }
