@@ -8,6 +8,14 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Scopes CARGO_REGISTRY_TOKEN to this job (not repo-wide) and enforces
+    # the environment's deployment-tag policy (v*.*.* only) as a second,
+    # independently-configured guard beyond this workflow's own trigger
+    # filter above. Required-reviewer approval was the original intent but
+    # isn't available for org-owned repos below GitHub Team/Enterprise
+    # Cloud even on a public repo (confirmed via a 422 from the
+    # environments API, not assumed) -- revisit if kan-tools ever upgrades.
+    environment: crates-io
     steps:
       - uses: actions/checkout@v4
 
