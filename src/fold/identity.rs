@@ -118,7 +118,17 @@ pub fn merge_classes(claims: &[(Cid, StoredClaim)], trust: &TrustBase) -> Vec<Me
         } = &content.body
         {
             all_subjects.insert(target.clone());
-            if trust.trusts(&content.author) {
+            // `docs/SPEC.md` §5.1: "SameAs between two Anchors is a TYPE
+            // ERROR, not a claim" — strict identity is decided by
+            // construction, never asserted, so a `SameAs` touching an
+            // `Anchor` on either side is excluded as a witness the same way
+            // an untrusted or cross-author claim already is, not treated as
+            // a real (if odd) merge. No CLI path constructs an `Anchor`
+            // subject yet (that's a deliberately separate follow-up), so
+            // this only fires against library-constructed claims today.
+            let anchor_type_error = matches!(content.subject, SubjectRef::Anchor(_))
+                || matches!(target, SubjectRef::Anchor(_));
+            if trust.trusts(&content.author) && !anchor_type_error {
                 witnesses.push(SameAsWitness {
                     claim_cid: cid.clone(),
                     author: content.author.clone(),
