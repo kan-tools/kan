@@ -45,6 +45,10 @@ pub enum Command {
         /// CIDs of prior claims this one cites.
         #[arg(long = "cites")]
         cites: Vec<String>,
+        /// A more specific artifact than the automatic HEAD-commit anchor:
+        /// `path` or `path:start-end`.
+        #[arg(long)]
+        file: Option<String>,
         /// Print a human-readable confirmation instead of the bare CID.
         #[arg(long, short)]
         verbose: bool,
@@ -57,6 +61,10 @@ pub enum Command {
         /// CIDs of prior claims the `Resolution` claim cites.
         #[arg(long = "cites")]
         cites: Vec<String>,
+        /// A more specific artifact than the automatic HEAD-commit anchor:
+        /// `path` or `path:start-end`.
+        #[arg(long)]
+        file: Option<String>,
         /// Print a human-readable confirmation instead of the bare CID.
         #[arg(long, short)]
         verbose: bool,
@@ -66,6 +74,10 @@ pub enum Command {
     Block {
         subject: String,
         text: String,
+        /// A more specific artifact than the automatic HEAD-commit anchor:
+        /// `path` or `path:start-end`.
+        #[arg(long)]
+        file: Option<String>,
         /// Print a human-readable confirmation instead of the bare CID.
         #[arg(long, short)]
         verbose: bool,
@@ -74,6 +86,10 @@ pub enum Command {
     /// works on a `Retraction` itself — the undo mechanism.
     Retract {
         cid: String,
+        /// A more specific artifact than the automatic HEAD-commit anchor:
+        /// `path` or `path:start-end`.
+        #[arg(long)]
+        file: Option<String>,
         /// Print a human-readable confirmation instead of the bare CID.
         #[arg(long, short)]
         verbose: bool,
@@ -82,6 +98,10 @@ pub enum Command {
     Mark {
         subject: String,
         value: StatusValueArg,
+        /// A more specific artifact than the automatic HEAD-commit anchor:
+        /// `path` or `path:start-end`.
+        #[arg(long)]
+        file: Option<String>,
         /// Print a human-readable confirmation instead of the bare CID.
         #[arg(long, short)]
         verbose: bool,
@@ -140,6 +160,10 @@ pub struct NarrativeArgs {
     /// CIDs of prior claims this one cites.
     #[arg(long = "cites")]
     pub cites: Vec<String>,
+    /// A more specific artifact than the automatic HEAD-commit anchor:
+    /// `path` or `path:start-end`.
+    #[arg(long)]
+    pub file: Option<String>,
     /// Print a human-readable confirmation instead of the bare CID.
     #[arg(long, short)]
     pub verbose: bool,
@@ -165,17 +189,20 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
     match cli.command {
         Command::Observe(args) => {
             let verbose = args.verbose;
-            let result = actions::observe(&mut ws, args.text, args.subject, args.cites).await?;
+            let result =
+                actions::observe(&mut ws, args.text, args.subject, args.cites, args.file).await?;
             print_result(&result, verbose);
         }
         Command::Plan(args) => {
             let verbose = args.verbose;
-            let result = actions::plan(&mut ws, args.text, args.subject, args.cites).await?;
+            let result =
+                actions::plan(&mut ws, args.text, args.subject, args.cites, args.file).await?;
             print_result(&result, verbose);
         }
         Command::Decide(args) => {
             let verbose = args.verbose;
-            let result = actions::decide(&mut ws, args.text, args.subject, args.cites).await?;
+            let result =
+                actions::decide(&mut ws, args.text, args.subject, args.cites, args.file).await?;
             print_result(&result, verbose);
         }
         Command::Show { subject } => print!("{}", actions::show(&ws, &subject)?),
@@ -184,38 +211,42 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             a,
             b,
             cites,
+            file,
             verbose,
         } => {
-            let result = actions::same(&mut ws, &a, &b, cites).await?;
+            let result = actions::same(&mut ws, &a, &b, cites, file).await?;
             print_result(&result, verbose);
         }
         Command::Resolve {
             subject,
             text,
             cites,
+            file,
             verbose,
         } => {
-            let result = actions::resolve(&mut ws, &subject, &text, cites).await?;
+            let result = actions::resolve(&mut ws, &subject, &text, cites, file).await?;
             print_paired_result(&result, verbose);
         }
         Command::Block {
             subject,
             text,
+            file,
             verbose,
         } => {
-            let result = actions::block(&mut ws, &subject, &text).await?;
+            let result = actions::block(&mut ws, &subject, &text, file).await?;
             print_paired_result(&result, verbose);
         }
-        Command::Retract { cid, verbose } => {
-            let result = actions::retract(&mut ws, &cid).await?;
+        Command::Retract { cid, file, verbose } => {
+            let result = actions::retract(&mut ws, &cid, file).await?;
             print_result(&result, verbose);
         }
         Command::Mark {
             subject,
             value,
+            file,
             verbose,
         } => {
-            let result = actions::mark(&mut ws, &subject, value.into()).await?;
+            let result = actions::mark(&mut ws, &subject, value.into(), file).await?;
             print_result(&result, verbose);
         }
         Command::Issues => print!("{}", actions::issues(&ws)?),

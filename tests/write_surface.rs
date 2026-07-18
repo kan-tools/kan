@@ -91,7 +91,7 @@ async fn retract_rejects_another_authors_claim_at_write_time() {
         git,
     };
 
-    match actions::retract(&mut ws, &other_cid.to_string()).await {
+    match actions::retract(&mut ws, &other_cid.to_string(), None).await {
         Err(actions::Error::NotYourClaim(_)) => {}
         other => panic!(
             "expected NotYourClaim, got {}",

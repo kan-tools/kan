@@ -3,10 +3,15 @@
 //! wrappers around exactly these functions; neither surface has logic the
 //! other doesn't share).
 
+use std::path::PathBuf;
+
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{ClaimBody, ClaimContent, ClaimKind, RelationKind, Rkey, StatusValue, SubjectRef},
+    claim::{
+        ArtifactRef, ClaimBody, ClaimContent, ClaimKind, RelationKind, Rkey, Span, StatusValue,
+        SubjectRef,
+    },
     context::{self, TiktokenEstimator, TokenEstimator},
     fold::{self, state::StateView, FoldedView, SubjectView},
     relations,
@@ -21,6 +26,8 @@ pub enum Error {
     Log(#[from] crate::store::log::Error),
     #[error(transparent)]
     Index(#[from] crate::store::index::Error),
+    #[error(transparent)]
+    Git(#[from] crate::git::Error),
     #[error("invalid CID {0:?}: {1}")]
     InvalidCid(String, atproto_dasl::DecodeError),
     #[error("no such claim: {0}")]
@@ -79,20 +86,55 @@ fn parse_cids(raw: Vec<String>) -> Result<Vec<Cid>, Error> {
     Ok(cites)
 }
 
+/// `--file <path>[:<start>-<end>]` (REQ-9) — opt-in, on top of the automatic
+/// commit anchor `append` always attaches. The trailing `:start-end` is only
+/// treated as a line range if it actually parses as one; otherwise the whole
+/// string is the path (a colon can legitimately appear in a path).
+/// `head_sha` is the same commit `append`'s automatic `ArtifactRef::Commit`
+/// uses — a `FileAt`/`LineRangeAt` anchor is "this file, as of that commit,"
+/// not a separately-anchored artifact.
+fn parse_file_artifact(raw: &str, head_sha: &crate::claim::Sha) -> ArtifactRef {
+    if let Some(idx) = raw.rfind(':') {
+        let (path, range) = (&raw[..idx], &raw[idx + 1..]);
+        if let Some((start, end)) = range.split_once('-') {
+            if let (Ok(start), Ok(end)) = (start.parse::<u32>(), end.parse::<u32>()) {
+                return ArtifactRef::LineRangeAt(
+                    PathBuf::from(path),
+                    head_sha.clone(),
+                    Span { start, end },
+                );
+            }
+        }
+    }
+    ArtifactRef::FileAt(PathBuf::from(raw), head_sha.clone())
+}
+
+/// Every write verb's shared append path. Always attaches the current `HEAD`
+/// commit as `ArtifactRef::Commit` (REQ-8, `docs/SPEC.md` §6.2's "anchor to
+/// the tightest git object you can" as a real default, not just a
+/// recommendation nobody follows) — zero agent effort, no flag needed.
+/// `file`, if given, attaches a more specific `FileAt`/`LineRangeAt`
+/// artifact on top (REQ-9).
 async fn append(
     ws: &mut Workspace,
     subject: SubjectRef,
     body: ClaimBody,
     cites: Vec<Cid>,
+    file: Option<String>,
 ) -> Result<AppendResult, Error> {
     let kind = body.kind();
+    let head = ws.git.head_commit()?;
+    let mut artifacts = vec![ArtifactRef::Commit(head.clone())];
+    if let Some(raw) = file {
+        artifacts.push(parse_file_artifact(&raw, &head));
+    }
     let content = ClaimContent {
         author: ws.my_author(),
         workspace: ws.anchor.clone(),
         subject: subject.clone(),
         body,
         cites,
-        artifacts: vec![],
+        artifacts,
     };
     let cid = ws.log.append(content, &ws.identity).await?;
     let claims = ws.log.iter_all().await?;
@@ -105,13 +147,14 @@ async fn narrative(
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
+    file: Option<String>,
     make_body: impl FnOnce(String) -> ClaimBody,
 ) -> Result<AppendResult, Error> {
     let subject = SubjectRef::Local(Rkey::from(
         subject.unwrap_or_else(|| GENERAL_SUBJECT.to_string()),
     ));
     let cites = parse_cids(cites)?;
-    append(ws, subject, make_body(text), cites).await
+    append(ws, subject, make_body(text), cites, file).await
 }
 
 pub async fn observe(
@@ -119,9 +162,10 @@ pub async fn observe(
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
+    file: Option<String>,
 ) -> Result<AppendResult, Error> {
-    narrative(ws, text, subject, cites, |text| ClaimBody::Observation {
-        text,
+    narrative(ws, text, subject, cites, file, |text| {
+        ClaimBody::Observation { text }
     })
     .await
 }
@@ -131,8 +175,12 @@ pub async fn plan(
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
+    file: Option<String>,
 ) -> Result<AppendResult, Error> {
-    narrative(ws, text, subject, cites, |text| ClaimBody::Plan { text }).await
+    narrative(ws, text, subject, cites, file, |text| ClaimBody::Plan {
+        text,
+    })
+    .await
 }
 
 pub async fn decide(
@@ -140,8 +188,9 @@ pub async fn decide(
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
+    file: Option<String>,
 ) -> Result<AppendResult, Error> {
-    narrative(ws, text, subject, cites, |text| ClaimBody::Decision {
+    narrative(ws, text, subject, cites, file, |text| ClaimBody::Decision {
         text,
     })
     .await
@@ -157,13 +206,14 @@ pub async fn same(
     a: &str,
     b: &str,
     cites: Vec<String>,
+    file: Option<String>,
 ) -> Result<AppendResult, Error> {
     let cites = parse_cids(cites)?;
     let body = ClaimBody::Relation {
         kind: RelationKind::SameAs,
         target: SubjectRef::Local(Rkey::from(b)),
     };
-    append(ws, SubjectRef::Local(Rkey::from(a)), body, cites).await
+    append(ws, SubjectRef::Local(Rkey::from(a)), body, cites, file).await
 }
 
 /// Asserts a subject is resolved: writes `ClaimBody::Resolution` (a
@@ -179,6 +229,7 @@ pub async fn resolve(
     subject: &str,
     text: &str,
     cites: Vec<String>,
+    file: Option<String>,
 ) -> Result<PairedAppendResult, Error> {
     let cites = parse_cids(cites)?;
     let subject_ref = SubjectRef::Local(Rkey::from(subject));
@@ -189,6 +240,7 @@ pub async fn resolve(
             text: text.to_string(),
         },
         cites,
+        file,
     )
     .await?;
     let status = append(
@@ -198,6 +250,7 @@ pub async fn resolve(
             value: StatusValue::Resolved,
         },
         vec![narrative.cid.clone()],
+        None,
     )
     .await?;
     Ok(PairedAppendResult { narrative, status })
@@ -210,6 +263,7 @@ pub async fn block(
     ws: &mut Workspace,
     subject: &str,
     text: &str,
+    file: Option<String>,
 ) -> Result<PairedAppendResult, Error> {
     let subject_ref = SubjectRef::Local(Rkey::from(subject));
     let narrative = append(
@@ -219,6 +273,7 @@ pub async fn block(
             text: text.to_string(),
         },
         vec![],
+        file,
     )
     .await?;
     let status = append(
@@ -228,6 +283,7 @@ pub async fn block(
             value: StatusValue::Blocked,
         },
         vec![narrative.cid.clone()],
+        None,
     )
     .await?;
     Ok(PairedAppendResult { narrative, status })
@@ -240,9 +296,10 @@ pub async fn mark(
     ws: &mut Workspace,
     subject: &str,
     value: StatusValue,
+    file: Option<String>,
 ) -> Result<AppendResult, Error> {
     let subject_ref = SubjectRef::Local(Rkey::from(subject));
-    append(ws, subject_ref, ClaimBody::Status { value }, vec![]).await
+    append(ws, subject_ref, ClaimBody::Status { value }, vec![], file).await
 }
 
 /// Writes `ClaimBody::Retraction { supersedes: cid }`, filed under the
@@ -254,7 +311,11 @@ pub async fn mark(
 /// this is a friendlier write-time echo of it). Works uniformly for
 /// "retract a retraction" (ADR-6's undo mechanism) — no special-casing
 /// needed, `retract` just takes any CID.
-pub async fn retract(ws: &mut Workspace, cid: &str) -> Result<AppendResult, Error> {
+pub async fn retract(
+    ws: &mut Workspace,
+    cid: &str,
+    file: Option<String>,
+) -> Result<AppendResult, Error> {
     let target_cid: Cid = cid
         .parse()
         .map_err(|e| Error::InvalidCid(cid.to_string(), e))?;
@@ -270,7 +331,7 @@ pub async fn retract(ws: &mut Workspace, cid: &str) -> Result<AppendResult, Erro
     let body = ClaimBody::Retraction {
         supersedes: target_cid,
     };
-    append(ws, subject, body, vec![]).await
+    append(ws, subject, body, vec![], file).await
 }
 
 /// A single subject's live claims, rendered — `fold` + `render` for one
