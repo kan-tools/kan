@@ -71,6 +71,13 @@ impl GitSubstrate {
         Ok(format!("{digest:x}"))
     }
 
+    /// Current `HEAD` commit SHA — the artifact every write verb attaches by
+    /// default (`docs/SPEC.md` §6.2's "anchor to the tightest git object you
+    /// can" as a real default, not just a recommendation).
+    pub fn head_commit(&self) -> Result<Sha, Error> {
+        Ok(self.run(&["rev-parse", "HEAD"])?.trim().to_string())
+    }
+
     /// Does `ancestor` reach `descendant` by following parent edges — i.e.
     /// is `ancestor` causally earlier? (`git merge-base --is-ancestor`:
     /// exit 0 = yes, exit 1 = no, anything else = a real error.)

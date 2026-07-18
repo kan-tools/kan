@@ -71,6 +71,11 @@ struct NarrativeParams {
     /// CIDs of prior claims this one cites.
     #[serde(default)]
     cites: Vec<String>,
+    #[serde(default)]
+    #[schemars(
+        description = "A more specific artifact than the automatic HEAD-commit anchor: \"path\" or \"path:start-end\"."
+    )]
+    file: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -82,6 +87,11 @@ struct SameParams {
     /// CIDs of prior claims this one cites.
     #[serde(default)]
     cites: Vec<String>,
+    #[serde(default)]
+    #[schemars(
+        description = "A more specific artifact than the automatic HEAD-commit anchor: \"path\" or \"path:start-end\"."
+    )]
+    file: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -93,6 +103,11 @@ struct ResolveParams {
     /// CIDs of prior claims the `Resolution` claim cites.
     #[serde(default)]
     cites: Vec<String>,
+    #[serde(default)]
+    #[schemars(
+        description = "A more specific artifact than the automatic HEAD-commit anchor: \"path\" or \"path:start-end\"."
+    )]
+    file: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -101,12 +116,22 @@ struct BlockParams {
     subject: String,
     /// What it's blocked on.
     text: String,
+    #[serde(default)]
+    #[schemars(
+        description = "A more specific artifact than the automatic HEAD-commit anchor: \"path\" or \"path:start-end\"."
+    )]
+    file: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct RetractParams {
     /// The CID of the claim to retract (must be your own).
     cid: String,
+    #[serde(default)]
+    #[schemars(
+        description = "A more specific artifact than the automatic HEAD-commit anchor: \"path\" or \"path:start-end\"."
+    )]
+    file: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -115,6 +140,11 @@ struct MarkParams {
     subject: String,
     /// The status value to write.
     value: crate::claim::StatusValue,
+    #[serde(default)]
+    #[schemars(
+        description = "A more specific artifact than the automatic HEAD-commit anchor: \"path\" or \"path:start-end\"."
+    )]
+    file: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -162,7 +192,7 @@ impl KanServer {
     async fn observe(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::observe(&mut ws, p.text, p.subject, p.cites)
+        actions::observe(&mut ws, p.text, p.subject, p.cites, p.file)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
@@ -172,7 +202,7 @@ impl KanServer {
     async fn plan(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::plan(&mut ws, p.text, p.subject, p.cites)
+        actions::plan(&mut ws, p.text, p.subject, p.cites, p.file)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
@@ -182,7 +212,7 @@ impl KanServer {
     async fn decide(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::decide(&mut ws, p.text, p.subject, p.cites)
+        actions::decide(&mut ws, p.text, p.subject, p.cites, p.file)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
@@ -192,7 +222,7 @@ impl KanServer {
     async fn same(&self, params: Parameters<SameParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::same(&mut ws, &p.a, &p.b, p.cites)
+        actions::same(&mut ws, &p.a, &p.b, p.cites, p.file)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
@@ -204,7 +234,7 @@ impl KanServer {
     async fn resolve(&self, params: Parameters<ResolveParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::resolve(&mut ws, &p.subject, &p.text, p.cites)
+        actions::resolve(&mut ws, &p.subject, &p.text, p.cites, p.file)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
@@ -216,7 +246,7 @@ impl KanServer {
     async fn block(&self, params: Parameters<BlockParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::block(&mut ws, &p.subject, &p.text)
+        actions::block(&mut ws, &p.subject, &p.text, p.file)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
@@ -227,7 +257,8 @@ impl KanServer {
     )]
     async fn retract(&self, params: Parameters<RetractParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
-        actions::retract(&mut ws, &params.0.cid)
+        let p = params.0;
+        actions::retract(&mut ws, &p.cid, p.file)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
@@ -237,7 +268,7 @@ impl KanServer {
     async fn mark(&self, params: Parameters<MarkParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::mark(&mut ws, &p.subject, p.value)
+        actions::mark(&mut ws, &p.subject, p.value, p.file)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
