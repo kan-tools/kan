@@ -79,6 +79,9 @@ struct SameParams {
     a: String,
     /// The subject `a` is asserted to be the same as.
     b: String,
+    /// CIDs of prior claims this one cites.
+    #[serde(default)]
+    cites: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -87,6 +90,31 @@ struct ResolveParams {
     subject: String,
     /// How it was resolved.
     text: String,
+    /// CIDs of prior claims the `Resolution` claim cites.
+    #[serde(default)]
+    cites: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct BlockParams {
+    /// The subject that is blocked.
+    subject: String,
+    /// What it's blocked on.
+    text: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RetractParams {
+    /// The CID of the claim to retract (must be your own).
+    cid: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct MarkParams {
+    /// The subject to mark.
+    subject: String,
+    /// The status value to write.
+    value: crate::claim::StatusValue,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -163,16 +191,53 @@ impl KanServer {
     #[tool(description = "Assert that two subjects are the same (Relation::SameAs).")]
     async fn same(&self, params: Parameters<SameParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
-        actions::same(&mut ws, &params.0.a, &params.0.b)
+        let p = params.0;
+        actions::same(&mut ws, &p.a, &p.b, p.cites)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
     }
 
-    #[tool(description = "Record that a subject has been resolved (ClaimBody::Resolution).")]
+    #[tool(
+        description = "Record that a subject has been resolved: pairs a Resolution claim with a Status{Resolved} claim citing it."
+    )]
     async fn resolve(&self, params: Parameters<ResolveParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
-        actions::resolve(&mut ws, &params.0.subject, &params.0.text)
+        let p = params.0;
+        actions::resolve(&mut ws, &p.subject, &p.text, p.cites)
+            .await
+            .map(|r| r.confirmation())
+            .map_err(to_error)
+    }
+
+    #[tool(
+        description = "Record that a subject is blocked: pairs a Blocker claim with a Status{Blocked} claim citing it."
+    )]
+    async fn block(&self, params: Parameters<BlockParams>) -> Result<String, ErrorData> {
+        let mut ws = self.workspace().await?;
+        let p = params.0;
+        actions::block(&mut ws, &p.subject, &p.text)
+            .await
+            .map(|r| r.confirmation())
+            .map_err(to_error)
+    }
+
+    #[tool(
+        description = "Retract a prior claim of your own (ClaimBody::Retraction). Also works on a Retraction itself, as the undo mechanism."
+    )]
+    async fn retract(&self, params: Parameters<RetractParams>) -> Result<String, ErrorData> {
+        let mut ws = self.workspace().await?;
+        actions::retract(&mut ws, &params.0.cid)
+            .await
+            .map(|r| r.confirmation())
+            .map_err(to_error)
+    }
+
+    #[tool(description = "Write a bare Status claim with no paired narrative.")]
+    async fn mark(&self, params: Parameters<MarkParams>) -> Result<String, ErrorData> {
+        let mut ws = self.workspace().await?;
+        let p = params.0;
+        actions::mark(&mut ws, &p.subject, p.value)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)

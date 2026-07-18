@@ -42,14 +42,46 @@ pub enum Command {
     Same {
         a: String,
         b: String,
+        /// CIDs of prior claims this one cites.
+        #[arg(long = "cites")]
+        cites: Vec<String>,
         /// Print a human-readable confirmation instead of the bare CID.
         #[arg(long, short)]
         verbose: bool,
     },
-    /// Record that a subject has been resolved.
+    /// Record that a subject has been resolved. Pairs a `Resolution` claim
+    /// with a `Status { value: Resolved }` claim citing it.
     Resolve {
         subject: String,
         text: String,
+        /// CIDs of prior claims the `Resolution` claim cites.
+        #[arg(long = "cites")]
+        cites: Vec<String>,
+        /// Print a human-readable confirmation instead of the bare CID.
+        #[arg(long, short)]
+        verbose: bool,
+    },
+    /// Record that a subject is blocked. Pairs a `Blocker` claim with a
+    /// `Status { value: Blocked }` claim citing it.
+    Block {
+        subject: String,
+        text: String,
+        /// Print a human-readable confirmation instead of the bare CID.
+        #[arg(long, short)]
+        verbose: bool,
+    },
+    /// Retract a prior claim of your own (`ClaimBody::Retraction`). Also
+    /// works on a `Retraction` itself — the undo mechanism.
+    Retract {
+        cid: String,
+        /// Print a human-readable confirmation instead of the bare CID.
+        #[arg(long, short)]
+        verbose: bool,
+    },
+    /// Write a bare status claim with no paired narrative.
+    Mark {
+        subject: String,
+        value: StatusValueArg,
         /// Print a human-readable confirmation instead of the bare CID.
         #[arg(long, short)]
         verbose: bool,
@@ -73,6 +105,30 @@ pub enum McpAction {
     /// Print registration instructions for this binary — no config-file
     /// mutation, just the commands to run.
     Install,
+}
+
+/// Mirrors `claim::StatusValue` — kept as a separate CLI-layer type so
+/// `claim.rs` stays free of a `clap` dependency (this file maps between the
+/// two enums at the CLI/actions call boundary, in `run` below).
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum StatusValueArg {
+    Open,
+    InProgress,
+    Blocked,
+    Resolved,
+    Closed,
+}
+
+impl From<StatusValueArg> for crate::claim::StatusValue {
+    fn from(value: StatusValueArg) -> Self {
+        match value {
+            StatusValueArg::Open => Self::Open,
+            StatusValueArg::InProgress => Self::InProgress,
+            StatusValueArg::Blocked => Self::Blocked,
+            StatusValueArg::Resolved => Self::Resolved,
+            StatusValueArg::Closed => Self::Closed,
+        }
+    }
 }
 
 #[derive(Debug, clap::Args)]
@@ -124,16 +180,42 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Show { subject } => print!("{}", actions::show(&ws, &subject)?),
         Command::Status { subject } => print!("{}", actions::status(&ws, subject.as_deref())?),
-        Command::Same { a, b, verbose } => {
-            let result = actions::same(&mut ws, &a, &b).await?;
+        Command::Same {
+            a,
+            b,
+            cites,
+            verbose,
+        } => {
+            let result = actions::same(&mut ws, &a, &b, cites).await?;
             print_result(&result, verbose);
         }
         Command::Resolve {
             subject,
             text,
+            cites,
             verbose,
         } => {
-            let result = actions::resolve(&mut ws, &subject, &text).await?;
+            let result = actions::resolve(&mut ws, &subject, &text, cites).await?;
+            print_paired_result(&result, verbose);
+        }
+        Command::Block {
+            subject,
+            text,
+            verbose,
+        } => {
+            let result = actions::block(&mut ws, &subject, &text).await?;
+            print_paired_result(&result, verbose);
+        }
+        Command::Retract { cid, verbose } => {
+            let result = actions::retract(&mut ws, &cid).await?;
+            print_result(&result, verbose);
+        }
+        Command::Mark {
+            subject,
+            value,
+            verbose,
+        } => {
+            let result = actions::mark(&mut ws, &subject, value.into()).await?;
             print_result(&result, verbose);
         }
         Command::Issues => print!("{}", actions::issues(&ws)?),
@@ -153,5 +235,16 @@ fn print_result(result: &actions::AppendResult, verbose: bool) {
         println!("{}", result.confirmation());
     } else {
         println!("{}", result.cid);
+    }
+}
+
+/// Bare-CID default is the narrative claim's CID only — the citable handle
+/// an agent would chain a follow-up `--cites` off of, matching the existing
+/// bare-CID-by-default contract (`--cites` piping, AC-6 of the AX pass).
+fn print_paired_result(result: &actions::PairedAppendResult, verbose: bool) {
+    if verbose {
+        println!("{}", result.confirmation());
+    } else {
+        println!("{}", result.narrative.cid);
     }
 }

@@ -73,7 +73,12 @@ pub enum SubjectKind {
     Question,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// `schemars::JsonSchema` (alongside `Serialize`/`Deserialize`) lets
+/// `mcp::MarkParams` use this type directly instead of a duplicate MCP-side
+/// enum — unlike `clap::ValueEnum` (kept out of this file per the CLI
+/// layer's `StatusValueArg`), `schemars` doesn't conflict with keeping
+/// `claim.rs` free of CLI-specific dependencies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum StatusValue {
     Open,
     InProgress,
