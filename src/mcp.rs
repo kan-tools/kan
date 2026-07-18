@@ -7,13 +7,28 @@ use std::path::PathBuf;
 
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{ServerCapabilities, ServerInfo},
-    tool, tool_handler, tool_router, ErrorData, ServerHandler, ServiceExt,
+    model::{
+        ListResourceTemplatesResult, ReadResourceRequestParams, ReadResourceResult,
+        ResourceContents, ResourceTemplate, ServerCapabilities, ServerInfo,
+    },
+    service::RequestContext,
+    tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler, ServiceExt,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{actions, context::DEFAULT_BUDGET, workspace::Workspace};
+
+/// The one MCP resource kan exposes (REQ-17, issue #28, minimal scope): a
+/// subject's live claims, addressable as `kan://claims/<subject>` — the
+/// same data `show` returns, via URI instead of a tool call. No resource
+/// enumeration (`resources/list` stays empty/default) and no prompts —
+/// deliberately the smallest real slice, per issue #28's own framing.
+const CLAIMS_URI_PREFIX: &str = "kan://claims/";
+
+fn claims_uri(subject: &str) -> String {
+    format!("{CLAIMS_URI_PREFIX}{subject}")
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -308,7 +323,13 @@ impl ServerHandler for KanServer {
     /// agent should call which tool (`docs/DECISIONS.md`'s
     /// kan/companion-tool boundary rule).
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
+        )
+        .with_instructions(
             "kan is an append-only, signed, content-addressed claim log for this repo. \
              A \"subject\" is a freely-chosen name (e.g. \"bug-42\") that claims are \
              about; the same subject name always refers to the same thing within one \
@@ -319,7 +340,43 @@ impl ServerHandler for KanServer {
              Contested classification for one subject, or a one-line summary for \
              every subject if none is given. issues lists subjects that aren't \
              resolved yet. context returns the highest-value claims that fit under a \
-             token budget.",
+             token budget. A subject's live claims are also readable as a resource \
+             at kan://claims/<subject>, the same data the show tool returns.",
         )
+    }
+
+    /// Advertises `kan://claims/{subject}` (REQ-17) — no fixed enumeration
+    /// of every subject as a `resources/list` entry, since subjects are
+    /// open-ended; a client constructs a URI from a subject name it already
+    /// knows (e.g. from `show`/`issues`/`status`).
+    async fn list_resource_templates(
+        &self,
+        _request: Option<rmcp::model::PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, ErrorData> {
+        Ok(ListResourceTemplatesResult::with_all_items(vec![
+            ResourceTemplate::new("kan://claims/{subject}", "subject-claims")
+                .with_description("A subject's live claims — the same data the show tool returns.")
+                .with_mime_type("text/plain"),
+        ]))
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, ErrorData> {
+        let Some(subject) = request.uri.strip_prefix(CLAIMS_URI_PREFIX) else {
+            return Err(ErrorData::resource_not_found(
+                format!("no such resource: {}", request.uri),
+                None,
+            ));
+        };
+        let ws = self.workspace().await?;
+        let text = actions::show(&ws, subject).map_err(to_error)?;
+        Ok(ReadResourceResult::new(vec![ResourceContents::text(
+            text,
+            claims_uri(subject),
+        )]))
     }
 }
