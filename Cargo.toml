@@ -12,6 +12,7 @@ atproto-dasl = "0.14.5"
 atproto-repo = "0.14.5"
 atrium-crypto = "0.1.3"
 clap = { version = "4.6.2", features = ["derive"] }
+keyring = "4.1.5"
 rand = "0.8"
 rmcp = { version = "2.2.0", features = ["transport-io"] }
 rusqlite = { version = "0.40.1", features = ["bundled"] }
