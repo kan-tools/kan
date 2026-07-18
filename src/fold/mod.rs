@@ -18,6 +18,7 @@ use crate::{
     claim::{Claim, SubjectRef},
     store::log::StoredClaim,
 };
+pub use identity::SameAsWitness;
 pub use trust::TrustBase;
 
 /// One merge-class's live, trusted claims, oldest first. `subjects` has more
@@ -32,6 +33,12 @@ pub struct SubjectView {
     /// §4.5). Surfaced, not silently enumerated: callers should warn on
     /// this rather than just rendering a big class as if it were normal.
     pub flagged_oversized: bool,
+    /// Every retained `SameAs` witness (author, direction, claim CID) that
+    /// justified this merge-class, threaded through from
+    /// `identity::MergeClass::witnesses` — `docs/SPEC.md` §4.3's HARD
+    /// requirement that "the fold must carry its factorization + witness
+    /// set," previously discarded in this exact conversion (REQ-18).
+    pub witnesses: Vec<SameAsWitness>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -74,6 +81,7 @@ pub fn fold(claims: Vec<(Cid, StoredClaim)>, trust: &TrustBase) -> FoldedView {
                 subjects: class.subjects,
                 claims: class_claims,
                 flagged_oversized: class.flagged_oversized,
+                witnesses: class.witnesses,
             });
         }
     }
