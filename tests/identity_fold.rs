@@ -322,6 +322,62 @@ async fn peer_contested_sees_all_weighted_authors() {
     assert_eq!(issue1.claims.len(), 2);
 }
 
+/// AC-7: `docs/SPEC.md` §5.1's "SameAs between two Anchors is a TYPE ERROR,
+/// not a claim" — a `SameAs` witness where either side is a
+/// `SubjectRef::Anchor` is excluded from merge-class computation, the same
+/// way an untrusted witness is. Unit-tested directly (no CLI path
+/// constructs an `Anchor` subject yet).
+#[tokio::test]
+async fn sameas_touching_an_anchor_is_not_honored() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = Identity::generate();
+    let author = AuthorId {
+        did: identity.did(),
+        agent: None,
+    };
+    let trust = TrustBase::solo(author.clone());
+    let mut log = Log::open_or_create(&dir.path().join("log"), &identity)
+        .await
+        .unwrap();
+
+    let anchor = SubjectRef::Anchor(Anchor::Commit("deadbeef".to_string()));
+    log.append(
+        ClaimContent {
+            author: author.clone(),
+            workspace: Anchor::Workspace("test-workspace".to_string()),
+            subject: SubjectRef::Local("bug-42".to_string()),
+            body: ClaimBody::Relation {
+                kind: RelationKind::SameAs,
+                target: anchor.clone(),
+            },
+            cites: vec![],
+            artifacts: vec![],
+        },
+        &identity,
+    )
+    .await
+    .unwrap();
+    log.append(
+        content(&author, "bug-42", observation("still its own subject")),
+        &identity,
+    )
+    .await
+    .unwrap();
+
+    let claims = log.iter_all().await.unwrap();
+    let view = fold::fold(claims, &trust);
+
+    // bug-42 stays its own class, not merged with the Anchor subject.
+    let bug42 = view
+        .subject(&SubjectRef::Local("bug-42".to_string()))
+        .unwrap();
+    assert_eq!(
+        bug42.subjects,
+        vec![SubjectRef::Local("bug-42".to_string())]
+    );
+    assert!(!bug42.subjects.contains(&anchor));
+}
+
 #[tokio::test]
 async fn oversized_component_is_flagged() {
     let dir = tempfile::tempdir().unwrap();
