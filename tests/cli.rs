@@ -205,6 +205,137 @@ fn same_merges_two_subjects_into_one_view() {
     assert!(show_out.contains("reported by a user"));
 }
 
+/// AC-1: `kan resolve` produces two claims (a `Resolution` and a
+/// `Status{Resolved}` citing it) and `kan status` reflects the settled
+/// resolved state.
+#[test]
+fn resolve_pair_writes_resolution_and_status() {
+    let dir = git_repo();
+    kan(dir.path(), &["observe", "x", "--subject", "bug-42"]);
+
+    let (cid, _, ok) = kan(dir.path(), &["resolve", "bug-42", "fixed"]);
+    assert!(ok);
+    assert!(!cid.is_empty(), "bare stdout should be the Resolution CID");
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("Resolution"));
+    assert!(show_out.contains("Status"));
+    assert!(show_out.contains("Resolved"));
+
+    let (status_out, _, ok) = kan(dir.path(), &["status", "bug-42"]);
+    assert!(ok);
+    assert!(status_out.contains("Settled"));
+    assert!(status_out.contains("Resolved"));
+}
+
+/// AC-2: `kan block` produces a `Blocker` + `Status{Blocked}` pair, same
+/// shape as AC-1.
+#[test]
+fn block_pair_writes_blocker_and_status() {
+    let dir = git_repo();
+    kan(dir.path(), &["observe", "x", "--subject", "bug-42"]);
+
+    let (cid, _, ok) = kan(dir.path(), &["block", "bug-42", "waiting on upstream"]);
+    assert!(ok);
+    assert!(!cid.is_empty());
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("Blocker"));
+    assert!(show_out.contains("waiting on upstream"));
+    assert!(show_out.contains("Blocked"));
+
+    let (status_out, _, ok) = kan(dir.path(), &["status", "bug-42"]);
+    assert!(ok);
+    assert!(status_out.contains("Settled"));
+    assert!(status_out.contains("Blocked"));
+}
+
+/// AC-3 (first half): `kan retract` on the caller's own claim excludes it
+/// from the live set on the next fold. The second half — rejecting another
+/// author's claim at write time — needs a genuinely different signing
+/// identity, which the CLI's single-identity-per-repo model can't produce;
+/// see `retract_rejects_another_authors_claim_at_write_time` in
+/// `tests/write_surface.rs` for that half, at the library level.
+#[test]
+fn retract_excludes_own_claim_from_the_live_set() {
+    let dir = git_repo();
+    let (cid, _, ok) = kan(dir.path(), &["observe", "x", "--subject", "bug-42"]);
+    assert!(ok);
+
+    let (_, _, ok) = kan(dir.path(), &["retract", &cid]);
+    assert!(ok);
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(!show_out.contains("Observation"));
+
+    // Retracting a CID that was never written should fail cleanly, not panic.
+    let (_, err, ok) = kan(
+        dir.path(),
+        &[
+            "retract",
+            "bafyreif4au544xcim6pd62nvks5vhgdj5u3tdkqecg4zvjsfqxfj66lnai",
+        ],
+    );
+    assert!(!ok);
+    assert!(err.contains("no such claim"));
+}
+
+/// AC-4: `kan mark` writes a bare `Status{InProgress}` claim.
+#[test]
+fn mark_writes_a_bare_status_claim() {
+    let dir = git_repo();
+    kan(dir.path(), &["observe", "x", "--subject", "bug-42"]);
+
+    let (cid, _, ok) = kan(dir.path(), &["mark", "bug-42", "in-progress"]);
+    assert!(ok);
+    assert!(!cid.is_empty());
+
+    let (status_out, _, ok) = kan(dir.path(), &["status", "bug-42"]);
+    assert!(ok);
+    assert!(status_out.contains("InProgress"));
+}
+
+/// AC-5: `kan resolve --cites` round-trips a citation the same way
+/// `observe --cites` already does.
+#[test]
+fn resolve_cites_round_trips() {
+    let dir = git_repo();
+    let (prior_cid, _, ok) = kan(dir.path(), &["observe", "x", "--subject", "bug-42"]);
+    assert!(ok);
+
+    let (_, _, ok) = kan(
+        dir.path(),
+        &["resolve", "bug-42", "fixed", "--cites", &prior_cid],
+    );
+    assert!(ok);
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains(&prior_cid));
+}
+
+/// `kan same --cites` round-trips too (the other half of AC-5).
+#[test]
+fn same_cites_round_trips() {
+    let dir = git_repo();
+    let (prior_cid, _, ok) = kan(dir.path(), &["observe", "x", "--subject", "bug-42"]);
+    assert!(ok);
+    kan(dir.path(), &["observe", "y", "--subject", "issue-7"]);
+
+    let (_, _, ok) = kan(
+        dir.path(),
+        &["same", "bug-42", "issue-7", "--cites", &prior_cid],
+    );
+    assert!(ok);
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains(&prior_cid));
+}
+
 /// Issue #3: `kan` walks upward to find the repo root (`.git/`), the same
 /// search `git` itself does, so `.kan/` always lands beside `.git/`
 /// (ADR-3) regardless of which subdirectory it's invoked from.

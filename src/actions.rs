@@ -23,6 +23,10 @@ pub enum Error {
     Index(#[from] crate::store::index::Error),
     #[error("invalid CID {0:?}: {1}")]
     InvalidCid(String, atproto_dasl::DecodeError),
+    #[error("no such claim: {0}")]
+    UnknownClaim(Cid),
+    #[error("you can't retract another author's claim ({0}, authored by someone else)")]
+    NotYourClaim(Cid),
 }
 
 const GENERAL_SUBJECT: &str = "general";
@@ -43,6 +47,25 @@ impl AppendResult {
         format!(
             "recorded {:?} on {:?}  ({})",
             self.kind, self.subject, self.cid
+        )
+    }
+}
+
+/// Two claims from one agent action (`kan resolve`/`kan block`): a narrative
+/// claim (`Resolution`/`Blocker`) plus the `Status` claim it's paired with,
+/// `cites`-linked to it. An agent never has to think about "narrative vs.
+/// structural" — resolving/blocking something *is* asserting its status.
+pub struct PairedAppendResult {
+    pub narrative: AppendResult,
+    pub status: AppendResult,
+}
+
+impl PairedAppendResult {
+    pub fn confirmation(&self) -> String {
+        format!(
+            "{}\n{}",
+            self.narrative.confirmation(),
+            self.status.confirmation()
         )
     }
 }
@@ -129,24 +152,125 @@ pub async fn decide(
 /// `SameAs` is one witness in the identity fold's merge-class computation,
 /// not an immediate, unconditional merge — whether it's honored depends on
 /// the viewer's `TrustBase`.
-pub async fn same(ws: &mut Workspace, a: &str, b: &str) -> Result<AppendResult, Error> {
+pub async fn same(
+    ws: &mut Workspace,
+    a: &str,
+    b: &str,
+    cites: Vec<String>,
+) -> Result<AppendResult, Error> {
+    let cites = parse_cids(cites)?;
     let body = ClaimBody::Relation {
         kind: RelationKind::SameAs,
         target: SubjectRef::Local(Rkey::from(b)),
     };
-    append(ws, SubjectRef::Local(Rkey::from(a)), body, vec![]).await
+    append(ws, SubjectRef::Local(Rkey::from(a)), body, cites).await
 }
 
-/// Asserts a subject is resolved (`ClaimBody::Resolution`). Distinct from
-/// `ClaimBody::Status { value: Resolved }`: this is a narrative claim (the
-/// fold never needs to reduce or contest it), while `Status` is the
-/// structural, poset-classified kind `fold::state` reduces (`docs/SPEC.md`
-/// §7). `issues` treats a live `Resolution` as "done" too — see its doc.
-pub async fn resolve(ws: &mut Workspace, subject: &str, text: &str) -> Result<AppendResult, Error> {
-    let body = ClaimBody::Resolution {
-        text: text.to_string(),
+/// Asserts a subject is resolved: writes `ClaimBody::Resolution` (a
+/// narrative claim — the fold never needs to reduce or contest it) plus
+/// `ClaimBody::Status { value: Resolved }` (the structural, poset-classified
+/// kind `fold::state` reduces, `docs/SPEC.md` §7), `cites`-linked to the
+/// Resolution. One agent action, two claims, correct provenance — an agent
+/// never has to think about "narrative vs. structural." `issues` also
+/// treats a live `Resolution` as "done" on its own, independent of this
+/// pairing — see its doc.
+pub async fn resolve(
+    ws: &mut Workspace,
+    subject: &str,
+    text: &str,
+    cites: Vec<String>,
+) -> Result<PairedAppendResult, Error> {
+    let cites = parse_cids(cites)?;
+    let subject_ref = SubjectRef::Local(Rkey::from(subject));
+    let narrative = append(
+        ws,
+        subject_ref.clone(),
+        ClaimBody::Resolution {
+            text: text.to_string(),
+        },
+        cites,
+    )
+    .await?;
+    let status = append(
+        ws,
+        subject_ref,
+        ClaimBody::Status {
+            value: StatusValue::Resolved,
+        },
+        vec![narrative.cid.clone()],
+    )
+    .await?;
+    Ok(PairedAppendResult { narrative, status })
+}
+
+/// Asserts a subject is blocked: writes `ClaimBody::Blocker` plus
+/// `ClaimBody::Status { value: Blocked }`, `cites`-linked to the Blocker —
+/// same pairing discipline as `resolve`.
+pub async fn block(
+    ws: &mut Workspace,
+    subject: &str,
+    text: &str,
+) -> Result<PairedAppendResult, Error> {
+    let subject_ref = SubjectRef::Local(Rkey::from(subject));
+    let narrative = append(
+        ws,
+        subject_ref.clone(),
+        ClaimBody::Blocker {
+            text: text.to_string(),
+        },
+        vec![],
+    )
+    .await?;
+    let status = append(
+        ws,
+        subject_ref,
+        ClaimBody::Status {
+            value: StatusValue::Blocked,
+        },
+        vec![narrative.cid.clone()],
+    )
+    .await?;
+    Ok(PairedAppendResult { narrative, status })
+}
+
+/// Writes a bare `ClaimBody::Status { value }` claim with no paired
+/// narrative — the entry point for `Open`/`InProgress`/`Closed`, which have
+/// no natural narrative-kind pairing.
+pub async fn mark(
+    ws: &mut Workspace,
+    subject: &str,
+    value: StatusValue,
+) -> Result<AppendResult, Error> {
+    let subject_ref = SubjectRef::Local(Rkey::from(subject));
+    append(ws, subject_ref, ClaimBody::Status { value }, vec![]).await
+}
+
+/// Writes `ClaimBody::Retraction { supersedes: cid }`, filed under the
+/// target claim's own subject (matching existing test/library convention).
+/// Checks the target's author matches the caller's own `AuthorId` *before*
+/// writing — a clear, immediate CLI error instead of silently writing an
+/// inert claim that `fold::identity::excluded_by_retraction` will ignore
+/// anyway (that fold-level enforcement, ADR-16, stays the source of truth;
+/// this is a friendlier write-time echo of it). Works uniformly for
+/// "retract a retraction" (ADR-6's undo mechanism) — no special-casing
+/// needed, `retract` just takes any CID.
+pub async fn retract(ws: &mut Workspace, cid: &str) -> Result<AppendResult, Error> {
+    let target_cid: Cid = cid
+        .parse()
+        .map_err(|e| Error::InvalidCid(cid.to_string(), e))?;
+    let target = ws
+        .log
+        .get_stored(target_cid.clone())
+        .await?
+        .ok_or_else(|| Error::UnknownClaim(target_cid.clone()))?;
+    if target.claim.content.author != ws.my_author() {
+        return Err(Error::NotYourClaim(target_cid));
+    }
+    let subject = target.claim.content.subject.clone();
+    let body = ClaimBody::Retraction {
+        supersedes: target_cid,
     };
-    append(ws, SubjectRef::Local(Rkey::from(subject)), body, vec![]).await
+    append(ws, subject, body, vec![]).await
 }
 
 /// A single subject's live claims, rendered — `fold` + `render` for one
