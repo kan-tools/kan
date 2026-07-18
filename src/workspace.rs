@@ -11,13 +11,32 @@
 
 use std::path::{Path, PathBuf};
 
+use sha2::Digest;
+
 use crate::{
-    claim::{Anchor, AuthorId},
+    claim::{AgentKey, Anchor, AuthorId},
     fold::TrustBase,
     git::GitSubstrate,
     sign::Identity,
     store::{index::Index, log::Log},
 };
+
+/// The `KAN_AGENT` environment variable an MCP-server `env` config (or a
+/// human's shell) sets to tag claims with a distinct agent identity.
+const KAN_AGENT_ENV: &str = "KAN_AGENT";
+
+/// **Placeholder, not a real keypair.** A simple, consistent hash of the
+/// `KAN_AGENT` string — enough to make two different agent names produce
+/// two distinct, stable `AgentKey`s (closing the *reachability* gap: an
+/// `AuthorId.agent` a `PeerContested` trust base can actually tell apart),
+/// but this is not a signing key and nothing verifies it against anything.
+/// `claim::AgentKey`'s own doc comment ("compressed public key bytes of the
+/// signing agent") stays aspirational until a real per-agent-keypair design
+/// replaces this (tracked as its own follow-up issue, deliberately not
+/// v0.2 — see `docs/DECISIONS.md`).
+fn derive_agent_key(name: &str) -> AgentKey {
+    sha2::Sha256::digest(name.as_bytes()).to_vec()
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -72,18 +91,29 @@ impl Workspace {
         })
     }
 
-    /// This CLI's own human-direct `AuthorId` (`agent: None`).
+    /// This process's `AuthorId`: `agent: None` (human-direct) unless
+    /// `KAN_AGENT` is set, in which case `agent` is a placeholder hash
+    /// derived from it (`derive_agent_key`'s doc comment — not a real
+    /// per-agent keypair, an honest reachability patch only).
     pub fn my_author(&self) -> AuthorId {
+        let agent = std::env::var(KAN_AGENT_ENV)
+            .ok()
+            .map(|name| derive_agent_key(&name));
         AuthorId {
             did: self.identity.did(),
-            agent: None,
+            agent,
         }
     }
 
-    /// Trust only this actor's own author — the default for read views
-    /// today, since neither surface writes with an agent key yet. Once
-    /// agent-key support exists, callers needing `PeerContested` will
-    /// construct that `TrustBase` directly rather than through this helper.
+    /// Trust only this exact process's own `AuthorId` (did + current
+    /// `KAN_AGENT`, if any) — the default for every read view today. A
+    /// `KAN_AGENT`-tagged write is only visible back to a read in the same
+    /// `KAN_AGENT` context under this default; a caller wanting to see
+    /// *every* locally-known agent's claims together constructs a
+    /// `PeerContested` `TrustBase` directly rather than through this helper
+    /// (no CLI/MCP surface for that exists yet — v1's real scope is "one
+    /// human, one-or-more local agents" with no second human to weigh
+    /// against, `fold::trust`'s own doc comment).
     pub fn solo_trust(&self) -> TrustBase {
         TrustBase::solo(self.my_author())
     }
