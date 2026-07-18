@@ -350,6 +350,17 @@ pub fn show(ws: &Workspace, subject: &str) -> Result<String, Error> {
                     "{subject} (merged with {:?}):\n",
                     subject_view.subjects
                 ));
+                // REQ-19/AC-11: name at least one witness (author +
+                // direction), not just the flat merged subject list —
+                // `docs/SPEC.md` §4.3's "never silently promote a long weak
+                // chain to strict identity" needs the witness itself
+                // visible, not just its conclusion.
+                for w in &subject_view.witnesses {
+                    out.push_str(&format!(
+                        "  merged by {:?}: {:?} -> {:?}  ({})\n",
+                        w.author, w.from, w.to, w.claim_cid
+                    ));
+                }
             }
             if subject_view.flagged_oversized {
                 out.push_str(
@@ -368,9 +379,58 @@ pub fn show(ws: &Workspace, subject: &str) -> Result<String, Error> {
                     claim.content.body
                 ));
             }
+            let related = related_subjects_by_file(&view, subject_view, &ws.git);
+            if !related.is_empty() {
+                out.push_str(&format!("  related subjects (same file): {related:?}\n"));
+            }
         }
     }
     Ok(out)
+}
+
+/// REQ-20: subjects sharing a `GitSameFile` edge with `subject_view`, via
+/// any of their claims — minimal scope, a read-only surfacing of
+/// already-computed data, not a new ranking/scoring mechanism.
+/// `relations::compute_default` only sees edges within the claim slice it's
+/// given, and a same-file relation is inherently cross-subject, so this
+/// runs it over every live claim in `view` (not just `subject_view`'s own),
+/// then keeps only edges that cross from `subject_view` into some other
+/// class.
+fn related_subjects_by_file(
+    view: &FoldedView,
+    subject_view: &SubjectView,
+    git: &crate::git::GitSubstrate,
+) -> std::collections::BTreeSet<String> {
+    let all_claims: Vec<(Cid, crate::claim::Claim)> = view
+        .classes
+        .iter()
+        .flat_map(|c| c.claims.iter().cloned())
+        .collect();
+    let edges = relations::compute_default(&all_claims, git);
+    let mine: std::collections::HashSet<&Cid> =
+        subject_view.claims.iter().map(|(cid, _)| cid).collect();
+
+    let mut related = std::collections::BTreeSet::new();
+    for edge in &edges {
+        if edge.kind != relations::ComputedEdgeKind::SameFile {
+            continue;
+        }
+        let other = match (mine.contains(&edge.from), mine.contains(&edge.to)) {
+            (true, false) => &edge.to,
+            (false, true) => &edge.from,
+            _ => continue,
+        };
+        if let Some(owner) = view
+            .classes
+            .iter()
+            .find(|c| c.claims.iter().any(|(cid, _)| cid == other))
+        {
+            if owner.subjects != subject_view.subjects {
+                related.insert(format!("{:?}", owner.subjects));
+            }
+        }
+    }
+    related
 }
 
 /// One subject's (or every subject's) `Settled | Confirmed | Contested`

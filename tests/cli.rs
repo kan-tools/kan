@@ -205,6 +205,57 @@ fn same_merges_two_subjects_into_one_view() {
     assert!(show_out.contains("reported by a user"));
 }
 
+/// AC-11: `kan show` on a merged subject names at least one witness
+/// (author + direction), not just the flat merged subject list.
+#[test]
+fn show_on_a_merged_subject_names_a_witness() {
+    let dir = git_repo();
+    kan(dir.path(), &["observe", "x", "--subject", "bug-42"]);
+    kan(dir.path(), &["observe", "y", "--subject", "issue-7"]);
+    kan(dir.path(), &["same", "bug-42", "issue-7"]);
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("merged by"));
+    assert!(show_out.contains("did:key:"));
+    assert!(show_out.contains("bug-42"));
+    assert!(show_out.contains("issue-7"));
+}
+
+/// AC-12: `kan show` on a subject sharing a file-anchor with another
+/// subject lists it as related.
+#[test]
+fn show_lists_a_subject_sharing_a_file_anchor_as_related() {
+    let dir = git_repo();
+    kan(
+        dir.path(),
+        &[
+            "observe",
+            "x",
+            "--subject",
+            "bug-42",
+            "--file",
+            "src/foo.rs",
+        ],
+    );
+    kan(
+        dir.path(),
+        &[
+            "observe",
+            "y",
+            "--subject",
+            "issue-7",
+            "--file",
+            "src/foo.rs",
+        ],
+    );
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("related subjects (same file)"));
+    assert!(show_out.contains("issue-7"));
+}
+
 /// AC-1: `kan resolve` produces two claims (a `Resolution` and a
 /// `Status{Resolved}` citing it) and `kan status` reflects the settled
 /// resolved state.
