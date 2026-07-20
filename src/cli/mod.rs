@@ -83,6 +83,14 @@ pub enum Command {
         /// `path` or `path:start-end`.
         #[arg(long)]
         file: Option<String>,
+        /// Declares the subject (ClaimBody::Subject) alongside this claim —
+        /// requires `--kind` too.
+        #[arg(long)]
+        title: Option<String>,
+        /// Declares the subject's kind alongside this claim — requires
+        /// `--title` too.
+        #[arg(long)]
+        kind: Option<SubjectKindArg>,
         /// Print a human-readable confirmation instead of the bare CID.
         #[arg(long, short)]
         verbose: bool,
@@ -96,6 +104,14 @@ pub enum Command {
         /// `path` or `path:start-end`.
         #[arg(long)]
         file: Option<String>,
+        /// Declares the subject (ClaimBody::Subject) alongside this claim —
+        /// requires `--kind` too.
+        #[arg(long)]
+        title: Option<String>,
+        /// Declares the subject's kind alongside this claim — requires
+        /// `--title` too.
+        #[arg(long)]
+        kind: Option<SubjectKindArg>,
         /// Print a human-readable confirmation instead of the bare CID.
         #[arg(long, short)]
         verbose: bool,
@@ -207,6 +223,25 @@ impl From<RelationKindArg> for crate::claim::RelationKind {
     }
 }
 
+/// Mirrors `claim::SubjectKind`. Kept as a separate CLI-layer type for the
+/// same reason `StatusValueArg`/`RelationKindArg` are.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum SubjectKindArg {
+    Issue,
+    Idea,
+    Question,
+}
+
+impl From<SubjectKindArg> for crate::claim::SubjectKind {
+    fn from(value: SubjectKindArg) -> Self {
+        match value {
+            SubjectKindArg::Issue => Self::Issue,
+            SubjectKindArg::Idea => Self::Idea,
+            SubjectKindArg::Question => Self::Question,
+        }
+    }
+}
+
 #[derive(Debug, clap::Args)]
 pub struct NarrativeArgs {
     pub text: String,
@@ -220,6 +255,14 @@ pub struct NarrativeArgs {
     /// `path` or `path:start-end`.
     #[arg(long)]
     pub file: Option<String>,
+    /// Declares the subject (ClaimBody::Subject) alongside this claim —
+    /// requires `--kind` too.
+    #[arg(long)]
+    pub title: Option<String>,
+    /// Declares the subject's kind alongside this claim — requires
+    /// `--title` too.
+    #[arg(long)]
+    pub kind: Option<SubjectKindArg>,
     /// Print a human-readable confirmation instead of the bare CID.
     #[arg(long, short)]
     pub verbose: bool,
@@ -245,21 +288,45 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
     match cli.command {
         Command::Observe(args) => {
             let verbose = args.verbose;
-            let result =
-                actions::observe(&mut ws, args.text, args.subject, args.cites, args.file).await?;
-            print_result(&result, verbose);
+            let result = actions::observe(
+                &mut ws,
+                args.text,
+                args.subject,
+                args.cites,
+                args.file,
+                args.title,
+                args.kind.map(Into::into),
+            )
+            .await?;
+            print_narrative_result(&result, verbose);
         }
         Command::Plan(args) => {
             let verbose = args.verbose;
-            let result =
-                actions::plan(&mut ws, args.text, args.subject, args.cites, args.file).await?;
-            print_result(&result, verbose);
+            let result = actions::plan(
+                &mut ws,
+                args.text,
+                args.subject,
+                args.cites,
+                args.file,
+                args.title,
+                args.kind.map(Into::into),
+            )
+            .await?;
+            print_narrative_result(&result, verbose);
         }
         Command::Decide(args) => {
             let verbose = args.verbose;
-            let result =
-                actions::decide(&mut ws, args.text, args.subject, args.cites, args.file).await?;
-            print_result(&result, verbose);
+            let result = actions::decide(
+                &mut ws,
+                args.text,
+                args.subject,
+                args.cites,
+                args.file,
+                args.title,
+                args.kind.map(Into::into),
+            )
+            .await?;
+            print_narrative_result(&result, verbose);
         }
         Command::Show { subject } => print!("{}", actions::show(&ws, &subject)?),
         Command::Status { subject } => print!("{}", actions::status(&ws, subject.as_deref())?),
@@ -289,18 +356,32 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             text,
             cites,
             file,
+            title,
+            kind,
             verbose,
         } => {
-            let result = actions::resolve(&mut ws, &subject, &text, cites, file).await?;
+            let result = actions::resolve(
+                &mut ws,
+                &subject,
+                &text,
+                cites,
+                file,
+                title,
+                kind.map(Into::into),
+            )
+            .await?;
             print_paired_result(&result, verbose);
         }
         Command::Block {
             subject,
             text,
             file,
+            title,
+            kind,
             verbose,
         } => {
-            let result = actions::block(&mut ws, &subject, &text, file).await?;
+            let result =
+                actions::block(&mut ws, &subject, &text, file, title, kind.map(Into::into)).await?;
             print_paired_result(&result, verbose);
         }
         Command::Retract { cid, file, verbose } => {
@@ -337,6 +418,17 @@ fn print_result(result: &actions::AppendResult, verbose: bool) {
         println!("{}", result.confirmation());
     } else {
         println!("{}", result.cid);
+    }
+}
+
+/// Bare-CID default is the narrative claim's CID only, matching
+/// `print_paired_result`'s convention — REQ-7's optional `Subject` claim
+/// only shows up under `--verbose`.
+fn print_narrative_result(result: &actions::NarrativeResult, verbose: bool) {
+    if verbose {
+        println!("{}", result.confirmation());
+    } else {
+        println!("{}", result.narrative.cid);
     }
 }
 
