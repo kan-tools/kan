@@ -339,6 +339,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
     match cli.command {
         Command::Observe(args) => {
             let verbose = args.verbose;
+            print_naming_warnings(subject_warnings(&ws, args.subject.as_deref())?);
             let result = actions::observe(
                 &mut ws,
                 args.text,
@@ -354,6 +355,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Plan(args) => {
             let verbose = args.verbose;
+            print_naming_warnings(subject_warnings(&ws, args.subject.as_deref())?);
             let result = actions::plan(
                 &mut ws,
                 args.text,
@@ -369,6 +371,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Decide(args) => {
             let verbose = args.verbose;
+            print_naming_warnings(subject_warnings(&ws, args.subject.as_deref())?);
             let result = actions::decide(
                 &mut ws,
                 args.text,
@@ -391,6 +394,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             file,
             verbose,
         } => {
+            print_naming_warnings(actions::warn_similar_subjects(&ws, &[&a, &b])?);
             let result = actions::same(&mut ws, &a, &b, cites, file).await?;
             print_result(&result, verbose);
         }
@@ -402,6 +406,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             file,
             verbose,
         } => {
+            print_naming_warnings(actions::warn_similar_subjects(&ws, &[&a, &b])?);
             let result = actions::relate(&mut ws, &a, kind.into(), &b, cites, file).await?;
             print_result(&result, verbose);
         }
@@ -414,6 +419,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             kind,
             verbose,
         } => {
+            print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::resolve(
                 &mut ws,
                 &subject,
@@ -436,6 +442,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             kind,
             verbose,
         } => {
+            print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::result(
                 &mut ws,
                 &subject,
@@ -457,6 +464,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             kind,
             verbose,
         } => {
+            print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result =
                 actions::block(&mut ws, &subject, &text, file, title, kind.map(Into::into)).await?;
             print_paired_result(&result, verbose);
@@ -475,6 +483,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             file,
             verbose,
         } => {
+            print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::mark(&mut ws, &subject, value.into(), file).await?;
             print_result(&result, verbose);
         }
@@ -488,6 +497,25 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         Command::Mcp { .. } => unreachable!("handled above"),
     }
     Ok(())
+}
+
+/// `actions::warn_similar_subjects` for a single candidate — `None` skips
+/// the check entirely (REQ-6/7): a caller who didn't explicitly type a
+/// subject (`observe`/`plan`/`decide`'s default-to-`"general"` case) never
+/// typed anything that could be a naming-variant typo in the first place.
+fn subject_warnings(ws: &Workspace, candidate: Option<&str>) -> Result<Vec<String>, Error> {
+    match candidate {
+        Some(c) => Ok(actions::warn_similar_subjects(ws, &[c])?),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// REQ-8: printed to stderr, never blocking — the write proceeds
+/// regardless, and stdout's bare-CID default is unaffected.
+fn print_naming_warnings(warnings: Vec<String>) {
+    for warning in warnings {
+        eprintln!("warning: {warning}");
+    }
 }
 
 fn print_result(result: &actions::AppendResult, verbose: bool) {

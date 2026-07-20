@@ -76,6 +76,29 @@ fn open_error(e: crate::workspace::Error) -> ErrorData {
     ErrorData::internal_error(e.to_string(), None)
 }
 
+/// `actions::warn_similar_subjects` for a single candidate (issue #47,
+/// REQ-6/7) — `None` skips the check entirely, the same reasoning
+/// `cli::subject_warnings` uses.
+fn subject_warnings(ws: &Workspace, candidate: Option<&str>) -> Result<Vec<String>, ErrorData> {
+    match candidate {
+        Some(c) => actions::warn_similar_subjects(ws, &[c]).map_err(to_error),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// REQ-8: appended as extra lines to the confirmation text MCP write tools
+/// already return — unlike the CLI's stderr channel, MCP has no side
+/// channel separate from the tool's own response, so the warning has to
+/// ride in the same string.
+fn append_warnings(mut confirmation: String, warnings: Vec<String>) -> String {
+    for warning in warnings {
+        confirmation.push('\n');
+        confirmation.push_str("warning: ");
+        confirmation.push_str(&warning);
+    }
+    confirmation
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 struct NarrativeParams {
     /// The text of the claim.
@@ -319,11 +342,12 @@ impl KanServer {
     async fn observe(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
+        let warnings = subject_warnings(&ws, p.subject.as_deref())?;
         actions::observe(
             &mut ws, p.text, p.subject, p.cites, p.file, p.status, p.title, p.kind,
         )
         .await
-        .map(|r| r.confirmation())
+        .map(|r| append_warnings(r.confirmation(), warnings))
         .map_err(to_error)
     }
 
@@ -331,11 +355,12 @@ impl KanServer {
     async fn plan(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
+        let warnings = subject_warnings(&ws, p.subject.as_deref())?;
         actions::plan(
             &mut ws, p.text, p.subject, p.cites, p.file, p.status, p.title, p.kind,
         )
         .await
-        .map(|r| r.confirmation())
+        .map(|r| append_warnings(r.confirmation(), warnings))
         .map_err(to_error)
     }
 
@@ -343,11 +368,12 @@ impl KanServer {
     async fn decide(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
+        let warnings = subject_warnings(&ws, p.subject.as_deref())?;
         actions::decide(
             &mut ws, p.text, p.subject, p.cites, p.file, p.status, p.title, p.kind,
         )
         .await
-        .map(|r| r.confirmation())
+        .map(|r| append_warnings(r.confirmation(), warnings))
         .map_err(to_error)
     }
 
@@ -357,9 +383,10 @@ impl KanServer {
     async fn block(&self, params: Parameters<BlockParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
+        let warnings = subject_warnings(&ws, Some(&p.subject))?;
         actions::block(&mut ws, &p.subject, &p.text, p.file, p.title, p.kind)
             .await
-            .map(|r| r.confirmation())
+            .map(|r| append_warnings(r.confirmation(), warnings))
             .map_err(to_error)
     }
 
@@ -369,11 +396,12 @@ impl KanServer {
     async fn resolve(&self, params: Parameters<ResolveParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
+        let warnings = subject_warnings(&ws, Some(&p.subject))?;
         actions::resolve(
             &mut ws, &p.subject, &p.text, p.cites, p.file, p.title, p.kind,
         )
         .await
-        .map(|r| r.confirmation())
+        .map(|r| append_warnings(r.confirmation(), warnings))
         .map_err(to_error)
     }
 
@@ -383,11 +411,12 @@ impl KanServer {
     async fn result(&self, params: Parameters<ResultParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
+        let warnings = subject_warnings(&ws, Some(&p.subject))?;
         actions::result(
             &mut ws, &p.subject, &p.text, p.cites, p.file, p.status, p.title, p.kind,
         )
         .await
-        .map(|r| r.confirmation())
+        .map(|r| append_warnings(r.confirmation(), warnings))
         .map_err(to_error)
     }
 
@@ -395,9 +424,10 @@ impl KanServer {
     async fn same(&self, params: Parameters<SameParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
+        let warnings = actions::warn_similar_subjects(&ws, &[&p.a, &p.b]).map_err(to_error)?;
         actions::same(&mut ws, &p.a, &p.b, p.cites, p.file)
             .await
-            .map(|r| r.confirmation())
+            .map(|r| append_warnings(r.confirmation(), warnings))
             .map_err(to_error)
     }
 
@@ -407,9 +437,10 @@ impl KanServer {
     async fn relate(&self, params: Parameters<RelateParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
+        let warnings = actions::warn_similar_subjects(&ws, &[&p.a, &p.b]).map_err(to_error)?;
         actions::relate(&mut ws, &p.a, p.kind.into(), &p.b, p.cites, p.file)
             .await
-            .map(|r| r.confirmation())
+            .map(|r| append_warnings(r.confirmation(), warnings))
             .map_err(to_error)
     }
 
@@ -441,9 +472,10 @@ impl KanServer {
     async fn mark(&self, params: Parameters<MarkParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
+        let warnings = subject_warnings(&ws, Some(&p.subject))?;
         actions::mark(&mut ws, &p.subject, p.value, p.file)
             .await
-            .map(|r| r.confirmation())
+            .map(|r| append_warnings(r.confirmation(), warnings))
             .map_err(to_error)
     }
 

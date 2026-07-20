@@ -412,3 +412,108 @@ async fn ac10_resource_template_lists_and_reads_a_subjects_claims() {
     drop(stdin);
     let _ = child.kill().await;
 }
+
+/// REQ-8: the subject-naming nudge (issue #47) appends a warning line to
+/// the MCP confirmation text rather than blocking the write -- MCP has no
+/// stderr side channel the way the CLI does, so the warning has to ride in
+/// the same string the tool call returns.
+#[tokio::test]
+async fn naming_nudge_appends_a_warning_to_the_confirmation_text() {
+    let dir = git_repo();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
+        .arg("mcp")
+        .current_dir(dir.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("failed to spawn kan mcp");
+
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+
+    let send = |v: Value| serde_json::to_string(&v).unwrap() + "\n";
+    let mut recv_line = String::new();
+    macro_rules! recv {
+        () => {{
+            recv_line.clear();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                stdout.read_line(&mut recv_line),
+            )
+            .await
+            .expect("timed out waiting for kan mcp response")
+            .expect("failed to read from kan mcp stdout");
+            serde_json::from_str::<Value>(&recv_line).expect("response was not valid JSON")
+        }};
+    }
+
+    stdin
+        .write_all(
+            send(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "naming-nudge-test", "version": "0.0.1"}
+                }
+            }))
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    recv!();
+    stdin
+        .write_all(
+            send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"})).as_bytes(),
+        )
+        .await
+        .unwrap();
+
+    stdin
+        .write_all(
+            send(json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "observe",
+                    "arguments": {"text": "x", "subject": "f1-c1"}
+                }
+            }))
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    recv!();
+
+    stdin
+        .write_all(
+            send(json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "observe",
+                    "arguments": {"text": "y", "subject": "F1-C1"}
+                }
+            }))
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let call = recv!();
+    assert_eq!(call["result"]["isError"], false);
+    let text = call["result"]["content"][0]["text"]
+        .as_str()
+        .expect("observe tool should return confirmation text");
+    assert!(text.contains("f1-c1"));
+    assert!(text.contains("F1-C1"));
+
+    drop(stdin);
+    let _ = child.kill().await;
+}

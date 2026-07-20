@@ -597,6 +597,59 @@ pub async fn reject(
     append(ws, subject, body, vec![], file).await
 }
 
+/// Case/separator-normalized comparison key for a subject rkey (issue #47,
+/// `.design/v0.4-milestone.md` REQ-6) — `-`/`_`/whitespace stripped, case
+/// folded, so `f1-c1`/`F1-C1`/`f1_c1` all collapse to the same key. Cheap,
+/// zero-new-dependency, deliberately not edit-distance/typo-tolerant (see
+/// ADR-38): the one concrete failure mode reported is a naming-variant
+/// fork, not a typo.
+fn normalize_subject_name(s: &str) -> String {
+    s.chars()
+        .filter(|c| *c != '-' && *c != '_' && !c.is_whitespace())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+/// A non-blocking nudge (REQ-7/8): for each `candidates` subject name about
+/// to be written, checks it against every existing *live* subject's exact
+/// literal spelling. A normalized match against a *different* literal
+/// spelling — e.g. writing `F1-C1` when `f1-c1` already exists — returns a
+/// warning line naming both, so a caller can surface it (CLI: stderr; MCP:
+/// appended to the confirmation text) without ever blocking the write
+/// (affordance not enforcement, `CLAUDE.md`). Called with the pre-write
+/// state, from the CLI/MCP dispatch layer rather than from inside
+/// `append()` itself, since `same`/`relate` need to check two candidate
+/// names (`a` and `b`) against one shared view, not one.
+pub fn warn_similar_subjects(ws: &Workspace, candidates: &[&str]) -> Result<Vec<String>, Error> {
+    let claims = ws.index.all_stored_claims()?;
+    let view = fold::fold(claims, &ws.solo_trust());
+    let existing: Vec<&Rkey> = view
+        .classes
+        .iter()
+        .flat_map(|c| &c.subjects)
+        .filter_map(|s| match s {
+            SubjectRef::Local(rkey) => Some(rkey),
+            SubjectRef::Anchor(_) => None,
+        })
+        .collect();
+
+    let mut warnings = Vec::new();
+    for candidate in candidates {
+        let normalized_candidate = normalize_subject_name(candidate);
+        for existing_name in &existing {
+            if existing_name.as_str() != *candidate
+                && normalize_subject_name(existing_name) == normalized_candidate
+            {
+                warnings.push(format!(
+                    "\"{candidate}\" looks similar to existing subject \"{existing_name}\" \
+                     -- did you mean that instead?"
+                ));
+            }
+        }
+    }
+    Ok(warnings)
+}
+
 /// A single subject's live claims, rendered — `fold` + `render` for one
 /// subject (`docs/SPEC.md` §9's "decategorify only at render").
 pub fn show(ws: &Workspace, subject: &str) -> Result<String, Error> {
