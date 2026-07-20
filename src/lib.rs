@@ -13,4 +13,5 @@ pub mod mcp;
 pub mod relations;
 pub mod sign;
 pub mod store;
+pub mod transport;
 pub mod workspace;
