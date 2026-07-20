@@ -74,6 +74,7 @@ pub fn render_claim(claim: &Claim) -> String {
         ClaimBody::Status { value } => format!("{value:?}"),
         ClaimBody::Relation { kind, target } => format!("{kind:?} {target:?}"),
         ClaimBody::Retraction { supersedes } => format!("supersedes {supersedes}"),
+        ClaimBody::Rejects { claim } => format!("rejects {claim}"),
     };
     format!("[{subject}] {kind:?}: {detail}")
 }
@@ -84,7 +85,7 @@ fn kind_value(kind: ClaimKind) -> i64 {
         ClaimKind::Decision | ClaimKind::Blocker | ClaimKind::Resolution => 4,
         ClaimKind::Plan | ClaimKind::Result => 3,
         ClaimKind::Observation | ClaimKind::Subject | ClaimKind::Relation => 2,
-        ClaimKind::Retraction => 1,
+        ClaimKind::Retraction | ClaimKind::Rejects => 1,
     }
 }
 

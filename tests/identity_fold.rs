@@ -378,6 +378,171 @@ async fn sameas_touching_an_anchor_is_not_honored() {
     assert!(!bug42.subjects.contains(&anchor));
 }
 
+/// AC-5 (first half): a `Rejects` claim from an author the viewing
+/// `TrustBase` trusts excludes the target claim from that viewer's fold.
+#[tokio::test]
+async fn rejects_claim_excluded_when_viewer_trusts_the_rejecter() {
+    let dir = tempfile::tempdir().unwrap();
+    let owner = Identity::generate();
+    let owner_author = AuthorId {
+        did: owner.did(),
+        agent: None,
+    };
+    let stranger = Identity::generate();
+    let stranger_author = AuthorId {
+        did: stranger.did(),
+        agent: None,
+    };
+
+    let mut log = Log::open_or_create(&dir.path().join("log"), &owner)
+        .await
+        .unwrap();
+    let original = log
+        .append(
+            content(&owner_author, "bug-42", observation("owner's claim")),
+            &owner,
+        )
+        .await
+        .unwrap();
+    log.append(
+        content(
+            &stranger_author,
+            "bug-42",
+            ClaimBody::Rejects {
+                claim: original.clone(),
+            },
+        ),
+        &stranger,
+    )
+    .await
+    .unwrap();
+
+    let claims = log.iter_all().await.unwrap();
+    let trust = TrustBase::PeerContested {
+        weights: HashMap::from([(owner_author, 1.0), (stranger_author, 1.0)]),
+    };
+    let view = fold::fold(claims, &trust);
+
+    let bug42 = view
+        .subject(&SubjectRef::Local("bug-42".to_string()))
+        .unwrap();
+    let live_cids: Vec<_> = bug42.claims.iter().map(|(cid, _)| cid.clone()).collect();
+    assert!(
+        !live_cids.contains(&original),
+        "a Rejects claim from a trusted author must exclude its target"
+    );
+}
+
+/// AC-5 (second half): the same `Rejects` claim, from an author the viewing
+/// `TrustBase` does *not* trust, leaves the target claim live.
+#[tokio::test]
+async fn rejects_claim_from_untrusted_author_is_not_honored() {
+    let dir = tempfile::tempdir().unwrap();
+    let owner = Identity::generate();
+    let owner_author = AuthorId {
+        did: owner.did(),
+        agent: None,
+    };
+    let stranger = Identity::generate();
+    let stranger_author = AuthorId {
+        did: stranger.did(),
+        agent: None,
+    };
+
+    let mut log = Log::open_or_create(&dir.path().join("log"), &owner)
+        .await
+        .unwrap();
+    let original = log
+        .append(
+            content(&owner_author, "bug-42", observation("owner's claim")),
+            &owner,
+        )
+        .await
+        .unwrap();
+    log.append(
+        content(
+            &stranger_author,
+            "bug-42",
+            ClaimBody::Rejects {
+                claim: original.clone(),
+            },
+        ),
+        &stranger,
+    )
+    .await
+    .unwrap();
+
+    let claims = log.iter_all().await.unwrap();
+    let trust = TrustBase::solo(owner_author);
+    let view = fold::fold(claims, &trust);
+
+    let bug42 = view
+        .subject(&SubjectRef::Local("bug-42".to_string()))
+        .unwrap();
+    let live_cids: Vec<_> = bug42.claims.iter().map(|(cid, _)| cid.clone()).collect();
+    assert!(
+        live_cids.contains(&original),
+        "a Rejects claim from an untrusted author must not exclude its target"
+    );
+}
+
+/// REQ-6: a rejected `SameAs` witness must also stop contributing to
+/// identity computation for a viewer who trusts the rejecter — the same
+/// threading point `excluded_by_retraction` already has in `merge_classes`.
+#[tokio::test]
+async fn rejected_sameas_witness_does_not_merge_when_rejecter_is_trusted() {
+    let dir = tempfile::tempdir().unwrap();
+    let owner = Identity::generate();
+    let owner_author = AuthorId {
+        did: owner.did(),
+        agent: None,
+    };
+    let stranger = Identity::generate();
+    let stranger_author = AuthorId {
+        did: stranger.did(),
+        agent: None,
+    };
+
+    let mut log = Log::open_or_create(&dir.path().join("log"), &owner)
+        .await
+        .unwrap();
+    log.append(
+        content(&owner_author, "bug-42", observation("owner's claim")),
+        &owner,
+    )
+    .await
+    .unwrap();
+    let same_as_cid = log
+        .append(content(&owner_author, "bug-42", same_as("issue-7")), &owner)
+        .await
+        .unwrap();
+    log.append(
+        content(
+            &stranger_author,
+            "bug-42",
+            ClaimBody::Rejects { claim: same_as_cid },
+        ),
+        &stranger,
+    )
+    .await
+    .unwrap();
+
+    let claims = log.iter_all().await.unwrap();
+    let trust = TrustBase::PeerContested {
+        weights: HashMap::from([(owner_author, 1.0), (stranger_author, 1.0)]),
+    };
+    let view = fold::fold(claims, &trust);
+
+    let bug42 = view
+        .subject(&SubjectRef::Local("bug-42".to_string()))
+        .unwrap();
+    assert_eq!(
+        bug42.subjects,
+        vec![SubjectRef::Local("bug-42".to_string())],
+        "a rejected SameAs witness (rejecter trusted) must not merge the subjects"
+    );
+}
+
 #[tokio::test]
 async fn oversized_component_is_flagged() {
     let dir = tempfile::tempdir().unwrap();

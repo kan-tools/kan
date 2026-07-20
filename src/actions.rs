@@ -32,8 +32,12 @@ pub enum Error {
     InvalidCid(String, atproto_dasl::DecodeError),
     #[error("no such claim: {0}")]
     UnknownClaim(Cid),
-    #[error("you can't retract another author's claim ({0}, authored by someone else)")]
+    #[error(
+        "you can't retract another author's claim ({0}, authored by someone else) -- use `kan reject` instead"
+    )]
     NotYourClaim(Cid),
+    #[error("you can't reject your own claim ({0}) -- use `kan retract` instead")]
+    CantRejectOwnClaim(Cid),
 }
 
 const GENERAL_SUBJECT: &str = "general";
@@ -216,6 +220,28 @@ pub async fn same(
     append(ws, SubjectRef::Local(Rkey::from(a)), body, cites, file).await
 }
 
+/// A domain-semantic edge between two subjects (`docs/SPEC.md` §6):
+/// `ClaimBody::Relation { kind, target: b }` for any of REQ-1's 5
+/// non-identity `RelationKind`s. `SameAs` stays `kan same`'s alone (REQ-2) —
+/// the CLI/MCP layers are what actually keep it out of reach here (this
+/// function itself doesn't re-check `kind`, since every caller already
+/// narrows to the 5 non-identity kinds at the argument-parsing boundary).
+pub async fn relate(
+    ws: &mut Workspace,
+    a: &str,
+    kind: RelationKind,
+    b: &str,
+    cites: Vec<String>,
+    file: Option<String>,
+) -> Result<AppendResult, Error> {
+    let cites = parse_cids(cites)?;
+    let body = ClaimBody::Relation {
+        kind,
+        target: SubjectRef::Local(Rkey::from(b)),
+    };
+    append(ws, SubjectRef::Local(Rkey::from(a)), body, cites, file).await
+}
+
 /// Asserts a subject is resolved: writes `ClaimBody::Resolution` (a
 /// narrative claim — the fold never needs to reduce or contest it) plus
 /// `ClaimBody::Status { value: Resolved }` (the structural, poset-classified
@@ -331,6 +357,35 @@ pub async fn retract(
     let body = ClaimBody::Retraction {
         supersedes: target_cid,
     };
+    append(ws, subject, body, vec![], file).await
+}
+
+/// Writes `ClaimBody::Rejects { claim: cid }` — a cross-author suppression
+/// (`docs/SPEC.md` §8, ADR-29), honored only by folds whose `TrustBase`
+/// trusts the rejecter (`fold::identity::excluded_by_rejection`). Checks the
+/// target's author does *not* match the caller's own `AuthorId` before
+/// writing — `retract`'s check in reverse: no single call should have two
+/// possible fold-time meanings depending on facts the caller may not track
+/// (REQ-5), so `reject`ing your own claim is a clear write-time error
+/// pointing at `kan retract`, not a silent dispatch to it.
+pub async fn reject(
+    ws: &mut Workspace,
+    cid: &str,
+    file: Option<String>,
+) -> Result<AppendResult, Error> {
+    let target_cid: Cid = cid
+        .parse()
+        .map_err(|e| Error::InvalidCid(cid.to_string(), e))?;
+    let target = ws
+        .log
+        .get_stored(target_cid.clone())
+        .await?
+        .ok_or_else(|| Error::UnknownClaim(target_cid.clone()))?;
+    if target.claim.content.author == ws.my_author() {
+        return Err(Error::CantRejectOwnClaim(target_cid));
+    }
+    let subject = target.claim.content.subject.clone();
+    let body = ClaimBody::Rejects { claim: target_cid };
     append(ws, subject, body, vec![], file).await
 }
 
