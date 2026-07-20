@@ -1419,3 +1419,65 @@ with comments pointing at the merging PRs, matching the v0.2/v0.3 pattern
 feedback, including an explicit note that the structured-data point
 raised there is a real, unresolved, bigger question deliberately not
 addressed by this release.
+
+## ADR-40 — Transport trait matches Log::append's real shape, not SPEC.md §10's pseudocode
+**Date:** 2026-07-20
+**Decision:** `src/transport.rs`'s `trait Transport` (`.design/v0.5-milestone.md`,
+sync staging Milestone 0) adapts `docs/SPEC.md` §10's illustrative `fn
+publish(&self, &[Claim]); fn subscribe(&self, &[Did]) -> Stream<Claim>;`
+sketch into four concrete choices, each checked against real code rather
+than guessed: (1) `publish(&mut self, content: ClaimContent, identity:
+&Identity) -> Result<Cid, Error>` matches `Log::append`'s real single-claim,
+unsigned-content-in shape exactly, not SPEC's batch-of-pre-signed-`Claim`s;
+(2) `subscribe` returns a real `tokio-stream`-backed `ClaimStream`
+(`Pin<Box<dyn Stream<Item = Result<Claim, Error>> + Send>>`), a new minimal
+dependency, rather than a plain `Vec<Claim>`; (3) the stream item is the
+signed `Claim`, not `store::log::StoredClaim` — `rev` is log-internal
+ordering that doesn't belong across the transport boundary; (4)
+`Transport::Error` is its own enum (`#[error(...)] Log(#[from]
+store::log::Error)`), decoupled from `LocalOnly`'s specific backing store so
+`HostedRelay`'s future error variants have somewhere to live without
+`store::log::Error` growing transport-shaped variants. `LocalOnly` wraps
+`store::log::Log` 1:1: `publish` delegates directly to `Log::append`;
+`subscribe` returns `tokio_stream::empty()` — the honest answer for a
+single-author local log, not a stub.
+**Why match `Log::append` instead of SPEC's sketch:** `docs/SPEC.md` §10's
+pseudocode was always illustrative, and `Log::append` is the only thing
+`LocalOnly` — the transport this milestone actually has to implement —
+wraps. Inventing batching or pre-signed-`Claim` input to match the sketch
+literally would give `LocalOnly` a shape it can't honestly implement without
+new `Log` surface nothing in this milestone's requirements asks for.
+**Consequences:** New dependency `tokio-stream = "0.1"` (thin wrapper around
+the same `futures-core::Stream` trait; already adjacent to kan's tokio async
+runtime, `Cargo.toml`'s existing `rt-multi-thread` feature). Zero change to
+`Workspace`/CLI/MCP — `Transport` is additive, wiring deferred to
+`HostedRelay`'s own `/design` pass (Milestone 3 in
+`.design/sync-layer-architecture-and-staging.md`). New tests
+`tests/transport.rs::local_only_publish_matches_log_append_directly` (a
+CID-equivalence proof against direct `Log::append` usage) and
+`::local_only_subscribe_is_honestly_empty`. The trait signature is
+explicitly not meant to be final — `HostedRelay`'s design pass may need to
+widen it once a second real implementation exists to design the wiring
+against.
+
+## ADR-41 — Fifth release: v0.5.0-beta.1
+**Date:** 2026-07-20
+**Decision:** `Cargo.toml`'s version bumps `0.4.0-beta.1` → `0.5.0-beta.1` —
+a minor bump (new backward-compatible functionality: `src/transport.rs`'s
+`Transport` trait + `LocalOnly`, PR #56, ADR-40), staying a semver
+pre-release rather than promoting to stable `0.5.0`, same reasoning as
+ADR-28/34/39. Follows the same branch → PR → merge → tag workflow as the
+prior four releases.
+**Why beta again, not stable:** this milestone touches nothing about the
+on-disk claim log or index format — `Transport`/`LocalOnly` is a new,
+additive seam in front of the already-shipped `Log::append`/`iter_all`, not
+a change to `src/claim.rs`, the CAR/MST format, or `store::index::Index`'s
+schema, so a `v0.4.0-beta.1` `.kan/` directory opens cleanly under `v0.5`
+code with zero migration. The project itself still isn't stable: issue #30
+(real per-agent identity, staged as Milestone 2 in
+`.design/sync-layer-architecture-and-staging.md`) remains open, and this
+release only closes Milestone 0 of ADR-35's sync roadmap — Milestones 1
+(E2EE design, issue #7), 2 (identity, v0.6.0-beta.1), and 3 (`HostedRelay`,
+v0.7.0-beta.1) remain before v1.0.0 is anchored.
+**Consequences:** `cargo publish --dry-run --allow-dirty` confirmed clean
+packaging before tagging.
