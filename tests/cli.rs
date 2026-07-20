@@ -435,6 +435,66 @@ fn reject_refuses_the_callers_own_claim() {
     assert!(err.contains("kan retract"));
 }
 
+/// AC-6: `kan observe bug-42 "fixed" --status resolved` produces two
+/// claims (`Observation` + `Status{Resolved}` citing it) — the same pairing
+/// shape `kan resolve` produces, via a different narrative kind.
+#[test]
+fn observe_status_pairs_a_status_claim_citing_the_narrative() {
+    let dir = git_repo();
+    let (narrative_cid, err, ok) = kan(
+        dir.path(),
+        &[
+            "observe",
+            "fixed",
+            "--subject",
+            "bug-42",
+            "--status",
+            "resolved",
+        ],
+    );
+    assert!(ok, "{err}");
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("2 live claim(s)"));
+    assert!(show_out.contains("Observation"));
+    assert!(show_out.contains("Status"));
+    assert!(show_out.contains("Resolved"));
+    assert!(show_out.contains(&narrative_cid));
+
+    // The default bare-CID output is still the narrative claim's CID.
+    let (status_out, _, ok) = kan(dir.path(), &["status", "bug-42"]);
+    assert!(ok);
+    assert!(status_out.contains("Settled(Resolved)"));
+}
+
+/// `--status` is independent of `--title`/`--kind` -- a single call can
+/// write all three (narrative, status, subject) at once.
+#[test]
+fn plan_status_and_title_kind_together_write_three_claims() {
+    let dir = git_repo();
+    let (_, err, ok) = kan(
+        dir.path(),
+        &[
+            "plan",
+            "add retry logic",
+            "--subject",
+            "bug-42",
+            "--status",
+            "in-progress",
+            "--title",
+            "Bug 42",
+            "--kind",
+            "issue",
+        ],
+    );
+    assert!(ok, "{err}");
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("3 live claim(s)"));
+}
+
 /// AC-7 (success half): `--title`/`--kind` together write an extra
 /// `Subject{title, subject_kind}` claim alongside the narrative claim.
 #[test]

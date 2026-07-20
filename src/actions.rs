@@ -92,26 +92,32 @@ impl PairedAppendResult {
     }
 }
 
-/// A narrative claim (`Observation`/`Plan`/`Decision`) plus REQ-7's optional
-/// `Subject` claim (`--title`/`--kind`) written alongside it. The bare-CID
-/// default (`cli::run`'s scripting-compatible contract) stays the narrative
-/// claim's CID regardless of whether `subject` is present, matching
-/// `PairedAppendResult`'s own convention.
+/// A narrative claim (`Observation`/`Plan`/`Decision`) plus two independent
+/// optional claims that can ride along with it: REQ-7's `Subject` claim
+/// (`--title`/`--kind`) and REQ-9's `Status` claim (`--status`, citing the
+/// narrative claim — the exact pairing `resolve`/`block` hardcode for
+/// `Resolution`/`Blocker`, generalized here to any narrative kind and any
+/// status value). The bare-CID default (`cli::run`'s scripting-compatible
+/// contract) stays the narrative claim's CID regardless of which optional
+/// claims are present, matching `PairedAppendResult`'s own convention.
 pub struct NarrativeResult {
     pub narrative: AppendResult,
+    pub status: Option<AppendResult>,
     pub subject: Option<AppendResult>,
 }
 
 impl NarrativeResult {
     pub fn confirmation(&self) -> String {
-        match &self.subject {
-            Some(subject) => format!(
-                "{}\n{}",
-                self.narrative.confirmation(),
-                subject.confirmation()
-            ),
-            None => self.narrative.confirmation(),
+        let mut out = self.narrative.confirmation();
+        if let Some(status) = &self.status {
+            out.push('\n');
+            out.push_str(&status.confirmation());
         }
+        if let Some(subject) = &self.subject {
+            out.push('\n');
+            out.push_str(&subject.confirmation());
+        }
+        out
     }
 }
 
@@ -150,6 +156,31 @@ async fn maybe_subject_claim(
             .await?,
         )),
         _ => Ok(None),
+    }
+}
+
+/// REQ-9: writes `ClaimBody::Status { value }` citing `narrative_cid` when
+/// `status` is given — the same pairing mechanism `resolve`/`block`
+/// hardcode for `Resolution`→`Resolved`/`Blocker`→`Blocked`, generalized to
+/// any narrative kind and any status value instead of two special cases.
+async fn maybe_status_claim(
+    ws: &mut Workspace,
+    subject: SubjectRef,
+    narrative_cid: Cid,
+    status: Option<StatusValue>,
+) -> Result<Option<AppendResult>, Error> {
+    match status {
+        Some(value) => Ok(Some(
+            append(
+                ws,
+                subject,
+                ClaimBody::Status { value },
+                vec![narrative_cid],
+                None,
+            )
+            .await?,
+        )),
+        None => Ok(None),
     }
 }
 
@@ -225,6 +256,7 @@ async fn narrative(
     subject: Option<String>,
     cites: Vec<String>,
     file: Option<String>,
+    status: Option<StatusValue>,
     title: Option<String>,
     kind: Option<SubjectKind>,
     make_body: impl FnOnce(String) -> ClaimBody,
@@ -235,8 +267,13 @@ async fn narrative(
     ));
     let cites = parse_cids(cites)?;
     let narrative = append(ws, subject_ref.clone(), make_body(text), cites, file).await?;
+    let status = maybe_status_claim(ws, subject_ref.clone(), narrative.cid.clone(), status).await?;
     let subject = maybe_subject_claim(ws, subject_ref, title, kind).await?;
-    Ok(NarrativeResult { narrative, subject })
+    Ok(NarrativeResult {
+        narrative,
+        status,
+        subject,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -246,12 +283,21 @@ pub async fn observe(
     subject: Option<String>,
     cites: Vec<String>,
     file: Option<String>,
+    status: Option<StatusValue>,
     title: Option<String>,
     kind: Option<SubjectKind>,
 ) -> Result<NarrativeResult, Error> {
-    narrative(ws, text, subject, cites, file, title, kind, |text| {
-        ClaimBody::Observation { text }
-    })
+    narrative(
+        ws,
+        text,
+        subject,
+        cites,
+        file,
+        status,
+        title,
+        kind,
+        |text| ClaimBody::Observation { text },
+    )
     .await
 }
 
@@ -262,12 +308,21 @@ pub async fn plan(
     subject: Option<String>,
     cites: Vec<String>,
     file: Option<String>,
+    status: Option<StatusValue>,
     title: Option<String>,
     kind: Option<SubjectKind>,
 ) -> Result<NarrativeResult, Error> {
-    narrative(ws, text, subject, cites, file, title, kind, |text| {
-        ClaimBody::Plan { text }
-    })
+    narrative(
+        ws,
+        text,
+        subject,
+        cites,
+        file,
+        status,
+        title,
+        kind,
+        |text| ClaimBody::Plan { text },
+    )
     .await
 }
 
@@ -278,12 +333,21 @@ pub async fn decide(
     subject: Option<String>,
     cites: Vec<String>,
     file: Option<String>,
+    status: Option<StatusValue>,
     title: Option<String>,
     kind: Option<SubjectKind>,
 ) -> Result<NarrativeResult, Error> {
-    narrative(ws, text, subject, cites, file, title, kind, |text| {
-        ClaimBody::Decision { text }
-    })
+    narrative(
+        ws,
+        text,
+        subject,
+        cites,
+        file,
+        status,
+        title,
+        kind,
+        |text| ClaimBody::Decision { text },
+    )
     .await
 }
 

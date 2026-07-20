@@ -207,30 +207,36 @@ impl KanServer {
     async fn observe(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::observe(&mut ws, p.text, p.subject, p.cites, p.file, None, None)
-            .await
-            .map(|r| r.confirmation())
-            .map_err(to_error)
+        actions::observe(
+            &mut ws, p.text, p.subject, p.cites, p.file, None, None, None,
+        )
+        .await
+        .map(|r| r.confirmation())
+        .map_err(to_error)
     }
 
     #[tool(description = "Record an intended approach (ClaimBody::Plan).")]
     async fn plan(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::plan(&mut ws, p.text, p.subject, p.cites, p.file, None, None)
-            .await
-            .map(|r| r.confirmation())
-            .map_err(to_error)
+        actions::plan(
+            &mut ws, p.text, p.subject, p.cites, p.file, None, None, None,
+        )
+        .await
+        .map(|r| r.confirmation())
+        .map_err(to_error)
     }
 
     #[tool(description = "Record a choice made (ClaimBody::Decision).")]
     async fn decide(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::decide(&mut ws, p.text, p.subject, p.cites, p.file, None, None)
-            .await
-            .map(|r| r.confirmation())
-            .map_err(to_error)
+        actions::decide(
+            &mut ws, p.text, p.subject, p.cites, p.file, None, None, None,
+        )
+        .await
+        .map(|r| r.confirmation())
+        .map_err(to_error)
     }
 
     #[tool(description = "Assert that two subjects are the same (Relation::SameAs).")]
