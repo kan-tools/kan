@@ -245,7 +245,7 @@ async fn append(
     };
     let cid = ws.log.append(content, &ws.identity).await?;
     let claims = ws.log.iter_all().await?;
-    ws.index.rebuild(&claims)?;
+    ws.index.rebuild(&claims, ws.log.current_root().as_ref())?;
     Ok(AppendResult { cid, subject, kind })
 }
 

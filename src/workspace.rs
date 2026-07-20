@@ -73,12 +73,24 @@ impl Workspace {
         let mut log = Log::open_or_create(&kan_dir.join("log"), &identity).await?;
         let mut index = Index::open(&kan_dir.join("index.sqlite"))?;
 
-        // Correctness-first (CLAUDE.md house rules): always rebuild from the
-        // log before use rather than trusting a possibly-stale index.
-        // Fine at today's scale; incremental indexing is a later
-        // optimization once fixtures exist to guard it.
-        let claims = log.iter_all().await?;
-        index.rebuild(&claims)?;
+        // Correctness-first (CLAUDE.md house rules), with one cheap,
+        // provably-safe skip (issue #26, `.design/v0.4-milestone.md`
+        // REQ-5): `Log::current_root` is already resident in memory (no
+        // I/O, no MST walk) from `open_or_create` above. When it matches
+        // what the index was last `rebuild`t from, content-addressing
+        // guarantees the log genuinely hasn't changed a single bit since
+        // then — not "probably fresh," provably fresh — so `iter_all`'s
+        // per-claim signature verification (ADR-13's dominant cost) can be
+        // skipped entirely. Any mismatch (or a fresh/recreated index with
+        // no recorded root yet) falls back to exactly the prior
+        // unconditional full rebuild; incremental *indexing* (partial
+        // updates rather than skip-or-full-rebuild) stays a later
+        // optimization, deliberately not what this is.
+        let current_root = log.current_root();
+        if current_root != index.built_from_root()? {
+            let claims = log.iter_all().await?;
+            index.rebuild(&claims, current_root.as_ref())?;
+        }
 
         let git = GitSubstrate::open(&root)?;
         let anchor = Anchor::Workspace(git.genesis()?);
