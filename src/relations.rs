@@ -4,7 +4,7 @@
 //! `TrustBase` can down-weight or disable a provider later (§6.2) — v1
 //! wires up the providers and their edges but not that down-weighting yet.
 
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use atproto_dasl::Cid;
 
@@ -64,14 +64,18 @@ fn file_of(claim: &Claim) -> Option<&Path> {
 /// Claims anchored to git objects inherit git's DAG ordering (§6.1).
 ///
 /// O(n²) in the number of commit-anchored claims per merge-class, and each
-/// comparison can spawn up to two real `git` subprocesses
+/// distinct commit pair can spawn up to two real `git` subprocesses
 /// (`GitSubstrate::is_ancestor`) — like `fold::identity`'s own recompute
 /// cost, this is a known, accepted v1 characteristic (correctness before
 /// performance, `CLAUDE.md`), not something to silently let scale badly.
-/// Fine at real class sizes (a handful to a few dozen commit-anchored
-/// claims); revisit if a class's claim count grows enough for this to be
-/// felt, e.g. by caching `is_ancestor` results across calls within one
-/// `compute_all` pass rather than only within a single pairwise comparison.
+/// REQ-13 (`.design/v0.3-milestone.md`): `relations` caches `is_ancestor`
+/// results in a `HashMap<(Sha, Sha), bool>` local to the call, since the
+/// same commit pair recurs whenever multiple claims share a commit (a claim
+/// count of `n` over `k` distinct commits still only needs up to `k²`
+/// real subprocess invocations, not `n²`) — the "obvious first
+/// optimization" this doc comment used to name as a future revisit; now
+/// live rather than theoretical (v0.2 populated real artifacts on every
+/// claim).
 pub struct GitAncestry;
 
 impl RelationProvider for GitAncestry {
@@ -80,6 +84,17 @@ impl RelationProvider for GitAncestry {
     }
 
     fn relations(&self, claims: &[(Cid, Claim)], substrate: &GitSubstrate) -> Vec<ComputedEdge> {
+        let mut cache: HashMap<(Sha, Sha), bool> = HashMap::new();
+        let mut is_ancestor = |ancestor: &Sha, descendant: &Sha| -> bool {
+            let key = (ancestor.clone(), descendant.clone());
+            if let Some(&cached) = cache.get(&key) {
+                return cached;
+            }
+            let result = matches!(substrate.is_ancestor(ancestor, descendant), Ok(true));
+            cache.insert(key, result);
+            result
+        };
+
         let mut edges = Vec::new();
         for (i, (cid_a, claim_a)) in claims.iter().enumerate() {
             let Some(sha_a) = commit_of(claim_a) else {
@@ -92,14 +107,14 @@ impl RelationProvider for GitAncestry {
                 if sha_a == sha_b {
                     continue;
                 }
-                if matches!(substrate.is_ancestor(sha_a, sha_b), Ok(true)) {
+                if is_ancestor(sha_a, sha_b) {
                     edges.push(ComputedEdge {
                         from: cid_a.clone(),
                         to: cid_b.clone(),
                         kind: ComputedEdgeKind::Ancestry,
                         provider: self.name(),
                     });
-                } else if matches!(substrate.is_ancestor(sha_b, sha_a), Ok(true)) {
+                } else if is_ancestor(sha_b, sha_a) {
                     edges.push(ComputedEdge {
                         from: cid_b.clone(),
                         to: cid_a.clone(),
