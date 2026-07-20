@@ -207,7 +207,7 @@ impl KanServer {
     async fn observe(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::observe(&mut ws, p.text, p.subject, p.cites, p.file)
+        actions::observe(&mut ws, p.text, p.subject, p.cites, p.file, None, None)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
@@ -217,7 +217,7 @@ impl KanServer {
     async fn plan(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::plan(&mut ws, p.text, p.subject, p.cites, p.file)
+        actions::plan(&mut ws, p.text, p.subject, p.cites, p.file, None, None)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
@@ -227,7 +227,7 @@ impl KanServer {
     async fn decide(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::decide(&mut ws, p.text, p.subject, p.cites, p.file)
+        actions::decide(&mut ws, p.text, p.subject, p.cites, p.file, None, None)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
@@ -249,7 +249,7 @@ impl KanServer {
     async fn resolve(&self, params: Parameters<ResolveParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::resolve(&mut ws, &p.subject, &p.text, p.cites, p.file)
+        actions::resolve(&mut ws, &p.subject, &p.text, p.cites, p.file, None, None)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
@@ -261,7 +261,7 @@ impl KanServer {
     async fn block(&self, params: Parameters<BlockParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::block(&mut ws, &p.subject, &p.text, p.file)
+        actions::block(&mut ws, &p.subject, &p.text, p.file, None, None)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)

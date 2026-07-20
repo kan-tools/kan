@@ -10,7 +10,7 @@ use atproto_dasl::Cid;
 use crate::{
     claim::{
         ArtifactRef, ClaimBody, ClaimContent, ClaimKind, RelationKind, Rkey, Span, StatusValue,
-        SubjectRef,
+        SubjectKind, SubjectRef,
     },
     context::{self, TiktokenEstimator, TokenEstimator},
     fold::{self, state::StateView, FoldedView, SubjectView},
@@ -38,6 +38,8 @@ pub enum Error {
     NotYourClaim(Cid),
     #[error("you can't reject your own claim ({0}) -- use `kan retract` instead")]
     CantRejectOwnClaim(Cid),
+    #[error("--title and --kind must be given together (ClaimBody::Subject needs both)")]
+    TitleKindRequireEachOther,
 }
 
 const GENERAL_SUBJECT: &str = "general";
@@ -66,18 +68,88 @@ impl AppendResult {
 /// claim (`Resolution`/`Blocker`) plus the `Status` claim it's paired with,
 /// `cites`-linked to it. An agent never has to think about "narrative vs.
 /// structural" — resolving/blocking something *is* asserting its status.
+/// `subject` is REQ-7's independent, optional third claim (`--title`/
+/// `--kind` writing `ClaimBody::Subject`) — unrelated to the narrative/status
+/// pairing itself, just riding along on the same call.
 pub struct PairedAppendResult {
     pub narrative: AppendResult,
     pub status: AppendResult,
+    pub subject: Option<AppendResult>,
 }
 
 impl PairedAppendResult {
     pub fn confirmation(&self) -> String {
-        format!(
+        let mut out = format!(
             "{}\n{}",
             self.narrative.confirmation(),
             self.status.confirmation()
-        )
+        );
+        if let Some(subject) = &self.subject {
+            out.push('\n');
+            out.push_str(&subject.confirmation());
+        }
+        out
+    }
+}
+
+/// A narrative claim (`Observation`/`Plan`/`Decision`) plus REQ-7's optional
+/// `Subject` claim (`--title`/`--kind`) written alongside it. The bare-CID
+/// default (`cli::run`'s scripting-compatible contract) stays the narrative
+/// claim's CID regardless of whether `subject` is present, matching
+/// `PairedAppendResult`'s own convention.
+pub struct NarrativeResult {
+    pub narrative: AppendResult,
+    pub subject: Option<AppendResult>,
+}
+
+impl NarrativeResult {
+    pub fn confirmation(&self) -> String {
+        match &self.subject {
+            Some(subject) => format!(
+                "{}\n{}",
+                self.narrative.confirmation(),
+                subject.confirmation()
+            ),
+            None => self.narrative.confirmation(),
+        }
+    }
+}
+
+/// REQ-7: `--title`/`--kind` are required together, checked *before* any
+/// claim is written (a call site validates with this before its own
+/// `append` calls) — `ClaimBody::Subject`'s two fields are both
+/// non-optional, so there's no sensible partial write.
+fn validate_title_kind(title: &Option<String>, kind: &Option<SubjectKind>) -> Result<(), Error> {
+    if title.is_some() != kind.is_some() {
+        return Err(Error::TitleKindRequireEachOther);
+    }
+    Ok(())
+}
+
+/// Writes `ClaimBody::Subject { title, subject_kind }` when both are given
+/// (validated by `validate_title_kind` at the call site's entry, so by the
+/// time this runs the only possibilities are "both" or "neither").
+async fn maybe_subject_claim(
+    ws: &mut Workspace,
+    subject: SubjectRef,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
+) -> Result<Option<AppendResult>, Error> {
+    match (title, kind) {
+        (Some(title), Some(subject_kind)) => Ok(Some(
+            append(
+                ws,
+                subject,
+                ClaimBody::Subject {
+                    title,
+                    subject_kind,
+                },
+                vec![],
+                None,
+            )
+            .await?,
+        )),
+        _ => Ok(None),
     }
 }
 
@@ -146,56 +218,71 @@ async fn append(
     Ok(AppendResult { cid, subject, kind })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn narrative(
     ws: &mut Workspace,
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
     file: Option<String>,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
     make_body: impl FnOnce(String) -> ClaimBody,
-) -> Result<AppendResult, Error> {
-    let subject = SubjectRef::Local(Rkey::from(
+) -> Result<NarrativeResult, Error> {
+    validate_title_kind(&title, &kind)?;
+    let subject_ref = SubjectRef::Local(Rkey::from(
         subject.unwrap_or_else(|| GENERAL_SUBJECT.to_string()),
     ));
     let cites = parse_cids(cites)?;
-    append(ws, subject, make_body(text), cites, file).await
+    let narrative = append(ws, subject_ref.clone(), make_body(text), cites, file).await?;
+    let subject = maybe_subject_claim(ws, subject_ref, title, kind).await?;
+    Ok(NarrativeResult { narrative, subject })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn observe(
     ws: &mut Workspace,
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
     file: Option<String>,
-) -> Result<AppendResult, Error> {
-    narrative(ws, text, subject, cites, file, |text| {
+    title: Option<String>,
+    kind: Option<SubjectKind>,
+) -> Result<NarrativeResult, Error> {
+    narrative(ws, text, subject, cites, file, title, kind, |text| {
         ClaimBody::Observation { text }
     })
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn plan(
     ws: &mut Workspace,
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
     file: Option<String>,
-) -> Result<AppendResult, Error> {
-    narrative(ws, text, subject, cites, file, |text| ClaimBody::Plan {
-        text,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
+) -> Result<NarrativeResult, Error> {
+    narrative(ws, text, subject, cites, file, title, kind, |text| {
+        ClaimBody::Plan { text }
     })
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn decide(
     ws: &mut Workspace,
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
     file: Option<String>,
-) -> Result<AppendResult, Error> {
-    narrative(ws, text, subject, cites, file, |text| ClaimBody::Decision {
-        text,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
+) -> Result<NarrativeResult, Error> {
+    narrative(ws, text, subject, cites, file, title, kind, |text| {
+        ClaimBody::Decision { text }
     })
     .await
 }
@@ -250,13 +337,17 @@ pub async fn relate(
 /// never has to think about "narrative vs. structural." `issues` also
 /// treats a live `Resolution` as "done" on its own, independent of this
 /// pairing — see its doc.
+#[allow(clippy::too_many_arguments)]
 pub async fn resolve(
     ws: &mut Workspace,
     subject: &str,
     text: &str,
     cites: Vec<String>,
     file: Option<String>,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
 ) -> Result<PairedAppendResult, Error> {
+    validate_title_kind(&title, &kind)?;
     let cites = parse_cids(cites)?;
     let subject_ref = SubjectRef::Local(Rkey::from(subject));
     let narrative = append(
@@ -271,7 +362,7 @@ pub async fn resolve(
     .await?;
     let status = append(
         ws,
-        subject_ref,
+        subject_ref.clone(),
         ClaimBody::Status {
             value: StatusValue::Resolved,
         },
@@ -279,7 +370,12 @@ pub async fn resolve(
         None,
     )
     .await?;
-    Ok(PairedAppendResult { narrative, status })
+    let subject = maybe_subject_claim(ws, subject_ref, title, kind).await?;
+    Ok(PairedAppendResult {
+        narrative,
+        status,
+        subject,
+    })
 }
 
 /// Asserts a subject is blocked: writes `ClaimBody::Blocker` plus
@@ -290,7 +386,10 @@ pub async fn block(
     subject: &str,
     text: &str,
     file: Option<String>,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
 ) -> Result<PairedAppendResult, Error> {
+    validate_title_kind(&title, &kind)?;
     let subject_ref = SubjectRef::Local(Rkey::from(subject));
     let narrative = append(
         ws,
@@ -304,7 +403,7 @@ pub async fn block(
     .await?;
     let status = append(
         ws,
-        subject_ref,
+        subject_ref.clone(),
         ClaimBody::Status {
             value: StatusValue::Blocked,
         },
@@ -312,7 +411,12 @@ pub async fn block(
         None,
     )
     .await?;
-    Ok(PairedAppendResult { narrative, status })
+    let subject = maybe_subject_claim(ws, subject_ref, title, kind).await?;
+    Ok(PairedAppendResult {
+        narrative,
+        status,
+        subject,
+    })
 }
 
 /// Writes a bare `ClaimBody::Status { value }` claim with no paired
@@ -583,14 +687,28 @@ fn write_state(out: &mut String, label: &str, subject_view: &SubjectView, state:
 }
 
 /// The "issue-like view across subjects" (`.design/kan-spine.md` CLI
-/// table): every merge-class that isn't done yet. "Done" means either the
-/// state fold settled on `Resolved`/`Closed` (structural `Status` claims),
-/// or the class has a live `ClaimBody::Resolution` — the narrative signal
-/// `kan resolve` writes, and in practice the only one most subjects will
-/// ever have, since v1's CLI has no verb for authoring `Status` claims
-/// directly. No subject is special-cased here (there's no more built-in
+/// table): every merge-class that's issue-*eligible* and isn't done yet
+/// (REQ-8, fixing a real shipped bug: a pure-knowledge subject with only
+/// narrative claims — `spine` itself, on this very repo — used to be listed
+/// as an open issue purely because it had never been resolved, which is a
+/// different thing from ever having been *opened*).
+///
+/// Eligibility (checked first, before "done" is even considered): a class
+/// is only in scope when it has at least one live `Status` claim (any
+/// value — presence of the claim kind is the signal, not which value) or
+/// its most recent live `Subject` claim declares `SubjectKind::Issue`. A
+/// class with neither signal is excluded entirely, not merely marked done —
+/// the common case for pure-knowledge subjects that were never meant to be
+/// tracked as issues at all.
+///
+/// "Done" (for an eligible class) means either the state fold settled on
+/// `Resolved`/`Closed` (structural `Status` claims), or the class has a
+/// live `ClaimBody::Resolution` — the narrative signal `kan resolve`
+/// writes, and in practice the only one most subjects will ever have,
+/// since v1's CLI has no verb for authoring bare `Status` claims besides
+/// `kan mark`. No subject is special-cased here (there's no more built-in
 /// "session" bookkeeping subject, `docs/DECISIONS.md`'s boundary-rule ADR) —
-/// every subject is judged purely on whether it's done, the same way.
+/// every subject is judged purely on eligibility + doneness, the same way.
 pub fn issues(ws: &Workspace) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let view = fold::fold(claims, &ws.solo_trust());
@@ -598,6 +716,23 @@ pub fn issues(ws: &Workspace) -> Result<String, Error> {
     let mut out = String::new();
     let mut shown = 0usize;
     for subject_view in &view.classes {
+        let has_status_claim = subject_view
+            .claims
+            .iter()
+            .any(|(_, c)| matches!(c.content.body, ClaimBody::Status { .. }));
+        let declared_issue =
+            subject_view
+                .claims
+                .iter()
+                .rev()
+                .find_map(|(_, c)| match &c.content.body {
+                    ClaimBody::Subject { subject_kind, .. } => Some(*subject_kind),
+                    _ => None,
+                })
+                == Some(SubjectKind::Issue);
+        if !has_status_claim && !declared_issue {
+            continue;
+        }
         let has_resolution = subject_view
             .claims
             .iter()
