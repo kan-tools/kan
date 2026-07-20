@@ -74,9 +74,18 @@ async fn observe_auto_attaches_the_head_commit_with_no_flag() {
     let sha = head_sha(dir.path());
     let mut ws = open_workspace(dir.path()).await;
 
-    let result = actions::observe(&mut ws, "x".to_string(), None, vec![], None, None, None)
-        .await
-        .unwrap();
+    let result = actions::observe(
+        &mut ws,
+        "x".to_string(),
+        None,
+        vec![],
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     let stored = ws
         .log
         .get_stored(result.narrative.cid)
@@ -101,6 +110,7 @@ async fn file_flag_attaches_file_at_on_top_of_the_automatic_commit() {
         None,
         vec![],
         Some("src/foo.rs".to_string()),
+        None,
         None,
         None,
     )
@@ -133,6 +143,7 @@ async fn file_flag_with_a_line_range_attaches_line_range_at() {
         None,
         vec![],
         Some("src/foo.rs:10-20".to_string()),
+        None,
         None,
         None,
     )
@@ -171,6 +182,7 @@ async fn file_flag_with_an_unparseable_range_falls_back_to_the_whole_path() {
         None,
         vec![],
         Some("src/foo.rs:not-a-range".to_string()),
+        None,
         None,
         None,
     )

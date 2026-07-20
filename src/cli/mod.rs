@@ -255,6 +255,10 @@ pub struct NarrativeArgs {
     /// `path` or `path:start-end`.
     #[arg(long)]
     pub file: Option<String>,
+    /// Pairs a `Status { value }` claim citing this one — the same pairing
+    /// `kan resolve`/`kan block` hardcode, generalized to any status value.
+    #[arg(long)]
+    pub status: Option<StatusValueArg>,
     /// Declares the subject (ClaimBody::Subject) alongside this claim —
     /// requires `--kind` too.
     #[arg(long)]
@@ -294,6 +298,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                 args.subject,
                 args.cites,
                 args.file,
+                args.status.map(Into::into),
                 args.title,
                 args.kind.map(Into::into),
             )
@@ -308,6 +313,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                 args.subject,
                 args.cites,
                 args.file,
+                args.status.map(Into::into),
                 args.title,
                 args.kind.map(Into::into),
             )
@@ -322,6 +328,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                 args.subject,
                 args.cites,
                 args.file,
+                args.status.map(Into::into),
                 args.title,
                 args.kind.map(Into::into),
             )
