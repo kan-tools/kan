@@ -66,7 +66,11 @@ pub enum Anchor {
     LineRangeAt(PathBuf, Sha, Span),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// `schemars::JsonSchema` derived directly here (matching `StatusValue`'s
+/// own comment/rationale just below) since `mcp::NarrativeParams`/
+/// `ResolveParams`/`BlockParams` use this type directly for their `kind`
+/// field, the MCP mirror of the CLI's `SubjectKindArg`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum SubjectKind {
     Issue,
     Idea,

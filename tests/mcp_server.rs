@@ -125,7 +125,8 @@ async fn ac8_lists_tools_and_calls_the_observe_tool() {
         .expect("tools/list should return an array");
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     for expected in [
-        "observe", "plan", "decide", "resolve", "same", "show", "issues", "status", "context",
+        "observe", "plan", "decide", "block", "resolve", "same", "relate", "mark", "retract",
+        "reject", "show", "issues", "status", "context",
     ] {
         assert!(
             names.contains(&expected),
@@ -168,6 +169,126 @@ async fn ac8_lists_tools_and_calls_the_observe_tool() {
         .expect("observe tool should return confirmation text");
     assert!(text.contains("mcp-ac8"));
     assert!(text.contains("Observation"));
+
+    drop(stdin);
+    let _ = child.kill().await;
+}
+
+/// AC-12: MCP `tools/list` includes `relate`/`reject`, and `observe`/
+/// `plan`/`decide` schemas show optional `status`/`title`/`kind` params
+/// while `block`/`resolve` schemas show `title`/`kind` (no `status` --
+/// REQ-9 explicitly excludes those two).
+#[tokio::test]
+async fn ac12_mcp_tool_surface_mirrors_the_cli() {
+    let dir = git_repo();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
+        .arg("mcp")
+        .current_dir(dir.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("failed to spawn kan mcp");
+
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+
+    let send = |v: Value| serde_json::to_string(&v).unwrap() + "\n";
+    let mut recv_line = String::new();
+    macro_rules! recv {
+        () => {{
+            recv_line.clear();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                stdout.read_line(&mut recv_line),
+            )
+            .await
+            .expect("timed out waiting for kan mcp response")
+            .expect("failed to read from kan mcp stdout");
+            serde_json::from_str::<Value>(&recv_line).expect("response was not valid JSON")
+        }};
+    }
+
+    stdin
+        .write_all(
+            send(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "ac12-test", "version": "0.0.1"}
+                }
+            }))
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    recv!();
+    stdin
+        .write_all(
+            send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"})).as_bytes(),
+        )
+        .await
+        .unwrap();
+
+    stdin
+        .write_all(send(json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})).as_bytes())
+        .await
+        .unwrap();
+    let list = recv!();
+    let tools = list["result"]["tools"]
+        .as_array()
+        .expect("tools/list should return an array");
+
+    let schema_of = |name: &str| -> Value {
+        tools
+            .iter()
+            .find(|t| t["name"].as_str() == Some(name))
+            .unwrap_or_else(|| panic!("missing tool {name:?}"))["inputSchema"]["properties"]
+            .clone()
+    };
+
+    for name in ["observe", "plan", "decide"] {
+        let props = schema_of(name);
+        for param in ["status", "title", "kind"] {
+            assert!(
+                props.get(param).is_some(),
+                "{name} schema missing {param:?}: {props:?}"
+            );
+        }
+    }
+    for name in ["block", "resolve"] {
+        let props = schema_of(name);
+        for param in ["title", "kind"] {
+            assert!(
+                props.get(param).is_some(),
+                "{name} schema missing {param:?}: {props:?}"
+            );
+        }
+        assert!(
+            props.get("status").is_none(),
+            "{name} schema should not have status (REQ-9 excludes it): {props:?}"
+        );
+    }
+
+    let relate_props = schema_of("relate");
+    for param in ["a", "kind", "b"] {
+        assert!(relate_props.get(param).is_some());
+    }
+    // AC-1: same-as is not reachable through relate's kind enum.
+    let kind_schema = &relate_props["kind"];
+    let kind_json = kind_schema.to_string().to_lowercase();
+    assert!(
+        !kind_json.contains("sameas") && !kind_json.contains("same_as"),
+        "relate's kind schema should not include SameAs: {kind_schema:?}"
+    );
+
+    let reject_props = schema_of("reject");
+    assert!(reject_props.get("cid").is_some());
 
     drop(stdin);
     let _ = child.kill().await;
