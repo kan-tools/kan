@@ -30,9 +30,12 @@ from many local logs into a coherent view, parameterized by whom you trust.
 
 ## Status
 
-Early. Building the local-only spine first (one human, one-or-more agents, one
-repo, no sync). Sync, the atproto layer, and the shared ecosystem come after the
-core proves out. See `docs/SETUP-TODO.md`.
+Pre-1.0 (`v0.4.0-beta.1` on crates.io). The local-only spine — one human,
+one-or-more agents, one repo, no sync — is built and hardening. Sync (a
+private-team `HostedRelay` transport, then the public atproto layer) has a
+concrete staged plan targeting `v1.0.0` — see
+`.design/sync-layer-architecture-and-staging.md` and `docs/DECISIONS.md`
+ADR-35 — but hasn't started yet.
 
 ## Name
 
