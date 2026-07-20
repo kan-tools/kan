@@ -125,8 +125,8 @@ async fn ac8_lists_tools_and_calls_the_observe_tool() {
         .expect("tools/list should return an array");
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     for expected in [
-        "observe", "plan", "decide", "block", "resolve", "same", "relate", "mark", "retract",
-        "reject", "show", "issues", "status", "context",
+        "observe", "plan", "decide", "block", "resolve", "result", "same", "relate", "mark",
+        "retract", "reject", "show", "issues", "status", "context",
     ] {
         assert!(
             names.contains(&expected),

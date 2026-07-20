@@ -34,7 +34,9 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     // --- Recording: append a claim ---
-    /// Record a finding.
+    /// Record something you noticed — a fact about the current state, not
+    /// something you did. Use `result` instead for the outcome of an
+    /// action you took.
     Observe(NarrativeArgs),
     /// Record an intended approach.
     Plan(NarrativeArgs),
@@ -61,8 +63,10 @@ pub enum Command {
         #[arg(long, short)]
         verbose: bool,
     },
-    /// Record that a subject has been resolved. Pairs a `Resolution` claim
-    /// with a `Status { value: Resolved }` claim citing it.
+    /// Record that a subject is now resolved — an outcome that also closes
+    /// the subject out; use `result` instead when it doesn't. Pairs a
+    /// `Resolution` claim with a `Status { value: Resolved }` claim citing
+    /// it.
     Resolve {
         subject: String,
         text: String,
@@ -73,6 +77,36 @@ pub enum Command {
         /// `path` or `path:start-end`.
         #[arg(long)]
         file: Option<String>,
+        /// Declares the subject (ClaimBody::Subject) alongside this claim —
+        /// requires `--kind` too.
+        #[arg(long)]
+        title: Option<String>,
+        /// Declares the subject's kind alongside this claim — requires
+        /// `--title` too.
+        #[arg(long)]
+        kind: Option<SubjectKindArg>,
+        /// Print a human-readable confirmation instead of the bare CID.
+        #[arg(long, short)]
+        verbose: bool,
+    },
+    /// Record the outcome of an action you just took — what happened after
+    /// you ran something, changed something, or executed a step. Use
+    /// `resolve` instead when the outcome also means this subject's work
+    /// is done.
+    Result {
+        subject: String,
+        text: String,
+        /// CIDs of prior claims this one cites.
+        #[arg(long = "cites")]
+        cites: Vec<String>,
+        /// A more specific artifact than the automatic HEAD-commit anchor:
+        /// `path` or `path:start-end`.
+        #[arg(long)]
+        file: Option<String>,
+        /// Pairs a `Status { value }` claim citing this one — the same
+        /// pairing `kan resolve`/`kan block` hardcode, generalized.
+        #[arg(long)]
+        status: Option<StatusValueArg>,
         /// Declares the subject (ClaimBody::Subject) alongside this claim —
         /// requires `--kind` too.
         #[arg(long)]
@@ -391,6 +425,29 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             )
             .await?;
             print_paired_result(&result, verbose);
+        }
+        Command::Result {
+            subject,
+            text,
+            cites,
+            file,
+            status,
+            title,
+            kind,
+            verbose,
+        } => {
+            let result = actions::result(
+                &mut ws,
+                &subject,
+                &text,
+                cites,
+                file,
+                status.map(Into::into),
+                title,
+                kind.map(Into::into),
+            )
+            .await?;
+            print_narrative_result(&result, verbose);
         }
         Command::Block {
             subject,
