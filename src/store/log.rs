@@ -280,6 +280,17 @@ impl Log {
         Ok(Some(stored))
     }
 
+    /// The log's current root commit CID, if any claim has ever been
+    /// appended — already resident in memory from `open_or_create` (which
+    /// reads it from the `HEAD` file), so this is free: no additional I/O,
+    /// no MST walk, no signature verification. `Workspace::open`
+    /// (`.design/v0.4-milestone.md` REQ-5) compares this against the
+    /// index's stored `built_from_root` to decide whether `iter_all`'s
+    /// per-claim signature verification can be skipped.
+    pub fn current_root(&self) -> Option<Cid> {
+        self.commit_cid.clone()
+    }
+
     /// Enumerate every claim currently in the log, each with the CID it's
     /// keyed by and its log-revision TID. Order is not guaranteed; sort by
     /// `rev` for chronological order.

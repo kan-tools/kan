@@ -6,6 +6,7 @@
 use std::path::Path;
 
 use atproto_dasl::Cid;
+use rusqlite::OptionalExtension;
 
 use crate::store::log::StoredClaim;
 
@@ -43,14 +44,28 @@ impl Index {
                 raw         BLOB NOT NULL
              );
              CREATE INDEX IF NOT EXISTS claims_by_rev ON claims(rev);
-             CREATE INDEX IF NOT EXISTS claims_by_subject ON claims(subject_key);",
+             CREATE INDEX IF NOT EXISTS claims_by_subject ON claims(subject_key);
+             CREATE TABLE IF NOT EXISTS meta (
+                key   TEXT PRIMARY KEY,
+                value TEXT
+             );",
         )?;
         Ok(Self { conn })
     }
 
     /// Wipe and repopulate the index from `claims` (the full contents of a
     /// `Log`, via `Log::iter_all`) — the disposable-projection guarantee.
-    pub fn rebuild(&mut self, claims: &[(Cid, StoredClaim)]) -> Result<(), Error> {
+    /// `built_from_root` (`Log::current_root` at the time `claims` was
+    /// read) is stored in the same transaction as the claims themselves
+    /// (`.design/v0.4-milestone.md` REQ-4) — meta and claims always commit
+    /// atomically together, so a crash mid-rebuild can never leave a
+    /// half-updated claims table read back as "fresh" by
+    /// `built_from_root`'s caller.
+    pub fn rebuild(
+        &mut self,
+        claims: &[(Cid, StoredClaim)],
+        built_from_root: Option<&Cid>,
+    ) -> Result<(), Error> {
         let tx = self.conn.transaction()?;
         tx.execute("DELETE FROM claims", [])?;
         for (cid, stored) in claims {
@@ -70,8 +85,35 @@ impl Index {
                 ],
             )?;
         }
+        tx.execute(
+            "INSERT INTO meta (key, value) VALUES ('built_from_root', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![built_from_root.map(|c| c.to_string())],
+        )?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// The log root CID this index was last `rebuild`t from, if any —
+    /// `None` for a freshly created index (no `meta` row yet) or if the
+    /// log itself had no commits at rebuild time. `Workspace::open`
+    /// compares this against `Log::current_root()`: an exact match proves
+    /// (via content-addressing, not a heuristic) that nothing has changed
+    /// since this index was built, so the full rebuild can be skipped.
+    pub fn built_from_root(&self) -> Result<Option<Cid>, Error> {
+        let value: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'built_from_root'",
+                [],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        Ok(match value {
+            Some(v) => Some(v.parse()?),
+            None => None,
+        })
     }
 
     /// All claims currently projected, in chronological (`rev`) order — the
