@@ -886,6 +886,229 @@ implying more finality than the current state warrants.
 **Consequences:** `cargo publish --dry-run --allow-dirty` confirmed clean
 packaging before tagging, same discipline as the first release.
 
+## ADR-29 — v0.3 relation surface: `kan relate`, `Rejects` reshaped into its own claim kind, `retract`/`reject` split
+**Date:** 2026-07-19
+**Decision:** Three related changes closing issue #31 (`.design/v0.3-milestone.md`
+REQ-1..6):
+1. New CLI/MCP verb `kan relate <a> <kind> <b>` (`actions::relate`) writes
+   `ClaimBody::Relation { kind, target }` for `kind` ∈ `{blocks, about,
+   manifests-at, depends-on, accepts}` — a `clap::ValueEnum` (`cli::
+   RelationKindArg`, kept out of `claim.rs` the same way `StatusValueArg`
+   is) that only has these 5 values, so `same-as` is rejected at argument
+   parsing rather than by a runtime check. `kan same` stays its own verb,
+   unfolded — `SameAs` is the only identity-conferring edge and already
+   carries more ceremony (the component-size guardrail, ADR-23's
+   Anchor-vs-Anchor rejection) than an ordinary relation.
+2. `RelationKind` narrows from 7 to 6 variants: `Rejects` removed.
+   `ClaimBody` gains a new top-level `Rejects { claim: Cid }` variant
+   (`ClaimKind` gains a matching `Rejects`, sitting beside `Retraction`, not
+   nested in `Relation`) — structurally mirroring `Retraction`'s
+   `supersedes: Cid` shape, not `Relation`'s `{ kind, target: SubjectRef }`
+   shape. Zero-cost correction: no CLI/MCP path ever constructed
+   `RelationKind::Rejects`, so no existing log data references the removed
+   variant.
+3. New verb `kan reject <cid>` (`actions::reject`) writes `ClaimBody::
+   Rejects { claim }`, only against a *different* author's claim — erroring
+   (`Error::CantRejectOwnClaim`, message naming `kan retract`) on the
+   caller's own. `kan retract`'s existing cross-author error
+   (`Error::NotYourClaim`) is updated the same way, naming `kan reject`.
+   Two verbs with a write-time author check each, not one verb silently
+   dispatching between two claim kinds depending on whose claim the CID
+   turns out to be — no single call should have two possible fold-time
+   meanings depending on facts the caller may not track.
+   `fold::identity::excluded_by_rejection(claims, trust) -> HashSet<Cid>` is
+   a new sibling to `excluded_by_retraction`, but **trust-gated** (unlike
+   self-retraction, which is deliberately `TrustBase`-independent): a live
+   `Rejects { claim }` claim excludes `claim` from a viewer's fold only
+   when that viewer's `TrustBase` trusts the rejecting author
+   (`docs/SPEC.md` §8's "a local suppression honored only by folds that
+   trust the rejecter"). Threaded through both `fold::fold`'s general
+   claim-visibility filtering and `identity::merge_classes` (a rejected
+   `SameAs` witness stops contributing to identity computation for a viewer
+   who trusts the rejecter) — the same two threading points
+   `excluded_by_retraction` already has. Undo needs no special-casing: a
+   `Rejects` claim is itself an ordinary claim CID, so an author retracting
+   their own `Rejects` (via the existing `Retraction` mechanism) already
+   makes `excluded_by_rejection` skip it.
+**Why:** `RelationKind::Rejects` looked like a domain-semantic edge the way
+`Blocks`/`About`/etc. are, but isn't one — it doesn't relate two subjects,
+it suppresses one specific claim, which is exactly what `Retraction`
+already does for same-author claims. Modeling it as `Relation`'s sibling
+instead of `Retraction`'s sibling would have meant a `SubjectRef` target
+standing in for "the claim I mean," an indirection with no benefit once the
+shape mismatch was named directly. The `retract`/`reject` split (rather
+than one verb with silent dispatch) follows the same reasoning ADR-21
+already used for `resolve`/`block` staying separate from a generic
+status-setter: an agent's single action should have exactly one fold-time
+meaning, readable from which verb it called, not inferred after the fact
+from claim authorship.
+**Consequences:** `src/context.rs`'s `render_claim`/`kind_value` gained
+match arms for `ClaimBody::Rejects`/`ClaimKind::Rejects` (filed alongside
+`Retraction` in the value-scoring tier — bookkeeping, not narrative
+content). New tests: `tests/cli.rs` (`relate_writes_a_relation_claim_for_
+each_non_identity_kind`, `relate_rejects_same_as_at_argument_parsing`,
+`reject_refuses_the_callers_own_claim`), `tests/write_surface.rs`
+(`reject_writes_a_rejects_claim_against_another_authors_claim`, the
+own-claim library-level counterpart, and the updated `NotYourClaim` message
+assertion) — the cross-author success/failure split needs a genuinely
+different signing `Identity`, the same reason `retract`'s own cross-author
+test lives at the library level, not through the CLI subprocess harness.
+`tests/identity_fold.rs` gained the trust-gating pair
+(`rejects_claim_excluded_when_viewer_trusts_the_rejecter`/
+`rejects_claim_from_untrusted_author_is_not_honored`) plus
+`rejected_sameas_witness_does_not_merge_when_rejecter_is_trusted` for the
+`merge_classes` threading point specifically. MCP `relate`/`reject` tools
+are deliberately deferred to the verb-lexicon-reorg PR (REQ-10..12),
+alongside the rest of that PR's MCP param additions, rather than mirrored
+here.
+
+## ADR-30 — `--title`/`--kind` construct `Subject` claims; `kan issues` requires a real eligibility signal, not just "never resolved"
+**Date:** 2026-07-19
+**Decision:** Two related changes closing issue #32 (`.design/v0.3-milestone.md`
+REQ-7..8):
+1. `kan observe`/`kan plan`/`kan decide`/`kan block`/`kan resolve` all gain
+   optional `--title <text> --kind issue|idea|question` flags
+   (`cli::SubjectKindArg`, kept out of `claim.rs` the same way
+   `StatusValueArg`/`RelationKindArg` are), required together — validated
+   (`actions::validate_title_kind`) *before* any claim is written, so a
+   lone `--title` or `--kind` never leaves a partial write (an orphaned
+   narrative claim with no `Subject`, or vice versa). When given, an
+   additional `ClaimBody::Subject { title, subject_kind }` claim is written
+   alongside whatever the verb already writes. `observe`/`plan`/`decide`'s
+   return type changes from bare `AppendResult` to a new
+   `actions::NarrativeResult { narrative, subject: Option<AppendResult> }`;
+   `resolve`/`block`'s existing `PairedAppendResult` gains a third
+   `subject: Option<AppendResult>` field alongside its `narrative`/`status`
+   pair. Both keep the bare-CID-by-default contract pointed at the
+   *narrative* claim's CID regardless of whether the optional `Subject`
+   claim was written — `--verbose` is the only way to see it.
+2. `actions::issues` no longer treats "this subject has never had a
+   `Status` claim" as equivalent to "open." A class is now only
+   issue-*eligible* — checked before "done" is even considered — when it
+   has at least one live `Status` claim (any value; presence of the claim
+   kind is the signal, not which value) **or** its most recent live
+   `Subject` claim declares `SubjectKind::Issue`. A class with neither
+   signal is excluded entirely, not marked done.
+**Why:** `ClaimBody::Subject`/`SubjectKind` existed in the type system since
+early on but had no construction path and no behavioral consumer — pure
+reachability debt (issue #32). Giving it real weight needed both halves at
+once: writing it (part 1) would have been inert without `issues` actually
+reading it (part 2), and fixing `issues` without a way to write `Subject`
+claims would have left "declare this an issue before it has a status" with
+no mechanism. The bug `issues` fix corrects is real and was live on this
+very repo: `kan issues` listed `spine` — kan's own dogfooding log, which has
+only ever carried `Observation`/`Plan`/`Decision` claims and structurally
+never should carry a `Status` one — as an open issue, purely because
+"never resolved" and "never opened" were conflated. Requiring `--title`/
+`--kind` together (rather than defaulting a bare `--kind` to some
+placeholder title, or vice versa) follows the same reasoning `ClaimBody::
+Subject`'s own shape already forces: both fields are non-optional, so a
+partial value has no honest claim to write.
+**Consequences:** `NarrativeResult`'s introduction is additive, not a
+redesign — `AppendResult` is untouched and still used everywhere a single
+claim is written (`same`/`relate`/`retract`/`reject`/`mark`).
+`PairedAppendResult` gaining a field is source-compatible with every
+existing read of `.narrative`/`.status`. `src/mcp.rs`'s existing
+`observe`/`plan`/`decide`/`resolve`/`block` tool implementations now pass
+`None, None` for the two new params at their `actions::` call sites —
+real MCP `title`/`kind` params are REQ-12, scoped to the verb-lexicon-reorg
+PR, not this one. New tests: `tests/cli.rs` gained
+`observe_title_and_kind_writes_a_subject_claim` (AC-7 success),
+`observe_title_without_kind_errors`/`observe_kind_without_title_errors`
+(AC-7 error half, both directions),
+`issues_excludes_a_subject_with_no_status_and_no_declared_issue_kind`
+(AC-8, the exact `spine`-shaped regression case), and
+`issues_lists_a_subject_declared_as_issue_kind_before_any_status_claim`
+(AC-9).
+
+## ADR-31 — `--status` generalizes `resolve`/`block`'s narrative+status pairing to `observe`/`plan`/`decide`
+**Date:** 2026-07-19
+**Decision:** `kan observe`/`kan plan`/`kan decide` gain an optional
+`--status <value>` flag (REQ-9, `.design/v0.3-milestone.md`). When given, it
+writes a `ClaimBody::Status { value }` claim citing the narrative claim —
+the exact pairing mechanism `resolve`/`block` already hardcode
+(`Resolution`→`Resolved`, `Blocker`→`Blocked`), generalized to any
+narrative kind and any `StatusValue` instead of two special cases.
+`kan resolve`/`kan block` are unchanged — their fixed pairing stays
+hardcoded, since that pairing is inherent to what those two kinds *mean*,
+not a special case needing generalization; adding `--status` to them too
+would let a caller write a contradictory pair in one call (e.g. `resolve`
+citing `Status{Blocked}`), which the fixed pairing structurally prevents.
+`actions::NarrativeResult` (introduced in ADR-30 for the `Subject` claim)
+gains a second independent optional field, `status: Option<AppendResult>`,
+alongside the existing `subject` one — `--status` and `--title`/`--kind`
+compose freely in one call (a single `kan plan` can write up to three
+claims: narrative, status, subject), each validated/written independently.
+**Why:** Before this, only `resolve`/`block` could pair a narrative claim
+with a status change in one call; `observe`/`plan`/`decide` needed a
+separate `kan mark` call to do the same. Some previously-impossible-in-one-
+call combinations (e.g. `Decision` + `Status{Closed}`, or `Observation` +
+`Status{Resolved}` when `resolve`'s specific `Resolution` framing doesn't
+fit what actually happened) had no path without adding a new verb per
+combination. Generalizing the existing pairing mechanism instead of adding
+verbs keeps the verb count fixed while closing the gap.
+**Consequences:** `narrative()` (the shared helper `observe`/`plan`/`decide`
+funnel through) now writes up to three claims in sequence — narrative,
+then status (if given, citing the narrative CID), then subject (if given)
+— via a new `maybe_status_claim` helper mirroring `maybe_subject_claim`'s
+shape. `src/mcp.rs`'s `observe`/`plan`/`decide` tool implementations pass
+an extra `None` for the new `status` param — real MCP `status` params are
+REQ-12, scoped to the verb-lexicon-reorg PR. New tests in `tests/cli.rs`:
+`observe_status_pairs_a_status_claim_citing_the_narrative` (AC-6) and
+`plan_status_and_title_kind_together_write_three_claims` (composing REQ-9
+and REQ-7 in one call).
+
+## ADR-32 — Verb lexicon reorganized by AX phase; MCP tool surface catches up to the full CLI
+**Date:** 2026-07-19
+**Decision:** Three changes closing out `.design/v0.3-milestone.md`
+REQ-10..12:
+1. `cli::Command`'s variants are reordered into four declared groups —
+   Recording (`observe`/`plan`/`decide`/`block`/`resolve`), Structuring
+   (`same`/`relate`/`mark`), Correcting (`retract`/`reject`), Recalling
+   (`show`/`status`/`issues`/`context`) — with `mcp` staying outside the
+   four phases (setup/tooling) at the end. Since clap prints subcommands in
+   declaration order, `kan --help` now teaches the phase structure for
+   free, with zero runtime cost — confirmed by inspecting the actual
+   `--help` output, not just re-ordering and assuming.
+2. `mcp::KanServer::get_info()`'s instructions are rewritten around the
+   same four phases, replacing the previous flat kind-by-kind description.
+   Still passes `tests/mcp_server.rs`'s existing sequencing-language guard
+   (no "first"/"then"/"before starting") — confirmed by running that exact
+   test, not just avoiding the words by inspection.
+3. The MCP tool surface catches up to the full CLI: new `relate`/`reject`
+   tools; `NarrativeParams` (`observe`/`plan`/`decide`) gains `status`/
+   `title`/`kind`; `ResolveParams`/`BlockParams` gain `title`/`kind` (no
+   `status` — REQ-9 excludes those two the same way the CLI does).
+   `claim::SubjectKind` gains a direct `schemars::JsonSchema` derive (same
+   rationale ADR-21 already used for `claim::StatusValue`: MCP params use
+   the core type directly, since `schemars` — unlike `clap` — doesn't carry
+   the "keep `claim.rs` CLI-free" concern). `relate`'s `kind` param uses a
+   new MCP-local `RelateKindParam` enum (Blocks/About/ManifestsAt/
+   DependsOn/Accepts, no `SameAs`) rather than `claim::RelationKind`
+   directly — the MCP-side counterpart to `cli::RelationKindArg`, enforcing
+   REQ-2's "`same` is the only way to write `SameAs`" at the
+   deserialization boundary instead of a runtime check inside
+   `actions::relate` (which still does no `kind` re-validation itself, on
+   either surface).
+**Why:** A flat alphabetical/kind-order tool list teaches nothing about
+workflow; grouping by the four AX phases (Recording, Structuring,
+Correcting, Recalling) lets the verb list itself communicate intended use
+without `get_info()` having to prescribe an order (which the sequencing-
+language guard test exists specifically to prevent, per `docs/DECISIONS.md`'s
+kan/companion-tool boundary rule — affordance, not enforcement). The MCP
+surface lagging the CLI by two PRs (`relate`/`reject`/`status`/`title`/
+`kind` all landed CLI-first, MCP passing `None` as placeholders) was a
+deliberate, tracked debt from ADR-29/30/31, not an oversight; this PR pays
+it off in one pass rather than mirroring each earlier PR twice.
+**Consequences:** `tests/mcp_server.rs` gained `ac12_mcp_tool_surface_
+mirrors_the_cli`, spawning a real `kan mcp` subprocess and inspecting
+`tools/list`'s JSON schemas directly (not just presence of the tool names)
+for `status`/`title`/`kind` on the right tools, `status`'s *absence* on
+`block`/`resolve`, and confirming `relate`'s `kind` schema has no
+`SameAs`/`same_as` variant. The existing tool-name assertion list in
+`ac8_lists_tools_and_calls_the_observe_tool` grew to include `block`/
+`relate`/`mark`/`retract`/`reject` alongside the previously-checked subset.
+
 ## ADR-33 — `GitAncestry::relations` caches `is_ancestor` per directed commit pair, within one call
 **Date:** 2026-07-19
 **Decision:** `relations::GitAncestry::relations` (REQ-13, issue #27,

@@ -95,6 +95,35 @@ pub fn excluded_by_retraction(claims: &[(Cid, StoredClaim)]) -> HashSet<Cid> {
     excluded
 }
 
+/// Claim CIDs currently excluded by a live `Rejects` claim, for a viewer
+/// whose `trust` trusts the rejecter (`docs/SPEC.md` §8: "a local suppression
+/// honored only by folds that trust the rejecter"). Unlike
+/// `excluded_by_retraction`, this **is** trust-gated: a `Rejects` claim is
+/// inherently a cross-author suppression attempt (`actions::reject` refuses
+/// to write one against the caller's own claim, so any that exist target
+/// someone else's), and whether it's honored depends entirely on whether the
+/// viewer trusts the author who wrote it — there's no structural "same
+/// author" check the way self-retraction has.
+pub fn excluded_by_rejection(claims: &[(Cid, StoredClaim)], trust: &TrustBase) -> HashSet<Cid> {
+    // A `Rejects` claim retracted by its own author (ADR-6's undo mechanism,
+    // which needs no special-casing since a `Rejects` claim is an ordinary
+    // claim CID) is itself excluded here, so it stops contributing.
+    let retracted = excluded_by_retraction(claims);
+    let mut excluded: HashSet<Cid> = HashSet::new();
+
+    for (cid, stored) in claims {
+        if retracted.contains(cid) {
+            continue;
+        }
+        if let ClaimBody::Rejects { claim } = &stored.claim.content.body {
+            if trust.trusts(&stored.claim.content.author) {
+                excluded.insert(claim.clone());
+            }
+        }
+    }
+    excluded
+}
+
 fn canonical_key(subject: &SubjectRef) -> String {
     format!("{subject:?}")
 }
@@ -102,12 +131,13 @@ fn canonical_key(subject: &SubjectRef) -> String {
 /// Build merge-classes from trusted, live `SameAs` witnesses under `trust`.
 pub fn merge_classes(claims: &[(Cid, StoredClaim)], trust: &TrustBase) -> Vec<MergeClass> {
     let excluded = excluded_by_retraction(claims);
+    let rejected = excluded_by_rejection(claims, trust);
 
     let mut witnesses: Vec<SameAsWitness> = Vec::new();
     let mut all_subjects: HashSet<SubjectRef> = HashSet::new();
 
     for (cid, stored) in claims {
-        if excluded.contains(cid) {
+        if excluded.contains(cid) || rejected.contains(cid) {
             continue;
         }
         let content = &stored.claim.content;

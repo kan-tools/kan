@@ -10,7 +10,7 @@ use atproto_dasl::Cid;
 use crate::{
     claim::{
         ArtifactRef, ClaimBody, ClaimContent, ClaimKind, RelationKind, Rkey, Span, StatusValue,
-        SubjectRef,
+        SubjectKind, SubjectRef,
     },
     context::{self, TiktokenEstimator, TokenEstimator},
     fold::{self, state::StateView, FoldedView, SubjectView},
@@ -32,8 +32,14 @@ pub enum Error {
     InvalidCid(String, atproto_dasl::DecodeError),
     #[error("no such claim: {0}")]
     UnknownClaim(Cid),
-    #[error("you can't retract another author's claim ({0}, authored by someone else)")]
+    #[error(
+        "you can't retract another author's claim ({0}, authored by someone else) -- use `kan reject` instead"
+    )]
     NotYourClaim(Cid),
+    #[error("you can't reject your own claim ({0}) -- use `kan retract` instead")]
+    CantRejectOwnClaim(Cid),
+    #[error("--title and --kind must be given together (ClaimBody::Subject needs both)")]
+    TitleKindRequireEachOther,
 }
 
 const GENERAL_SUBJECT: &str = "general";
@@ -62,18 +68,119 @@ impl AppendResult {
 /// claim (`Resolution`/`Blocker`) plus the `Status` claim it's paired with,
 /// `cites`-linked to it. An agent never has to think about "narrative vs.
 /// structural" — resolving/blocking something *is* asserting its status.
+/// `subject` is REQ-7's independent, optional third claim (`--title`/
+/// `--kind` writing `ClaimBody::Subject`) — unrelated to the narrative/status
+/// pairing itself, just riding along on the same call.
 pub struct PairedAppendResult {
     pub narrative: AppendResult,
     pub status: AppendResult,
+    pub subject: Option<AppendResult>,
 }
 
 impl PairedAppendResult {
     pub fn confirmation(&self) -> String {
-        format!(
+        let mut out = format!(
             "{}\n{}",
             self.narrative.confirmation(),
             self.status.confirmation()
-        )
+        );
+        if let Some(subject) = &self.subject {
+            out.push('\n');
+            out.push_str(&subject.confirmation());
+        }
+        out
+    }
+}
+
+/// A narrative claim (`Observation`/`Plan`/`Decision`) plus two independent
+/// optional claims that can ride along with it: REQ-7's `Subject` claim
+/// (`--title`/`--kind`) and REQ-9's `Status` claim (`--status`, citing the
+/// narrative claim — the exact pairing `resolve`/`block` hardcode for
+/// `Resolution`/`Blocker`, generalized here to any narrative kind and any
+/// status value). The bare-CID default (`cli::run`'s scripting-compatible
+/// contract) stays the narrative claim's CID regardless of which optional
+/// claims are present, matching `PairedAppendResult`'s own convention.
+pub struct NarrativeResult {
+    pub narrative: AppendResult,
+    pub status: Option<AppendResult>,
+    pub subject: Option<AppendResult>,
+}
+
+impl NarrativeResult {
+    pub fn confirmation(&self) -> String {
+        let mut out = self.narrative.confirmation();
+        if let Some(status) = &self.status {
+            out.push('\n');
+            out.push_str(&status.confirmation());
+        }
+        if let Some(subject) = &self.subject {
+            out.push('\n');
+            out.push_str(&subject.confirmation());
+        }
+        out
+    }
+}
+
+/// REQ-7: `--title`/`--kind` are required together, checked *before* any
+/// claim is written (a call site validates with this before its own
+/// `append` calls) — `ClaimBody::Subject`'s two fields are both
+/// non-optional, so there's no sensible partial write.
+fn validate_title_kind(title: &Option<String>, kind: &Option<SubjectKind>) -> Result<(), Error> {
+    if title.is_some() != kind.is_some() {
+        return Err(Error::TitleKindRequireEachOther);
+    }
+    Ok(())
+}
+
+/// Writes `ClaimBody::Subject { title, subject_kind }` when both are given
+/// (validated by `validate_title_kind` at the call site's entry, so by the
+/// time this runs the only possibilities are "both" or "neither").
+async fn maybe_subject_claim(
+    ws: &mut Workspace,
+    subject: SubjectRef,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
+) -> Result<Option<AppendResult>, Error> {
+    match (title, kind) {
+        (Some(title), Some(subject_kind)) => Ok(Some(
+            append(
+                ws,
+                subject,
+                ClaimBody::Subject {
+                    title,
+                    subject_kind,
+                },
+                vec![],
+                None,
+            )
+            .await?,
+        )),
+        _ => Ok(None),
+    }
+}
+
+/// REQ-9: writes `ClaimBody::Status { value }` citing `narrative_cid` when
+/// `status` is given — the same pairing mechanism `resolve`/`block`
+/// hardcode for `Resolution`→`Resolved`/`Blocker`→`Blocked`, generalized to
+/// any narrative kind and any status value instead of two special cases.
+async fn maybe_status_claim(
+    ws: &mut Workspace,
+    subject: SubjectRef,
+    narrative_cid: Cid,
+    status: Option<StatusValue>,
+) -> Result<Option<AppendResult>, Error> {
+    match status {
+        Some(value) => Ok(Some(
+            append(
+                ws,
+                subject,
+                ClaimBody::Status { value },
+                vec![narrative_cid],
+                None,
+            )
+            .await?,
+        )),
+        None => Ok(None),
     }
 }
 
@@ -142,57 +249,105 @@ async fn append(
     Ok(AppendResult { cid, subject, kind })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn narrative(
     ws: &mut Workspace,
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
     file: Option<String>,
+    status: Option<StatusValue>,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
     make_body: impl FnOnce(String) -> ClaimBody,
-) -> Result<AppendResult, Error> {
-    let subject = SubjectRef::Local(Rkey::from(
+) -> Result<NarrativeResult, Error> {
+    validate_title_kind(&title, &kind)?;
+    let subject_ref = SubjectRef::Local(Rkey::from(
         subject.unwrap_or_else(|| GENERAL_SUBJECT.to_string()),
     ));
     let cites = parse_cids(cites)?;
-    append(ws, subject, make_body(text), cites, file).await
+    let narrative = append(ws, subject_ref.clone(), make_body(text), cites, file).await?;
+    let status = maybe_status_claim(ws, subject_ref.clone(), narrative.cid.clone(), status).await?;
+    let subject = maybe_subject_claim(ws, subject_ref, title, kind).await?;
+    Ok(NarrativeResult {
+        narrative,
+        status,
+        subject,
+    })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn observe(
     ws: &mut Workspace,
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
     file: Option<String>,
-) -> Result<AppendResult, Error> {
-    narrative(ws, text, subject, cites, file, |text| {
-        ClaimBody::Observation { text }
-    })
+    status: Option<StatusValue>,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
+) -> Result<NarrativeResult, Error> {
+    narrative(
+        ws,
+        text,
+        subject,
+        cites,
+        file,
+        status,
+        title,
+        kind,
+        |text| ClaimBody::Observation { text },
+    )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn plan(
     ws: &mut Workspace,
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
     file: Option<String>,
-) -> Result<AppendResult, Error> {
-    narrative(ws, text, subject, cites, file, |text| ClaimBody::Plan {
+    status: Option<StatusValue>,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
+) -> Result<NarrativeResult, Error> {
+    narrative(
+        ws,
         text,
-    })
+        subject,
+        cites,
+        file,
+        status,
+        title,
+        kind,
+        |text| ClaimBody::Plan { text },
+    )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn decide(
     ws: &mut Workspace,
     text: String,
     subject: Option<String>,
     cites: Vec<String>,
     file: Option<String>,
-) -> Result<AppendResult, Error> {
-    narrative(ws, text, subject, cites, file, |text| ClaimBody::Decision {
+    status: Option<StatusValue>,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
+) -> Result<NarrativeResult, Error> {
+    narrative(
+        ws,
         text,
-    })
+        subject,
+        cites,
+        file,
+        status,
+        title,
+        kind,
+        |text| ClaimBody::Decision { text },
+    )
     .await
 }
 
@@ -216,6 +371,28 @@ pub async fn same(
     append(ws, SubjectRef::Local(Rkey::from(a)), body, cites, file).await
 }
 
+/// A domain-semantic edge between two subjects (`docs/SPEC.md` §6):
+/// `ClaimBody::Relation { kind, target: b }` for any of REQ-1's 5
+/// non-identity `RelationKind`s. `SameAs` stays `kan same`'s alone (REQ-2) —
+/// the CLI/MCP layers are what actually keep it out of reach here (this
+/// function itself doesn't re-check `kind`, since every caller already
+/// narrows to the 5 non-identity kinds at the argument-parsing boundary).
+pub async fn relate(
+    ws: &mut Workspace,
+    a: &str,
+    kind: RelationKind,
+    b: &str,
+    cites: Vec<String>,
+    file: Option<String>,
+) -> Result<AppendResult, Error> {
+    let cites = parse_cids(cites)?;
+    let body = ClaimBody::Relation {
+        kind,
+        target: SubjectRef::Local(Rkey::from(b)),
+    };
+    append(ws, SubjectRef::Local(Rkey::from(a)), body, cites, file).await
+}
+
 /// Asserts a subject is resolved: writes `ClaimBody::Resolution` (a
 /// narrative claim — the fold never needs to reduce or contest it) plus
 /// `ClaimBody::Status { value: Resolved }` (the structural, poset-classified
@@ -224,13 +401,17 @@ pub async fn same(
 /// never has to think about "narrative vs. structural." `issues` also
 /// treats a live `Resolution` as "done" on its own, independent of this
 /// pairing — see its doc.
+#[allow(clippy::too_many_arguments)]
 pub async fn resolve(
     ws: &mut Workspace,
     subject: &str,
     text: &str,
     cites: Vec<String>,
     file: Option<String>,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
 ) -> Result<PairedAppendResult, Error> {
+    validate_title_kind(&title, &kind)?;
     let cites = parse_cids(cites)?;
     let subject_ref = SubjectRef::Local(Rkey::from(subject));
     let narrative = append(
@@ -245,7 +426,7 @@ pub async fn resolve(
     .await?;
     let status = append(
         ws,
-        subject_ref,
+        subject_ref.clone(),
         ClaimBody::Status {
             value: StatusValue::Resolved,
         },
@@ -253,7 +434,12 @@ pub async fn resolve(
         None,
     )
     .await?;
-    Ok(PairedAppendResult { narrative, status })
+    let subject = maybe_subject_claim(ws, subject_ref, title, kind).await?;
+    Ok(PairedAppendResult {
+        narrative,
+        status,
+        subject,
+    })
 }
 
 /// Asserts a subject is blocked: writes `ClaimBody::Blocker` plus
@@ -264,7 +450,10 @@ pub async fn block(
     subject: &str,
     text: &str,
     file: Option<String>,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
 ) -> Result<PairedAppendResult, Error> {
+    validate_title_kind(&title, &kind)?;
     let subject_ref = SubjectRef::Local(Rkey::from(subject));
     let narrative = append(
         ws,
@@ -278,7 +467,7 @@ pub async fn block(
     .await?;
     let status = append(
         ws,
-        subject_ref,
+        subject_ref.clone(),
         ClaimBody::Status {
             value: StatusValue::Blocked,
         },
@@ -286,7 +475,12 @@ pub async fn block(
         None,
     )
     .await?;
-    Ok(PairedAppendResult { narrative, status })
+    let subject = maybe_subject_claim(ws, subject_ref, title, kind).await?;
+    Ok(PairedAppendResult {
+        narrative,
+        status,
+        subject,
+    })
 }
 
 /// Writes a bare `ClaimBody::Status { value }` claim with no paired
@@ -331,6 +525,35 @@ pub async fn retract(
     let body = ClaimBody::Retraction {
         supersedes: target_cid,
     };
+    append(ws, subject, body, vec![], file).await
+}
+
+/// Writes `ClaimBody::Rejects { claim: cid }` — a cross-author suppression
+/// (`docs/SPEC.md` §8, ADR-29), honored only by folds whose `TrustBase`
+/// trusts the rejecter (`fold::identity::excluded_by_rejection`). Checks the
+/// target's author does *not* match the caller's own `AuthorId` before
+/// writing — `retract`'s check in reverse: no single call should have two
+/// possible fold-time meanings depending on facts the caller may not track
+/// (REQ-5), so `reject`ing your own claim is a clear write-time error
+/// pointing at `kan retract`, not a silent dispatch to it.
+pub async fn reject(
+    ws: &mut Workspace,
+    cid: &str,
+    file: Option<String>,
+) -> Result<AppendResult, Error> {
+    let target_cid: Cid = cid
+        .parse()
+        .map_err(|e| Error::InvalidCid(cid.to_string(), e))?;
+    let target = ws
+        .log
+        .get_stored(target_cid.clone())
+        .await?
+        .ok_or_else(|| Error::UnknownClaim(target_cid.clone()))?;
+    if target.claim.content.author == ws.my_author() {
+        return Err(Error::CantRejectOwnClaim(target_cid));
+    }
+    let subject = target.claim.content.subject.clone();
+    let body = ClaimBody::Rejects { claim: target_cid };
     append(ws, subject, body, vec![], file).await
 }
 
@@ -528,14 +751,28 @@ fn write_state(out: &mut String, label: &str, subject_view: &SubjectView, state:
 }
 
 /// The "issue-like view across subjects" (`.design/kan-spine.md` CLI
-/// table): every merge-class that isn't done yet. "Done" means either the
-/// state fold settled on `Resolved`/`Closed` (structural `Status` claims),
-/// or the class has a live `ClaimBody::Resolution` — the narrative signal
-/// `kan resolve` writes, and in practice the only one most subjects will
-/// ever have, since v1's CLI has no verb for authoring `Status` claims
-/// directly. No subject is special-cased here (there's no more built-in
+/// table): every merge-class that's issue-*eligible* and isn't done yet
+/// (REQ-8, fixing a real shipped bug: a pure-knowledge subject with only
+/// narrative claims — `spine` itself, on this very repo — used to be listed
+/// as an open issue purely because it had never been resolved, which is a
+/// different thing from ever having been *opened*).
+///
+/// Eligibility (checked first, before "done" is even considered): a class
+/// is only in scope when it has at least one live `Status` claim (any
+/// value — presence of the claim kind is the signal, not which value) or
+/// its most recent live `Subject` claim declares `SubjectKind::Issue`. A
+/// class with neither signal is excluded entirely, not merely marked done —
+/// the common case for pure-knowledge subjects that were never meant to be
+/// tracked as issues at all.
+///
+/// "Done" (for an eligible class) means either the state fold settled on
+/// `Resolved`/`Closed` (structural `Status` claims), or the class has a
+/// live `ClaimBody::Resolution` — the narrative signal `kan resolve`
+/// writes, and in practice the only one most subjects will ever have,
+/// since v1's CLI has no verb for authoring bare `Status` claims besides
+/// `kan mark`. No subject is special-cased here (there's no more built-in
 /// "session" bookkeeping subject, `docs/DECISIONS.md`'s boundary-rule ADR) —
-/// every subject is judged purely on whether it's done, the same way.
+/// every subject is judged purely on eligibility + doneness, the same way.
 pub fn issues(ws: &Workspace) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let view = fold::fold(claims, &ws.solo_trust());
@@ -543,6 +780,23 @@ pub fn issues(ws: &Workspace) -> Result<String, Error> {
     let mut out = String::new();
     let mut shown = 0usize;
     for subject_view in &view.classes {
+        let has_status_claim = subject_view
+            .claims
+            .iter()
+            .any(|(_, c)| matches!(c.content.body, ClaimBody::Status { .. }));
+        let declared_issue =
+            subject_view
+                .claims
+                .iter()
+                .rev()
+                .find_map(|(_, c)| match &c.content.body {
+                    ClaimBody::Subject { subject_kind, .. } => Some(*subject_kind),
+                    _ => None,
+                })
+                == Some(SubjectKind::Issue);
+        if !has_status_claim && !declared_issue {
+            continue;
+        }
         let has_resolution = subject_view
             .claims
             .iter()

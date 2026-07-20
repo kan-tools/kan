@@ -66,7 +66,11 @@ pub enum Anchor {
     LineRangeAt(PathBuf, Sha, Span),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// `schemars::JsonSchema` derived directly here (matching `StatusValue`'s
+/// own comment/rationale just below) since `mcp::NarrativeParams`/
+/// `ResolveParams`/`BlockParams` use this type directly for their `kind`
+/// field, the MCP mirror of the CLI's `SubjectKindArg`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum SubjectKind {
     Issue,
     Idea,
@@ -87,8 +91,11 @@ pub enum StatusValue {
     Closed,
 }
 
-/// §4.2, §12.1 — `SameAs` is the only identity-conferring edge. `Rejects` is
-/// a local, cross-author suppression (§8), not a retraction.
+/// §4.2 — `SameAs` is the only identity-conferring edge. `Rejects` is not a
+/// variant here (ADR-29): it isn't a domain-semantic edge between two
+/// subjects the way these are — it's `Retraction`'s cross-author-aware
+/// sibling, citing a specific claim CID rather than relating two
+/// `SubjectRef`s, so it lives in `ClaimBody::Rejects` instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RelationKind {
     SameAs,
@@ -97,7 +104,6 @@ pub enum RelationKind {
     ManifestsAt,
     DependsOn,
     Accepts,
-    Rejects,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,6 +126,7 @@ pub enum ClaimKind {
     Status,
     Relation,
     Retraction,
+    Rejects,
 }
 
 /// ADR-5: `ClaimKind` + `Body` (two fields in `docs/SPEC.md` §1's sketch)
@@ -165,6 +172,17 @@ pub enum ClaimBody {
     Retraction {
         supersedes: Cid,
     },
+    /// §8/ADR-29 — `Retraction`'s cross-author-aware sibling: a local
+    /// suppression of another author's claim, honored only by folds whose
+    /// `TrustBase` trusts the rejecter (`fold::identity::
+    /// excluded_by_rejection`). Structurally mirrors `Retraction`'s
+    /// `supersedes: Cid` shape rather than `Relation`'s `SubjectRef` target —
+    /// it suppresses one specific claim, not a whole subject. Retracting a
+    /// `Rejects` claim (an ordinary claim CID) is its own undo, no special
+    /// casing needed.
+    Rejects {
+        claim: Cid,
+    },
 }
 
 impl ClaimBody {
@@ -180,6 +198,7 @@ impl ClaimBody {
             ClaimBody::Status { .. } => ClaimKind::Status,
             ClaimBody::Relation { .. } => ClaimKind::Relation,
             ClaimBody::Retraction { .. } => ClaimKind::Retraction,
+            ClaimBody::Rejects { .. } => ClaimKind::Rejects,
         }
     }
 }

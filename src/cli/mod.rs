@@ -26,29 +26,37 @@ pub struct Cli {
     pub command: Command,
 }
 
+/// REQ-10: declared in four AX-driven phases — Recording, Structuring,
+/// Correcting, Recalling — so `kan --help`'s output (clap prints
+/// subcommands in declaration order) teaches the phase structure with no
+/// runtime cost, purely from ordering. `Mcp` sits outside the four phases
+/// (setup/tooling, not a claim-graph verb) and stays last.
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    // --- Recording: append a claim ---
     /// Record a finding.
     Observe(NarrativeArgs),
     /// Record an intended approach.
     Plan(NarrativeArgs),
     /// Record a choice made.
     Decide(NarrativeArgs),
-    /// Show a subject's live claims.
-    Show { subject: String },
-    /// Show status: one subject, or every subject if omitted.
-    Status { subject: Option<String> },
-    /// Assert that `a` and `b` are the same subject (Relation::SameAs).
-    Same {
-        a: String,
-        b: String,
-        /// CIDs of prior claims this one cites.
-        #[arg(long = "cites")]
-        cites: Vec<String>,
+    /// Record that a subject is blocked. Pairs a `Blocker` claim with a
+    /// `Status { value: Blocked }` claim citing it.
+    Block {
+        subject: String,
+        text: String,
         /// A more specific artifact than the automatic HEAD-commit anchor:
         /// `path` or `path:start-end`.
         #[arg(long)]
         file: Option<String>,
+        /// Declares the subject (ClaimBody::Subject) alongside this claim —
+        /// requires `--kind` too.
+        #[arg(long)]
+        title: Option<String>,
+        /// Declares the subject's kind alongside this claim — requires
+        /// `--title` too.
+        #[arg(long)]
+        kind: Option<SubjectKindArg>,
         /// Print a human-readable confirmation instead of the bare CID.
         #[arg(long, short)]
         verbose: bool,
@@ -65,15 +73,27 @@ pub enum Command {
         /// `path` or `path:start-end`.
         #[arg(long)]
         file: Option<String>,
+        /// Declares the subject (ClaimBody::Subject) alongside this claim —
+        /// requires `--kind` too.
+        #[arg(long)]
+        title: Option<String>,
+        /// Declares the subject's kind alongside this claim — requires
+        /// `--title` too.
+        #[arg(long)]
+        kind: Option<SubjectKindArg>,
         /// Print a human-readable confirmation instead of the bare CID.
         #[arg(long, short)]
         verbose: bool,
     },
-    /// Record that a subject is blocked. Pairs a `Blocker` claim with a
-    /// `Status { value: Blocked }` claim citing it.
-    Block {
-        subject: String,
-        text: String,
+
+    // --- Structuring: relate subjects to each other ---
+    /// Assert that `a` and `b` are the same subject (Relation::SameAs).
+    Same {
+        a: String,
+        b: String,
+        /// CIDs of prior claims this one cites.
+        #[arg(long = "cites")]
+        cites: Vec<String>,
         /// A more specific artifact than the automatic HEAD-commit anchor:
         /// `path` or `path:start-end`.
         #[arg(long)]
@@ -82,10 +102,16 @@ pub enum Command {
         #[arg(long, short)]
         verbose: bool,
     },
-    /// Retract a prior claim of your own (`ClaimBody::Retraction`). Also
-    /// works on a `Retraction` itself — the undo mechanism.
-    Retract {
-        cid: String,
+    /// Assert a domain-semantic edge between `a` and `b` (Relation::{Blocks,
+    /// About, ManifestsAt, DependsOn, Accepts}). Not for identity — use
+    /// `kan same` for `SameAs`.
+    Relate {
+        a: String,
+        kind: RelationKindArg,
+        b: String,
+        /// CIDs of prior claims this one cites.
+        #[arg(long = "cites")]
+        cites: Vec<String>,
         /// A more specific artifact than the automatic HEAD-commit anchor:
         /// `path` or `path:start-end`.
         #[arg(long)]
@@ -106,6 +132,39 @@ pub enum Command {
         #[arg(long, short)]
         verbose: bool,
     },
+
+    // --- Correcting: undo or suppress a prior claim ---
+    /// Retract a prior claim of your own (`ClaimBody::Retraction`). Also
+    /// works on a `Retraction` itself — the undo mechanism.
+    Retract {
+        cid: String,
+        /// A more specific artifact than the automatic HEAD-commit anchor:
+        /// `path` or `path:start-end`.
+        #[arg(long)]
+        file: Option<String>,
+        /// Print a human-readable confirmation instead of the bare CID.
+        #[arg(long, short)]
+        verbose: bool,
+    },
+    /// Reject another author's claim (ClaimBody::Rejects) — a local
+    /// suppression honored only by folds that trust you. Errors, pointing to
+    /// `kan retract`, if the target is your own claim.
+    Reject {
+        cid: String,
+        /// A more specific artifact than the automatic HEAD-commit anchor:
+        /// `path` or `path:start-end`.
+        #[arg(long)]
+        file: Option<String>,
+        /// Print a human-readable confirmation instead of the bare CID.
+        #[arg(long, short)]
+        verbose: bool,
+    },
+
+    // --- Recalling: read the claim graph ---
+    /// Show a subject's live claims.
+    Show { subject: String },
+    /// Show status: one subject, or every subject if omitted.
+    Status { subject: Option<String> },
     /// List open (not-yet-resolved) subjects.
     Issues,
     /// Assemble the maximal-value claim set that fits under a token budget.
@@ -113,6 +172,7 @@ pub enum Command {
         #[arg(long)]
         budget: Option<usize>,
     },
+
     /// MCP server over stdio, and related setup.
     Mcp {
         #[command(subcommand)]
@@ -151,6 +211,50 @@ impl From<StatusValueArg> for crate::claim::StatusValue {
     }
 }
 
+/// Mirrors `claim::RelationKind`, minus `SameAs` (REQ-2 — `kan same` is the
+/// only way to write a `SameAs` edge, so `same-as` is deliberately not a
+/// valid value here; rejected at argument parsing, not a runtime check).
+/// Kept as a separate CLI-layer type for the same reason `StatusValueArg` is.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum RelationKindArg {
+    Blocks,
+    About,
+    ManifestsAt,
+    DependsOn,
+    Accepts,
+}
+
+impl From<RelationKindArg> for crate::claim::RelationKind {
+    fn from(value: RelationKindArg) -> Self {
+        match value {
+            RelationKindArg::Blocks => Self::Blocks,
+            RelationKindArg::About => Self::About,
+            RelationKindArg::ManifestsAt => Self::ManifestsAt,
+            RelationKindArg::DependsOn => Self::DependsOn,
+            RelationKindArg::Accepts => Self::Accepts,
+        }
+    }
+}
+
+/// Mirrors `claim::SubjectKind`. Kept as a separate CLI-layer type for the
+/// same reason `StatusValueArg`/`RelationKindArg` are.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum SubjectKindArg {
+    Issue,
+    Idea,
+    Question,
+}
+
+impl From<SubjectKindArg> for crate::claim::SubjectKind {
+    fn from(value: SubjectKindArg) -> Self {
+        match value {
+            SubjectKindArg::Issue => Self::Issue,
+            SubjectKindArg::Idea => Self::Idea,
+            SubjectKindArg::Question => Self::Question,
+        }
+    }
+}
+
 #[derive(Debug, clap::Args)]
 pub struct NarrativeArgs {
     pub text: String,
@@ -164,6 +268,18 @@ pub struct NarrativeArgs {
     /// `path` or `path:start-end`.
     #[arg(long)]
     pub file: Option<String>,
+    /// Pairs a `Status { value }` claim citing this one — the same pairing
+    /// `kan resolve`/`kan block` hardcode, generalized to any status value.
+    #[arg(long)]
+    pub status: Option<StatusValueArg>,
+    /// Declares the subject (ClaimBody::Subject) alongside this claim —
+    /// requires `--kind` too.
+    #[arg(long)]
+    pub title: Option<String>,
+    /// Declares the subject's kind alongside this claim — requires
+    /// `--title` too.
+    #[arg(long)]
+    pub kind: Option<SubjectKindArg>,
     /// Print a human-readable confirmation instead of the bare CID.
     #[arg(long, short)]
     pub verbose: bool,
@@ -189,21 +305,48 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
     match cli.command {
         Command::Observe(args) => {
             let verbose = args.verbose;
-            let result =
-                actions::observe(&mut ws, args.text, args.subject, args.cites, args.file).await?;
-            print_result(&result, verbose);
+            let result = actions::observe(
+                &mut ws,
+                args.text,
+                args.subject,
+                args.cites,
+                args.file,
+                args.status.map(Into::into),
+                args.title,
+                args.kind.map(Into::into),
+            )
+            .await?;
+            print_narrative_result(&result, verbose);
         }
         Command::Plan(args) => {
             let verbose = args.verbose;
-            let result =
-                actions::plan(&mut ws, args.text, args.subject, args.cites, args.file).await?;
-            print_result(&result, verbose);
+            let result = actions::plan(
+                &mut ws,
+                args.text,
+                args.subject,
+                args.cites,
+                args.file,
+                args.status.map(Into::into),
+                args.title,
+                args.kind.map(Into::into),
+            )
+            .await?;
+            print_narrative_result(&result, verbose);
         }
         Command::Decide(args) => {
             let verbose = args.verbose;
-            let result =
-                actions::decide(&mut ws, args.text, args.subject, args.cites, args.file).await?;
-            print_result(&result, verbose);
+            let result = actions::decide(
+                &mut ws,
+                args.text,
+                args.subject,
+                args.cites,
+                args.file,
+                args.status.map(Into::into),
+                args.title,
+                args.kind.map(Into::into),
+            )
+            .await?;
+            print_narrative_result(&result, verbose);
         }
         Command::Show { subject } => print!("{}", actions::show(&ws, &subject)?),
         Command::Status { subject } => print!("{}", actions::status(&ws, subject.as_deref())?),
@@ -217,27 +360,56 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             let result = actions::same(&mut ws, &a, &b, cites, file).await?;
             print_result(&result, verbose);
         }
+        Command::Relate {
+            a,
+            kind,
+            b,
+            cites,
+            file,
+            verbose,
+        } => {
+            let result = actions::relate(&mut ws, &a, kind.into(), &b, cites, file).await?;
+            print_result(&result, verbose);
+        }
         Command::Resolve {
             subject,
             text,
             cites,
             file,
+            title,
+            kind,
             verbose,
         } => {
-            let result = actions::resolve(&mut ws, &subject, &text, cites, file).await?;
+            let result = actions::resolve(
+                &mut ws,
+                &subject,
+                &text,
+                cites,
+                file,
+                title,
+                kind.map(Into::into),
+            )
+            .await?;
             print_paired_result(&result, verbose);
         }
         Command::Block {
             subject,
             text,
             file,
+            title,
+            kind,
             verbose,
         } => {
-            let result = actions::block(&mut ws, &subject, &text, file).await?;
+            let result =
+                actions::block(&mut ws, &subject, &text, file, title, kind.map(Into::into)).await?;
             print_paired_result(&result, verbose);
         }
         Command::Retract { cid, file, verbose } => {
             let result = actions::retract(&mut ws, &cid, file).await?;
+            print_result(&result, verbose);
+        }
+        Command::Reject { cid, file, verbose } => {
+            let result = actions::reject(&mut ws, &cid, file).await?;
             print_result(&result, verbose);
         }
         Command::Mark {
@@ -266,6 +438,17 @@ fn print_result(result: &actions::AppendResult, verbose: bool) {
         println!("{}", result.confirmation());
     } else {
         println!("{}", result.cid);
+    }
+}
+
+/// Bare-CID default is the narrative claim's CID only, matching
+/// `print_paired_result`'s convention — REQ-7's optional `Subject` claim
+/// only shows up under `--verbose`.
+fn print_narrative_result(result: &actions::NarrativeResult, verbose: bool) {
+    if verbose {
+        println!("{}", result.confirmation());
+    } else {
+        println!("{}", result.narrative.cid);
     }
 }
 

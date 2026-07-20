@@ -91,6 +91,18 @@ struct NarrativeParams {
         description = "A more specific artifact than the automatic HEAD-commit anchor: \"path\" or \"path:start-end\"."
     )]
     file: Option<String>,
+    /// Pairs a Status claim citing this one — the same pairing `resolve`/
+    /// `block` hardcode, generalized to any status value.
+    #[serde(default)]
+    status: Option<crate::claim::StatusValue>,
+    /// Declares the subject (ClaimBody::Subject) alongside this claim —
+    /// requires `kind` too.
+    #[serde(default)]
+    title: Option<String>,
+    /// Declares the subject's kind alongside this claim — requires `title`
+    /// too.
+    #[serde(default)]
+    kind: Option<crate::claim::SubjectKind>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -98,6 +110,49 @@ struct SameParams {
     /// The subject asserted to be the same as `b`.
     a: String,
     /// The subject `a` is asserted to be the same as.
+    b: String,
+    /// CIDs of prior claims this one cites.
+    #[serde(default)]
+    cites: Vec<String>,
+    #[serde(default)]
+    #[schemars(
+        description = "A more specific artifact than the automatic HEAD-commit anchor: \"path\" or \"path:start-end\"."
+    )]
+    file: Option<String>,
+}
+
+/// Mirrors `claim::RelationKind`, minus `SameAs` — the MCP-side counterpart
+/// to `cli::RelationKindArg` (REQ-2: `same` is the only way to write a
+/// `SameAs` edge), enforced the same way, at the deserialization boundary
+/// rather than a runtime check in `actions::relate`.
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+enum RelateKindParam {
+    Blocks,
+    About,
+    ManifestsAt,
+    DependsOn,
+    Accepts,
+}
+
+impl From<RelateKindParam> for crate::claim::RelationKind {
+    fn from(value: RelateKindParam) -> Self {
+        match value {
+            RelateKindParam::Blocks => Self::Blocks,
+            RelateKindParam::About => Self::About,
+            RelateKindParam::ManifestsAt => Self::ManifestsAt,
+            RelateKindParam::DependsOn => Self::DependsOn,
+            RelateKindParam::Accepts => Self::Accepts,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RelateParams {
+    /// The subject the edge is asserted from.
+    a: String,
+    /// The kind of domain-semantic edge asserted.
+    kind: RelateKindParam,
+    /// The subject the edge is asserted to.
     b: String,
     /// CIDs of prior claims this one cites.
     #[serde(default)]
@@ -123,6 +178,14 @@ struct ResolveParams {
         description = "A more specific artifact than the automatic HEAD-commit anchor: \"path\" or \"path:start-end\"."
     )]
     file: Option<String>,
+    /// Declares the subject (ClaimBody::Subject) alongside this claim —
+    /// requires `kind` too.
+    #[serde(default)]
+    title: Option<String>,
+    /// Declares the subject's kind alongside this claim — requires `title`
+    /// too.
+    #[serde(default)]
+    kind: Option<crate::claim::SubjectKind>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -136,11 +199,30 @@ struct BlockParams {
         description = "A more specific artifact than the automatic HEAD-commit anchor: \"path\" or \"path:start-end\"."
     )]
     file: Option<String>,
+    /// Declares the subject (ClaimBody::Subject) alongside this claim —
+    /// requires `kind` too.
+    #[serde(default)]
+    title: Option<String>,
+    /// Declares the subject's kind alongside this claim — requires `title`
+    /// too.
+    #[serde(default)]
+    kind: Option<crate::claim::SubjectKind>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct RetractParams {
     /// The CID of the claim to retract (must be your own).
+    cid: String,
+    #[serde(default)]
+    #[schemars(
+        description = "A more specific artifact than the automatic HEAD-commit anchor: \"path\" or \"path:start-end\"."
+    )]
+    file: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RejectParams {
+    /// The CID of the claim to reject (must be another author's).
     cid: String,
     #[serde(default)]
     #[schemars(
@@ -207,30 +289,62 @@ impl KanServer {
     async fn observe(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::observe(&mut ws, p.text, p.subject, p.cites, p.file)
-            .await
-            .map(|r| r.confirmation())
-            .map_err(to_error)
+        actions::observe(
+            &mut ws, p.text, p.subject, p.cites, p.file, p.status, p.title, p.kind,
+        )
+        .await
+        .map(|r| r.confirmation())
+        .map_err(to_error)
     }
 
     #[tool(description = "Record an intended approach (ClaimBody::Plan).")]
     async fn plan(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::plan(&mut ws, p.text, p.subject, p.cites, p.file)
-            .await
-            .map(|r| r.confirmation())
-            .map_err(to_error)
+        actions::plan(
+            &mut ws, p.text, p.subject, p.cites, p.file, p.status, p.title, p.kind,
+        )
+        .await
+        .map(|r| r.confirmation())
+        .map_err(to_error)
     }
 
     #[tool(description = "Record a choice made (ClaimBody::Decision).")]
     async fn decide(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::decide(&mut ws, p.text, p.subject, p.cites, p.file)
+        actions::decide(
+            &mut ws, p.text, p.subject, p.cites, p.file, p.status, p.title, p.kind,
+        )
+        .await
+        .map(|r| r.confirmation())
+        .map_err(to_error)
+    }
+
+    #[tool(
+        description = "Record that a subject is blocked: pairs a Blocker claim with a Status{Blocked} claim citing it."
+    )]
+    async fn block(&self, params: Parameters<BlockParams>) -> Result<String, ErrorData> {
+        let mut ws = self.workspace().await?;
+        let p = params.0;
+        actions::block(&mut ws, &p.subject, &p.text, p.file, p.title, p.kind)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
+    }
+
+    #[tool(
+        description = "Record that a subject has been resolved: pairs a Resolution claim with a Status{Resolved} claim citing it."
+    )]
+    async fn resolve(&self, params: Parameters<ResolveParams>) -> Result<String, ErrorData> {
+        let mut ws = self.workspace().await?;
+        let p = params.0;
+        actions::resolve(
+            &mut ws, &p.subject, &p.text, p.cites, p.file, p.title, p.kind,
+        )
+        .await
+        .map(|r| r.confirmation())
+        .map_err(to_error)
     }
 
     #[tool(description = "Assert that two subjects are the same (Relation::SameAs).")]
@@ -244,24 +358,12 @@ impl KanServer {
     }
 
     #[tool(
-        description = "Record that a subject has been resolved: pairs a Resolution claim with a Status{Resolved} claim citing it."
+        description = "Assert a domain-semantic edge between two subjects (Relation::{Blocks, About, ManifestsAt, DependsOn, Accepts}). Not for identity -- use same for SameAs."
     )]
-    async fn resolve(&self, params: Parameters<ResolveParams>) -> Result<String, ErrorData> {
+    async fn relate(&self, params: Parameters<RelateParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
-        actions::resolve(&mut ws, &p.subject, &p.text, p.cites, p.file)
-            .await
-            .map(|r| r.confirmation())
-            .map_err(to_error)
-    }
-
-    #[tool(
-        description = "Record that a subject is blocked: pairs a Blocker claim with a Status{Blocked} claim citing it."
-    )]
-    async fn block(&self, params: Parameters<BlockParams>) -> Result<String, ErrorData> {
-        let mut ws = self.workspace().await?;
-        let p = params.0;
-        actions::block(&mut ws, &p.subject, &p.text, p.file)
+        actions::relate(&mut ws, &p.a, p.kind.into(), &p.b, p.cites, p.file)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
@@ -274,6 +376,18 @@ impl KanServer {
         let mut ws = self.workspace().await?;
         let p = params.0;
         actions::retract(&mut ws, &p.cid, p.file)
+            .await
+            .map(|r| r.confirmation())
+            .map_err(to_error)
+    }
+
+    #[tool(
+        description = "Reject another author's claim (ClaimBody::Rejects) -- a local suppression honored only by folds that trust you. Errors, pointing to retract, if the target is your own claim."
+    )]
+    async fn reject(&self, params: Parameters<RejectParams>) -> Result<String, ErrorData> {
+        let mut ws = self.workspace().await?;
+        let p = params.0;
+        actions::reject(&mut ws, &p.cid, p.file)
             .await
             .map(|r| r.confirmation())
             .map_err(to_error)
@@ -321,7 +435,10 @@ impl ServerHandler for KanServer {
     /// operations or a workflow — that's process, and kan's scope is the
     /// durable claim log and reads over it, not opinions about when an
     /// agent should call which tool (`docs/DECISIONS.md`'s
-    /// kan/companion-tool boundary rule).
+    /// kan/companion-tool boundary rule). REQ-11: organized around the same
+    /// four AX phases `cli::Command`'s declaration order groups by
+    /// (Recording, Structuring, Correcting, Recalling), still guarded by
+    /// `tests/mcp_server.rs`'s sequencing-language check.
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(
             ServerCapabilities::builder()
@@ -333,15 +450,25 @@ impl ServerHandler for KanServer {
             "kan is an append-only, signed, content-addressed claim log for this repo. \
              A \"subject\" is a freely-chosen name (e.g. \"bug-42\") that claims are \
              about; the same subject name always refers to the same thing within one \
-             log. observe/plan/decide/resolve/same each append one claim of a \
-             different kind (finding, intended approach, choice made, resolution, or \
-             an identity assertion that two subjects are the same). show returns one \
-             subject's full live claim history; status returns Settled/Confirmed/ \
-             Contested classification for one subject, or a one-line summary for \
-             every subject if none is given. issues lists subjects that aren't \
-             resolved yet. context returns the highest-value claims that fit under a \
-             token budget. A subject's live claims are also readable as a resource \
-             at kan://claims/<subject>, the same data the show tool returns.",
+             log. The tool surface groups into four phases. Recording (observe/plan/ \
+             decide/block/resolve) each append a narrative claim (finding, intended \
+             approach, choice made, blocker, resolution); block/resolve also pair a \
+             Status claim, observe/plan/decide can optionally pair one too via a \
+             status param, and every Recording tool can optionally declare the \
+             subject's title/kind. Structuring (same/relate/mark) asserts \
+             relationships and status independent of any narrative: same asserts two \
+             subjects are the same, relate asserts a domain edge (blocks/about/ \
+             manifests-at/depends-on/accepts), mark writes a bare status value. \
+             Correcting (retract/reject) supersedes a claim: retract for your own, \
+             reject (a local suppression honored only by trusting folds) for another \
+             author's. Recalling (show/status/issues/context) reads the claim graph: \
+             show returns one subject's full live claim history; status returns \
+             Settled/Confirmed/Contested classification for one subject, or a \
+             one-line summary for every subject if none is given; issues lists \
+             subjects that aren't resolved yet; context returns the highest-value \
+             claims that fit under a token budget. A subject's live claims are also \
+             readable as a resource at kan://claims/<subject>, the same data the show \
+             tool returns.",
         )
     }
 

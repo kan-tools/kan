@@ -387,6 +387,218 @@ fn same_cites_round_trips() {
     assert!(show_out.contains(&prior_cid));
 }
 
+/// AC-1: `kan relate` writes a live `Relation{kind, target}` claim for each
+/// of the 5 non-identity `RelationKind`s.
+#[test]
+fn relate_writes_a_relation_claim_for_each_non_identity_kind() {
+    let dir = git_repo();
+    kan(dir.path(), &["observe", "x", "--subject", "bug-42"]);
+    kan(dir.path(), &["observe", "y", "--subject", "issue-7"]);
+
+    for kind in ["blocks", "about", "manifests-at", "depends-on", "accepts"] {
+        let (_, err, ok) = kan(dir.path(), &["relate", "bug-42", kind, "issue-7"]);
+        assert!(ok, "kan relate {kind} failed: {err}");
+    }
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("Blocks"));
+    assert!(show_out.contains("About"));
+    assert!(show_out.contains("ManifestsAt"));
+    assert!(show_out.contains("DependsOn"));
+    assert!(show_out.contains("Accepts"));
+}
+
+/// AC-1: `same-as` is not a valid `kind` value for `relate` — rejected at
+/// argument parsing, confirming `SameAs` stays `kan same`'s alone (REQ-2).
+#[test]
+fn relate_rejects_same_as_at_argument_parsing() {
+    let dir = git_repo();
+    let (_, err, ok) = kan(dir.path(), &["relate", "bug-42", "same-as", "issue-7"]);
+    assert!(!ok);
+    assert!(err.contains("same-as") || err.to_lowercase().contains("invalid value"));
+}
+
+/// AC-3 (first half): `kan reject` on the caller's own claim errors,
+/// mentioning `kan retract`. (The success half — rejecting another author's
+/// claim — needs a genuinely different signing identity, so it's covered at
+/// the library level in `tests/write_surface.rs`, same split `retract`'s own
+/// cross-author half already uses.)
+#[test]
+fn reject_refuses_the_callers_own_claim() {
+    let dir = git_repo();
+    let (cid, _, ok) = kan(dir.path(), &["observe", "x", "--subject", "bug-42"]);
+    assert!(ok);
+
+    let (_, err, ok) = kan(dir.path(), &["reject", &cid]);
+    assert!(!ok);
+    assert!(err.contains("kan retract"));
+}
+
+/// AC-6: `kan observe bug-42 "fixed" --status resolved` produces two
+/// claims (`Observation` + `Status{Resolved}` citing it) — the same pairing
+/// shape `kan resolve` produces, via a different narrative kind.
+#[test]
+fn observe_status_pairs_a_status_claim_citing_the_narrative() {
+    let dir = git_repo();
+    let (narrative_cid, err, ok) = kan(
+        dir.path(),
+        &[
+            "observe",
+            "fixed",
+            "--subject",
+            "bug-42",
+            "--status",
+            "resolved",
+        ],
+    );
+    assert!(ok, "{err}");
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("2 live claim(s)"));
+    assert!(show_out.contains("Observation"));
+    assert!(show_out.contains("Status"));
+    assert!(show_out.contains("Resolved"));
+    assert!(show_out.contains(&narrative_cid));
+
+    // The default bare-CID output is still the narrative claim's CID.
+    let (status_out, _, ok) = kan(dir.path(), &["status", "bug-42"]);
+    assert!(ok);
+    assert!(status_out.contains("Settled(Resolved)"));
+}
+
+/// `--status` is independent of `--title`/`--kind` -- a single call can
+/// write all three (narrative, status, subject) at once.
+#[test]
+fn plan_status_and_title_kind_together_write_three_claims() {
+    let dir = git_repo();
+    let (_, err, ok) = kan(
+        dir.path(),
+        &[
+            "plan",
+            "add retry logic",
+            "--subject",
+            "bug-42",
+            "--status",
+            "in-progress",
+            "--title",
+            "Bug 42",
+            "--kind",
+            "issue",
+        ],
+    );
+    assert!(ok, "{err}");
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("3 live claim(s)"));
+}
+
+/// AC-7 (success half): `--title`/`--kind` together write an extra
+/// `Subject{title, subject_kind}` claim alongside the narrative claim.
+#[test]
+fn observe_title_and_kind_writes_a_subject_claim() {
+    let dir = git_repo();
+    let (_, err, ok) = kan(
+        dir.path(),
+        &[
+            "observe",
+            "x",
+            "--subject",
+            "bug-42",
+            "--title",
+            "Bug 42",
+            "--kind",
+            "issue",
+        ],
+    );
+    assert!(ok, "{err}");
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("2 live claim(s)"));
+    assert!(show_out.contains("Observation"));
+    assert!(show_out.contains("Subject"));
+    assert!(show_out.contains("Issue"));
+    assert!(show_out.contains("Bug 42"));
+}
+
+/// AC-7 (error half): `--title` without `--kind` (and vice versa) errors
+/// clearly, rather than writing a partial/inert `Subject` claim.
+#[test]
+fn observe_title_without_kind_errors() {
+    let dir = git_repo();
+    let (_, err, ok) = kan(
+        dir.path(),
+        &["observe", "x", "--subject", "bug-42", "--title", "Bug 42"],
+    );
+    assert!(!ok);
+    assert!(err.contains("--title") && err.contains("--kind"));
+
+    // Nothing was written at all -- not even the narrative claim.
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("no claims"));
+}
+
+#[test]
+fn observe_kind_without_title_errors() {
+    let dir = git_repo();
+    let (_, err, ok) = kan(
+        dir.path(),
+        &["observe", "x", "--subject", "bug-42", "--kind", "issue"],
+    );
+    assert!(!ok);
+    assert!(err.contains("--title") && err.contains("--kind"));
+}
+
+/// AC-8: `kan issues` excludes a subject with zero `Status` claims and no
+/// declared `SubjectKind::Issue` -- the regression case shaped exactly like
+/// `spine` (only narrative claims, never `Status`), the real shipped bug
+/// this fixes.
+#[test]
+fn issues_excludes_a_subject_with_no_status_and_no_declared_issue_kind() {
+    let dir = git_repo();
+    kan(
+        dir.path(),
+        &["observe", "just a finding", "--subject", "spine"],
+    );
+    kan(dir.path(), &["plan", "next steps", "--subject", "spine"]);
+    kan(dir.path(), &["decide", "went with X", "--subject", "spine"]);
+
+    let (issues_out, _, ok) = kan(dir.path(), &["issues"]);
+    assert!(ok);
+    assert!(!issues_out.contains("spine"));
+    assert!(issues_out.contains("no open issues"));
+}
+
+/// AC-9: `kan issues` *does* list a subject with a declared
+/// `SubjectKind::Issue` `Subject` claim, even before any `Status` claim
+/// exists for it.
+#[test]
+fn issues_lists_a_subject_declared_as_issue_kind_before_any_status_claim() {
+    let dir = git_repo();
+    let (_, err, ok) = kan(
+        dir.path(),
+        &[
+            "observe",
+            "crashes on startup",
+            "--subject",
+            "bug-42",
+            "--title",
+            "Bug 42",
+            "--kind",
+            "issue",
+        ],
+    );
+    assert!(ok, "{err}");
+
+    let (issues_out, _, ok) = kan(dir.path(), &["issues"]);
+    assert!(ok);
+    assert!(issues_out.contains("bug-42"));
+}
+
 /// Issue #3: `kan` walks upward to find the repo root (`.git/`), the same
 /// search `git` itself does, so `.kan/` always lands beside `.git/`
 /// (ADR-3) regardless of which subdirectory it's invoked from.
