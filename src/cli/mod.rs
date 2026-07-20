@@ -26,18 +26,67 @@ pub struct Cli {
     pub command: Command,
 }
 
+/// REQ-10: declared in four AX-driven phases — Recording, Structuring,
+/// Correcting, Recalling — so `kan --help`'s output (clap prints
+/// subcommands in declaration order) teaches the phase structure with no
+/// runtime cost, purely from ordering. `Mcp` sits outside the four phases
+/// (setup/tooling, not a claim-graph verb) and stays last.
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    // --- Recording: append a claim ---
     /// Record a finding.
     Observe(NarrativeArgs),
     /// Record an intended approach.
     Plan(NarrativeArgs),
     /// Record a choice made.
     Decide(NarrativeArgs),
-    /// Show a subject's live claims.
-    Show { subject: String },
-    /// Show status: one subject, or every subject if omitted.
-    Status { subject: Option<String> },
+    /// Record that a subject is blocked. Pairs a `Blocker` claim with a
+    /// `Status { value: Blocked }` claim citing it.
+    Block {
+        subject: String,
+        text: String,
+        /// A more specific artifact than the automatic HEAD-commit anchor:
+        /// `path` or `path:start-end`.
+        #[arg(long)]
+        file: Option<String>,
+        /// Declares the subject (ClaimBody::Subject) alongside this claim —
+        /// requires `--kind` too.
+        #[arg(long)]
+        title: Option<String>,
+        /// Declares the subject's kind alongside this claim — requires
+        /// `--title` too.
+        #[arg(long)]
+        kind: Option<SubjectKindArg>,
+        /// Print a human-readable confirmation instead of the bare CID.
+        #[arg(long, short)]
+        verbose: bool,
+    },
+    /// Record that a subject has been resolved. Pairs a `Resolution` claim
+    /// with a `Status { value: Resolved }` claim citing it.
+    Resolve {
+        subject: String,
+        text: String,
+        /// CIDs of prior claims the `Resolution` claim cites.
+        #[arg(long = "cites")]
+        cites: Vec<String>,
+        /// A more specific artifact than the automatic HEAD-commit anchor:
+        /// `path` or `path:start-end`.
+        #[arg(long)]
+        file: Option<String>,
+        /// Declares the subject (ClaimBody::Subject) alongside this claim —
+        /// requires `--kind` too.
+        #[arg(long)]
+        title: Option<String>,
+        /// Declares the subject's kind alongside this claim — requires
+        /// `--title` too.
+        #[arg(long)]
+        kind: Option<SubjectKindArg>,
+        /// Print a human-readable confirmation instead of the bare CID.
+        #[arg(long, short)]
+        verbose: bool,
+    },
+
+    // --- Structuring: relate subjects to each other ---
     /// Assert that `a` and `b` are the same subject (Relation::SameAs).
     Same {
         a: String,
@@ -71,51 +120,20 @@ pub enum Command {
         #[arg(long, short)]
         verbose: bool,
     },
-    /// Record that a subject has been resolved. Pairs a `Resolution` claim
-    /// with a `Status { value: Resolved }` claim citing it.
-    Resolve {
+    /// Write a bare status claim with no paired narrative.
+    Mark {
         subject: String,
-        text: String,
-        /// CIDs of prior claims the `Resolution` claim cites.
-        #[arg(long = "cites")]
-        cites: Vec<String>,
+        value: StatusValueArg,
         /// A more specific artifact than the automatic HEAD-commit anchor:
         /// `path` or `path:start-end`.
         #[arg(long)]
         file: Option<String>,
-        /// Declares the subject (ClaimBody::Subject) alongside this claim —
-        /// requires `--kind` too.
-        #[arg(long)]
-        title: Option<String>,
-        /// Declares the subject's kind alongside this claim — requires
-        /// `--title` too.
-        #[arg(long)]
-        kind: Option<SubjectKindArg>,
         /// Print a human-readable confirmation instead of the bare CID.
         #[arg(long, short)]
         verbose: bool,
     },
-    /// Record that a subject is blocked. Pairs a `Blocker` claim with a
-    /// `Status { value: Blocked }` claim citing it.
-    Block {
-        subject: String,
-        text: String,
-        /// A more specific artifact than the automatic HEAD-commit anchor:
-        /// `path` or `path:start-end`.
-        #[arg(long)]
-        file: Option<String>,
-        /// Declares the subject (ClaimBody::Subject) alongside this claim —
-        /// requires `--kind` too.
-        #[arg(long)]
-        title: Option<String>,
-        /// Declares the subject's kind alongside this claim — requires
-        /// `--title` too.
-        #[arg(long)]
-        kind: Option<SubjectKindArg>,
-        /// Print a human-readable confirmation instead of the bare CID.
-        #[arg(long, short)]
-        verbose: bool,
-    },
+
+    // --- Correcting: undo or suppress a prior claim ---
     /// Retract a prior claim of your own (`ClaimBody::Retraction`). Also
     /// works on a `Retraction` itself — the undo mechanism.
     Retract {
@@ -141,18 +159,12 @@ pub enum Command {
         #[arg(long, short)]
         verbose: bool,
     },
-    /// Write a bare status claim with no paired narrative.
-    Mark {
-        subject: String,
-        value: StatusValueArg,
-        /// A more specific artifact than the automatic HEAD-commit anchor:
-        /// `path` or `path:start-end`.
-        #[arg(long)]
-        file: Option<String>,
-        /// Print a human-readable confirmation instead of the bare CID.
-        #[arg(long, short)]
-        verbose: bool,
-    },
+
+    // --- Recalling: read the claim graph ---
+    /// Show a subject's live claims.
+    Show { subject: String },
+    /// Show status: one subject, or every subject if omitted.
+    Status { subject: Option<String> },
     /// List open (not-yet-resolved) subjects.
     Issues,
     /// Assemble the maximal-value claim set that fits under a token budget.
@@ -160,6 +172,7 @@ pub enum Command {
         #[arg(long)]
         budget: Option<usize>,
     },
+
     /// MCP server over stdio, and related setup.
     Mcp {
         #[command(subcommand)]
