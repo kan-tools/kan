@@ -653,6 +653,83 @@ fn help_text_distinguishes_observe_result_resolve() {
     assert!(help_out.to_lowercase().contains("closes the subject"));
 }
 
+/// AC-5: a normalized-but-differently-spelled subject name prints a
+/// non-blocking stderr warning naming both spellings; the write still
+/// succeeds (exit 0, claim written, stdout unaffected).
+#[test]
+fn naming_nudge_warns_on_a_case_separator_variant() {
+    let dir = git_repo();
+    let (_, _, ok) = kan(dir.path(), &["observe", "x", "--subject", "f1-c1"]);
+    assert!(ok);
+
+    let (cid, err, ok) = kan(dir.path(), &["observe", "y", "--subject", "F1-C1"]);
+    assert!(ok);
+    assert!(!cid.is_empty(), "stdout should still be the bare CID");
+    assert!(err.contains("f1-c1"));
+    assert!(err.contains("F1-C1"));
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "F1-C1"]);
+    assert!(ok);
+    assert!(
+        show_out.contains("1 live claim(s)"),
+        "the write still landed"
+    );
+}
+
+/// AC-6: a genuinely different subject name (not a normalization match)
+/// prints no warning.
+#[test]
+fn naming_nudge_is_silent_for_a_genuinely_different_subject() {
+    let dir = git_repo();
+    kan(dir.path(), &["observe", "x", "--subject", "f1-c1"]);
+
+    let (_, err, ok) = kan(dir.path(), &["observe", "y", "--subject", "f1-c2"]);
+    assert!(ok);
+    assert!(err.is_empty(), "expected no warning, got: {err}");
+}
+
+/// AC-7: the nudge fires identically on `same`/`relate`/`mark`, not just
+/// the Recording verbs -- including both subject positions on `same`/
+/// `relate`.
+#[test]
+fn naming_nudge_fires_on_structuring_verbs() {
+    let dir = git_repo();
+    kan(dir.path(), &["observe", "x", "--subject", "f1-c1"]);
+    kan(dir.path(), &["observe", "y", "--subject", "issue-7"]);
+
+    let (_, err, ok) = kan(dir.path(), &["mark", "F1-C1", "in-progress"]);
+    assert!(ok);
+    assert!(err.contains("f1-c1"));
+
+    let (_, err, ok) = kan(dir.path(), &["same", "F1-C1", "issue-8"]);
+    assert!(ok);
+    assert!(
+        err.contains("f1-c1"),
+        "expected a warning for the `a` position, got: {err}"
+    );
+
+    let (_, err, ok) = kan(dir.path(), &["relate", "issue-9", "blocks", "Issue-7"]);
+    assert!(ok);
+    assert!(
+        err.contains("issue-7"),
+        "expected a warning for the `b` position, got: {err}"
+    );
+}
+
+/// `kan result` (REQ-1, PR1) is also a subject-taking write verb -- the
+/// nudge covers it too, not just the verbs named in the original v0.4
+/// design doc text (a design-doc undercount caught and fixed at
+/// implementation time, ADR-38).
+#[test]
+fn naming_nudge_fires_on_result() {
+    let dir = git_repo();
+    kan(dir.path(), &["observe", "x", "--subject", "f1-c1"]);
+
+    let (_, err, ok) = kan(dir.path(), &["result", "F1-C1", "ran the fix"]);
+    assert!(ok);
+    assert!(err.contains("f1-c1"));
+}
+
 /// Issue #3: `kan` walks upward to find the repo root (`.git/`), the same
 /// search `git` itself does, so `.kan/` always lands beside `.git/`
 /// (ADR-3) regardless of which subdirectory it's invoked from.
