@@ -24,7 +24,11 @@ decategorify only at render) → git anchors + computable relation providers →
 CLI + MCP server with budgeted context assembly.
 
 Explicitly OUT for v1: sync/atproto/lexicons, TUI, web dashboard, editor
-extensions, >2 trust policies, enforcement hooks, incremental fold.
+extensions, >2 trust policies, enforcement hooks, incremental fold. The
+local-only spine (this section) shipped through v0.3.0-beta.1; sync now has
+a concrete staging plan (`.design/sync-layer-architecture-and-staging.md`,
+`docs/DECISIONS.md` ADR-35) — see that doc before starting any sync-adjacent
+work rather than treating "out for v1" as still open-ended.
 
 ## House rules
 - Rust. Use `atproto-repo` + `atproto-dasl` for MST/CAR/CID (`atrium-crypto`
@@ -49,8 +53,14 @@ The local-only path must be *dramatically* simpler than the multi-actor path
 If it isn't, the abstraction is wrong — stop and reconsider.
 
 ## CLI vocabulary (git-like, verb-first)
-kan observe | plan | decide | resolve | same | show | issues | status |
-context [--budget N] | mcp [install]
+Declared in four AX-driven phases (`docs/DECISIONS.md` ADR-32) — `kan --help`
+reflects this order directly, so treat it as the source of truth over this
+line if they ever drift:
+- Recording: `observe | plan | decide | block | resolve | result`
+- Structuring: `same | relate | mark`
+- Correcting: `retract | reject`
+- Recalling: `show | status | issues | context [--budget N]`
+- Outside the four phases (setup/tooling, not a claim-graph verb): `mcp [install]`
 
 ## Scope boundary: kan vs. a future companion tool
 kan owns a feature iff it needs a new/existing `ClaimBody`/`ClaimKind`/
@@ -74,12 +84,19 @@ Clean-room successor to `crosslink`. Build forward from SPEC.md; consult crossli
 only as lessons-learned (its sync model is what we're fixing), not a codebase to port.
 
 ## Workflow: one PR per milestone
-Each spine milestone (see `.design/kan-spine.md`'s M1–M6 roadmap) is its own
-branch and PR, not a direct commit to `main` — branch off `main`, commit, push,
-`gh pr create`, wait for CI (`.github/workflows/ci.yml`) to go green, then
-`gh pr merge --merge --delete-branch` (regular merge, not squash, so the
-milestone's internal commits stay visible in history). Keeps each PR's diff
-scoped to exactly one milestone.
+Each milestone — the original spine (`.design/kan-spine.md`'s M1–M6 roadmap)
+and every release since (`.design/v0.2-milestone.md`, `v0.3-milestone.md`,
+`v0.4-milestone.md`, …) — is its own branch and PR, not a direct commit to
+`main` — branch off `main`, commit, push, `gh pr create`, wait for CI
+(`.github/workflows/ci.yml`) to go green, then `gh pr merge --merge
+--delete-branch` (regular merge, not squash, so the milestone's internal
+commits stay visible in history). Keeps each PR's diff scoped to exactly one
+milestone. A milestone doc frequently breaks into several requirement-scoped
+PRs (see any `.design/vX.Y-milestone.md`'s own PR breakdown) — each still
+gets this same branch → PR → CI → merge treatment individually, and if two
+PRs both land new `docs/DECISIONS.md` ADR entries at the tail of the file
+before either merges, expect (and resolve, don't avoid) a same-spot merge
+conflict — reorder by ADR number, don't drop either entry.
 
 ## Workflow: release
 Bump `Cargo.toml`'s `version` on `main`, then push a tag matching `v*.*.*`
