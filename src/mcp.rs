@@ -189,6 +189,34 @@ struct ResolveParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct ResultParams {
+    /// The subject the action's outcome is about.
+    subject: String,
+    /// What happened.
+    text: String,
+    /// CIDs of prior claims this one cites.
+    #[serde(default)]
+    cites: Vec<String>,
+    #[serde(default)]
+    #[schemars(
+        description = "A more specific artifact than the automatic HEAD-commit anchor: \"path\" or \"path:start-end\"."
+    )]
+    file: Option<String>,
+    /// Pairs a Status claim citing this one — the same pairing resolve/
+    /// block hardcode, generalized.
+    #[serde(default)]
+    status: Option<crate::claim::StatusValue>,
+    /// Declares the subject (ClaimBody::Subject) alongside this claim —
+    /// requires `kind` too.
+    #[serde(default)]
+    title: Option<String>,
+    /// Declares the subject's kind alongside this claim — requires `title`
+    /// too.
+    #[serde(default)]
+    kind: Option<crate::claim::SubjectKind>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct BlockParams {
     /// The subject that is blocked.
     subject: String,
@@ -285,7 +313,9 @@ impl KanServer {
 
 #[tool_router]
 impl KanServer {
-    #[tool(description = "Record a finding (ClaimBody::Observation).")]
+    #[tool(
+        description = "Record something you noticed -- a fact about the current state, not something you did (ClaimBody::Observation). Use result instead for the outcome of an action you took."
+    )]
     async fn observe(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
@@ -334,13 +364,27 @@ impl KanServer {
     }
 
     #[tool(
-        description = "Record that a subject has been resolved: pairs a Resolution claim with a Status{Resolved} claim citing it."
+        description = "Record that a subject is now resolved -- an outcome that also closes the subject out; use result instead when it doesn't. Pairs a Resolution claim with a Status{Resolved} claim citing it."
     )]
     async fn resolve(&self, params: Parameters<ResolveParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
         let p = params.0;
         actions::resolve(
             &mut ws, &p.subject, &p.text, p.cites, p.file, p.title, p.kind,
+        )
+        .await
+        .map(|r| r.confirmation())
+        .map_err(to_error)
+    }
+
+    #[tool(
+        description = "Record the outcome of an action you just took -- what happened after you ran something, changed something, or executed a step (ClaimBody::Result). Use resolve instead when the outcome also means this subject's work is done."
+    )]
+    async fn result(&self, params: Parameters<ResultParams>) -> Result<String, ErrorData> {
+        let mut ws = self.workspace().await?;
+        let p = params.0;
+        actions::result(
+            &mut ws, &p.subject, &p.text, p.cites, p.file, p.status, p.title, p.kind,
         )
         .await
         .map(|r| r.confirmation())
@@ -451,11 +495,15 @@ impl ServerHandler for KanServer {
              A \"subject\" is a freely-chosen name (e.g. \"bug-42\") that claims are \
              about; the same subject name always refers to the same thing within one \
              log. The tool surface groups into four phases. Recording (observe/plan/ \
-             decide/block/resolve) each append a narrative claim (finding, intended \
-             approach, choice made, blocker, resolution); block/resolve also pair a \
-             Status claim, observe/plan/decide can optionally pair one too via a \
-             status param, and every Recording tool can optionally declare the \
-             subject's title/kind. Structuring (same/relate/mark) asserts \
+             decide/block/resolve/result) each append a narrative claim (finding, \
+             intended approach, choice made, blocker, resolution, or the outcome of \
+             an action taken); block/resolve also pair a Status claim, observe/plan/ \
+             decide/result can optionally pair one too via a status param, and every \
+             Recording tool can optionally declare the subject's title/kind. observe \
+             records something noticed; result records the outcome of an action \
+             without necessarily closing anything out; resolve records an outcome \
+             that also closes the subject (pairs Status{Resolved}). Structuring \
+             (same/relate/mark) asserts \
              relationships and status independent of any narrative: same asserts two \
              subjects are the same, relate asserts a domain edge (blocks/about/ \
              manifests-at/depends-on/accepts), mark writes a bare status value. \

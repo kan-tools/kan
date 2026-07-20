@@ -599,6 +599,60 @@ fn issues_lists_a_subject_declared_as_issue_kind_before_any_status_claim() {
     assert!(issues_out.contains("bug-42"));
 }
 
+/// AC-1: `kan result` writes a live `Result{text}` claim, with no paired
+/// `Status` claim (unlike `resolve`).
+#[test]
+fn result_writes_a_result_claim_with_no_status_pairing() {
+    let dir = git_repo();
+    let (_, err, ok) = kan(
+        dir.path(),
+        &["result", "bug-42", "ran the fix, build is green"],
+    );
+    assert!(ok, "{err}");
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("1 live claim(s)"));
+    assert!(show_out.contains("Result"));
+    assert!(!show_out.contains("Status"));
+}
+
+/// `kan result` also supports `--status`, matching `observe`/`plan`/
+/// `decide`'s generalized (opt-in, not automatic) pairing.
+#[test]
+fn result_status_pairs_a_status_claim() {
+    let dir = git_repo();
+    let (_, err, ok) = kan(
+        dir.path(),
+        &[
+            "result",
+            "bug-42",
+            "ran the fix, build is green",
+            "--status",
+            "resolved",
+        ],
+    );
+    assert!(ok, "{err}");
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("2 live claim(s)"));
+    assert!(show_out.contains("Result"));
+    assert!(show_out.contains("Status"));
+}
+
+/// AC-2: `kan --help` shows sharpened, trigger-condition descriptions for
+/// `observe`/`result`/`resolve` so the narrow semantic gap stays legible.
+#[test]
+fn help_text_distinguishes_observe_result_resolve() {
+    let dir = git_repo();
+    let (help_out, _, ok) = kan(dir.path(), &["--help"]);
+    assert!(ok);
+    assert!(help_out.to_lowercase().contains("noticed"));
+    assert!(help_out.to_lowercase().contains("outcome of an action"));
+    assert!(help_out.to_lowercase().contains("closes the subject"));
+}
+
 /// Issue #3: `kan` walks upward to find the repo root (`.git/`), the same
 /// search `git` itself does, so `.kan/` always lands beside `.git/`
 /// (ADR-3) regardless of which subdirectory it's invoked from.

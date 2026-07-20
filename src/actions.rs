@@ -276,6 +276,10 @@ async fn narrative(
     })
 }
 
+/// Records something noticed — a fact about the current state of the
+/// world, not something the caller did. Distinct from `result` (the
+/// outcome of an action taken) and `resolve` (an outcome that also closes
+/// the subject out) — see each verb's own doc comment.
 #[allow(clippy::too_many_arguments)]
 pub async fn observe(
     ws: &mut Workspace,
@@ -351,6 +355,41 @@ pub async fn decide(
     .await
 }
 
+/// Records the outcome of an action just taken — `ClaimBody::Result`
+/// (issue #41), distinct from `Observation` ("something noticed," passive)
+/// and `Resolution` ("this closes the subject out," `resolve`'s fixed
+/// pairing). No *automatic* Status pairing — a result doesn't necessarily
+/// resolve anything — but `--status` is still available opt-in, the same
+/// generalized pairing REQ-9 already gave `observe`/`plan`/`decide`; this
+/// reuses `narrative()` directly rather than a bespoke implementation.
+/// Unlike `observe`/`plan`/`decide`, `subject` is a required positional
+/// argument, not `--subject` defaulting to `"general"` — a result is
+/// almost always about the specific subject the action targeted.
+#[allow(clippy::too_many_arguments)]
+pub async fn result(
+    ws: &mut Workspace,
+    subject: &str,
+    text: &str,
+    cites: Vec<String>,
+    file: Option<String>,
+    status: Option<StatusValue>,
+    title: Option<String>,
+    kind: Option<SubjectKind>,
+) -> Result<NarrativeResult, Error> {
+    narrative(
+        ws,
+        text.to_string(),
+        Some(subject.to_string()),
+        cites,
+        file,
+        status,
+        title,
+        kind,
+        |text| ClaimBody::Result { text },
+    )
+    .await
+}
+
 /// A directed, situated identity claim (`docs/SPEC.md` §4.2): asserts `a`
 /// and `b` are the same subject from this author's perspective. A single
 /// `SameAs` is one witness in the identity fold's merge-class computation,
@@ -393,14 +432,15 @@ pub async fn relate(
     append(ws, SubjectRef::Local(Rkey::from(a)), body, cites, file).await
 }
 
-/// Asserts a subject is resolved: writes `ClaimBody::Resolution` (a
-/// narrative claim — the fold never needs to reduce or contest it) plus
-/// `ClaimBody::Status { value: Resolved }` (the structural, poset-classified
-/// kind `fold::state` reduces, `docs/SPEC.md` §7), `cites`-linked to the
-/// Resolution. One agent action, two claims, correct provenance — an agent
-/// never has to think about "narrative vs. structural." `issues` also
-/// treats a live `Resolution` as "done" on its own, independent of this
-/// pairing — see its doc.
+/// Asserts a subject is resolved — an outcome that also closes the
+/// subject out; use `result` instead when the outcome doesn't. Writes
+/// `ClaimBody::Resolution` (a narrative claim — the fold never needs to
+/// reduce or contest it) plus `ClaimBody::Status { value: Resolved }` (the
+/// structural, poset-classified kind `fold::state` reduces, `docs/SPEC.md`
+/// §7), `cites`-linked to the Resolution. One agent action, two claims,
+/// correct provenance — an agent never has to think about "narrative vs.
+/// structural." `issues` also treats a live `Resolution` as "done" on its
+/// own, independent of this pairing — see its doc.
 #[allow(clippy::too_many_arguments)]
 pub async fn resolve(
     ws: &mut Workspace,
