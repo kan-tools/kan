@@ -54,6 +54,7 @@ impl FoldedView {
 
 pub fn fold(claims: Vec<(Cid, StoredClaim)>, trust: &TrustBase) -> FoldedView {
     let excluded = identity::excluded_by_retraction(&claims);
+    let rejected = identity::excluded_by_rejection(&claims, trust);
     let classes = identity::merge_classes(&claims, trust);
 
     let mut ordered = claims;
@@ -63,7 +64,7 @@ pub fn fold(claims: Vec<(Cid, StoredClaim)>, trust: &TrustBase) -> FoldedView {
     for class in classes {
         let mut class_claims = Vec::new();
         for (cid, stored) in &ordered {
-            if excluded.contains(cid) {
+            if excluded.contains(cid) || rejected.contains(cid) {
                 continue;
             }
             if !trust.trusts(&stored.claim.content.author) {

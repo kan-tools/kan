@@ -53,6 +53,24 @@ pub enum Command {
         #[arg(long, short)]
         verbose: bool,
     },
+    /// Assert a domain-semantic edge between `a` and `b` (Relation::{Blocks,
+    /// About, ManifestsAt, DependsOn, Accepts}). Not for identity — use
+    /// `kan same` for `SameAs`.
+    Relate {
+        a: String,
+        kind: RelationKindArg,
+        b: String,
+        /// CIDs of prior claims this one cites.
+        #[arg(long = "cites")]
+        cites: Vec<String>,
+        /// A more specific artifact than the automatic HEAD-commit anchor:
+        /// `path` or `path:start-end`.
+        #[arg(long)]
+        file: Option<String>,
+        /// Print a human-readable confirmation instead of the bare CID.
+        #[arg(long, short)]
+        verbose: bool,
+    },
     /// Record that a subject has been resolved. Pairs a `Resolution` claim
     /// with a `Status { value: Resolved }` claim citing it.
     Resolve {
@@ -85,6 +103,19 @@ pub enum Command {
     /// Retract a prior claim of your own (`ClaimBody::Retraction`). Also
     /// works on a `Retraction` itself — the undo mechanism.
     Retract {
+        cid: String,
+        /// A more specific artifact than the automatic HEAD-commit anchor:
+        /// `path` or `path:start-end`.
+        #[arg(long)]
+        file: Option<String>,
+        /// Print a human-readable confirmation instead of the bare CID.
+        #[arg(long, short)]
+        verbose: bool,
+    },
+    /// Reject another author's claim (ClaimBody::Rejects) — a local
+    /// suppression honored only by folds that trust you. Errors, pointing to
+    /// `kan retract`, if the target is your own claim.
+    Reject {
         cid: String,
         /// A more specific artifact than the automatic HEAD-commit anchor:
         /// `path` or `path:start-end`.
@@ -147,6 +178,31 @@ impl From<StatusValueArg> for crate::claim::StatusValue {
             StatusValueArg::Blocked => Self::Blocked,
             StatusValueArg::Resolved => Self::Resolved,
             StatusValueArg::Closed => Self::Closed,
+        }
+    }
+}
+
+/// Mirrors `claim::RelationKind`, minus `SameAs` (REQ-2 — `kan same` is the
+/// only way to write a `SameAs` edge, so `same-as` is deliberately not a
+/// valid value here; rejected at argument parsing, not a runtime check).
+/// Kept as a separate CLI-layer type for the same reason `StatusValueArg` is.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum RelationKindArg {
+    Blocks,
+    About,
+    ManifestsAt,
+    DependsOn,
+    Accepts,
+}
+
+impl From<RelationKindArg> for crate::claim::RelationKind {
+    fn from(value: RelationKindArg) -> Self {
+        match value {
+            RelationKindArg::Blocks => Self::Blocks,
+            RelationKindArg::About => Self::About,
+            RelationKindArg::ManifestsAt => Self::ManifestsAt,
+            RelationKindArg::DependsOn => Self::DependsOn,
+            RelationKindArg::Accepts => Self::Accepts,
         }
     }
 }
@@ -217,6 +273,17 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             let result = actions::same(&mut ws, &a, &b, cites, file).await?;
             print_result(&result, verbose);
         }
+        Command::Relate {
+            a,
+            kind,
+            b,
+            cites,
+            file,
+            verbose,
+        } => {
+            let result = actions::relate(&mut ws, &a, kind.into(), &b, cites, file).await?;
+            print_result(&result, verbose);
+        }
         Command::Resolve {
             subject,
             text,
@@ -238,6 +305,10 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Retract { cid, file, verbose } => {
             let result = actions::retract(&mut ws, &cid, file).await?;
+            print_result(&result, verbose);
+        }
+        Command::Reject { cid, file, verbose } => {
+            let result = actions::reject(&mut ws, &cid, file).await?;
             print_result(&result, verbose);
         }
         Command::Mark {

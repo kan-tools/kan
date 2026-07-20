@@ -387,6 +387,54 @@ fn same_cites_round_trips() {
     assert!(show_out.contains(&prior_cid));
 }
 
+/// AC-1: `kan relate` writes a live `Relation{kind, target}` claim for each
+/// of the 5 non-identity `RelationKind`s.
+#[test]
+fn relate_writes_a_relation_claim_for_each_non_identity_kind() {
+    let dir = git_repo();
+    kan(dir.path(), &["observe", "x", "--subject", "bug-42"]);
+    kan(dir.path(), &["observe", "y", "--subject", "issue-7"]);
+
+    for kind in ["blocks", "about", "manifests-at", "depends-on", "accepts"] {
+        let (_, err, ok) = kan(dir.path(), &["relate", "bug-42", kind, "issue-7"]);
+        assert!(ok, "kan relate {kind} failed: {err}");
+    }
+
+    let (show_out, _, ok) = kan(dir.path(), &["show", "bug-42"]);
+    assert!(ok);
+    assert!(show_out.contains("Blocks"));
+    assert!(show_out.contains("About"));
+    assert!(show_out.contains("ManifestsAt"));
+    assert!(show_out.contains("DependsOn"));
+    assert!(show_out.contains("Accepts"));
+}
+
+/// AC-1: `same-as` is not a valid `kind` value for `relate` — rejected at
+/// argument parsing, confirming `SameAs` stays `kan same`'s alone (REQ-2).
+#[test]
+fn relate_rejects_same_as_at_argument_parsing() {
+    let dir = git_repo();
+    let (_, err, ok) = kan(dir.path(), &["relate", "bug-42", "same-as", "issue-7"]);
+    assert!(!ok);
+    assert!(err.contains("same-as") || err.to_lowercase().contains("invalid value"));
+}
+
+/// AC-3 (first half): `kan reject` on the caller's own claim errors,
+/// mentioning `kan retract`. (The success half — rejecting another author's
+/// claim — needs a genuinely different signing identity, so it's covered at
+/// the library level in `tests/write_surface.rs`, same split `retract`'s own
+/// cross-author half already uses.)
+#[test]
+fn reject_refuses_the_callers_own_claim() {
+    let dir = git_repo();
+    let (cid, _, ok) = kan(dir.path(), &["observe", "x", "--subject", "bug-42"]);
+    assert!(ok);
+
+    let (_, err, ok) = kan(dir.path(), &["reject", &cid]);
+    assert!(!ok);
+    assert!(err.contains("kan retract"));
+}
+
 /// Issue #3: `kan` walks upward to find the repo root (`.git/`), the same
 /// search `git` itself does, so `.kan/` always lands beside `.git/`
 /// (ADR-3) regardless of which subdirectory it's invoked from.
