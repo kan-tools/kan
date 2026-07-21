@@ -62,16 +62,28 @@ line if they ever drift:
 - Recalling: `show | status | issues | context [--budget N]`
 - Outside the four phases (setup/tooling, not a claim-graph verb): `mcp [install]`
 
-## Scope boundary: kan vs. a future companion tool
+## Scope boundary: kan vs. `day`, the companion tool
 kan owns a feature iff it needs a new/existing `ClaimBody`/`ClaimKind`/
 `Anchor`/`RelationKind` variant, or is a pure read/fold over the claim graph
 that needs no memory of *when* or *why* to call it. If a feature is buildable
 entirely as a calling convention over existing primitives (subject naming,
 `cites`, `artifacts`) with no data-model change, it's process/workflow and
-belongs in a future, separate companion tool that consumes kan via CLI/MCP —
-not a new mode of kan itself. Full rationale and worked examples (why `kan
-session start/end` was removed, why a proposed vector index still belongs in
-kan): `docs/DECISIONS.md` ADR-18.
+belongs in the companion tool that consumes kan via CLI/MCP — not a new mode
+of kan itself. Full rationale and worked examples (why `kan session
+start/end` was removed, why a proposed vector index still belongs in kan):
+`docs/DECISIONS.md` ADR-18.
+
+That companion tool now exists: **`day`** (`kan-tools/day`, on crates.io) —
+the structured *process* layer to kan's structured *knowledge* layer. It
+holds teloi, process atoms, and drift assessment entirely as conventions
+over kan's existing verbs (`telos/<slug>` and `atom/<slug>` subjects), needs
+no kan data-model change, keeps no store of its own, and shells out to the
+`kan` binary rather than linking it. ADR-42 records what its existence
+settles — including the two things it puts back on kan: `RelationKind` has
+no "in tension with" edge (a new variant, so kan's to own), and day will
+soon write through kan's CLI, making kan's write-verb ergonomics a
+dependency of a program rather than only of agents. Send a process/workflow
+feature request there, not here.
 
 ## Design docs
 Feature-level design work goes through `/design` (see `.claude/commands/design.md`)

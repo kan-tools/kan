@@ -3,13 +3,17 @@ allowed-tools: Bash(kan *), Bash(git *), Bash(gh *), Bash(ls *), Bash(mkdir *), 
 description: Interactive, iterative design document authoring grounded in codebase exploration (kan-native, no crosslink dependency)
 ---
 
-> **Tech debt (`docs/DECISIONS.md` ADR-18):** this command is itself an
-> instance of the workflow/AX creep ADR-18's kan/companion-tool boundary
-> rule identifies — it's process (interactive, multi-turn authoring), not
-> durable fact-recording, so by that rule it doesn't belong in kan's own
-> repo. It stays here, working as-is, until a separate companion tool
-> exists to receive it — no functional change, just flagged so this doesn't
-> get treated as settled architecture.
+> **This command now lives in `day` (`docs/DECISIONS.md` ADR-18, ADR-42).**
+> By ADR-18's boundary rule it doesn't belong in kan's repo — it's process
+> (interactive, multi-turn authoring), not durable fact-recording — and the
+> companion tool that owns it exists: `kan-tools/day` ships it as the
+> "generative closed-loop design" atom.
+>
+> This copy stays only because day's repo is private and therefore not
+> `/plugin install`-able yet. Prefer day's version, which is telos-aware
+> (it reads any recorded `telos/*` subjects as the design's north star).
+> Retire this file in favour of a pointer once the plugin path works for a
+> third party.
 
 ## Context
 
@@ -166,14 +170,18 @@ Once the spine exists, the design doc gets folded into the log instead of a sepa
 knowledge store:
 
 ```bash
-kan observe "explored <files/spec sections> for <slug>" --cites <paths>
-kan plan "<slug> design: <one-line summary>" --cites .design/<slug>.md
+# --cites takes CIDs of prior claims, never file paths. Capture the CID the
+# write verb prints and chain it into the next call; name the design doc in
+# the claim text instead, and use --file for a path anchor.
+OBSERVED=$(kan observe "explored <files/spec sections> for <slug>" --subject <slug>)
+PLAN=$(kan plan "<slug> design (.design/<slug>.md): <one-line summary>" \
+  --subject <slug> --cites "$OBSERVED")
 ```
 
 For each open question resolved in Phase 3:
 
 ```bash
-kan decide "<question>: <resolution>" --cites .design/<slug>.md
+kan decide "<question>: <resolution>" --subject <slug> --cites "$PLAN"
 ```
 
 If `kan` is not yet built, skip this phase entirely and print a note instead:
@@ -183,10 +191,11 @@ kan not built yet — design recorded as a plain file only.
 Back-fill with `kan observe` / `kan plan` / `kan decide` once the CLI exists.
 ```
 
-Do not invent kan subcommands or flags beyond the vocabulary in `CLAUDE.md`
-(`observe | plan | decide | resolve | same | show | issues | status | session | context`).
-If a step needs a flag that doesn't obviously exist yet, ask the user or note it as an
-open question — don't guess at CLI surface.
+Do not invent kan subcommands or flags. Check `kan --help` (and `kan <verb> --help`)
+rather than guessing; the vocabulary is `observe | plan | decide | block | resolve |
+result | same | relate | mark | retract | reject | show | status | issues | context |
+mcp` (`session` was removed — ADR-18). If a step needs a flag that doesn't obviously
+exist, ask the user or note it as an open question.
 
 ### Summary Output
 
