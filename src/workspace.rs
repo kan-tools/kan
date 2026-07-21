@@ -53,6 +53,9 @@ pub enum Error {
 }
 
 pub struct Workspace {
+    /// Repo root — the directory `.kan/` sits beside. Needed by anything
+    /// that writes outside the private store, such as `kan publish`.
+    pub root: std::path::PathBuf,
     pub identity: Identity,
     pub log: Log,
     pub index: Index,
@@ -95,6 +98,7 @@ impl Workspace {
         let git = GitSubstrate::open(&root)?;
         let anchor = Anchor::Workspace(git.genesis()?);
         Ok(Self {
+            root,
             identity,
             log,
             index,

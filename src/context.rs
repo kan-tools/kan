@@ -75,6 +75,7 @@ pub fn render_claim(claim: &Claim) -> String {
         ClaimBody::Relation { kind, target } => format!("{kind:?} {target:?}"),
         ClaimBody::Retraction { supersedes } => format!("supersedes {supersedes}"),
         ClaimBody::Rejects { claim } => format!("rejects {claim}"),
+        ClaimBody::Publication { layer } => format!("published to {layer:?}"),
     };
     format!("[{subject}] {kind:?}: {detail}")
 }
@@ -85,6 +86,10 @@ fn kind_value(kind: ClaimKind) -> i64 {
         ClaimKind::Decision | ClaimKind::Blocker | ClaimKind::Resolution => 4,
         ClaimKind::Plan | ClaimKind::Result => 3,
         ClaimKind::Observation | ClaimKind::Subject | ClaimKind::Relation => 2,
+        // Structural like Relation: it says where a subject is shared, not
+        // what is true about it, so it is worth carrying but not at the
+        // expense of narrative.
+        ClaimKind::Publication => 2,
         ClaimKind::Retraction | ClaimKind::Rejects => 1,
     }
 }

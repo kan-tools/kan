@@ -127,6 +127,7 @@ pub enum ClaimKind {
     Relation,
     Retraction,
     Rejects,
+    Publication,
 }
 
 /// ADR-5: `ClaimKind` + `Body` (two fields in `docs/SPEC.md` §1's sketch)
@@ -183,6 +184,26 @@ pub enum ClaimBody {
     Rejects {
         claim: Cid,
     },
+    /// Declares that a subject is published to a sharing layer other than
+    /// this author's own log (`.design/git-tree-transport.md`).
+    ///
+    /// Publication is a *decision about* a subject, so it is a claim rather
+    /// than local configuration: attributable, retractable, and itself
+    /// publishable, so a clone can see who chose to share a subject. A
+    /// config file would have been unattributable, unsynced state in a
+    /// system where everything else is a signed claim.
+    Publication {
+        layer: Layer,
+    },
+}
+
+/// Where a claim is shared, beyond its author's own log. A closed enum: a
+/// layer kan cannot serialize to is not a layer it can honestly claim to
+/// publish to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Layer {
+    /// The repo's own committed git tree (`transport::git_tree`).
+    GitTree,
 }
 
 impl ClaimBody {
@@ -199,6 +220,41 @@ impl ClaimBody {
             ClaimBody::Relation { .. } => ClaimKind::Relation,
             ClaimBody::Retraction { .. } => ClaimKind::Retraction,
             ClaimBody::Rejects { .. } => ClaimKind::Rejects,
+            ClaimBody::Publication { .. } => ClaimKind::Publication,
+        }
+    }
+
+    /// The narrative text a body carries, if it carries one.
+    ///
+    /// Exists for the git-tree wire format, which puts narrative text in a
+    /// file's Markdown body rather than in its frontmatter — so that a
+    /// human editing the visible prose changes the claim's CID and is
+    /// detected, instead of the file quietly disagreeing with the record it
+    /// claims to be.
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            ClaimBody::Observation { text }
+            | ClaimBody::Plan { text }
+            | ClaimBody::Decision { text }
+            | ClaimBody::Blocker { text }
+            | ClaimBody::Resolution { text }
+            | ClaimBody::Result { text } => Some(text),
+            _ => None,
+        }
+    }
+
+    /// Replaces the narrative text, for bodies that have one. The inverse of
+    /// [`ClaimBody::text`], used to reassemble a claim whose text was
+    /// carried outside its frontmatter.
+    pub fn with_text(self, replacement: String) -> Self {
+        match self {
+            ClaimBody::Observation { .. } => ClaimBody::Observation { text: replacement },
+            ClaimBody::Plan { .. } => ClaimBody::Plan { text: replacement },
+            ClaimBody::Decision { .. } => ClaimBody::Decision { text: replacement },
+            ClaimBody::Blocker { .. } => ClaimBody::Blocker { text: replacement },
+            ClaimBody::Resolution { .. } => ClaimBody::Resolution { text: replacement },
+            ClaimBody::Result { .. } => ClaimBody::Result { text: replacement },
+            other => other,
         }
     }
 }

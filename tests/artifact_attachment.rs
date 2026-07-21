@@ -60,6 +60,7 @@ async fn open_workspace(dir: &std::path::Path) -> Workspace {
     let git = GitSubstrate::open(dir).unwrap();
     let anchor = Anchor::Workspace(git.genesis().unwrap());
     Workspace {
+        root: dir.to_path_buf(),
         identity,
         log,
         index,

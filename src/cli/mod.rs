@@ -207,6 +207,14 @@ pub enum Command {
         budget: Option<usize>,
     },
 
+    /// Publish a subject's claims into the committed git tree (`.claims/`),
+    /// sharing them with anyone who clones the repo. Writes files; never
+    /// runs git.
+    Publish {
+        /// The subject to publish
+        subject: String,
+    },
+
     /// MCP server over stdio, and related setup.
     Mcp {
         #[command(subcommand)]
@@ -476,6 +484,10 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         Command::Reject { cid, file, verbose } => {
             let result = actions::reject(&mut ws, &cid, file).await?;
             print_result(&result, verbose);
+        }
+        Command::Publish { subject } => {
+            print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
+            println!("{}", actions::publish(&mut ws, &subject).await?);
         }
         Command::Mark {
             subject,

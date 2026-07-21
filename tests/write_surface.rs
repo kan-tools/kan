@@ -84,6 +84,7 @@ async fn retract_rejects_another_authors_claim_at_write_time() {
     index.rebuild(&claims, log.current_root().as_ref()).unwrap();
 
     let mut ws = Workspace {
+        root: dir.path().to_path_buf(),
         identity,
         log,
         index,
@@ -156,6 +157,7 @@ async fn reject_writes_a_rejects_claim_against_another_authors_claim() {
     index.rebuild(&claims, log.current_root().as_ref()).unwrap();
 
     let mut ws = Workspace {
+        root: dir.path().to_path_buf(),
         identity,
         log,
         index,
@@ -206,6 +208,7 @@ async fn reject_refuses_the_callers_own_claim() {
     index.rebuild(&claims, log.current_root().as_ref()).unwrap();
 
     let mut ws = Workspace {
+        root: dir.path().to_path_buf(),
         identity,
         log,
         index,
