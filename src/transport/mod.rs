@@ -17,6 +17,8 @@
 //! to exist before the wiring shape can be designed against something real
 //! rather than guessed at from one implementation alone.
 
+pub mod git_tree;
+
 use std::pin::Pin;
 
 use atproto_dasl::Cid;
@@ -32,6 +34,10 @@ use crate::{
 pub enum Error {
     #[error("log error: {0}")]
     Log(#[from] crate::store::log::Error),
+    // Boxed: `git_tree::Error` carries paths and CIDs and is far larger than
+    // `Log`'s payload, which clippy flags as enum-size skew otherwise.
+    #[error("git tree: {0}")]
+    GitTree(Box<git_tree::Error>),
 }
 
 /// A stream of claims arriving from `subscribe`. `Item` is a `Result`, not a

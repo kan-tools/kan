@@ -291,6 +291,7 @@ render(enrichment E):
   trait Transport { fn publish(&self, &[Claim]); fn subscribe(&self, &[Did]) -> Stream<Claim>; }
   ```
   - `LocalOnly` (no-op) — **BUILD FIRST, SHIP FIRST.** Sync killed v1; do not start there.
+  - `GitTree` — the repo's own committed tree as a sharing layer. No server, no wire protocol, no network: signed claims are written into a tracked `.claims/` and arrive from other actors by an ordinary `git pull`. The cheapest possible first non-local transport, and the first thing to exercise the multi-actor fold with zero infrastructure (ADR-43).
   - `HostedRelay` — private teams, E2E-able. The monetizable one.
   - `AtProto` — PDS + firehose; public ecosystem; lexicons = evangelism.
 - **AppView = the fold.** Choosing which actors to index = choosing the covering family = the Grothendieck topology. Different AppViews over the same claims = different topoi.

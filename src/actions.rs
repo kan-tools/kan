@@ -20,6 +20,9 @@ use crate::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    // Boxed for the same enum-size reason `transport::Error` boxes it.
+    #[error("publish failed: {0}")]
+    Publish(Box<crate::transport::git_tree::Error>),
     #[error(transparent)]
     Workspace(#[from] crate::workspace::Error),
     #[error(transparent)]
@@ -526,6 +529,52 @@ pub async fn block(
 /// Writes a bare `ClaimBody::Status { value }` claim with no paired
 /// narrative — the entry point for `Open`/`InProgress`/`Closed`, which have
 /// no natural narrative-kind pairing.
+/// `kan publish <subject>` — declares the subject published to the git tree
+/// and writes its live claims there.
+///
+/// Two acts, deliberately in this order: the `Publication` claim is appended
+/// first, so the decision to share is itself recorded and attributable, and
+/// the file is written second. A clone can then see who chose to share a
+/// subject, not merely that someone did.
+///
+/// kan writes files and never runs git. Staging and committing stay the
+/// user's — kan is git's sibling, not its driver.
+pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error> {
+    use crate::claim::Layer;
+
+    let subject_ref = SubjectRef::Local(Rkey::from(subject));
+    append(
+        ws,
+        subject_ref.clone(),
+        ClaimBody::Publication {
+            layer: Layer::GitTree,
+        },
+        vec![],
+        None,
+    )
+    .await?;
+
+    let live: Vec<crate::claim::Claim> = ws
+        .log
+        .iter_all()
+        .await?
+        .into_iter()
+        .map(|(_, stored)| stored.claim)
+        .filter(|claim| claim.content.subject == subject_ref)
+        .collect();
+
+    let count = live.len();
+    let path = crate::transport::git_tree::write_subject(&ws.root, &subject_ref, &live)
+        .map_err(|e| Error::Publish(Box::new(e)))?;
+
+    Ok(format!(
+        "published {subject} ({count} claim(s)) to {}\n\nkan wrote the file; staging and \
+         committing are yours.\n{}",
+        path.display(),
+        crate::transport::git_tree::gitignore_guidance()
+    ))
+}
+
 pub async fn mark(
     ws: &mut Workspace,
     subject: &str,
