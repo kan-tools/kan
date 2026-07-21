@@ -91,6 +91,23 @@ const RECORD_SEPARATOR: &str = "---8<---";
 /// together before hashing, so the bytes a reader sees are the bytes that
 /// were signed.
 pub fn to_record(claim: &Claim) -> Result<String, Error> {
+    to_record_with_rev(claim, None)
+}
+
+/// [`to_record`], carrying the claim's `rev` TID.
+///
+/// A TID is a 13-character, lexicographically-sortable atproto timestamp
+/// identifier — real time, unlike a CID, which is a content hash and carries
+/// none. kan generates one per append, but it lives on `StoredClaim`,
+/// outside `ClaimContent` and therefore outside the CID and the signature.
+///
+/// Publishing without it left a clone able to verify and fold every claim
+/// and unable to order any two of them by time (`.design/schema-evolution.md`
+/// REQ-11). It rides in the envelope rather than the content, so it is
+/// exactly as trustworthy here as in the log — no more, no less — and it is
+/// not an input to the CID. Whether time should become *signed* content is
+/// issue #67, deliberately unanswered.
+pub fn to_record_with_rev(claim: &Claim, rev: Option<&str>) -> Result<String, Error> {
     let cid = content_cid(&claim.content)?;
     let mut content = claim.content.clone();
     let text = content.body.text().map(str::to_string);
@@ -105,6 +122,7 @@ pub fn to_record(claim: &Claim) -> Result<String, Error> {
         subject: format!("{:?}", content.subject),
         kind: format!("{:?}", content.body.kind()),
         cites: claim.content.cites.iter().map(|c| c.to_string()).collect(),
+        rev: rev.map(str::to_string),
         content: hex_encode(
             &atproto_dasl::to_vec(&content).map_err(|e| Error::Malformed {
                 path: String::new(),
@@ -158,6 +176,10 @@ struct RecordHeader {
     kind: String,
     /// Derived, ignored on read.
     cites: Vec<String>,
+    /// The claim's TID: envelope metadata, not an input to the CID, and
+    /// the only time information a published claim carries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rev: Option<String>,
     /// Authoritative: hex DAG-CBOR of `ClaimContent`, text blanked.
     content: String,
 }
@@ -169,6 +191,15 @@ struct RecordHeader {
 /// authoritative. With it, the file is a claim carrier rather than a forgery
 /// surface.
 pub fn from_record(path: &str, record: &str) -> Result<(Cid, Claim), Error> {
+    from_record_with_rev(path, record).map(|(cid, claim, _)| (cid, claim))
+}
+
+/// [`from_record`], also returning the claim's published TID if it carries
+/// one. Older records have none; that is a gap, not a failure.
+pub fn from_record_with_rev(
+    path: &str,
+    record: &str,
+) -> Result<(Cid, Claim, Option<String>), Error> {
     let malformed = |detail: &str| Error::Malformed {
         path: path.to_string(),
         detail: detail.to_string(),
@@ -210,7 +241,7 @@ pub fn from_record(path: &str, record: &str) -> Result<(Cid, Claim), Error> {
         });
     }
 
-    Ok((actual, Claim { content, sig }))
+    Ok((actual, Claim { content, sig }, header.rev))
 }
 
 /// Splits a subject file into records.
@@ -269,19 +300,19 @@ pub fn file_name(subject: &crate::claim::SubjectRef) -> String {
 pub fn write_subject(
     root: &Path,
     subject: &crate::claim::SubjectRef,
-    claims: &[Claim],
+    claims: &[(Claim, Option<String>)],
 ) -> Result<PathBuf, Error> {
     let dir = root.join(CLAIMS_DIR);
     std::fs::create_dir_all(&dir).map_err(io(&dir))?;
     let path = dir.join(file_name(subject));
 
     let mut out = String::new();
-    for claim in claims {
+    for (claim, rev) in claims {
         if !out.is_empty() {
             out.push_str(RECORD_SEPARATOR);
             out.push('\n');
         }
-        out.push_str(&to_record(claim)?);
+        out.push_str(&to_record_with_rev(claim, rev.as_deref())?);
     }
     std::fs::write(&path, out).map_err(io(&path))?;
     Ok(path)
@@ -362,13 +393,13 @@ impl Transport for GitTree {
         let subject = content.subject.clone();
         let cid = self.log.append(content, identity).await?;
 
-        let live: Vec<Claim> = self
+        let live: Vec<(Claim, Option<String>)> = self
             .log
             .iter_all()
             .await?
             .into_iter()
-            .map(|(_, stored)| stored.claim)
-            .filter(|claim| claim.content.subject == subject)
+            .map(|(_, stored)| (stored.claim, Some(stored.rev)))
+            .filter(|(claim, _)| claim.content.subject == subject)
             .collect();
 
         write_subject(&self.root, &subject, &live)

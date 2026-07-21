@@ -128,6 +128,8 @@ pub enum ClaimKind {
     Retraction,
     Rejects,
     Publication,
+    /// A kind this build does not recognize (ADR-44).
+    Unknown,
 }
 
 /// ADR-5: `ClaimKind` + `Body` (two fields in `docs/SPEC.md` §1's sketch)
@@ -137,7 +139,7 @@ pub enum ClaimKind {
 /// Structural variants (`Subject`, `Status`, `Relation`, `Retraction`) are
 /// typed because the fold reads them; narrative variants hold opaque text
 /// because the fold only needs to know they exist and what they cite.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClaimBody {
     Subject {
         title: String,
@@ -195,6 +197,178 @@ pub enum ClaimBody {
     Publication {
         layer: Layer,
     },
+    /// A claim kind this build does not recognize (`docs/SPEC.md` §7.1,
+    /// ADR-44).
+    ///
+    /// Preserved rather than rejected or dropped: `raw` holds the body's
+    /// canonical DAG-CBOR, so the claim re-encodes byte-for-byte and stays
+    /// CID-verifiable and signature-checkable despite being uninterpretable.
+    /// It may be counted, cited, and retracted; it carries no status or
+    /// relational meaning into the fold.
+    ///
+    /// Dropping unknown claims instead would make a newer actor's claims
+    /// silently vanish from an older actor's view of a shared tree — the
+    /// exact divergence §10's sharing layers exist to avoid.
+    Unknown {
+        kind: String,
+        raw: Vec<u8>,
+    },
+}
+
+/// Mirrors every *known* [`ClaimBody`] variant, and exists only to carry the
+/// derived serde impls.
+///
+/// `ClaimBody` cannot derive them itself, because the derived
+/// `Deserialize` for an externally-tagged enum rejects unknown variants —
+/// which is the behavior ADR-44 replaces. The hand-written impls below
+/// delegate here for known variants, so their encoding is byte-identical to
+/// what kan has always produced; `body_kinds_all_round_trip` fails if this
+/// mirror ever drifts from `ClaimBody`.
+#[derive(Serialize, Deserialize)]
+enum KnownBody {
+    Subject {
+        title: String,
+        subject_kind: SubjectKind,
+    },
+    Observation {
+        text: String,
+    },
+    Plan {
+        text: String,
+    },
+    Decision {
+        text: String,
+    },
+    Blocker {
+        text: String,
+    },
+    Resolution {
+        text: String,
+    },
+    Result {
+        text: String,
+    },
+    Status {
+        value: StatusValue,
+    },
+    Relation {
+        kind: RelationKind,
+        target: SubjectRef,
+    },
+    Retraction {
+        supersedes: Cid,
+    },
+    Rejects {
+        claim: Cid,
+    },
+    Publication {
+        layer: Layer,
+    },
+}
+
+impl From<KnownBody> for ClaimBody {
+    fn from(k: KnownBody) -> Self {
+        match k {
+            KnownBody::Subject {
+                title,
+                subject_kind,
+            } => ClaimBody::Subject {
+                title,
+                subject_kind,
+            },
+            KnownBody::Observation { text } => ClaimBody::Observation { text },
+            KnownBody::Plan { text } => ClaimBody::Plan { text },
+            KnownBody::Decision { text } => ClaimBody::Decision { text },
+            KnownBody::Blocker { text } => ClaimBody::Blocker { text },
+            KnownBody::Resolution { text } => ClaimBody::Resolution { text },
+            KnownBody::Result { text } => ClaimBody::Result { text },
+            KnownBody::Status { value } => ClaimBody::Status { value },
+            KnownBody::Relation { kind, target } => ClaimBody::Relation { kind, target },
+            KnownBody::Retraction { supersedes } => ClaimBody::Retraction { supersedes },
+            KnownBody::Rejects { claim } => ClaimBody::Rejects { claim },
+            KnownBody::Publication { layer } => ClaimBody::Publication { layer },
+        }
+    }
+}
+
+impl ClaimBody {
+    /// `None` for [`ClaimBody::Unknown`], which by definition has no known
+    /// representation.
+    fn as_known(&self) -> Option<KnownBody> {
+        Some(match self.clone() {
+            ClaimBody::Subject {
+                title,
+                subject_kind,
+            } => KnownBody::Subject {
+                title,
+                subject_kind,
+            },
+            ClaimBody::Observation { text } => KnownBody::Observation { text },
+            ClaimBody::Plan { text } => KnownBody::Plan { text },
+            ClaimBody::Decision { text } => KnownBody::Decision { text },
+            ClaimBody::Blocker { text } => KnownBody::Blocker { text },
+            ClaimBody::Resolution { text } => KnownBody::Resolution { text },
+            ClaimBody::Result { text } => KnownBody::Result { text },
+            ClaimBody::Status { value } => KnownBody::Status { value },
+            ClaimBody::Relation { kind, target } => KnownBody::Relation { kind, target },
+            ClaimBody::Retraction { supersedes } => KnownBody::Retraction { supersedes },
+            ClaimBody::Rejects { claim } => KnownBody::Rejects { claim },
+            ClaimBody::Publication { layer } => KnownBody::Publication { layer },
+            ClaimBody::Unknown { .. } => return None,
+        })
+    }
+}
+
+impl Serialize for ClaimBody {
+    /// Known variants delegate to [`KnownBody`]'s derived impl, so their
+    /// bytes are exactly what kan has always written. An `Unknown` re-emits
+    /// the DAG-CBOR it was decoded from, which is what keeps its CID valid.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            ClaimBody::Unknown { kind, raw } => {
+                use serde::ser::SerializeMap;
+                let value: atproto_dasl::Ipld = atproto_dasl::from_reader(&raw[..])
+                    .map_err(|e| serde::ser::Error::custom(format!("unknown body: {e}")))?;
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry(kind, &value)?;
+                map.end()
+            }
+            known => known
+                .as_known()
+                .expect("only Unknown has no known form")
+                .serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ClaimBody {
+    /// Decodes through [`atproto_dasl::Ipld`] so an unrecognized variant can
+    /// be captured rather than rejected. `Ipld` round-trips DAG-CBOR
+    /// byte-for-byte, which is what makes an `Unknown` claim verifiable.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error as _;
+        let value = atproto_dasl::Ipld::deserialize(deserializer)?;
+
+        let atproto_dasl::Ipld::Map(entries) = &value else {
+            return Err(D::Error::custom("claim body is not a single-key map"));
+        };
+        let Some((kind, body)) = entries.iter().next().filter(|_| entries.len() == 1) else {
+            return Err(D::Error::custom("claim body is not a single-key map"));
+        };
+
+        let whole = atproto_dasl::to_vec(&value).map_err(D::Error::custom)?;
+        let decoded: Result<KnownBody, _> = atproto_dasl::from_reader(&whole[..]);
+        match decoded {
+            Ok(known) => Ok(known.into()),
+            // Unrecognized kind: keep the body's own bytes so it re-encodes
+            // exactly (ADR-44). Anything else makes it unverifiable, which
+            // would be worse than an honest hard failure.
+            Err(_) => Ok(ClaimBody::Unknown {
+                kind: kind.clone(),
+                raw: atproto_dasl::to_vec(body).map_err(D::Error::custom)?,
+            }),
+        }
+    }
 }
 
 /// Where a claim is shared, beyond its author's own log. A closed enum: a
@@ -221,6 +395,7 @@ impl ClaimBody {
             ClaimBody::Retraction { .. } => ClaimKind::Retraction,
             ClaimBody::Rejects { .. } => ClaimKind::Rejects,
             ClaimBody::Publication { .. } => ClaimKind::Publication,
+            ClaimBody::Unknown { .. } => ClaimKind::Unknown,
         }
     }
 
@@ -263,7 +438,21 @@ impl ClaimBody {
 /// the CID. Deliberately has no `sig` and no explicit id/CID field: identity
 /// is `crate::cid::content_cid(&self)`, computed on demand (§1, "no explicit
 /// id field").
+///
+/// **These fields are frozen** (`docs/SPEC.md` §7.1, ADR-44). Each is an
+/// input to every CID kan has ever computed, so changing a name, order,
+/// type, or encoding silently invalidates all of history. New fields may be
+/// added *only* as `Option<T>` with `skip_serializing_if`, which is measured
+/// to leave existing CIDs byte-identical.
+///
+/// `deny_unknown_fields` is what makes an out-of-date reader honest. Without
+/// it, a reader meeting a record from a newer kan deserializes it, silently
+/// drops the field it does not know, recomputes a different CID, and reports
+/// the claim as **altered since it was signed** — accusing a legitimate
+/// claim of tampering. With it, the same reader says `unknown field`, which
+/// is true.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ClaimContent {
     pub author: AuthorId,
     pub workspace: Anchor,

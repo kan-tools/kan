@@ -76,6 +76,17 @@ pub fn render_claim(claim: &Claim) -> String {
         ClaimBody::Retraction { supersedes } => format!("supersedes {supersedes}"),
         ClaimBody::Rejects { claim } => format!("rejects {claim}"),
         ClaimBody::Publication { layer } => format!("published to {layer:?}"),
+        // Uninterpretable, but present and verifiable — say so rather than
+        // rendering nothing, so a reader can tell the difference between a
+        // subject with three claims and one with three it can read plus one
+        // it cannot (ADR-44).
+        ClaimBody::Unknown { kind, raw } => {
+            format!(
+                "unreadable claim of kind `{kind}` ({} bytes) — this build does not \
+                     understand it",
+                raw.len()
+            )
+        }
     };
     format!("[{subject}] {kind:?}: {detail}")
 }
@@ -91,6 +102,10 @@ fn kind_value(kind: ClaimKind) -> i64 {
         // expense of narrative.
         ClaimKind::Publication => 2,
         ClaimKind::Retraction | ClaimKind::Rejects => 1,
+        // Carries no meaning this build can act on, so it must not displace
+        // a claim that does — but it is still worth surfacing if room
+        // remains.
+        ClaimKind::Unknown => 0,
     }
 }
 

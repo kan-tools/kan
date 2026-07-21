@@ -554,13 +554,13 @@ pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error>
     )
     .await?;
 
-    let live: Vec<crate::claim::Claim> = ws
+    let live: Vec<(crate::claim::Claim, Option<String>)> = ws
         .log
         .iter_all()
         .await?
         .into_iter()
-        .map(|(_, stored)| stored.claim)
-        .filter(|claim| claim.content.subject == subject_ref)
+        .map(|(_, stored)| (stored.claim, Some(stored.rev)))
+        .filter(|(claim, _)| claim.content.subject == subject_ref)
         .collect();
 
     let count = live.len();

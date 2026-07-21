@@ -293,6 +293,58 @@ async fn publishing_writes_the_tree_and_subscribing_reads_it_back() {
     assert_eq!(claim.content.body.text(), Some("published into the tree"));
 }
 
+/// `.design/schema-evolution.md` AC-11. A CID is a content hash and carries
+/// no time; a TID does. kan generates one per append but keeps it on
+/// `StoredClaim`, so publishing used to drop it — leaving a clone able to
+/// verify every claim and unable to order any two by time.
+#[test]
+fn a_published_record_carries_its_tid_and_stays_verifiable() {
+    let id = identity();
+    let claim = observation("bug-42", "recorded at some point", &id);
+    let expected = content_cid(&claim.content).unwrap();
+
+    let record = git_tree::to_record_with_rev(&claim, Some("3lqqx7abc2k22")).unwrap();
+    let (cid, parsed, rev) = git_tree::from_record_with_rev("t.md", &record).unwrap();
+
+    assert_eq!(rev.as_deref(), Some("3lqqx7abc2k22"));
+    assert_eq!(parsed, claim);
+    assert_eq!(
+        cid, expected,
+        "rev is envelope metadata and must not disturb the CID"
+    );
+
+    // A record written without one still reads: older records have no rev,
+    // which is a gap rather than a failure.
+    let bare = git_tree::to_record(&claim).unwrap();
+    let (_, _, none) = git_tree::from_record_with_rev("t.md", &bare).unwrap();
+    assert_eq!(none, None);
+}
+
+/// TIDs are lexicographically sortable, which is the whole reason to carry
+/// one: two claims read out of a tree can be ordered without a clock.
+#[test]
+fn published_claims_can_be_ordered_by_tid() {
+    let id = identity();
+    let a = observation("bug-42", "first", &id);
+    let b = observation("bug-42", "second", &id);
+    let file = format!(
+        "{}---8<---\n{}",
+        git_tree::to_record_with_rev(&a, Some("3lqqx7aaaaa22")).unwrap(),
+        git_tree::to_record_with_rev(&b, Some("3lqqx7bbbbb22")).unwrap()
+    );
+
+    let mut revs: Vec<String> = git_tree::split_records(&file)
+        .iter()
+        .filter_map(|r| git_tree::from_record_with_rev("f.md", r).unwrap().2)
+        .collect();
+    let original = revs.clone();
+    revs.sort();
+    assert_eq!(
+        revs, original,
+        "TIDs sort lexicographically into time order"
+    );
+}
+
 /// AC-12: `.kan/` stays private, `.claims/` is the shared layer. They are
 /// separate directories precisely so ADR-3's rule is extended rather than
 /// contradicted.
