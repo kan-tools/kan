@@ -88,6 +88,16 @@ misleading in the exact dimension kan exists to be trustworthy in.
   findings above — the measurements are the justification, and a future
   reader should not have to re-derive them to know why the rules are what
   they are.
+- REQ-11: A published record (ADR-43's `.claims/` format) carries the
+  claim's `rev` TID in its envelope, restoring parity with the log. Today
+  publishing drops it: `GitTree` serializes `ClaimContent` alone, so a clone
+  can verify and fold every claim but cannot order any two of them by time.
+  The TID is unsigned in the log as well, so carrying it in the envelope
+  changes nothing about how much it can be trusted — it makes the shared
+  layer as informative as the private one, which is the least a sharing
+  layer should be. **Whether time should become signed content is a separate
+  and larger question (#67), deliberately not answered here**; this closes a
+  gap between two of kan's own layers rather than changing the data model.
 
 ## Acceptance Criteria
 
@@ -119,7 +129,11 @@ misleading in the exact dimension kan exists to be trustworthy in.
       successfully, and `kan status` reports the unknown one's presence rather
       than omitting it. (REQ-5, REQ-9)
 - [ ] AC-10: `docs/DECISIONS.md` contains an ADR recording the contract and
-      the four measurements that justify it. (REQ-10)
+      the measurements that justify it. (REQ-10)
+- [ ] AC-11: A published record round-trips its `rev`, and two claims read
+      out of `.claims/` can be ordered by it — the property a clone lacks
+      today. Verification is unaffected: `rev` is envelope metadata and is
+      not an input to the CID. (REQ-11)
 
 ## Architecture
 
@@ -173,9 +187,16 @@ exists to make that permanent rather than incidental.
 - Implementation. This pass produces the contract and the specification; the
   code follows against these requirements.
 - Changing any existing `ClaimContent` field, which REQ-2 forbids outright.
-- A timestamp field (#67) — a real candidate for the first additive field,
-  and deliberately not decided here. This pass establishes *how* such a field
-  could be added; whether to add it is its own question.
+- Making time **signed content** (#67). REQ-11 publishes the TID kan already
+  has, at the trust level it already has. Promoting `rev` into
+  `ClaimContent` — where it would be signed, verifiable, and part of the CID
+  — is the natural first use of the additive rule this pass establishes, and
+  is its own decision. That question is now sharper than when #67 was filed:
+  it is not "invent a timestamp" but "promote an existing one, and accept
+  that a claim's time becomes an attested claim about time rather than
+  storage metadata."
+
+- Rewriting or re-signing any existing claim.
 - Exposing artifacts through `show` (#61) — a rendering question, unaffected
   by these rules.
 - Cross-version negotiation between actors. Two actors at different versions
