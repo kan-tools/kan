@@ -155,6 +155,7 @@ enum RelateKindParam {
     ManifestsAt,
     DependsOn,
     Accepts,
+    InTensionWith,
 }
 
 impl From<RelateKindParam> for crate::claim::RelationKind {
@@ -165,6 +166,7 @@ impl From<RelateKindParam> for crate::claim::RelationKind {
             RelateKindParam::ManifestsAt => Self::ManifestsAt,
             RelateKindParam::DependsOn => Self::DependsOn,
             RelateKindParam::Accepts => Self::Accepts,
+            RelateKindParam::InTensionWith => Self::InTensionWith,
         }
     }
 }
@@ -538,7 +540,7 @@ impl ServerHandler for KanServer {
              (same/relate/mark) asserts \
              relationships and status independent of any narrative: same asserts two \
              subjects are the same, relate asserts a domain edge (blocks/about/ \
-             manifests-at/depends-on/accepts), mark writes a bare status value. \
+             manifests-at/depends-on/accepts/in-tension-with), mark writes a bare status value. \
              Correcting (retract/reject) supersedes a claim: retract for your own, \
              reject (a local suppression honored only by trusting folds) for another \
              author's. Recalling (show/status/issues/context) reads the claim graph: \

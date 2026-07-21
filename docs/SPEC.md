@@ -164,6 +164,27 @@ enum Anchor {
 - **Rationale (safety, not just semantics):** strict identity has **no witness layer to absorb error** — a wrong strict identification is welded into the global topology and cannot be retracted. Therefore strict identity is permitted **only where error is impossible by construction** (computed from bytes). Everything requiring a *judgment* stays Local + weak + retractable.
 - **`SameAs` between two anchors is a TYPE ERROR, not a claim.** Anchor identity is settled by construction.
 
+### 4.5.1 Domain relations are stored as asserted, read as projected
+
+`SameAs` is enriched (§4.3). The other domain kinds — `Blocks`, `About`,
+`ManifestsAt`, `DependsOn`, `Accepts`, `InTensionWith` — are **not**, yet, and
+that asymmetry is a known gap rather than a decision (#72).
+
+What holds for all of them now: a relation claim is stored exactly as
+asserted — directed, attributed, carrying its `cites` — and any symmetric,
+transitive, or weighted reading of it is a **projection computed on demand**
+(`fold::relations`). `InTensionWith` is the clearest case: tension is
+symmetric in meaning, so "what is X in tension with" reads both directions,
+while the *grounds* are perspectival and stay directed in the store, because
+two actors can hold the same pair in tension for different reasons and
+collapsing that at write time destroys which side observed what.
+
+A relation carries **no degree and no reason field**. The reason is the claim
+it cites. A degree, once anything needs one, is derived by composing over
+those witnesses under a chosen enriching base — exactly as §4.3 derives
+identity confidence — never stored, because a stored degree asserts a fold
+output as input and forecloses every other base.
+
 ### 5.2 Fact vs. interpretation cut
 
 - **Anchors = computable facts** about the substrate (git objects). Strict identity.
