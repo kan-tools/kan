@@ -104,6 +104,24 @@ pub enum RelationKind {
     ManifestsAt,
     DependsOn,
     Accepts,
+    /// Two subjects pull against each other: satisfying one makes the other
+    /// harder, without either blocking or depending on the other (#60).
+    ///
+    /// **Asserted directed, read symmetric.** The claim records who observed
+    /// tension between which ordered pair, because the *nature* of a tension
+    /// is perspectival — two actors can hold the same pair in tension for
+    /// different reasons, and collapsing that at write time throws the
+    /// difference away. "Is in tension with" is then a projection over those
+    /// directed assertions (`fold::relations::in_tension_with`), which is the
+    /// general rule this repo's `telos/raw-data-and-projections` states:
+    /// retain the raw attestations, simplify by determined projection.
+    ///
+    /// Carries no degree and no reason, deliberately. The reason is the
+    /// claim it `cites`; the degree, once anything needs one, is derived by
+    /// composing over those witnesses under a chosen enriching base, exactly
+    /// as `docs/SPEC.md` §4.3 derives identity confidence — never a stored
+    /// number, which would assert a fold output as input (#72).
+    InTensionWith,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

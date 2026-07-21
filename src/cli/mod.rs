@@ -264,6 +264,7 @@ pub enum RelationKindArg {
     ManifestsAt,
     DependsOn,
     Accepts,
+    InTensionWith,
 }
 
 impl From<RelationKindArg> for crate::claim::RelationKind {
@@ -274,6 +275,7 @@ impl From<RelationKindArg> for crate::claim::RelationKind {
             RelationKindArg::ManifestsAt => Self::ManifestsAt,
             RelationKindArg::DependsOn => Self::DependsOn,
             RelationKindArg::Accepts => Self::Accepts,
+            RelationKindArg::InTensionWith => Self::InTensionWith,
         }
     }
 }
