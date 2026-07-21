@@ -231,6 +231,42 @@ enum ClaimKind {
 
 ---
 
+## 7.1 Schema evolution (HARD — the compatibility contract)
+
+A CID *is* a claim's identity, and the log is append-only. Both together mean
+**kan cannot migrate**: a claim can never be rewritten in place, because
+rewriting it produces a different claim. What kan does instead is
+**permanent coexistence** — readers tolerate every historical shape, forever.
+Only the disposable SQLite index is ever rebuilt. A log-rewriting migration
+tool is not a deferred feature but a rejected one: history you can alter is
+not what this is.
+
+**Frozen.** `ClaimContent`'s existing fields — their names, order, types, and
+encoding — may never change. Each is an input to every CID kan has ever
+computed, so changing one silently invalidates all of history.
+
+**Additive only.** A new field may be added *only* as `Option<T>` with
+`skip_serializing_if = "Option::is_none"`. Measured: that produces
+byte-identical encoding when the field is absent, so every claim written
+before the field existed keeps its exact CID.
+
+**Unknown kinds are preserved, not rejected or dropped.** A reader
+encountering a `ClaimBody` kind it does not recognize decodes it as an opaque
+claim retaining its original bytes, so it stays CID-verifiable and
+signature-checkable. It may be counted, cited, and retracted; it may not be
+interpreted, and it carries no status or relational meaning into the fold
+(§9) — an uninterpretable claim must not influence a classification nobody
+can reason about. Dropping it instead would make a newer actor's claims
+silently vanish from an older actor's view of a shared tree, which is the
+precise divergence §10's sharing layers exist to avoid.
+
+**Failure must be honest.** `ClaimContent` is `deny_unknown_fields`, so an
+older reader meeting a newer record fails with `unknown field` rather than
+silently discarding it and then reporting a CID mismatch. The second
+behavior — measured, and the reason this section exists — accuses a
+legitimate claim of having been *altered since it was signed*. A tool one
+version behind must say so, not impugn the record.
+
 ## 8. Retraction (RECOMMENDED default, flagged OPEN in §9)
 
 **Option B — retraction-as-claim (palimpsest):**
