@@ -198,15 +198,30 @@ pub enum Command {
 
     // --- Recalling: read the claim graph ---
     /// Show a subject's live claims.
-    Show { subject: String },
+    Show {
+        subject: String,
+        /// Structured output for programs. The rendered form is for people
+        /// and is free to change; this shape is versioned and additive-only.
+        #[arg(long)]
+        json: bool,
+    },
     /// Show status: one subject, or every subject if omitted.
-    Status { subject: Option<String> },
+    Status {
+        subject: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
     /// List open (not-yet-resolved) subjects.
-    Issues,
+    Issues {
+        #[arg(long)]
+        json: bool,
+    },
     /// Assemble the maximal-value claim set that fits under a token budget.
     Context {
         #[arg(long)]
         budget: Option<usize>,
+        #[arg(long)]
+        json: bool,
     },
 
     /// Publish a subject's claims into the committed git tree (`.claims/`),
@@ -428,8 +443,22 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             .await?;
             print_narrative_result(&result, verbose);
         }
-        Command::Show { subject } => print!("{}", actions::show(&ws, &subject)?),
-        Command::Status { subject } => print!("{}", actions::status(&ws, subject.as_deref())?),
+        Command::Show { subject, json } => print!(
+            "{}",
+            if json {
+                actions::show_json(&ws, &subject)?
+            } else {
+                actions::show(&ws, &subject)?
+            }
+        ),
+        Command::Status { subject, json } => print!(
+            "{}",
+            if json {
+                actions::status_json(&ws, subject.as_deref())?
+            } else {
+                actions::status(&ws, subject.as_deref())?
+            }
+        ),
         Command::Same {
             a,
             b,
@@ -545,11 +574,23 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             let result = actions::mark(&mut ws, &subject, value.into(), file).await?;
             print_result(&result, verbose);
         }
-        Command::Issues => print!("{}", actions::issues(&ws)?),
-        Command::Context { budget } => {
+        Command::Issues { json } => print!(
+            "{}",
+            if json {
+                actions::issues_json(&ws)?
+            } else {
+                actions::issues(&ws)?
+            }
+        ),
+        Command::Context { budget, json } => {
+            let budget = budget.unwrap_or(DEFAULT_BUDGET);
             print!(
                 "{}",
-                actions::context(&ws, budget.unwrap_or(DEFAULT_BUDGET))?
+                if json {
+                    actions::context_json(&ws, budget)?
+                } else {
+                    actions::context(&ws, budget)?
+                }
             );
         }
         Command::Identity { action } => match action {

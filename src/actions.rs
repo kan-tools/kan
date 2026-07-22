@@ -1264,6 +1264,45 @@ fn write_state(out: &mut String, label: &str, subject_view: &SubjectView, state:
 /// `kan mark`. No subject is special-cased here (there's no more built-in
 /// "session" bookkeeping subject, `docs/DECISIONS.md`'s boundary-rule ADR) —
 /// every subject is judged purely on eligibility + doneness, the same way.
+/// Whether a merge class counts as an open issue.
+///
+/// Factored out of `issues` so the rendered and structured surfaces cannot
+/// drift on *what an issue is* — only on how it is presented. That drift is
+/// the class of bug that made `day` see an empty log while `kan show`
+/// displayed it perfectly (ADR-50).
+fn is_open_issue(ws: &Workspace, subject_view: &SubjectView) -> bool {
+    let has_status_claim = subject_view
+        .claims
+        .iter()
+        .any(|(_, c)| matches!(c.content.body, ClaimBody::Status { .. }));
+    let declared_issue =
+        subject_view
+            .claims
+            .iter()
+            .rev()
+            .find_map(|(_, c)| match &c.content.body {
+                ClaimBody::Subject { subject_kind, .. } => Some(*subject_kind),
+                _ => None,
+            })
+            == Some(SubjectKind::Issue);
+    if !has_status_claim && !declared_issue {
+        return false;
+    }
+    let has_resolution = subject_view
+        .claims
+        .iter()
+        .any(|(_, c)| matches!(c.content.body, ClaimBody::Resolution { .. }));
+    let done = has_resolution
+        || matches!(
+            classify_subject(ws, subject_view),
+            StateView::Settled {
+                value: StatusValue::Resolved | StatusValue::Closed,
+                ..
+            }
+        );
+    !done
+}
+
 pub fn issues(ws: &Workspace) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let view = fold::fold(claims, &ws.solo_trust());
@@ -1271,39 +1310,10 @@ pub fn issues(ws: &Workspace) -> Result<String, Error> {
     let mut out = String::new();
     let mut shown = 0usize;
     for subject_view in &view.classes {
-        let has_status_claim = subject_view
-            .claims
-            .iter()
-            .any(|(_, c)| matches!(c.content.body, ClaimBody::Status { .. }));
-        let declared_issue =
-            subject_view
-                .claims
-                .iter()
-                .rev()
-                .find_map(|(_, c)| match &c.content.body {
-                    ClaimBody::Subject { subject_kind, .. } => Some(*subject_kind),
-                    _ => None,
-                })
-                == Some(SubjectKind::Issue);
-        if !has_status_claim && !declared_issue {
+        if !is_open_issue(ws, subject_view) {
             continue;
         }
-        let has_resolution = subject_view
-            .claims
-            .iter()
-            .any(|(_, c)| matches!(c.content.body, ClaimBody::Resolution { .. }));
         let state = classify_subject(ws, subject_view);
-        let done = has_resolution
-            || matches!(
-                state,
-                StateView::Settled {
-                    value: StatusValue::Resolved | StatusValue::Closed,
-                    ..
-                }
-            );
-        if done {
-            continue;
-        }
         shown += 1;
         let label = subject_label(subject_view);
         write_state(&mut out, &label, subject_view, state);
@@ -1312,6 +1322,128 @@ pub fn issues(ws: &Workspace) -> Result<String, Error> {
         out.push_str("no open issues\n");
     }
     Ok(out)
+}
+
+// ------------------------------------------------------- structured output
+//
+// The read verbs' machine-readable half (`crate::json`). Kept beside the
+// rendering functions rather than in `json.rs` so the two cannot drift on
+// what a view *contains* — only on how it is presented.
+
+/// `kan show <subject> --json`.
+pub fn show_json(ws: &Workspace, subject: &str) -> Result<String, Error> {
+    let claims = ws.index.all_stored_claims()?;
+    let view = fold::fold(claims, &ws.solo_trust());
+    let subject_ref = SubjectRef::Local(Rkey::from(subject));
+
+    let (subjects, claims, flagged) = match view.subject(&subject_ref) {
+        None => (vec![subject.to_string()], Vec::new(), false),
+        Some(class) => {
+            let superseded = superseded_status_cids(&class.claims);
+            (
+                class
+                    .subjects
+                    .iter()
+                    .map(crate::json::subject_name)
+                    .collect(),
+                class
+                    .claims
+                    .iter()
+                    .map(|(cid, claim)| {
+                        crate::json::ClaimJson::new(cid, claim, superseded.contains(cid))
+                    })
+                    .collect(),
+                class.flagged_oversized,
+            )
+        }
+    };
+
+    let out = crate::json::ShowJson {
+        v: crate::json::SCHEMA_VERSION,
+        subject: subject.to_string(),
+        subjects,
+        claims,
+        flagged_oversized: flagged,
+        inbound: match view.subject(&subject_ref) {
+            Some(class) => inbound_edges(&view, class),
+            None => inbound_edges_to(&view, &subject_ref),
+        },
+    };
+    to_json(&out)
+}
+
+/// `kan status [subject] --json`.
+pub fn status_json(ws: &Workspace, subject: Option<&str>) -> Result<String, Error> {
+    let claims = ws.index.all_stored_claims()?;
+    let view = fold::fold(claims, &ws.solo_trust());
+    let subjects = match subject {
+        Some(name) => view
+            .subject(&SubjectRef::Local(Rkey::from(name)))
+            .map(|c| vec![crate::json::status_entry(c)])
+            .unwrap_or_default(),
+        None => crate::json::all_status(&view),
+    };
+    to_json(&crate::json::StatusJson {
+        v: crate::json::SCHEMA_VERSION,
+        subjects,
+    })
+}
+
+/// `kan issues --json`.
+pub fn issues_json(ws: &Workspace) -> Result<String, Error> {
+    let claims = ws.index.all_stored_claims()?;
+    let view = fold::fold(claims, &ws.solo_trust());
+    let subjects = view
+        .classes
+        .iter()
+        .filter(|c| is_open_issue(ws, c))
+        .map(crate::json::status_entry)
+        .collect();
+    to_json(&crate::json::IssuesJson {
+        v: crate::json::SCHEMA_VERSION,
+        subjects,
+    })
+}
+
+/// `kan context --budget N --json`.
+pub fn context_json(ws: &Workspace, budget: usize) -> Result<String, Error> {
+    let claims = ws.index.all_stored_claims()?;
+    let view = fold::fold(claims, &ws.solo_trust());
+    let estimator = TiktokenEstimator::cl100k();
+    let assembled = context::assemble_reporting(&view, budget, &estimator);
+    let superseded: std::collections::HashSet<Cid> = view
+        .classes
+        .iter()
+        .flat_map(|c| superseded_status_cids(&c.claims))
+        .collect();
+
+    let mut tokens = 0usize;
+    let claims: Vec<_> = assembled
+        .selected
+        .iter()
+        .map(|(cid, claim)| {
+            tokens += estimator.estimate(&context::render_claim(claim));
+            crate::json::ClaimJson::new(cid, claim, superseded.contains(cid))
+        })
+        .collect();
+
+    to_json(&crate::json::ContextJson {
+        v: crate::json::SCHEMA_VERSION,
+        claims,
+        tokens,
+        budget,
+        omitted_claims: assembled.omitted_claims,
+        omitted_subjects: assembled.omitted_subjects.clone(),
+    })
+}
+
+fn to_json<T: serde::Serialize>(value: &T) -> Result<String, Error> {
+    serde_json::to_string_pretty(value)
+        .map(|mut s| {
+            s.push('\n');
+            s
+        })
+        .map_err(|e| Error::Usage(format!("could not serialize output: {e}")))
 }
 
 /// Budgeted context assembly (`crate::context`, REQ-14/AC-7): the
