@@ -269,7 +269,20 @@ computed, so changing one silently invalidates all of history.
 **Additive only.** A new field may be added *only* as `Option<T>` with
 `skip_serializing_if = "Option::is_none"`. Measured: that produces
 byte-identical encoding when the field is absent, so every claim written
-before the field existed keeps its exact CID.
+before the field existed keeps its exact CID. `ClaimContent::recorded_at`
+(v0.7.0-beta.1) is the first field added under this rule and is the worked
+example.
+
+**`deny_unknown_fields` applies at every level that decodes a claim, not just
+the outermost.** It was originally placed on `ClaimContent` alone, and
+`ClaimBody`'s `KnownBody` mirror was missed — so a claim of a *known* kind
+carrying a field from a newer kan deserialized successfully, silently dropped
+the field, re-encoded to different bytes, and was then reported as **altered
+since it was signed**. That is precisely the failure this contract exists to
+prevent, surviving one level below where the fix was applied. Any future type
+that participates in decoding a claim must carry the attribute, and the test
+that proves it must construct a *known* kind with an unknown field, not only
+an unknown kind (ADR-48).
 
 **Unknown kinds are preserved, not rejected or dropped.** A reader
 encountering a `ClaimBody` kind it does not recognize decodes it as an opaque
