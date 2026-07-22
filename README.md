@@ -30,12 +30,28 @@ from many local logs into a coherent view, parameterized by whom you trust.
 
 ## Status
 
-Pre-1.0 (`v0.4.0-beta.1` on crates.io). The local-only spine — one human,
-one-or-more agents, one repo, no sync — is built and hardening. Sync (a
-private-team `HostedRelay` transport, then the public atproto layer) has a
-concrete staged plan targeting `v1.0.0` — see
+Pre-1.0 (`v0.6.0-beta.1` on crates.io). The local-only spine — one human,
+one-or-more agents, one repo — is built and hardening.
+
+Sharing has started. `kan publish <subject>` writes a subject's signed
+claims into a tracked `.claims/` directory, so they travel with the repo:
+visible in `git diff`, reviewable in a PR, and readable by someone without
+kan installed. Each record carries a complete signed claim, so it is
+verified rather than trusted — editing the prose changes the CID and fails
+verification. **Publishing works; consuming a published tree does not yet.**
+Threading `Transport` through the workspace, so a clone actually folds
+claims another actor published, is the next milestone (ADR-43, ADR-45).
+
+`docs/SPEC.md` §7.1 states the compatibility contract that came out of it:
+existing claim fields are frozen, new ones are additive and optional, and an
+unrecognized claim kind is preserved as a verifiable opaque claim rather
+than rejected — so an older kan meeting a newer log says what it does not
+understand instead of failing outright (ADR-44).
+
+The rest of sync — a private-team `HostedRelay` transport, then the public
+atproto layer — has a concrete staged plan targeting `v1.0.0`; see
 `.design/sync-layer-architecture-and-staging.md` and `docs/DECISIONS.md`
-ADR-35 — but hasn't started yet.
+ADR-35.
 
 ## Name
 

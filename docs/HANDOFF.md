@@ -1,5 +1,17 @@
 # kan — Design Handoff Brief
 
+> **Historical — this is the original bootstrap brief**, written before any
+> code existed, and kept as the record of what the project looked like at the
+> start. Its "first build", "two OPEN choices", and "deliverables expected
+> from the initial design pass" sections were all resolved years of decisions
+> ago; it predates the `Transport` layer, the sharing layer, the schema
+> contract, and the companion tool `day` entirely.
+>
+> **For current orientation read `docs/SPEC.md` (authoritative), then
+> `docs/DECISIONS.md` (why things are the way they are), then `.design/` for
+> in-flight work.** For current *state* rather than design, `kan show spine`
+> in this repo is the entry point.
+
 *Hand this to the initial Claude Code design session, together with `agent-memory-substrate-spec.md` (the full data-model + algorithm spec, which is authoritative). This brief orients the session, fixes vocabulary, and scopes the first build.*
 
 ---

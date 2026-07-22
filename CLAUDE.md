@@ -4,7 +4,10 @@ You are building `kan`: a local-first, provenance-preserving memory substrate fo
 AI agents, in Rust. This file orients you; the authoritative design is in `docs/`.
 
 ## Read first, in order
-1. `docs/HANDOFF.md` — orientation, vocabulary, scope, the two open choices.
+1. `docs/HANDOFF.md` — **historical**: the original bootstrap brief, kept as
+   a record of the starting point. Useful for the vocabulary map; its scope
+   and open-choices sections are long resolved. Read it for background, not
+   for current state.
 2. `docs/SPEC.md` — AUTHORITATIVE data model, identity model, anchors, computable
    relations, the fold algorithm, storage, and the v1 scope fence. If anything
    here conflicts with SPEC.md, SPEC.md wins.
@@ -60,6 +63,8 @@ line if they ever drift:
 - Structuring: `same | relate | mark`
 - Correcting: `retract | reject`
 - Recalling: `show | status | issues | context [--budget N]`
+- Sharing: `publish <subject>` — writes the subject's signed claims into the
+  tracked `.claims/` directory (ADR-43). Writes files; never runs git.
 - Outside the four phases (setup/tooling, not a claim-graph verb): `mcp [install]`
 
 ## Scope boundary: kan vs. `day`, the companion tool
