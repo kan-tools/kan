@@ -352,5 +352,22 @@ fn published_claims_can_be_ordered_by_tid() {
 fn the_shared_layer_is_outside_the_private_store() {
     assert_ne!(git_tree::CLAIMS_DIR, ".kan");
     assert!(!git_tree::CLAIMS_DIR.starts_with(".kan"));
-    assert!(git_tree::GITATTRIBUTES_LINE.contains("merge=union"));
+    assert!(!git_tree::GITATTRIBUTES_LINE.contains("merge=union"));
+}
+
+/// kan ships no merge-driver guidance for `.claims/`, and specifically not
+/// `merge=union` — it is line-based, every record starts with the same
+/// boilerplate lines, so git unions *inside* a record and welds two claims
+/// into one malformed record with duplicate `cid`/`sig` keys. Both
+/// concurrent claims are lost, at exit 0. A plain conflict is strictly
+/// better: visible, and recoverable.
+#[test]
+fn no_merge_driver_is_recommended_for_the_shared_layer() {
+    assert!(git_tree::GITATTRIBUTES_LINE.is_empty());
+    // The guidance names `merge=union` in order to warn against it, so the
+    // check is that it is not *recommended* — the word alone proves nothing.
+    let guidance = git_tree::gitignore_guidance();
+    assert!(guidance.contains("Do not set a merge driver"));
+    assert!(guidance.contains("silently destroys"));
+    assert!(!guidance.contains("Add to .gitattributes"));
 }

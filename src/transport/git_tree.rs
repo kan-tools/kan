@@ -432,11 +432,27 @@ impl Transport for GitTree {
     }
 }
 
-/// The `.gitattributes` line shipped with the feature. Records are additive
-/// and immutable, so a concurrent write from two clones is correctly
-/// resolved by keeping both — which is what `merge=union` does, and what
-/// kan's fold then classifies as a contest rather than silently picking one.
-pub const GITATTRIBUTES_LINE: &str = ".claims/*.md merge=union";
+/// Deliberately empty: kan ships **no** merge-driver guidance for
+/// `.claims/`.
+///
+/// ADR-43 originally shipped `.claims/*.md merge=union`, reasoning that
+/// records are additive and immutable, so keeping both sides is the correct
+/// resolution. The reasoning about *claims* is right; the conclusion about
+/// *files* was wrong, and an adversarial review proved it destroys data.
+///
+/// `merge=union` is **line**-based. Every record here begins with the same
+/// boilerplate lines (`---`, `{`, `"cid": …`), so git aligns the two sides'
+/// record boundaries against each other and unions *inside* a record,
+/// welding two claims into one malformed record with duplicate `cid`/`sig`
+/// keys. The merge exits 0 reporting insertions, and both concurrent claims
+/// are lost. Without the driver, the same merge raises an ordinary conflict
+/// — visible, and recoverable by hand.
+///
+/// Union merge could only be safe if a record were one line, or if record
+/// boundaries were unique enough that git could never align across them.
+/// Neither is true today, so the honest shipped answer is no guidance at
+/// all rather than guidance that loses claims.
+pub const GITATTRIBUTES_LINE: &str = "";
 
 /// What `.gitignore` must *not* do. ADR-3 keeps `.kan/` ignored in full;
 /// this feature deliberately inverts that for a separate directory, so the
@@ -444,7 +460,9 @@ pub const GITATTRIBUTES_LINE: &str = ".claims/*.md merge=union";
 pub fn gitignore_guidance() -> String {
     format!(
         "`.kan/` stays gitignored in full (ADR-3). `{CLAIMS_DIR}/` is tracked — it is a \
-         sharing layer, not a store.\nAdd to .gitattributes:\n    {GITATTRIBUTES_LINE}\n"
+         sharing layer, not a store.\nDo not set a merge driver for `{CLAIMS_DIR}/`: a \
+         merge conflict there is informative, and `merge=union` silently destroys both \
+         sides' claims.\n"
     )
 }
 
