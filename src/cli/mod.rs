@@ -23,6 +23,12 @@ pub enum Error {
 
 #[derive(Debug, Parser)]
 #[command(name = "kan", about = "Local reasoning, global coherence.")]
+// `--version` from Cargo.toml. Absent until now (#100), which quietly left
+// ADR-50's contract half-built: the `--json` payload carries a schema
+// version, and the binary producing it carried none, so a consumer could
+// check the shape and not the tool. `day` shells out to this binary and had
+// no way to say "I need kan >= x".
+#[command(version)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
@@ -47,8 +53,13 @@ pub enum Command {
     /// Record that a subject is blocked. Pairs a `Blocker` claim with a
     /// `Status { value: Blocked }` claim citing it.
     Block {
-        subject: String,
-        text: String,
+        /// Either the subject (when a second positional follows) or the
+        /// text. Both `<subject> <text>` and `<text> --subject <s>` work.
+        first: String,
+        second: Option<String>,
+        /// Subject rkey, as an alternative to giving it positionally.
+        #[arg(long)]
+        subject: Option<String>,
         /// A more specific artifact than the automatic HEAD-commit anchor:
         /// `path` or `path:start-end`.
         #[arg(long)]
@@ -70,8 +81,13 @@ pub enum Command {
     /// `Resolution` claim with a `Status { value: Resolved }` claim citing
     /// it.
     Resolve {
-        subject: String,
-        text: String,
+        /// Either the subject (when a second positional follows) or the
+        /// text. Both `<subject> <text>` and `<text> --subject <s>` work.
+        first: String,
+        second: Option<String>,
+        /// Subject rkey, as an alternative to giving it positionally.
+        #[arg(long)]
+        subject: Option<String>,
         /// CIDs of prior claims the `Resolution` claim cites.
         #[arg(long = "cites")]
         cites: Vec<String>,
@@ -96,8 +112,13 @@ pub enum Command {
     /// `resolve` instead when the outcome also means this subject's work
     /// is done.
     Result {
-        subject: String,
-        text: String,
+        /// Either the subject (when a second positional follows) or the
+        /// text. Both `<subject> <text>` and `<text> --subject <s>` work.
+        first: String,
+        second: Option<String>,
+        /// Subject rkey, as an alternative to giving it positionally.
+        #[arg(long)]
+        subject: Option<String>,
         /// CIDs of prior claims this one cites.
         #[arg(long = "cites")]
         cites: Vec<String>,
@@ -249,6 +270,29 @@ pub enum Command {
     },
 }
 
+/// Read one line of secret input without it reaching argv.
+///
+/// On a terminal, `rpassword` reads with echo disabled so the phrase never
+/// appears on screen or in scrollback. Off a terminal it is read as a plain
+/// line from stdin — the automation path.
+///
+/// The branch is explicit because `rpassword` does **not** fall back: spiked
+/// before use per `CLAUDE.md`'s crate rule, it fails with "Device not
+/// configured" when stdin is not a TTY.
+fn read_secret_line(prompt: &str) -> Result<String, Error> {
+    use std::io::IsTerminal;
+    if std::io::stdin().is_terminal() {
+        Ok(rpassword::prompt_password(prompt)
+            .map_err(|e| actions::Error::Usage(format!("could not read the phrase: {e}")))?)
+    } else {
+        let mut line = String::new();
+        std::io::stdin()
+            .read_line(&mut line)
+            .map_err(|e| actions::Error::Usage(format!("could not read the phrase: {e}")))?;
+        Ok(line.trim_end_matches(['\n', '\r']).to_string())
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum IdentityAction {
     /// Print this repo's `did:key` identifier. Public, safe to share.
@@ -263,9 +307,14 @@ pub enum IdentityAction {
         yes: bool,
     },
     /// Check a recovery phrase: prints the identity it belongs to.
+    ///
+    /// The phrase is read from stdin, never from the command line. On a
+    /// terminal you are prompted and the words are not echoed; otherwise it
+    /// is read from a pipe, which is the automation path.
     Restore {
-        /// The 24 words, space-separated.
-        #[arg(required = true, num_args = 1..)]
+        /// Rejected. The phrase is your private key and must not appear in
+        /// argv — see the error text.
+        #[arg(hide = true, num_args = 0..)]
         phrase: Vec<String>,
     },
 }
@@ -347,9 +396,80 @@ impl From<SubjectKindArg> for crate::claim::SubjectKind {
     }
 }
 
+/// Resolve a verb's subject and text from whichever form the caller used.
+///
+/// Every claim-writing verb now accepts **both**:
+///
+/// ```text
+/// kan observe <SUBJECT> <TEXT>
+/// kan observe <TEXT> --subject <SUBJECT>
+/// kan result  <SUBJECT> <TEXT>
+/// kan result  <TEXT> --subject <SUBJECT>
+/// ```
+///
+/// Before this, `observe`/`plan`/`decide` took `--subject` and
+/// `result`/`resolve`/`block` took it positionally, with nothing to infer
+/// which was which. Two independent sessions got it wrong in opposite
+/// directions, and issue #101 records that it cost **lost writes** — a long
+/// claim retyped after `error: unexpected argument '--subject'`.
+///
+/// Accepting both was chosen over unifying on one form (the earlier
+/// decision, recorded on `v0.6.1-cleanup`) because the evidence changed what
+/// the problem was. Unifying is a breaking change that removes the stress
+/// only after a deprecation window and forces `day` to migrate; accepting
+/// both removes it now and breaks nothing. The consistency argument was
+/// aesthetic. The lost-write argument is not.
+///
+/// `default_subject` is `Some("general")` for the narrative verbs, which have
+/// always had that fallback, and `None` for the verbs that require a subject
+/// — those error rather than guess.
+fn subject_and_text(
+    first: String,
+    second: Option<String>,
+    flag: Option<String>,
+    default_subject: Option<&str>,
+) -> Result<(String, String), Error> {
+    match (second, flag) {
+        // Both forms at once: refuse rather than silently pick one.
+        (Some(_), Some(_)) => Err(actions::Error::Usage(
+            "give the subject once -- either positionally (`kan <verb> <subject> <text>`) \
+             or with --subject, not both"
+                .to_string(),
+        )
+        .into()),
+        (Some(text), None) => Ok((first, text)),
+        (None, Some(subject)) => Ok((subject, first)),
+        (None, None) => match default_subject {
+            Some(default) => Ok((default.to_string(), first)),
+            None => Err(actions::Error::Usage(format!(
+                "this verb needs a subject: `kan <verb> <subject> \"{}\"`, or \
+                 `kan <verb> \"{}\" --subject <subject>`",
+                elide(&first),
+                elide(&first)
+            ))
+            .into()),
+        },
+    }
+}
+
+/// First few words of a claim, for an error message that has to quote it back
+/// without dumping a paragraph into the terminal.
+fn elide(text: &str) -> String {
+    let head: String = text.chars().take(40).collect();
+    if text.chars().count() > 40 {
+        format!("{head}...")
+    } else {
+        head
+    }
+}
+
 #[derive(Debug, clap::Args)]
 pub struct NarrativeArgs {
-    pub text: String,
+    /// Either the subject (when a second positional follows) or the claim
+    /// text. See `subject_and_text`.
+    pub first: String,
+    /// The claim text, when the subject was given positionally.
+    pub second: Option<String>,
     /// Subject rkey this claim is about (default: "general").
     #[arg(long)]
     pub subject: Option<String>,
@@ -397,11 +517,13 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
     match cli.command {
         Command::Observe(args) => {
             let verbose = args.verbose;
-            print_naming_warnings(subject_warnings(&ws, args.subject.as_deref())?);
+            let (subject, text) =
+                subject_and_text(args.first, args.second, args.subject, Some("general"))?;
+            print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::observe(
                 &mut ws,
-                args.text,
-                args.subject,
+                text,
+                Some(subject),
                 args.cites,
                 args.file,
                 args.status.map(Into::into),
@@ -413,11 +535,13 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Plan(args) => {
             let verbose = args.verbose;
-            print_naming_warnings(subject_warnings(&ws, args.subject.as_deref())?);
+            let (subject, text) =
+                subject_and_text(args.first, args.second, args.subject, Some("general"))?;
+            print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::plan(
                 &mut ws,
-                args.text,
-                args.subject,
+                text,
+                Some(subject),
                 args.cites,
                 args.file,
                 args.status.map(Into::into),
@@ -429,11 +553,13 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Decide(args) => {
             let verbose = args.verbose;
-            print_naming_warnings(subject_warnings(&ws, args.subject.as_deref())?);
+            let (subject, text) =
+                subject_and_text(args.first, args.second, args.subject, Some("general"))?;
+            print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::decide(
                 &mut ws,
-                args.text,
-                args.subject,
+                text,
+                Some(subject),
                 args.cites,
                 args.file,
                 args.status.map(Into::into),
@@ -483,14 +609,16 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             print_result(&result, verbose);
         }
         Command::Resolve {
+            first,
+            second,
             subject,
-            text,
             cites,
             file,
             title,
             kind,
             verbose,
         } => {
+            let (subject, text) = subject_and_text(first, second, subject, None)?;
             print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::resolve(
                 &mut ws,
@@ -505,8 +633,9 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             print_paired_result(&result, verbose);
         }
         Command::Result {
+            first,
+            second,
             subject,
-            text,
             cites,
             file,
             status,
@@ -514,6 +643,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             kind,
             verbose,
         } => {
+            let (subject, text) = subject_and_text(first, second, subject, None)?;
             print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::result(
                 &mut ws,
@@ -529,13 +659,15 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             print_narrative_result(&result, verbose);
         }
         Command::Block {
+            first,
+            second,
             subject,
-            text,
             file,
             title,
             kind,
             verbose,
         } => {
+            let (subject, text) = subject_and_text(first, second, subject, None)?;
             print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result =
                 actions::block(&mut ws, &subject, &text, file, title, kind.map(Into::into)).await?;
@@ -625,7 +757,32 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                 println!("{}", crate::sign::recovery_phrase(&ws.identity)?);
             }
             IdentityAction::Restore { phrase } => {
-                let restored = crate::sign::from_recovery_phrase(&phrase.join(" "))?;
+                // argv is not a place a private key may go.
+                //
+                // Shell history keeps it indefinitely, `ps` exposes it to
+                // every other process for the life of the command, and it
+                // lands in terminal scrollback and any agent transcript.
+                // `kan identity phrase` is gated twice so the phrase never
+                // reaches somewhere permanent; accepting it here on the
+                // command line undid that entirely. Rejected rather than
+                // deprecated: using it once is already a leak, so accepting
+                // it "for compatibility" would preserve the defect.
+                if !phrase.is_empty() {
+                    return Err(actions::Error::Usage(
+                        "the recovery phrase must not be passed on the command line -- it \
+                         is your private signing key, and argv is visible in shell history, \
+                         in `ps` output to other processes, and in terminal scrollback.\n\n\
+                         Run `kan identity restore` with no arguments and enter it at the \
+                         prompt, or pipe it in:\n    \
+                         cat phrase.txt | kan identity restore\n\n\
+                         If you already ran it with the words as arguments, clear them from \
+                         your shell history."
+                            .to_string(),
+                    )
+                    .into());
+                }
+                let phrase = read_secret_line("Recovery phrase (input hidden): ")?;
+                let restored = crate::sign::from_recovery_phrase(&phrase)?;
                 if restored.did() == ws.identity.did() {
                     println!(
                         "that phrase belongs to {} -- it matches this repo's identity.",
