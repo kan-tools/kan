@@ -49,6 +49,17 @@ pub enum Error {
     #[error("recovery phrase: {0}")]
     Recovery(String),
     #[error(
+        "{override_path} does not exist, and this repo already has claims written under an \
+         existing identity.\n\n\
+         Creating a key there would give this repo a second identity: the claims already in \
+         the log are signed by the first one, and a fold trusts a single author, so they \
+         would all disappear from every read at exit 0 while still being on disk.\n\n\
+         Point KAN_IDENTITY_FILE at the existing key file, or unset it and let kan use the \
+         keychain. To \
+         restore from a recovery phrase, write the key to that path first."
+    )]
+    WouldMintSecondIdentity { override_path: String },
+    #[error(
         "this repo has an identity in the OS keychain but it could not be read ({detail}).\n\
          \n\
          kan will not generate a second identity for a repo that already has one — a new \
@@ -114,6 +125,22 @@ impl Identity {
             let override_path = std::path::PathBuf::from(override_path);
             if let Some(parent) = override_path.parent() {
                 std::fs::create_dir_all(parent)?;
+            }
+            // Refuse to mint a second identity for a repo that already has
+            // one, exactly as the keychain branch does.
+            //
+            // Without this the guard existed on only one of two paths, and
+            // the *other* path is the one `KeychainUnreachable`'s own message
+            // recommends. Following that advice against a repo whose key had
+            // already been migrated created a fresh keypair and a new DID,
+            // and `TrustBase::Solo` then hid every existing claim: `kan
+            // status` printed "no subjects yet" at exit 0 — verbatim REQ-5's
+            // failure mode, reached through the release's recommended
+            // workaround.
+            if !override_path.exists() && log_has_claims(path) {
+                return Err(Error::WouldMintSecondIdentity {
+                    override_path: override_path.display().to_string(),
+                });
             }
             return Self::load_or_create_plaintext(&override_path);
         }
@@ -324,6 +351,20 @@ fn keychain_account(identity_path: &Path) -> Result<String, Error> {
 
     std::fs::write(&id_path, &account)?;
     Ok(account)
+}
+
+/// Whether this repo's log already holds claims.
+///
+/// Deliberately a file-existence check rather than a read: `sign` must not
+/// depend on `store`, and the question here is only "has anything ever been
+/// written," which a non-empty CAR answers without decoding a single claim.
+fn log_has_claims(identity_path: &Path) -> bool {
+    identity_path
+        .parent()
+        .map(|dir| dir.join("log").join("repo.car"))
+        .filter(|car| car.exists())
+        .and_then(|car| std::fs::metadata(car).ok())
+        .is_some_and(|m| m.len() > 0)
 }
 
 /// A fresh, random keychain account name for a checkout that has none.

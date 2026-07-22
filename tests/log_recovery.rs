@@ -66,9 +66,28 @@ async fn a_partially_written_head_is_recovered() {
         "every claim was intact in the CAR and must come back"
     );
 
-    // HEAD is repaired on disk, not just papered over in memory.
+    // HEAD on disk is *deliberately* still broken: a read command must not
+    // write to the log. Rewriting it off the write lock is what let a
+    // transient torn read roll a healthy log back permanently.
+    let head_after_read = std::fs::read_to_string(log_dir.join("HEAD")).unwrap();
+    assert_eq!(
+        head_after_read.trim(),
+        "bafyreig",
+        "opening for a read must leave HEAD exactly as it found it"
+    );
+
+    // The next *write* repairs it, under the lock.
+    log.append(content(&identity, "a write repairs HEAD"), &identity)
+        .await
+        .unwrap();
     let head = std::fs::read_to_string(log_dir.join("HEAD")).unwrap();
-    assert!(head.trim().parse::<atproto_dasl::Cid>().is_ok());
+    assert!(
+        head.trim().parse::<atproto_dasl::Cid>().is_ok(),
+        "the first write after a recovery must persist the recovered root"
+    );
+    drop(log);
+    let mut reopened = Log::open_or_create(&log_dir, &identity).await.unwrap();
+    assert_eq!(reopened.iter_all().await.unwrap().len(), 4);
 }
 
 /// AC-5: a missing `HEAD` is the same story.
@@ -107,7 +126,41 @@ async fn a_truncated_car_tail_keeps_every_intact_claim() {
     log.append(content(&identity, "after-recovery"), &identity)
         .await
         .expect("a recovered log must still accept appends");
-    assert_eq!(log.iter_all().await.unwrap().len(), recovered + 1);
+
+    // **Reopen from disk.** Asserting against the same in-memory `Log` here
+    // is what made the original version of this test unable to fail: the MST
+    // is in RAM, so the count is +1 by construction whether or not the block
+    // ever reached a readable position in the file. The defect it missed was
+    // that `persist_new_blocks` appends *past* the damaged region, so every
+    // post-recovery write was unreachable to the tolerant reader --
+    // silently, permanently, at exit 0.
+    drop(log);
+    let mut reopened = Log::open_or_create(&log_dir, &identity).await.unwrap();
+    let after = reopened.iter_all().await.unwrap();
+    assert_eq!(
+        after.len(),
+        recovered + 1,
+        "an append after recovery must survive a reopen -- otherwise the log \
+         is a write black hole that reports success"
+    );
+    assert!(
+        after.iter().any(|(_, s)| matches!(
+            &s.claim.content.body,
+            ClaimBody::Observation { text } if text == "after-recovery"
+        )),
+        "the specific post-recovery claim must be readable back"
+    );
+
+    // And it keeps working: several more appends, all still there.
+    for i in 0..3 {
+        reopened
+            .append(content(&identity, &format!("later-{i}")), &identity)
+            .await
+            .unwrap();
+    }
+    drop(reopened);
+    let mut again = Log::open_or_create(&log_dir, &identity).await.unwrap();
+    assert_eq!(again.iter_all().await.unwrap().len(), recovered + 4);
 }
 
 /// A healthy log must not be touched by any of this: recovery is a fallback,
@@ -126,4 +179,49 @@ async fn an_undamaged_log_is_left_exactly_as_it_was() {
         head_before
     );
     assert_eq!(std::fs::read(log_dir.join("repo.car")).unwrap(), car_before);
+}
+
+/// D3: a read must never modify the log, even when it recovers.
+///
+/// The recovery path runs on every open, including `kan show`. Rewriting
+/// `HEAD` from there — off the write lock and non-atomically — turned a
+/// transient torn read (CAR loaded before `HEAD`, an append landing between)
+/// into a permanent rollback that stranded every claim written since.
+#[tokio::test]
+async fn reading_a_recovered_log_does_not_write_to_it() {
+    let (_dir, identity, log_dir) = seeded(3).await;
+    std::fs::write(log_dir.join("HEAD"), "bafyreig").unwrap();
+
+    let before: Vec<(std::path::PathBuf, Vec<u8>, std::time::SystemTime)> =
+        std::fs::read_dir(&log_dir)
+            .unwrap()
+            .flatten()
+            .map(|e| {
+                let p = e.path();
+                let bytes = std::fs::read(&p).unwrap_or_default();
+                let mtime = e.metadata().unwrap().modified().unwrap();
+                (p, bytes, mtime)
+            })
+            .collect();
+
+    // Several reads, including ones that fully enumerate.
+    for _ in 0..3 {
+        let mut log = Log::open_or_create(&log_dir, &identity).await.unwrap();
+        assert_eq!(log.iter_all().await.unwrap().len(), 3);
+    }
+
+    for (path, bytes, mtime) in before {
+        assert_eq!(
+            std::fs::read(&path).unwrap_or_default(),
+            bytes,
+            "{} was modified by a read",
+            path.display()
+        );
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().modified().unwrap(),
+            mtime,
+            "{} was rewritten by a read",
+            path.display()
+        );
+    }
 }

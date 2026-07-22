@@ -578,16 +578,7 @@ pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error>
         .collect();
 
     let view = crate::fold::fold(stored, &ws.solo_trust());
-    let live: Vec<(crate::claim::Claim, Option<String>)> = view
-        .subject(&subject_ref)
-        .map(|class| {
-            class
-                .claims
-                .iter()
-                .map(|(cid, claim)| (claim.clone(), rev_of.get(cid).cloned()))
-                .collect()
-        })
-        .unwrap_or_default();
+    let live = live_claims_for(&view, &subject_ref, &rev_of);
 
     let count = live.len();
     let path = crate::transport::git_tree::write_subject(&ws.root, &subject_ref, &live)
@@ -608,7 +599,44 @@ pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error>
 /// Republishes subjects that already carry a `Publication` claim; it does not
 /// publish anything new. Publishing is a decision about a subject, recorded
 /// as a claim, so `--all` refreshing files is bookkeeping while `publish
-/// <subject>` remains the act of deciding to share.
+/// The live claims of `subject` — folded, then narrowed back to the subject
+/// itself.
+///
+/// The fold's unit is the merge *class*, so taking its output wholesale put
+/// every claim of every `SameAs`-merged subject into each of their files:
+/// `alpha`'s file contained `beta`'s claims, every claim was duplicated
+/// across both, and publishing `beta` rewrote `alpha`'s file. That last part
+/// is the cross-subject form of the republish-overwrites problem.
+///
+/// Folding first is still right — it is what filters retracted and untrusted
+/// claims (REQ-12). Narrowing after is what keeps a `.claims/<subject>.md`
+/// file mean what its name says, which is the precondition for
+/// authenticating the filename against its records at all (REQ-13).
+///
+/// The merge is not lost by doing this: the `SameAs` claim is published like
+/// any other claim and folds on read, so a clone still sees one subject. The
+/// merge travels as a claim rather than as file layout — which is where kan
+/// puts everything else.
+fn live_claims_for(
+    view: &FoldedView,
+    subject: &SubjectRef,
+    rev_of: &std::collections::HashMap<Cid, String>,
+) -> Vec<(crate::claim::Claim, Option<String>)> {
+    view.subject(subject)
+        .map(|class| {
+            class
+                .claims
+                .iter()
+                .filter(|(_, claim)| &claim.content.subject == subject)
+                .map(|(cid, claim)| (claim.clone(), rev_of.get(cid).cloned()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `kan publish --all` — refresh every already-published subject's file.
+/// Republishes subjects that already carry a `Publication` claim; `kan
+/// publish <subject>` remains the act of deciding to share.
 pub async fn publish_all(ws: &mut Workspace) -> Result<String, Error> {
     let stored = ws.log.iter_all().await?;
     let rev_of: std::collections::HashMap<_, _> = stored
@@ -630,16 +658,7 @@ pub async fn publish_all(ws: &mut Workspace) -> Result<String, Error> {
 
     let mut written = Vec::new();
     for subject_ref in subjects.values() {
-        let claims: Vec<(crate::claim::Claim, Option<String>)> = view
-            .subject(subject_ref)
-            .map(|class| {
-                class
-                    .claims
-                    .iter()
-                    .map(|(cid, claim)| (claim.clone(), rev_of.get(cid).cloned()))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let claims = live_claims_for(&view, subject_ref, &rev_of);
         let path = crate::transport::git_tree::write_subject(&ws.root, subject_ref, &claims)
             .map_err(|e| Error::Publish(Box::new(e)))?;
         written.push(format!("  {} ({} claim(s))", path.display(), claims.len()));
@@ -846,22 +865,39 @@ fn superseded_status_cids(claims: &[(Cid, crate::claim::Claim)]) -> std::collect
 }
 
 /// One claim, by CID, wherever it lives (REQ-18).
-fn show_claim_by_cid(view: &FoldedView, wanted: &Cid) -> String {
+fn show_claim_by_cid(ws: &Workspace, view: &FoldedView, wanted: &Cid) -> Result<String, Error> {
     for class in &view.classes {
         for (cid, claim) in &class.claims {
             if cid == wanted {
-                return format!(
+                return Ok(format!(
                     "{cid}  {}\n{}",
                     crate::context::render_claim(claim),
                     claim_detail_lines(claim, "      ")
-                );
+                ));
             }
         }
     }
-    format!(
-        "{wanted}: no such live claim\n\nIt may have been retracted, or authored by \
-         someone this view does not trust.\n"
-    )
+
+    // Not live — so look in the log itself.
+    //
+    // Searching only the fold's live set made this useless for the case it
+    // was built for: a `Retraction` names its target by CID, and the target
+    // is by definition *not* live, so `kan show <cid>` of it said "no such
+    // claim". `docs/SPEC.md` §8's "a view CAN show 'X retracted Y'" stayed
+    // half-built — you saw *that*, never *what* — which is the whole reason
+    // REQ-18 exists. The requirement was reinterpreted into "accepts CID
+    // syntax"; this is the thing it actually asked for.
+    for (cid, stored) in ws.index.all_stored_claims()? {
+        if &cid == wanted {
+            return Ok(format!(
+                "{cid}  {}\n{}      (not live in this view -- retracted, superseded, or \
+                 from an author this view does not trust)\n",
+                crate::context::render_claim(&stored.claim),
+                claim_detail_lines(&stored.claim, "      ")
+            ));
+        }
+    }
+    Ok(format!("{wanted}: no claim with this CID is in the log\n"))
 }
 
 /// A single subject's live claims, rendered — `fold` + `render` for one
@@ -877,13 +913,29 @@ pub fn show(ws: &Workspace, subject: &str) -> Result<String, Error> {
     // Y'" half-built: you could see *that*, never *what*.
     if subject.starts_with("bafy") {
         if let Ok(wanted) = subject.parse::<Cid>() {
-            return Ok(show_claim_by_cid(&view, &wanted));
+            return show_claim_by_cid(ws, &view, &wanted);
         }
     }
 
     let mut out = String::new();
     match view.subject(&subject_ref) {
-        None => out.push_str(&format!("{subject}: no claims{}\n", subject_hint(&view))),
+        None => {
+            out.push_str(&format!("{subject}: no claims{}\n", subject_hint(&view)));
+            // An edge asserted *at* a subject is part of its story even when
+            // the subject has nothing of its own. `inbound_edges` used to sit
+            // inside the `Some(..)` arm, so `kan relate a blocks b` then `kan
+            // show b` printed "no claims" -- the literal scenario REQ-21
+            // states, failing because `b` has no merge class until it has a
+            // claim. Relations are exactly the thing that can arrive before a
+            // subject does.
+            let inbound = inbound_edges_to(&view, &subject_ref);
+            if !inbound.is_empty() {
+                out.push_str("  edges pointing here:\n");
+                for line in inbound {
+                    out.push_str(&format!("    {line}\n"));
+                }
+            }
+        }
         Some(subject_view) => {
             if subject_view.subjects.len() > 1 {
                 out.push_str(&format!(
@@ -1026,7 +1078,23 @@ pub fn status(ws: &Workspace, subject: Option<&str>) -> Result<String, Error> {
         Some(subject) => {
             let subject_ref = SubjectRef::Local(Rkey::from(subject));
             match view.subject(&subject_ref) {
-                None => out.push_str(&format!("{subject}: no claims{}\n", subject_hint(&view))),
+                None => {
+                    out.push_str(&format!("{subject}: no claims{}\n", subject_hint(&view)));
+                    // An edge asserted *at* a subject is part of its story even when
+                    // the subject has nothing of its own. `inbound_edges` used to sit
+                    // inside the `Some(..)` arm, so `kan relate a blocks b` then `kan
+                    // show b` printed "no claims" -- the literal scenario REQ-21
+                    // states, failing because `b` has no merge class until it has a
+                    // claim. Relations are exactly the thing that can arrive before a
+                    // subject does.
+                    let inbound = inbound_edges_to(&view, &subject_ref);
+                    if !inbound.is_empty() {
+                        out.push_str("  edges pointing here:\n");
+                        for line in inbound {
+                            out.push_str(&format!("    {line}\n"));
+                        }
+                    }
+                }
                 Some(subject_view) => {
                     let state = classify_subject(ws, subject_view);
                     write_state(&mut out, subject, subject_view, state);
@@ -1091,6 +1159,28 @@ fn subject_label(subject_view: &SubjectView) -> String {
         })
         .collect();
     names.join(" = ")
+}
+
+/// Relations pointing at `subject`, for a subject that has no claims (and so
+/// no merge class) of its own.
+fn inbound_edges_to(view: &FoldedView, subject: &SubjectRef) -> Vec<String> {
+    let mut out = Vec::new();
+    for class in &view.classes {
+        for (_, claim) in &class.claims {
+            if let crate::claim::ClaimBody::Relation { kind, target } = &claim.content.body {
+                if target == subject {
+                    let from = match &claim.content.subject {
+                        SubjectRef::Local(rkey) => rkey.to_string(),
+                        other => format!("{other:?}"),
+                    };
+                    out.push(format!("{from} {kind:?} this"));
+                }
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// Relations asserted by *other* subjects that point at this one (REQ-21).
