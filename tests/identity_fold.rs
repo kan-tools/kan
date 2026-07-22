@@ -22,6 +22,7 @@ fn content(author: &AuthorId, subject: &str, body: ClaimBody) -> ClaimContent {
         body,
         cites: vec![],
         artifacts: vec![],
+        recorded_at: None,
     }
 }
 
@@ -352,6 +353,7 @@ async fn sameas_touching_an_anchor_is_not_honored() {
             },
             cites: vec![],
             artifacts: vec![],
+            recorded_at: None,
         },
         &identity,
     )

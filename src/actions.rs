@@ -245,6 +245,7 @@ async fn append(
         body,
         cites,
         artifacts,
+        recorded_at: None,
     };
     let cid = ws.log.append(content, &ws.identity).await?;
     let claims = ws.log.iter_all().await?;

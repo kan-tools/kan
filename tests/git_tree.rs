@@ -28,6 +28,7 @@ fn content(subject: &str, body: ClaimBody, identity: &Identity) -> ClaimContent 
         body,
         cites: vec![],
         artifacts: vec![],
+        recorded_at: None,
     }
 }
 

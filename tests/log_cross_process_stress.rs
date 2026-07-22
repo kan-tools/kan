@@ -23,6 +23,7 @@ fn content(author: &AuthorId, i: usize) -> ClaimContent {
         },
         cites: vec![],
         artifacts: vec![],
+        recorded_at: None,
     }
 }
 

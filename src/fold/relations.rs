@@ -113,6 +113,7 @@ mod tests {
             },
             cites: vec![],
             artifacts: vec![],
+            recorded_at: None,
         };
         let cid = crate::cid::content_cid(&content).unwrap();
         (

@@ -23,6 +23,7 @@ fn sample_content(author_did: String, text: &str) -> ClaimContent {
         },
         cites: vec![],
         artifacts: vec![],
+        recorded_at: None,
     }
 }
 
@@ -91,7 +92,20 @@ async fn log_round_trip_reads_back_a_verified_claim() {
         .await
         .unwrap()
         .expect("claim should be present");
-    assert_eq!(fetched.content, content);
+    // `append` stamps `recorded_at` before computing the CID, so the stored
+    // content is the caller's content *plus* the observer-frame recording
+    // time. Everything else must survive untouched.
+    assert!(
+        fetched.content.recorded_at.is_some(),
+        "append must stamp recorded_at"
+    );
+    assert_eq!(
+        ClaimContent {
+            recorded_at: None,
+            ..fetched.content.clone()
+        },
+        content
+    );
     assert!(sign::verify(
         &identity.did(),
         &claim_cid.to_bytes(),
@@ -162,6 +176,7 @@ async fn subject_claim_round_trips_through_the_log() {
         },
         cites: vec![],
         artifacts: vec![],
+        recorded_at: None,
     };
     assert_eq!(content.body.kind(), ClaimKind::Subject);
 
@@ -171,7 +186,14 @@ async fn subject_claim_round_trips_through_the_log() {
         .await
         .unwrap()
         .expect("claim should be present");
-    assert_eq!(fetched.content, content);
+    assert!(fetched.content.recorded_at.is_some());
+    assert_eq!(
+        ClaimContent {
+            recorded_at: None,
+            ..fetched.content.clone()
+        },
+        content
+    );
     assert_eq!(
         fetched.content.body,
         ClaimBody::Subject {
