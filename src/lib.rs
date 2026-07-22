@@ -9,6 +9,7 @@ pub mod cli;
 pub mod context;
 pub mod fold;
 pub mod git;
+pub mod json;
 pub mod mcp;
 pub mod relations;
 pub mod sign;
