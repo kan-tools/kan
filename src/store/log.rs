@@ -105,6 +105,7 @@ pub struct Log {
     /// against this to find only the new blocks to write, instead of
     /// re-serializing everything `mst.storage()` has ever seen.
     persisted: HashSet<Cid>,
+    lock_path: std::path::PathBuf,
     did: String,
     tid: TidGenerator,
     /// Floor for the next `ClaimContent::recorded_at`, so two appends in the
@@ -112,12 +113,37 @@ pub struct Log {
     /// identical content in a tight loop collides again and the defect
     /// `recorded_at` exists to fix returns.
     ///
-    /// Within-process only. Two *separate* processes appending byte-identical
-    /// content in the same microsecond can still collide; that window closes
-    /// with the append lock in `.design/v0.7-milestone.md` REQ-3, which
-    /// serializes appends and can seed this floor while holding it. Stated
-    /// rather than papered over.
+    /// Cross-process too, not merely within-process: the floor is seeded
+    /// from the reopened log's last commit `rev` (itself a microsecond
+    /// timestamp) on open and again on any mid-flight reload, and the write
+    /// lock serializes appends — so a second writer cannot mint a value at
+    /// or below one already durably recorded.
     last_recorded_at: u64,
+}
+
+/// Holds the exclusive write lock for as long as it is alive.
+///
+/// `flock` is released by the OS when the file descriptor closes, so a
+/// crashed or killed writer cannot leave the log permanently locked — which
+/// is the property an `O_EXCL` lockfile would not have given us.
+struct WriteGuard {
+    file: std::fs::File,
+}
+
+impl WriteGuard {
+    /// Explicit release, so the lock's lifetime is visible at the call site
+    /// rather than resting on where a binding happens to drop.
+    fn release(self) {
+        // `Drop` does the work; this exists to make the intent legible.
+    }
+}
+
+impl Drop for WriteGuard {
+    fn drop(&mut self) {
+        // Best-effort: closing the descriptor releases the lock regardless,
+        // so a failure here cannot strand it.
+        let _ = fs4::FileExt::unlock(&self.file);
+    }
 }
 
 /// Wall-clock microseconds since the Unix epoch.
@@ -133,6 +159,7 @@ impl Log {
         fs::create_dir_all(dir).await?;
         let car_path = dir.join("repo.car");
         let head_path = dir.join("HEAD");
+        let lock_path = dir.join("LOCK");
         let did = identity.did();
 
         if car_path.exists() {
@@ -163,9 +190,13 @@ impl Log {
                 mst,
                 commit_cid: Some(root),
                 persisted,
+                lock_path,
                 did,
+                // Floor the recording clock at the last durable append's
+                // wall-clock time, so a fresh process cannot mint a
+                // recorded_at at or below one already persisted.
+                last_recorded_at: tid.last_micros(),
                 tid,
-                last_recorded_at: 0,
             })
         } else {
             let mst = Mst::new(MemoryStorage::new(), RepoConfig::default());
@@ -175,6 +206,7 @@ impl Log {
                 mst,
                 commit_cid: None,
                 persisted: HashSet::new(),
+                lock_path,
                 did,
                 tid: TidGenerator::new(),
                 last_recorded_at: 0,
@@ -216,9 +248,114 @@ impl Log {
             file.write_all(&block.to_bytes()?).await?;
             self.persisted.insert(cid);
         }
-        file.flush().await?;
 
-        fs::write(&self.head_path, root.to_string()).await?;
+        // `flush()` only pushes tokio's userspace buffer at the kernel; it
+        // makes no promise the bytes survive a crash. `sync_all` does, and
+        // the *ordering* is the point: every block must be durable before
+        // the root that points at them, or a crash in the window leaves a
+        // HEAD referencing blocks that were never written — `MissingRoot` on
+        // the next open, with a log that looks corrupt and is not
+        // (`.design/v0.7-milestone.md` REQ-4).
+        file.sync_all().await?;
+
+        self.write_head_atomically(root).await
+    }
+
+    /// Replace `HEAD` atomically: write a temp file beside it, fsync that,
+    /// then `rename` over the target.
+    ///
+    /// A plain `fs::write` truncates first and then writes, so a crash — or
+    /// a full disk — between the two leaves a zero-length or half-written
+    /// `HEAD`, which `open_or_create` reports as `MissingHead` and which
+    /// bricks reads *and* writes while every claim sits intact in the CAR.
+    /// `rename` within a directory is atomic on POSIX: readers see either
+    /// the old root or the new one, never a partial one.
+    ///
+    /// The directory fsync at the end is what makes the rename itself
+    /// durable — without it the file contents are on disk but the directory
+    /// entry pointing at them need not be.
+    async fn write_head_atomically(&self, root: &Cid) -> Result<(), Error> {
+        let tmp_path = self.head_path.with_extension("tmp");
+        let mut tmp = fs::File::create(&tmp_path).await?;
+        tmp.write_all(root.to_string().as_bytes()).await?;
+        tmp.sync_all().await?;
+        drop(tmp);
+
+        fs::rename(&tmp_path, &self.head_path).await?;
+
+        if let Some(dir) = self.head_path.parent() {
+            // Best-effort: a filesystem that refuses to open a directory for
+            // fsync (rare, but not worth failing an otherwise-good append
+            // over) leaves the rename durable-on-next-sync rather than
+            // immediately.
+            if let Ok(dir_handle) = fs::File::open(dir).await {
+                let _ = dir_handle.sync_all().await;
+            }
+        }
+        Ok(())
+    }
+
+    /// Block until this process holds the log's exclusive write lock.
+    ///
+    /// A dedicated `LOCK` file rather than locking the CAR itself: the CAR is
+    /// opened for reading by every command, and locking a file you also read
+    /// invites a reader accidentally taking or blocking on a writer's lock.
+    /// A file whose only purpose is the lock has no such ambiguity, and its
+    /// contents are never read.
+    ///
+    /// Readers deliberately do **not** take this lock. Appends are atomic at
+    /// the `HEAD` rename, so a concurrent reader sees either the previous
+    /// root or the new one — never a torn state — and making every read
+    /// contend on a writer's lock would be a much larger behavioural change
+    /// than the defect requires.
+    async fn lock_for_write(&self) -> Result<WriteGuard, Error> {
+        let lock_path = self.lock_path.clone();
+        // `fs4`'s blocking `lock()` on a `std::fs::File`, moved off the async
+        // runtime: it parks the calling thread until the lock is available,
+        // which would stall other tasks on a shared worker thread.
+        let file = tokio::task::spawn_blocking(move || -> std::io::Result<std::fs::File> {
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .read(true)
+                .write(true)
+                .truncate(false)
+                .open(&lock_path)?;
+            fs4::FileExt::lock(&file)?;
+            Ok(file)
+        })
+        .await
+        .expect("lock task panicked")?;
+        Ok(WriteGuard { file })
+    }
+
+    /// Rebuild in-memory state from disk if another process has moved `HEAD`
+    /// since this `Log` was opened. A no-op in the overwhelmingly common
+    /// single-writer case — one `read_to_string` of a CID-sized file.
+    async fn reload_if_stale(&mut self) -> Result<(), Error> {
+        let on_disk = match fs::read_to_string(&self.head_path).await {
+            Ok(head) => head.trim().parse::<Cid>().ok(),
+            // No HEAD yet: nothing to be stale relative to.
+            Err(_) => return Ok(()),
+        };
+        if on_disk.is_none() || on_disk == self.commit_cid {
+            return Ok(());
+        }
+
+        let bytes = fs::read(&self.car_path).await?;
+        let mut storage = MemoryStorage::new();
+        let reader = CarReader::new(std::io::Cursor::new(&bytes)).await?;
+        reader.stream_to_storage(&mut storage).await?;
+        self.persisted = storage.cids().map(Cid::from).collect();
+
+        let root = on_disk.expect("checked above");
+        let commit_bytes = storage.get(&root).await?.ok_or(Error::MissingRoot)?;
+        let commit = Commit::from_bytes(&commit_bytes)?;
+        self.mst = Mst::from_root(RawCid::from(commit.data), storage, RepoConfig::default());
+        self.commit_cid = Some(root);
+        // Keep TID monotonicity across the takeover, exactly as reopening
+        // would have.
+        self.tid = TidGenerator::seeded(&commit.rev);
+        self.last_recorded_at = self.last_recorded_at.max(self.tid.last_micros());
         Ok(())
     }
 
@@ -227,9 +364,42 @@ impl Log {
     /// identity (`docs/SPEC.md` §1, no explicit id field).
     pub async fn append(
         &mut self,
+        content: ClaimContent,
+        identity: &Identity,
+    ) -> Result<Cid, Error> {
+        // Serialize the whole read-modify-write against every other process
+        // holding this log open (`.design/v0.7-milestone.md` REQ-3).
+        //
+        // Without this, each process opened the CAR into an in-memory MST,
+        // appended to *its* copy, and last-writer-wins overwrote HEAD: five
+        // concurrent `kan observe` calls returned five distinct CIDs and five
+        // exit-0 successes while two claims survived, the losers' blocks
+        // reaching the CAR but unreachable from the winning root. ADR-15's
+        // "reopens from disk every call ... avoids any question of
+        // concurrent-mutation safety" was exactly inverted: reopening per
+        // call is *what makes* each process start from a stale root. This is
+        // the deployment kan targets — one human, one-or-more local agents,
+        // plus `day` shelling out to the same binary (ADR-42).
+        let guard = self.lock_for_write().await?;
+        let result = self.append_locked(content, identity).await;
+        guard.release();
+        result
+    }
+
+    /// The append itself, with the write lock already held. Split out so the
+    /// lock is released on every path, including the error ones.
+    async fn append_locked(
+        &mut self,
         mut content: ClaimContent,
         identity: &Identity,
     ) -> Result<Cid, Error> {
+        // The lock excludes concurrent writers from here on, but this
+        // process may have read the log *before* acquiring it — so whatever
+        // is in memory can already be behind. Re-read HEAD and rebuild from
+        // disk if another writer moved it. Taking the lock without this
+        // check would serialize the writes and still lose them.
+        self.reload_if_stale().await?;
+
         // Stamp the observer-frame recording time before the CID is computed
         // — it is signed content, not storage metadata
         // (`ClaimContent::recorded_at`). `get_or_insert` rather than an
