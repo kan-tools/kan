@@ -777,12 +777,109 @@ pub fn warn_similar_subjects(ws: &Workspace, candidates: &[&str]) -> Result<Vec<
     Ok(warnings)
 }
 
+/// REQ-17: what a claim actually carries, beyond its kind and text.
+///
+/// `cites` and `artifacts` appeared **zero times** in every read path, and no
+/// surface showed a claim's author or when it was recorded. A store whose
+/// stated purpose is provenance was holding provenance edges that no reader
+/// could see -- `CLAUDE.md`'s "provenance is sacred: never fabricate or drop
+/// `cites` edges" was satisfied in the store and invisible at the boundary.
+fn claim_detail_lines(claim: &crate::claim::Claim, indent: &str) -> String {
+    let mut out = String::new();
+    if let Some(micros) = claim.content.recorded_at {
+        out.push_str(&format!("{indent}recorded: {}\n", format_micros(micros)));
+    }
+    out.push_str(&format!("{indent}author:   {}\n", claim.content.author.did));
+    if !claim.content.cites.is_empty() {
+        for cid in &claim.content.cites {
+            out.push_str(&format!("{indent}cites:    {cid}\n"));
+        }
+    }
+    for artifact in &claim.content.artifacts {
+        out.push_str(&format!("{indent}artifact: {artifact:?}\n"));
+    }
+    out
+}
+
+/// Microseconds since the epoch as an ISO-8601 UTC timestamp.
+///
+/// Hand-rolled rather than pulling in `chrono`/`time`: kan needs to *print* a
+/// timestamp, not parse, localize, or do calendar arithmetic on one, and a
+/// dependency whose surface dwarfs its use here is the kind of thing ADR-11's
+/// postmortem argues against.
+fn format_micros(micros: u64) -> String {
+    let secs = (micros / 1_000_000) as i64;
+    let days = secs.div_euclid(86_400);
+    let tod = secs.rem_euclid(86_400);
+    let (h, m, sec) = (tod / 3600, (tod % 3600) / 60, tod % 60);
+
+    // Civil-from-days (Howard Hinnant's algorithm), shifted to a 0000-03-01 era.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if mo <= 2 { y + 1 } else { y };
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{sec:02}Z")
+}
+
+/// Status claims on this subject that a later status has replaced.
+///
+/// `fold::state::classify` already reduces to the live antichain; anything
+/// that is a `Status` and not in it has been superseded.
+fn superseded_status_cids(claims: &[(Cid, crate::claim::Claim)]) -> std::collections::HashSet<Cid> {
+    let live = match crate::fold::state::classify(claims, &[]) {
+        crate::fold::state::StateView::Unclassified => return Default::default(),
+        other => other.live_cids(),
+    };
+    claims
+        .iter()
+        .filter(|(cid, claim)| {
+            claim.content.body.kind() == crate::claim::ClaimKind::Status && !live.contains(cid)
+        })
+        .map(|(cid, _)| cid.clone())
+        .collect()
+}
+
+/// One claim, by CID, wherever it lives (REQ-18).
+fn show_claim_by_cid(view: &FoldedView, wanted: &Cid) -> String {
+    for class in &view.classes {
+        for (cid, claim) in &class.claims {
+            if cid == wanted {
+                return format!(
+                    "{cid}  {}\n{}",
+                    crate::context::render_claim(claim),
+                    claim_detail_lines(claim, "      ")
+                );
+            }
+        }
+    }
+    format!(
+        "{wanted}: no such live claim\n\nIt may have been retracted, or authored by \
+         someone this view does not trust.\n"
+    )
+}
+
 /// A single subject's live claims, rendered — `fold` + `render` for one
 /// subject (`docs/SPEC.md` §9's "decategorify only at render").
 pub fn show(ws: &Workspace, subject: &str) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let view = fold::fold(claims, &ws.solo_trust());
     let subject_ref = SubjectRef::Local(Rkey::from(subject));
+
+    // REQ-18: a `Retraction` names its target by CID, and no read verb
+    // accepted one -- `kan show <cid>` treated it as a subject name and said
+    // "no claims", leaving `docs/SPEC.md` §8's "a view CAN show 'X retracted
+    // Y'" half-built: you could see *that*, never *what*.
+    if subject.starts_with("bafy") {
+        if let Ok(wanted) = subject.parse::<Cid>() {
+            return Ok(show_claim_by_cid(&view, &wanted));
+        }
+    }
 
     let mut out = String::new();
     match view.subject(&subject_ref) {
@@ -815,13 +912,54 @@ pub fn show(ws: &Workspace, subject: &str) -> Result<String, Error> {
                 "{subject} ({} live claim(s)):\n",
                 subject_view.claims.len()
             ));
+            let superseded = superseded_status_cids(&subject_view.claims);
             for (cid, claim) in &subject_view.claims {
                 out.push_str(&format!(
-                    "  {cid}  {:?}  {:?}\n",
-                    claim.content.body.kind(),
-                    claim.content.body
+                    "  {cid}  {}\n",
+                    crate::context::render_claim(claim)
                 ));
+                // REQ-20: a status that a later one has replaced must not be
+                // presented as a peer of the one that replaced it. `kan
+                // status` got this right while `show` and `context` -- the
+                // surfaces actually pasted into an agent's window -- listed
+                // Blocked and Resolved side by side, unlabelled and in score
+                // order rather than chronological.
+                if superseded.contains(cid) {
+                    out.push_str("      (superseded by a later status on this subject)\n");
+                }
+                out.push_str(&claim_detail_lines(claim, "      "));
             }
+            // REQ-21: an edge asserted *at* this subject is part of its
+            // story too. `kan relate a blocks b` then `kan show b` showed
+            // nothing, so half of every relation was invisible -- and
+            // `fold::relations` (SPEC 4.5.1's symmetric projection, shipped
+            // in v0.6) had no caller anywhere outside its own tests.
+            let inbound = inbound_edges(&view, subject_view);
+            if !inbound.is_empty() {
+                out.push_str("  edges pointing here:\n");
+                for line in inbound {
+                    out.push_str(&format!("    {line}\n"));
+                }
+            }
+            let tensions = crate::fold::relations::in_tension_with(
+                &view
+                    .classes
+                    .iter()
+                    .flat_map(|c| c.claims.iter().cloned())
+                    .collect::<Vec<_>>(),
+                &subject_ref,
+            );
+            if !tensions.is_empty() {
+                let names: Vec<String> = tensions
+                    .iter()
+                    .map(|t| match t {
+                        SubjectRef::Local(rkey) => rkey.to_string(),
+                        other => format!("{other:?}"),
+                    })
+                    .collect();
+                out.push_str(&format!("  in tension with: {}\n", names.join(", ")));
+            }
+
             let related = related_subjects_by_file(&view, subject_view, &ws.git);
             if !related.is_empty() {
                 out.push_str(&format!("  related subjects (same file): {related:?}\n"));
@@ -900,7 +1038,7 @@ pub fn status(ws: &Workspace, subject: Option<&str>) -> Result<String, Error> {
                 out.push_str("no subjects yet\n");
             }
             for subject_view in &view.classes {
-                let label = format!("{:?}", subject_view.subjects);
+                let label = subject_label(subject_view);
                 let state = classify_subject(ws, subject_view);
                 write_state(&mut out, &label, subject_view, state);
             }
@@ -934,6 +1072,49 @@ fn subject_hint(view: &FoldedView) -> String {
 fn classify_subject(ws: &Workspace, subject_view: &SubjectView) -> StateView {
     let edges = relations::compute_default(&subject_view.claims, &ws.git);
     fold::state::classify(&subject_view.claims, &edges)
+}
+
+/// A merge-class's subject label, in a form `kan show` accepts verbatim.
+///
+/// `issues` and `status` printed `[Local("task-3")]` -- the `Debug` of a
+/// `Vec<SubjectRef>` -- while `show` accepts only the bare rkey, so their
+/// output could not be pasted into the verb a reader would reach for next
+/// (`.design/v0.7-milestone.md` REQ-22). A merged class still shows every
+/// name it bridges, because collapsing that would hide the merge.
+fn subject_label(subject_view: &SubjectView) -> String {
+    let names: Vec<String> = subject_view
+        .subjects
+        .iter()
+        .map(|s| match s {
+            SubjectRef::Local(rkey) => rkey.to_string(),
+            other => format!("{other:?}"),
+        })
+        .collect();
+    names.join(" = ")
+}
+
+/// Relations asserted by *other* subjects that point at this one (REQ-21).
+fn inbound_edges(view: &FoldedView, subject_view: &SubjectView) -> Vec<String> {
+    let mut out = Vec::new();
+    for class in &view.classes {
+        if class.subjects == subject_view.subjects {
+            continue;
+        }
+        for (_, claim) in &class.claims {
+            if let crate::claim::ClaimBody::Relation { kind, target } = &claim.content.body {
+                if subject_view.subjects.contains(target) {
+                    let from = match &claim.content.subject {
+                        SubjectRef::Local(rkey) => rkey.to_string(),
+                        other => format!("{other:?}"),
+                    };
+                    out.push(format!("{from} {kind:?} this"));
+                }
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
 }
 
 fn write_state(out: &mut String, label: &str, subject_view: &SubjectView, state: StateView) {
@@ -1034,7 +1215,7 @@ pub fn issues(ws: &Workspace) -> Result<String, Error> {
             continue;
         }
         shown += 1;
-        let label = format!("{:?}", subject_view.subjects);
+        let label = subject_label(subject_view);
         write_state(&mut out, &label, subject_view, state);
     }
     if shown == 0 {
@@ -1049,18 +1230,43 @@ pub fn context(ws: &Workspace, budget: usize) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let view = fold::fold(claims, &ws.solo_trust());
     let estimator = TiktokenEstimator::cl100k();
-    let selected = context::assemble(&view, budget, &estimator);
+    let assembled = context::assemble_reporting(&view, budget, &estimator);
+
+    // Superseded statuses across every class, so the budgeted view marks
+    // them the way `show` does (REQ-20).
+    let superseded: std::collections::HashSet<Cid> = view
+        .classes
+        .iter()
+        .flat_map(|c| superseded_status_cids(&c.claims))
+        .collect();
 
     let mut out = String::new();
     let mut total = 0usize;
-    for (cid, claim) in &selected {
+    for (cid, claim) in &assembled.selected {
         let text = context::render_claim(claim);
         total += estimator.estimate(&text);
-        out.push_str(&format!("{cid}  {text}\n"));
+        let mark = if superseded.contains(cid) {
+            "  (superseded)"
+        } else {
+            ""
+        };
+        out.push_str(&format!("{cid}  {text}{mark}\n"));
     }
+
     out.push_str(&format!(
         "-- {} claim(s), ~{total}/{budget} tokens --\n",
-        selected.len()
+        assembled.selected.len()
     ));
+
+    // REQ-19: never let a budgeted view pass for a complete one.
+    if assembled.omitted_claims > 0 {
+        out.push_str(&format!(
+            "-- {} claim(s) omitted to fit the budget, across {} subject(s): {} --\n",
+            assembled.omitted_claims,
+            assembled.omitted_subjects.len(),
+            assembled.omitted_subjects.join(", ")
+        ));
+        out.push_str("-- raise --budget to see more --\n");
+    }
     Ok(out)
 }

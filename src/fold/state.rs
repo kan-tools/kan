@@ -47,6 +47,23 @@ pub enum StateView {
     },
 }
 
+impl StateView {
+    /// CIDs of the status claims this view considers *live* — the surviving
+    /// antichain. Anything else is superseded, which is what read surfaces
+    /// need in order to stop presenting a replaced status as a peer of the
+    /// one that replaced it (`.design/v0.7-milestone.md` REQ-20).
+    pub fn live_cids(&self) -> std::collections::HashSet<Cid> {
+        match self {
+            StateView::Unclassified => Default::default(),
+            StateView::Settled { claim, .. } => [claim.0.clone()].into_iter().collect(),
+            StateView::Confirmed { by, .. } => by.iter().map(|(c, _)| c.clone()).collect(),
+            // `resolved` were dominated by a poset edge and are kept for
+            // legibility, not because they still stand — only `open` is live.
+            StateView::Contested { open, .. } => open.iter().map(|(c, _)| c.clone()).collect(),
+        }
+    }
+}
+
 pub fn value_of(claim: &Claim) -> StatusValue {
     match &claim.content.body {
         ClaimBody::Status { value } => *value,

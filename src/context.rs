@@ -115,7 +115,7 @@ fn kind_value(kind: ClaimKind) -> i64 {
 fn scored_queue(
     claims: &[(Cid, Claim)],
     estimator: &dyn TokenEstimator,
-) -> Vec<(Cid, Claim, usize)> {
+) -> Vec<(i64, Cid, Claim, usize)> {
     let mut scored: Vec<(i64, usize, Cid, Claim, usize)> = claims
         .iter()
         .enumerate()
@@ -128,7 +128,7 @@ fn scored_queue(
     scored.sort_by_key(|s| std::cmp::Reverse(s.0));
     scored
         .into_iter()
-        .map(|(_, _, cid, claim, tokens)| (cid, claim, tokens))
+        .map(|(score, _, cid, claim, tokens)| (score, cid, claim, tokens))
         .collect()
 }
 
@@ -138,12 +138,40 @@ fn scored_queue(
 /// (`fold::identity::merge_classes`'s sorted subjects) and `scored_queue`'s
 /// sort including an explicit index tiebreak — no hashmap-iteration-order
 /// dependence anywhere in the selection.
+/// What `assemble` chose, and what it had to leave out.
+///
+/// The omission counts are the point. `context` used to print only what it
+/// kept: at budget 150 over 14 claims it emitted five observations and
+/// dropped the only `Status{Blocked}` and its `Blocker` narrative with no
+/// signal at all, and budget 0 rendered identically to an empty log. A
+/// budgeted view that cannot say what it withheld is indistinguishable from
+/// a complete one, which makes it unsafe to reason from
+/// (`.design/v0.7-milestone.md` REQ-19).
+#[derive(Debug, Default)]
+pub struct Assembled {
+    pub selected: Vec<(Cid, Claim)>,
+    pub omitted_claims: usize,
+    /// Subjects with at least one claim omitted, in stable order.
+    pub omitted_subjects: Vec<String>,
+}
+
+/// AC-7: deterministic for a fixed claim set + budget, and the returned
+/// set's total estimated tokens never exceeds `budget`.
 pub fn assemble(
     view: &FoldedView,
     budget: usize,
     estimator: &dyn TokenEstimator,
 ) -> Vec<(Cid, Claim)> {
-    let mut queues: Vec<Vec<(Cid, Claim, usize)>> = view
+    assemble_reporting(view, budget, estimator).selected
+}
+
+/// [`assemble`], also reporting what was left out (REQ-19).
+pub fn assemble_reporting(
+    view: &FoldedView,
+    budget: usize,
+    estimator: &dyn TokenEstimator,
+) -> Assembled {
+    let mut queues: Vec<Vec<(i64, Cid, Claim, usize)>> = view
         .classes
         .iter()
         .map(|class| scored_queue(&class.claims, estimator))
@@ -152,13 +180,37 @@ pub fn assemble(
     let mut remaining = budget;
     let mut selected = Vec::new();
     loop {
+        // Round-robin still gives every subject a turn, so one chatty
+        // subject cannot starve the rest -- that part was always right. What
+        // was wrong is the order *within* a pass: it followed
+        // `view.classes`, which is lexical by subject name, so `task-1`'s
+        // Observation outranked `task-3`'s `Status{Blocked}` purely because
+        // the string sorts first. `kind_value`'s scoring was applied only
+        // within a class and never across them, inverting the module's own
+        // stated purpose. Ordering each pass by the best claim currently
+        // available in each queue keeps the fairness and lets value decide
+        // who goes first when the budget runs out mid-pass.
+        let mut order: Vec<usize> = (0..queues.len()).collect();
+        order.sort_by_key(|&i| {
+            let best = queues[i]
+                .iter()
+                .find(|(_, _, _, tokens)| *tokens <= remaining)
+                .map(|(score, ..)| *score);
+            // Exhausted or unaffordable queues sort last; ties break by
+            // class index so the result stays deterministic.
+            (std::cmp::Reverse(best), i)
+        });
+
         let mut progressed = false;
-        for queue in queues.iter_mut() {
-            // The highest-value claim in this class that currently fits —
+        for i in order {
+            // The highest-value claim in this class that currently fits --
             // not just the front, since a cheaper, lower-value claim later
             // in the queue might still fit even when the front doesn't.
-            if let Some(pos) = queue.iter().position(|(_, _, tokens)| *tokens <= remaining) {
-                let (cid, claim, tokens) = queue.remove(pos);
+            if let Some(pos) = queues[i]
+                .iter()
+                .position(|(_, _, _, tokens)| *tokens <= remaining)
+            {
+                let (_, cid, claim, tokens) = queues[i].remove(pos);
                 remaining -= tokens;
                 selected.push((cid, claim));
                 progressed = true;
@@ -168,5 +220,23 @@ pub fn assemble(
             break;
         }
     }
-    selected
+
+    let mut omitted_claims = 0;
+    let mut omitted_subjects = Vec::new();
+    for queue in &queues {
+        omitted_claims += queue.len();
+        for (_, _, claim, _) in queue {
+            let subject = format!("{:?}", claim.content.subject);
+            if !omitted_subjects.contains(&subject) {
+                omitted_subjects.push(subject);
+            }
+        }
+    }
+    omitted_subjects.sort();
+
+    Assembled {
+        selected,
+        omitted_claims,
+        omitted_subjects,
+    }
 }
