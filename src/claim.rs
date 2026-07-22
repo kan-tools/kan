@@ -242,7 +242,17 @@ pub enum ClaimBody {
 /// delegate here for known variants, so their encoding is byte-identical to
 /// what kan has always produced; `body_kinds_all_round_trip` fails if this
 /// mirror ever drifts from `ClaimBody`.
+/// `deny_unknown_fields` here is the other half of the fix ADR-44 made on
+/// [`ClaimContent`], and an adversarial review found it missing: without it,
+/// a *known* kind carrying a field from a newer kan deserializes fine
+/// through this mirror, silently drops the field, re-encodes to different
+/// bytes, and is then reported as **altered since it was signed** — exactly
+/// the failure ADR-44 measured and claimed to have eliminated, still live
+/// one level down. With it, deserialization fails here, `ClaimBody`'s
+/// hand-written impl falls through to its `Unknown` branch, and the record
+/// is preserved verbatim instead (`.design/v0.7-milestone.md` REQ-11).
 #[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 enum KnownBody {
     Subject {
         title: String,
@@ -478,6 +488,46 @@ pub struct ClaimContent {
     pub body: ClaimBody,
     pub cites: Vec<Cid>,
     pub artifacts: Vec<ArtifactRef>,
+    /// Microseconds since the Unix epoch: the clock time of the recording
+    /// **from the frame of the observer** (`.design/v0.7-milestone.md`
+    /// REQ-1). Signed, and therefore inside the CID.
+    ///
+    /// **Two clocks, deliberately.** `store::log::StoredClaim::rev` is a
+    /// sequencing clock for MST storage internals and stays log-internal —
+    /// it never crosses the `Transport` boundary
+    /// (`.design/v0.5-milestone.md` REQ-2). This is content: what the author
+    /// attests about when they recorded, which is a different thing from
+    /// where the record sits in one particular log. Promoting `rev` here
+    /// instead was rejected — it would collapse two semantically different
+    /// things because they share a shape, and weld storage ordering into
+    /// claim semantics permanently and in the CID.
+    ///
+    /// **Attested, not measured.** A lying author can put anything here, and
+    /// that is correct rather than a hole: it is an attestation and runs the
+    /// same trust machinery as any other claim. Clock skew between actors is
+    /// honest data about differing frames, not corruption to reconcile, and
+    /// cross-actor ordering by this field is a *projection* over attested
+    /// times parameterized by a base the reader chooses — never a stored
+    /// global truth (`telos/raw-data-and-projections`).
+    ///
+    /// **Why it exists at all**, beyond portable ordering: `ClaimContent`
+    /// had nothing time-varying in it, so recording the same observation
+    /// twice produced one content CID, one MST key, and one surviving claim
+    /// — an append-only log silently dropping an append, at exit 0. This is
+    /// the discriminator that makes two recordings two claims, because they
+    /// genuinely are two claims.
+    ///
+    /// **Microseconds, chosen not inherited.** Second-precision would
+    /// reintroduce that collision for any caller in a loop, which is what
+    /// `day` becomes (ADR-42).
+    ///
+    /// `Option` for `docs/SPEC.md` §7.1's coexistence contract: claims
+    /// written before v0.7.0-beta.1 have no such field, deserialize to
+    /// `None`, and — via `skip_serializing_if` — re-encode byte-identically,
+    /// keeping their original CID forever. Every newly authored claim sets
+    /// it in `store::log::Log::append`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recorded_at: Option<u64>,
 }
 
 /// A signed claim: `content` plus the signature over `content`'s CID (§3 —

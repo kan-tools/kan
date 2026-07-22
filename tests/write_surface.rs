@@ -73,6 +73,7 @@ async fn retract_rejects_another_authors_claim_at_write_time() {
                 },
                 cites: vec![],
                 artifacts: vec![],
+                recorded_at: None,
             },
             &other_identity,
         )
@@ -146,6 +147,7 @@ async fn reject_writes_a_rejects_claim_against_another_authors_claim() {
                 },
                 cites: vec![],
                 artifacts: vec![],
+                recorded_at: None,
             },
             &other_identity,
         )
@@ -197,6 +199,7 @@ async fn reject_refuses_the_callers_own_claim() {
                 },
                 cites: vec![],
                 artifacts: vec![],
+                recorded_at: None,
             },
             &identity,
         )

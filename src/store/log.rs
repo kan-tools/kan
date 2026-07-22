@@ -107,6 +107,25 @@ pub struct Log {
     persisted: HashSet<Cid>,
     did: String,
     tid: TidGenerator,
+    /// Floor for the next `ClaimContent::recorded_at`, so two appends in the
+    /// same wall-clock microsecond still get distinct values — without which
+    /// identical content in a tight loop collides again and the defect
+    /// `recorded_at` exists to fix returns.
+    ///
+    /// Within-process only. Two *separate* processes appending byte-identical
+    /// content in the same microsecond can still collide; that window closes
+    /// with the append lock in `.design/v0.7-milestone.md` REQ-3, which
+    /// serializes appends and can seed this floor while holding it. Stated
+    /// rather than papered over.
+    last_recorded_at: u64,
+}
+
+/// Wall-clock microseconds since the Unix epoch.
+fn now_micros() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock before 1970")
+        .as_micros() as u64
 }
 
 impl Log {
@@ -146,6 +165,7 @@ impl Log {
                 persisted,
                 did,
                 tid,
+                last_recorded_at: 0,
             })
         } else {
             let mst = Mst::new(MemoryStorage::new(), RepoConfig::default());
@@ -157,6 +177,7 @@ impl Log {
                 persisted: HashSet::new(),
                 did,
                 tid: TidGenerator::new(),
+                last_recorded_at: 0,
             })
         }
     }
@@ -206,9 +227,21 @@ impl Log {
     /// identity (`docs/SPEC.md` §1, no explicit id field).
     pub async fn append(
         &mut self,
-        content: ClaimContent,
+        mut content: ClaimContent,
         identity: &Identity,
     ) -> Result<Cid, Error> {
+        // Stamp the observer-frame recording time before the CID is computed
+        // — it is signed content, not storage metadata
+        // (`ClaimContent::recorded_at`). `get_or_insert` rather than an
+        // unconditional set so a caller that already holds an authored claim
+        // (a future ingest path for claims arriving from another actor,
+        // v0.8) cannot have its author's attested time silently rewritten,
+        // which would change the CID and break the signature. Every
+        // authoring caller today passes `None`.
+        let stamped = now_micros().max(self.last_recorded_at.saturating_add(1));
+        let recorded_at = *content.recorded_at.get_or_insert(stamped);
+        self.last_recorded_at = self.last_recorded_at.max(recorded_at);
+
         let claim_cid = content_cid(&content)?;
         let claim_sig = identity.sign(&claim_cid.to_bytes())?;
         let claim = Claim {

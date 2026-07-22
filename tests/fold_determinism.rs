@@ -24,6 +24,7 @@ fn content(author: &AuthorId, subject: &str, body: ClaimBody) -> ClaimContent {
         body,
         cites: vec![],
         artifacts: vec![],
+        recorded_at: None,
     }
 }
 

@@ -23,6 +23,7 @@ fn claim(subject: &str, body: ClaimBody) -> (atproto_dasl::Cid, kan::claim::Clai
         body,
         cites: vec![],
         artifacts: vec![],
+        recorded_at: None,
     };
     let cid = kan::cid::content_cid(&content).unwrap();
     (

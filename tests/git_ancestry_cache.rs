@@ -127,6 +127,7 @@ async fn is_ancestor_is_not_re_invoked_for_a_pair_already_resolved() {
                 },
                 cites: vec![],
                 artifacts: vec![ArtifactRef::Commit(sha)],
+                recorded_at: None,
             },
             &identity,
         )

@@ -26,6 +26,7 @@ fn content(did: &str, subject: &str, body: ClaimBody) -> ClaimContent {
         body,
         cites: vec![],
         artifacts: vec![],
+        recorded_at: None,
     }
 }
 

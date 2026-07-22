@@ -41,6 +41,7 @@ fn status_claim(
         body: ClaimBody::Status { value },
         cites,
         artifacts,
+        recorded_at: None,
     };
     let cid = kan::cid::content_cid(&content).unwrap();
     (
@@ -64,6 +65,7 @@ fn no_status_claims_is_unclassified() {
         },
         cites: vec![],
         artifacts: vec![],
+        recorded_at: None,
     };
     let cid = kan::cid::content_cid(&content).unwrap();
     let claims = vec![(
@@ -200,6 +202,7 @@ async fn ac4_contested_under_peer_settled_under_solo() {
         body: ClaimBody::Status { value },
         cites: vec![],
         artifacts: vec![],
+        recorded_at: None,
     };
     log.append(content(&agent_a, StatusValue::Open), &human)
         .await

@@ -20,6 +20,7 @@ fn content(author: &AuthorId) -> ClaimContent {
         },
         cites: vec![],
         artifacts: vec![],
+        recorded_at: None,
     }
 }
 
@@ -37,14 +38,22 @@ async fn local_only_publish_matches_log_append_directly() {
         agent: None,
     };
 
+    // `recorded_at` is content, so `append` stamping it means two logs can no
+    // longer be compared by handing them the *same* unstamped content — each
+    // would stamp a different microsecond and the CIDs would differ for a
+    // reason that has nothing to do with what this test is proving. Pinning
+    // it makes the comparison meaningful again, and exercises `append`'s
+    // `get_or_insert`: a caller-supplied time is honored, never rewritten.
+    let pinned = |author: &AuthorId| ClaimContent {
+        recorded_at: Some(1_700_000_000_000_000),
+        ..content(author)
+    };
+
     let direct_dir = tempfile::tempdir().unwrap();
     let mut direct_log = Log::open_or_create(&direct_dir.path().join("log"), &identity)
         .await
         .unwrap();
-    let direct_cid = direct_log
-        .append(content(&author), &identity)
-        .await
-        .unwrap();
+    let direct_cid = direct_log.append(pinned(&author), &identity).await.unwrap();
 
     let via_transport_dir = tempfile::tempdir().unwrap();
     let via_transport_log = Log::open_or_create(&via_transport_dir.path().join("log"), &identity)
@@ -52,7 +61,7 @@ async fn local_only_publish_matches_log_append_directly() {
         .unwrap();
     let mut local_only = LocalOnly::new(via_transport_log);
     let via_transport_cid = local_only
-        .publish(content(&author), &identity)
+        .publish(pinned(&author), &identity)
         .await
         .unwrap();
 
