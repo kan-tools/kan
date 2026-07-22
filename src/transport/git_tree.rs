@@ -116,6 +116,8 @@ pub fn to_record_with_rev(claim: &Claim, rev: Option<&str>) -> Result<String, Er
     }
 
     let header = serde_json::to_string_pretty(&RecordHeader {
+        v: FORMAT_VERSION,
+        text_len: text.as_ref().map(|t: &String| t.len()),
         cid: cid.to_string(),
         sig: hex_encode(&claim.sig),
         author: content.author.did.clone(),
@@ -139,6 +141,11 @@ pub fn to_record_with_rev(claim: &Claim, rev: Option<&str>) -> Result<String, Er
     out.push_str(&header);
     out.push_str("\n---\n");
     if let Some(text) = text {
+        // Exactly one newline of separation, then the text verbatim, then
+        // exactly one newline. The reader strips precisely this framing using
+        // `text_len` rather than trimming, so the bytes in between survive
+        // whatever they are -- trailing whitespace, CRLF, blank runs, or the
+        // record separator itself.
         out.push('\n');
         out.push_str(&text);
         out.push('\n');
@@ -166,6 +173,13 @@ pub fn to_record_with_rev(claim: &Claim, rev: Option<&str>) -> Result<String, Er
 /// format honest about what it is.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct RecordHeader {
+    /// Record-format version (`.design/git-tree-transport.md` REQ-4, never
+    /// implemented until now). Absent means version 1, the shape shipped in
+    /// v0.6.0-beta.1. A reader meeting a higher version says so, by version
+    /// number, instead of failing somewhere deeper with a message about
+    /// hex or CIDs that tells the operator nothing actionable.
+    #[serde(default = "default_format_version")]
+    v: u32,
     cid: String,
     sig: String,
     /// Derived, ignored on read.
@@ -180,8 +194,32 @@ struct RecordHeader {
     /// the only time information a published claim carries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     rev: Option<String>,
+    /// Byte length of the narrative body that follows the frontmatter.
+    ///
+    /// **This is what makes the framing safe.** Version 1 recovered the body
+    /// by trimming everything between the fence and the next separator, which
+    /// meant the writer's own output failed the reader: a trailing newline, a
+    /// leading space, a tab, CRLF, a non-breaking space, or a run of blank
+    /// lines all round-tripped to a different CID and were reported as
+    /// "altered since it was signed" — against honest claims, unrecoverably,
+    /// because the CID is frozen in the append-only log. It also meant the
+    /// literal record separator appearing in prose split one claim into
+    /// three phantom records.
+    ///
+    /// With an explicit length the reader takes exactly those bytes and never
+    /// consults the content to decide where the record ends, so no narrative
+    /// text can alter the framing (`.design/v0.7-milestone.md` REQ-7, REQ-8).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    text_len: Option<usize>,
     /// Authoritative: hex DAG-CBOR of `ClaimContent`, text blanked.
     content: String,
+}
+
+/// The record format this build writes.
+const FORMAT_VERSION: u32 = 2;
+
+fn default_format_version() -> u32 {
+    1
 }
 
 /// Parses one record and verifies it against itself.
@@ -214,7 +252,47 @@ pub fn from_record_with_rev(
         .ok_or_else(|| malformed("frontmatter fence is never closed"))?;
     let header: RecordHeader =
         serde_json::from_str(rest[..end].trim()).map_err(|e| malformed(&e.to_string()))?;
-    let body = rest[end + "\n---".len()..].trim();
+
+    if header.v > FORMAT_VERSION {
+        return Err(malformed(&format!(
+            "record format version {} is newer than this build understands (max {}). \
+             Upgrade kan to read it; the record is not damaged.",
+            header.v, FORMAT_VERSION
+        )));
+    }
+
+    let after_fence = &rest[end + "\n---".len()..];
+    let body = match header.text_len {
+        // v2: exactly the declared bytes, after the single newline the
+        // writer emits. Never trimmed, and the content is never consulted to
+        // decide where the record ends.
+        Some(len) => {
+            let start = after_fence
+                .strip_prefix('\n')
+                .ok_or_else(|| malformed("frontmatter fence is not followed by a newline"))?
+                .strip_prefix('\n')
+                .ok_or_else(|| malformed("no blank line between frontmatter and body"))?;
+            if start.len() < len {
+                return Err(malformed(&format!(
+                    "body is {} bytes but the record declares {len}",
+                    start.len()
+                )));
+            }
+            if !start.is_char_boundary(len) {
+                return Err(malformed(
+                    "declared body length does not fall on a character boundary",
+                ));
+            }
+            &start[..len]
+        }
+        // v1: no declared length. Fall back to the original trimming
+        // behaviour so records written before this change still read --
+        // `docs/SPEC.md` §7.1's coexistence contract. Those records remain
+        // vulnerable to the framing defects `text_len` fixes, which is why
+        // republishing under v2 is worth doing, but a reader must never
+        // refuse to read what an older kan legitimately wrote.
+        None => after_fence.trim(),
+    };
 
     let bytes = hex_decode(&header.content).ok_or_else(|| malformed("content is not valid hex"))?;
     let mut content: ClaimContent =
@@ -244,12 +322,57 @@ pub fn from_record_with_rev(
     Ok((actual, Claim { content, sig }, header.rev))
 }
 
-/// Splits a subject file into records.
+/// Splits a subject file into records, without letting any record's own
+/// content decide where it ends.
+///
+/// Version 1 split the whole file on the separator string, so narrative prose
+/// containing that string tore one claim into three: a tampering accusation,
+/// a malformed record, and a phantom. Records that declare `text_len` are now
+/// walked sequentially — header, then exactly the declared body — and the
+/// separator is only ever *skipped over* between records, never searched for
+/// inside one.
+///
+/// Records without `text_len` (version 1, written before this change) still
+/// fall back to separator splitting, because that is how they were framed and
+/// a reader must keep reading what an older kan legitimately wrote.
 pub fn split_records(text: &str) -> Vec<&str> {
-    text.split(RECORD_SEPARATOR)
-        .map(str::trim)
-        .filter(|r| !r.is_empty())
-        .collect()
+    let mut out = Vec::new();
+    let mut rest = text;
+
+    while let Some(open) = rest.find("---") {
+        let record = &rest[open..];
+        let Some(fence_rel) = record[3..].find("\n---").map(|i| i + 3) else {
+            break;
+        };
+        let header: Option<RecordHeader> = serde_json::from_str(record[3..fence_rel].trim()).ok();
+        let after_fence = fence_rel + "\n---".len();
+
+        let end = match header.as_ref().and_then(|h| h.text_len) {
+            // "\n" (closing the fence line) + "\n" + body + "\n"
+            Some(len) => (after_fence + 2 + len + 1).min(record.len()),
+            None => match record[after_fence..].find(RECORD_SEPARATOR) {
+                Some(i) => after_fence + i,
+                None => record.len(),
+            },
+        };
+
+        // Deliberately *not* trimmed: the trailing newline is part of the
+        // framing the reader strips using `text_len`, and trimming it would
+        // eat one byte of a body that legitimately ends in whitespace —
+        // which is the exact defect this change exists to fix.
+        let slice = &record[..end];
+        if !slice.trim().is_empty() {
+            out.push(slice);
+        }
+
+        // Step over the separator explicitly rather than letting the next
+        // `find("---")` land on it — `---8<---` contains `---`, so searching
+        // blindly re-enters on the separator and tries to parse `8<` as a
+        // header.
+        let tail = record[end..].trim_start();
+        rest = tail.strip_prefix(RECORD_SEPARATOR).unwrap_or(tail);
+    }
+    out
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -284,7 +407,31 @@ pub fn file_name(subject: &crate::claim::SubjectRef) -> String {
             }
         })
         .collect();
-    format!("{safe}.md")
+
+    // The readable part is lossy on purpose — it exists so a human scanning
+    // `.claims/` can tell what a file is about. The suffix is what makes the
+    // mapping injective (`.design/v0.7-milestone.md` REQ-13).
+    //
+    // Without it, every character that is not alphanumeric/`-`/`.` collapsed
+    // to `_`, so `telos/legible-process` and `telos_legible-process` shared
+    // one file and publishing the second silently destroyed the first's
+    // record — and `telos/<slug>` is exactly `day`'s naming convention
+    // (ADR-42). On a case-insensitive filesystem (APFS by default) `Bug42`
+    // and `bug42` collided on top of that, which no amount of character
+    // mapping fixes because the collision happens below kan entirely.
+    //
+    // The suffix is derived from the *exact* subject bytes, so any two
+    // distinct subjects differ in it even when their readable parts are
+    // identical, and it is lowercase hex so it cannot itself collide under
+    // case folding.
+    format!("{safe}.{}.md", subject_digest(&raw))
+}
+
+/// Short, stable, case-insensitive-safe digest of a subject's exact bytes.
+fn subject_digest(raw: &str) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(raw.as_bytes());
+    digest[..4].iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Writes every live claim of `subject` into its file under `root`,

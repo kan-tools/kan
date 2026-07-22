@@ -7,7 +7,7 @@
 
 use kan::{
     cid::content_cid,
-    claim::{Anchor, AuthorId, Claim, ClaimBody, ClaimContent, Layer, SubjectRef},
+    claim::{Anchor, AuthorId, Claim, ClaimBody, ClaimContent, Layer, Rkey, SubjectRef},
     sign::Identity,
     store::log::Log,
     transport::{git_tree, Transport},
@@ -282,7 +282,14 @@ async fn publishing_writes_the_tree_and_subscribing_reads_it_back() {
         .await
         .unwrap();
 
-    let file = dir.path().join(".claims").join("bug-42.md");
+    // Filenames carry a digest of the exact subject bytes so the mapping is
+    // injective (REQ-13) -- ask for the name rather than hardcoding it.
+    let file = dir
+        .path()
+        .join(".claims")
+        .join(git_tree::file_name(&SubjectRef::Local(Rkey::from(
+            "bug-42",
+        ))));
     assert!(file.exists(), "publishing should write the subject's file");
     let text = std::fs::read_to_string(&file).unwrap();
     assert!(text.contains("published into the tree"));
