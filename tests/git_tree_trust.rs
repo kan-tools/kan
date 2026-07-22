@@ -96,13 +96,13 @@ fn deleting_a_record_is_reported() {
         .collect();
     let path = git_tree::write_subject(dir.path(), &subject, &claims).unwrap();
 
-    let text = std::fs::read_to_string(&path).unwrap();
+    let text = std::fs::read_to_string(&path.path).unwrap();
     let records = git_tree::split_records(&text);
     assert_eq!(records.len(), 3);
 
     // Remove the middle record, leaving the rest verifying cleanly.
     let kept = format!("{}\n---8<---\n{}", records[0], records[2]);
-    std::fs::write(&path, kept).unwrap();
+    std::fs::write(&path.path, kept).unwrap();
 
     let results = read_all_at(dir.path());
     let reported = results.iter().any(|r| match r {
