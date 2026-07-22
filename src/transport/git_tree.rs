@@ -81,6 +81,15 @@ pub enum Error {
         actual: String,
     },
     #[error(
+        "{path}: this file is named for {expected:?} but holds a record about {found:?} — \
+         the filename does not describe its contents"
+    )]
+    FilenameMismatch {
+        path: String,
+        expected: String,
+        found: String,
+    },
+    #[error(
         "{path}: {found} of {declared} records are present — {missing} record(s) have been \
          removed from this file since it was published"
     )]
@@ -645,7 +654,30 @@ impl GitTree {
                         out.push(Err(missing));
                     }
                     for record in records {
-                        out.push(from_record(&shown, record));
+                        let parsed = from_record(&shown, record);
+                        // REQ-13's second half: the filename is authenticated
+                        // against the records inside it.
+                        //
+                        // Without this the name was decorative — a
+                        // `.claims/x.md` full of subject-`y` claims folded as
+                        // `y` and nothing said so, which combined with the
+                        // header fields being unverified (REQ-9) meant
+                        // *nothing* about a file's apparent subject was
+                        // checkable. Only the hex content was.
+                        if let Ok((_, claim)) = &parsed {
+                            let expected = file_name(&claim.content.subject);
+                            if let Some(actual) = file.file_name().and_then(|n| n.to_str()) {
+                                if expected != actual {
+                                    out.push(Err(Error::FilenameMismatch {
+                                        path: shown.clone(),
+                                        expected: actual.to_string(),
+                                        found: format!("{:?}", claim.content.subject),
+                                    }));
+                                    continue;
+                                }
+                            }
+                        }
+                        out.push(parsed);
                     }
                 }
                 Err(source) => out.push(Err(Error::Io {

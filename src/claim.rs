@@ -66,10 +66,15 @@ pub enum Anchor {
     LineRangeAt(PathBuf, Sha, Span),
 }
 
-/// `schemars::JsonSchema` derived directly here (matching `StatusValue`'s
-/// own comment/rationale just below) since `mcp::NarrativeParams`/
-/// `ResolveParams`/`BlockParams` use this type directly for their `kind`
-/// field, the MCP mirror of the CLI's `SubjectKindArg`.
+/// What kind of thing a subject is.
+//
+// Implementation note as a `//` comment, not a doc comment: `schemars`
+// publishes doc comments verbatim into JSON-Schema `description` fields, so
+// anything here is spent out of every MCP agent's context on every call to
+// seven different tools. This block used to explain the `schemars`-derive
+// choice — true, useful to a maintainer, useless to a caller deciding what
+// kind a subject is. The identical fix was applied to `StatusValue` a few
+// lines below and missed here (ADR-48, AC-23).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub enum SubjectKind {
     Issue,
