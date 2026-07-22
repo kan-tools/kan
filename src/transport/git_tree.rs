@@ -70,6 +70,26 @@ pub enum Error {
         cid: String,
         did: String,
     },
+    #[error(
+        "{path}: record header claims {field} is {stated:?} but the signed content says \
+         {actual:?} — the human-readable header disagrees with the claim it describes"
+    )]
+    HeaderMismatch {
+        path: String,
+        field: &'static str,
+        stated: String,
+        actual: String,
+    },
+    #[error(
+        "{path}: {found} of {declared} records are present — {missing} record(s) have been \
+         removed from this file since it was published"
+    )]
+    RecordsMissing {
+        path: String,
+        found: usize,
+        declared: usize,
+        missing: usize,
+    },
 }
 
 fn io(path: &Path) -> impl Fn(std::io::Error) -> Error + '_ {
@@ -108,6 +128,16 @@ pub fn to_record(claim: &Claim) -> Result<String, Error> {
 /// not an input to the CID. Whether time should become *signed* content is
 /// issue #67, deliberately unanswered.
 pub fn to_record_with_rev(claim: &Claim, rev: Option<&str>) -> Result<String, Error> {
+    to_record_at(claim, rev, None)
+}
+
+/// [`to_record_with_rev`], carrying this record's position in its file so a
+/// later deletion is visible (REQ-10).
+pub fn to_record_at(
+    claim: &Claim,
+    rev: Option<&str>,
+    position: Option<(usize, usize)>,
+) -> Result<String, Error> {
     let cid = content_cid(&claim.content)?;
     let mut content = claim.content.clone();
     let text = content.body.text().map(str::to_string);
@@ -117,6 +147,8 @@ pub fn to_record_with_rev(claim: &Claim, rev: Option<&str>) -> Result<String, Er
 
     let header = serde_json::to_string_pretty(&RecordHeader {
         v: FORMAT_VERSION,
+        seq: position.map(|(i, _)| i),
+        of: position.map(|(_, n)| n),
         text_len: text.as_ref().map(|t: &String| t.len()),
         cid: cid.to_string(),
         sig: hex_encode(&claim.sig),
@@ -194,6 +226,27 @@ struct RecordHeader {
     /// the only time information a published claim carries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     rev: Option<String>,
+    /// This record's position in its file, and how many the file held when
+    /// it was written.
+    ///
+    /// Deleting a whole record used to be **completely undetectable**: the
+    /// remainder verified cleanly, because nothing linked a subject's records
+    /// to each other. Anyone with repo write access could remove a shared
+    /// claim and kan would never say so, and an out-of-date clone
+    /// republishing did it accidentally via `write_subject`'s whole-file
+    /// rewrite (`.design/v0.7-milestone.md` REQ-10).
+    ///
+    /// Honest about its limits: this is envelope metadata, not signed, so it
+    /// detects deletion rather than *preventing* it — an editor who rewrites
+    /// every remaining record's `seq`/`of` defeats it. Authenticated deletion
+    /// detection needs the publisher to sign over the record set, which is a
+    /// new claim shape and therefore its own design pass. Catching accidental
+    /// loss and naive removal is worth having in the meantime; claiming more
+    /// would be the kind of overstatement this release exists to remove.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    seq: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    of: Option<usize>,
     /// Byte length of the narrative body that follows the frontmatter.
     ///
     /// **This is what makes the framing safe.** Version 1 recovered the body
@@ -308,6 +361,40 @@ pub fn from_record_with_rev(
             stated: header.cid,
             actual: actual.to_string(),
         });
+    }
+
+    // REQ-9: authenticate the legibility fields against the claim they
+    // describe.
+    //
+    // These were documented "derived, ignored on read" and never checked, so
+    // each could be set to an arbitrary valid-looking lie that verified
+    // clean: a reviewer reading a PR diff saw a `Decision` by a victim's DID
+    // about a different subject citing a fabricated provenance edge, while
+    // kan read an `Observation` by the real author citing nothing. The whole
+    // reason this format exists is human review in a PR — so the fields a
+    // human actually reads are exactly the ones that must not be able to lie.
+    // `cites` being forgeable is a direct hit on CLAUDE.md's "provenance is
+    // sacred: never fabricate or drop `cites` edges."
+    let mismatch = |field: &'static str, stated: &str, actual: &str| Error::HeaderMismatch {
+        path: path.to_string(),
+        field,
+        stated: stated.to_string(),
+        actual: actual.to_string(),
+    };
+    if header.author != content.author.did {
+        return Err(mismatch("author", &header.author, &content.author.did));
+    }
+    let subject = format!("{:?}", content.subject);
+    if header.subject != subject {
+        return Err(mismatch("subject", &header.subject, &subject));
+    }
+    let kind = format!("{:?}", content.body.kind());
+    if header.kind != kind {
+        return Err(mismatch("kind", &header.kind, &kind));
+    }
+    let cites: Vec<String> = content.cites.iter().map(|c| c.to_string()).collect();
+    if header.cites != cites {
+        return Err(mismatch("cites", &header.cites.join(","), &cites.join(",")));
     }
 
     let sig = hex_decode(&header.sig).ok_or_else(|| malformed("signature is not valid hex"))?;
@@ -427,6 +514,41 @@ pub fn file_name(subject: &crate::claim::SubjectRef) -> String {
     format!("{safe}.{}.md", subject_digest(&raw))
 }
 
+/// Whether a subject file is missing records it declares it should have
+/// (REQ-10).
+///
+/// Every record written since v0.7 carries how many records its file held at
+/// write time. If fewer are present than the largest such count declares,
+/// records have been removed — accidentally by an out-of-date clone
+/// republishing, or deliberately by someone with repo write access. Either
+/// way it is reported rather than passing silently, which is what used to
+/// happen.
+///
+/// Returns `None` for files written before v0.7 (no record declares a count),
+/// because nothing there is claimed and nothing can be checked. That is a gap
+/// in what old records can tell us, not a failure to report.
+fn missing_records(path: &str, records: &[&str]) -> Option<Error> {
+    let declared = records
+        .iter()
+        .filter_map(|r| {
+            let rest = r.trim_start().strip_prefix("---")?;
+            let end = rest.find("\n---")?;
+            let header: RecordHeader = serde_json::from_str(rest[..end].trim()).ok()?;
+            header.of
+        })
+        .max()?;
+
+    if records.len() < declared {
+        return Some(Error::RecordsMissing {
+            path: path.to_string(),
+            found: records.len(),
+            declared,
+            missing: declared - records.len(),
+        });
+    }
+    None
+}
+
 /// Short, stable, case-insensitive-safe digest of a subject's exact bytes.
 fn subject_digest(raw: &str) -> String {
     use sha2::Digest;
@@ -454,12 +576,16 @@ pub fn write_subject(
     let path = dir.join(file_name(subject));
 
     let mut out = String::new();
-    for (claim, rev) in claims {
+    for (i, (claim, rev)) in claims.iter().enumerate() {
         if !out.is_empty() {
             out.push_str(RECORD_SEPARATOR);
             out.push('\n');
         }
-        out.push_str(&to_record_with_rev(claim, rev.as_deref())?);
+        out.push_str(&to_record_at(
+            claim,
+            rev.as_deref(),
+            Some((i, claims.len())),
+        )?);
     }
     std::fs::write(&path, out).map_err(io(&path))?;
     Ok(path)
@@ -514,7 +640,11 @@ impl GitTree {
             let shown = file.display().to_string();
             match std::fs::read_to_string(&file) {
                 Ok(text) => {
-                    for record in split_records(&text) {
+                    let records = split_records(&text);
+                    if let Some(missing) = missing_records(&shown, &records) {
+                        out.push(Err(missing));
+                    }
+                    for record in records {
                         out.push(from_record(&shown, record));
                     }
                 }

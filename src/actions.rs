@@ -555,14 +555,34 @@ pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error>
     )
     .await?;
 
-    let live: Vec<(crate::claim::Claim, Option<String>)> = ws
-        .log
-        .iter_all()
-        .await?
-        .into_iter()
-        .map(|(_, stored)| (stored.claim, Some(stored.rev)))
-        .filter(|(claim, _)| claim.content.subject == subject_ref)
+    // Genuinely live, and genuinely this actor's: fold first, then publish
+    // what the fold says is live (`.design/v0.7-milestone.md` REQ-12).
+    //
+    // This filtered on subject alone, while calling the result `live`. A
+    // subject showing 2 live claims published 5 — including a retracted
+    // observation and another agent's claim, rendered in the file exactly
+    // like live ones and stamped with the bare DID, so a collaborator
+    // pulling the repo could not tell them apart. Publishing a retraction's
+    // target as though it still stood is the sharing layer contradicting the
+    // fold, and publishing another actor's claims under your own publication
+    // is worse than merely wrong.
+    let stored = ws.log.iter_all().await?;
+    let rev_of: std::collections::HashMap<_, _> = stored
+        .iter()
+        .map(|(cid, s)| (cid.clone(), s.rev.clone()))
         .collect();
+
+    let view = crate::fold::fold(stored, &ws.solo_trust());
+    let live: Vec<(crate::claim::Claim, Option<String>)> = view
+        .subject(&subject_ref)
+        .map(|class| {
+            class
+                .claims
+                .iter()
+                .map(|(cid, claim)| (claim.clone(), rev_of.get(cid).cloned()))
+                .collect()
+        })
+        .unwrap_or_default();
 
     let count = live.len();
     let path = crate::transport::git_tree::write_subject(&ws.root, &subject_ref, &live)
