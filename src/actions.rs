@@ -21,6 +21,11 @@ use crate::{
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     // Boxed for the same enum-size reason `transport::Error` boxes it.
+    /// A usage mistake, phrased for the person who made it. Reusing a
+    /// transport or store error here leaks internals into a message whose
+    /// only job is to say what to type instead.
+    #[error("{0}")]
+    Usage(String),
     #[error("publish failed: {0}")]
     Publish(Box<crate::transport::git_tree::Error>),
     #[error(transparent)]
@@ -593,6 +598,58 @@ pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error>
          committing are yours.\n{}",
         path.display(),
         crate::transport::git_tree::gitignore_guidance()
+    ))
+}
+
+/// `kan publish --all` — bring every already-published subject's file up to
+/// date (`.design/git-tree-transport.md` REQ-9, `.design/v0.7-milestone.md`
+/// REQ-15; specified in the original design and never implemented).
+///
+/// Republishes subjects that already carry a `Publication` claim; it does not
+/// publish anything new. Publishing is a decision about a subject, recorded
+/// as a claim, so `--all` refreshing files is bookkeeping while `publish
+/// <subject>` remains the act of deciding to share.
+pub async fn publish_all(ws: &mut Workspace) -> Result<String, Error> {
+    let stored = ws.log.iter_all().await?;
+    let rev_of: std::collections::HashMap<_, _> = stored
+        .iter()
+        .map(|(cid, s)| (cid.clone(), s.rev.clone()))
+        .collect();
+
+    let view = crate::fold::fold(stored, &ws.solo_trust());
+    let all_live: Vec<(atproto_dasl::Cid, crate::claim::Claim)> = view
+        .classes
+        .iter()
+        .flat_map(|c| c.claims.iter().cloned())
+        .collect();
+    let subjects = crate::transport::git_tree::published_subjects(&all_live);
+
+    if subjects.is_empty() {
+        return Ok("no published subjects yet — `kan publish <subject>` first".to_string());
+    }
+
+    let mut written = Vec::new();
+    for subject_ref in subjects.values() {
+        let claims: Vec<(crate::claim::Claim, Option<String>)> = view
+            .subject(subject_ref)
+            .map(|class| {
+                class
+                    .claims
+                    .iter()
+                    .map(|(cid, claim)| (claim.clone(), rev_of.get(cid).cloned()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let path = crate::transport::git_tree::write_subject(&ws.root, subject_ref, &claims)
+            .map_err(|e| Error::Publish(Box::new(e)))?;
+        written.push(format!("  {} ({} claim(s))", path.display(), claims.len()));
+    }
+
+    Ok(format!(
+        "refreshed {} published subject(s):\n{}\n\nkan wrote the files; staging and \
+         committing are yours.",
+        written.len(),
+        written.join("\n")
     ))
 }
 

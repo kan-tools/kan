@@ -211,8 +211,12 @@ pub enum Command {
     /// sharing them with anyone who clones the repo. Writes files; never
     /// runs git.
     Publish {
-        /// The subject to publish
-        subject: String,
+        /// The subject to publish. Omit with `--all`.
+        subject: Option<String>,
+        /// Bring every already-published subject's file up to date, rather
+        /// than publishing one subject.
+        #[arg(long, conflicts_with = "subject")]
+        all: bool,
     },
 
     /// MCP server over stdio, and related setup.
@@ -487,10 +491,21 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             let result = actions::reject(&mut ws, &cid, file).await?;
             print_result(&result, verbose);
         }
-        Command::Publish { subject } => {
-            print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
-            println!("{}", actions::publish(&mut ws, &subject).await?);
-        }
+        Command::Publish { subject, all } => match (subject, all) {
+            (Some(subject), _) => {
+                print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
+                println!("{}", actions::publish(&mut ws, &subject).await?);
+            }
+            (None, true) => println!("{}", actions::publish_all(&mut ws).await?),
+            (None, false) => {
+                return Err(actions::Error::Usage(
+                    "give a subject to publish (`kan publish <subject>`), or `--all` to \
+                     refresh every already-published subject"
+                        .to_string(),
+                )
+                .into())
+            }
+        },
         Command::Mark {
             subject,
             value,
