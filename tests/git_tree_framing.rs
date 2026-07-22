@@ -136,7 +136,7 @@ fn a_separator_in_prose_does_not_tear_a_multi_record_file() {
         &claims,
     )
     .unwrap();
-    let text = std::fs::read_to_string(&path).unwrap();
+    let text = std::fs::read_to_string(&path.path).unwrap();
 
     let records = git_tree::split_records(&text);
     assert_eq!(records.len(), 3, "one record per claim, no phantoms");

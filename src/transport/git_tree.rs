@@ -81,12 +81,14 @@ pub enum Error {
         actual: String,
     },
     #[error(
-        "{path}: this file is named for {expected:?} but holds a record about {found:?} — \
-         the filename does not describe its contents"
+        "{path}: this file is named {found:?}, but the records in it belong in {expected:?} \
+         — the filename does not describe its contents"
     )]
     FilenameMismatch {
         path: String,
+        /// The filename these records should be in.
         expected: String,
+        /// The filename they are actually in.
         found: String,
     },
     #[error(
@@ -523,6 +525,35 @@ pub fn file_name(subject: &crate::claim::SubjectRef) -> String {
     format!("{safe}.{}.md", subject_digest(&raw))
 }
 
+/// The filename v0.6.0-beta.1 wrote for this subject.
+///
+/// Kept so files already in a repo's `.claims/` keep verifying. They are not
+/// wrong — kan wrote them, they are correctly signed, and the only thing that
+/// changed is where kan would put them now. Rejecting them would report a
+/// repo's own history as mismatched for the crime of predating a rename
+/// (#107).
+///
+/// Lossy, which is exactly why it was replaced: `telos/x` and `telos_x` both
+/// land here, and publishing the second destroyed the first. That is why it
+/// is accepted on **read** and never written.
+pub fn legacy_file_name(subject: &crate::claim::SubjectRef) -> String {
+    let raw = match subject {
+        crate::claim::SubjectRef::Local(rkey) => rkey.clone(),
+        crate::claim::SubjectRef::Anchor(anchor) => format!("{anchor:?}"),
+    };
+    let safe: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '.' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("{safe}.md")
+}
+
 /// Whether a subject file is missing records it declares it should have
 /// (REQ-10).
 ///
@@ -579,7 +610,7 @@ pub fn write_subject(
     root: &Path,
     subject: &crate::claim::SubjectRef,
     claims: &[(Claim, Option<String>)],
-) -> Result<PathBuf, Error> {
+) -> Result<Written, Error> {
     let dir = root.join(CLAIMS_DIR);
     std::fs::create_dir_all(&dir).map_err(io(&dir))?;
     let path = dir.join(file_name(subject));
@@ -597,7 +628,31 @@ pub fn write_subject(
         )?);
     }
     std::fs::write(&path, out).map_err(io(&path))?;
-    Ok(path)
+
+    // Retire the v0.6-named file for this subject, now that its claims have
+    // been rewritten under the current name (#107).
+    //
+    // Leaving it produced two files per subject, one of which never updated
+    // again and diverged silently — and once a reader ships, a wall of
+    // errors about files kan wrote itself. Safe to remove because everything
+    // in it was just republished from the log, and because `.claims/` is
+    // tracked, so git holds the previous version either way.
+    let legacy = dir.join(legacy_file_name(subject));
+    let retired = if legacy != path && legacy.exists() {
+        std::fs::remove_file(&legacy).map_err(io(&legacy))?;
+        Some(legacy)
+    } else {
+        None
+    };
+    Ok(Written { path, retired })
+}
+
+/// What `write_subject` did, so the caller can say so rather than removing a
+/// tracked file silently.
+pub struct Written {
+    pub path: PathBuf,
+    /// The v0.6-named file this replaced, if there was one.
+    pub retired: Option<PathBuf>,
 }
 
 // -------------------------------------------------------------- transport
@@ -665,13 +720,19 @@ impl GitTree {
                         // *nothing* about a file's apparent subject was
                         // checkable. Only the hex content was.
                         if let Ok((_, claim)) = &parsed {
-                            let expected = file_name(&claim.content.subject);
+                            let current = file_name(&claim.content.subject);
+                            // A v0.6-written file is accepted under its old
+                            // name (#107): the records in it are correctly
+                            // signed and kan wrote them, so reporting them as
+                            // mismatched would indict a repo's own history for
+                            // predating a rename.
+                            let legacy = legacy_file_name(&claim.content.subject);
                             if let Some(actual) = file.file_name().and_then(|n| n.to_str()) {
-                                if expected != actual {
+                                if actual != current && actual != legacy {
                                     out.push(Err(Error::FilenameMismatch {
                                         path: shown.clone(),
-                                        expected: actual.to_string(),
-                                        found: format!("{:?}", claim.content.subject),
+                                        expected: current,
+                                        found: actual.to_string(),
                                     }));
                                     continue;
                                 }

@@ -54,7 +54,7 @@ fn a_file_named_for_the_wrong_subject_is_reported() {
         .join(git_tree::file_name(&SubjectRef::Local(Rkey::from(
             "totally-different",
         ))));
-    std::fs::rename(&path, &impostor).unwrap();
+    std::fs::rename(&path.path, &impostor).unwrap();
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let results = rt.block_on(async {
@@ -112,4 +112,72 @@ fn publishing_a_merged_subject_writes_only_that_subjects_claims() {
             "{subject}'s file must not contain another subject's claim"
         );
     }
+}
+
+/// #107: a `.claims/` file written by v0.6 must keep verifying, and
+/// republishing must retire it rather than leaving a diverging duplicate.
+///
+/// v0.7 renamed files to make the mapping injective (REQ-13) and then added
+/// filename authentication (D6). Each was right alone; together they orphaned
+/// every existing published file and then reported every record in it as
+/// mismatched — a wall of errors about files kan wrote itself. Neither change
+/// was checked against what already existed.
+#[test]
+fn a_v0_6_published_file_still_verifies_and_is_retired_on_republish() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let subject = SubjectRef::Local(Rkey::from("bug-42"));
+    let claim = signed(&identity, "bug-42", "written before the rename");
+
+    // Publish, then move the file to the name v0.6 would have used.
+    let written = git_tree::write_subject(dir.path(), &subject, &[(claim.clone(), None)]).unwrap();
+    let legacy = dir
+        .path()
+        .join(".claims")
+        .join(git_tree::legacy_file_name(&subject));
+    assert_ne!(
+        written.path, legacy,
+        "the current name must differ from v0.6's, or this test proves nothing"
+    );
+    std::fs::rename(&written.path, &legacy).unwrap();
+
+    // It must read clean under the old name: kan wrote it, it is signed, and
+    // only the naming convention changed.
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let results = rt.block_on(async {
+        let id = Identity::load_or_create(&dir.path().join("reader-id")).unwrap();
+        let log = kan::store::log::Log::open_or_create(&dir.path().join("reader-log"), &id)
+            .await
+            .unwrap();
+        git_tree::GitTree::new(log, dir.path().to_path_buf()).read_all()
+    });
+    let errors: Vec<String> = results
+        .iter()
+        .filter_map(|r| r.as_ref().err().map(|e| e.to_string()))
+        .collect();
+    assert!(
+        errors.is_empty(),
+        "a v0.6-named file must verify clean: {errors:?}"
+    );
+
+    // Republishing retires it rather than leaving two diverging files.
+    let again = git_tree::write_subject(dir.path(), &subject, &[(claim, None)]).unwrap();
+    assert_eq!(
+        again.retired.as_deref(),
+        Some(legacy.as_path()),
+        "republishing must report retiring the old file, not do it silently"
+    );
+    assert!(!legacy.exists(), "the orphan must be gone");
+    assert!(again.path.exists());
+
+    let remaining: Vec<_> = std::fs::read_dir(dir.path().join(".claims"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name())
+        .collect();
+    assert_eq!(
+        remaining.len(),
+        1,
+        "exactly one file per subject: {remaining:?}"
+    );
 }

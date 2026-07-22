@@ -584,10 +584,18 @@ pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error>
     let path = crate::transport::git_tree::write_subject(&ws.root, &subject_ref, &live)
         .map_err(|e| Error::Publish(Box::new(e)))?;
 
+    let retired = match &path.retired {
+        Some(old) => format!(
+            "\nretired {} -- the pre-v0.7 name for this subject; its claims were just \
+             rewritten under the current one, and git still has it.\n",
+            old.display()
+        ),
+        None => String::new(),
+    };
     Ok(format!(
-        "published {subject} ({count} claim(s)) to {}\n\nkan wrote the file; staging and \
-         committing are yours.\n{}",
-        path.display(),
+        "published {subject} ({count} claim(s)) to {}\n{retired}\nkan wrote the file; \
+         staging and committing are yours.\n{}",
+        path.path.display(),
         crate::transport::git_tree::gitignore_guidance()
     ))
 }
@@ -661,7 +669,15 @@ pub async fn publish_all(ws: &mut Workspace) -> Result<String, Error> {
         let claims = live_claims_for(&view, subject_ref, &rev_of);
         let path = crate::transport::git_tree::write_subject(&ws.root, subject_ref, &claims)
             .map_err(|e| Error::Publish(Box::new(e)))?;
-        written.push(format!("  {} ({} claim(s))", path.display(), claims.len()));
+        written.push(format!(
+            "  {} ({} claim(s)){}",
+            path.path.display(),
+            claims.len(),
+            match &path.retired {
+                Some(old) => format!("  [retired {}]", old.display()),
+                None => String::new(),
+            }
+        ));
     }
 
     Ok(format!(
