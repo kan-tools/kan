@@ -144,10 +144,12 @@ struct SameParams {
     file: Option<String>,
 }
 
-/// Mirrors `claim::RelationKind`, minus `SameAs` — the MCP-side counterpart
-/// to `cli::RelationKindArg` (REQ-2: `same` is the only way to write a
-/// `SameAs` edge), enforced the same way, at the deserialization boundary
-/// rather than a runtime check in `actions::relate`.
+/// The kind of domain edge to assert. Use `same` for identity, not this.
+//
+// Mirrors `claim::RelationKind` minus `SameAs` — the MCP counterpart to
+// `cli::RelationKindArg`, enforced at the deserialization boundary rather
+// than by a runtime check in `actions::relate`. A `//` comment on purpose:
+// `schemars` would publish a doc comment here into every agent's context.
 #[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
 enum RelateKindParam {
     Blocks,
@@ -434,7 +436,9 @@ impl KanServer {
     }
 
     #[tool(
-        description = "Assert a domain-semantic edge between two subjects (Relation::{Blocks, About, ManifestsAt, DependsOn, Accepts}). Not for identity -- use same for SameAs."
+        description = "Assert a domain edge between two subjects: blocks, about, \
+                       manifests-at, depends-on, accepts, or in-tension-with. Not for \
+                       identity -- use `same` for that."
     )]
     async fn relate(&self, params: Parameters<RelateParams>) -> Result<String, ErrorData> {
         let mut ws = self.workspace().await?;
@@ -487,7 +491,10 @@ impl KanServer {
         actions::show(&ws, &params.0.subject).map_err(to_error)
     }
 
-    #[tool(description = "Show status classification: one subject, or every subject if omitted.")]
+    #[tool(
+        description = "Show a subject's settled status, or a one-line summary of every \
+                       subject if omitted."
+    )]
     async fn status(&self, params: Parameters<StatusParams>) -> Result<String, ErrorData> {
         let ws = self.workspace().await?;
         actions::status(&ws, params.0.subject.as_deref()).map_err(to_error)
@@ -545,7 +552,7 @@ impl ServerHandler for KanServer {
              reject (a local suppression honored only by trusting folds) for another \
              author's. Recalling (show/status/issues/context) reads the claim graph: \
              show returns one subject's full live claim history; status returns \
-             Settled/Confirmed/Contested classification for one subject, or a \
+             settled status for one subject, or a \
              one-line summary for every subject if none is given; issues lists \
              subjects that aren't resolved yet; context returns the highest-value \
              claims that fit under a token budget. A subject's live claims are also \
