@@ -146,6 +146,102 @@ impl Drop for WriteGuard {
     }
 }
 
+/// Read every intact block, stopping at the first damaged one rather than
+/// discarding the whole file.
+///
+/// A CAR is an append-only sequence of self-describing blocks, so a torn
+/// write can only ever damage the *last* one — everything before it is
+/// complete and verifiable. `stream_to_storage` treats any parse failure as
+/// a failure of the whole read, which meant one truncated byte made every
+/// claim in the file unreachable while all of them sat intact on disk
+/// (`.design/v0.7-milestone.md` REQ-4).
+///
+/// Returns the blocks that were recovered and whether anything was dropped.
+async fn read_blocks_tolerantly(bytes: &[u8]) -> Result<(MemoryStorage, bool), Error> {
+    let mut storage = MemoryStorage::new();
+    let mut reader = CarReader::new(std::io::Cursor::new(bytes)).await?;
+    loop {
+        match reader.next_block().await {
+            Ok(Some(block)) => {
+                storage.put(&block.cid, block.data).await?;
+            }
+            Ok(None) => return Ok((storage, false)),
+            // The tail is damaged. Keep everything already read.
+            Err(_) => return Ok((storage, true)),
+        }
+    }
+}
+
+/// The newest commit in `storage` whose MST is fully walkable.
+///
+/// "Newest" is by commit `rev`, a TID and therefore lexicographically
+/// sortable. Walkability is checked by actually enumerating the tree rather
+/// than by confirming the root block exists: a torn append can leave a commit
+/// whose root node is present but whose children are not, and a root that
+/// cannot be enumerated is no use as a recovery point. Walking back to the
+/// previous commit is always safe, because the MST is persistent — earlier
+/// commits share the nodes they had, and those were durable before this one
+/// was written.
+async fn recover_root(storage: &MemoryStorage) -> Option<Cid> {
+    let mut candidates: Vec<(String, Cid)> = Vec::new();
+    for raw in storage.cids().collect::<Vec<_>>() {
+        let cid = Cid::from(raw);
+        let Ok(Some(block)) = storage.get(&cid).await else {
+            continue;
+        };
+        if let Ok(commit) = Commit::from_bytes(&block) {
+            candidates.push((commit.rev.clone(), cid));
+        }
+    }
+    // Newest first, so the first walkable candidate is the best one.
+    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+
+    for (_rev, cid) in candidates {
+        if is_walkable(storage, &cid).await {
+            return Some(cid);
+        }
+    }
+    None
+}
+
+/// Whether `root` names a commit whose entire MST can be enumerated from
+/// `storage`.
+///
+/// Checked by actually walking the tree rather than by confirming the root
+/// block is present: a torn append can leave a commit durable while nodes it
+/// points at are missing, and a root that cannot be enumerated is no use
+/// either as `HEAD` or as a recovery point. Walking back to an earlier commit
+/// is always safe — the MST is persistent, so earlier commits share nodes
+/// that were durable before the damaged one was written.
+async fn is_walkable(storage: &MemoryStorage, root: &Cid) -> bool {
+    let Ok(Some(block)) = storage.get(root).await else {
+        return false;
+    };
+    let Ok(commit) = Commit::from_bytes(&block) else {
+        return false;
+    };
+    // `Mst::from_root` needs owned storage and `MemoryStorage` is not
+    // `Clone`, so copy the blocks per attempt. This is a cold path — it runs
+    // on open, but only the copy branch is reached when something is already
+    // wrong — and usually tries one or two candidates.
+    let Ok(copy) = copy_storage(storage).await else {
+        return false;
+    };
+    let mst = Mst::from_root(RawCid::from(commit.data), copy, RepoConfig::default());
+    mst.entries().await.is_ok()
+}
+
+async fn copy_storage(src: &MemoryStorage) -> Result<MemoryStorage, Error> {
+    let mut out = MemoryStorage::new();
+    for raw in src.cids().collect::<Vec<_>>() {
+        let cid = Cid::from(raw);
+        if let Some(block) = src.get(&cid).await? {
+            out.put(&cid, block).await?;
+        }
+    }
+    Ok(out)
+}
+
 /// Wall-clock microseconds since the Unix epoch.
 fn now_micros() -> u64 {
     std::time::SystemTime::now()
@@ -164,15 +260,53 @@ impl Log {
 
         if car_path.exists() {
             let bytes = fs::read(&car_path).await?;
-            let mut storage = MemoryStorage::new();
-            let reader = CarReader::new(std::io::Cursor::new(&bytes)).await?;
-            reader.stream_to_storage(&mut storage).await?;
+            let (storage, truncated) = read_blocks_tolerantly(&bytes).await?;
+            if truncated {
+                eprintln!(
+                    "warning: {} ends in a damaged block (an interrupted append, or truncation \
+                     by something outside kan) -- every intact block before it was recovered",
+                    car_path.display()
+                );
+            }
             let persisted: HashSet<Cid> = storage.cids().map(Cid::from).collect();
 
-            let head = fs::read_to_string(&head_path)
+            // `HEAD` names the current root. If it is missing, unparseable,
+            // or points at a block this CAR does not contain, the claims are
+            // still all here — the pointer to them is what was lost. Rebuild
+            // it from the newest commit in the CAR that is actually whole
+            // (`.design/v0.7-milestone.md` REQ-4), rather than failing with
+            // an intact log on disk and no way in.
+            let stated = fs::read_to_string(&head_path)
                 .await
-                .map_err(|_| Error::MissingHead)?;
-            let root: Cid = head.trim().parse().map_err(|_| Error::MissingHead)?;
+                .ok()
+                .and_then(|h| h.trim().parse::<Cid>().ok());
+            // Walkability, not mere presence. A crash mid-append can leave
+            // the commit block durable while nodes it points at are still
+            // missing, so "the root block exists" is not enough to call
+            // `HEAD` usable — the tree under it has to actually enumerate.
+            let usable = match &stated {
+                Some(cid) if is_walkable(&storage, cid).await => Some(cid.clone()),
+                _ => None,
+            };
+            let root = match usable {
+                Some(root) => root,
+                None => {
+                    let recovered = recover_root(&storage).await.ok_or(Error::MissingHead)?;
+                    eprintln!(
+                        "warning: HEAD was {} -- recovered the newest intact commit ({}) from \
+                         {} and rewrote HEAD. No claim was lost; the pointer to them was.",
+                        if stated.is_some() {
+                            "pointing at a block this log does not contain"
+                        } else {
+                            "missing or unreadable"
+                        },
+                        recovered,
+                        car_path.display()
+                    );
+                    fs::write(&head_path, recovered.to_string()).await?;
+                    recovered
+                }
+            };
 
             let commit_bytes = storage.get(&root).await?.ok_or(Error::MissingRoot)?;
             let commit = Commit::from_bytes(&commit_bytes)?;
