@@ -155,9 +155,33 @@ impl Identity {
         };
 
         match entry.get_secret() {
-            Ok(bytes) => Ok(Self {
-                keypair: P256Keypair::import(&bytes)?,
-            }),
+            Ok(bytes) => {
+                let identity = Self {
+                    keypair: P256Keypair::import(&bytes)?,
+                };
+                // The keychain already had it — so a plaintext copy sitting
+                // beside it is redundant *and* unprotected, and must go.
+                //
+                // The migration path deletes that copy; this path did not,
+                // so anyone whose key reached the keychain under an older
+                // version kept an unencrypted duplicate indefinitely. Found
+                // on this author's own repo, where "encrypted at rest" was
+                // therefore still notional after v0.7 shipped it. Same
+                // safety rule as the migration: only remove it once the
+                // keychain has demonstrably returned the same bytes, which
+                // it just did.
+                if path.exists() && bytes == identity.keypair.export() {
+                    if let Err(e) = std::fs::remove_file(path) {
+                        eprintln!(
+                            "warning: your signing key is in the keychain, but the redundant \
+                             plaintext copy at {} could not be removed ({e}) -- delete it by \
+                             hand; it is an unprotected copy of the same key",
+                            path.display()
+                        );
+                    }
+                }
+                Ok(identity)
+            }
             Err(keyring::Error::NoEntry) => {
                 let identity = match std::fs::read(path) {
                     Ok(bytes) => Self {
@@ -451,9 +475,21 @@ pub fn from_recovery_phrase(phrase: &str) -> Result<Identity, Error> {
         ))
     })?;
     let entropy = mnemonic.to_entropy();
-    Ok(Identity {
-        keypair: P256Keypair::import(&entropy)?,
-    })
+    // A correct checksum only proves the words are a well-formed BIP-39
+    // phrase, not that their entropy is a usable P-256 scalar — it must lie
+    // in [1, n-1], and all-zero entropy (the "abandon abandon … art" phrase)
+    // does not. Without this the failure surfaced as "crypto error:
+    // signature error", which tells an operator holding 24 words nothing
+    // about which of the two things went wrong.
+    let keypair = P256Keypair::import(&entropy).map_err(|_| {
+        Error::Recovery(
+            "those words are a valid BIP-39 phrase, but they do not encode a usable signing \
+             key. That means they are not a phrase kan produced — check you have the right \
+             one for this repo, rather than a phrase from another tool."
+                .to_string(),
+        )
+    })?;
+    Ok(Identity { keypair })
 }
 
 pub fn verify(did: &Did, msg: &[u8], sig: &[u8]) -> bool {

@@ -53,6 +53,34 @@ atproto layer — has a concrete staged plan targeting `v1.0.0`; see
 `.design/sync-layer-architecture-and-staging.md` and `docs/DECISIONS.md`
 ADR-35.
 
+## Identity and the keychain
+
+kan signs every claim with a per-repo `did:key`. By default the key lives in
+the OS keychain, encrypted at rest, and `kan identity phrase` gives you a
+24-word recovery phrase — take it before you need it, at a real terminal.
+
+**If you rebuild kan often, set this and forget the keychain exists:**
+
+```sh
+export KAN_IDENTITY_FILE="$PWD/.kan/identity"
+```
+
+On macOS a keychain entry is authorised to *the binary that created it*, so
+every `cargo install` produces a binary the keychain does not recognise and
+you get an auth prompt — forever, on every rebuild. `KAN_IDENTITY_FILE` names
+a key file directly and never consults the keychain, so nothing can block. The
+file is written `0600`.
+
+The trade-off is real and worth stating: that key is then plaintext on disk
+rather than encrypted at rest. For a repo you are *developing*, whose `.kan/`
+is gitignored, on an encrypted disk, that is usually the right call. For a
+repo you are *using*, prefer the keychain. Tracked as
+[#96](https://github.com/kan-tools/kan/issues/96) and
+[#105](https://github.com/kan-tools/kan/issues/105) — the long-term answer is
+a single root of trust with enclave-held keys, not a nicer prompt.
+
+CI and any non-interactive caller should always set `KAN_IDENTITY_FILE`.
+
 ## Name
 
 `kan` is the Kan extension: the universal construction that builds the best global
