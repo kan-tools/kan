@@ -11,32 +11,13 @@
 
 use std::path::{Path, PathBuf};
 
-use sha2::Digest;
-
 use crate::{
-    claim::{AgentKey, Anchor, AuthorId},
+    claim::{Anchor, AuthorId},
     fold::TrustBase,
     git::GitSubstrate,
     sign::Identity,
     store::{index::Index, log::Log},
 };
-
-/// The `KAN_AGENT` environment variable an MCP-server `env` config (or a
-/// human's shell) sets to tag claims with a distinct agent identity.
-const KAN_AGENT_ENV: &str = "KAN_AGENT";
-
-/// **Placeholder, not a real keypair.** A simple, consistent hash of the
-/// `KAN_AGENT` string — enough to make two different agent names produce
-/// two distinct, stable `AgentKey`s (closing the *reachability* gap: an
-/// `AuthorId.agent` a `PeerContested` trust base can actually tell apart),
-/// but this is not a signing key and nothing verifies it against anything.
-/// `claim::AgentKey`'s own doc comment ("compressed public key bytes of the
-/// signing agent") stays aspirational until a real per-agent-keypair design
-/// replaces this (tracked as its own follow-up issue, deliberately not
-/// v0.2 — see `docs/DECISIONS.md`).
-fn derive_agent_key(name: &str) -> AgentKey {
-    sha2::Sha256::digest(name.as_bytes()).to_vec()
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -107,25 +88,34 @@ impl Workspace {
         })
     }
 
-    /// This process's `AuthorId`: `agent: None` (human-direct) unless
-    /// `KAN_AGENT` is set, in which case `agent` is a placeholder hash
-    /// derived from it (`derive_agent_key`'s doc comment — not a real
-    /// per-agent keypair, an honest reachability patch only).
+    /// This process's `AuthorId`. `agent` is always `None`.
+    ///
+    /// **`KAN_AGENT` is gone** (`.design/v0.7-milestone.md` REQ-6), removed
+    /// rather than repaired. It hashed an environment variable into
+    /// `AuthorId.agent`, and since `TrustBase::Solo` trusts exactly one
+    /// `AuthorId`, setting it silently partitioned the log: claims written
+    /// under one value were invisible to every read under another. kan's own
+    /// `.mcp.json` set it, so the *shipped* configuration made the agent
+    /// surface and the human surface read disjoint views of one log — each
+    /// reporting a complete-looking view, neither mentioning the other's
+    /// claims existed.
+    ///
+    /// Its own source called it "not a real keypair and nothing verifies it
+    /// against anything," and issue #30's per-agent identity work replaces
+    /// it wholesale. Repairing something already scheduled for deletion, in
+    /// the release whose theme is that provisional patches cause data loss,
+    /// would have been the wrong lesson. Removing it also narrows
+    /// `AuthorId` usage rather than widening it, which is the direction #30
+    /// wants anyway.
     pub fn my_author(&self) -> AuthorId {
-        let agent = std::env::var(KAN_AGENT_ENV)
-            .ok()
-            .map(|name| derive_agent_key(&name));
         AuthorId {
             did: self.identity.did(),
-            agent,
+            agent: None,
         }
     }
 
-    /// Trust only this exact process's own `AuthorId` (did + current
-    /// `KAN_AGENT`, if any) — the default for every read view today. A
-    /// `KAN_AGENT`-tagged write is only visible back to a read in the same
-    /// `KAN_AGENT` context under this default; a caller wanting to see
-    /// *every* locally-known agent's claims together constructs a
+    /// Trust only this process's own `AuthorId` — the default for every read
+    /// view today. A caller wanting to weigh several authors constructs a
     /// `PeerContested` `TrustBase` directly rather than through this helper
     /// (no CLI/MCP surface for that exists yet — v1's real scope is "one
     /// human, one-or-more local agents" with no second human to weigh

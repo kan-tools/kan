@@ -3,10 +3,7 @@
     "kan": {
       "type": "stdio",
       "command": "kan",
-      "args": ["mcp"],
-      "env": {
-        "KAN_AGENT": "claude-code"
-      }
+      "args": ["mcp"]
     }
   }
 }
