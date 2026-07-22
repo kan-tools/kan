@@ -63,6 +63,19 @@ impl TidGenerator {
         }
     }
 
+    /// The microsecond value this generator will next exceed — for a
+    /// generator seeded from a persisted commit `rev`, that is the wall-clock
+    /// time of the last durable append.
+    ///
+    /// Exposed so `Log` can use it as a **cross-process** floor for
+    /// `ClaimContent::recorded_at`: a within-process floor alone would let
+    /// two separate writers in the same microsecond produce identical
+    /// content CIDs again, which is the whole defect `recorded_at` exists to
+    /// fix (`.design/v0.7-milestone.md` REQ-1/REQ-3).
+    pub fn last_micros(&self) -> u64 {
+        self.last
+    }
+
     /// The next TID, guaranteed strictly greater than every prior value
     /// this generator has produced.
     pub fn next(&mut self) -> String {
