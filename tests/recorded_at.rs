@@ -242,3 +242,53 @@ fn a_known_kind_with_an_unknown_field_is_preserved_not_reported_as_tampered() {
          claim being reported as altered since it was signed"
     );
 }
+
+/// The stale-binary error must tell an operator what to do.
+///
+/// Honest about its reach: this message lives in the *reader*, so it helps
+/// every kan from v0.7 forward that meets a log from a newer one. It cannot
+/// retroactively improve what v0.6 says — that binary is already shipped, and
+/// upgrading past it is exactly the advice this message would have given.
+#[test]
+fn an_out_of_date_reader_is_told_to_upgrade_rather_than_suspect_corruption() {
+    #[derive(serde::Serialize)]
+    struct FutureContent {
+        author: AuthorId,
+        workspace: Anchor,
+        subject: SubjectRef,
+        body: ClaimBody,
+        cites: Vec<atproto_dasl::Cid>,
+        artifacts: Vec<kan::claim::ArtifactRef>,
+        /// A field no released kan knows about.
+        invented_by_a_newer_kan: u64,
+    }
+
+    let bytes = atproto_dasl::to_vec(&FutureContent {
+        author: AuthorId {
+            did: "did:key:zX".to_string(),
+            agent: None,
+        },
+        workspace: Anchor::Workspace("g".to_string()),
+        subject: SubjectRef::Local(Rkey::from("s")),
+        body: observation("from the future"),
+        cites: vec![],
+        artifacts: vec![],
+        invented_by_a_newer_kan: 7,
+    })
+    .unwrap();
+
+    let decode_err = atproto_dasl::from_reader::<_, ClaimContent>(&bytes[..])
+        .expect_err("deny_unknown_fields must reject a field this build does not know");
+    let wrapped: kan::store::index::Error = decode_err.into();
+    let msg = wrapped.to_string();
+
+    assert!(
+        msg.contains("older than the log"),
+        "the message must name the actual cause: {msg}"
+    );
+    assert!(
+        msg.contains("not damaged"),
+        "it must say the log is fine, or it reads as corruption: {msg}"
+    );
+    assert!(msg.contains("cargo install"), "it must name the fix: {msg}");
+}

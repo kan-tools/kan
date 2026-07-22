@@ -17,6 +17,8 @@ pub enum Error {
     // variant's comment.
     #[error(transparent)]
     Mcp(#[from] Box<crate::mcp::Error>),
+    #[error(transparent)]
+    Sign(#[from] crate::sign::Error),
 }
 
 #[derive(Debug, Parser)]
@@ -219,6 +221,12 @@ pub enum Command {
         all: bool,
     },
 
+    /// Identity: recovery phrase export and restore.
+    Identity {
+        #[command(subcommand)]
+        action: IdentityAction,
+    },
+
     /// MCP server over stdio, and related setup.
     Mcp {
         #[command(subcommand)]
@@ -227,6 +235,27 @@ pub enum Command {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum IdentityAction {
+    /// Print this repo's `did:key` identifier. Public, safe to share.
+    Did,
+    /// Print the 24-word recovery phrase for this repo's signing key.
+    ///
+    /// Gated twice: `--yes`, and an interactive terminal. The phrase *is*
+    /// the private key, and this is the only command that will ever emit it.
+    Phrase {
+        /// Confirm you are somewhere the output will not be recorded.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Check a recovery phrase: prints the identity it belongs to.
+    Restore {
+        /// The 24 words, space-separated.
+        #[arg(required = true, num_args = 1..)]
+        phrase: Vec<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 pub enum McpAction {
     /// Print registration instructions for this binary — no config-file
     /// mutation, just the commands to run.
@@ -523,6 +552,56 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                 actions::context(&ws, budget.unwrap_or(DEFAULT_BUDGET))?
             );
         }
+        Command::Identity { action } => match action {
+            IdentityAction::Did => println!("{}", ws.identity.did()),
+            IdentityAction::Phrase { yes } => {
+                // Terminal-sensing gate. An MCP server, a CI job, and an AI
+                // agent's shell all have their output captured rather than
+                // attached to a terminal, so this refuses in exactly the
+                // places where the phrase would end up written down
+                // permanently by accident. `--yes` alone is a speed bump;
+                // this is the part that actually holds.
+                use std::io::IsTerminal;
+                if !std::io::stdout().is_terminal() || !std::io::stdin().is_terminal() {
+                    eprintln!(
+                        "refusing: `kan identity phrase` only runs in an interactive \
+                         terminal.\n\nstdout or stdin is not a TTY here, which means this \
+                         output is being captured -- a pipe, a CI job, an MCP server, or an \
+                         AI agent's shell. The phrase is your private signing key; kan will \
+                         not emit it somewhere it is likely to be recorded.\n\nRun it \
+                         directly in a terminal you trust."
+                    );
+                    return Ok(());
+                }
+                if !yes {
+                    eprintln!(
+                        "This prints your signing key as 24 words. Anyone who reads them \
+                         can sign claims as you.\n\nWrite them on paper and store them the \
+                         way you would a seed phrase. Re-run with --yes to print."
+                    );
+                    return Ok(());
+                }
+                println!("{}", crate::sign::recovery_phrase(&ws.identity)?);
+            }
+            IdentityAction::Restore { phrase } => {
+                let restored = crate::sign::from_recovery_phrase(&phrase.join(" "))?;
+                if restored.did() == ws.identity.did() {
+                    println!(
+                        "that phrase belongs to {} -- it matches this repo's identity.",
+                        restored.did()
+                    );
+                } else {
+                    println!(
+                        "that phrase belongs to {}\nthis repo's identity is {}\n\nThey do \
+                         not match. kan does not overwrite an existing identity \
+                         automatically: move `.kan/` aside, or point KAN_IDENTITY_FILE at a \
+                         file holding this key, so nothing is replaced by accident.",
+                        restored.did(),
+                        ws.identity.did()
+                    );
+                }
+            }
+        },
         Command::Mcp { .. } => unreachable!("handled above"),
     }
     Ok(())
