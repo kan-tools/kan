@@ -46,6 +46,20 @@ pub enum Error {
     Crypto(#[from] atrium_crypto::Error),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("recovery phrase: {0}")]
+    Recovery(String),
+    #[error(
+        "this repo has an identity in the OS keychain but it could not be read ({detail}).\n\
+         \n\
+         kan will not generate a second identity for a repo that already has one — a new \
+         DID would drop every existing claim out of every read.\n\
+         \n\
+         If the keychain is locked, unlock it and retry. If this is a different kan binary \
+         than the one that created the entry (an upgrade, or a local build), macOS will ask \
+         for authorization the first time — run kan once in a terminal that can answer, or \
+         set KAN_IDENTITY_FILE to a dedicated key file to bypass the keychain entirely."
+    )]
+    KeychainUnreachable { detail: String },
 }
 
 /// A local signing identity, backed by a P-256 keypair.
@@ -126,11 +140,68 @@ impl Identity {
                     Err(e) => return Err(e.into()),
                 };
                 match entry.set_secret(&identity.keypair.export()) {
-                    // Migration/fresh-generate case: the keychain now holds
-                    // the identity. A pre-existing plaintext file, if any,
-                    // is deliberately left in place (see doc above) rather
-                    // than deleted or (re)written.
-                    Ok(()) => Ok(identity),
+                    Ok(()) => {
+                        // Encrypted at rest, by default and in fact.
+                        //
+                        // ADR-25 wrote the key into the keychain and
+                        // **deliberately left the plaintext file in place**
+                        // as a fallback. The effect was that every migrated
+                        // identity kept an unprotected copy of the same 32
+                        // bytes beside the protected one -- world-readable
+                        // at 0644 on this author's own machine -- so the
+                        // keychain imposed its full cost and protected
+                        // nothing. "Encryption at rest" only ever held for
+                        // identities generated fresh after ADR-25.
+                        //
+                        // The plaintext copy is now removed once the
+                        // keychain has it, but only after reading it back
+                        // and confirming it matches: deleting the sole
+                        // remaining copy of a signing key on the strength of
+                        // a write that returned `Ok` is not a trade worth
+                        // making, and `load_or_create` would then silently
+                        // mint a *new* identity, taking every prior claim
+                        // out of every read.
+                        // Point at the recovery phrase, without printing it.
+                        //
+                        // Once the plaintext copy is gone the keychain is the
+                        // only place the key lives, and `.kan/` is gitignored
+                        // (ADR-3), so nothing else on the machine or in the
+                        // remote has it. A user who never learns the phrase
+                        // exists has a single point of failure they did not
+                        // agree to. Printing the phrase here instead would
+                        // undo the encryption in the same breath -- straight
+                        // into a terminal scrollback, a CI log, or an agent
+                        // transcript.
+                        eprintln!(
+                            "kan: this repo's signing key is now encrypted at rest in the OS \
+                             keychain.\n      It is the only copy. Run `kan identity phrase` \
+                             in a private terminal to write down a\n      24-word recovery \
+                             phrase -- without it, losing .kan/ loses the identity, and \
+                             every\n      claim you have written drops out of every read."
+                        );
+                        if path.exists() {
+                            match entry.get_secret() {
+                                Ok(stored) if stored == identity.keypair.export() => {
+                                    if let Err(e) = std::fs::remove_file(path) {
+                                        eprintln!(
+                                            "warning: identity is in the keychain but the \
+                                             plaintext copy at {} could not be removed ({e}) \
+                                             -- delete it by hand; it is an unprotected copy \
+                                             of your signing key",
+                                            path.display()
+                                        );
+                                    }
+                                }
+                                _ => eprintln!(
+                                    "warning: wrote the identity to the keychain but could \
+                                     not read it back to confirm, so the plaintext copy at \
+                                     {} was kept. Your key is not encrypted at rest.",
+                                    path.display()
+                                ),
+                            }
+                        }
+                        Ok(identity)
+                    }
                     Err(_) => {
                         warn_keychain_unavailable(path);
                         identity.save(path)?;
@@ -138,9 +209,26 @@ impl Identity {
                     }
                 }
             }
-            Err(_) => {
-                warn_keychain_unavailable(path);
-                Self::load_or_create_plaintext(path)
+            // The keychain exists and answered, but not with the key and not
+            // with "no such entry" — it is locked, access was denied, or the
+            // entry is ACL'd to a different binary (the macOS case that
+            // *hangs*, `IDENTITY_FILE_ENV`'s doc comment).
+            //
+            // Falling through to `load_or_create_plaintext` here would
+            // generate a brand-new keypair whenever no plaintext file exists,
+            // which is now the normal state — and a new DID means
+            // `TrustBase::Solo` drops every prior claim from every read, at
+            // exit 0. Silently minting a second identity for a repo that
+            // already has one is the worst available outcome, so this refuses
+            // instead, and names the way out.
+            Err(e) => {
+                if path.exists() {
+                    warn_keychain_unavailable(path);
+                    return Self::load_or_create_plaintext(path);
+                }
+                Err(Error::KeychainUnreachable {
+                    detail: e.to_string(),
+                })
             }
         }
     }
@@ -290,6 +378,43 @@ fn restrict_permissions(_path: &Path) -> std::io::Result<()> {
 
 /// Verify `sig` over `msg` against the public key encoded in `did` (a
 /// `did:key:...` string, as produced by `Identity::did`).
+/// The identity's 24-word BIP-39 recovery phrase.
+///
+/// A P-256 private key is 32 bytes, which is exactly BIP-39's 256-bit
+/// entropy size, so the phrase carries the key itself rather than a
+/// derivation of it — write it down and the identity is recoverable even if
+/// the keychain, the disk, and the machine are all gone.
+///
+/// **This is the private key in another encoding.** kan never prints it
+/// unprompted: the release that made the key encrypted at rest would be
+/// undone by a tool that spills it into a terminal, a CI log, or an agent
+/// transcript on every migration. A human asks for it explicitly, once,
+/// and stores it somewhere kan has nothing to do with.
+pub fn recovery_phrase(identity: &Identity) -> Result<String, Error> {
+    let entropy = identity.keypair.export();
+    Ok(bip39::Mnemonic::from_entropy(&entropy)
+        .map_err(|e| Error::Recovery(e.to_string()))?
+        .to_string())
+}
+
+/// Rebuild an identity from its recovery phrase.
+///
+/// The BIP-39 checksum rejects a mistyped or reordered phrase rather than
+/// silently producing a different key — which for a signing identity would
+/// mean a different DID and every existing claim dropping out of every read.
+pub fn from_recovery_phrase(phrase: &str) -> Result<Identity, Error> {
+    let mnemonic = bip39::Mnemonic::parse(phrase.trim()).map_err(|e| {
+        Error::Recovery(format!(
+            "{e} — check the word order and spelling; the checksum rejects a phrase \
+             that is close but not exact, rather than silently giving you a different key"
+        ))
+    })?;
+    let entropy = mnemonic.to_entropy();
+    Ok(Identity {
+        keypair: P256Keypair::import(&entropy)?,
+    })
+}
+
 pub fn verify(did: &Did, msg: &[u8], sig: &[u8]) -> bool {
     verify_signature(did, msg, sig).is_ok()
 }

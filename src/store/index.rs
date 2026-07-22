@@ -16,12 +16,44 @@ pub enum Error {
     Sqlite(#[from] rusqlite::Error),
     #[error("DAG-CBOR encode error: {0}")]
     Encode(#[from] atproto_dasl::EncodeError),
-    #[error("DAG-CBOR decode error: {0}")]
+    /// A stored claim could not be decoded.
+    ///
+    /// The message distinguishes the *only* two shapes this realistically
+    /// takes, because they call for opposite responses and the raw serde
+    /// text names neither. An unknown field or variant means this binary is
+    /// older than the log it is reading — `docs/SPEC.md` §7.1's honest
+    /// failure, working as designed — and the fix is to upgrade. Anything
+    /// else is a genuinely damaged record.
+    ///
+    /// Without that distinction the raw text ("unknown field `recorded_at`,
+    /// expected one of ...") reads as corruption. It was mistaken for
+    /// exactly that during this release's development, minutes after a real
+    /// data-loss incident and against a freshly restored log — an operator
+    /// with less context could reasonably have concluded the backup was bad
+    /// and discarded it. Third time the stale-binary class caused a false
+    /// alarm in one session (ADR-48).
+    #[error("{}", decode_message(.0))]
     Decode(#[from] atproto_dasl::DecodeError),
     #[error("stored CID is not valid: {0}")]
     InvalidCid(#[from] atproto_dasl::DaslCidError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+}
+
+/// Turns a decode failure into something an operator can act on.
+fn decode_message(e: &atproto_dasl::DecodeError) -> String {
+    let raw = e.to_string();
+    if raw.contains("unknown field") || raw.contains("unknown variant") {
+        format!(
+            "this kan is older than the log it is reading.\n\n{raw}\n\n\
+             The log is not damaged: a claim in it uses a field or claim kind this build \
+             does not know about, and kan reports that rather than silently dropping it \
+             (docs/SPEC.md 7.1). Upgrade kan -- `cargo install kan` for a release, or \
+             `cargo install --path .` from a checkout -- and read it again."
+        )
+    } else {
+        format!("DAG-CBOR decode error: {raw}")
+    }
 }
 
 pub struct Index {

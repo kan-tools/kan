@@ -49,11 +49,26 @@ fn load_or_create_is_idempotent_across_separate_calls() {
     assert_eq!(first.did(), second.did());
 }
 
-/// REQ-16: a pre-existing plaintext identity file is migrated in (read
-/// correctly, same DID) and left in place afterward — deliberately not
-/// deleted (ADR-25's explicit choice for this open question).
+/// A pre-existing plaintext identity is migrated in (read correctly, same
+/// DID) and the plaintext copy is then **removed** — reversing ADR-25's
+/// choice to keep it.
+///
+/// ADR-25 kept it as a fallback, with the effect that every migrated identity
+/// retained an unprotected copy of the same 32 bytes beside the protected one
+/// — world-readable at 0644 on this author's own machine. The keychain
+/// therefore imposed its full cost and protected nothing: "encryption at
+/// rest" only ever held for identities generated fresh after ADR-25, not for
+/// any that were migrated. Removing the copy is what makes the default
+/// actually encrypted at rest (ADR-48).
+///
+/// The deletion is conditional on reading the secret back and confirming it
+/// matches, because deleting the sole remaining copy of a signing key on the
+/// strength of a write that returned `Ok` is not a trade worth making.
+///
+/// Skipped where no keychain is available (headless CI, no Secret Service):
+/// there the plaintext file is the only store and must stay.
 #[test]
-fn a_preexisting_plaintext_identity_is_migrated_and_left_in_place() {
+fn a_migrated_plaintext_identity_is_removed_once_the_keychain_holds_it() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("identity");
 
@@ -63,15 +78,34 @@ fn a_preexisting_plaintext_identity_is_migrated_and_left_in_place() {
     assert!(path.exists());
 
     let loaded = Identity::load_or_create(&path).unwrap();
-    assert_eq!(original.did(), loaded.did());
-    assert!(
-        path.exists(),
-        "the plaintext file should be left in place as a fallback copy, not deleted"
+    assert_eq!(
+        original.did(),
+        loaded.did(),
+        "migration must preserve the identity -- a new DID would drop every \
+         existing claim out of every read"
     );
 
-    // And it's stable on a second call too, whichever backend served it.
+    if path.exists() {
+        // No keychain here, so the file is the only copy and correctly kept.
+        // Assert the fallback still round-trips rather than silently passing.
+        let reloaded = Identity::load_or_create(&path).unwrap();
+        assert_eq!(original.did(), reloaded.did());
+        return;
+    }
+
+    // Keychain served it: the unprotected copy is gone, and the identity is
+    // still reachable without it.
     let reloaded = Identity::load_or_create(&path).unwrap();
-    assert_eq!(original.did(), reloaded.did());
+    assert_eq!(
+        original.did(),
+        reloaded.did(),
+        "the identity must survive deletion of the plaintext copy -- if it \
+         does not, that copy was load-bearing and must not have been removed"
+    );
+    assert!(
+        !path.exists(),
+        "the plaintext copy must not be recreated on a later load"
+    );
 }
 
 /// AC-9: with no OS keychain available (simulated / CI), `kan` still works
