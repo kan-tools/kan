@@ -586,8 +586,8 @@ pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error>
 
     let retired = match &path.retired {
         Some(old) => format!(
-            "\nretired {} -- the pre-v0.7 name for this subject; its claims were just \
-             rewritten under the current one, and git still has it.\n",
+            "\nretired {} -- its records were all for this subject and have been rewritten \
+             under the current filename. If it was committed, git still has it.\n",
             old.display()
         ),
         None => String::new(),

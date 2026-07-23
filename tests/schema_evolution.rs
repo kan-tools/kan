@@ -279,3 +279,82 @@ fn known_bodies() -> Vec<ClaimBody> {
         },
     ]
 }
+
+/// #95 / `docs/SPEC.md` §7.1 (as amended in ADR-49): the mandated test that
+/// a *known* kind carrying a field from a newer kan survives **through the
+/// GitTree transport** with a matching CID — not only at the type level.
+///
+/// ADR-49 recorded that the behaviour worked but this exact test did not
+/// exist: `tests/recorded_at.rs` covers the `KnownBody` case at the type
+/// level, and `tests/schema_evolution.rs` covered an unknown *kind* at the
+/// `ClaimContent` level, but nothing exercised a known kind + unknown field
+/// across `to_record`/`from_record`. A spec that mandates a test, in the
+/// release that added the mandate, and then does not have it, is the same
+/// class of gap the release exists to close.
+#[test]
+fn a_known_kind_with_an_unknown_field_round_trips_through_gittree() {
+    use kan::transport::git_tree;
+
+    // An `Observation` as a newer kan writes it: the field this build knows,
+    // plus one it does not. Externally tagged, matching `ClaimBody`'s own
+    // encoding, so this is exactly what arrives on the wire.
+    #[derive(serde::Serialize)]
+    enum FutureBody {
+        Observation { text: String, confidence: u8 },
+    }
+    #[derive(serde::Serialize)]
+    struct FutureContent {
+        author: AuthorId,
+        workspace: Anchor,
+        subject: SubjectRef,
+        body: FutureBody,
+        cites: Vec<atproto_dasl::Cid>,
+        artifacts: Vec<kan::claim::ArtifactRef>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        recorded_at: Option<u64>,
+    }
+
+    let id = Identity::generate();
+    let future = FutureContent {
+        author: AuthorId {
+            did: id.did(),
+            agent: None,
+        },
+        workspace: Anchor::Workspace("genesis".to_string()),
+        subject: SubjectRef::Local(kan::claim::Rkey::from("bug-42")),
+        body: FutureBody::Observation {
+            text: "written by a newer kan".to_string(),
+            confidence: 9,
+        },
+        cites: vec![],
+        artifacts: vec![],
+        recorded_at: Some(1_700_000_000_000_000),
+    };
+
+    // The CID a newer kan computed and signed over.
+    let stated = content_cid(&future).unwrap();
+    let sig = id.sign(&stated.to_bytes()).unwrap();
+
+    // This build decodes the future content: the known kind with an unknown
+    // field falls through to `Unknown`, preserving the bytes.
+    let bytes = atproto_dasl::to_vec(&future).unwrap();
+    let content: ClaimContent = atproto_dasl::from_reader(&bytes[..]).unwrap();
+    assert!(
+        matches!(content.body, ClaimBody::Unknown { .. }),
+        "a known kind + unknown field must be preserved as Unknown"
+    );
+    let claim = kan::claim::Claim { content, sig };
+
+    // Through the transport: serialize to a record, parse it back, and the
+    // CID this build recomputes must equal the one the newer kan signed --
+    // otherwise the record reads as "altered since it was signed" against an
+    // honest claim, the failure §7.1 exists to prevent.
+    let record = git_tree::to_record(&claim).unwrap();
+    let (parsed_cid, parsed) = git_tree::from_record("bug-42.md", &record)
+        .expect("a known kind + unknown field must round-trip, not be rejected");
+    assert_eq!(
+        parsed_cid, stated,
+        "the recomputed CID must match the one the newer kan signed"
+    );
+    assert!(matches!(parsed.content.body, ClaimBody::Unknown { .. }));
+}

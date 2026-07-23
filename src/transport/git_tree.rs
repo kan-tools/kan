@@ -634,17 +634,70 @@ pub fn write_subject(
     //
     // Leaving it produced two files per subject, one of which never updated
     // again and diverged silently — and once a reader ships, a wall of
-    // errors about files kan wrote itself. Safe to remove because everything
-    // in it was just republished from the log, and because `.claims/` is
-    // tracked, so git holds the previous version either way.
+    // errors about files kan wrote itself.
+    //
+    // **The legacy name is lossy** (`legacy_file_name`'s own doc: `telos/x`
+    // and `telos_x` both land there). A `.design/`-era version keyed the
+    // deletion on it directly, and an adversarial review proved that let
+    // publishing `telos/x` delete a *different* subject `telos_x`'s file —
+    // a write path destroying another subject's data, keyed on a value that
+    // is not unique (#107 round two). So the file is only retired after
+    // reading it and confirming **every** record in it is about this exact
+    // subject. A file that belongs to a colliding neighbour, or holds
+    // anything unverifiable, is left untouched.
     let legacy = dir.join(legacy_file_name(subject));
-    let retired = if legacy != path && legacy.exists() {
+    let retired = if legacy != path && retirable(&legacy, subject) {
         std::fs::remove_file(&legacy).map_err(io(&legacy))?;
         Some(legacy)
     } else {
         None
     };
     Ok(Written { path, retired })
+}
+
+/// Whether `filename` is the v0.6 legacy name of a *uniform* file — every
+/// record about one subject, and that subject's legacy name is `filename`.
+///
+/// This is the only shape a genuine v0.6 file has (v0.6 wrote subject-exact
+/// files), and requiring it stops the lossy legacy name from authenticating a
+/// mixed-subject file (review D-C). An unparseable record makes the file
+/// non-uniform, which is the safe direction: it falls back to strict
+/// current-name checking rather than being waved through under a legacy name.
+fn file_is_uniform_legacy(records: &[&str], filename: &str) -> bool {
+    let mut subject: Option<crate::claim::SubjectRef> = None;
+    for record in records {
+        let Ok((_, claim)) = from_record(filename, record) else {
+            return false;
+        };
+        match &subject {
+            None => subject = Some(claim.content.subject.clone()),
+            Some(s) if s != &claim.content.subject => return false,
+            _ => {}
+        }
+    }
+    subject.is_some_and(|s| legacy_file_name(&s) == filename)
+}
+
+/// Whether a legacy file may be deleted as this subject's superseded copy.
+///
+/// True only if it exists, parses, and **every** record in it is about
+/// exactly `subject`. The lossy legacy name is never trusted as the sole
+/// key: a file that a colliding neighbour wrote, an empty file, or one
+/// holding anything that does not verify or belongs to another subject is
+/// left in place. Deleting the wrong file here destroys another subject's
+/// published claims, which is the invariant this guards.
+fn retirable(legacy: &Path, subject: &crate::claim::SubjectRef) -> bool {
+    let Ok(text) = std::fs::read_to_string(legacy) else {
+        return false;
+    };
+    let records = split_records(&text);
+    if records.is_empty() {
+        return false;
+    }
+    let shown = legacy.display().to_string();
+    records.iter().all(|record| {
+        matches!(from_record(&shown, record), Ok((_, claim)) if &claim.content.subject == subject)
+    })
 }
 
 /// What `write_subject` did, so the caller can say so rather than removing a
@@ -708,27 +761,34 @@ impl GitTree {
                     if let Some(missing) = missing_records(&shown, &records) {
                         out.push(Err(missing));
                     }
+
+                    // A legacy (`.md`, no-digest) name is accepted only for a
+                    // file that is *uniform* — every record about one subject
+                    // whose legacy name is this filename. That is what a
+                    // genuine v0.6 file is (v0.6 wrote subject-exact files),
+                    // and it is the check that keeps the lossy legacy name
+                    // from authenticating a whole equivalence class: without
+                    // it, a `foo_bar.md` holding a mix of `foo/bar` and
+                    // `foo:bar` records passed, because each record's own
+                    // legacy name equals the filename (review D-C). Current
+                    // digest names stay per-record injective and need no such
+                    // allowance.
+                    let actual = file.file_name().and_then(|n| n.to_str());
+                    let legacy_ok = actual.is_some_and(|a| file_is_uniform_legacy(&records, a));
+
                     for record in records {
                         let parsed = from_record(&shown, record);
                         // REQ-13's second half: the filename is authenticated
-                        // against the records inside it.
-                        //
-                        // Without this the name was decorative — a
-                        // `.claims/x.md` full of subject-`y` claims folded as
-                        // `y` and nothing said so, which combined with the
-                        // header fields being unverified (REQ-9) meant
-                        // *nothing* about a file's apparent subject was
-                        // checkable. Only the hex content was.
+                        // against the records inside it. Without it the name
+                        // was decorative — a `.claims/x.md` full of subject-`y`
+                        // claims folded as `y` and nothing said so.
                         if let Ok((_, claim)) = &parsed {
                             let current = file_name(&claim.content.subject);
-                            // A v0.6-written file is accepted under its old
-                            // name (#107): the records in it are correctly
-                            // signed and kan wrote them, so reporting them as
-                            // mismatched would indict a repo's own history for
-                            // predating a rename.
-                            let legacy = legacy_file_name(&claim.content.subject);
-                            if let Some(actual) = file.file_name().and_then(|n| n.to_str()) {
-                                if actual != current && actual != legacy {
+                            if let Some(actual) = actual {
+                                let accepted = actual == current
+                                    || (legacy_ok
+                                        && actual == legacy_file_name(&claim.content.subject));
+                                if !accepted {
                                     out.push(Err(Error::FilenameMismatch {
                                         path: shown.clone(),
                                         expected: current,

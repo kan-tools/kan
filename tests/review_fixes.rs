@@ -181,3 +181,99 @@ fn a_v0_6_published_file_still_verifies_and_is_retired_on_republish() {
         "exactly one file per subject: {remaining:?}"
     );
 }
+
+/// Review D-A: publishing a subject must never retire a *different* subject's
+/// file, even when both map to the same lossy v0.6 legacy name.
+///
+/// The first #107 fix keyed the deletion on `legacy_file_name` alone — the
+/// very mapping whose lossiness caused #107 in the first place — so
+/// publishing `telos/x` deleted `telos_x`'s file and told the user it had
+/// rewritten it. A write path destroying another subject's data.
+#[test]
+fn publishing_does_not_retire_a_colliding_subjects_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+
+    // `telos_x` has a genuine v0.6 file of its own.
+    let neighbour = SubjectRef::Local(Rkey::from("telos_x"));
+    let w = git_tree::write_subject(
+        dir.path(),
+        &neighbour,
+        &[(signed(&identity, "telos_x", "the neighbour's claim"), None)],
+    )
+    .unwrap();
+    let legacy = dir
+        .path()
+        .join(".claims")
+        .join(git_tree::legacy_file_name(&neighbour));
+    std::fs::rename(&w.path, &legacy).unwrap();
+
+    // Publish `telos/x` — a different subject that maps to the SAME legacy name.
+    let colliding = SubjectRef::Local(Rkey::from("telos/x"));
+    assert_eq!(
+        git_tree::legacy_file_name(&colliding),
+        git_tree::legacy_file_name(&neighbour),
+        "the two subjects must share a legacy name, or this proves nothing"
+    );
+    let written = git_tree::write_subject(
+        dir.path(),
+        &colliding,
+        &[(signed(&identity, "telos/x", "the colliding claim"), None)],
+    )
+    .unwrap();
+
+    assert!(
+        written.retired.is_none(),
+        "publishing telos/x must not retire telos_x's file"
+    );
+    assert!(legacy.exists(), "the neighbour's file must survive");
+    let text = std::fs::read_to_string(&legacy).unwrap();
+    assert!(
+        text.contains("the neighbour's claim"),
+        "the neighbour's claim must be intact"
+    );
+}
+
+/// Review D-C: a legacy-named file holding a *mix* of subjects (each mapping
+/// to that legacy name) must not authenticate — only a uniform, single-subject
+/// file gets the legacy allowance.
+#[test]
+fn a_mixed_subject_legacy_file_is_not_authenticated() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+
+    // Two subjects that both map to `telos_x.md` under the v0.6 scheme.
+    let a = signed(&identity, "telos/x", "record about telos/x");
+    let b = signed(&identity, "telos_x", "record about telos_x");
+    let claims_dir = dir.path().join(".claims");
+    std::fs::create_dir_all(&claims_dir).unwrap();
+    let mixed = format!(
+        "{}\n---8<---\n{}",
+        git_tree::to_record(&a).unwrap(),
+        git_tree::to_record(&b).unwrap()
+    );
+    let legacy_name = git_tree::legacy_file_name(&SubjectRef::Local(Rkey::from("telos_x")));
+    std::fs::write(claims_dir.join(&legacy_name), mixed).unwrap();
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let results = rt.block_on(async {
+        let id = Identity::load_or_create(&dir.path().join("reader-id")).unwrap();
+        let log = kan::store::log::Log::open_or_create(&dir.path().join("reader-log"), &id)
+            .await
+            .unwrap();
+        git_tree::GitTree::new(log, dir.path().to_path_buf()).read_all()
+    });
+    let mismatch = results.iter().any(|r| {
+        r.as_ref()
+            .err()
+            .is_some_and(|e| e.to_string().contains("does not describe"))
+    });
+    assert!(
+        mismatch,
+        "a mixed-subject legacy file must be reported, not waved through: {:?}",
+        results
+            .iter()
+            .map(|r| r.as_ref().map(|_| "ok").map_err(|e| e.to_string()))
+            .collect::<Vec<_>>()
+    );
+}
