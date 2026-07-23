@@ -161,21 +161,36 @@ impl Identity {
                 };
                 // The keychain already had it — so a plaintext copy sitting
                 // beside it is redundant *and* unprotected, and must go.
+                // Anyone whose key reached the keychain under a version
+                // before this branch existed kept an unencrypted duplicate
+                // indefinitely; "encrypted at rest" was notional for them.
                 //
-                // The migration path deletes that copy; this path did not,
-                // so anyone whose key reached the keychain under an older
-                // version kept an unencrypted duplicate indefinitely. Found
-                // on this author's own repo, where "encrypted at rest" was
-                // therefore still notional after v0.7 shipped it. Same
-                // safety rule as the migration: only remove it once the
-                // keychain has demonstrably returned the same bytes, which
-                // it just did.
-                if path.exists() && bytes == identity.keypair.export() {
-                    if let Err(e) = std::fs::remove_file(path) {
+                // The comparison is against **the file's own bytes**, not
+                // against the keychain key round-tripped through itself. An
+                // adversarial review caught the earlier form —
+                // `bytes == P256Keypair::import(&bytes).export()` — as a
+                // tautology that never read the file, reducing the guard to
+                // `path.exists()`: a plaintext file holding a *different*
+                // key would have been deleted with no copy. Only a file that
+                // holds exactly the key the keychain returned is redundant,
+                // and only a redundant copy is safe to remove.
+                if let Ok(file_bytes) = std::fs::read(path) {
+                    if file_bytes == bytes {
+                        if let Err(e) = std::fs::remove_file(path) {
+                            eprintln!(
+                                "warning: your signing key is in the keychain, but the \
+                                 redundant plaintext copy at {} could not be removed ({e}) \
+                                 -- delete it by hand; it is an unprotected copy of the same \
+                                 key",
+                                path.display()
+                            );
+                        }
+                    } else {
                         eprintln!(
-                            "warning: your signing key is in the keychain, but the redundant \
-                             plaintext copy at {} could not be removed ({e}) -- delete it by \
-                             hand; it is an unprotected copy of the same key",
+                            "warning: {} holds a different key than the keychain — leaving it \
+                             in place rather than deleting a key kan cannot reproduce. If it \
+                             is stale, remove it by hand; if it is the one you want, move the \
+                             keychain entry aside.",
                             path.display()
                         );
                     }
