@@ -47,6 +47,53 @@ fn git_repo() -> tempfile::TempDir {
     dir
 }
 
+/// #103: `show --json` inbound relations are structured objects carrying their
+/// own `cid`, `author`, `relation`, and `source` — not the rendered
+/// `"<from> <Kind> this"` string, whose `{kind:?}` Debug-leak is exactly the
+/// failure class `--json` exists to end. A consumer must be able to cite and
+/// attribute an edge that points at a subject, not just see that one does.
+#[test]
+fn show_json_inbound_edges_are_structured_not_strings() {
+    let dir = git_repo();
+    let (_, _, ok) = kan(
+        dir.path(),
+        &["observe", "a exists", "--subject", "target-a"],
+    );
+    assert!(ok);
+    let (_, _, ok) = kan(
+        dir.path(),
+        &["observe", "b exists", "--subject", "source-b"],
+    );
+    assert!(ok);
+    let (_, _, ok) = kan(dir.path(), &["relate", "source-b", "blocks", "target-a"]);
+    assert!(ok, "relate should succeed");
+
+    let (stdout, _, ok) = kan(dir.path(), &["show", "target-a", "--json"]);
+    assert!(ok);
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("show --json must be JSON");
+    let inbound = v["inbound"].as_array().expect("inbound should be an array");
+    assert_eq!(inbound.len(), 1, "one inbound edge expected: {stdout}");
+
+    let edge = &inbound[0];
+    assert!(
+        edge.is_object(),
+        "inbound edge must be a structured object, not a string: {edge}"
+    );
+    assert_eq!(edge["kind"], "Relation");
+    assert_eq!(edge["relation"], "Blocks");
+    assert_eq!(edge["source"], "source-b");
+    assert!(
+        edge["cid"].as_str().is_some_and(|c| c.starts_with("bafy")),
+        "the edge must carry its own cid for citation: {edge}"
+    );
+    assert!(
+        edge["author"]
+            .as_str()
+            .is_some_and(|a| a.starts_with("did:")),
+        "the edge must carry its author for attribution: {edge}"
+    );
+}
+
 #[test]
 fn golden_path_across_separate_invocations() {
     let dir = git_repo();

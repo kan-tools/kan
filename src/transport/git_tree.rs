@@ -92,6 +92,16 @@ pub enum Error {
         found: String,
     },
     #[error(
+        "{path}: this file already holds another subject's claims — publishing {subject} here \
+         would overwrite them. The filename digest collided; publish was refused rather than \
+         destroy the existing file (its claims are safe in the log and in git)"
+    )]
+    FilenameCollision {
+        path: String,
+        /// The subject whose publish was refused.
+        subject: String,
+    },
+    #[error(
         "{path}: {found} of {declared} records are present — {missing} record(s) have been \
          removed from this file since it was published"
     )]
@@ -615,6 +625,26 @@ pub fn write_subject(
     std::fs::create_dir_all(&dir).map_err(io(&dir))?;
     let path = dir.join(file_name(subject));
 
+    // #111: the primary write trusts `file_name(subject)` — a sanitized
+    // prefix plus a 32-bit digest — as a unique key and overwrites
+    // unconditionally, the last instance of ADR-52's class (a lossy derived
+    // value trusted as a unique key for a destructive operation) still on a
+    // write path. Two subjects colliding in the sanitized prefix *and* the
+    // 4-byte digest would silently overwrite each other's file. Before
+    // overwriting an existing file, confirm it is entirely this subject's —
+    // exactly the check `retirable` makes below, keyed on the records'
+    // content, not on the filename. A normal re-publish of this subject's own
+    // file passes (every record is this subject); only a genuine collision, or
+    // a file no longer parseable as this subject's, is refused rather than
+    // clobbered. The claims are safe in the log and git either way, so refusing
+    // loses nothing but the overwrite.
+    if path.exists() && !retirable(&path, subject) {
+        return Err(Error::FilenameCollision {
+            path: path.display().to_string(),
+            subject: format!("{subject:?}"),
+        });
+    }
+
     let mut out = String::new();
     for (i, (claim, rev)) in claims.iter().enumerate() {
         if !out.is_empty() {
@@ -702,6 +732,7 @@ fn retirable(legacy: &Path, subject: &crate::claim::SubjectRef) -> bool {
 
 /// What `write_subject` did, so the caller can say so rather than removing a
 /// tracked file silently.
+#[derive(Debug)]
 pub struct Written {
     pub path: PathBuf,
     /// The v0.6-named file this replaced, if there was one.

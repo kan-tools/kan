@@ -379,3 +379,62 @@ fn no_merge_driver_is_recommended_for_the_shared_layer() {
     assert!(guidance.contains("silently destroys"));
     assert!(!guidance.contains("Add to .gitattributes"));
 }
+
+/// #111: `write_subject`'s primary write must refuse to overwrite a file that
+/// holds *another* subject's claims, rather than trusting the (lossy, 32-bit
+/// digest) filename as a unique key — the last instance of ADR-52's class on a
+/// write path. Simulated by placing subject B's real records at subject A's
+/// path (the collision the digest could produce) and confirming a publish of A
+/// is refused with the file left byte-for-byte intact.
+///
+/// Negative control: reverting the guard (removing the `retirable` check
+/// before the write) makes A's publish overwrite B's file and this test fails
+/// on the `FilenameCollision` match and the untouched-bytes assertion.
+#[test]
+fn publish_refuses_to_overwrite_another_subjects_file() {
+    let id = identity();
+    let root = tempfile::tempdir().unwrap();
+
+    // B's genuine published file.
+    let b = observation("subject-b", "b's only claim", &id);
+    git_tree::write_subject(root.path(), &b.content.subject, &[(b.clone(), None)]).unwrap();
+
+    // Force B's records to sit at A's path — the digest collision, simulated.
+    let a_subject = SubjectRef::Local(Rkey::from("subject-a"));
+    let claims_dir = root.path().join(git_tree::CLAIMS_DIR);
+    let a_path = claims_dir.join(git_tree::file_name(&a_subject));
+    let b_path = claims_dir.join(git_tree::file_name(&b.content.subject));
+    assert_ne!(a_path, b_path);
+    std::fs::copy(&b_path, &a_path).unwrap();
+    let before = std::fs::read(&a_path).unwrap();
+
+    // Publishing A must refuse rather than clobber B's claims.
+    let a = observation("subject-a", "a's claim", &id);
+    let err = git_tree::write_subject(root.path(), &a_subject, &[(a, None)]).unwrap_err();
+    assert!(
+        matches!(err, git_tree::Error::FilenameCollision { .. }),
+        "expected FilenameCollision, got {err:?}"
+    );
+    assert_eq!(
+        std::fs::read(&a_path).unwrap(),
+        before,
+        "the colliding file must be left byte-for-byte intact"
+    );
+}
+
+/// A normal re-publish of a subject's *own* file is not a collision and must
+/// still succeed — the guard keys on the file's contents (all this subject's),
+/// so this is the discriminating other half of the test above.
+#[test]
+fn republishing_a_subjects_own_file_succeeds() {
+    let id = identity();
+    let root = tempfile::tempdir().unwrap();
+    let c1 = observation("subj", "first", &id);
+    let subj = c1.content.subject.clone();
+    git_tree::write_subject(root.path(), &subj, &[(c1.clone(), None)]).unwrap();
+    // Re-publish the same subject with an extra claim — the file already
+    // exists and is entirely this subject's, so the overwrite is allowed.
+    let c2 = observation("subj", "second", &id);
+    git_tree::write_subject(root.path(), &subj, &[(c1, None), (c2, None)])
+        .expect("own-file re-publish must succeed");
+}

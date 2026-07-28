@@ -1177,23 +1177,48 @@ fn subject_label(subject_view: &SubjectView) -> String {
     names.join(" = ")
 }
 
-/// Relations pointing at `subject`, for a subject that has no claims (and so
-/// no merge class) of its own.
-fn inbound_edges_to(view: &FoldedView, subject: &SubjectRef) -> Vec<String> {
+/// The live relation claims other subjects assert pointing at `targets`,
+/// skipping `own_class` (a subject's own merge class does not count as inbound
+/// to itself). The shared spine of the inbound-edge views: the human `show`
+/// renders these as lines, `--json` as structured entries with provenance
+/// (#103), so the two can never disagree about what points here.
+fn inbound_relation_claims(
+    view: &FoldedView,
+    targets: &[SubjectRef],
+    own_class: Option<&[SubjectRef]>,
+) -> Vec<(Cid, crate::claim::Claim)> {
     let mut out = Vec::new();
     for class in &view.classes {
-        for (_, claim) in &class.claims {
-            if let crate::claim::ClaimBody::Relation { kind, target } = &claim.content.body {
-                if target == subject {
-                    let from = match &claim.content.subject {
-                        SubjectRef::Local(rkey) => rkey.to_string(),
-                        other => format!("{other:?}"),
-                    };
-                    out.push(format!("{from} {kind:?} this"));
+        if own_class == Some(class.subjects.as_slice()) {
+            continue;
+        }
+        for (cid, claim) in &class.claims {
+            if let crate::claim::ClaimBody::Relation { target, .. } = &claim.content.body {
+                if targets.contains(target) {
+                    out.push((cid.clone(), claim.clone()));
                 }
             }
         }
     }
+    out
+}
+
+/// The rendered `"<from> <Kind> this"` line for one inbound relation claim.
+fn inbound_edge_line(claim: &crate::claim::Claim) -> Option<String> {
+    let crate::claim::ClaimBody::Relation { kind, .. } = &claim.content.body else {
+        return None;
+    };
+    let from = crate::json::subject_name(&claim.content.subject);
+    Some(format!("{from} {kind:?} this"))
+}
+
+/// Relations pointing at `subject`, for a subject that has no claims (and so
+/// no merge class) of its own.
+fn inbound_edges_to(view: &FoldedView, subject: &SubjectRef) -> Vec<String> {
+    let mut out: Vec<String> = inbound_relation_claims(view, std::slice::from_ref(subject), None)
+        .iter()
+        .filter_map(|(_, claim)| inbound_edge_line(claim))
+        .collect();
     out.sort();
     out.dedup();
     out
@@ -1201,25 +1226,33 @@ fn inbound_edges_to(view: &FoldedView, subject: &SubjectRef) -> Vec<String> {
 
 /// Relations asserted by *other* subjects that point at this one (REQ-21).
 fn inbound_edges(view: &FoldedView, subject_view: &SubjectView) -> Vec<String> {
-    let mut out = Vec::new();
-    for class in &view.classes {
-        if class.subjects == subject_view.subjects {
-            continue;
-        }
-        for (_, claim) in &class.claims {
-            if let crate::claim::ClaimBody::Relation { kind, target } = &claim.content.body {
-                if subject_view.subjects.contains(target) {
-                    let from = match &claim.content.subject {
-                        SubjectRef::Local(rkey) => rkey.to_string(),
-                        other => format!("{other:?}"),
-                    };
-                    out.push(format!("{from} {kind:?} this"));
-                }
-            }
-        }
-    }
+    let mut out: Vec<String> =
+        inbound_relation_claims(view, &subject_view.subjects, Some(&subject_view.subjects))
+            .iter()
+            .filter_map(|(_, claim)| inbound_edge_line(claim))
+            .collect();
     out.sort();
     out.dedup();
+    out
+}
+
+/// The structured inbound relations for `--json` (#103): the same claims the
+/// rendered lines are built from, carrying each edge's `cid`, `author`, and
+/// source subject so a consumer can cite and attribute it. Sorted for a
+/// deterministic payload.
+fn inbound_edges_json(
+    view: &FoldedView,
+    subject_ref: &SubjectRef,
+) -> Vec<crate::json::InboundEdgeJson> {
+    let claims = match view.subject(subject_ref) {
+        Some(class) => inbound_relation_claims(view, &class.subjects, Some(&class.subjects)),
+        None => inbound_relation_claims(view, std::slice::from_ref(subject_ref), None),
+    };
+    let mut out: Vec<crate::json::InboundEdgeJson> = claims
+        .iter()
+        .filter_map(|(cid, claim)| crate::json::InboundEdgeJson::from_claim(cid, claim))
+        .collect();
+    out.sort_by(|a, b| (&a.source, &a.relation, &a.cid).cmp(&(&b.source, &b.relation, &b.cid)));
     out
 }
 
@@ -1380,10 +1413,7 @@ pub fn show_json(ws: &Workspace, subject: &str) -> Result<String, Error> {
         subjects,
         claims,
         flagged_oversized: flagged,
-        inbound: match view.subject(&subject_ref) {
-            Some(class) => inbound_edges(&view, class),
-            None => inbound_edges_to(&view, &subject_ref),
-        },
+        inbound: inbound_edges_json(&view, &subject_ref),
     };
     to_json(&out)
 }
