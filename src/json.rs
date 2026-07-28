@@ -97,9 +97,45 @@ pub struct ShowJson {
     /// than silently enumerated.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub flagged_oversized: bool,
-    /// Relations other subjects assert *at* this one.
+    /// Relations other subjects assert *at* this one, structured with
+    /// provenance so a consumer can cite and attribute them (#103).
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub inbound: Vec<String>,
+    pub inbound: Vec<InboundEdgeJson>,
+}
+
+/// A relation another subject asserts pointing at this one — structured with
+/// its own `cid` and `author` so a consumer can cite, attribute, and follow
+/// it, rather than the rendered string the human `show` prints (#103). Mirrors
+/// an outbound relation `ClaimJson`, with `source` where outbound has
+/// `target`. The rendered `show` output keeps its string form; this is the
+/// `--json` envelope only.
+#[derive(Debug, Serialize)]
+pub struct InboundEdgeJson {
+    pub cid: String,
+    /// Always `"Relation"`, so the shape matches an outbound entry's `kind`.
+    pub kind: String,
+    pub relation: String,
+    /// The subject asserting the edge — the analogue of outbound's `target`.
+    pub source: String,
+    pub author: String,
+}
+
+impl InboundEdgeJson {
+    /// Build from a relation claim pointing at the shown subject. Returns
+    /// `None` for a non-`Relation` claim (the caller only ever passes
+    /// relations, but the shape is total rather than panicking).
+    pub fn from_claim(cid: &atproto_dasl::Cid, claim: &Claim) -> Option<Self> {
+        let ClaimBody::Relation { kind, .. } = &claim.content.body else {
+            return None;
+        };
+        Some(Self {
+            cid: cid.to_string(),
+            kind: "Relation".to_string(),
+            relation: format!("{kind:?}"),
+            source: subject_name(&claim.content.subject),
+            author: claim.content.author.did.clone(),
+        })
+    }
 }
 
 /// One subject's settled state.

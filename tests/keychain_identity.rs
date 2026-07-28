@@ -108,6 +108,67 @@ fn a_migrated_plaintext_identity_is_removed_once_the_keychain_holds_it() {
     );
 }
 
+/// #112 (the D-B negative control): a plaintext file holding a **different**
+/// key than the keychain's must **survive** a keychain hit.
+///
+/// PR #109 fixed the keychain-hit deletion guard to read the file and delete
+/// it only if its bytes equal the keychain's, replacing the tautology
+/// `bytes == import(bytes).export()` that never read the file. Every existing
+/// test exercises the *matching* (migration) deletion; none asserted the
+/// discriminating behaviour that is the whole point — that a non-matching file
+/// is kept. The tautology passed precisely because nothing distinguished, so
+/// this is the test that fails when the guard is inverted (delete-when-
+/// different), which for a signing key is the worst outcome: deleting a key
+/// the keychain does not hold.
+///
+/// Environment-gated exactly like the migration test: it can only run where a
+/// real keychain serves the entry (so the deletion branch is even reached).
+/// On a machine with no Secret Service (headless CI) the first load keeps the
+/// file, the keychain-hit branch never runs, and the test skips.
+#[test]
+fn a_different_key_plaintext_file_survives_a_keychain_hit() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("identity");
+
+    // First load establishes the keychain entry (and, where a keychain
+    // exists, removes any plaintext copy). Its DID is what the keychain holds.
+    let keychain_identity = Identity::load_or_create(&path).unwrap();
+
+    if path.exists() {
+        // No keychain here: the file is the only store and the keychain-hit
+        // deletion branch never runs. Nothing to discriminate — skip.
+        return;
+    }
+
+    // Keychain serves the identity. Drop a *different* key's file beside it.
+    let other = Identity::generate();
+    assert_ne!(
+        keychain_identity.did(),
+        other.did(),
+        "the two identities must differ for this to test anything"
+    );
+    other.save(&path).unwrap();
+    assert!(path.exists());
+
+    // Load again: keychain hit returns its own identity; the file holds a
+    // different key, so the guard must KEEP it (delete only on a byte match).
+    let loaded = Identity::load_or_create(&path).unwrap();
+    assert_eq!(
+        keychain_identity.did(),
+        loaded.did(),
+        "the keychain is authoritative on a hit; the stray file must not shadow it"
+    );
+    assert!(
+        path.exists(),
+        "a plaintext file holding a DIFFERENT key than the keychain must survive — deleting it \
+         would destroy a key the keychain does not hold (the D-B false-positive delete)"
+    );
+    // And the surviving file is untouched: still the other key, not rewritten.
+    let from_file = Identity::load_or_create(&path).unwrap();
+    assert_eq!(keychain_identity.did(), from_file.did());
+    assert!(path.exists());
+}
+
 /// AC-9: with no OS keychain available (simulated / CI), `kan` still works
 /// non-interactively, falling back to the plaintext file with a visible
 /// warning. Written to hold either way this runs: if the keychain genuinely
