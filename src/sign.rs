@@ -668,6 +668,83 @@ pub fn from_recovery_phrase(phrase: &str) -> Result<Identity, Error> {
     Ok(Identity { keypair })
 }
 
+// ------------------------------------------------------ derived key material
+
+/// HKDF context label for the encryption slot.
+///
+/// **Versioned, because it is a format decision and not an implementation
+/// detail.** The bytes this label produces *are* the encryption key; changing
+/// the string changes every identity's key, which for an encrypted backup
+/// means everything previously wrapped to it becomes unreadable. A `v2` label
+/// would be a migration, not an edit.
+const ENCRYPT_LABEL: &str = "kan/v1/encrypt";
+
+/// Derive `N` bytes from root key material under a labelled context.
+fn derive<const N: usize>(root: &[u8], label: &str) -> [u8; N] {
+    let hk = hkdf::Hkdf::<sha2::Sha256>::new(None, root);
+    let mut out = [0u8; N];
+    hk.expand(label.as_bytes(), &mut out)
+        .expect("output length is far inside HKDF-SHA256's limit");
+    out
+}
+
+/// An identity's X25519 encryption key (ADR-55's Q2, v0.9 REQ-5).
+///
+/// Per *identity*, not per device: every device holding the same root derives
+/// the same key, so any of them can decrypt a space shared with this identity.
+/// Nothing in kan encrypts anything yet — this exists so ADR-54's L1 encrypted
+/// backup and #7's HPKE protocol have a recipient to address.
+pub struct EncryptionKey {
+    secret: x25519_dalek::StaticSecret,
+}
+
+impl EncryptionKey {
+    /// The public half, hex-encoded — safe to share, and the thing a remote
+    /// or a peer wraps a content key to.
+    pub fn public_hex(&self) -> String {
+        x25519_dalek::PublicKey::from(&self.secret)
+            .as_bytes()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    /// The secret half, for the HPKE pass that will actually use it.
+    pub fn secret(&self) -> &x25519_dalek::StaticSecret {
+        &self.secret
+    }
+}
+
+impl Identity {
+    /// This identity's encryption key, derived from the signing key's own
+    /// material under a separate labelled context.
+    ///
+    /// **Derived, never converted.** The Ed25519→X25519 footgun is reusing
+    /// one key's *scalar* on two curves; this instead runs the root through
+    /// HKDF under a distinct label, so the encryption key is a one-way
+    /// function of the root rather than a re-encoding of the signing key.
+    /// Compromising the encryption key therefore yields nothing about the
+    /// signing key.
+    ///
+    /// **What the root is, stated plainly because it is asymmetric.** Today
+    /// the root *is* the signing key material, which means the existing
+    /// recovery phrase already reproduces this key and nobody has to escrow a
+    /// second secret — the property that makes this deployable to every
+    /// existing workspace with no migration at all. It also means the signing
+    /// key dominates the encryption key: whoever holds the former can derive
+    /// the latter. That is the same shape as the seed-rooted scheme (a root
+    /// that dominates both slots), with the signing key playing the root's
+    /// part for identities that predate the seed. ADR-55's grandfathering is
+    /// what makes that acceptable rather than a compromise: every existing
+    /// DID stays valid, which was the constraint with teeth.
+    pub fn encryption_key(&self) -> EncryptionKey {
+        let root = self.keypair.export();
+        EncryptionKey {
+            secret: x25519_dalek::StaticSecret::from(derive::<32>(&root, ENCRYPT_LABEL)),
+        }
+    }
+}
+
 pub fn verify(did: &Did, msg: &[u8], sig: &[u8]) -> bool {
     verify_signature(did, msg, sig).is_ok()
 }
