@@ -327,6 +327,24 @@ fn every_payload_envelope_is_pinned() {
     // conflating them would point a consumer at the wrong lever.
     assert!(context.get("omitted_claims").is_some() && context.get("excluded_by_trust").is_some());
 
+    // ShowAllJson: the bulk-read envelope (#123). Its entries are full
+    // ShowJson values on purpose, so a consumer parsing `show --json` parses
+    // these unchanged -- pinned here so that reuse cannot be quietly broken
+    // by "tidying" the entry into a slimmer shape.
+    let bulk = serde_json::to_value(json::ShowAllJson {
+        v: json::SCHEMA_VERSION,
+        trust: trust(),
+        excluded_by_trust: 0,
+        subjects: vec![],
+    })
+    .unwrap();
+    let keys: Vec<String> = bulk.as_object().unwrap().keys().cloned().collect();
+    assert_pinned(
+        &["v", "trust", "excluded_by_trust", "subjects"],
+        &keys,
+        "ShowAllJson",
+    );
+
     let publication = serde_json::to_value(json::ClaimJson::new(
         &claim(
             "s",

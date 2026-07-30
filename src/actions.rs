@@ -1817,6 +1817,62 @@ pub fn show_json(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<Str
     to_json(&out)
 }
 
+/// `kan show --all --json` — every subject's live claims, from one open
+/// (#123, `.design/kan-read-contract.md` REQ-5).
+///
+/// One fold serves the whole response, which is the entire point: the cost
+/// being collapsed is `Workspace::open`, paid once here and once per subject
+/// before.
+pub fn show_all_json(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
+    let claims = ws.index.all_stored_claims()?;
+    let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
+    let view = fold::fold(claims, trust);
+
+    let subjects: Vec<crate::json::ShowJson> = view
+        .classes
+        .iter()
+        .map(|class| {
+            let superseded = superseded_status_cids(&class.claims);
+            let names: Vec<String> = class
+                .subjects
+                .iter()
+                .map(crate::json::subject_name)
+                .collect();
+            // The class's own first name, matching what `all_status` uses as
+            // a label, so a consumer can join the two responses on it.
+            let primary = names.first().cloned().unwrap_or_default();
+            let inbound = class
+                .subjects
+                .first()
+                .map(|s| inbound_edges_json(&view, s))
+                .unwrap_or_default();
+            crate::json::ShowJson {
+                v: crate::json::SCHEMA_VERSION,
+                subject: primary,
+                subjects: names,
+                claims: class
+                    .claims
+                    .iter()
+                    .map(|(cid, claim)| {
+                        crate::json::ClaimJson::new(cid, claim, superseded.contains(cid))
+                    })
+                    .collect(),
+                flagged_oversized: class.flagged_oversized,
+                inbound,
+                trust: crate::json::TrustJson::new(trust),
+                excluded_by_trust: excluded.for_class(class),
+            }
+        })
+        .collect();
+
+    to_json(&crate::json::ShowAllJson {
+        v: crate::json::SCHEMA_VERSION,
+        trust: crate::json::TrustJson::new(trust),
+        excluded_by_trust: excluded.total(),
+        subjects,
+    })
+}
+
 /// `kan status [subject] --json`.
 pub fn status_json(
     ws: &Workspace,
