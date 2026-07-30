@@ -30,7 +30,7 @@ from many local logs into a coherent view, parameterized by whom you trust.
 
 ## Status
 
-Pre-1.0 (`v0.8.0-beta.1` on crates.io). The local-only spine — one human,
+Pre-1.0 (`v0.9.0-beta.1` on crates.io). The local-only spine — one human,
 one-or-more agents, one repo — is built and hardening.
 
 Sharing works in both directions as of v0.8. `kan publish <subject>` writes
@@ -47,6 +47,12 @@ Reading is where the trust posture becomes visible. The default view shows
 only the identity you are running as, and any read that leaves claims out
 now says so — on both the human output and `--json` — so a partial view
 cannot pass for a complete one (ADR-57).
+
+Durability arrived in v0.9. `kan status` says, per subject, whether it would
+survive losing `.kan/` — `unpublished`, `published`, or `stale` — and
+`kan restore` rebuilds a log from the published tree, refusing if nothing in
+it was signed by this identity, because that is what a lost key looks like
+from the inside (ADR-63, ADR-64).
 
 `docs/SPEC.md` §7.1 states the compatibility contract that came out of it:
 existing claim fields are frozen, new ones are additive and optional, and an
