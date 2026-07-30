@@ -97,6 +97,10 @@ kan identity role add director            # mints .kan/roles.d/director, registe
 KAN_IDENTITY_FILE=.kan/roles.d/director kan observe finding "the verdict"
 ```
 
+Declaring your first role also records the identity that was already signing
+here, as `primary` — so `--trust roles` covers claims written before the roles
+existed, not only after. `kan identity role list` shows the whole set.
+
 **Reading is the half that surprises people.** The default view is `Solo` —
 only the identity you are running as — so a role reads back only its own
 claims. Widen it:
