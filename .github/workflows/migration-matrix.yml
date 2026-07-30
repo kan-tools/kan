@@ -1,0 +1,201 @@
+name: Migration matrix
+
+# What this build does when it meets a workspace an *older released* kan wrote.
+#
+# The direction is the opposite of day's matrix of the same name, and the
+# difference is the point. day reads someone else's data, so its question is
+# what a released binary does with shapes written today. kan owns its own
+# on-disk format, so the question with teeth is the reverse: does this build
+# still read a log an older kan created? A user upgrades kan and expects their
+# claims to still be there. That is a **guarantee**, not a characterization.
+#
+# It exists because the failure it checks for has shipped twice. #90: a binary
+# upgrade silently minted a new identity, and `TrustBase::Solo` then hid every
+# existing claim — "no subjects yet" at exit 0 against a full log. #107: a
+# `.claims/` migration fix reintroduced the very class it fixed. Both were
+# found by a person, after release, and both were invisible to a green suite,
+# because every test runs one binary against a workspace that same binary
+# created.
+#
+# The cell can only detect the #90 shape at all because v0.8 shipped
+# `excluded_by_trust` (ADR-57): claims present on disk but filtered out by
+# trust are now reported rather than being indistinguishable from an empty
+# log. The disclosure built for a consumer's sake is what makes this
+# mechanizable.
+#
+# Outcomes are compared against `tests/fixtures/migration-expectations.tsv`.
+# A tag with no committed row is an error, not a pass — a version's migration
+# behaviour is a decision someone makes, never a default.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  pull_request:
+    paths:
+      # A change to how a workspace is opened, an identity resolved, or a log
+      # read is exactly when this needs to run before merging rather than
+      # after tagging.
+      - "src/sign.rs"
+      - "src/workspace.rs"
+      - "src/store/**"
+      - "src/transport/**"
+      - "scripts/run-migration-cell.sh"
+      - "tests/fixtures/migration-expectations.tsv"
+      - ".github/workflows/migration-matrix.yml"
+  workflow_dispatch:
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.tags.outputs.json }}
+      reader: ${{ steps.hash.outputs.reader }}
+      rustc: ${{ steps.hash.outputs.rustc }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - id: tags
+        name: Enumerate released tags
+        run: |
+          # Every released tag except one being released right now: a version
+          # is not a historical writer for its own release.
+          current="${GITHUB_REF_NAME}"
+          json=$(git tag --list 'v*.*.*' --sort=creatordate \
+                 | grep -v "^${current}$" \
+                 | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "json=$json" >> "$GITHUB_OUTPUT"
+          echo "matrix: $json"
+
+      - id: hash
+        name: Hash the reader side of the key
+        run: |
+          # The *reader* is what changes: this build. Hashing the modules that
+          # decide how a workspace is opened and an identity resolved means a
+          # change there invalidates every cell, and nothing else does. A
+          # released tag is immutable, so the writer side of each cell is
+          # already pinned by its commit sha.
+          reader=$(cat src/sign.rs src/workspace.rs src/store/log.rs \
+                       src/store/index.rs src/transport/git_tree.rs \
+                       scripts/run-migration-cell.sh \
+                   | sha256sum | cut -d' ' -f1)
+          echo "reader=$reader" >> "$GITHUB_OUTPUT"
+          echo "rustc=$(rustc --version | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+  matrix:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: ${{ fromJSON(needs.plan.outputs.tags) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: writer
+        name: Resolve the writer's immutable sha
+        run: echo "sha=$(git rev-parse "${{ matrix.tag }}")" >> "$GITHUB_OUTPUT"
+
+      # Key = (writer sha, reader hash, toolchain). All three are immutable
+      # inputs to a deterministic outcome, so a hit means the answer cannot
+      # have changed. Adding a tag costs one cell; changing how a workspace is
+      # opened costs all of them; changing neither costs nothing.
+      - id: cached
+        uses: actions/cache@v4
+        with:
+          path: migration-outcome.txt
+          key: >-
+            kan-migration-v1-${{ steps.writer.outputs.sha }}-${{
+            needs.plan.outputs.reader }}-${{ needs.plan.outputs.rustc }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.cached.outputs.cache-hit != 'true'
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.cached.outputs.cache-hit != 'true'
+        with:
+          key: writer-${{ matrix.tag }}
+
+      - name: Build this build (the reader)
+        if: steps.cached.outputs.cache-hit != 'true'
+        run: cargo build --release --quiet
+
+      - name: Build the historical writer
+        if: steps.cached.outputs.cache-hit != 'true'
+        run: |
+          git worktree add --detach /tmp/writer "${{ matrix.tag }}"
+          cd /tmp/writer
+          # An old tag may not compile under a current toolchain. That is a
+          # real outcome rather than a CI failure: a version nobody can build
+          # is a version nobody is running, and saying so is more useful than
+          # a red X.
+          if cargo build --release --quiet 2>/tmp/build.log; then
+            echo built > /tmp/writer-status
+          else
+            echo unbuildable > /tmp/writer-status
+            tail -20 /tmp/build.log || true
+          fi
+
+      - name: Write a workspace with it, then read it with this build
+        if: steps.cached.outputs.cache-hit != 'true'
+        run: |
+          if [ "$(cat /tmp/writer-status)" = unbuildable ]; then
+            echo unbuildable > migration-outcome.txt
+            exit 0
+          fi
+          scripts/run-migration-cell.sh \
+            /tmp/writer/target/release/kan \
+            "$PWD/target/release/kan" > migration-outcome.txt
+          cat migration-outcome.txt
+
+      - name: Report the actual outcome, then compare against the expectation
+        run: |
+          outcome=$(cat migration-outcome.txt)
+          # Skip comment lines, then take the outcome and its recorded reason.
+          expected=$(awk -v t="${{ matrix.tag }}" \
+                     '!/^#/ && $1==t {print $2}' \
+                     tests/fixtures/migration-expectations.tsv)
+          why=$(awk -v t="${{ matrix.tag }}" -F'\t' \
+                '!/^#/ && $1==t {print $3}' \
+                tests/fixtures/migration-expectations.tsv)
+
+          # The actual result is reported unconditionally, before any
+          # comparison: the table is checked against reality, never a
+          # substitute for it.
+          echo "::notice title=${{ matrix.tag }}::actual=$outcome expected=${expected:-<none>}"
+          {
+            printf '| %s | `%s` | `%s` | %s |\n' \
+              "${{ matrix.tag }}" "$outcome" "${expected:-—}" "${why:-—}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$expected" ]; then
+            echo "::error::${{ matrix.tag }} has no committed expectation. Add a row to tests/fixtures/migration-expectations.tsv -- what this build does with an older version's workspace is a decision, not a default."
+            exit 1
+          fi
+          if [ "$outcome" != "$expected" ]; then
+            echo "::error::${{ matrix.tag }}: expected '$expected', got '$outcome'. A change in this build moved what it does with an older workspace. Recorded reason for the expectation: ${why:-none given}. If the move is intended, update the outcome AND its reason in the same commit that changed the behaviour -- and be sure 'intended' is not 'ok' quietly becoming 'claims-lost'."
+            exit 1
+          fi
+
+  report:
+    needs: [plan, matrix]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarise
+        run: |
+          {
+            echo "### Migration matrix"
+            echo ""
+            echo "Result: ${{ needs.matrix.result }}"
+            echo ""
+            echo "Each cell is one released kan writing a workspace, and **this build** reading it."
+            echo "\`ok\` is a guarantee: kan owns this format, so an upgrade must not lose a log."
+            echo ""
+            echo "Per-tag rows (actual vs expected, with the recorded reason) are in the matrix jobs above."
+          } >> "$GITHUB_STEP_SUMMARY"
