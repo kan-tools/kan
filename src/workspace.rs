@@ -11,6 +11,8 @@
 
 use std::path::{Path, PathBuf};
 
+use atproto_dasl::Cid;
+
 use crate::{
     claim::{Anchor, AuthorId},
     fold::TrustBase,
@@ -41,6 +43,20 @@ pub struct Workspace {
     pub root: std::path::PathBuf,
     pub identity: Identity,
     pub log: Log,
+    /// Claims by **other** authors, read out of the tracked `.claims/` tree
+    /// and kept beside `log/` rather than inside it.
+    ///
+    /// `log/repo.car` stays *claims I authored*, which is what atproto repo
+    /// semantics require and what the eventual HostedRelay/AppView reads
+    /// from (`.design/durability-log-recovery.md` REQ-4). Mixing another
+    /// actor's records into it would make the local log unshippable as a
+    /// repo.
+    ///
+    /// **Disposable, like the index.** Everything here is reconstructible
+    /// from `.claims/`, so deleting `.kan/overlay/` costs nothing but the
+    /// re-parse. That is what makes refreshing it on open acceptable where
+    /// mutating `log/` on a read path would not be.
+    pub overlay: Log,
     pub index: Index,
     pub anchor: Anchor,
     pub git: GitSubstrate,
@@ -57,7 +73,14 @@ impl Workspace {
         let kan_dir = root.join(".kan");
         let identity = Identity::load_or_create(&kan_dir.join("identity"))?;
         let mut log = Log::open_or_create(&kan_dir.join("log"), &identity).await?;
+        let mut overlay = Log::open_or_create(&kan_dir.join("overlay"), &identity).await?;
         let mut index = Index::open(&kan_dir.join("index.sqlite"))?;
+
+        // REQ-1: a published tree is actually consumed. `GitTree::read_all`
+        // already returned byte-complete, signature-verified records and had
+        // no caller anywhere outside its own tests (#97) — this is that
+        // caller.
+        ingest_published(&root, &identity, &mut overlay).await?;
 
         // Correctness-first (CLAUDE.md house rules), with one cheap,
         // provably-safe skip (issue #26, `.design/v0.4-milestone.md`
@@ -72,9 +95,10 @@ impl Workspace {
         // unconditional full rebuild; incremental *indexing* (partial
         // updates rather than skip-or-full-rebuild) stays a later
         // optimization, deliberately not what this is.
-        let current_root = log.current_root();
+        let current_root = index_fingerprint(log.current_root(), overlay.current_root());
         if current_root != index.built_from_root()? {
-            let claims = log.iter_all().await?;
+            let mut claims = log.iter_all().await?;
+            claims.extend(overlay.iter_all().await?);
             index.rebuild(&claims, current_root.as_ref())?;
         }
 
@@ -84,6 +108,7 @@ impl Workspace {
             root,
             identity,
             log,
+            overlay,
             index,
             anchor,
             git,
@@ -187,6 +212,100 @@ impl Workspace {
         }
         Ok(TrustBase::peer_contested(weights))
     }
+}
+
+/// The value the index records as "what I was built from", now that it is
+/// built from two stores rather than one.
+///
+/// With no overlay this is the log's own root **unchanged**, so an index
+/// built by an earlier version stays valid and upgrading does not force a
+/// spurious full rebuild. Once an overlay exists, both roots are hashed
+/// together, so a change in either invalidates the index — which is the
+/// property the original skip depended on: not "probably fresh", provably
+/// fresh (`.design/v0.4-milestone.md` REQ-5, issue #26).
+fn index_fingerprint(log_root: Option<Cid>, overlay_root: Option<Cid>) -> Option<Cid> {
+    match (log_root, overlay_root) {
+        (log, None) => log,
+        (log, Some(overlay)) => {
+            let mut bytes = Vec::new();
+            if let Some(log) = &log {
+                bytes.extend_from_slice(&log.to_bytes());
+            }
+            bytes.extend_from_slice(&overlay.to_bytes());
+            Some(Cid::from(atproto_repo::compute_cid(&bytes)))
+        }
+    }
+}
+
+/// Read the tracked `.claims/` tree and insert every **foreign-authored**
+/// record into the overlay.
+///
+/// Three things this deliberately does not do.
+///
+/// **It does not touch `log/`.** Records authored by this identity are
+/// skipped entirely: they are already in the log if they were written here,
+/// and pulling them back out of `.claims/` is *restore*, a separate operation
+/// with its own identity check (`.design/durability-log-recovery.md`
+/// REQ-2/REQ-3, deferred to v0.9 with the `kan restore` command).
+///
+/// **It does not take the write lock unless something is new.** Membership is
+/// checked against the already-open overlay first, so the overwhelmingly
+/// common case — nothing published since last time — costs one directory read
+/// and no lock at all. `Workspace::open` runs on every single CLI invocation,
+/// and a lock acquisition per command would be a real regression (day#123
+/// measured `Workspace::open` as already the dominant per-call cost).
+///
+/// **It does not fail the workspace on a bad record.** An unverifiable or
+/// malformed record in `.claims/` warns on stderr and is skipped, because
+/// `.claims/` is a *tracked* directory that anyone can hand-edit or that a
+/// bad merge can mangle — and a repo whose every `kan` command aborts because
+/// a teammate's merge dropped a line is worse than one that says so and keeps
+/// working. The record is still refused, which is the part that matters:
+/// nothing unverifiable ever enters a view.
+async fn ingest_published(
+    root: &Path,
+    identity: &Identity,
+    overlay: &mut Log,
+) -> Result<(), Error> {
+    let claims_dir = root.join(crate::transport::git_tree::CLAIMS_DIR);
+    if !claims_dir.exists() {
+        return Ok(());
+    }
+
+    let tree = crate::transport::git_tree::GitTree::new_reader(root);
+    let mine = identity.did();
+    let mut pending = Vec::new();
+    for record in tree.read_all_with_rev() {
+        match record {
+            Ok((cid, claim, rev)) => {
+                if claim.content.author.did == mine {
+                    continue;
+                }
+                if overlay.contains(&cid).await? {
+                    continue;
+                }
+                pending.push(crate::store::log::StoredClaim {
+                    claim,
+                    // A record published before v0.7.0-beta.1 carries no
+                    // `rev`. Falling back to the content CID keeps ordering
+                    // *deterministic* across clones — every reader derives
+                    // the same value from the same bytes — which a locally
+                    // generated TID would not. It orders such claims apart
+                    // from timed ones rather than pretending to a time
+                    // nobody recorded.
+                    rev: rev.unwrap_or_else(|| cid.to_string()),
+                });
+            }
+            Err(e) => eprintln!("warning: skipping a published record: {e}"),
+        }
+    }
+
+    for stored in pending {
+        if let Err(e) = overlay.ingest(stored, identity).await {
+            eprintln!("warning: could not ingest a published record: {e}");
+        }
+    }
+    Ok(())
 }
 
 pub fn cwd() -> Result<PathBuf, Error> {

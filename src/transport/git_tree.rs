@@ -35,6 +35,10 @@ use crate::{
     store::log::Log,
 };
 
+/// One record read out of the tree: its content CID, the claim, and the
+/// published `rev` when the record carries one.
+pub type ReadRecord = Result<(Cid, Claim, Option<String>), Error>;
+
 /// Directory holding published claims, tracked in git — deliberately *not*
 /// under `.kan/`, which ADR-3 keeps gitignored in full. The two never
 /// overlap: `.kan/` is this author's private store, `.claims/` is the shared
@@ -747,14 +751,35 @@ pub struct Written {
 /// reads them back; staging, committing, and merging stay the user's, which
 /// keeps kan git's sibling rather than its driver.
 pub struct GitTree {
-    log: Log,
+    /// `None` for a reader built by [`GitTree::new_reader`].
+    log: Option<Log>,
     root: PathBuf,
 }
 
 impl GitTree {
     pub fn new(log: Log, root: impl Into<PathBuf>) -> Self {
         Self {
-            log,
+            log: Some(log),
+            root: root.into(),
+        }
+    }
+
+    /// A `GitTree` for reading only, with no log behind it.
+    ///
+    /// `Transport::publish` needs a `Log` to append to first; the read half
+    /// (`read_all`, `read_all_with_rev`) touches nothing but the tree, and
+    /// `Workspace::open` has no log to lend it at the point it needs to read
+    /// — the overlay it is filling *is* the destination. Rather than
+    /// contrive one, this constructs the reader alone.
+    ///
+    /// `publish` on a reader panics rather than silently writing to a log
+    /// that was never supplied. Nothing constructs one and then publishes;
+    /// the type-level version of this (splitting the trait in two) is a
+    /// bigger change than the reader wiring warrants, and is worth doing
+    /// when `HostedRelay` gives a second implementation to design against.
+    pub fn new_reader(root: impl Into<PathBuf>) -> Self {
+        Self {
+            log: None,
             root: root.into(),
         }
     }
@@ -767,7 +792,25 @@ impl GitTree {
     /// `Err` in place rather than being skipped: silently dropping a claim
     /// that fails verification would hide exactly the tampering the
     /// verification exists to catch.
+    /// [`Self::read_all`], keeping each record's published `rev`.
+    ///
+    /// The reader needs it and the plain `read_all` drops it: a `StoredClaim`
+    /// carries the log-revision TID that orders the fold, so ingesting
+    /// without it would reorder another actor's claims relative to how they
+    /// were written. Records published before v0.7.0-beta.1 carry none —
+    /// `Option`, because that is a gap in old data, not a failure.
+    pub fn read_all_with_rev(&self) -> Vec<ReadRecord> {
+        self.read_records()
+    }
+
     pub fn read_all(&self) -> Vec<Result<(Cid, Claim), Error>> {
+        self.read_records()
+            .into_iter()
+            .map(|r| r.map(|(cid, claim, _)| (cid, claim)))
+            .collect()
+    }
+
+    fn read_records(&self) -> Vec<ReadRecord> {
         let dir = self.claims_dir();
         let Ok(entries) = std::fs::read_dir(&dir) else {
             return Vec::new();
@@ -808,12 +851,12 @@ impl GitTree {
                     let legacy_ok = actual.is_some_and(|a| file_is_uniform_legacy(&records, a));
 
                     for record in records {
-                        let parsed = from_record(&shown, record);
+                        let parsed = from_record_with_rev(&shown, record);
                         // REQ-13's second half: the filename is authenticated
                         // against the records inside it. Without it the name
                         // was decorative — a `.claims/x.md` full of subject-`y`
                         // claims folded as `y` and nothing said so.
-                        if let Ok((_, claim)) = &parsed {
+                        if let Ok((_, claim, _)) = &parsed {
                             let current = file_name(&claim.content.subject);
                             if let Some(actual) = actual {
                                 let accepted = actual == current
@@ -852,10 +895,13 @@ impl Transport for GitTree {
         identity: &Identity,
     ) -> Result<Cid, super::Error> {
         let subject = content.subject.clone();
-        let cid = self.log.append(content, identity).await?;
-
-        let live: Vec<(Claim, Option<String>)> = self
+        let log = self
             .log
+            .as_mut()
+            .expect("publish on a GitTree reader -- new_reader has no log to append to");
+        let cid = log.append(content, identity).await?;
+
+        let live: Vec<(Claim, Option<String>)> = log
             .iter_all()
             .await?
             .into_iter()

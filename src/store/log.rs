@@ -723,6 +723,111 @@ impl Log {
         Ok(claim_cid)
     }
 
+    /// Whether this log already holds a claim with this content CID.
+    ///
+    /// Lock-free on purpose: it reads the in-memory MST this `Log` opened
+    /// with. `ingest` re-checks under the lock, so this is a cheap filter
+    /// that lets the common "nothing new to ingest" path avoid taking a
+    /// write lock at all, not a substitute for the authoritative check.
+    pub async fn contains(&self, claim_cid: &Cid) -> Result<bool, Error> {
+        let key = RecordPath::new(COLLECTION, claim_cid.to_string()).to_mst_key();
+        Ok(self.mst.get(&key).await?.is_some())
+    }
+
+    /// Insert a fully-formed `StoredClaim` **verbatim** — same content, same
+    /// CID, same signature, no re-signing.
+    ///
+    /// This is the primitive `append` structurally cannot be. `append_locked`
+    /// signs with the *local* identity, so pushing a restored or foreign
+    /// claim through it reproduces the content CID and replaces the
+    /// signature, which `get_stored`'s own-author verification then rejects.
+    /// A round-trip that silently invalidates what it stored is worse than a
+    /// missing feature.
+    ///
+    /// The record's signature is verified against **its own**
+    /// `content.author.did` before anything is written, so an unverifiable
+    /// record is refused at the door rather than stored and discovered later.
+    /// The *commit* is still signed by the local identity: a commit attests
+    /// to the repo's state, which this process genuinely is asserting, while
+    /// each record keeps its own author's signature. Those are different
+    /// claims and conflating them is what made `append` unusable here.
+    ///
+    /// Returns `Ok(None)` when the record is already present — ingest is
+    /// idempotent, because it runs on every read of a published tree and
+    /// must not rewrite the log each time.
+    ///
+    /// Destination is the caller's decision, keyed on the record's signed
+    /// author: same author into `log/repo.car` (restore), foreign author
+    /// into the overlay (`Workspace::open`). `log/repo.car` stays *claims I
+    /// authored*, which is what atproto repo semantics require.
+    /// (`.design/durability-log-recovery.md` REQ-1/REQ-4.)
+    pub async fn ingest(
+        &mut self,
+        stored: StoredClaim,
+        identity: &Identity,
+    ) -> Result<Option<Cid>, Error> {
+        let guard = self.lock_for_write().await?;
+        let result = self.ingest_locked(stored, identity).await;
+        guard.release();
+        result
+    }
+
+    async fn ingest_locked(
+        &mut self,
+        stored: StoredClaim,
+        identity: &Identity,
+    ) -> Result<Option<Cid>, Error> {
+        self.reload_if_stale().await?;
+        if self.needs_repair {
+            self.rewrite_car().await?;
+            self.needs_repair = false;
+        }
+
+        let claim_cid = content_cid(&stored.claim.content)?;
+        if !crate::sign::verify(
+            &stored.claim.content.author.did,
+            &claim_cid.to_bytes(),
+            &stored.claim.sig,
+        ) {
+            return Err(Error::BadSignature);
+        }
+
+        let key = RecordPath::new(COLLECTION, claim_cid.to_string()).to_mst_key();
+        if self.mst.get(&key).await?.is_some() {
+            return Ok(None);
+        }
+
+        // Keep the TID watermark ahead of anything ingested, so a later
+        // local append cannot collide with or sort before a record that
+        // arrived from elsewhere.
+        if let Some(micros) = stored.claim.content.recorded_at {
+            self.last_recorded_at = self.last_recorded_at.max(micros);
+        }
+
+        let record_bytes = atproto_dasl::to_vec(&stored).map_err(|e| {
+            Error::Car(atproto_dasl::errors::CarError::Io(std::io::Error::other(e)))
+        })?;
+        let record_cid = Cid::from(compute_cid(&record_bytes));
+        self.mst
+            .storage_mut()
+            .put(&record_cid, record_bytes)
+            .await?;
+        self.mst.insert(&key, record_cid).await?;
+
+        let unsigned = Commit::new_unsigned(
+            self.did.clone(),
+            Cid::from(mst_root(&self.mst)?),
+            self.tid.next(),
+            self.commit_cid.clone(),
+        );
+        let commit_sig = identity.sign(&unsigned.to_bytes()?)?;
+        let commit = unsigned.sign(commit_sig);
+        let new_commit_cid = write_commit(&mut self.mst, &commit).await?;
+        self.commit_cid = Some(new_commit_cid.clone());
+        self.persist_new_blocks(&new_commit_cid).await?;
+        Ok(Some(claim_cid))
+    }
+
     /// Fetch a claim by its `content_cid`, verifying its signature against
     /// its own author before returning it.
     pub async fn get(&mut self, claim_cid: Cid) -> Result<Option<Claim>, Error> {
