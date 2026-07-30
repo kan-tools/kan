@@ -53,6 +53,47 @@ impl FoldedView {
     }
 }
 
+/// Live claims dropped **solely** because this trust base does not trust
+/// their author, counted per subject as the claim itself names it.
+///
+/// **Why a count, and why separate from `fold`.** `fold` is the pure
+/// reduction and stays so; this is a second pure pass over the same inputs,
+/// so nothing about the fold's determinism changes. A count is deliberately
+/// all a caller gets: handing back the excluded *content* would ask kan to
+/// defeat the trust semantics it was just told to apply
+/// (`.design/kan-read-contract.md` REQ-6).
+///
+/// **Why it is keyed on the claim's own subject rather than a merge class.**
+/// A subject whose every claim is untrusted forms no class at all — under
+/// `Solo`, `merge_classes` filters by trust too — so there is no
+/// `SubjectView` to hang the count on, and that is exactly the case where a
+/// consumer most needs to know. `1 live claim(s)` and `no such subject` are
+/// both complete-looking answers to a partial read; this is what
+/// distinguishes *filtered* from *absent*.
+///
+/// Retracted and rejected claims are not counted: they are excluded for
+/// their own reasons, and reporting them here would attribute a retraction
+/// to the trust base.
+pub fn excluded_by_trust(
+    claims: &[(Cid, StoredClaim)],
+    trust: &TrustBase,
+) -> std::collections::HashMap<SubjectRef, usize> {
+    let retracted = identity::excluded_by_retraction(claims);
+    let rejected = identity::excluded_by_rejection(claims, trust);
+
+    let mut out = std::collections::HashMap::new();
+    for (cid, stored) in claims {
+        if retracted.contains(cid) || rejected.contains(cid) {
+            continue;
+        }
+        if trust.trusts(&stored.claim.content.author) {
+            continue;
+        }
+        *out.entry(stored.claim.content.subject.clone()).or_insert(0) += 1;
+    }
+    out
+}
+
 pub fn fold(claims: Vec<(Cid, StoredClaim)>, trust: &TrustBase) -> FoldedView {
     let excluded = identity::excluded_by_retraction(&claims);
     let rejected = identity::excluded_by_rejection(&claims, trust);
