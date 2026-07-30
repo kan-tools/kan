@@ -3,7 +3,7 @@
 //! wrappers around exactly these functions; neither surface has logic the
 //! other doesn't share).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use atproto_dasl::Cid;
 
@@ -690,6 +690,126 @@ pub fn durability_of(ws: &Workspace, class: &SubjectView) -> Durability {
     } else {
         Durability::Stale
     }
+}
+
+/// `kan identity adopt --key <path>` — point this workspace at a signing key
+/// it already has claims from (v0.9 REQ-8, issue #90).
+///
+/// **The supported way back from a lost identity.** #90's shape is a
+/// workspace whose keychain entry became unreachable — a moved checkout, a
+/// rebuilt binary, an upgrade — after which kan either refuses to open or
+/// (before the guard existed) minted a new DID and hid the whole log. The
+/// documented workaround was editing `.kan/identity-id` from a stack trace,
+/// which is not a recovery path so much as an invitation to make it worse.
+///
+/// **It verifies before it switches, and that is the whole difference between
+/// this and hand-editing.** A key that authored none of the log's claims is
+/// refused, with the DIDs the log *does* contain named — because the one
+/// thing an operator in this situation must not do is adopt the wrong key and
+/// conclude their claims are gone. Adopting into an empty log is allowed:
+/// there is nothing to contradict.
+pub fn adopt_identity(ws: &Workspace, key_path: &Path) -> Result<String, Error> {
+    let candidate = crate::sign::Identity::load_existing(key_path).map_err(|e| {
+        Error::Usage(format!(
+            "could not read a signing key from {}: {e}\n\nAdopt names a file that already \
+             holds a key; it never creates one. To start a new identity, let kan create it, \
+             or restore from a recovery phrase.",
+            key_path.display()
+        ))
+    })?;
+    let candidate_did = candidate.did();
+
+    let claims = ws.index.all_stored_claims()?;
+    let mut authors: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut authored = 0usize;
+    for (_, stored) in &claims {
+        let did = &stored.claim.content.author.did;
+        authors.insert(did.clone());
+        if did == &candidate_did {
+            authored += 1;
+        }
+    }
+
+    if authored == 0 && !authors.is_empty() {
+        let mut listed = String::new();
+        for did in &authors {
+            listed.push_str(&format!("  {did}\n"));
+        }
+        return Err(Error::Usage(format!(
+            "refusing to adopt {candidate_did}: it authored none of the {} claim(s) in this \
+             log.\n\nthe log's claims are authored by:\n{listed}\nNothing has been changed. \
+             Adopting a key that never wrote here would leave every claim invisible under it, \
+             which is the state you are presumably trying to get *out* of.\n\nIf one of the \
+             DIDs above is the key you meant, point --key at the file holding it. If you hold \
+             a recovery phrase instead, `kan identity restore` will tell you which DID it \
+             belongs to.",
+            claims.len()
+        )));
+    }
+
+    let kan_dir = ws.root.join(".kan");
+    std::fs::create_dir_all(&kan_dir)
+        .map_err(|e| Error::Usage(format!("could not create {}: {e}", kan_dir.display())))?;
+
+    // A seed-rooted workspace derives its identity from the seed *before*
+    // ever looking at a key file, so writing the adopted key without
+    // retiring the seed would leave adopt reporting success and changing
+    // nothing -- the single worst outcome for a recovery command, and one
+    // found only by testing it rather than by reading it.
+    let retired = retire_seed(&kan_dir)?;
+
+    candidate
+        .save(&kan_dir.join("identity"))
+        .map_err(|e| Error::Usage(format!("could not write the adopted key: {e}")))?;
+
+    let scope = if authors.is_empty() {
+        "this log is empty, so there was nothing to check it against".to_string()
+    } else {
+        format!(
+            "it authored {authored} of the {} claim(s) here",
+            claims.len()
+        )
+    };
+    Ok(format!(
+        "adopted {candidate_did}\n{scope}.\n{retired}\nThis workspace now signs and reads as that \
+         identity. Its claims should be visible again -- check with `kan status`.\n"
+    ))
+}
+
+/// Stop a seed from rooting this workspace's identity, without destroying it.
+///
+/// Moved aside, never deleted: it is a root secret, and the operator running
+/// `adopt` has already lost track of one identity. A keychain-held seed is
+/// left in the keychain and merely unreferenced, which is the most this can
+/// do without destroying something it cannot put back.
+fn retire_seed(kan_dir: &Path) -> Result<String, Error> {
+    let mut notes = String::new();
+    let seed = kan_dir.join(crate::sign::SEED_FILE);
+    if seed.exists() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let moved = kan_dir.join(format!("seed.replaced-{stamp}"));
+        std::fs::rename(&seed, &moved)
+            .map_err(|e| Error::Usage(format!("could not move the previous seed aside: {e}")))?;
+        notes.push_str(&format!(
+            "\nThis workspace was seed-rooted. That seed no longer decides its identity and \
+             has been moved to {} rather than deleted.\n",
+            moved.display()
+        ));
+    }
+    let seed_id = kan_dir.join(crate::sign::SEED_ID_FILE);
+    if seed_id.exists() {
+        std::fs::remove_file(&seed_id)
+            .map_err(|e| Error::Usage(format!("could not clear the seed reference: {e}")))?;
+        notes.push_str(
+            "\nThis workspace's seed was held in the OS keychain. The reference to it has \
+             been removed so it no longer roots this identity; the keychain entry itself is \
+             left alone.\n",
+        );
+    }
+    Ok(notes)
 }
 
 /// `kan restore` — rebuild this identity's log from the tracked `.claims/`

@@ -353,6 +353,18 @@ pub enum IdentityAction {
         #[arg(hide = true, num_args = 0..)]
         phrase: Vec<String>,
     },
+    /// Point this workspace at a signing key it already has claims from.
+    ///
+    /// The supported way back from a lost or unreachable identity (#90):
+    /// a moved checkout, a rebuilt binary, an upgrade that could no longer
+    /// read the keychain. Verifies the key authored claims in this log
+    /// before switching, and refuses -- naming the DIDs the log does
+    /// contain -- if it did not.
+    Adopt {
+        /// A file holding the signing key to adopt. Must already exist.
+        #[arg(long)]
+        key: String,
+    },
     /// Declare additional signing identities ("roles") for this workspace —
     /// a director and a prover signing separately, say.
     Role {
@@ -912,6 +924,12 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                         );
                     }
                 }
+            }
+            IdentityAction::Adopt { key } => {
+                print!(
+                    "{}",
+                    actions::adopt_identity(&ws, &std::path::PathBuf::from(key))?
+                )
             }
             IdentityAction::Role { action } => match action {
                 RoleAction::Add { name, key } => {

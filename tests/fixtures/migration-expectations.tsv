@@ -68,10 +68,18 @@ v0.8.0-beta.1	ok	Reader, trust surface, multi-role. Adds .kan/overlay and .kan/r
 #
 # The cell above does not set KAN_AGENT, so it does not exercise this. That is
 # a deliberate limit rather than an oversight: reproducing it needs a second
-# axis (with/without the variable) and the honest fix is `kan identity adopt`
-# (v0.9 REQ-8), which is what gives such a workspace a supported way back.
-# Recorded here so the gap is visible in the table rather than discovered by
-# someone whose claims vanished.
+# axis (with/without the variable). Recorded here so the gap is visible in the
+# table rather than discovered by someone whose claims vanished.
+#
+# CORRECTION (2026-07-30, while building v0.9 REQ-8): an earlier version of
+# this note said `kan identity adopt` was the fix. It is not, and the reason
+# is worth keeping. Adopt repoints a workspace at a different *key*; the
+# KAN_AGENT case has the RIGHT key -- the DID matches exactly -- and differs
+# only in AuthorId.agent. So adopt cannot help, and neither can `--trust`,
+# since a trust base names AuthorIds and agent is part of one. The real fix is
+# read-side: matching an author by DID irrespective of agent, which no surface
+# does today. Filed as its own issue rather than smuggled into a recovery
+# command it does not fit.
 #
 # Since v0.8 the failure is at least LOUD: excluded_by_trust reports the
 # hidden claims instead of the read looking empty (ADR-57).
