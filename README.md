@@ -81,6 +81,41 @@ a single root of trust with enclave-held keys, not a nicer prompt.
 
 CI and any non-interactive caller should always set `KAN_IDENTITY_FILE`.
 
+## Several roles in one repo
+
+A workspace can sign as more than one identity — a director and a prover in
+an agent loop, say, so each one's claims are attributable to the role that
+made them. It has to be declared, because a second identity appearing by
+accident is the failure kan guards hardest against: the claims already in the
+log are signed by the first identity, and the default fold trusts one author,
+so an unnoticed new key makes an entire log vanish from every read at exit 0.
+
+Declare a role, then write as it:
+
+```sh
+kan identity role add director            # mints .kan/roles.d/director, registers it
+KAN_IDENTITY_FILE=.kan/roles.d/director kan observe finding "the verdict"
+```
+
+**Reading is the half that surprises people.** The default view is `Solo` —
+only the identity you are running as — so a role reads back only its own
+claims. Widen it:
+
+```sh
+kan show finding --trust roles            # every declared role, plus the active one
+kan show finding --trust did:key:zA --trust did:key:zB=0.5   # explicit, weighted
+```
+
+Any read that leaves claims out now says so, on both the human output and
+`--json` (`excluded_by_trust`), so a partial view can no longer pass for a
+complete one. Whether `Solo` should stay the *default* once a workspace has
+several roles is open — [#121](https://github.com/kan-tools/kan/issues/121).
+
+Pointing `KAN_IDENTITY_FILE` at a *new* key file without declaring it is
+still refused whenever the log is non-empty. That refusal is the #90 guard,
+and declaring a role is how you tell it apart from the accident it exists to
+stop.
+
 ## Name
 
 `kan` is the Kan extension: the universal construction that builds the best global

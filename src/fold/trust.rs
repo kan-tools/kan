@@ -41,6 +41,11 @@ pub enum TrustBase {
 /// itself plus its peers.
 pub const SELF_ALIAS: &str = "me";
 
+/// The literal expanding to every identity this workspace declared, plus the
+/// active one — resolved by `Workspace`, which is the only layer that knows
+/// what a workspace has on disk. `fold` never reads a file.
+pub const ROLES_ALIAS: &str = "roles";
+
 /// One parsed `--trust` argument: who, and how much.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrustEntry {
@@ -58,9 +63,14 @@ pub enum SpecError {
     WeightOutOfRange { spec: String, weight: f64 },
     #[error(
         "`{spec}` does not name an author -- expected `did:key:...`, \
-         `did:key:...=<weight>`, or `me`"
+         `did:key:...=<weight>`, `me`, or `roles`"
     )]
     NotAnAuthor { spec: String },
+    #[error(
+        "`{spec}`: `roles` expands to every declared role and takes no weight. \
+         Name the DIDs individually to weight them differently."
+    )]
+    RolesTakesNoWeight { spec: String },
 }
 
 /// Parses `did:key:z...`, `did:key:z...=0.5`, `me`, or `me=0.5`. An omitted
@@ -92,6 +102,14 @@ pub fn parse_entry(spec: &str) -> Result<TrustEntry, SpecError> {
         None => (spec.trim(), 1.0),
     };
 
+    // `roles` is resolved by `Workspace` before it ever reaches here, so
+    // seeing it at this point means it arrived with a weight (`roles=0.5`),
+    // which has no meaning: the alias expands to a set, not one author.
+    if did == ROLES_ALIAS {
+        return Err(SpecError::RolesTakesNoWeight {
+            spec: spec.to_string(),
+        });
+    }
     if did != SELF_ALIAS && !did.starts_with("did:") {
         return Err(SpecError::NotAnAuthor {
             spec: spec.to_string(),

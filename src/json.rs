@@ -234,6 +234,24 @@ pub struct ContextJson {
     pub excluded_by_trust: usize,
 }
 
+/// This workspace's declared signing identities. The active one is listed
+/// separately rather than folded into `roles`, because "who am I writing as"
+/// and "who has this workspace declared" are different questions and a
+/// consumer picking a role to write as needs both.
+#[derive(Debug, Serialize)]
+pub struct RolesJson {
+    pub v: u32,
+    pub active: String,
+    pub roles: Vec<RoleJson>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RoleJson {
+    pub name: String,
+    pub did: String,
+    pub key_path: String,
+}
+
 /// A `SubjectRef` as a plain name, matching what the read verbs accept back.
 pub fn subject_name(subject: &SubjectRef) -> String {
     match subject {

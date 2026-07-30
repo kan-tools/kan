@@ -333,6 +333,40 @@ pub enum IdentityAction {
         #[arg(hide = true, num_args = 0..)]
         phrase: Vec<String>,
     },
+    /// Declare additional signing identities ("roles") for this workspace —
+    /// a director and a prover signing separately, say.
+    Role {
+        #[command(subcommand)]
+        action: RoleAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum RoleAction {
+    /// Mint a role key deliberately and register it.
+    ///
+    /// This is the explicit opt-in the `WouldMintSecondIdentity` guard is
+    /// waiting for. Without it, pointing `KAN_IDENTITY_FILE` at a new key
+    /// file against a non-empty log is refused — the guard cannot tell a
+    /// deliberate role from the accidental identity-mint that silently hid
+    /// a whole log. Declaring the role is how you say which one this is.
+    ///
+    /// Afterwards, run kan with `KAN_IDENTITY_FILE` set to the role's key
+    /// to write as that role, and read with `--trust roles` to see every
+    /// role's claims rather than only the active one's.
+    Add {
+        /// A short name for the role, e.g. `director`.
+        name: String,
+        /// Where to keep the role's key file. Defaults to
+        /// `.kan/roles.d/<name>`.
+        #[arg(long)]
+        key: Option<String>,
+    },
+    /// List this workspace's declared roles, with their DIDs.
+    List {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -837,6 +871,40 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                     );
                 }
             }
+            IdentityAction::Role { action } => match action {
+                RoleAction::Add { name, key } => {
+                    let kan_dir = ws.root.join(".kan");
+                    let key_path = match key {
+                        Some(k) => std::path::PathBuf::from(k),
+                        None => kan_dir.join("roles.d").join(&name),
+                    };
+                    let role = crate::sign::add_role(&kan_dir, &name, &key_path)?;
+                    println!("declared role `{}`: {}", role.name, role.did);
+                    println!("key: {}", role.key_path.display());
+                    println!(
+                        "\nWrite as this role:\n    KAN_IDENTITY_FILE={} kan observe <subject> \
+                         <text>\n\nRead every role's claims (the default Solo view shows only \
+                         the active identity's):\n    kan show <subject> --trust roles",
+                        role.key_path.display()
+                    );
+                }
+                RoleAction::List { json } => {
+                    let roles = crate::sign::list_roles(&ws.root.join(".kan"))?;
+                    if json {
+                        print!("{}", actions::roles_json(&ws, &roles)?);
+                    } else if roles.is_empty() {
+                        println!(
+                            "no declared roles. This workspace signs as one identity: {}",
+                            ws.identity.did()
+                        );
+                    } else {
+                        println!("active: {}", ws.identity.did());
+                        for role in roles {
+                            println!("{}\t{}\t{}", role.name, role.did, role.key_path.display());
+                        }
+                    }
+                }
+            },
         },
         Command::Mcp { .. } => unreachable!("handled above"),
     }
