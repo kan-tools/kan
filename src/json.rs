@@ -37,6 +37,36 @@ use crate::{
 
 /// Bumped only for a change a consumer must react to. Additive fields do not
 /// bump it — that is the point of the additive-only rule.
+///
+/// # The contract, for a consumer pinning to it
+///
+/// Every payload carries `v`. Check it, and refuse a value you do not
+/// understand rather than parsing hopefully — that refusal is the whole
+/// reason this field exists.
+///
+/// Within one version:
+///
+/// - **Field names are frozen.** A name present in this version will be
+///   present, spelled the same, in every later build reporting the same
+///   `v`. `tests/json_contract.rs` pins them; a rename or removal fails
+///   there, which is the intended way to discover you needed a bump.
+/// - **New fields may appear at any time.** A consumer must ignore names it
+///   does not know rather than treating them as an error — otherwise kan
+///   cannot add anything without breaking you, and the additive rule buys
+///   nobody anything.
+/// - **`Option` fields are omitted, never `null`.** Absence is the encoding
+///   of absence.
+/// - **An unrecognized claim kind still serializes**, as `kind: "Unknown"`
+///   with no `text`. It is a claim your build cannot interpret, not a
+///   parse failure and not a claim that does not exist — dropping it would
+///   make a newer actor's claims vanish from an older actor's view of a
+///   shared tree (SPEC §7.1, ADR-44).
+/// - **A count of zero is emitted, not omitted** (`excluded_by_trust`).
+///   "Nothing was excluded" and "this kan is too old to tell you" must not
+///   look alike.
+///
+/// What is *not* promised: the rendered (non-`--json`) output, which is for
+/// people and free to keep improving. Anything programmatic reads this.
 pub const SCHEMA_VERSION: u32 = 1;
 
 /// One claim, flattened for a reader that is not going to verify it.
