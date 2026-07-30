@@ -177,6 +177,7 @@ impl Identity {
             }
         };
 
+        let _warn = SlowKeychainWarning::start("reading this repo's signing key");
         match entry.get_secret() {
             Ok(bytes) => {
                 let identity = Self {
@@ -228,6 +229,7 @@ impl Identity {
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::generate(),
                     Err(e) => return Err(e.into()),
                 };
+                let _warn = SlowKeychainWarning::start("storing this repo's signing key");
                 match entry.set_secret(&identity.keypair.export()) {
                     Ok(()) => {
                         // Encrypted at rest, by default and in fact.
@@ -795,6 +797,106 @@ const SEED_KEYCHAIN_SERVICE: &str = "dev.kan.seed";
 /// CI is worse than one that fails.
 pub const NO_KEYCHAIN_ENV: &str = "KAN_NO_KEYCHAIN";
 
+/// How long a keychain call may block before kan says what it is waiting on.
+///
+/// Short enough that a person notices it before they start wondering, long
+/// enough that the overwhelmingly common case -- an entry the keychain hands
+/// over immediately -- prints nothing at all.
+const KEYCHAIN_SLOW_AFTER: std::time::Duration = std::time::Duration::from_millis(1500);
+
+/// Prints, once, if the keychain call it wraps has not returned yet.
+///
+/// **#90's fourth ask, and the friction that cost the most time building
+/// v0.9.** A macOS keychain entry is authorised to *the binary that created
+/// it*, so any rebuilt or upgraded kan blocks on an authorization prompt that
+/// never arrives in CI, a container, an MCP server, or `day` shelling out.
+/// The symptom is a command that simply never returns: no output, no
+/// indication anything is being waited on. The module doc already calls that
+/// "a hang, not a failure ... the worst shape", and #90 points out the same
+/// is true for *callers* of kan, which cannot tell it from a slow fold.
+///
+/// This does not fix the hang -- that is #30/#69's per-agent identity work.
+/// It makes the hang *legible*, which is the difference between a minute of
+/// confusion and an afternoon of it.
+pub struct SlowKeychainWarning {
+    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl SlowKeychainWarning {
+    /// Whether the watchdog would fire for an operation taking `took`,
+    /// against a threshold of `threshold`.
+    ///
+    /// Exposed for `tests/keychain_visibility.rs`, which has to check both
+    /// directions -- that a slow call warns *and* that a prompt one stays
+    /// silent -- without needing a genuinely wedged keychain, which is not
+    /// something Linux CI can produce and not something a developer should
+    /// have to arrange.
+    pub fn fired_after(threshold: std::time::Duration, took: std::time::Duration) -> bool {
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = done.clone();
+        let fired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let fired_flag = fired.clone();
+        let handle = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + threshold;
+            while std::time::Instant::now() < deadline {
+                if flag.load(std::sync::atomic::Ordering::Relaxed) {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            if !flag.load(std::sync::atomic::Ordering::Relaxed) {
+                fired_flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        });
+        std::thread::sleep(took);
+        done.store(true, std::sync::atomic::Ordering::Relaxed);
+        let _ = handle.join();
+        fired.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn start(what: &'static str) -> Self {
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = done.clone();
+        // Detached on purpose: if the call returns promptly the thread wakes,
+        // sees the flag, and exits without printing. If the process exits
+        // first, an unjoined sleeping thread costs nothing.
+        std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + KEYCHAIN_SLOW_AFTER;
+            while std::time::Instant::now() < deadline {
+                if flag.load(std::sync::atomic::Ordering::Relaxed) {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            if flag.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
+            eprintln!(
+                "kan: still waiting on the OS keychain ({what}).\n\
+                 \n\
+                 On macOS a keychain entry is authorised to the exact binary that created \
+                 it, so an upgraded or locally-rebuilt kan is treated as a different \
+                 program and the request waits for an authorization prompt -- which never \
+                 arrives in CI, a container, an MCP server, or a `day` subprocess.\n\
+                 \n\
+                 If a prompt is on screen, answer it. Otherwise interrupt and either:\n\
+                 - set KAN_IDENTITY_FILE to a dedicated key file (keychain never \
+                 consulted), or\n\
+                 - set KAN_NO_KEYCHAIN=1 to keep secrets in 0600 files under .kan/.\n\
+                 \n\
+                 Tracked as #96/#69; #30's per-agent identity work is the real fix."
+            );
+        });
+        Self { done }
+    }
+}
+
+impl Drop for SlowKeychainWarning {
+    fn drop(&mut self) {
+        self.done.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 fn keychain_disabled() -> bool {
     std::env::var_os(NO_KEYCHAIN_ENV).is_some()
 }
@@ -880,6 +982,7 @@ impl Seed {
                 detail: e.to_string(),
             }
         })?;
+        let _warn = SlowKeychainWarning::start("reading this repo's root seed");
         match entry.get_secret() {
             Ok(bytes) if bytes.len() == 32 => {
                 let mut seed = [0u8; 32];
@@ -916,11 +1019,13 @@ impl Seed {
         let seed = Self::generate();
         let account = fresh_account();
 
-        let stored = !keychain_disabled()
-            && keyring::Entry::new(SEED_KEYCHAIN_SERVICE, &account)
+        let stored = !keychain_disabled() && {
+            let _warn = SlowKeychainWarning::start("storing this repo's root seed");
+            keyring::Entry::new(SEED_KEYCHAIN_SERVICE, &account)
                 .ok()
                 .and_then(|entry| entry.set_secret(&seed.0).ok())
-                .is_some();
+                .is_some()
+        };
 
         if stored {
             std::fs::write(kan_dir.join(SEED_ID_FILE), &account)?;

@@ -85,6 +85,15 @@ repo you are *using*, prefer the keychain. Tracked as
 [#105](https://github.com/kan-tools/kan/issues/105) — the long-term answer is
 a single root of trust with enclave-held keys, not a nicer prompt.
 
+`KAN_NO_KEYCHAIN=1` is the other half of this: it makes kan behave as though
+no keychain exists, keeping secrets in `0600` files under `.kan/` without you
+having to name a specific key file. Use it if you simply don't want your keys
+in the keychain.
+
+If a keychain read does block, kan now says so on stderr after a second or
+two, naming both escape hatches — rather than looking like a slow command
+(#90).
+
 CI and any non-interactive caller should always set `KAN_IDENTITY_FILE`.
 
 ## Several roles in one repo
