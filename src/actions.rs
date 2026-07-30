@@ -643,6 +643,152 @@ fn live_claims_for(
         .unwrap_or_default()
 }
 
+/// `kan restore` — rebuild this identity's log from the tracked `.claims/`
+/// tree (`.design/durability-log-recovery.md` REQ-2/REQ-3, v0.9 REQ-1/REQ-2).
+///
+/// **The inverse of `publish`, using v0.8's primitive pointed the other way.**
+/// `Workspace::open` already ingests *foreign*-authored published records into
+/// the overlay (ADR-59); this ingests *my own* back into `log/repo.car`, which
+/// is where they belong and what a backup of `log/` alone must contain for
+/// #88's verified property to hold.
+///
+/// **It refuses rather than restoring nothing.** If no record in the tree is
+/// authored by this identity, the log is not rebuilt and nothing is written.
+/// That case is the whole reason REQ-3 exists: it is what a lost key looks
+/// like from the inside — you point restore at a tree full of your own past
+/// work, a freshly-minted identity reads it as *someone else's*, and a
+/// silently-empty restore would confirm the data is gone rather than reveal
+/// that the identity is wrong. #93's "identity recovery gates log recovery",
+/// enforced at the one place it bites.
+pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
+    let claims_dir = ws.root.join(crate::transport::git_tree::CLAIMS_DIR);
+    if !claims_dir.exists() {
+        return Err(Error::Usage(format!(
+            "no {} directory here, so there is nothing to restore from.\n\n\
+             `kan restore` rebuilds this repo's log from claims that were published into the \
+             tracked tree. If you expected published claims, check you are in the right repo \
+             and that the tree was committed.",
+            crate::transport::git_tree::CLAIMS_DIR
+        )));
+    }
+
+    let mine = ws.identity.did();
+    let tree = crate::transport::git_tree::GitTree::new_reader(&ws.root);
+    let mut restorable = Vec::new();
+    let mut foreign_authors: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut unreadable = Vec::new();
+
+    for record in tree.read_all_with_rev() {
+        match record {
+            Ok((cid, claim, rev)) => {
+                if claim.content.author.did == mine {
+                    restorable.push(crate::store::log::StoredClaim {
+                        claim,
+                        rev: rev.unwrap_or_else(|| cid.to_string()),
+                    });
+                } else {
+                    foreign_authors.insert(claim.content.author.did.clone());
+                }
+            }
+            // Reported, never skipped silently: a record that will not verify
+            // is exactly what a restore must not paper over.
+            Err(e) => unreadable.push(e.to_string()),
+        }
+    }
+
+    if restorable.is_empty() {
+        return Err(Error::Usage(restore_refusal(
+            &mine,
+            &foreign_authors,
+            &unreadable,
+        )));
+    }
+
+    let mut restored = 0usize;
+    let mut already = 0usize;
+    for stored in restorable {
+        match ws.log.ingest(stored, &ws.identity).await? {
+            Some(_) => restored += 1,
+            None => already += 1,
+        }
+    }
+
+    let mut out = format!(
+        "restored {restored} claim(s) into the log from {}\n",
+        crate::transport::git_tree::CLAIMS_DIR
+    );
+    if already > 0 {
+        out.push_str(&format!(
+            "{already} claim(s) were already in the log and were left alone.\n"
+        ));
+    }
+    if !foreign_authors.is_empty() {
+        out.push_str(&format!(
+            "\n{} other author(s) have claims in this tree. They are not restored into your \
+             log -- they are read from the overlay instead, so `log/repo.car` stays claims \
+             you authored. Read them with `kan show <subject> --trust <did>`.\n",
+            foreign_authors.len()
+        ));
+    }
+    if !unreadable.is_empty() {
+        out.push_str(&format!(
+            "\nwarning: {} record(s) in the tree could not be verified and were not \
+             restored:\n",
+            unreadable.len()
+        ));
+        for detail in &unreadable {
+            out.push_str(&format!("  {detail}\n"));
+        }
+    }
+    Ok(out)
+}
+
+/// The message REQ-3 requires: names the recovery phrase as the fix, and says
+/// what was actually found rather than only what was missing.
+fn restore_refusal(
+    mine: &str,
+    foreign_authors: &std::collections::BTreeSet<String>,
+    unreadable: &[String],
+) -> String {
+    let mut out = String::new();
+    if foreign_authors.is_empty() && unreadable.is_empty() {
+        out.push_str(
+            "there are no claims in the published tree, so there is nothing to restore.\n",
+        );
+        return out;
+    }
+
+    if !foreign_authors.is_empty() {
+        out.push_str(&format!(
+            "refusing to restore: nothing in the published tree was signed by this repo's \
+             identity.\n\nthis identity: {mine}\nclaims found, by author:\n"
+        ));
+        for did in foreign_authors {
+            out.push_str(&format!("  {did}\n"));
+        }
+        out.push_str(
+            "\nNothing has been written. If one of those is *you* on another machine or \
+             under a key this checkout has lost, restore the identity first and then restore \
+             the log:\n\n    kan identity restore\n\nThe recovery phrase reproduces the \
+             signing key, and the key is what makes those claims yours. Restoring the log \
+             under a different identity would leave every claim in it unreadable to you, \
+             which is the failure this refusal exists to prevent.\n\nIf those claims are \
+             genuinely another actor's, you do not need `kan restore` at all -- they are \
+             already read from the overlay. Try `kan show <subject> --trust <did>`.\n",
+        );
+    }
+    if !unreadable.is_empty() {
+        out.push_str(&format!(
+            "\nAlso, {} record(s) could not be verified:\n",
+            unreadable.len()
+        ));
+        for detail in unreadable {
+            out.push_str(&format!("  {detail}\n"));
+        }
+    }
+    out
+}
+
 /// `kan publish --all` — refresh every already-published subject's file.
 /// Republishes subjects that already carry a `Publication` claim; `kan
 /// publish <subject>` remains the act of deciding to share.

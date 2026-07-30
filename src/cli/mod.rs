@@ -273,6 +273,19 @@ pub enum Command {
         all: bool,
     },
 
+    /// Rebuild this repo's log from the published `.claims/` tree.
+    ///
+    /// The inverse of `publish`, for the case where `.kan/` is gone: every
+    /// claim you published is a complete signed record, so the log can be
+    /// rebuilt from the tracked tree without trusting it.
+    ///
+    /// Restores only claims signed by *this* identity — another actor's are
+    /// read from the overlay and never enter your log. If nothing in the
+    /// tree is yours, this refuses and writes nothing, because that is what
+    /// a lost signing key looks like from the inside: run `kan identity
+    /// restore` first.
+    Restore,
+
     /// Identity: recovery phrase export and restore.
     Identity {
         #[command(subcommand)]
@@ -760,6 +773,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                 .into())
             }
         },
+        Command::Restore => print!("{}", actions::restore(&mut ws).await?),
         Command::Mark {
             subject,
             value,
