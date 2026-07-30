@@ -111,7 +111,7 @@ impl Workspace {
     pub async fn open(cwd: &Path) -> Result<Self, Error> {
         let root = find_repo_root(cwd);
         let kan_dir = root.join(".kan");
-        let identity = Identity::load_or_create(&kan_dir.join("identity"))?;
+        let identity = Identity::load_or_create_for_workspace(&kan_dir)?;
         let mut log = Log::open_or_create(&kan_dir.join("log"), &identity).await?;
         let mut overlay = Log::open_or_create(&kan_dir.join("overlay"), &identity).await?;
         let mut index = Index::open(&kan_dir.join("index.sqlite"))?;

@@ -36,6 +36,11 @@ use atrium_crypto::{
 
 use crate::claim::Did;
 
+/// The file recording which keychain account this workspace's key is under.
+/// Its presence is also the cheap, keychain-free signal that this workspace
+/// has had an identity before.
+pub const IDENTITY_ID_FILE: &str = "identity-id";
+
 /// `keyring::Entry`'s `service` field — namespaces kan's identity keys away
 /// from any other application's keychain entries.
 const KEYCHAIN_SERVICE: &str = "dev.kan.identity";
@@ -160,6 +165,9 @@ impl Identity {
             return Self::load_or_create_plaintext(&override_path);
         }
 
+        if keychain_disabled() {
+            return Self::load_or_create_plaintext(path);
+        }
         let account = keychain_account(path)?;
         let entry = match keyring::Entry::new(KEYCHAIN_SERVICE, &account) {
             Ok(entry) => entry,
@@ -339,6 +347,64 @@ impl Identity {
         Ok(())
     }
 
+    /// [`Self::load_or_create`], seed-rooting a workspace that has **never**
+    /// had an identity (v0.9 REQ-4/REQ-6).
+    ///
+    /// The whole of the migration decision lives in one predicate. A
+    /// workspace that already has an identity by any route is left completely
+    /// alone — same key, same DID, same claims, no seed file, nothing
+    /// rewritten. Only a genuinely fresh workspace gets a seed, and from then
+    /// on its signing key is derived from that seed rather than generated.
+    ///
+    /// **Grandfathering is the whole point (REQ-6).** The alternative —
+    /// migrating existing identities onto a seed — has to either preserve the
+    /// signing key (in which case the seed is decorative) or replace it (in
+    /// which case every existing DID moves and every claim vanishes from
+    /// every read). That second outcome is #90 and #107 exactly, and it is
+    /// not a risk worth taking for an internal tidiness. Two schemes coexist
+    /// permanently, which ADR-55 anticipated and accepted.
+    ///
+    /// **Freshness is decided from files only, never by probing the
+    /// keychain.** A keychain probe on this path can hang for a rebuilt
+    /// binary (#96, and it hung during this milestone's own dogfooding), and
+    /// hanging while deciding whether to mint an identity is the worst place
+    /// to do it. `.kan/identity-id` exists iff the keychain has ever been
+    /// used for this workspace, so its absence plus the absence of a key file
+    /// is a sound, cheap "nothing here yet".
+    pub fn load_or_create_for_workspace(kan_dir: &Path) -> Result<Self, Error> {
+        let key_path = kan_dir.join("identity");
+
+        // An explicit key file is its own answer: if it exists, that is the
+        // identity; if it does not, `load_or_create`'s guard decides whether
+        // creating one is allowed, and that judgement must not be bypassed
+        // here.
+        if std::env::var_os(IDENTITY_FILE_ENV).is_some() {
+            return Self::load_or_create(&key_path);
+        }
+
+        // Already seed-rooted: derive and return. The signing key is never
+        // written anywhere -- it is a pure function of the seed, so storing
+        // it would be a second copy of the same secret for no gain, and
+        // fewer secrets at rest is the whole point of keeping the seed in
+        // the keychain.
+        if let Some(seed) = Seed::load(kan_dir)? {
+            return seed.signing_identity();
+        }
+
+        let fresh = !key_path.exists() && !kan_dir.join(IDENTITY_ID_FILE).exists();
+        if !fresh {
+            return Self::load_or_create(&key_path);
+        }
+
+        Seed::create(kan_dir)?.signing_identity()
+    }
+
+    /// Whether this workspace's identity is rooted in a seed, which is what
+    /// decides how its recovery phrase should be read back.
+    pub fn is_seed_rooted(kan_dir: &Path) -> bool {
+        kan_dir.join(SEED_FILE).exists() || kan_dir.join(SEED_ID_FILE).exists()
+    }
+
     /// This identity's `did:key:...` string — `AuthorId.did` for
     /// human-direct claims (ADR-4).
     pub fn did(&self) -> Did {
@@ -366,7 +432,7 @@ impl Identity {
 /// it.
 fn keychain_account(identity_path: &Path) -> Result<String, Error> {
     let dir = identity_path.parent().unwrap_or(Path::new("."));
-    let id_path = dir.join("identity-id");
+    let id_path = dir.join(IDENTITY_ID_FILE);
 
     match std::fs::read_to_string(&id_path) {
         Ok(id) if !id.trim().is_empty() => return Ok(id.trim().to_string()),
@@ -679,6 +745,239 @@ pub fn from_recovery_phrase(phrase: &str) -> Result<Identity, Error> {
 /// would be a migration, not an edit.
 const ENCRYPT_LABEL: &str = "kan/v1/encrypt";
 
+/// HKDF context label for the signing slot of a **seed-rooted** identity.
+///
+/// Only identities created from v0.9 onward derive their signing key this
+/// way. An identity that existed before is grandfathered and keeps the key it
+/// has (REQ-6) — see [`Seed`].
+const SIGN_LABEL: &str = "kan/v1/sign";
+
+/// The file holding a seed-rooted identity's root secret. Its absence is what
+/// marks an identity as grandfathered.
+pub const SEED_FILE: &str = "seed";
+
+/// Names the keychain entry holding this workspace's seed. Its presence is
+/// the file-only signal that a workspace is seed-rooted with the seed in the
+/// keychain, so no keychain call is needed to find that out.
+pub const SEED_ID_FILE: &str = "seed-id";
+
+/// Keychain service for seeds -- separate from the signing-key service so a
+/// workspace can hold one, the other, or neither without the entries
+/// colliding.
+const SEED_KEYCHAIN_SERVICE: &str = "dev.kan.seed";
+
+/// Set to any value to make kan behave as though no OS keychain exists.
+///
+/// Not a test hook bolted on: it is the missing middle of the
+/// `KAN_IDENTITY_FILE` story. Today the only way to avoid a keychain prompt
+/// is to name a specific key file, which is fine for an agent that manages
+/// its own key and wrong for anyone who simply does not want their secrets
+/// in the keychain and is happy with `0600` files in `.kan/`.
+///
+/// It exists because this milestone's own tests could not otherwise run on
+/// macOS. Exercising the fresh-workspace path means *not* setting
+/// `KAN_IDENTITY_FILE`, which means touching the keychain, which for a
+/// rebuilt binary is #96's hang -- a suite that hangs locally and passes on
+/// CI is worse than one that fails.
+pub const NO_KEYCHAIN_ENV: &str = "KAN_NO_KEYCHAIN";
+
+fn keychain_disabled() -> bool {
+    std::env::var_os(NO_KEYCHAIN_ENV).is_some()
+}
+
+/// A 32-byte root secret from which a new identity's signing and encryption
+/// keys are both derived (ADR-55's Q1, v0.9 REQ-4).
+///
+/// **Only for identities created from v0.9 onward.** An identity that already
+/// exists keeps its signing key verbatim (REQ-6) and derives only its
+/// encryption key, from that key's own material (ADR-65). Two schemes
+/// coexisting permanently is the deliberate shape: it is the one form in
+/// which no existing DID can move, and a DID moving is the failure #90 and
+/// #107 both were.
+pub struct Seed([u8; 32]);
+
+impl Seed {
+    pub fn generate() -> Self {
+        let mut bytes = [0u8; 32];
+        use rand::RngCore;
+        rand::thread_rng().fill_bytes(&mut bytes);
+        Self(bytes)
+    }
+
+    /// Read a seed file, or create one. `0600`, like the key files.
+    pub fn load_or_create(path: &Path) -> Result<Self, Error> {
+        if let Some(seed) = Self::from_file(path)? {
+            return Ok(seed);
+        }
+        let seed = Self::generate();
+        seed.save(path)?;
+        Ok(seed)
+    }
+
+    fn from_file(path: &Path) -> Result<Option<Self>, Error> {
+        let Ok(bytes) = std::fs::read(path) else {
+            return Ok(None);
+        };
+        if bytes.len() != 32 {
+            return Err(Error::Recovery(format!(
+                "{} is {} bytes, not 32 -- this is not a kan seed file. kan will not guess \
+                 at it, because deriving a signing key from the wrong bytes would silently \
+                 give this repo a different identity.",
+                path.display(),
+                bytes.len()
+            )));
+        }
+        let mut seed = [0u8; 32];
+        seed.copy_from_slice(&bytes);
+        Ok(Some(Self(seed)))
+    }
+
+    fn save(&self, path: &Path) -> Result<(), Error> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, self.0)?;
+        restrict_permissions(path)?;
+        Ok(())
+    }
+
+    /// This workspace's seed, if it is seed-rooted at all.
+    ///
+    /// **Decided from files before any keychain call.** `.kan/seed-id` names
+    /// a keychain entry; `.kan/seed` is the plaintext fallback; neither means
+    /// this workspace is not seed-rooted and the keychain is never touched.
+    /// That ordering is load-bearing: a grandfathered workspace on macOS must
+    /// not probe the keychain for a seed it will never have, because that
+    /// probe is exactly the prompt that hangs a rebuilt binary (#96).
+    pub fn load(kan_dir: &Path) -> Result<Option<Self>, Error> {
+        if let Some(seed) = Self::from_file(&kan_dir.join(SEED_FILE))? {
+            return Ok(Some(seed));
+        }
+        if keychain_disabled() {
+            return Ok(None);
+        }
+        let id_path = kan_dir.join(SEED_ID_FILE);
+        let Ok(account) = std::fs::read_to_string(&id_path) else {
+            return Ok(None);
+        };
+        let account = account.trim().to_string();
+        let entry = keyring::Entry::new(SEED_KEYCHAIN_SERVICE, &account).map_err(|e| {
+            Error::KeychainUnreachable {
+                detail: e.to_string(),
+            }
+        })?;
+        match entry.get_secret() {
+            Ok(bytes) if bytes.len() == 32 => {
+                let mut seed = [0u8; 32];
+                seed.copy_from_slice(&bytes);
+                Ok(Some(Self(seed)))
+            }
+            Ok(_) => Err(Error::Recovery(
+                "the seed in the OS keychain is not 32 bytes -- refusing to derive an \
+                 identity from it rather than silently producing a different DID."
+                    .to_string(),
+            )),
+            Err(e) => Err(Error::KeychainUnreachable {
+                detail: format!("seed entry: {e}"),
+            }),
+        }
+    }
+
+    /// Create this workspace's seed, preferring the OS keychain.
+    ///
+    /// Stored exactly the way the signing key is stored today (ADR-25): in
+    /// the keychain when one is available, in a `0600` file when it is not,
+    /// with the same warning. ADR-55's "at-rest protection is OS file
+    /// permissions **plus the existing keychain path where present**" is read
+    /// as sanctioning this rather than as requiring a plaintext root.
+    ///
+    /// Taking the file-always reading would have reopened issue #6 for every
+    /// new workspace — the root secret in plaintext where the key it replaces
+    /// was encrypted — which is a strictly worse at-rest posture than the
+    /// version it upgrades from. Callers who genuinely need no-prompt (CI,
+    /// agents, `day`) already set `KAN_IDENTITY_FILE`, which bypasses all of
+    /// this and is unchanged.
+    pub fn create(kan_dir: &Path) -> Result<Self, Error> {
+        std::fs::create_dir_all(kan_dir)?;
+        let seed = Self::generate();
+        let account = fresh_account();
+
+        let stored = !keychain_disabled()
+            && keyring::Entry::new(SEED_KEYCHAIN_SERVICE, &account)
+                .ok()
+                .and_then(|entry| entry.set_secret(&seed.0).ok())
+                .is_some();
+
+        if stored {
+            std::fs::write(kan_dir.join(SEED_ID_FILE), &account)?;
+        } else {
+            eprintln!(
+                "kan: OS keychain unavailable -- this repo's root seed is stored as a \
+                 plaintext file at {}, readable by anything running as you. Take its \
+                 recovery phrase (`kan identity phrase`) and keep it somewhere safe.",
+                kan_dir.join(SEED_FILE).display()
+            );
+            seed.save(&kan_dir.join(SEED_FILE))?;
+        }
+        Ok(seed)
+    }
+
+    /// The seed's own recovery phrase — 24 words, exactly as a signing key's
+    /// phrase is, and deliberately indistinguishable from one.
+    ///
+    /// There is no marker byte and no different word count. Both would have
+    /// worked, and both were rejected: a marker collides with a legacy key
+    /// whose first byte happens to match (1 in 256, which is not rare enough
+    /// for a recovery path), and a shorter phrase buys distinguishability by
+    /// cutting the root's entropy. Ambiguity that can be resolved against a
+    /// workspace is better than either.
+    pub fn phrase(&self) -> Result<String, Error> {
+        Ok(bip39::Mnemonic::from_entropy(&self.0)
+            .map_err(|e| Error::Recovery(e.to_string()))?
+            .to_string())
+    }
+
+    pub fn from_entropy(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    /// The signing key this seed derives.
+    ///
+    /// **Retries on an unusable scalar rather than failing.** A P-256 private
+    /// key must lie in `[1, n-1]`, and HKDF output is uniform bytes that can
+    /// land outside it. The probability is about 2^-32 — negligible, and
+    /// "negligible" is not a property a recovery path may rest on, because
+    /// the user it fails is holding 24 words that will never work and no way
+    /// to know why. The spike (`tests/key_derivation_spike.rs`) established
+    /// that `P256Keypair::import` *rejects* such bytes rather than coercing
+    /// them, which is what makes this loop correct instead of hopeful.
+    pub fn signing_identity(&self) -> Result<Identity, Error> {
+        for attempt in 0u8..64 {
+            let label = if attempt == 0 {
+                SIGN_LABEL.to_string()
+            } else {
+                format!("{SIGN_LABEL}/{attempt}")
+            };
+            if let Ok(keypair) = P256Keypair::import(&derive::<32>(&self.0, &label)) {
+                return Ok(Identity { keypair });
+            }
+        }
+        Err(Error::Recovery(
+            "could not derive a usable signing key from this seed after 64 attempts, which \
+             should be impossible -- please report it with the seed's phrase kept private."
+                .to_string(),
+        ))
+    }
+
+    /// The encryption key this seed derives, independently of the signing
+    /// slot.
+    pub fn encryption_key(&self) -> EncryptionKey {
+        EncryptionKey {
+            secret: x25519_dalek::StaticSecret::from(derive::<32>(&self.0, ENCRYPT_LABEL)),
+        }
+    }
+}
+
 /// Derive `N` bytes from root key material under a labelled context.
 fn derive<const N: usize>(root: &[u8], label: &str) -> [u8; N] {
     let hk = hkdf::Hkdf::<sha2::Sha256>::new(None, root);
@@ -743,6 +1042,90 @@ impl Identity {
             secret: x25519_dalek::StaticSecret::from(derive::<32>(&root, ENCRYPT_LABEL)),
         }
     }
+}
+
+/// The recovery phrase for a workspace, whichever scheme roots it.
+///
+/// A seed-rooted identity's phrase encodes the **seed**; a grandfathered
+/// one's encodes the **signing key**, exactly as it always has. Both are 24
+/// words and neither says which it is — see [`Seed::phrase`] for why no
+/// marker was added.
+///
+/// This is the one place that distinction reaches a person, so it is the one
+/// place it must not be silent: the caller is told which root it holds, since
+/// "write these down" means something different when the words are a root
+/// that derives two keys than when they are one key.
+pub fn workspace_phrase(kan_dir: &Path, identity: &Identity) -> Result<(String, Root), Error> {
+    if let Some(seed) = Seed::load(kan_dir)? {
+        return Ok((seed.phrase()?, Root::Seed));
+    }
+    Ok((recovery_phrase(identity)?, Root::SigningKey))
+}
+
+/// What a workspace's recovery phrase actually encodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Root {
+    /// Created v0.9 or later: the phrase is the seed, and both the signing
+    /// and encryption keys derive from it.
+    Seed,
+    /// Created before v0.9 and grandfathered: the phrase is the signing key
+    /// itself, and the encryption key derives from that key (ADR-65).
+    SigningKey,
+}
+
+impl Root {
+    pub fn describe(&self) -> &'static str {
+        match self {
+            Root::Seed => {
+                "a seed -- it derives both this repo's signing key and its \
+                           encryption key"
+            }
+            Root::SigningKey => {
+                "this repo's signing key -- its encryption key derives from \
+                                 that key in turn"
+            }
+        }
+    }
+}
+
+/// What a phrase yields under each reading, for a caller trying to work out
+/// which workspace it belongs to.
+///
+/// Both readings always produce a valid DID, because both are 32 bytes of
+/// BIP-39 entropy and nothing distinguishes them. Rather than guess, this
+/// returns both and lets the caller compare against a workspace that knows
+/// its own author — which is every case where the answer actually matters.
+pub fn candidate_identities(phrase: &str) -> Result<Vec<(Root, Identity)>, Error> {
+    let mnemonic = bip39::Mnemonic::parse(phrase.trim()).map_err(|e| {
+        Error::Recovery(format!(
+            "{e} — check the word order and spelling; the checksum rejects a phrase \
+             that is close but not exact, rather than silently giving you a different key"
+        ))
+    })?;
+    let entropy = mnemonic.to_entropy();
+
+    let mut out = Vec::new();
+    if entropy.len() == 32 {
+        let mut seed_bytes = [0u8; 32];
+        seed_bytes.copy_from_slice(&entropy);
+        if let Ok(identity) = Seed::from_entropy(seed_bytes).signing_identity() {
+            out.push((Root::Seed, identity));
+        }
+    }
+    if let Ok(keypair) = P256Keypair::import(&entropy) {
+        out.push((Root::SigningKey, Identity { keypair }));
+    }
+
+    if out.is_empty() {
+        return Err(Error::Recovery(
+            "those words are a valid BIP-39 phrase, but they do not encode a usable kan \
+             identity under either scheme. That means they are not a phrase kan produced -- \
+             check you have the right one for this repo, rather than a phrase from another \
+             tool."
+                .to_string(),
+        ));
+    }
+    Ok(out)
 }
 
 pub fn verify(did: &Did, msg: &[u8], sig: &[u8]) -> bool {
