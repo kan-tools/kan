@@ -136,12 +136,47 @@ impl Workspace {
     /// author sets in either order, and comparing one subject under two
     /// frames is two reads rather than a sequence of mutations
     /// (`.design/kan-read-contract.md` REQ-2).
+    /// `--trust roles` expands to every identity this workspace declared
+    /// (`kan identity role add`) **plus the active one**, all at full
+    /// weight.
+    ///
+    /// The active identity is included because leaving it out would make
+    /// the obvious command — "show me everything this workspace's own
+    /// identities wrote" — quietly drop the caller's own claims, which is a
+    /// smaller version of the bug this milestone exists to fix. A caller
+    /// wanting a role hierarchy rather than a flat union names the DIDs and
+    /// weights explicitly.
+    pub fn role_trust_entries(&self) -> Result<Vec<(String, f64)>, Error> {
+        let mut out = vec![(self.identity.did(), 1.0)];
+        for role in crate::sign::list_roles(&self.root.join(".kan"))? {
+            out.push((role.did, 1.0));
+        }
+        Ok(out)
+    }
+
+    /// Resolve `--trust` arguments into the base a read folds under. No
+    /// arguments means [`Self::solo_trust`] — the default is unchanged, and
+    /// only an explicit request moves off it.
+    ///
+    /// **Per-invocation by construction.** Nothing here writes workspace
+    /// state, so two reads in one session can name different author sets in
+    /// either order, and comparing one subject under two frames is two
+    /// reads rather than a sequence of mutations
+    /// (`.design/kan-read-contract.md` REQ-2). `roles` reads the declared
+    /// role list, which is workspace state — but it is *read* per
+    /// invocation and never set by one, so the property holds.
     pub fn trust_from(&self, specs: &[String]) -> Result<TrustBase, Error> {
         if specs.is_empty() {
             return Ok(self.solo_trust());
         }
         let mut weights = std::collections::HashMap::new();
         for spec in specs {
+            if spec == crate::fold::trust::ROLES_ALIAS {
+                for (did, weight) in self.role_trust_entries()? {
+                    weights.insert(AuthorId { did, agent: None }, weight);
+                }
+                continue;
+            }
             let entry = crate::fold::trust::parse_entry(spec)?;
             let did = if entry.did == crate::fold::trust::SELF_ALIAS {
                 self.identity.did()

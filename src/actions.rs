@@ -1551,6 +1551,22 @@ pub fn context_json(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<
     })
 }
 
+/// `kan identity role list --json`.
+pub fn roles_json(ws: &Workspace, roles: &[crate::sign::Role]) -> Result<String, Error> {
+    to_json(&crate::json::RolesJson {
+        v: crate::json::SCHEMA_VERSION,
+        active: ws.identity.did(),
+        roles: roles
+            .iter()
+            .map(|r| crate::json::RoleJson {
+                name: r.name.clone(),
+                did: r.did.clone(),
+                key_path: r.key_path.display().to_string(),
+            })
+            .collect(),
+    })
+}
+
 fn to_json<T: serde::Serialize>(value: &T) -> Result<String, Error> {
     serde_json::to_string_pretty(value)
         .map(|mut s| {

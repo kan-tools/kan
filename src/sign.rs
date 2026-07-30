@@ -27,7 +27,7 @@
 //! every prior claim out of every read at exit 0. The id file travels with
 //! `.kan/`, so the identity now travels with the repo.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use atrium_crypto::{
     keypair::{Did as _, Export as _, P256Keypair},
@@ -56,9 +56,24 @@ pub enum Error {
          would all disappear from every read at exit 0 while still being on disk.\n\n\
          Point KAN_IDENTITY_FILE at the existing key file, or unset it and let kan use the \
          keychain. To \
-         restore from a recovery phrase, write the key to that path first."
+         restore from a recovery phrase, write the key to that path first.\n\n\
+         If you meant to add a second *role* to this workspace -- a director and a prover \
+         signing separately, say -- that is a supported thing and this is not the way to ask \
+         for it: run `kan identity role add <name> --key {override_path}`, which mints the \
+         role key deliberately and registers it, then read with `--trust roles` so both \
+         roles' claims are visible."
     )]
     WouldMintSecondIdentity { override_path: String },
+    #[error(
+        "a role named `{name}` is already declared in this workspace (key: {existing}). \
+         Pick another name, or use the existing role."
+    )]
+    RoleNameTaken { name: String, existing: String },
+    #[error(
+        "that key already belongs to the declared role `{name}` ({did}). Registering one \
+         identity under two role names would make attribution ambiguous in every read."
+    )]
+    RoleAlreadyRegistered { did: Did, name: String },
     #[error(
         "this repo has an identity in the OS keychain but it could not be read ({detail}).\n\
          \n\
@@ -299,7 +314,7 @@ impl Identity {
         }
     }
 
-    fn load_or_create_plaintext(path: &Path) -> Result<Self, Error> {
+    pub(crate) fn load_or_create_plaintext(path: &Path) -> Result<Self, Error> {
         match std::fs::read(path) {
             Ok(bytes) => {
                 // Tighten an existing loose file on the way in, not just on
@@ -404,6 +419,111 @@ fn log_has_claims(identity_path: &Path) -> bool {
         .filter(|car| car.exists())
         .and_then(|car| std::fs::metadata(car).ok())
         .is_some_and(|m| m.len() > 0)
+}
+
+/// The file recording this workspace's declared role identities, one per
+/// line as `<did>\t<name>\t<key path>`. Lives inside `.kan/` (gitignored,
+/// repo-local per ADR-3) because a role is a local process arrangement, not
+/// something to share — the *claims* roles write are the shareable part, and
+/// they already carry their own author.
+pub const ROLES_FILE: &str = "roles";
+
+/// One declared role: a signing identity this workspace was deliberately
+/// told to expect.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Role {
+    pub did: Did,
+    pub name: String,
+    pub key_path: PathBuf,
+}
+
+/// Mint a role key **deliberately**, bypassing the `WouldMintSecondIdentity`
+/// guard, and register it.
+///
+/// This is the whole of REQ-4's opt-in, and the shape matters. The guard
+/// (#90's fix) refuses a *new* key file whenever the log already has claims,
+/// because it cannot tell a deliberate second role from the accidental
+/// identity-mint that silently hid a whole log. What it was missing is a way
+/// for the operator to say which one this is. Registration is that signal,
+/// and it is deliberately a **separate, explicit act** rather than a flag on
+/// the write verbs: a `--as` flag is something a script passes blanket and
+/// forgets, whereas minting a role is a thing you do once, on purpose, and
+/// can later read back with `kan identity role list`.
+///
+/// The guard is therefore not weakened — an *undeclared* second identity
+/// against a non-empty log is refused exactly as before, which is
+/// `.design/v0.8-milestone.md` AC-4's negative control.
+pub fn add_role(kan_dir: &Path, name: &str, key_path: &Path) -> Result<Role, Error> {
+    if let Some(parent) = key_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let existing = list_roles(kan_dir)?;
+    if let Some(clash) = existing.iter().find(|r| r.name == name) {
+        return Err(Error::RoleNameTaken {
+            name: name.to_string(),
+            existing: clash.key_path.display().to_string(),
+        });
+    }
+
+    // Straight to the plaintext loader, which is what makes this the
+    // opt-in: it is `load_or_create` minus the guard, reached only from
+    // here. An existing key file is loaded rather than overwritten, so
+    // registering a role twice is idempotent instead of destroying a key.
+    let identity = Identity::load_or_create_plaintext(key_path)?;
+    let did = identity.did();
+
+    if let Some(clash) = existing.iter().find(|r| r.did == did) {
+        return Err(Error::RoleAlreadyRegistered {
+            did,
+            name: clash.name.clone(),
+        });
+    }
+
+    std::fs::create_dir_all(kan_dir)?;
+    let line = format!("{}\t{}\t{}\n", did, name, key_path.display());
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(kan_dir.join(ROLES_FILE))?;
+    file.write_all(line.as_bytes())?;
+
+    Ok(Role {
+        did,
+        name: name.to_string(),
+        key_path: key_path.to_path_buf(),
+    })
+}
+
+/// Every declared role, in declaration order. A missing file is no roles,
+/// not an error — the overwhelmingly common case is a workspace that has
+/// never declared one.
+///
+/// A malformed line is skipped rather than fatal: this file gates nothing
+/// (it only *widens* a read), so a hand-edit typo should not take out every
+/// command that opens a workspace.
+pub fn list_roles(kan_dir: &Path) -> Result<Vec<Role>, Error> {
+    let path = kan_dir.join(ROLES_FILE);
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Ok(Vec::new());
+    };
+    Ok(text
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split('\t');
+            let did = parts.next()?.trim();
+            let name = parts.next()?.trim();
+            let key_path = parts.next()?.trim();
+            if did.is_empty() || !did.starts_with("did:") {
+                return None;
+            }
+            Some(Role {
+                did: did.to_string(),
+                name: name.to_string(),
+                key_path: PathBuf::from(key_path),
+            })
+        })
+        .collect())
 }
 
 /// A fresh, random keychain account name for a checkout that has none.
