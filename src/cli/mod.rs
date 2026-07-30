@@ -218,9 +218,19 @@ pub enum Command {
     },
 
     // --- Recalling: read the claim graph ---
-    /// Show a subject's live claims.
+    /// Show a subject's live claims, or every subject's with `--all`.
     Show {
-        subject: String,
+        /// Omit when using `--all`.
+        subject: Option<String>,
+        /// Every subject's live claims, from one invocation.
+        ///
+        /// A program reading the whole claim graph otherwise pays one process
+        /// startup per subject, and that startup -- not the fold, and not the
+        /// log size -- is where the time goes (#123). Requires `--json`:
+        /// the rendered form is for people, and nobody reads forty subjects'
+        /// full claim histories at a terminal.
+        #[arg(long, conflicts_with = "subject")]
+        all: bool,
         /// Structured output for programs. The rendered form is for people
         /// and is free to change; this shape is versioned and additive-only.
         #[arg(long)]
@@ -653,18 +663,40 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Show {
             subject,
+            all,
             json,
             trust,
         } => {
             let trust = ws.trust_from(&trust)?;
-            print!(
-                "{}",
-                if json {
-                    actions::show_json(&ws, &subject, &trust)?
-                } else {
-                    actions::show(&ws, &subject, &trust)?
+            match (all, subject) {
+                (true, _) if !json => {
+                    return Err(actions::Error::Usage(
+                        "`kan show --all` needs `--json`. It exists for programs reading the \
+                         whole claim graph in one invocation; the rendered form is for \
+                         people, and forty subjects' full claim histories is not something \
+                         anyone reads at a terminal."
+                            .to_string(),
+                    )
+                    .into())
                 }
-            )
+                (true, _) => print!("{}", actions::show_all_json(&ws, &trust)?),
+                (false, None) => {
+                    return Err(actions::Error::Usage(
+                        "give a subject to show (`kan show <subject>`), or `--all --json` for \
+                         every subject at once"
+                            .to_string(),
+                    )
+                    .into())
+                }
+                (false, Some(subject)) => print!(
+                    "{}",
+                    if json {
+                        actions::show_json(&ws, &subject, &trust)?
+                    } else {
+                        actions::show(&ws, &subject, &trust)?
+                    }
+                ),
+            }
         }
         Command::Status {
             subject,

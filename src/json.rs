@@ -270,6 +270,36 @@ pub struct ContextJson {
     pub excluded_by_trust: usize,
 }
 
+/// Every subject's live claims, from one `Workspace::open`.
+///
+/// **Why this exists, and why it is a bulk *read* rather than a faster one.**
+/// `day` answers a single witness by reading the whole claim graph, which
+/// meant one `kan show` per subject: on day's own 40-subject log, `day status`
+/// spent 1.99s of its 2.76s inside 41 kan invocations (#123). That cost is
+/// almost entirely `Workspace::open` — an empty log costs ~30ms per call and
+/// `kan identity did`, which reads no log at all, costs the same. So no
+/// optimisation *inside* a read helps: only collapsing 41 process startups
+/// into one does.
+///
+/// Each entry is a full [`ShowJson`], deliberately including its own `trust`
+/// even though every entry repeats it. A consumer already parsing `show
+/// --json` for one subject parses these unchanged, which is worth far more
+/// than the few hundred bytes of repetition — the ask (`.design/
+/// kan-read-contract.md` REQ-5) was explicitly to reduce the invocation
+/// *count*, not to shrink the payload.
+#[derive(Debug, Serialize)]
+pub struct ShowAllJson {
+    pub v: u32,
+    /// The trust base every entry was folded under — the same for all of
+    /// them, since one fold produced the whole response.
+    pub trust: TrustJson,
+    /// Live claims excluded by that trust base across the entire log,
+    /// including on subjects absent from `subjects` because every claim
+    /// naming them was excluded.
+    pub excluded_by_trust: usize,
+    pub subjects: Vec<ShowJson>,
+}
+
 /// This workspace's declared signing identities. The active one is listed
 /// separately rather than folded into `roles`, because "who am I writing as"
 /// and "who has this workspace declared" are different questions and a
