@@ -341,6 +341,20 @@ impl Identity {
         }
     }
 
+    /// Load a key that must already exist -- never creates one.
+    ///
+    /// `load_or_create` cannot serve `adopt`: its whole contract is to
+    /// produce a key one way or another, and adopt's contract is the
+    /// opposite. Pointing adopt at a path that holds nothing must fail
+    /// loudly, not quietly mint the identity the operator is trying to
+    /// recover from losing.
+    pub fn load_existing(path: &Path) -> Result<Self, Error> {
+        let bytes = std::fs::read(path)?;
+        Ok(Self {
+            keypair: P256Keypair::import(&bytes)?,
+        })
+    }
+
     pub fn save(&self, path: &Path) -> Result<(), Error> {
         std::fs::write(path, self.keypair.export())?;
         restrict_permissions(path)?;
