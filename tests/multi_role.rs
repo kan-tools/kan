@@ -345,6 +345,57 @@ fn one_shared_log_survives_roles_writing_alternately() {
     assert_eq!(authors.len(), 2, "expected two distinct claim authors");
 }
 
+/// Found by dogfooding the real director/prover loop, not by a test that
+/// was designed for it: `--trust roles`, read **as a role**, must still show
+/// claims the workspace wrote *before any role existed*.
+///
+/// The primary identity is neither a declared role nor the active one once
+/// `KAN_IDENTITY_FILE` points at a role, so it fell outside the alias and
+/// every pre-roles claim vanished from the obvious "show me everything this
+/// workspace wrote" command. The exclusion was disclosed — so this was never
+/// the silent-loss class — but it was still the wrong answer to the obvious
+/// question, and the same reasoning that put the active identity into the
+/// alias applies to the identity that was active before.
+#[test]
+fn trust_roles_covers_claims_written_before_any_role_existed() {
+    let dir = workspace_with_claims(); // primary wrote "shared" first
+    for name in ["prover", "director"] {
+        let add = kan_as(dir.path(), None, &["identity", "role", "add", name]);
+        assert!(add.ok, "role add {name} failed: {}", add.stderr);
+    }
+    let prover_key = dir.path().join(".kan/roles.d/prover");
+    let write = kan_as(
+        dir.path(),
+        Some(&prover_key),
+        &["observe", "shared", "the prover's claim"],
+    );
+    assert!(write.ok, "role write failed: {}", write.stderr);
+
+    // Read as the prover — the case the loop actually runs.
+    let all = kan_as(
+        dir.path(),
+        Some(&prover_key),
+        &["show", "shared", "--trust", "roles", "--json"],
+    );
+    assert!(all.ok, "{}", all.stderr);
+    let all: serde_json::Value = serde_json::from_str(&all.stdout).unwrap();
+    let texts: Vec<&str> = all["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["text"].as_str().unwrap_or(""))
+        .collect();
+    assert!(
+        texts.contains(&"the primary identity's claim"),
+        "`--trust roles` dropped a claim written before the roles existed: {all}"
+    );
+    assert!(texts.contains(&"the prover's claim"));
+    assert_eq!(
+        all["excluded_by_trust"], 0,
+        "`--trust roles` still excluded something: {all}"
+    );
+}
+
 /// The declared role set is readable back, so an operator (or day) can
 /// discover which identities a workspace expects rather than keeping the
 /// list somewhere else.
@@ -369,17 +420,29 @@ fn declared_roles_are_listed_with_their_dids() {
     let listed = kan_as(dir.path(), None, &["identity", "role", "list", "--json"]);
     assert!(listed.ok);
     let listed: serde_json::Value = serde_json::from_str(&listed.stdout).unwrap();
-    assert_eq!(listed["roles"].as_array().unwrap().len(), 1);
-    assert_eq!(listed["roles"][0]["name"], "director");
-    assert!(listed["roles"][0]["did"]
-        .as_str()
-        .unwrap()
-        .starts_with("did:key:"));
-    // The active identity is reported separately from the declared roles:
-    // "who am I writing as" and "who has this workspace declared" are
-    // different questions.
+    let roles = listed["roles"].as_array().unwrap();
+    let by_name = |n: &str| roles.iter().find(|r| r["name"] == n);
+
+    let director = by_name("director").unwrap_or_else(|| panic!("director missing: {listed}"));
+    assert!(director["did"].as_str().unwrap().starts_with("did:key:"));
+
+    // The identity that was signing here before any role existed is
+    // recorded too, so `--trust roles` covers the whole workspace rather
+    // than only what was written after roles were introduced.
+    let primary = by_name("primary").unwrap_or_else(|| panic!("primary missing: {listed}"));
+    assert_eq!(
+        primary["did"], listed["active"],
+        "the `primary` row should be the identity that declared the role"
+    );
+    // `active` is still reported on its own line: "who am I writing as" and
+    // "who has this workspace declared" stay different questions even now
+    // that the answers overlap. Read as the director, `active` would be the
+    // director while `primary` stayed where it is.
     assert!(listed["active"].as_str().unwrap().starts_with("did:key:"));
-    assert_ne!(listed["active"], listed["roles"][0]["did"]);
+    assert_ne!(
+        listed["active"], director["did"],
+        "this read was made by the primary identity, not the director"
+    );
 }
 
 /// Declaring a role is idempotent on the key: re-running against an existing

@@ -495,6 +495,47 @@ pub fn add_role(kan_dir: &Path, name: &str, key_path: &Path) -> Result<Role, Err
     })
 }
 
+/// Record the workspace's pre-existing identity as a role, if it is not
+/// already recorded.
+///
+/// **Found by dogfooding, not by design.** Without this, a workspace that
+/// wrote claims before declaring any roles has a *primary* identity that is
+/// neither declared nor (once you are running as a role) active — so
+/// `--trust roles`, the obvious "show me everything this workspace wrote"
+/// command, silently omits every claim written before the roles existed.
+/// The exclusion is disclosed, so it is not the silent-loss class; it is
+/// still the wrong answer to the obvious question, and the same argument
+/// that put the active identity into `--trust roles` applies here.
+///
+/// Called when the first role is declared, which is the one moment the
+/// primary identity is guaranteed to be loaded and its DID known. Once
+/// `KAN_IDENTITY_FILE` points at a role, kan never consults the keychain,
+/// so the primary's DID is not discoverable at read time — recording it
+/// while it is in hand is the only cheap option.
+///
+/// `key_path` is where the primary key is *looked up*, which for a keychain
+/// identity is the account path rather than a file that exists.
+pub fn register_active(kan_dir: &Path, did: &Did, key_path: &Path) -> Result<(), Error> {
+    let existing = list_roles(kan_dir)?;
+    if existing.iter().any(|r| &r.did == did) {
+        return Ok(());
+    }
+    let name = if existing.iter().any(|r| r.name == "primary") {
+        format!("primary-{}", &did[did.len().saturating_sub(8)..])
+    } else {
+        "primary".to_string()
+    };
+
+    std::fs::create_dir_all(kan_dir)?;
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(kan_dir.join(ROLES_FILE))?;
+    file.write_all(format!("{}\t{}\t{}\n", did, name, key_path.display()).as_bytes())?;
+    Ok(())
+}
+
 /// Every declared role, in declaration order. A missing file is no roles,
 /// not an error — the overwhelmingly common case is a workspace that has
 /// never declared one.

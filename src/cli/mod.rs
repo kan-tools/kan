@@ -878,6 +878,18 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                         Some(k) => std::path::PathBuf::from(k),
                         None => kan_dir.join("roles.d").join(&name),
                     };
+                    // Record the identity that was already signing here
+                    // before this role existed, while it is loaded and its
+                    // DID is in hand. Once KAN_IDENTITY_FILE points at a
+                    // role, kan never consults the keychain, so this is the
+                    // only cheap moment to learn it — and without it,
+                    // `--trust roles` omits everything written before the
+                    // first role was declared.
+                    crate::sign::register_active(
+                        &kan_dir,
+                        &ws.identity.did(),
+                        &kan_dir.join("identity"),
+                    )?;
                     let role = crate::sign::add_role(&kan_dir, &name, &key_path)?;
                     println!("declared role `{}`: {}", role.name, role.did);
                     println!("key: {}", role.key_path.display());
