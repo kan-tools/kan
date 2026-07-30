@@ -30,7 +30,7 @@ from many local logs into a coherent view, parameterized by whom you trust.
 
 ## Status
 
-Pre-1.0 (`v0.9.0-beta.1` on crates.io). The local-only spine — one human,
+Pre-1.0 (`v0.9.1-beta.1` on crates.io). The local-only spine — one human,
 one-or-more agents, one repo — is built and hardening.
 
 Sharing works in both directions as of v0.8. `kan publish <subject>` writes
