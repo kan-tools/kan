@@ -29,6 +29,8 @@ pub enum Error {
     Index(#[from] crate::store::index::Error),
     #[error("git error: {0}")]
     Git(#[from] crate::git::Error),
+    #[error("{0}")]
+    TrustSpec(#[from] crate::fold::trust::SpecError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -114,14 +116,41 @@ impl Workspace {
         }
     }
 
-    /// Trust only this process's own `AuthorId` — the default for every read
-    /// view today. A caller wanting to weigh several authors constructs a
-    /// `PeerContested` `TrustBase` directly rather than through this helper
-    /// (no CLI/MCP surface for that exists yet — v1's real scope is "one
-    /// human, one-or-more local agents" with no second human to weigh
-    /// against, `fold::trust`'s own doc comment).
+    /// Trust only this process's own `AuthorId` — still the default for
+    /// every read that names no authors. Whether it is the *right* default
+    /// once a workspace holds several role identities is a live question
+    /// (#121) that v0.8 deliberately does not settle; what v0.8 adds is that
+    /// a read under this base now *discloses* what it excluded
+    /// (`fold::excluded_by_trust`), so a narrow default can no longer be
+    /// mistaken for a complete view.
     pub fn solo_trust(&self) -> TrustBase {
         TrustBase::solo(self.my_author())
+    }
+
+    /// Resolve `--trust` arguments into the base a read folds under. No
+    /// arguments means [`Self::solo_trust`] — the default is unchanged, and
+    /// only an explicit request moves off it.
+    ///
+    /// **Per-invocation by construction.** Nothing here reads or writes
+    /// workspace state, so two reads in one session can name different
+    /// author sets in either order, and comparing one subject under two
+    /// frames is two reads rather than a sequence of mutations
+    /// (`.design/kan-read-contract.md` REQ-2).
+    pub fn trust_from(&self, specs: &[String]) -> Result<TrustBase, Error> {
+        if specs.is_empty() {
+            return Ok(self.solo_trust());
+        }
+        let mut weights = std::collections::HashMap::new();
+        for spec in specs {
+            let entry = crate::fold::trust::parse_entry(spec)?;
+            let did = if entry.did == crate::fold::trust::SELF_ALIAS {
+                self.identity.did()
+            } else {
+                entry.did
+            };
+            weights.insert(AuthorId { did, agent: None }, entry.weight);
+        }
+        Ok(TrustBase::peer_contested(weights))
     }
 }
 

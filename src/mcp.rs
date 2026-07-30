@@ -76,6 +76,15 @@ fn open_error(e: crate::workspace::Error) -> ErrorData {
     ErrorData::internal_error(e.to_string(), None)
 }
 
+/// A malformed `trust` argument is the caller's mistake, not kan's, so it
+/// surfaces as `invalid_params`. The important half is that it *fails*: a
+/// tolerated-and-ignored trust selector would hand back a `Solo` view in
+/// reply to a request for a wider one, with a success code attached
+/// (`.design/kan-read-contract.md` REQ-4).
+fn trust_error(e: crate::workspace::Error) -> ErrorData {
+    ErrorData::invalid_params(e.to_string(), None)
+}
+
 /// `actions::warn_similar_subjects` for a single candidate (issue #47,
 /// REQ-6/7) — `None` skips the check entirely, the same reasoning
 /// `cli::subject_warnings` uses.
@@ -303,6 +312,11 @@ struct MarkParams {
 struct SubjectParams {
     /// The subject rkey to show.
     subject: String,
+    /// Fold under PeerContested over these authors instead of the Solo
+    /// default: "did:key:...", "did:key:...=<weight>", or "me" for this
+    /// workspace's own identity. An author you do not name is invisible.
+    #[serde(default)]
+    trust: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -310,6 +324,16 @@ struct StatusParams {
     /// The subject rkey to check, or omit for every subject.
     #[serde(default)]
     subject: Option<String>,
+    /// See the `show` tool's `trust`.
+    #[serde(default)]
+    trust: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct TrustParams {
+    /// See the `show` tool's `trust`.
+    #[serde(default)]
+    trust: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -317,6 +341,9 @@ struct ContextParams {
     /// Token budget (default: 4096).
     #[serde(default)]
     budget: Option<usize>,
+    /// See the `show` tool's `trust`.
+    #[serde(default)]
+    trust: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -488,7 +515,8 @@ impl KanServer {
     #[tool(description = "Show a subject's live claims.")]
     async fn show(&self, params: Parameters<SubjectParams>) -> Result<String, ErrorData> {
         let ws = self.workspace().await?;
-        actions::show(&ws, &params.0.subject).map_err(to_error)
+        let trust = ws.trust_from(&params.0.trust).map_err(trust_error)?;
+        actions::show(&ws, &params.0.subject, &trust).map_err(to_error)
     }
 
     #[tool(
@@ -497,19 +525,22 @@ impl KanServer {
     )]
     async fn status(&self, params: Parameters<StatusParams>) -> Result<String, ErrorData> {
         let ws = self.workspace().await?;
-        actions::status(&ws, params.0.subject.as_deref()).map_err(to_error)
+        let trust = ws.trust_from(&params.0.trust).map_err(trust_error)?;
+        actions::status(&ws, params.0.subject.as_deref(), &trust).map_err(to_error)
     }
 
     #[tool(description = "List open (not-yet-resolved) subjects.")]
-    async fn issues(&self) -> Result<String, ErrorData> {
+    async fn issues(&self, params: Parameters<TrustParams>) -> Result<String, ErrorData> {
         let ws = self.workspace().await?;
-        actions::issues(&ws).map_err(to_error)
+        let trust = ws.trust_from(&params.0.trust).map_err(trust_error)?;
+        actions::issues(&ws, &trust).map_err(to_error)
     }
 
     #[tool(description = "Assemble the maximal-value claim set that fits under a token budget.")]
     async fn context(&self, params: Parameters<ContextParams>) -> Result<String, ErrorData> {
         let ws = self.workspace().await?;
-        actions::context(&ws, params.0.budget.unwrap_or(DEFAULT_BUDGET)).map_err(to_error)
+        let trust = ws.trust_from(&params.0.trust).map_err(trust_error)?;
+        actions::context(&ws, params.0.budget.unwrap_or(DEFAULT_BUDGET), &trust).map_err(to_error)
     }
 }
 
@@ -589,7 +620,11 @@ impl ServerHandler for KanServer {
             ));
         };
         let ws = self.workspace().await?;
-        let text = actions::show(&ws, subject).map_err(to_error)?;
+        // The resource URI carries a subject and nothing else, so this is
+        // the default view — the same thing `show` with no `trust` returns,
+        // which is what the resource template advertises. A trust-selected
+        // read is a tool call, where the selection has somewhere to live.
+        let text = actions::show(&ws, subject, &ws.solo_trust()).map_err(to_error)?;
         Ok(ReadResourceResult::new(vec![ResourceContents::text(
             text,
             claims_uri(subject),

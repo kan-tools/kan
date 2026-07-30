@@ -225,17 +225,30 @@ pub enum Command {
         /// and is free to change; this shape is versioned and additive-only.
         #[arg(long)]
         json: bool,
+        /// Fold under `PeerContested` over these authors instead of the
+        /// `Solo` default: `did:key:...`, `did:key:...=<weight>`, or `me`
+        /// for this workspace's own identity. Repeat for several authors.
+        /// Weight defaults to 1.0 and must be in [0,1]; an author you do
+        /// not name is invisible, not merely down-weighted.
+        #[arg(long = "trust", value_name = "AUTHOR[=WEIGHT]")]
+        trust: Vec<String>,
     },
     /// Show status: one subject, or every subject if omitted.
     Status {
         subject: Option<String>,
         #[arg(long)]
         json: bool,
+        /// See `kan show --help`.
+        #[arg(long = "trust", value_name = "AUTHOR[=WEIGHT]")]
+        trust: Vec<String>,
     },
     /// List open (not-yet-resolved) subjects.
     Issues {
         #[arg(long)]
         json: bool,
+        /// See `kan show --help`.
+        #[arg(long = "trust", value_name = "AUTHOR[=WEIGHT]")]
+        trust: Vec<String>,
     },
     /// Assemble the maximal-value claim set that fits under a token budget.
     Context {
@@ -243,6 +256,9 @@ pub enum Command {
         budget: Option<usize>,
         #[arg(long)]
         json: bool,
+        /// See `kan show --help`.
+        #[arg(long = "trust", value_name = "AUTHOR[=WEIGHT]")]
+        trust: Vec<String>,
     },
 
     /// Publish a subject's claims into the committed git tree (`.claims/`),
@@ -569,22 +585,36 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             .await?;
             print_narrative_result(&result, verbose);
         }
-        Command::Show { subject, json } => print!(
-            "{}",
-            if json {
-                actions::show_json(&ws, &subject)?
-            } else {
-                actions::show(&ws, &subject)?
-            }
-        ),
-        Command::Status { subject, json } => print!(
-            "{}",
-            if json {
-                actions::status_json(&ws, subject.as_deref())?
-            } else {
-                actions::status(&ws, subject.as_deref())?
-            }
-        ),
+        Command::Show {
+            subject,
+            json,
+            trust,
+        } => {
+            let trust = ws.trust_from(&trust)?;
+            print!(
+                "{}",
+                if json {
+                    actions::show_json(&ws, &subject, &trust)?
+                } else {
+                    actions::show(&ws, &subject, &trust)?
+                }
+            )
+        }
+        Command::Status {
+            subject,
+            json,
+            trust,
+        } => {
+            let trust = ws.trust_from(&trust)?;
+            print!(
+                "{}",
+                if json {
+                    actions::status_json(&ws, subject.as_deref(), &trust)?
+                } else {
+                    actions::status(&ws, subject.as_deref(), &trust)?
+                }
+            )
+        }
         Command::Same {
             a,
             b,
@@ -706,22 +736,30 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             let result = actions::mark(&mut ws, &subject, value.into(), file).await?;
             print_result(&result, verbose);
         }
-        Command::Issues { json } => print!(
-            "{}",
-            if json {
-                actions::issues_json(&ws)?
-            } else {
-                actions::issues(&ws)?
-            }
-        ),
-        Command::Context { budget, json } => {
-            let budget = budget.unwrap_or(DEFAULT_BUDGET);
+        Command::Issues { json, trust } => {
+            let trust = ws.trust_from(&trust)?;
             print!(
                 "{}",
                 if json {
-                    actions::context_json(&ws, budget)?
+                    actions::issues_json(&ws, &trust)?
                 } else {
-                    actions::context(&ws, budget)?
+                    actions::issues(&ws, &trust)?
+                }
+            )
+        }
+        Command::Context {
+            budget,
+            json,
+            trust,
+        } => {
+            let budget = budget.unwrap_or(DEFAULT_BUDGET);
+            let trust = ws.trust_from(&trust)?;
+            print!(
+                "{}",
+                if json {
+                    actions::context_json(&ws, budget, &trust)?
+                } else {
+                    actions::context(&ws, budget, &trust)?
                 }
             );
         }

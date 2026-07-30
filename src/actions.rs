@@ -13,7 +13,8 @@ use crate::{
         SubjectKind, SubjectRef,
     },
     context::{self, TiktokenEstimator, TokenEstimator},
-    fold::{self, state::StateView, FoldedView, SubjectView},
+    fold::{self, state::StateView, FoldedView, SubjectView, TrustBase},
+    json::ExcludedByTrust,
     relations,
     workspace::Workspace,
 };
@@ -918,9 +919,10 @@ fn show_claim_by_cid(ws: &Workspace, view: &FoldedView, wanted: &Cid) -> Result<
 
 /// A single subject's live claims, rendered — `fold` + `render` for one
 /// subject (`docs/SPEC.md` §9's "decategorify only at render").
-pub fn show(ws: &Workspace, subject: &str) -> Result<String, Error> {
+pub fn show(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
-    let view = fold::fold(claims, &ws.solo_trust());
+    let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
+    let view = fold::fold(claims, trust);
     let subject_ref = SubjectRef::Local(Rkey::from(subject));
 
     // REQ-18: a `Retraction` names its target by CID, and no read verb
@@ -937,6 +939,7 @@ pub fn show(ws: &Workspace, subject: &str) -> Result<String, Error> {
     match view.subject(&subject_ref) {
         None => {
             out.push_str(&format!("{subject}: no claims{}\n", subject_hint(&view)));
+            out.push_str(&excluded_note(excluded.for_subject(&subject_ref), trust));
             // An edge asserted *at* a subject is part of its story even when
             // the subject has nothing of its own. `inbound_edges` used to sit
             // inside the `Some(..)` arm, so `kan relate a blocks b` then `kan
@@ -980,6 +983,7 @@ pub fn show(ws: &Workspace, subject: &str) -> Result<String, Error> {
                 "{subject} ({} live claim(s)):\n",
                 subject_view.claims.len()
             ));
+            out.push_str(&excluded_note(excluded.for_class(subject_view), trust));
             let superseded = superseded_status_cids(&subject_view.claims);
             for (cid, claim) in &subject_view.claims {
                 out.push_str(&format!(
@@ -1085,9 +1089,10 @@ fn related_subjects_by_file(
 /// One subject's (or every subject's) `Settled | Confirmed | Contested`
 /// state, or "most recent live claim" for subjects with no `Status` claims
 /// yet (`fold::state`, M4b).
-pub fn status(ws: &Workspace, subject: Option<&str>) -> Result<String, Error> {
+pub fn status(ws: &Workspace, subject: Option<&str>, trust: &TrustBase) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
-    let view = fold::fold(claims, &ws.solo_trust());
+    let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
+    let view = fold::fold(claims, trust);
 
     let mut out = String::new();
     match subject {
@@ -1110,10 +1115,12 @@ pub fn status(ws: &Workspace, subject: Option<&str>) -> Result<String, Error> {
                             out.push_str(&format!("    {line}\n"));
                         }
                     }
+                    out.push_str(&excluded_note(excluded.for_subject(&subject_ref), trust));
                 }
                 Some(subject_view) => {
                     let state = classify_subject(ws, subject_view);
                     write_state(&mut out, subject, subject_view, state);
+                    out.push_str(&excluded_note(excluded.for_class(subject_view), trust));
                 }
             }
         }
@@ -1126,6 +1133,12 @@ pub fn status(ws: &Workspace, subject: Option<&str>) -> Result<String, Error> {
                 let state = classify_subject(ws, subject_view);
                 write_state(&mut out, &label, subject_view, state);
             }
+            // Summary line rather than per-subject: the whole-log view's
+            // exclusions include subjects that are missing from the listing
+            // entirely, which no per-row note could carry. "no subjects yet"
+            // above is the sharpest case — it is a complete-looking answer
+            // that a wider trust base would contradict.
+            out.push_str(&excluded_note(excluded.total(), trust));
         }
     }
     Ok(out)
@@ -1352,9 +1365,10 @@ fn is_open_issue(ws: &Workspace, subject_view: &SubjectView) -> bool {
     !done
 }
 
-pub fn issues(ws: &Workspace) -> Result<String, Error> {
+pub fn issues(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
-    let view = fold::fold(claims, &ws.solo_trust());
+    let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
+    let view = fold::fold(claims, trust);
 
     let mut out = String::new();
     let mut shown = 0usize;
@@ -1370,7 +1384,36 @@ pub fn issues(ws: &Workspace) -> Result<String, Error> {
     if shown == 0 {
         out.push_str("no open issues\n");
     }
+    out.push_str(&excluded_note(excluded.total(), trust));
     Ok(out)
+}
+
+/// The human half of the disclosure the `--json` surface carries as
+/// `excluded_by_trust`. Empty when nothing was excluded, so a healthy read is
+/// unchanged and the line means something when it does appear.
+///
+/// This is the fix for a reproduction, not a worry. Two role identities in
+/// one workspace each appended to one subject, and each then read that
+/// subject and saw **only its own claim**, rendered `1 live claim(s)` —
+/// identically through the human output, `--json`, and `status`. Nothing was
+/// lost on disk and nothing said a second claim existed. kan had already
+/// judged this exact shape unacceptable once, in the `KAN_AGENT` removal
+/// (`workspace::Workspace::my_author`): "each reporting a complete-looking
+/// view, neither mentioning the other's claims existed." That cause was
+/// fixed; this class was not.
+///
+/// It names how to widen the view rather than only reporting the number,
+/// because a count alone leaves the reader knowing they have a partial view
+/// and not what to do about it.
+fn excluded_note(count: usize, trust: &TrustBase) -> String {
+    if count == 0 {
+        return String::new();
+    }
+    let base = trust.name();
+    format!(
+        "  note: {count} live claim(s) here are excluded by this view's trust base \
+         ({base}) -- pass --trust <did>[=<weight>] (or --trust me) to widen it\n"
+    )
 }
 
 // ------------------------------------------------------- structured output
@@ -1380,10 +1423,20 @@ pub fn issues(ws: &Workspace) -> Result<String, Error> {
 // what a view *contains* — only on how it is presented.
 
 /// `kan show <subject> --json`.
-pub fn show_json(ws: &Workspace, subject: &str) -> Result<String, Error> {
+pub fn show_json(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
-    let view = fold::fold(claims, &ws.solo_trust());
+    let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
+    let view = fold::fold(claims, trust);
     let subject_ref = SubjectRef::Local(Rkey::from(subject));
+
+    // On the class when there is one (a `SameAs` merge can bring in claims
+    // excluded under several names), on the bare subject when there is not
+    // — the wholly-filtered case, which is the one a consumer most needs
+    // told and the one a class-only lookup would silently report as zero.
+    let excluded_here = match view.subject(&subject_ref) {
+        Some(class) => excluded.for_class(class),
+        None => excluded.for_subject(&subject_ref),
+    };
 
     let (subjects, claims, flagged) = match view.subject(&subject_ref) {
         None => (vec![subject.to_string()], Vec::new(), false),
@@ -1414,47 +1467,60 @@ pub fn show_json(ws: &Workspace, subject: &str) -> Result<String, Error> {
         claims,
         flagged_oversized: flagged,
         inbound: inbound_edges_json(&view, &subject_ref),
+        trust: crate::json::TrustJson::new(trust),
+        excluded_by_trust: excluded_here,
     };
     to_json(&out)
 }
 
 /// `kan status [subject] --json`.
-pub fn status_json(ws: &Workspace, subject: Option<&str>) -> Result<String, Error> {
+pub fn status_json(
+    ws: &Workspace,
+    subject: Option<&str>,
+    trust: &TrustBase,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
-    let view = fold::fold(claims, &ws.solo_trust());
+    let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
+    let view = fold::fold(claims, trust);
     let subjects = match subject {
         Some(name) => view
             .subject(&SubjectRef::Local(Rkey::from(name)))
-            .map(|c| vec![crate::json::status_entry(c)])
+            .map(|c| vec![crate::json::status_entry(c, &excluded)])
             .unwrap_or_default(),
-        None => crate::json::all_status(&view),
+        None => crate::json::all_status(&view, &excluded),
     };
     to_json(&crate::json::StatusJson {
         v: crate::json::SCHEMA_VERSION,
         subjects,
+        trust: crate::json::TrustJson::new(trust),
+        excluded_by_trust: excluded.total(),
     })
 }
 
 /// `kan issues --json`.
-pub fn issues_json(ws: &Workspace) -> Result<String, Error> {
+pub fn issues_json(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
-    let view = fold::fold(claims, &ws.solo_trust());
+    let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
+    let view = fold::fold(claims, trust);
     let subjects = view
         .classes
         .iter()
         .filter(|c| is_open_issue(ws, c))
-        .map(crate::json::status_entry)
+        .map(|c| crate::json::status_entry(c, &excluded))
         .collect();
     to_json(&crate::json::IssuesJson {
         v: crate::json::SCHEMA_VERSION,
         subjects,
+        trust: crate::json::TrustJson::new(trust),
+        excluded_by_trust: excluded.total(),
     })
 }
 
 /// `kan context --budget N --json`.
-pub fn context_json(ws: &Workspace, budget: usize) -> Result<String, Error> {
+pub fn context_json(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
-    let view = fold::fold(claims, &ws.solo_trust());
+    let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
+    let view = fold::fold(claims, trust);
     let estimator = TiktokenEstimator::cl100k();
     let assembled = context::assemble_reporting(&view, budget, &estimator);
     let superseded: std::collections::HashSet<Cid> = view
@@ -1480,6 +1546,8 @@ pub fn context_json(ws: &Workspace, budget: usize) -> Result<String, Error> {
         budget,
         omitted_claims: assembled.omitted_claims,
         omitted_subjects: assembled.omitted_subjects.clone(),
+        trust: crate::json::TrustJson::new(trust),
+        excluded_by_trust: excluded.total(),
     })
 }
 
@@ -1494,9 +1562,10 @@ fn to_json<T: serde::Serialize>(value: &T) -> Result<String, Error> {
 
 /// Budgeted context assembly (`crate::context`, REQ-14/AC-7): the
 /// maximal-value live claim set that fits under `budget` tokens.
-pub fn context(ws: &Workspace, budget: usize) -> Result<String, Error> {
+pub fn context(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
-    let view = fold::fold(claims, &ws.solo_trust());
+    let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
+    let view = fold::fold(claims, trust);
     let estimator = TiktokenEstimator::cl100k();
     let assembled = context::assemble_reporting(&view, budget, &estimator);
 
@@ -1536,5 +1605,9 @@ pub fn context(ws: &Workspace, budget: usize) -> Result<String, Error> {
         ));
         out.push_str("-- raise --budget to see more --\n");
     }
+    // Deliberately *not* folded into the omitted-claims line above. Raising
+    // `--budget` recovers those; nothing recovers these but a wider trust
+    // base, so conflating the two would point the reader at the wrong lever.
+    out.push_str(&excluded_note(excluded.total(), trust));
     Ok(out)
 }

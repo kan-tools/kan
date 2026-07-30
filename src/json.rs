@@ -82,6 +82,41 @@ pub struct ClaimJson {
     pub superseded: bool,
 }
 
+/// The trust base a view was folded under, carried *in the response*.
+///
+/// Without this a consumer can only assume kan honoured the frame it asked
+/// for; with it, the view states its own frame and the assumption becomes a
+/// read (`.design/kan-read-contract.md` REQ-3). `Solo` reports its single
+/// author at weight `1.0`, so both variants parse identically.
+#[derive(Debug, Serialize)]
+pub struct TrustJson {
+    /// `"Solo"` or `"PeerContested"`.
+    pub base: String,
+    pub authors: Vec<TrustAuthorJson>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TrustAuthorJson {
+    pub did: String,
+    pub weight: f64,
+}
+
+impl TrustJson {
+    pub fn new(trust: &crate::fold::TrustBase) -> Self {
+        Self {
+            base: trust.name().to_string(),
+            authors: trust
+                .authors()
+                .into_iter()
+                .map(|(author, weight)| TrustAuthorJson {
+                    did: author.did,
+                    weight,
+                })
+                .collect(),
+        }
+    }
+}
+
 /// One subject's live claims.
 #[derive(Debug, Serialize)]
 pub struct ShowJson {
@@ -101,6 +136,12 @@ pub struct ShowJson {
     /// provenance so a consumer can cite and attribute them (#103).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub inbound: Vec<InboundEdgeJson>,
+    /// The trust base that produced this view (v0.8, REQ-3).
+    pub trust: TrustJson,
+    /// Live claims on this subject that the trust base excluded. Zero is
+    /// emitted, not skipped: "no exclusions" and "this kan is too old to
+    /// say" must not look alike to a consumer.
+    pub excluded_by_trust: usize,
 }
 
 /// A relation another subject asserts pointing at this one — structured with
@@ -149,18 +190,29 @@ pub struct StatusEntryJson {
     pub value: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cid: Option<String>,
+    /// Live claims on this subject the trust base excluded.
+    pub excluded_by_trust: usize,
 }
 
 #[derive(Debug, Serialize)]
 pub struct StatusJson {
     pub v: u32,
     pub subjects: Vec<StatusEntryJson>,
+    pub trust: TrustJson,
+    /// Total live claims excluded by the trust base across the whole log —
+    /// including on subjects that are absent from `subjects` entirely
+    /// because every claim naming them was excluded. Without this a
+    /// wholly-filtered subject is indistinguishable from one that was never
+    /// written.
+    pub excluded_by_trust: usize,
 }
 
 #[derive(Debug, Serialize)]
 pub struct IssuesJson {
     pub v: u32,
     pub subjects: Vec<StatusEntryJson>,
+    pub trust: TrustJson,
+    pub excluded_by_trust: usize,
 }
 
 /// A budgeted context assembly, including what it left out.
@@ -175,6 +227,11 @@ pub struct ContextJson {
     pub omitted_claims: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub omitted_subjects: Vec<String>,
+    pub trust: TrustJson,
+    /// Distinct from `omitted_claims`: that is what the *budget* withheld,
+    /// this is what the *trust base* never offered. A caller raising
+    /// `--budget` recovers the first and never the second.
+    pub excluded_by_trust: usize,
 }
 
 /// A `SubjectRef` as a plain name, matching what the read verbs accept back.
@@ -246,7 +303,7 @@ pub fn state_of(class: &SubjectView) -> (String, Option<String>, Option<String>)
     }
 }
 
-pub fn status_entry(class: &SubjectView) -> StatusEntryJson {
+pub fn status_entry(class: &SubjectView, excluded: &ExcludedByTrust) -> StatusEntryJson {
     let (state, value, cid) = state_of(class);
     let subjects: Vec<String> = class.subjects.iter().map(subject_name).collect();
     StatusEntryJson {
@@ -255,10 +312,42 @@ pub fn status_entry(class: &SubjectView) -> StatusEntryJson {
         state,
         value,
         cid,
+        excluded_by_trust: excluded.for_class(class),
     }
 }
 
 /// Every merge class in `view`, in the fold's own stable order.
-pub fn all_status(view: &FoldedView) -> Vec<StatusEntryJson> {
-    view.classes.iter().map(status_entry).collect()
+pub fn all_status(view: &FoldedView, excluded: &ExcludedByTrust) -> Vec<StatusEntryJson> {
+    view.classes
+        .iter()
+        .map(|c| status_entry(c, excluded))
+        .collect()
+}
+
+/// `fold::excluded_by_trust`'s per-subject counts, with the lookups the read
+/// surfaces need. Wrapping the map keeps the merge-class summing in one
+/// place: a class can span several `SubjectRef`s after a `SameAs`, and each
+/// of those names may have had claims excluded independently.
+pub struct ExcludedByTrust(std::collections::HashMap<SubjectRef, usize>);
+
+impl ExcludedByTrust {
+    pub fn new(map: std::collections::HashMap<SubjectRef, usize>) -> Self {
+        Self(map)
+    }
+
+    /// Excluded claims naming exactly this subject.
+    pub fn for_subject(&self, subject: &SubjectRef) -> usize {
+        self.0.get(subject).copied().unwrap_or(0)
+    }
+
+    /// Excluded claims naming any subject in this merge class.
+    pub fn for_class(&self, class: &SubjectView) -> usize {
+        class.subjects.iter().map(|s| self.for_subject(s)).sum()
+    }
+
+    /// Every excluded claim in the log, including those on subjects that no
+    /// longer appear in the view at all.
+    pub fn total(&self) -> usize {
+        self.0.values().sum()
+    }
 }

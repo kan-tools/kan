@@ -100,6 +100,11 @@ fn every_payload_is_versioned() {
     let out = json::StatusJson {
         v: json::SCHEMA_VERSION,
         subjects: vec![],
+        trust: json::TrustJson::new(&kan::fold::TrustBase::solo(kan::claim::AuthorId {
+            did: "did:key:zTest".to_string(),
+            agent: None,
+        })),
+        excluded_by_trust: 0,
     };
     let value: serde_json::Value =
         serde_json::from_str(&serde_json::to_string(&out).unwrap()).unwrap();
