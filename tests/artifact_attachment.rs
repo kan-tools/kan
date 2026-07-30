@@ -56,6 +56,9 @@ async fn open_workspace(dir: &std::path::Path) -> Workspace {
     let log = Log::open_or_create(&dir.join(".kan/log"), &identity)
         .await
         .unwrap();
+    let overlay = Log::open_or_create(&dir.join(".kan/overlay"), &identity)
+        .await
+        .unwrap();
     let index = Index::open(&dir.join(".kan/index.sqlite")).unwrap();
     let git = GitSubstrate::open(dir).unwrap();
     let anchor = Anchor::Workspace(git.genesis().unwrap());
@@ -63,6 +66,7 @@ async fn open_workspace(dir: &std::path::Path) -> Workspace {
         root: dir.to_path_buf(),
         identity,
         log,
+        overlay,
         index,
         anchor,
         git,
