@@ -335,6 +335,13 @@ pub enum IdentityAction {
         #[arg(long)]
         yes: bool,
     },
+    /// Print this repo's X25519 encryption public key.
+    ///
+    /// Public and safe to share, like the DID. It is what a future encrypted
+    /// backup or a peer wraps a content key to, and it is derived from the
+    /// same secret the recovery phrase already reproduces -- so there is no
+    /// second thing to write down.
+    EncryptionKey,
     /// Check a recovery phrase: prints the identity it belongs to.
     ///
     /// The phrase is read from stdin, never from the command line. On a
@@ -813,6 +820,9 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Identity { action } => match action {
             IdentityAction::Did => println!("{}", ws.identity.did()),
+            IdentityAction::EncryptionKey => {
+                println!("{}", ws.identity.encryption_key().public_hex())
+            }
             IdentityAction::Phrase { yes } => {
                 // Terminal-sensing gate. An MCP server, a CI job, and an AI
                 // agent's shell all have their output captured rather than

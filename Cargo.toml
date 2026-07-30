@@ -14,6 +14,7 @@ atrium-crypto = "0.1.3"
 bip39 = "2.2.2"
 clap = { version = "4.6.2", features = ["derive"] }
 fs4 = { version = "1.1.0", features = ["tokio"] }
+hkdf = "0.12"
 keyring = "4.1.5"
 rand = "0.8"
 rmcp = { version = "2.2.0", features = ["transport-io"] }
@@ -28,6 +29,7 @@ thiserror = "2.0.18"
 tiktoken-rs = "0.12.0"
 tokio = { version = "1.52.4", features = ["rt", "rt-multi-thread", "macros", "fs", "io-util"] }
 tokio-stream = "0.1"
+x25519-dalek = { version = "2", features = ["static_secrets"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
