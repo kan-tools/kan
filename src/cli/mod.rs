@@ -850,7 +850,10 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                     );
                     return Ok(());
                 }
-                println!("{}", crate::sign::recovery_phrase(&ws.identity)?);
+                let (phrase, root) =
+                    crate::sign::workspace_phrase(&ws.root.join(".kan"), &ws.identity)?;
+                println!("{phrase}");
+                eprintln!("\nThese words are {}.", root.describe());
             }
             IdentityAction::Restore { phrase } => {
                 // argv is not a place a private key may go.
@@ -878,21 +881,36 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                     .into());
                 }
                 let phrase = read_secret_line("Recovery phrase (input hidden): ")?;
-                let restored = crate::sign::from_recovery_phrase(&phrase)?;
-                if restored.did() == ws.identity.did() {
-                    println!(
-                        "that phrase belongs to {} -- it matches this repo's identity.",
-                        restored.did()
-                    );
-                } else {
-                    println!(
-                        "that phrase belongs to {}\nthis repo's identity is {}\n\nThey do \
-                         not match. kan does not overwrite an existing identity \
-                         automatically: move `.kan/` aside, or point KAN_IDENTITY_FILE at a \
-                         file holding this key, so nothing is replaced by accident.",
-                        restored.did(),
-                        ws.identity.did()
-                    );
+                // A phrase is 32 bytes of BIP-39 entropy under both schemes,
+                // so it always has two readings and nothing in the words says
+                // which. Rather than guess, report both and say which one --
+                // if either -- is this repo's.
+                let candidates = crate::sign::candidate_identities(&phrase)?;
+                let matched = candidates
+                    .iter()
+                    .find(|(_, identity)| identity.did() == ws.identity.did());
+                match matched {
+                    Some((root, identity)) => println!(
+                        "that phrase belongs to {} -- it matches this repo's identity.\n\nRead \
+                         as {}.",
+                        identity.did(),
+                        root.describe()
+                    ),
+                    None => {
+                        println!("this repo's identity is {}", ws.identity.did());
+                        println!(
+                            "\nThat phrase does not match it. It could be read two ways, \
+                                  and neither is this repo:"
+                        );
+                        for (root, identity) in &candidates {
+                            println!("  as {:?}: {}", root, identity.did());
+                        }
+                        println!(
+                            "\nkan does not overwrite an existing identity automatically: move \
+                             `.kan/` aside, or point KAN_IDENTITY_FILE at a file holding the \
+                             right key, so nothing is replaced by accident."
+                        );
+                    }
                 }
             }
             IdentityAction::Role { action } => match action {

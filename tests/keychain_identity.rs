@@ -190,17 +190,37 @@ fn keychain_or_plaintext_fallback_both_work_non_interactively() {
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let identity_path = dir.path().join(".kan/identity");
+    let kan_dir = dir.path().join(".kan");
+    let identity_path = kan_dir.join("identity");
+    let seed_path = kan_dir.join("seed");
+
+    // A brand-new workspace is seed-rooted since v0.9, so the secret that can
+    // land at rest is the **seed**, and the signing key is derived from it
+    // rather than stored at all. The property this test has always been about
+    // is unchanged and is asserted on whichever secret is in play: a plaintext
+    // copy exists if and only if the keychain was unavailable.
+    assert!(
+        !identity_path.exists(),
+        "a seed-rooted workspace wrote a plaintext signing key -- it is derivable from the \
+         seed, so storing it is a second at-rest secret for no gain"
+    );
+
     if stderr.contains("OS keychain unavailable") {
         assert!(
-            identity_path.exists(),
-            "fallback warning fired, so the plaintext identity file should exist"
+            seed_path.exists(),
+            "fallback warning fired, so the plaintext seed file should exist"
         );
     } else {
         assert!(
-            !identity_path.exists(),
-            "keychain succeeded for a brand-new identity, so no plaintext file should have \
-             been created (that's the actual point of encrypting the key at rest)"
+            !seed_path.exists(),
+            "keychain succeeded for a brand-new identity, so no plaintext secret should have \
+             been created (that's the actual point of encrypting at rest, issue #6)"
+        );
+        assert!(
+            kan_dir.join("seed-id").exists(),
+            "the keychain path must leave the marker that says where the seed went, or the \
+             next open cannot tell a keychain-held seed from no seed at all -- and would \
+             mint a second identity"
         );
     }
 }
