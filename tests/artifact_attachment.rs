@@ -68,6 +68,7 @@ async fn open_workspace(dir: &std::path::Path) -> Workspace {
         log,
         overlay,
         index,
+        published: Default::default(),
         anchor,
         git,
     }
