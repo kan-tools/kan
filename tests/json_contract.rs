@@ -254,6 +254,33 @@ fn an_unknown_claim_kind_still_serializes() {
 fn every_payload_envelope_is_pinned() {
     let trust = || json::TrustJson::new(&kan::fold::TrustBase::solo(author()));
 
+    // StatusEntryJson's own field set, including v0.9's durability column.
+    let entry = serde_json::to_value(json::StatusEntryJson {
+        subject: "s".to_string(),
+        subjects: vec!["s".to_string()],
+        state: "Settled".to_string(),
+        value: None,
+        cid: None,
+        excluded_by_trust: 0,
+        durability: "unpublished".to_string(),
+    })
+    .unwrap();
+    let keys: Vec<String> = entry.as_object().unwrap().keys().cloned().collect();
+    assert_pinned(
+        &[
+            "subject",
+            "subjects",
+            "state",
+            "excluded_by_trust",
+            "durability",
+        ],
+        &keys,
+        "StatusEntryJson",
+    );
+    // Emitted even in the healthy state: a field that appears only on bad
+    // news is indistinguishable from an older kan that never reports it.
+    assert_eq!(entry["durability"], "unpublished");
+
     let status = serde_json::to_value(json::StatusJson {
         v: json::SCHEMA_VERSION,
         subjects: vec![],

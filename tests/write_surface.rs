@@ -93,6 +93,7 @@ async fn retract_rejects_another_authors_claim_at_write_time() {
         log,
         overlay,
         index,
+        published: Default::default(),
         anchor,
         git,
     };
@@ -171,6 +172,7 @@ async fn reject_writes_a_rejects_claim_against_another_authors_claim() {
         log,
         overlay,
         index,
+        published: Default::default(),
         anchor,
         git,
     };
@@ -227,6 +229,7 @@ async fn reject_refuses_the_callers_own_claim() {
         log,
         overlay,
         index,
+        published: Default::default(),
         anchor,
         git,
     };

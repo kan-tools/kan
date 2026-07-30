@@ -60,6 +60,46 @@ pub struct Workspace {
     pub index: Index,
     pub anchor: Anchor,
     pub git: GitSubstrate,
+    /// Which claims are in the tracked `.claims/` tree, by subject — built
+    /// during the same read `ingest_published` already does, so the
+    /// durability column costs no additional I/O.
+    pub published: PublishedIndex,
+}
+
+/// The content CIDs present in the published tree, per subject.
+///
+/// **Why the *set of CIDs* and not the `Publication` claim's timestamp.**
+/// `kan publish --all` refreshes a subject's file without appending a new
+/// `Publication` claim, so a subject brought fully up to date would still
+/// look stale under a timestamp comparison — the column would report a gap
+/// that the operator had just closed, which is the fastest way to teach
+/// someone to ignore a column. Comparing claim-for-claim against what is
+/// actually in the file answers the question durability actually asks: if
+/// `.kan/` disappeared right now, what would come back?
+#[derive(Default)]
+pub struct PublishedIndex {
+    by_subject: std::collections::HashMap<crate::claim::SubjectRef, std::collections::HashSet<Cid>>,
+}
+
+impl PublishedIndex {
+    fn record(&mut self, subject: crate::claim::SubjectRef, cid: Cid) {
+        self.by_subject.entry(subject).or_default().insert(cid);
+    }
+
+    /// Whether anything at all has been published for this subject.
+    pub fn is_published(&self, subject: &crate::claim::SubjectRef) -> bool {
+        self.by_subject.contains_key(subject)
+    }
+
+    pub fn contains(&self, subject: &crate::claim::SubjectRef, cid: &Cid) -> bool {
+        self.by_subject
+            .get(subject)
+            .is_some_and(|cids| cids.contains(cid))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_subject.is_empty()
+    }
 }
 
 impl Workspace {
@@ -80,7 +120,7 @@ impl Workspace {
         // already returned byte-complete, signature-verified records and had
         // no caller anywhere outside its own tests (#97) — this is that
         // caller.
-        ingest_published(&root, &identity, &mut overlay).await?;
+        let published = ingest_published(&root, &identity, &mut overlay).await?;
 
         // Correctness-first (CLAUDE.md house rules), with one cheap,
         // provably-safe skip (issue #26, `.design/v0.4-milestone.md`
@@ -112,6 +152,7 @@ impl Workspace {
             index,
             anchor,
             git,
+            published,
         })
     }
 
@@ -266,18 +307,24 @@ async fn ingest_published(
     root: &Path,
     identity: &Identity,
     overlay: &mut Log,
-) -> Result<(), Error> {
+) -> Result<PublishedIndex, Error> {
     let claims_dir = root.join(crate::transport::git_tree::CLAIMS_DIR);
     if !claims_dir.exists() {
-        return Ok(());
+        return Ok(PublishedIndex::default());
     }
 
     let tree = crate::transport::git_tree::GitTree::new_reader(root);
     let mine = identity.did();
+    let mut published = PublishedIndex::default();
     let mut pending = Vec::new();
     for record in tree.read_all_with_rev() {
         match record {
             Ok((cid, claim, rev)) => {
+                // Recorded before the author test, and for every record
+                // regardless of who signed it: durability asks "is this claim
+                // in the tree", which is a question about the tree, not about
+                // whose claim it is.
+                published.record(claim.content.subject.clone(), cid.clone());
                 if claim.content.author.did == mine {
                     continue;
                 }
@@ -305,7 +352,7 @@ async fn ingest_published(
             eprintln!("warning: could not ingest a published record: {e}");
         }
     }
-    Ok(())
+    Ok(published)
 }
 
 pub fn cwd() -> Result<PathBuf, Error> {

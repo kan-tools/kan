@@ -643,6 +643,55 @@ fn live_claims_for(
         .unwrap_or_default()
 }
 
+/// Whether a subject would survive losing `.kan/`
+/// (`.design/durability-log-recovery.md` REQ-5, v0.9 REQ-3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Durability {
+    /// Lives only in `.kan/`. One directory, one copy, one machine.
+    Unpublished,
+    /// Every live claim is in the tracked tree; losing `.kan/` loses nothing.
+    Published,
+    /// Published, but the log holds live claims the tree does not. A restore
+    /// would come back short.
+    Stale,
+}
+
+impl Durability {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Durability::Unpublished => "unpublished",
+            Durability::Published => "published",
+            Durability::Stale => "stale",
+        }
+    }
+}
+
+/// Classify one merge class against the published tree.
+///
+/// Computed over the class's live claims **as this view sees them**, not over
+/// one author's. With several role identities in a workspace, every one of
+/// their claims is in the same `.kan/log` and every one is lost together, so
+/// a claim absent from the tree makes the subject stale whoever signed it.
+///
+/// A class spanning several names after a `SameAs` is published under each
+/// name it was published under; a claim counts as durable if the tree holds
+/// it under *any* of the class's subjects, since that is enough to restore it.
+pub fn durability_of(ws: &Workspace, class: &SubjectView) -> Durability {
+    let published_anywhere = class.subjects.iter().any(|s| ws.published.is_published(s));
+    if !published_anywhere {
+        return Durability::Unpublished;
+    }
+    let all_present = class
+        .claims
+        .iter()
+        .all(|(cid, _)| class.subjects.iter().any(|s| ws.published.contains(s, cid)));
+    if all_present {
+        Durability::Published
+    } else {
+        Durability::Stale
+    }
+}
+
 /// `kan restore` — rebuild this identity's log from the tracked `.claims/`
 /// tree (`.design/durability-log-recovery.md` REQ-2/REQ-3, v0.9 REQ-1/REQ-2).
 ///
@@ -1265,7 +1314,8 @@ pub fn status(ws: &Workspace, subject: Option<&str>, trust: &TrustBase) -> Resul
                 }
                 Some(subject_view) => {
                     let state = classify_subject(ws, subject_view);
-                    write_state(&mut out, subject, subject_view, state);
+                    let durability = durability_of(ws, subject_view);
+                    write_state(&mut out, subject, subject_view, state, durability);
                     out.push_str(&excluded_note(excluded.for_class(subject_view), trust));
                 }
             }
@@ -1277,7 +1327,8 @@ pub fn status(ws: &Workspace, subject: Option<&str>, trust: &TrustBase) -> Resul
             for subject_view in &view.classes {
                 let label = subject_label(subject_view);
                 let state = classify_subject(ws, subject_view);
-                write_state(&mut out, &label, subject_view, state);
+                let durability = durability_of(ws, subject_view);
+                write_state(&mut out, &label, subject_view, state, durability);
             }
             // Summary line rather than per-subject: the whole-log view's
             // exclusions include subjects that are missing from the listing
@@ -1415,7 +1466,28 @@ fn inbound_edges_json(
     out
 }
 
-fn write_state(out: &mut String, label: &str, subject_view: &SubjectView, state: StateView) {
+/// One status line, with the durability marker appended inline.
+///
+/// Inline rather than a second line per subject: `kan status` with no
+/// argument lists every subject, and doubling that output would make the
+/// column something people stop reading. It is shown for **all three**
+/// states, including the healthy one — a column that only appears when
+/// something is wrong is a nag, and the point of REQ-5 is to make the gap
+/// legible as data.
+fn write_state(
+    out: &mut String,
+    label: &str,
+    subject_view: &SubjectView,
+    state: StateView,
+    durability: Durability,
+) {
+    let mut line = String::new();
+    write_state_line(&mut line, label, subject_view, state);
+    out.push_str(line.trim_end_matches('\n'));
+    out.push_str(&format!("  [{}]\n", durability.name()));
+}
+
+fn write_state_line(out: &mut String, label: &str, subject_view: &SubjectView, state: StateView) {
     match state {
         StateView::Unclassified => match subject_view.claims.last() {
             None => out.push_str(&format!("{label}: no claims\n")),
@@ -1525,7 +1597,13 @@ pub fn issues(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
         let state = classify_subject(ws, subject_view);
         shown += 1;
         let label = subject_label(subject_view);
-        write_state(&mut out, &label, subject_view, state);
+        write_state(
+            &mut out,
+            &label,
+            subject_view,
+            state,
+            durability_of(ws, subject_view),
+        );
     }
     if shown == 0 {
         out.push_str("no open issues\n");
@@ -1631,9 +1709,15 @@ pub fn status_json(
     let subjects = match subject {
         Some(name) => view
             .subject(&SubjectRef::Local(Rkey::from(name)))
-            .map(|c| vec![crate::json::status_entry(c, &excluded)])
+            .map(|c| {
+                vec![crate::json::status_entry(
+                    c,
+                    &excluded,
+                    durability_of(ws, c),
+                )]
+            })
             .unwrap_or_default(),
-        None => crate::json::all_status(&view, &excluded),
+        None => crate::json::all_status(&view, &excluded, |c| durability_of(ws, c)),
     };
     to_json(&crate::json::StatusJson {
         v: crate::json::SCHEMA_VERSION,
@@ -1652,7 +1736,7 @@ pub fn issues_json(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
         .classes
         .iter()
         .filter(|c| is_open_issue(ws, c))
-        .map(|c| crate::json::status_entry(c, &excluded))
+        .map(|c| crate::json::status_entry(c, &excluded, durability_of(ws, c)))
         .collect();
     to_json(&crate::json::IssuesJson {
         v: crate::json::SCHEMA_VERSION,

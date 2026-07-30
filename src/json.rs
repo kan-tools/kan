@@ -222,6 +222,12 @@ pub struct StatusEntryJson {
     pub cid: Option<String>,
     /// Live claims on this subject the trust base excluded.
     pub excluded_by_trust: usize,
+    /// `unpublished` | `published` | `stale` — whether this subject would
+    /// survive losing `.kan/` (`.design/durability-log-recovery.md` REQ-5).
+    /// Emitted always, not only when there is a gap: a field that appears
+    /// only on bad news cannot be distinguished from an older kan that does
+    /// not report it at all.
+    pub durability: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -351,7 +357,11 @@ pub fn state_of(class: &SubjectView) -> (String, Option<String>, Option<String>)
     }
 }
 
-pub fn status_entry(class: &SubjectView, excluded: &ExcludedByTrust) -> StatusEntryJson {
+pub fn status_entry(
+    class: &SubjectView,
+    excluded: &ExcludedByTrust,
+    durability: crate::actions::Durability,
+) -> StatusEntryJson {
     let (state, value, cid) = state_of(class);
     let subjects: Vec<String> = class.subjects.iter().map(subject_name).collect();
     StatusEntryJson {
@@ -361,14 +371,19 @@ pub fn status_entry(class: &SubjectView, excluded: &ExcludedByTrust) -> StatusEn
         value,
         cid,
         excluded_by_trust: excluded.for_class(class),
+        durability: durability.name().to_string(),
     }
 }
 
 /// Every merge class in `view`, in the fold's own stable order.
-pub fn all_status(view: &FoldedView, excluded: &ExcludedByTrust) -> Vec<StatusEntryJson> {
+pub fn all_status(
+    view: &FoldedView,
+    excluded: &ExcludedByTrust,
+    durability: impl Fn(&SubjectView) -> crate::actions::Durability,
+) -> Vec<StatusEntryJson> {
     view.classes
         .iter()
-        .map(|c| status_entry(c, excluded))
+        .map(|c| status_entry(c, excluded, durability(c)))
         .collect()
 }
 
