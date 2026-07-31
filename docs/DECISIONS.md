@@ -3418,3 +3418,197 @@ documented scheduler recipes, with `kan status` making a misconfigured cadence
 visible. And where the credential lives; the lean is the existing key-storage
 machinery at lower ceremony, since a lost capability is re-issued rather than
 recovered and a second 24-word phrase would be ceremony for nothing.
+
+## ADR-74 — Media replace the publicness ladder
+**Date:** 2026-07-31
+**Status:** Accepted — supersedes ADR-54's ladder
+
+**Decision:** `.design/medium-architecture.md`. kan's model is a **set of media
+with capabilities**, not an ordered ladder of publicness. An identity writes to
+one medium — its own log — and replicates to others; what a user sees is
+`fold(⋃ readable claim media, trust)`. "Promotion" is sugar over *post to a
+medium* plus *aggregate and filter*.
+
+**The ladder was describing a different architecture than the one kan has.**
+The README's thesis is "many local truths, glued into a shared picture,
+parameterized by whom you trust" — a set with a filter. ADR-54's ladder said
+"one truth escalating through ordered publicness", and the two do not agree.
+v0.8 had already implemented the set-with-a-filter version without naming it:
+`Transport` is a medium connection, `Workspace.log ∪ overlay` is the aggregate,
+`TrustBase` is the filter, the fold is the projection.
+
+**What proves the ladder wrong is L1 and GitTree, from opposite directions.**
+L1's encrypted backup *discloses to nobody* — putting it between Local and
+relay on a publicness ladder asserts it is more public than local, which is
+false. And `GitTree`, the shipped transport, has no rung at all: its reach is
+whatever the git remote's is, spanning "only me" to "the world, irreversibly",
+which kan neither controls nor knows. A ladder indexed by mechanism cannot
+express a reach that is not a property of the mechanism.
+
+**What survives:** reach and reversibility, as properties of a medium
+*instance*. Reversibility is what ADR-54 was really tracking when it marked
+one-way rungs, and it is real — a relay you control is reversible, a public git
+remote is not.
+
+**Conflict resolution is not a problem kan has.** The log is a grow-only set of
+content-addressed signed claims — retraction is another claim, and
+content-addressing makes adds idempotent. That is a G-Set, union is the merge,
+and convergence is guaranteed by the data type rather than the protocol. No OT,
+no transformation, no ordering, no locks, no consensus, at any layer.
+
+**The rule for background processes falls out of granularity, not direction:**
+workspace-granular media (archive, mirror) *require* one, because a whole-store
+operation cannot ride on a claim write; claim-granular media *forbid* one,
+because `kan publish` being a deliberate act is ADR-43's curation boundary.
+
+**Every hosted service is blind, and that was not the design goal — it fell
+out.** The archive holds encrypted whole objects; the replica holds an MST of
+encrypted records, learning cardinality and not the citation graph. Plaintext
+access becomes a grant to a **named service** (an indexer joins as a member
+holding a wrapped epoch key) rather than a property of the substrate.
+
+**Two of atproto's three reasons for choosing access control over encryption do
+not apply here**, which is why kan can encrypt where permissioned spaces do
+not. Key management is easier because the encryption key is per-*identity* and
+derived from one seed (ADR-55/65), so every device derives the same key and
+recipients' keys come from their identity. And kan's groups are teams, not the
+50k-member case that strains group encryption. The third — backends must read
+to index — is handled by the named-member grant above. atproto's design
+explicitly permits applications to layer encryption on the permissioning
+protocol, so this is compatible rather than divergent.
+
+**Membership is host-authoritative**, matching atproto's Arbiter and for the
+same reason: membership held in members' repos is circular, since you need
+membership to read the repos that declare it. kan adds that membership
+*changes* are recorded as claims for audit — the ACL enforces, the claims say
+who added whom, and divergence between them is visible rather than silent.
+
+**Identity across kan and atproto: the repo is a carrier.** Claims stay
+authored by `did:key`; the atproto repo holds a complete self-signed claim
+exactly as `.claims/` does. Making `did:plc` authoritative would tie provenance
+to the carrier, which is the coupling kan exists to avoid — and it would have
+required author-level identity merging, a fold change this avoids entirely.
+
+**Consequences:** ADR-54's ladder is superseded; its wire reasoning survives
+scoped to media where the server may read. ADR-70's stated reason for rejecting
+structure-preserving encryption is corrected in place — it overstated the leak,
+and the corrected version is what lets the replica be encrypted. `Layer` stays
+in the claim (the kind is what kan knows), the address stays in the mount
+manifest (URIs move, signed content does not). The durability column's
+publicness vocabulary must be replaced; that is a shipped `--json` field and
+therefore a schema change.
+
+## ADR-75 — Agents are derived roles; scope lives in the attestation
+**Date:** 2026-07-31
+**Status:** Accepted (design); the fold change is its own later pass
+
+**Decision:** an agent identity is `HKDF(seed, "kan/v1/agent/" + label)`,
+vouched for by a signed claim from the root identity, enrolled as a space
+member in its own right. Delegation *scope* — time-bounds, per-subject limits —
+is expressed as constraints on the vouching claim and honoured at fold time,
+not encoded in keys.
+
+**This rests on a correction.** The design looked blocked because handing an
+agent decryption appeared to mean handing it the seed, since ADR-65/66 derive
+everything from one root. That is wrong: **HKDF is one-way**. An agent holding
+`HKDF(seed, label)` can derive neither the root nor any sibling. The property
+that made "one escrowed secret reproduces everything" work is the same property
+that makes bounded delegation work, and the apparent conflict was mine.
+
+**Why derived rather than randomly generated.** Determinism means an agent key
+is recoverable from the root by label, so nothing needs escrowing per agent —
+which is what makes minting one per container, worktree, or task affordable
+rather than a provisioning burden.
+
+**Why scope belongs in the claim rather than in keys.** Per-subject scoping at
+the crypto layer needs per-subject keys, which defeats the whole-space epoch
+model. At the ACL layer it is crude and unauditable. In the attestation it is
+signed, retractable, attributable, and composes with the trust base already
+built. The cost is that `TrustBase` generalizes from `author -> weight` to
+`claim -> weight` — a fold change, which `CLAUDE.md` permits only for a
+measured reason. This is one, and it lands as its own pass with its own
+negative controls.
+
+**One-step expansion, to avoid a fixpoint.** Vouching claims live inside the
+fold whose trust base they modify. Only claims from **explicitly trusted**
+authors are honoured, and expansion never recurses: Alice's vouching grants
+conditional trust to her agents; her agents' vouching grants nothing. Bounded
+and decidable, and consistent with v0.8's rule that transitive trust is never
+automatic — `--trust roles` expands a registry rather than inferring a chain.
+
+**Time-bounds are weaker than they look, and are shipped saying so.**
+`recorded_at` is signed but self-attested, so a compromised agent can backdate
+past its own expiry. Per-subject constraints have no equivalent weakness. The
+fix is a **notary** — an attestation that a claim was seen at a time, or
+equivalently a replica recording server-observed arrival, which is the same
+claim wearing a different name. That is #67, and it stops being a curiosity
+here: it is what makes time-bounded delegation enforceable rather than
+advisory.
+
+**Consequences for #30.** It narrows to non-extractability — an enclave-held
+sub-key an agent cannot exfiltrate — which derivation cannot provide and which
+ADR-55 already accepted as residual at the root. The useful half (many
+attributable agents, cheap to mint, revocable by membership change) needs **no
+fold change** and mostly reuses v0.9's role registry: `kan identity role add`
+already mints, registers, and expands under `--trust roles`. The delta is a
+derived-key mode and the vouching claim.
+
+## ADR-76 — Deletion is a medium event; the key authenticates the content
+**Date:** 2026-07-31
+**Status:** Accepted
+
+**Decision:** `.design/medium-architecture.md`. atproto repos are CRUD; kan has
+one withdrawal mechanism and no notion of the other two. This records what each
+means.
+
+**Update is prevented structurally.** kan records in an atproto repo are keyed
+by their **content CID**, so `putRecord` with different content under the same
+key is a detectable contradiction — the key states CID X, the content hashes to
+Y. Immutability stops being a rule anyone must respect and becomes a property
+of the addressing.
+
+That is the **third instance of one pattern**: `.claims/`'s filename
+authentication (ADR-43 REQ-13), the rule that an identity binding must name the
+repo it is found in (ADR-74), and now record keys. Stated generally so it is
+not rediscovered a fourth time: **the key authenticates the content.**
+
+**Deletion is a medium event, never a claim event.** A claim's existence is not
+a property of any medium — it is a signed object, and a log, a `.claims/` tree,
+and a PDS are all places it happens to be. A record vanishing means *no longer
+published there*, not *withdrawn*. Inferring retraction from absence would let
+deletion silently perform a fold-affecting operation kan explicitly says it is
+not.
+
+kan already behaves this way: `git_tree`'s `missing_records` reports removed
+records as an **anomaly**, not a retraction. This generalizes #92 from
+`.claims/` to every medium.
+
+**The invariant is local, and that is the honest statement.** "No operation
+destroys a subject" holds absolutely inside `.kan/`. At any medium kan does not
+control it is a *convention*, and deletion there is genuinely destructive:
+retraction preserves what was withdrawn, deletion removes it, and if that
+medium was a reader's only source the claim is gone for them.
+
+**And deletion is probably legally required**, which reframes atproto's CRUD as
+answering a constraint rather than being careless about immutability. A hosted
+service that cannot delete cannot operate in most jurisdictions. kan meets this
+the moment it hosts anything: the archive drops an object trivially; the
+replica can delete a record but other members have already synced it, so
+**erasure at a service is not erasure globally** and promising otherwise would
+be false; and an appview must honour deletion *and not re-derive from its own
+cache*, which would quietly resurrect deleted data.
+
+**Retraction propagation is an appview correctness requirement**, distinct from
+T3's completeness. An appview serving a repo must serve that repo's
+`Retraction` claims — omitting one misstates the repo's own position, which is
+misrepresentation rather than incompleteness. `Rejects` is different: it is
+another author's, trust-local, so an appview serves it as a claim and applies
+nothing, since honouring rejections centrally would be the appview applying
+someone's trust base — the folding it must not do (`docs/SPEC.md` §8).
+
+T3's per-repo commitment already makes the first enforceable: a client
+verifying against the commit root *notices* a missing retraction. For
+cross-repo selections, which have no commitment, the spec rule is **if you
+return a claim, you return its retractions** — cheap for an appview already
+indexing them, and the difference between being opinionated about what you see
+and being wrong about what you saw.
