@@ -280,6 +280,83 @@ kan-tools' opinions. Forkability protects structurally rather than practically.
 That is equally true of Bluesky, and it is recorded rather than left to sound
 stronger than it is.
 
+### Withdrawal, deletion, and update (T6, resolved)
+
+An appview that indexes claims but does not serve retractions shows withdrawn
+content as live. That is **misrepresentation rather than incompleteness** — a
+different severity from T3's selection, which can honestly say what it is.
+
+**The rule splits by kind**, because the two withdrawal mechanisms differ in
+whose they are:
+
+- **`Retraction`** — the author's own, in the author's own repo. An appview
+  serving a repo **must** serve its retractions. Omitting one misstates that
+  repo's own position, and it is cheap because the commitment already covers
+  both.
+- **`Rejects`** — another author's, trust-local. Serve it as a claim and apply
+  nothing: honouring rejections centrally would be the appview applying
+  *someone's* trust base, which is precisely the folding it must not do
+  (`docs/SPEC.md` §8 — honoured only by folds that trust the rejecter).
+
+**T3's commitment already enforces the first.** A client verifying a per-repo
+response against its commit root *notices* a missing retraction, because the
+root will not verify. The mechanism built for completeness makes
+retraction-dropping detectable rather than a promise.
+
+The gap it does not cover is cross-repo selections, which have no commitment.
+Spec rule: **if you return a claim, you return its retractions.** Cheap for an
+appview that is indexing them anyway, and it is the difference between being
+opinionated about what you see and being wrong about what you saw.
+
+### Three operations where kan has one
+
+atproto repos are CRUD. kan has one withdrawal mechanism and no notion of the
+other two.
+
+| | atproto | kan |
+|---|---|---|
+| retract | — | a *claim*; preserves what was withdrawn |
+| delete | `deleteRecord` | **no concept** — "no operation destroys a subject" |
+| update | `putRecord` | **incoherent** — claims are content-addressed |
+
+**Update is preventable structurally: key kan records by their content CID.**
+Then `putRecord` with different content under the same key is a detectable
+contradiction — the key states CID X, the content hashes to Y. This is the
+third instance of one pattern, after `.claims/`'s filename authentication
+(ADR-43 REQ-13) and the rule that an identity binding must name the repo it is
+found in. Worth stating generally: **the key authenticates the content.**
+
+**Delete is not preventable, and should not be.** The rule is that **deletion
+at a medium is a medium event, never a claim event.** A claim's existence is
+not a property of any medium — it is a signed object, and a log, a `.claims/`
+tree, and a PDS are all places it happens to be. A record vanishing means *no
+longer published there*, not *withdrawn*. Treating absence as retraction would
+let deletion silently perform a fold-affecting operation kan says it is not.
+
+kan already behaves this way: `git_tree`'s `missing_records` reports removed
+records as an **anomaly** ("N of M present, M−N removed since publication"),
+not as a retraction. This generalizes #92 from `.claims/` to every medium.
+
+**The honest part.** kan's non-destruction invariant is **local**. Inside
+`.kan/` it holds absolutely; at any medium kan does not control it is a
+*convention*, and deletion there is genuinely destructive — retraction
+preserves what was withdrawn, deletion removes it, and if that medium was a
+reader's only source the claim is gone for them.
+
+That is not merely a leak to tolerate. **Right to erasure likely requires it**:
+a hosted service that cannot delete cannot operate in most jurisdictions. So
+atproto's CRUD is not careless about immutability — it answers a requirement
+kan meets the moment it hosts anything.
+
+For the services:
+
+- **archive** — trivial; drop the object.
+- **replica** — delete the record, but other members have already synced it.
+  **Erasure at a service is not erasure globally**, and promising otherwise
+  would be false.
+- **appview** — must honour deletion from its index, and must **not** re-derive
+  from its own cache afterwards, which would quietly resurrect deleted data.
+
 ## Open Questions
 
 <!-- OPEN: Q2 -->
@@ -332,14 +409,6 @@ an agent cannot exfiltrate. Derivation cannot give that, and ADR-55 already
 accepted T5 at the root, so it protects nothing today either. The useful half
 of #30 — many attributable agents, cheaply, revocably — falls out of derivation
 plus the role registry, with **no fold change**.
-<!-- /OPEN -->
-
-<!-- OPEN: Q3 -->
-### Q3: Retraction propagation (T6)
-
-An appview that indexes claims but does not serve retractions shows withdrawn
-content as live. That is misrepresentation rather than incompleteness, so
-"faithfully represents network state" has to include the negative claims.
 <!-- /OPEN -->
 
 <!-- OPEN: Q4 -->
