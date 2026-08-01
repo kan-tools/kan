@@ -454,6 +454,8 @@ pub enum RelationKindArg {
     DependsOn,
     Accepts,
     InTensionWith,
+    Supersedes,
+    Refutes,
 }
 
 impl From<RelationKindArg> for crate::claim::RelationKind {
@@ -465,6 +467,8 @@ impl From<RelationKindArg> for crate::claim::RelationKind {
             RelationKindArg::DependsOn => Self::DependsOn,
             RelationKindArg::Accepts => Self::Accepts,
             RelationKindArg::InTensionWith => Self::InTensionWith,
+            RelationKindArg::Supersedes => Self::Supersedes,
+            RelationKindArg::Refutes => Self::Refutes,
         }
     }
 }

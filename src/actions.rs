@@ -1328,14 +1328,12 @@ pub fn show(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<String, 
                     out.push_str(&format!("    {line}\n"));
                 }
             }
-            let tensions = crate::fold::relations::in_tension_with(
-                &view
-                    .classes
-                    .iter()
-                    .flat_map(|c| c.claims.iter().cloned())
-                    .collect::<Vec<_>>(),
-                &subject_ref,
-            );
+            let all_claims: Vec<_> = view
+                .classes
+                .iter()
+                .flat_map(|c| c.claims.iter().cloned())
+                .collect();
+            let tensions = crate::fold::relations::in_tension_with(&all_claims, &subject_ref);
             if !tensions.is_empty() {
                 let names: Vec<String> = tensions
                     .iter()
@@ -1345,6 +1343,29 @@ pub fn show(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<String, 
                     })
                     .collect();
                 out.push_str(&format!("  in tension with: {}\n", names.join(", ")));
+            }
+
+            // #116: the two projections the research loop asked for, on the
+            // surface it actually reads. A `supersedes` edge already shows up
+            // under "edges pointing here", but that is the raw assertion —
+            // the useful question is where the chain *ends*, which is a walk
+            // rather than a lookup. Same for refutation: the register is only
+            // worth having as a fold-time view, and a view nobody can reach
+            // from the CLI is one that gets kept by hand instead.
+            let live = crate::fold::relations::live_members(&all_claims, &subject_ref);
+            let still_live = live.len() == 1 && live[0] == subject_ref;
+            if !still_live {
+                out.push_str(&format!(
+                    "  superseded — live now: {}\n",
+                    render_subject_list(&live)
+                ));
+            }
+
+            let refutations =
+                crate::fold::relations::refutation_witnesses(&all_claims, &subject_ref);
+            if !refutations.is_empty() {
+                let by: Vec<SubjectRef> = refutations.iter().map(|e| e.from.clone()).collect();
+                out.push_str(&format!("  refuted by: {}\n", render_subject_list(&by)));
             }
 
             let related = related_subjects_by_file(&view, subject_view, &ws.git);
@@ -1544,6 +1565,18 @@ fn inbound_edge_line(claim: &crate::claim::Claim) -> Option<String> {
 
 /// Relations pointing at `subject`, for a subject that has no claims (and so
 /// no merge class) of its own.
+/// Subject refs as a human-facing comma list, local names bare and anything
+/// else debug-rendered — the same rendering the tension line uses.
+fn render_subject_list(refs: &[SubjectRef]) -> String {
+    refs.iter()
+        .map(|r| match r {
+            SubjectRef::Local(rkey) => rkey.to_string(),
+            other => format!("{other:?}"),
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn inbound_edges_to(view: &FoldedView, subject: &SubjectRef) -> Vec<String> {
     let mut out: Vec<String> = inbound_relation_claims(view, std::slice::from_ref(subject), None)
         .iter()
