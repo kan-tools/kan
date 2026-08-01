@@ -131,6 +131,42 @@ pub enum RelationKind {
     /// as `docs/SPEC.md` §4.3 derives identity confidence — never a stored
     /// number, which would assert a fold output as input (#72).
     InTensionWith,
+    /// This subject replaces `target`, which is retained rather than deleted
+    /// (#116). The research loop's non-destructive-supersession rule: a
+    /// retired object stays readable and the replacement points at what it
+    /// replaced.
+    ///
+    /// **Distinct from `Retraction`, and the difference is not pedantic.** A
+    /// retraction says the claim was wrong and removes it from the fold.
+    /// Supersession says it was right and has been outgrown — the superseded
+    /// subject keeps its claims, its author, and its place in the record.
+    /// Also distinct from `SameAs`: these are two subjects, not one subject
+    /// under two names, so merging them would destroy exactly the history
+    /// supersession exists to keep.
+    ///
+    /// Read forward by `fold::relations::live_members`, which returns the
+    /// *frontier* rather than a single tip — a subject superseded twice has
+    /// genuinely forked, and collapsing that to one answer would be the store
+    /// deciding something the data does not say.
+    Supersedes,
+    /// This subject refutes `target`: a substantive, citable result that kills
+    /// it (#116).
+    ///
+    /// **Distinct from `Rejects`.** Rejection is trust-local suppression of
+    /// another author's claim — it changes what *you* see and nothing else.
+    /// Refutation is public and additive: the refuted subject stays fully
+    /// visible, and the refutation is a new claim standing beside it. Nothing
+    /// is hidden, which is why this is a domain relation and not a fold
+    /// control.
+    ///
+    /// **Asserted subject-to-subject, though #116 describes it claim-to-
+    /// claim.** `Relation` targets a `SubjectRef`, and rather than widen that
+    /// for one kind, the specific claim being refuted is named the way this
+    /// codebase already names evidence: the refuting claim `cites` it. That is
+    /// the same split `InTensionWith` makes — the edge carries the assertion,
+    /// `cites` carries the *what* and the *why* — and it keeps one shape for
+    /// every relation instead of two.
+    Refutes,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

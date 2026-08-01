@@ -167,6 +167,8 @@ enum RelateKindParam {
     DependsOn,
     Accepts,
     InTensionWith,
+    Supersedes,
+    Refutes,
 }
 
 impl From<RelateKindParam> for crate::claim::RelationKind {
@@ -178,6 +180,8 @@ impl From<RelateKindParam> for crate::claim::RelationKind {
             RelateKindParam::DependsOn => Self::DependsOn,
             RelateKindParam::Accepts => Self::Accepts,
             RelateKindParam::InTensionWith => Self::InTensionWith,
+            RelateKindParam::Supersedes => Self::Supersedes,
+            RelateKindParam::Refutes => Self::Refutes,
         }
     }
 }
@@ -464,7 +468,8 @@ impl KanServer {
 
     #[tool(
         description = "Assert a domain edge between two subjects: blocks, about, \
-                       manifests-at, depends-on, accepts, or in-tension-with. Not for \
+                       manifests-at, depends-on, accepts, in-tension-with, supersedes, or \
+                       refutes. Not for \
                        identity -- use `same` for that."
     )]
     async fn relate(&self, params: Parameters<RelateParams>) -> Result<String, ErrorData> {
@@ -578,7 +583,8 @@ impl ServerHandler for KanServer {
              (same/relate/mark) asserts \
              relationships and status independent of any narrative: same asserts two \
              subjects are the same, relate asserts a domain edge (blocks/about/ \
-             manifests-at/depends-on/accepts/in-tension-with), mark writes a bare status value. \
+             manifests-at/depends-on/accepts/in-tension-with/supersedes/refutes), mark writes a \
+             bare status value. \
              Correcting (retract/reject) supersedes a claim: retract for your own, \
              reject (a local suppression honored only by trusting folds) for another \
              author's. Recalling (show/status/issues/context) reads the claim graph: \

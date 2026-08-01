@@ -3700,3 +3700,88 @@ had no rows at all, so the matrix failed on the v0.9.1 tag push and stayed red
 and unread for two days — the gate worked and nobody was looking. Adding the
 rows while already in the file is the difference between a gate and a
 formality.
+
+## ADR-79 — Retire the v0.10 reservation; number by content
+**Date:** 2026-08-01
+**Status:** Accepted (supersedes the reservation in ADR-35, reaffirmed in ADR-72)
+
+**Context.** ADR-35 reserved `v0.10` for the HostedRelay milestone, and ADR-72
+defended it — v0.9.1's branch was misnamed `v0.10-bulk-read`, and releasing it
+as a minor would have taken that number for something that was not that
+milestone.
+
+The reservation has since been overtaken by the design work it was reserving
+for. ADR-73 moved L1's wire to object PUT/GET and deferred the wire protocol
+to M5, which **made M4 smaller**; ADR-74 replaced the publicness ladder with
+media entirely. The thing "v0.10 = HostedRelay" named no longer exists in that
+shape, and is now plausibly several releases rather than one.
+
+**Decision.** Retire the reservation. Releases are numbered by what they
+contain, under the patch/minor test ADR-53 and ADR-72 already apply. HostedRelay
+lands on whatever numbers its staging actually needs.
+
+**Why not keep it and re-scope.** Re-scoping requires re-deriving HostedRelay's
+staging post-ADR-73/74 before the next cut — a design pass standing between a
+blocked consumer (#116) and a release. Holding shipping work behind a numbering
+question is the wrong trade, and the numbering question is the smaller one.
+
+**Why not stay in 0.9.x until then.** That was the alternative, and it fails on
+its own terms: #116 adds `RelationKind` variants and the identity surface
+changes when workspaces come into existence. Shipping those as patches would
+make "patch" stop meaning what ADR-72 said it means, which costs more than a
+version number does.
+
+**Consequences.** A reserved-but-unclaimed version number is a promise about
+work not yet designed, and this is the second time it has had to be defended
+rather than used. kan does not reserve version numbers again; the roadmap says
+what is next, and the version says what shipped.
+
+## ADR-80 — `Supersedes` and `Refutes`: retiring and killing, without deleting
+**Date:** 2026-08-01
+**Status:** Accepted
+
+**Context.** #116, from the same research loop that produced #60. Two edges
+were being carried as naming conventions and `about` links, and both are
+load-bearing enough that queryability matters.
+
+**Decision.** Two directed `RelationKind` variants, read as projections in
+`fold::relations`.
+
+**`Supersedes`** — this subject replaces that one, which is retained. The
+distinctions carry the weight: a `Retraction` says the claim was *wrong* and
+removes it from the fold, supersession says it was right and has been
+outgrown; `SameAs` would merge the two subjects and destroy the history
+supersession exists to keep. Read forward by `live_members`.
+
+**`Refutes`** — a substantive, citable result that kills a claim. Distinct
+from `Rejects`, which is trust-local suppression that changes only what the
+rejecting reader sees. Refutation is public and additive: the refuted subject
+stays fully visible and the refutation stands beside it. That is why it is a
+domain relation and not a fold control.
+
+**Asserted subject-to-subject, though #116 describes `refutes` as
+claim-to-claim.** `Relation` targets a `SubjectRef`. Rather than widen that for
+one kind, the specific claim refuted is named the way this codebase already
+names evidence — the refuting claim `cites` it. Same split ADR-46 made for
+`InTensionWith`: the edge carries the assertion, `cites` carries the what and
+the why. One shape for every relation beats two.
+
+**`live_members` returns a frontier, not a tip.** A subject superseded by two
+different subjects has genuinely forked, and answering with one would be the
+fold resolving what the claims leave open. It is also **cycle-safe**, which is
+not defensive programming: `a supersedes b supersedes a` is expressible, and
+non-destruction means neither assertion can ever be removed, so the walk has to
+survive a state the store cannot be cleaned of.
+
+**The additive contract is now measured, not asserted.** ADR-44 promised that
+an older binary meets an unknown variant gracefully. Checked against released
+v0.9.1 reading a log containing both new kinds: it does not crash, and renders
+`Unknown { kind: "Relation", raw: [...] }` — bytes preserved, semantics
+honestly absent. Minor rather than patch, because that degradation *is* a
+semantic loss for an older reader even though nothing breaks.
+
+**Consequences.** The refuted register becomes a fold-time view instead of a
+hand-kept file, which is the point: it cannot drift from the claims it is
+derived from. `kan show` renders `superseded — live now:` and `refuted by:`,
+because a projection no consumer can reach from the CLI is one that gets kept
+by hand anyway.
