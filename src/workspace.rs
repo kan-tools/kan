@@ -139,7 +139,7 @@ impl Workspace {
         // already returned byte-complete, signature-verified records and had
         // no caller anywhere outside its own tests (#97) — this is that
         // caller.
-        let published = ingest_published(&root, &identity, &log, &mut overlay).await?;
+        let mut published = ingest_published(&root, &identity, &log, &mut overlay).await?;
 
         // Correctness-first (CLAUDE.md house rules), with one cheap,
         // provably-safe skip (issue #26, `.design/v0.4-milestone.md`
@@ -154,36 +154,66 @@ impl Workspace {
         // unconditional full rebuild; incremental *indexing* (partial
         // updates rather than skip-or-full-rebuild) stays a later
         // optimization, deliberately not what this is.
-        let current_root = index_fingerprint(log.current_root(), overlay.current_root());
+        let mut current_root = index_fingerprint(log.current_root(), overlay.current_root());
         if current_root != index.built_from_root()? {
             let mut claims = log.iter_all().await?;
-            let overlay_claims = overlay.iter_all().await?;
+            let mut overlay_claims = overlay.iter_all().await?;
 
-            // #146 part 2: an assertion, deliberately not a dedupe.
+            // #150: recover a workspace already poisoned by the defect above,
+            // rather than only declining to poison a fresh one.
             //
-            // A claim in both logs is not a state to tolerate — it means
-            // `ingest_published`'s author test misclassified this workspace's
-            // own records as foreign, which only happens when the active
-            // identity is not the one that wrote the log. Deduping would let
-            // the workspace open cleanly under that wrong identity and report
-            // "no subjects yet" against a full log: #90's silent shape,
-            // reached by tidying away the symptom that made #146 loud.
+            // Skipping log-resident records at ingest stops this state being
+            // *created*. It does nothing for the workspaces that already have
+            // it -- and there, one bad read had made every subsequent command
+            // fail, as the primary identity too, permanently. A fix that
+            // leaves those unopenable fixes the defect and not the damage.
             //
-            // So this raises *earlier* than the sqlite UNIQUE constraint it
-            // replaces, and says which condition it found rather than which
-            // constraint it violated.
-            let in_log: std::collections::HashSet<&Cid> = claims.iter().map(|(c, _)| c).collect();
-            let overlapping: Vec<&Cid> = overlay_claims
-                .iter()
-                .map(|(c, _)| c)
-                .filter(|c| in_log.contains(*c))
-                .collect();
-            if let Some(first) = overlapping.first() {
-                return Err(Error::LogOverlayOverlap {
-                    count: overlapping.len(),
-                    first: first.to_string(),
-                    did: identity.did().to_string(),
-                });
+            // Healing is safe here for a documented reason: the overlay is
+            // *disposable*. Everything in it is reconstructible from
+            // `.claims/`, which is why deleting it costs nothing but a
+            // re-parse. So the repair is to discard and rebuild it, which is
+            // exactly what the issue's reporter did by hand
+            // (`rm -rf .kan/overlay .kan/index.sqlite`).
+            //
+            // It is loud, not silent. #146's warning against tidying this away
+            // was about *deduping at the index*, which would have let a
+            // workspace open under a wrong identity and report "no subjects
+            // yet" against a full log. That cause is now blocked by the guard
+            // in `sign.rs`, and this repairs the store rather than papering
+            // over the read -- but it still says so, because a store that
+            // quietly rearranges itself is not one anybody can reason about.
+            if overlapping(&claims, &overlay_claims).is_some() {
+                eprintln!(
+                    "warning: this workspace's overlay held claims the log already had, which \
+                     is the corruption in issue #150 -- one read under a role identity, in a \
+                     workspace that had published its own claims.\n\
+                     \n\
+                     Rebuilding the overlay from .claims/. Nothing is lost: the overlay is \
+                     derived, and the log was never touched."
+                );
+
+                let overlay_dir = kan_dir.join("overlay");
+                std::fs::remove_dir_all(&overlay_dir)?;
+                overlay = Log::open_or_create(&overlay_dir, &identity).await?;
+                published = ingest_published(&root, &identity, &log, &mut overlay).await?;
+                overlay_claims = overlay.iter_all().await?;
+                current_root = index_fingerprint(log.current_root(), overlay.current_root());
+
+                // Rebuilt and still overlapping means the repair did not hold,
+                // and continuing would hand sqlite the same duplicate. The
+                // assertion stays for that case: it should be unreachable, and
+                // if it is reached it names the condition rather than a
+                // constraint violation.
+                if let Some(first) = overlapping(&claims, &overlay_claims) {
+                    return Err(Error::LogOverlayOverlap {
+                        count: overlay_claims
+                            .iter()
+                            .filter(|(c, _)| claims.iter().any(|(l, _)| l == c))
+                            .count(),
+                        first: first.to_string(),
+                        did: identity.did().to_string(),
+                    });
+                }
             }
 
             claims.extend(overlay_claims);
@@ -301,6 +331,24 @@ impl Workspace {
         }
         Ok(TrustBase::peer_contested(weights))
     }
+}
+
+/// The first claim present in both stores, if any.
+///
+/// The log and the overlay are disjoint by construction — the log holds what
+/// was written here, the overlay what `.claims/` published that the log does
+/// not already have. `claims.content_cid` is a PRIMARY KEY, so an overlap is
+/// a `UNIQUE constraint failed` at index build and, because the overlay is
+/// persistent, an unopenable workspace from then on (#150).
+fn overlapping<'a>(
+    log_claims: &[(Cid, crate::store::log::StoredClaim)],
+    overlay_claims: &'a [(Cid, crate::store::log::StoredClaim)],
+) -> Option<&'a Cid> {
+    let in_log: std::collections::HashSet<&Cid> = log_claims.iter().map(|(c, _)| c).collect();
+    overlay_claims
+        .iter()
+        .map(|(c, _)| c)
+        .find(|c| in_log.contains(*c))
 }
 
 /// The value the index records as "what I was built from", now that it is
