@@ -130,6 +130,23 @@ impl Workspace {
     pub async fn open(cwd: &Path) -> Result<Self, Error> {
         let root = find_repo_root(cwd);
         let kan_dir = root.join(".kan");
+
+        // #141: resolve the git substrate BEFORE touching identity.
+        //
+        // Both are prerequisites, but only one of them writes. Opening the
+        // anchor first means a repo that cannot host a workspace at all --
+        // no commits, so no root commit to derive an identity from -- is
+        // refused before `.kan/` exists and before a keypair is minted. The
+        // reported symptom was a keychain notice printed *first*, implying
+        // things were working, followed by a raw `git rev-list` failure; the
+        // notice was true, which was the problem.
+        //
+        // It also narrows #149: in this one case a failed read no longer
+        // leaves a workspace behind. The general form of that -- reads should
+        // not vivify at all -- is still open.
+        let git = GitSubstrate::open(&root)?;
+        let anchor = Anchor::Workspace(git.genesis()?);
+
         let identity = Identity::load_or_create_for_workspace(&kan_dir)?;
         let mut log = Log::open_or_create(&kan_dir.join("log"), &identity).await?;
         let mut overlay = Log::open_or_create(&kan_dir.join("overlay"), &identity).await?;
@@ -220,8 +237,6 @@ impl Workspace {
             index.rebuild(&claims, current_root.as_ref())?;
         }
 
-        let git = GitSubstrate::open(&root)?;
-        let anchor = Anchor::Workspace(git.genesis()?);
         Ok(Self {
             root,
             identity,

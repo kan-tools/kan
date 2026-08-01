@@ -29,6 +29,14 @@ pub enum Error {
          real genesis); run `git fetch --unshallow` first"
     )]
     ShallowClone,
+    #[error(
+        "this git repo has no commits yet, and kan anchors every claim to one (docs/SPEC.md \
+         §5/§6.2): the workspace identity is derived from the repo's root commit, and a \
+         repo with no commits has no root.\n\n\
+         Make a commit first -- `git commit --allow-empty -m init` is enough -- then run kan \
+         again. Nothing was written."
+    )]
+    NoCommits,
 }
 
 pub struct GitSubstrate {
@@ -62,6 +70,19 @@ impl GitSubstrate {
         let shallow = self.run(&["rev-parse", "--is-shallow-repository"])?;
         if shallow.trim() == "true" {
             return Err(Error::ShallowClone);
+        }
+
+        // #141: a repo with no commits fails `rev-list ... HEAD` with a raw
+        // 128 and git's own "ambiguous argument 'HEAD'" prose, which names
+        // neither kan's requirement nor the one-line fix. Asked before the
+        // call rather than pattern-matched on stderr afterwards, because
+        // git's message is localised and version-dependent and the question
+        // "does HEAD resolve" has a direct answer.
+        if self
+            .run(&["rev-parse", "--verify", "--quiet", "HEAD"])
+            .is_err()
+        {
+            return Err(Error::NoCommits);
         }
 
         let out = self.run(&["rev-list", "--max-parents=0", "HEAD"])?;
