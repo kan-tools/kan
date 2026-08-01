@@ -93,6 +93,12 @@ jobs:
       fail-fast: false
       matrix:
         tag: ${{ fromJSON(needs.plan.outputs.tags) }}
+        # How the identity is resolved on both sides (#146 part 3). Every
+        # cell used to drive KAN_IDENTITY_FILE, which is the one branch that
+        # short-circuits the other two -- so seed-rooting had never been run
+        # against an older workspace, and #146's defect lived where no cell
+        # could reach it.
+        mode: [identity-file, seed]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -111,8 +117,8 @@ jobs:
         with:
           path: migration-outcome.txt
           key: >-
-            kan-migration-v1-${{ steps.writer.outputs.sha }}-${{
-            needs.plan.outputs.reader }}-${{ needs.plan.outputs.rustc }}
+            kan-migration-v2-${{ matrix.mode }}-${{ steps.writer.outputs.sha
+            }}-${{ needs.plan.outputs.reader }}-${{ needs.plan.outputs.rustc }}
 
       - uses: dtolnay/rust-toolchain@stable
         if: steps.cached.outputs.cache-hit != 'true'
@@ -151,34 +157,35 @@ jobs:
           fi
           scripts/run-migration-cell.sh \
             /tmp/writer/target/release/kan \
-            "$PWD/target/release/kan" > migration-outcome.txt
+            "$PWD/target/release/kan" \
+            "${{ matrix.mode }}" > migration-outcome.txt
           cat migration-outcome.txt
 
       - name: Report the actual outcome, then compare against the expectation
         run: |
           outcome=$(cat migration-outcome.txt)
           # Skip comment lines, then take the outcome and its recorded reason.
-          expected=$(awk -v t="${{ matrix.tag }}" \
-                     '!/^#/ && $1==t {print $2}' \
+          expected=$(awk -v t="${{ matrix.tag }}" -v m="${{ matrix.mode }}" \
+                     -F'\t' '!/^#/ && $1==t && $2==m {print $3}' \
                      tests/fixtures/migration-expectations.tsv)
-          why=$(awk -v t="${{ matrix.tag }}" -F'\t' \
-                '!/^#/ && $1==t {print $3}' \
+          why=$(awk -v t="${{ matrix.tag }}" -v m="${{ matrix.mode }}" \
+                -F'\t' '!/^#/ && $1==t && $2==m {print $4}' \
                 tests/fixtures/migration-expectations.tsv)
 
           # The actual result is reported unconditionally, before any
           # comparison: the table is checked against reality, never a
           # substitute for it.
-          echo "::notice title=${{ matrix.tag }}::actual=$outcome expected=${expected:-<none>}"
+          echo "::notice title=${{ matrix.tag }} (${{ matrix.mode }})::actual=$outcome expected=${expected:-<none>}"
           {
-            printf '| %s | `%s` | `%s` | %s |\n' \
-              "${{ matrix.tag }}" "$outcome" "${expected:-—}" "${why:-—}"
+            printf '| %s | `%s` | `%s` | `%s` | %s |\n' \
+              "${{ matrix.tag }}" "${{ matrix.mode }}" "$outcome" "${expected:-—}" "${why:-—}"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ -z "$expected" ]; then
-            echo "::error::${{ matrix.tag }} has no committed expectation. Add a row to tests/fixtures/migration-expectations.tsv -- what this build does with an older version's workspace is a decision, not a default."
+            echo "::error::${{ matrix.tag }} (${{ matrix.mode }}) has no committed expectation. Add a row to tests/fixtures/migration-expectations.tsv -- what this build does with an older version's workspace is a decision, not a default."
             exit 1
           fi
           if [ "$outcome" != "$expected" ]; then
-            echo "::error::${{ matrix.tag }}: expected '$expected', got '$outcome'. A change in this build moved what it does with an older workspace. Recorded reason for the expectation: ${why:-none given}. If the move is intended, update the outcome AND its reason in the same commit that changed the behaviour -- and be sure 'intended' is not 'ok' quietly becoming 'claims-lost'."
+            echo "::error::${{ matrix.tag }} (${{ matrix.mode }}): expected '$expected', got '$outcome'. A change in this build moved what it does with an older workspace. Recorded reason for the expectation: ${why:-none given}. If the move is intended, update the outcome AND its reason in the same commit that changed the behaviour -- and be sure 'intended' is not 'ok' quietly becoming 'claims-lost'."
             exit 1
           fi
 
