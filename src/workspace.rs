@@ -35,6 +35,25 @@ pub enum Error {
     TrustSpec(#[from] crate::fold::trust::SpecError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(
+        "{count} claim(s) are in both this workspace's log and its overlay, which should be \
+         unreachable: `ingest_published` skips any published record that is already in the \
+         log, whoever signed it.\n\n\
+         This is an invariant check, not an expected condition — reaching it means the \
+         overlay was written by something other than that path, or the log changed \
+         underneath an overlay built against an earlier state.\n\n\
+         First claim in both: {first}\n\
+         Active identity: {did}\n\n\
+         Check `kan identity did` against the authors in `.claims/`. If the identity is \
+         wrong, recover it with `kan identity adopt` rather than writing anything further; \
+         the overlay is disposable, so `rm -rf .kan/overlay .kan/index.sqlite` is safe once \
+         the identity is right."
+    )]
+    LogOverlayOverlap {
+        count: usize,
+        first: String,
+        did: String,
+    },
 }
 
 pub struct Workspace {
@@ -120,7 +139,7 @@ impl Workspace {
         // already returned byte-complete, signature-verified records and had
         // no caller anywhere outside its own tests (#97) — this is that
         // caller.
-        let published = ingest_published(&root, &identity, &mut overlay).await?;
+        let published = ingest_published(&root, &identity, &log, &mut overlay).await?;
 
         // Correctness-first (CLAUDE.md house rules), with one cheap,
         // provably-safe skip (issue #26, `.design/v0.4-milestone.md`
@@ -138,7 +157,36 @@ impl Workspace {
         let current_root = index_fingerprint(log.current_root(), overlay.current_root());
         if current_root != index.built_from_root()? {
             let mut claims = log.iter_all().await?;
-            claims.extend(overlay.iter_all().await?);
+            let overlay_claims = overlay.iter_all().await?;
+
+            // #146 part 2: an assertion, deliberately not a dedupe.
+            //
+            // A claim in both logs is not a state to tolerate — it means
+            // `ingest_published`'s author test misclassified this workspace's
+            // own records as foreign, which only happens when the active
+            // identity is not the one that wrote the log. Deduping would let
+            // the workspace open cleanly under that wrong identity and report
+            // "no subjects yet" against a full log: #90's silent shape,
+            // reached by tidying away the symptom that made #146 loud.
+            //
+            // So this raises *earlier* than the sqlite UNIQUE constraint it
+            // replaces, and says which condition it found rather than which
+            // constraint it violated.
+            let in_log: std::collections::HashSet<&Cid> = claims.iter().map(|(c, _)| c).collect();
+            let overlapping: Vec<&Cid> = overlay_claims
+                .iter()
+                .map(|(c, _)| c)
+                .filter(|c| in_log.contains(*c))
+                .collect();
+            if let Some(first) = overlapping.first() {
+                return Err(Error::LogOverlayOverlap {
+                    count: overlapping.len(),
+                    first: first.to_string(),
+                    did: identity.did().to_string(),
+                });
+            }
+
+            claims.extend(overlay_claims);
             index.rebuild(&claims, current_root.as_ref())?;
         }
 
@@ -306,6 +354,7 @@ fn index_fingerprint(log_root: Option<Cid>, overlay_root: Option<Cid>) -> Option
 async fn ingest_published(
     root: &Path,
     identity: &Identity,
+    log: &Log,
     overlay: &mut Log,
 ) -> Result<PublishedIndex, Error> {
     let claims_dir = root.join(crate::transport::git_tree::CLAIMS_DIR);
@@ -329,6 +378,25 @@ async fn ingest_published(
                     continue;
                 }
                 if overlay.contains(&cid).await? {
+                    continue;
+                }
+                // Already in this workspace's own log, so ingesting it would
+                // put one claim in both stores (#146 part 2).
+                //
+                // The author test above is not wrong when this fires — it is
+                // right. A *declared role* (ADR-58) genuinely is a different
+                // author from the primary identity that wrote the log, so it
+                // reads the primary's published records as foreign, correctly.
+                // What would be wrong is concluding they therefore belong in
+                // the overlay: the overlay exists for claims the log does not
+                // have, and these it has.
+                //
+                // Found by running the supported multi-role flow rather than
+                // by reading the code — publish as the primary, declare a
+                // role, read as that role — which is the one path the suite
+                // did not cover. Without this, that flow duplicates every
+                // published claim.
+                if log.contains(&cid).await? {
                     continue;
                 }
                 pending.push(crate::store::log::StoredClaim {

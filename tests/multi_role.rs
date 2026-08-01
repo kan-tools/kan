@@ -505,3 +505,96 @@ fn re_declaring_a_role_never_overwrites_its_key() {
         "a repeated `role add` changed the role's signing key"
     );
 }
+
+/// Publish as the primary, then read as a declared role — the one supported
+/// flow that puts the *same* claim on both sides of the log/overlay split.
+///
+/// Found by running it, not by reading the code (#146 part 2). `.claims/`
+/// records are sorted into the overlay by comparing each record's author
+/// against the active identity, and under a role that comparison is *correct*:
+/// a role genuinely is a different author from the primary that wrote the log.
+/// So every published claim looked foreign and was ingested into the overlay
+/// while already sitting in the log, and the index rebuild hit
+/// `UNIQUE constraint failed: claims.content_cid`.
+///
+/// The fix is to skip what the log already holds, whoever signed it — which
+/// is why #146's suggested "assert instead of dedupe" would have been wrong
+/// here: it would have made this supported flow a hard error.
+#[test]
+fn a_role_reading_a_published_workspace_does_not_duplicate_the_log() {
+    let dir = workspace_with_claims();
+    let key = dir.path().join("keys/prover");
+
+    let published = kan_as(dir.path(), None, &["publish", "shared"]);
+    assert!(published.ok, "publish failed: {}", published.stderr);
+
+    // `.claims/` is a tracked directory, so stage and commit it the way a
+    // real workspace would before another identity reads it.
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(dir.path())
+            .status()
+            .expect("failed to run git");
+        assert!(status.success(), "git {args:?} failed");
+    };
+    git(&["add", "-A"]);
+    git(&[
+        "-c",
+        "user.email=kan-test@example.com",
+        "-c",
+        "user.name=kan-test",
+        "commit",
+        "-qm",
+        "publish",
+    ]);
+
+    let add = kan_as(
+        dir.path(),
+        None,
+        &[
+            "identity",
+            "role",
+            "add",
+            "prover",
+            "--key",
+            key.to_str().unwrap(),
+        ],
+    );
+    assert!(add.ok, "role add failed: {}", add.stderr);
+
+    // The read that used to abort on a UNIQUE constraint.
+    let as_role = kan_as(dir.path(), Some(&key), &["status"]);
+    assert!(
+        as_role.ok,
+        "reading as a role after publish failed: {}\n{}",
+        as_role.stderr, as_role.stdout
+    );
+    assert!(
+        !as_role
+            .stderr
+            .contains("both this workspace's log and its overlay"),
+        "the overlap invariant fired on a supported flow: {}",
+        as_role.stderr
+    );
+
+    // The primary's claims are not this role's to see under Solo, but the
+    // exclusion must be *disclosed* (ADR-57) rather than silent — the whole
+    // point of not letting this state look like an empty workspace.
+    assert!(
+        as_role
+            .stdout
+            .contains("excluded by this view's trust base"),
+        "a role saw the primary's claims as simply absent: {}",
+        as_role.stdout
+    );
+
+    // And widening the base shows them, from one copy rather than two.
+    let widened = kan_as(dir.path(), Some(&key), &["status", "--trust", "roles"]);
+    assert!(widened.ok, "--trust roles failed: {}", widened.stderr);
+    assert!(
+        widened.stdout.contains("shared"),
+        "--trust roles did not surface the primary's subject: {}",
+        widened.stdout
+    );
+}
