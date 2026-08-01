@@ -22,6 +22,14 @@
 # cannot tell those apart is one that gets edited to green rather than read.
 # The `why` is the bookkeeping: which feature change explains this cell.
 #
+# HISTORY WORTH KEEPING: v0.9.0-beta.1 and v0.9.1-beta.1 had no rows here at
+# all until #146. The matrix therefore failed on the v0.9.1 tag push
+# (run 30582674101, 2026-07-30) with "v0.9.0-beta.1 has no committed
+# expectation" -- a release shipped with this table red and it went unread for
+# two days. The gate works; nobody was looking at it. The actual outcome in
+# that run was `ok`, so nothing was lost, which is exactly why it was easy to
+# miss.
+#
 # Outcomes:
 #   ok                the old workspace reads correctly under this build
 #   unbuildable       the tag does not compile with the current toolchain
@@ -92,12 +100,16 @@ v0.8.0-beta.1	identity-file	ok	Reader, trust surface, multi-role. Adds .kan/over
 #
 # Since v0.8 the failure is at least LOUD: excluded_by_trust reports the
 # hidden claims instead of the read looking empty (ADR-57).
-v0.1.1-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. PREDICTED, not yet observed -- CI is the ground truth for this column.
-v0.2.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. PREDICTED, not yet observed -- CI is the ground truth for this column.
-v0.3.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. PREDICTED, not yet observed -- CI is the ground truth for this column.
-v0.4.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. PREDICTED, not yet observed -- CI is the ground truth for this column.
-v0.5.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. PREDICTED, not yet observed -- CI is the ground truth for this column.
-v0.6.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. PREDICTED, not yet observed -- CI is the ground truth for this column.
-v0.7.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. PREDICTED, not yet observed -- CI is the ground truth for this column.
-v0.7.1-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. PREDICTED, not yet observed -- CI is the ground truth for this column.
-v0.8.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. PREDICTED, not yet observed -- CI is the ground truth for this column.
+v0.1.1-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. Measured in run 30707872913, the first run of this axis.
+v0.2.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. Measured in run 30707872913, the first run of this axis.
+v0.3.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. Measured in run 30707872913, the first run of this axis.
+v0.4.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. Measured in run 30707872913, the first run of this axis.
+v0.5.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. Measured in run 30707872913, the first run of this axis.
+v0.6.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. Measured in run 30707872913, the first run of this axis.
+v0.7.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. Measured in run 30707872913, the first run of this axis.
+v0.7.1-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. Measured in run 30707872913, the first run of this axis.
+v0.8.0-beta.1	seed	ok	The writer leaves a plaintext .kan/identity (no Secret Service on CI), so this build finds a key file, reads the workspace as non-fresh, and loads that key rather than seed-rooting over it. Measured in run 30707872913, the first run of this axis.
+v0.9.0-beta.1	identity-file	ok	First seed-rooting release, but KAN_IDENTITY_FILE short-circuits that path, so it writes a key file exactly as every version before it did. Measured in run 30707872913.
+v0.9.1-beta.1	identity-file	ok	Bulk read (ADR-71/72); no on-disk change from v0.9.0. Measured in run 30707872913.
+v0.9.0-beta.1	seed	ok	The cell this axis was added for: the writer genuinely seed-roots, creating .kan/seed, and this build derives the same DID from that seed rather than minting over it. Measured in run 30707872913.
+v0.9.1-beta.1	seed	ok	As v0.9.0 -- seed-rooted writer, seed-derived reader, same DID. Measured in run 30707872913.
