@@ -54,21 +54,19 @@ pub enum Error {
     #[error("recovery phrase: {0}")]
     Recovery(String),
     #[error(
-        "{override_path} does not exist, and this repo already has claims written under an \
-         existing identity.\n\n\
-         Creating a key there would give this repo a second identity: the claims already in \
-         the log are signed by the first one, and a fold trusts a single author, so they \
-         would all disappear from every read at exit 0 while still being on disk.\n\n\
-         Point KAN_IDENTITY_FILE at the existing key file, or unset it and let kan use the \
-         keychain. To \
-         restore from a recovery phrase, write the key to that path first.\n\n\
+        "this repo already has claims written under an existing identity, and {attempt} \
+         would give it a second identity.\n\n\
+         The claims already in the log are signed by the first identity, and a fold trusts a \
+         single author, so they would all disappear from every read at exit 0 while still \
+         being on disk.\n\n\
+         {remedy}\n\n\
          If you meant to add a second *role* to this workspace -- a director and a prover \
          signing separately, say -- that is a supported thing and this is not the way to ask \
-         for it: run `kan identity role add <name> --key {override_path}`, which mints the \
-         role key deliberately and registers it, then read with `--trust roles` so both \
-         roles' claims are visible."
+         for it: run `kan identity role add <name> --key <path>`, which mints the role key \
+         deliberately and registers it, then read with `--trust roles` so both roles' claims \
+         are visible."
     )]
-    WouldMintSecondIdentity { override_path: String },
+    WouldMintSecondIdentity { attempt: String, remedy: String },
     #[error(
         "a role named `{name}` is already declared in this workspace (key: {existing}). \
          Pick another name, or use the existing role."
@@ -157,15 +155,34 @@ impl Identity {
             // status` printed "no subjects yet" at exit 0 — verbatim REQ-5's
             // failure mode, reached through the release's recommended
             // workaround.
-            if !override_path.exists() && log_has_claims(path) {
-                return Err(Error::WouldMintSecondIdentity {
-                    override_path: override_path.display().to_string(),
-                });
+            if !override_path.exists() {
+                refuse_second_identity(
+                    path,
+                    format!("creating a key at {}", override_path.display()),
+                    "Point KAN_IDENTITY_FILE at the existing key file, or unset it and let \
+                     kan use the keychain. To restore from a recovery phrase, write the key \
+                     to that path first.",
+                )?;
             }
             return Self::load_or_create_plaintext(&override_path);
         }
 
         if keychain_disabled() {
+            // #146: this branch is how the defect was actually reached. On a
+            // workspace whose key is in the keychain, ADR-53 has *correctly*
+            // deleted the plaintext copy — so `path` does not exist, and
+            // without this check the loader below mints a fresh keypair and a
+            // new DID against a log full of claims signed by the old one.
+            if !path.exists() {
+                refuse_second_identity(
+                    path,
+                    "KAN_NO_KEYCHAIN, with no key file to fall back on",
+                    "Unset KAN_NO_KEYCHAIN so kan can read the key from the OS keychain, or \
+                     point KAN_IDENTITY_FILE at the existing key file. If the key itself is \
+                     gone, restore it from the recovery phrase with `kan identity adopt` \
+                     before writing anything.",
+                )?;
+            }
             return Self::load_or_create_plaintext(path);
         }
         let account = keychain_account(path)?;
@@ -226,7 +243,26 @@ impl Identity {
                     Ok(bytes) => Self {
                         keypair: P256Keypair::import(&bytes)?,
                     },
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::generate(),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        // The keychain has no entry and there is no file, yet
+                        // the log has claims — so this workspace's key was
+                        // reachable once and is not now. Minting here is the
+                        // same silent-loss shape as #146's, arrived at by a
+                        // keychain that answered "no entry" rather than by an
+                        // escape hatch (#90's `unwrap_or(false)` conflation is
+                        // one way to get that answer wrongly).
+                        refuse_second_identity(
+                            path,
+                            "generating a fresh key, because the keychain has no entry for \
+                             this workspace and no key file exists either",
+                            "Do not write with this workspace until the original key is \
+                             back. If the keychain entry is merely unreadable — a rebuilt \
+                             binary, a locked keychain — fix that and retry. If the key is \
+                             genuinely lost, restore it from the recovery phrase with `kan \
+                             identity adopt`.",
+                        )?;
+                        Self::generate()
+                    }
                     Err(e) => return Err(e.into()),
                 };
                 let _warn = SlowKeychainWarning::start("storing this repo's signing key");
@@ -412,6 +448,20 @@ impl Identity {
             return Self::load_or_create(&key_path);
         }
 
+        // "Fresh" is decided from identity files only, deliberately (a
+        // keychain probe here can hang, #96). But a workspace with no identity
+        // file and a non-empty log is not fresh — it is one whose identity
+        // went missing, and seed-rooting it now would mint a new DID and hide
+        // every claim already written. The log is the tiebreaker the file
+        // check cannot see, and consulting it costs one `metadata` call.
+        refuse_second_identity(
+            &key_path,
+            "seed-rooting this workspace, which has no identity file but a non-empty log",
+            "This workspace had an identity and no longer has one on disk. Restore it from \
+             the recovery phrase with `kan identity adopt`, or point KAN_IDENTITY_FILE at \
+             the existing key file, before writing anything further.",
+        )?;
+
         Seed::create(kan_dir)?.signing_identity()
     }
 
@@ -487,6 +537,38 @@ fn keychain_account(identity_path: &Path) -> Result<String, Error> {
 
     std::fs::write(&id_path, &account)?;
     Ok(account)
+}
+
+/// Refuse to mint an identity for a workspace whose log already holds claims.
+///
+/// **The condition has nothing to do with which mechanism is minting** (#146).
+/// The guard originally lived inside the `KAN_IDENTITY_FILE` branch, which
+/// made it a property of one code path rather than of the workspace, and
+/// `KAN_NO_KEYCHAIN` — added by ADR-66 so this milestone's own tests could run
+/// on macOS — walked straight past it into `load_or_create_plaintext` and
+/// minted a second identity against a 3.7 MB log. The escape hatch reopened
+/// the defect its own milestone was hardening against.
+///
+/// So the rule is stated once, here, and every path that can create a key
+/// calls it. `attempt` names what was about to mint and `remedy` what to do
+/// about *that* mechanism; the consequence is identical either way, so the
+/// explanation of the consequence lives in the error, not the call site.
+///
+/// `add_role` is the one deliberate bypass and reaches
+/// [`Identity::load_or_create_plaintext`] directly — minting a role is an
+/// explicit act, which is exactly the signal this guard is waiting for.
+fn refuse_second_identity(
+    identity_path: &Path,
+    attempt: impl Into<String>,
+    remedy: impl Into<String>,
+) -> Result<(), Error> {
+    if log_has_claims(identity_path) {
+        return Err(Error::WouldMintSecondIdentity {
+            attempt: attempt.into(),
+            remedy: remedy.into(),
+        });
+    }
+    Ok(())
 }
 
 /// Whether this repo's log already holds claims.
