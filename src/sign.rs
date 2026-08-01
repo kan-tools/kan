@@ -26,6 +26,16 @@
 //! a checkout missed the lookup and silently minted a new identity, taking
 //! every prior claim out of every read at exit 0. The id file travels with
 //! `.kan/`, so the identity now travels with the repo.
+//!
+//! **Every one of those paths can mint, so every one is guarded**
+//! (`refuse_second_identity`, ADR-77, issue #146). The guard used to live
+//! inside (1) alone, which made it a property of a code path rather than of
+//! the workspace — and `KAN_NO_KEYCHAIN`, the ADR-66 escape hatch that makes
+//! (2) avoidable, walked straight past it into (3) and minted against a
+//! non-empty log. `Identity::load_or_create_for_workspace`'s seed-rooting is a
+//! fourth minting path and is guarded for the same reason: it judges freshness
+//! from identity files only, deliberately (a keychain probe there can hang,
+//! #96), so the log is the tiebreaker those files cannot see.
 
 use std::path::{Path, PathBuf};
 
@@ -178,9 +188,10 @@ impl Identity {
                     path,
                     "KAN_NO_KEYCHAIN, with no key file to fall back on",
                     "Unset KAN_NO_KEYCHAIN so kan can read the key from the OS keychain, or \
-                     point KAN_IDENTITY_FILE at the existing key file. If the key itself is \
-                     gone, restore it from the recovery phrase with `kan identity adopt` \
-                     before writing anything.",
+                     point KAN_IDENTITY_FILE at the existing key file. If the key is in a file, adopt it with `KAN_IDENTITY_FILE=<path> kan identity \
+                     adopt --key <path>`, naming the same path twice -- adopt has to open the \
+                     workspace before it can repoint it, and this guard is what it would \
+                     otherwise trip on.",
                 )?;
             }
             return Self::load_or_create_plaintext(path);
@@ -257,9 +268,10 @@ impl Identity {
                              this workspace and no key file exists either",
                             "Do not write with this workspace until the original key is \
                              back. If the keychain entry is merely unreadable — a rebuilt \
-                             binary, a locked keychain — fix that and retry. If the key is \
-                             genuinely lost, restore it from the recovery phrase with `kan \
-                             identity adopt`.",
+                             binary, a locked keychain — fix that and retry. If the key is in a file, adopt it with `KAN_IDENTITY_FILE=<path> kan identity \
+                     adopt --key <path>`, naming the same path twice -- adopt has to open the \
+                     workspace before it can repoint it, and this guard is what it would \
+                     otherwise trip on.",
                         )?;
                         Self::generate()
                     }
@@ -457,9 +469,11 @@ impl Identity {
         refuse_second_identity(
             &key_path,
             "seed-rooting this workspace, which has no identity file but a non-empty log",
-            "This workspace had an identity and no longer has one on disk. Restore it from \
-             the recovery phrase with `kan identity adopt`, or point KAN_IDENTITY_FILE at \
-             the existing key file, before writing anything further.",
+            "This workspace had an identity and no longer has one on disk. Point \
+             KAN_IDENTITY_FILE at the existing key file if you have it. If the key is in a file, adopt it with `KAN_IDENTITY_FILE=<path> kan identity \
+                     adopt --key <path>`, naming the same path twice -- adopt has to open the \
+                     workspace before it can repoint it, and this guard is what it would \
+                     otherwise trip on.",
         )?;
 
         Seed::create(kan_dir)?.signing_identity()

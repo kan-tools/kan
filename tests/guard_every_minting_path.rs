@@ -228,3 +228,55 @@ fn declaring_a_role_is_still_the_deliberate_way_past_the_guard() {
     );
     assert!(role_key.exists(), "role key should have been minted");
 }
+
+/// A guard whose remedy cannot be run is a trap, and this one nearly was.
+///
+/// `adopt_identity` takes a `&Workspace`, so `Workspace::open` — and with it
+/// identity resolution — has to succeed before adopt can change anything.
+/// The refusal therefore cannot simply say "run `kan identity adopt`": in the
+/// state that produces the refusal, adopt trips the very same guard. The
+/// message names the form that works, and this test is what keeps it working.
+#[test]
+fn the_remedy_the_refusal_names_actually_runs() {
+    let (dir, key) = workspace_with_claims();
+    std::fs::write(dir.path().join(".kan/identity-id"), "some-account-id").unwrap();
+
+    let refused = kan(dir.path(), None, true, &["status"]);
+    assert!(!refused.ok, "precondition: the guard should have fired");
+    assert!(
+        refused.stderr.contains("kan identity adopt --key"),
+        "the refusal should name a recovery command: {}",
+        refused.stderr
+    );
+
+    // Exactly what the message says: name the same path twice.
+    let adopted = kan(
+        dir.path(),
+        Some(&key),
+        true,
+        &["identity", "adopt", "--key", key.to_str().unwrap()],
+    );
+    assert!(
+        adopted.ok,
+        "the remedy named in the refusal did not run: {}",
+        adopted.stderr
+    );
+
+    // And the workspace is genuinely recovered, not merely openable.
+    let after = kan(dir.path(), None, true, &["status"]);
+    assert!(
+        after.ok,
+        "workspace still unreadable after adopt: {}",
+        after.stderr
+    );
+    assert!(
+        !after.stdout.contains("no subjects yet"),
+        "the recovered workspace still reads as empty -- the #90 shape: {}",
+        after.stdout
+    );
+    assert!(
+        !after.stdout.contains("excluded by this view's trust base"),
+        "adopt opened the workspace but under the wrong identity: {}",
+        after.stdout
+    );
+}
