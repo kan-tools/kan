@@ -121,6 +121,14 @@ Bump `Cargo.toml`'s `version` on `main`, then push a tag matching `v*.*.*`
 build/test/clippy/fmt, checks the tag matches `Cargo.toml`'s version, and
 publishes to crates.io via the `crates-io` GitHub Environment (tag-restricted
 to `v*.*.*` as a second guard beyond the workflow's own trigger filter).
+**Add the migration-expectation rows for the version you are cutting, in the
+release commit** — `tests/fixtures/migration-expectations.tsv`, one row per
+`mode`. The matrix excludes the tag being released but needs that tag as a
+*writer* at the next release, so a version whose rows are not added at cut
+time makes the next release red. That is not hypothetical: v0.9.0 and v0.9.1
+had no rows, the v0.9.1 tag push failed accordingly, and nobody read it for
+two days (ADR-78).
+
 Requires a `CARGO_REGISTRY_TOKEN` secret scoped to that environment (`gh
 secret set CARGO_REGISTRY_TOKEN --env crates-io`, never through a chat
 session — it's a credential Claude Code should never see). See ADR-19 for
