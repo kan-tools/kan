@@ -241,3 +241,76 @@ fn the_bulk_read_refuses_shapes_that_would_not_help_anyone() {
     let (_, ok) = kan(dir.path(), &key, &["show", "subject-1", "--all", "--json"]);
     assert!(!ok, "`--all` with a subject should be rejected by clap");
 }
+
+/// #143, asked from the day side: can `show --all` omit a subject it could
+/// not read?
+///
+/// **No — and the reason is structural rather than careful.** `show_all_json`
+/// makes exactly one read (`all_stored_claims()?`) and then maps over the
+/// folded merge classes. There is no per-subject operation that could fail
+/// for one subject and succeed for the rest, so the only two outcomes are a
+/// complete answer or a propagated error. That is the guarantee day wanted
+/// stated (ADR-81), and this pins it: the subject set of `show --all` must
+/// equal the subject set of `status`, always.
+#[test]
+fn show_all_never_omits_a_subject_that_status_reports() {
+    let dir = git_repo();
+    let key = dir.path().join("key");
+
+    for s in ["alpha", "beta", "gamma/nested", "delta with spaces"] {
+        let (_, ok) = kan(dir.path(), &key, &["observe", "a claim", "--subject", s]);
+        assert!(ok, "setup write failed for {s}");
+    }
+
+    let (status_out, ok) = kan(dir.path(), &key, &["status", "--json"]);
+    assert!(ok, "status --json failed");
+    let (show_out, ok) = kan(dir.path(), &key, &["show", "--all", "--json"]);
+    assert!(ok, "show --all --json failed");
+
+    let names = |json: &str, field: &str| -> Vec<String> {
+        let v: serde_json::Value = serde_json::from_str(json).expect("valid json");
+        let mut out: Vec<String> = v[field]
+            .as_array()
+            .expect("array")
+            .iter()
+            .map(|e| e["subject"].as_str().unwrap_or_default().to_string())
+            .collect();
+        out.sort();
+        out
+    };
+
+    assert_eq!(
+        names(&status_out, "subjects"),
+        names(&show_out, "subjects"),
+        "show --all and status disagree about which subjects exist"
+    );
+}
+
+/// The second assumption day's mitigation rests on, stated in #143: a subject
+/// cannot become absent by having its claims retracted, because a
+/// `Retraction` is itself a claim on that subject.
+///
+/// Worth pinning rather than reasoning about — day's unaccounted-for check
+/// produces false positives the moment it stops holding.
+#[test]
+fn retracting_a_subjects_only_claim_does_not_remove_the_subject() {
+    let dir = git_repo();
+    let key = dir.path().join("key");
+
+    let (cid, ok) = kan(
+        dir.path(),
+        &key,
+        &["observe", "the only claim", "--subject", "solo"],
+    );
+    assert!(ok, "setup write failed");
+
+    let (_, ok) = kan(dir.path(), &key, &["retract", cid.trim()]);
+    assert!(ok, "retract failed");
+
+    let (show_out, ok) = kan(dir.path(), &key, &["show", "--all", "--json"]);
+    assert!(ok, "show --all --json failed after retraction");
+    assert!(
+        show_out.contains("solo"),
+        "the subject vanished after its only claim was retracted: {show_out}"
+    );
+}

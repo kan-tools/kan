@@ -231,6 +231,50 @@ fn parse_file_artifact(raw: &str, head_sha: &crate::claim::Sha) -> ArtifactRef {
 /// recommendation nobody follows) — zero agent effort, no flag needed.
 /// `file`, if given, attaches a more specific `FileAt`/`LineRangeAt`
 /// artifact on top (REQ-9).
+/// Reject a subject name that cannot have been meant (#144).
+///
+/// A control character in an rkey is never deliberate. It arrives one way —
+/// an unquoted or over-eager shell expansion, `--subject "$(kan status ...)"`
+/// — and once written it is permanent, because non-destruction means the
+/// claim cannot be removed. So the check belongs at the write, which is the
+/// only moment it is still cheap.
+///
+/// It also breaks things downstream in ways that read as *other* bugs: the
+/// name spans lines in every human surface, and `.claims/` filenames are
+/// derived from it (ADR-43), so a newline in an rkey is a newline in a path.
+///
+/// Deliberately narrow. Spaces, slashes, colons and unicode are all fine and
+/// in active use — `telos/raw-data-and-projections`, `schema/design-doc`.
+/// Only C0 controls and DEL are refused, because only they are unrepresentable
+/// rather than merely unusual.
+fn validate_subject_name(rkey: &str) -> Result<(), Error> {
+    if let Some(ch) = rkey.chars().find(|c| c.is_control()) {
+        let shown: String = rkey.chars().take(60).collect();
+        return Err(Error::Usage(format!(
+            "subject name contains a control character ({}), which is never intentional.\n\n\
+             The usual cause is a shell expansion that produced more than a name -- \
+             `--subject \"$(kan ...)\"` captures a whole listing, and kan would record it \
+             as one subject whose name spans every line of that output (#144).\n\n\
+             Got (first 60 chars): {:?}\n\n\
+             Quote the name you meant, or pass it via a variable you have checked. Nothing \
+             was written.",
+            match ch {
+                '\n' => "a newline".to_string(),
+                '\r' => "a carriage return".to_string(),
+                '\t' => "a tab".to_string(),
+                other => format!("U+{:04X}", other as u32),
+            },
+            shown
+        )));
+    }
+    if rkey.trim().is_empty() {
+        return Err(Error::Usage(
+            "subject name is empty or only whitespace. Nothing was written.".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 async fn append(
     ws: &mut Workspace,
     subject: SubjectRef,
@@ -238,6 +282,22 @@ async fn append(
     cites: Vec<Cid>,
     file: Option<String>,
 ) -> Result<AppendResult, Error> {
+    // #144: one choke point, because every write verb reaches this and a
+    // check that lives on some of them is a check that lives on none.
+    //
+    // The reported symptom was `kan status --json` emitting a phantom subject
+    // whose name was every other subject name newline-joined. It is not a JSON
+    // bug and there is no phantom: it is a real claim, written by a shell
+    // command substitution that expanded to a whole listing --
+    // `--subject "$(kan ...)"` -- which kan then accepted verbatim.
+    //
+    // Reads are deliberately NOT gated. A subject like this already exists in
+    // at least one real log, and refusing to display it would make the fix
+    // destroy the data it is meant to expose.
+    if let SubjectRef::Local(rkey) = &subject {
+        validate_subject_name(rkey)?;
+    }
+
     let kind = body.kind();
     let head = ws.git.head_commit()?;
     let mut artifacts = vec![ArtifactRef::Commit(head.clone())];
