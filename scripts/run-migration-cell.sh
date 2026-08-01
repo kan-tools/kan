@@ -20,8 +20,10 @@
 #   identity-changed  claims are present but excluded by trust (the #90 shape)
 set -uo pipefail
 
-OLD_BIN="${1:?usage: run-migration-cell.sh <old-kan-binary> <new-kan-binary>}"
-NEW_BIN="${2:?usage: run-migration-cell.sh <old-kan-binary> <new-kan-binary>}"
+OLD_BIN="${1:?usage: run-migration-cell.sh <old-kan-binary> <new-kan-binary> [mode]}"
+NEW_BIN="${2:?usage: run-migration-cell.sh <old-kan-binary> <new-kan-binary> [mode]}"
+# How the identity is resolved on BOTH sides of the cell. See the block below.
+MODE="${3:-identity-file}"
 
 say() { echo "$@" >&2; }
 
@@ -44,11 +46,44 @@ cd "$work" || { echo "unwritable"; exit 0; }
 git init -q .
 git -c user.email=matrix@example.com -c user.name=matrix commit -q --allow-empty -m init
 
-# A dedicated key file rather than the keychain: CI has no Secret Service, and
-# every kan since KAN_IDENTITY_FILE existed honours this. Older versions that
-# do not simply fall back to a plaintext `.kan/identity`, which is equally
-# fine here -- the point is a workspace, not which path produced it.
-export KAN_IDENTITY_FILE="$work/key"
+# The identity axis (#146 part 3).
+#
+# Every cell used to drive `KAN_IDENTITY_FILE`, which meant the matrix
+# exercised exactly one of the three ways kan resolves an identity -- and the
+# one that short-circuits the other two. `load_or_create_for_workspace`
+# returns early when that variable is set, so v0.9's seed-rooting has never
+# been run against an older workspace by this matrix, and #146's defect lived
+# in a branch no cell could reach. A harness that drives one shape cannot see
+# a defect that lives in the other; that is the same finding as the bug.
+#
+#   identity-file  KAN_IDENTITY_FILE on both sides. The original cell.
+#   seed           Neither side names a key file. The writer falls back to a
+#                  plaintext `.kan/identity` (no Secret Service on CI), and
+#                  the reader takes the seed-rooting path -- freshness judged
+#                  from identity files, with the log as the tiebreaker the
+#                  files cannot see.
+case "$MODE" in
+  identity-file)
+    # A dedicated key file rather than the keychain: CI has no Secret Service,
+    # and every kan since KAN_IDENTITY_FILE existed honours this. Older
+    # versions that do not simply fall back to a plaintext `.kan/identity`,
+    # which is equally fine here -- the point is a workspace, not which path
+    # produced it.
+    export KAN_IDENTITY_FILE="$work/key"
+    ;;
+  seed)
+    unset KAN_IDENTITY_FILE
+    # Honoured only by v0.9+; older writers ignore it and fall back to
+    # plaintext anyway on a machine with no keychain, which is the same
+    # on-disk result.
+    export KAN_NO_KEYCHAIN=1
+    ;;
+  *)
+    say "unknown mode: $MODE"
+    echo "unwritable"
+    exit 0
+    ;;
+esac
 
 # `--subject` rather than a positional: the positional form only arrived in
 # v0.7.1 (Wave 1, ADR-53), and this script has to drive every released
@@ -80,7 +115,7 @@ say "old binary wrote $wrote claim(s)"
 #
 # Reproducing "same machine, same workspace, upgraded binary" means using the
 # key that is actually there.
-if [ ! -f "$KAN_IDENTITY_FILE" ]; then
+if [ "$MODE" = identity-file ] && [ ! -f "$KAN_IDENTITY_FILE" ]; then
   if [ -f "$work/.kan/identity" ]; then
     say "writer predates KAN_IDENTITY_FILE -- reading with .kan/identity, as an upgrade would"
     export KAN_IDENTITY_FILE="$work/.kan/identity"
