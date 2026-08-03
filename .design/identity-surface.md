@@ -65,6 +65,11 @@ in the cases where today's answer is already wrong.
   signal that an unexpected identity has written here — the #90 and #136
   anomaly, surfaced as data rather than as an absence.
 
+- REQ-10: `publish` folds under **the same base a default read uses**, and
+  stays un-parameterized by `--trust`. It continues to read `.kan/log` only,
+  never the overlay, so a claim that arrived from another actor can never be
+  re-published regardless of base.
+
 ## Acceptance Criteria
 
 - [ ] AC-1: A single-author workspace produces byte-identical `show`, `status`,
@@ -110,6 +115,11 @@ in the cases where today's answer is already wrong.
 - [ ] AC-10: A workspace whose active identity has been re-minted (the #90
   shape: `identity-id` present, key absent, log non-empty) still returns every
   claim in the log under the default read. Covers REQ-1.
+
+- [ ] AC-11: In a workspace whose log holds claims for one subject from two
+  role identities, `kan publish <subject>` writes **both** authors' live claims,
+  and `kan show <subject>` and the published file agree claim-for-claim. A claim
+  present only in `.kan/overlay` is never written. Covers REQ-10.
 
 ## Architecture
 
@@ -244,25 +254,43 @@ Each bullet is the decision as recorded; the prose beneath is the reasoning.
   which is where content-addressed filenames would earn their keep. Recorded here
   so it is met as a known boundary rather than rediscovered as a slowdown.
 
-## Open Questions
+- RQ-6: Yes, `Local` changes what `publish` writes — **and it should.** The
+  invariant `publish` was built to hold is *"the sharing layer must not
+  contradict the fold"*: it folds first and publishes what the fold says is
+  live (`.design/v0.7-milestone.md` REQ-12). That fix exists because a subject
+  showing 2 live claims once published 5, including a retracted observation.
+  The base it folded under was `Solo` because `Solo` was the default — the
+  invariant is agreement with the default read, not `Solo` specifically. Under
+  `Local`, publishing under the narrower base is what would *break* it: `kan
+  show X` and `.claims/X.md` would disagree.
 
-<!-- OPEN: Q6 -->
-### Q6: Does `Local` change what `publish` writes?
+  The safety property that fix bought is fully preserved, because it comes from
+  *folding* rather than from `Solo` — retracted and non-live claims are still
+  excluded.
 
-`kan publish` writes a subject's claims into `.claims/`. Under `Solo` the
-claims a subject "has" were the active identity's; under `Local` a subject may
-hold claims from several log authors, so publishing it would export other
-identities' claims too.
+  The comment's other concern, *"publishing another actor's claims under your
+  own publication is worse than merely wrong"*, is preserved **more strongly
+  than the trust base ever preserved it**: all three publish paths read
+  `ws.log.iter_all()` and never the overlay, so a claim that arrived from
+  someone else cannot be re-published under any base. That is structural rather
+  than a filter, and it already holds today.
 
-That is probably correct — they are all this workspace's claims, which is what
-publishing a subject means — but it changes what a published file contains for
-any multi-role workspace, and `.claims/` is a tracked format, so a change here
-is a migration with a matrix row. It also interacts with #131 (two actors
-colliding on one published filename), which is already queued for v0.12.0.
+  `publish` also stays **un-parameterized by `--trust`**, which is the natural
+  extension to refuse. An explicit narrow frame is a *viewer's* choice; baking
+  one into a shared artifact hands every downstream reader a partial export that
+  looks complete — the failure class this project keeps re-encountering.
 
-**To resolve**: Edit this section with your decision and remove the
-`<!-- OPEN -->` marker.
-<!-- /OPEN -->
+  The genuinely new case is a third-party DID that wrote directly to this log.
+  RQ-1 already counts that as this workspace's, and RQ-9's `local` minus `roles`
+  is where it surfaces. Publishing it is right; suppressing it at publish time
+  would be a silent partial export.
+
+  **Not a format migration.** The record shape is unchanged and
+  `write_subject`'s `retirable` check still passes, since the extra records are
+  the same subject's. What does change is that the first `publish --all` after
+  upgrading produces a visible diff in a multi-role workspace, as files gain the
+  other roles' claims. Worth announcing in the release note rather than
+  discovering in a review.
 
 ## Out of Scope
 
