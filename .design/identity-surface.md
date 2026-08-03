@@ -207,35 +207,44 @@ Each bullet is the decision as recorded; the prose beneath is the reasoning.
   reports every log author at weight `1.0` and parses the same way, so the
   envelope shape is unchanged and this is a new value rather than a new field.
 
+- RQ-5: A read **eliminates both identity and anchor**, and **keeps ingestion**
+  behind a provably-fresh key. Three parts, in the order they matter.
+
+  *Eliminate `genesis()` from the read path.* Measured on a scratch workspace:
+  kan's fixed per-invocation cost is ~42ms against a 2.2ms bare process spawn,
+  and `genesis()`'s three `git` subprocesses are **28.2ms of it** — roughly 70%,
+  spent computing a value that cannot change for a repo and that a read does not
+  need, since claims carry their own anchors. `kan identity did`, `status --json`
+  and `show --all --json` all cost the same, so log size is irrelevant and this
+  is the whole cost. The anchor is a *write-time* concern, exactly as identity
+  is; v0.10.0 already moved git ahead of identity for #141, and this finishes the
+  move by taking both off reads. One of those three spawns
+  (`rev-parse --verify --quiet HEAD`) was added in v0.10.0 for #141's error
+  message — ~10ms, a 25% increase in fixed cost on the path #151 had already
+  flagged — and moves to the write path, where #141's error still lands before
+  anything is written.
+
+  *Keep ingestion on reads, gated by a content hash of `.claims/`.* The first
+  resolution of this question deferred ingestion to an explicit refresh, on the
+  reasoning that no cheap provably-fresh witness existed — because
+  `file_name(subject)` is a sanitized prefix plus a digest **of the subject
+  name**, so publishing more claims rewrites the same file and a filename-set
+  fingerprint would miss updates. That reasoning was wrong about the cost, not
+  the mechanism: reading every published file in full measures **0.66ms** for 40
+  files, 15x cheaper than a single `git` spawn. So the key is a hash of the bytes
+  — provably fresh, no format change, no dependency on the `.claims/` naming work
+  in #131/#92. The expensive part of ingestion is parse and signature
+  verification, and that is what the key skips.
+
+  *Drop identity from the own-vs-foreign test*, generalising the log-membership
+  check v0.9.2 already introduced for #150.
+
+  The tripwire: the hash is O(published bytes), cheap at current scale and not
+  forever. A repo with thousands of published subjects wants a readdir-level key,
+  which is where content-addressed filenames would earn their keep. Recorded here
+  so it is met as a known boundary rather than rediscovered as a slowdown.
+
 ## Open Questions
-
-<!-- OPEN: Q5 -->
-### Q5: Does `ingest_published` still run on a read-only open?
-
-Populating `.kan/overlay` is a write, performed today during every
-`Workspace::open` — including reads. Under REQ-2 a read resolves no identity,
-and `ingest_published` currently uses the active identity as its own-vs-foreign
-test.
-
-Three options:
-
-1. **Reads skip ingestion entirely.** The overlay is refreshed only on write
-   paths. A read immediately after `git pull` would not see newly published
-   claims until the next write, which is a surprising staleness.
-2. **Reads ingest, using log membership as the test** — the generalisation of
-   the fix v0.9.2 already made for #150. Keeps reads current, but a read still
-   writes to `.kan/overlay`, which sits awkwardly with "a read does no identity
-   work" even though it does no *identity* work.
-3. **Ingestion moves out of `open` to an explicit refresh**, with reads
-   reporting the overlay as potentially stale.
-
-(2) is the smallest change and preserves current behaviour; (3) is the most
-honest about what a read is. The choice affects AC-3, since option (2) means a
-read still creates `.kan/overlay` in a fresh workspace.
-
-**To resolve**: Edit this section with your decision and remove the
-`<!-- OPEN -->` marker.
-<!-- /OPEN -->
 
 <!-- OPEN: Q6 -->
 ### Q6: Does `Local` change what `publish` writes?
