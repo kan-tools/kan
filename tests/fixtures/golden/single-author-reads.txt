@@ -1,0 +1,656 @@
+$ kan show alpha
+exit: ok
+--- stdout ---
+alpha (7 live claim(s)):
+  <CID-0>  [Local("alpha")] Observation: the fold reads morphisms and never mutates objects
+      recorded: <TIME>
+      author:   <DID-0>
+      artifact: Commit("<GENESIS>")
+  <CID-1>  [Local("alpha")] Subject: Issue "Alpha, the first subject"
+      recorded: <TIME>
+      author:   <DID-0>
+      artifact: Commit("<GENESIS>")
+  <CID-2>  [Local("alpha")] Plan: add a golden fixture first
+      recorded: <TIME>
+      author:   <DID-0>
+      artifact: Commit("<GENESIS>")
+  <CID-3>  [Local("alpha")] Blocker: waiting on the fixture to exist
+      recorded: <TIME>
+      author:   <DID-0>
+      artifact: Commit("<GENESIS>")
+  <CID-4>  [Local("alpha")] Status: Blocked
+      (superseded by a later status on this subject)
+      recorded: <TIME>
+      author:   <DID-0>
+      cites:    <CID-3>
+      artifact: Commit("<GENESIS>")
+  <CID-5>  [Local("alpha")] Status: Open
+      recorded: <TIME>
+      author:   <DID-0>
+      artifact: Commit("<GENESIS>")
+  <CID-6>  [Local("alpha")] Publication: published to GitTree
+      recorded: <TIME>
+      author:   <DID-0>
+      artifact: Commit("<GENESIS>")
+  edges pointing here:
+    beta Blocks this
+--- stderr ---
+=====================================================
+$ kan show beta
+exit: ok
+--- stdout ---
+beta (5 live claim(s)):
+  <CID-7>  [Local("beta")] Observation: beta was noticed in passing
+      recorded: <TIME>
+      author:   <DID-0>
+      artifact: Commit("<GENESIS>")
+  <CID-8>  [Local("beta")] Relation: Blocks Local("alpha")
+      recorded: <TIME>
+      author:   <DID-0>
+      artifact: Commit("<GENESIS>")
+  <CID-9>  [Local("beta")] Resolution: beta turned out to be nothing
+      recorded: <TIME>
+      author:   <DID-0>
+      artifact: Commit("<GENESIS>")
+  <CID-10>  [Local("beta")] Status: Resolved
+      recorded: <TIME>
+      author:   <DID-0>
+      cites:    <CID-9>
+      artifact: Commit("<GENESIS>")
+  <CID-11>  [Local("beta")] Retraction: supersedes <CID-12>
+      recorded: <TIME>
+      author:   <DID-0>
+      artifact: Commit("<GENESIS>")
+--- stderr ---
+=====================================================
+$ kan show alpha --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subject": "alpha",
+  "subjects": [
+    "alpha"
+  ],
+  "claims": [
+    {
+      "cid": "<CID-0>",
+      "kind": "Observation",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "the fold reads morphisms and never mutates objects",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-1>",
+      "kind": "Subject",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "title": "Alpha, the first subject",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-2>",
+      "kind": "Plan",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "add a golden fixture first",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-3>",
+      "kind": "Blocker",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "waiting on the fixture to exist",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-4>",
+      "kind": "Status",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "status": "Blocked",
+      "cites": [
+        "<CID-3>"
+      ],
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ],
+      "superseded": true
+    },
+    {
+      "cid": "<CID-5>",
+      "kind": "Status",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "status": "Open",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-6>",
+      "kind": "Publication",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    }
+  ],
+  "inbound": [
+    {
+      "cid": "<CID-8>",
+      "kind": "Relation",
+      "relation": "Blocks",
+      "source": "beta",
+      "author": "<DID-0>"
+    }
+  ],
+  "trust": {
+    "base": "<BASE>",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 0
+}
+--- stderr ---
+=====================================================
+$ kan show --all --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "trust": {
+    "base": "<BASE>",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 0,
+  "subjects": [
+    {
+      "v": 1,
+      "subject": "alpha",
+      "subjects": [
+        "alpha"
+      ],
+      "claims": [
+        {
+          "cid": "<CID-0>",
+          "kind": "Observation",
+          "subject": "alpha",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "text": "the fold reads morphisms and never mutates objects",
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        },
+        {
+          "cid": "<CID-1>",
+          "kind": "Subject",
+          "subject": "alpha",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "title": "Alpha, the first subject",
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        },
+        {
+          "cid": "<CID-2>",
+          "kind": "Plan",
+          "subject": "alpha",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "text": "add a golden fixture first",
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        },
+        {
+          "cid": "<CID-3>",
+          "kind": "Blocker",
+          "subject": "alpha",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "text": "waiting on the fixture to exist",
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        },
+        {
+          "cid": "<CID-4>",
+          "kind": "Status",
+          "subject": "alpha",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "status": "Blocked",
+          "cites": [
+            "<CID-3>"
+          ],
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ],
+          "superseded": true
+        },
+        {
+          "cid": "<CID-5>",
+          "kind": "Status",
+          "subject": "alpha",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "status": "Open",
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        },
+        {
+          "cid": "<CID-6>",
+          "kind": "Publication",
+          "subject": "alpha",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        }
+      ],
+      "inbound": [
+        {
+          "cid": "<CID-8>",
+          "kind": "Relation",
+          "relation": "Blocks",
+          "source": "beta",
+          "author": "<DID-0>"
+        }
+      ],
+      "trust": {
+        "base": "<BASE>",
+        "authors": [
+          {
+            "did": "<DID-0>",
+            "weight": 1.0
+          }
+        ]
+      },
+      "excluded_by_trust": 0
+    },
+    {
+      "v": 1,
+      "subject": "beta",
+      "subjects": [
+        "beta"
+      ],
+      "claims": [
+        {
+          "cid": "<CID-7>",
+          "kind": "Observation",
+          "subject": "beta",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "text": "beta was noticed in passing",
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        },
+        {
+          "cid": "<CID-8>",
+          "kind": "Relation",
+          "subject": "beta",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "relation": "Blocks",
+          "target": "alpha",
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        },
+        {
+          "cid": "<CID-9>",
+          "kind": "Resolution",
+          "subject": "beta",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "text": "beta turned out to be nothing",
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        },
+        {
+          "cid": "<CID-10>",
+          "kind": "Status",
+          "subject": "beta",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "status": "Resolved",
+          "cites": [
+            "<CID-9>"
+          ],
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        },
+        {
+          "cid": "<CID-11>",
+          "kind": "Retraction",
+          "subject": "beta",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "supersedes": "<CID-12>",
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        }
+      ],
+      "trust": {
+        "base": "<BASE>",
+        "authors": [
+          {
+            "did": "<DID-0>",
+            "weight": 1.0
+          }
+        ]
+      },
+      "excluded_by_trust": 0
+    }
+  ]
+}
+--- stderr ---
+=====================================================
+$ kan status
+exit: ok
+--- stdout ---
+alpha: Settled(Open)  (<CID-5>)  [published]
+beta: Settled(Resolved)  (<CID-10>)  [unpublished]
+--- stderr ---
+=====================================================
+$ kan status alpha
+exit: ok
+--- stdout ---
+alpha: Settled(Open)  (<CID-5>)  [published]
+--- stderr ---
+=====================================================
+$ kan status --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subjects": [
+    {
+      "subject": "alpha",
+      "subjects": [
+        "alpha"
+      ],
+      "state": "Settled",
+      "value": "Open",
+      "cid": "<CID-5>",
+      "excluded_by_trust": 0,
+      "durability": "published"
+    },
+    {
+      "subject": "beta",
+      "subjects": [
+        "beta"
+      ],
+      "state": "Settled",
+      "value": "Resolved",
+      "cid": "<CID-10>",
+      "excluded_by_trust": 0,
+      "durability": "unpublished"
+    }
+  ],
+  "trust": {
+    "base": "<BASE>",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 0
+}
+--- stderr ---
+=====================================================
+$ kan issues
+exit: ok
+--- stdout ---
+alpha: Settled(Open)  (<CID-5>)  [published]
+--- stderr ---
+=====================================================
+$ kan issues --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subjects": [
+    {
+      "subject": "alpha",
+      "subjects": [
+        "alpha"
+      ],
+      "state": "Settled",
+      "value": "Open",
+      "cid": "<CID-5>",
+      "excluded_by_trust": 0,
+      "durability": "published"
+    }
+  ],
+  "trust": {
+    "base": "<BASE>",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 0
+}
+--- stderr ---
+=====================================================
+$ kan context --budget 400
+exit: ok
+--- stdout ---
+<CID-5>  [Local("alpha")] Status: Open
+<CID-10>  [Local("beta")] Status: Resolved
+<CID-4>  [Local("alpha")] Status: Blocked  (superseded)
+<CID-9>  [Local("beta")] Resolution: beta turned out to be nothing
+<CID-3>  [Local("alpha")] Blocker: waiting on the fixture to exist
+<CID-8>  [Local("beta")] Relation: Blocks Local("alpha")
+<CID-2>  [Local("alpha")] Plan: add a golden fixture first
+<CID-7>  [Local("beta")] Observation: beta was noticed in passing
+<CID-6>  [Local("alpha")] Publication: published to GitTree
+<CID-11>  [Local("beta")] Retraction: supersedes <CID-12>
+<CID-1>  [Local("alpha")] Subject: Issue "Alpha, the first subject"
+<CID-0>  [Local("alpha")] Observation: the fold reads morphisms and never mutates objects
+-- 12 claim(s), ~<TOKENS>/400 tokens --
+--- stderr ---
+=====================================================
+$ kan context --budget 400 --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "claims": [
+    {
+      "cid": "<CID-5>",
+      "kind": "Status",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "status": "Open",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-10>",
+      "kind": "Status",
+      "subject": "beta",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "status": "Resolved",
+      "cites": [
+        "<CID-9>"
+      ],
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-4>",
+      "kind": "Status",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "status": "Blocked",
+      "cites": [
+        "<CID-3>"
+      ],
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ],
+      "superseded": true
+    },
+    {
+      "cid": "<CID-9>",
+      "kind": "Resolution",
+      "subject": "beta",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "beta turned out to be nothing",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-3>",
+      "kind": "Blocker",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "waiting on the fixture to exist",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-8>",
+      "kind": "Relation",
+      "subject": "beta",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "relation": "Blocks",
+      "target": "alpha",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-2>",
+      "kind": "Plan",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "add a golden fixture first",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-7>",
+      "kind": "Observation",
+      "subject": "beta",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "beta was noticed in passing",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-6>",
+      "kind": "Publication",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-11>",
+      "kind": "Retraction",
+      "subject": "beta",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "supersedes": "<CID-12>",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-1>",
+      "kind": "Subject",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "title": "Alpha, the first subject",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-0>",
+      "kind": "Observation",
+      "subject": "alpha",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "the fold reads morphisms and never mutates objects",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    }
+  ],
+  "tokens": <TOKENS>,
+  "budget": 400,
+  "omitted_claims": 0,
+  "trust": {
+    "base": "<BASE>",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 0
+}
+--- stderr ---
+=====================================================
