@@ -178,7 +178,7 @@ async fn ac6_index_is_disposable() {
 
     let mut index = Index::open(&index_path).unwrap();
     index
-        .rebuild(&claims_from_log, log.current_root().as_ref())
+        .rebuild(&claims_from_log, &[], log.current_root().as_ref())
         .unwrap();
     assert_eq!(index.len().unwrap(), 2);
     let first_pass = index.all_stored_claims().unwrap();
@@ -190,7 +190,7 @@ async fn ac6_index_is_disposable() {
     let mut index = Index::open(&index_path).unwrap();
     assert!(index.is_empty().unwrap());
     index
-        .rebuild(&claims_from_log, log.current_root().as_ref())
+        .rebuild(&claims_from_log, &[], log.current_root().as_ref())
         .unwrap();
     let second_pass = index.all_stored_claims().unwrap();
 

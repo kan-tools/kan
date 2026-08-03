@@ -82,7 +82,9 @@ async fn retract_rejects_another_authors_claim_at_write_time() {
 
     let claims = log.iter_all().await.unwrap();
     let mut index = Index::open(&dir.path().join(".kan/index.sqlite")).unwrap();
-    index.rebuild(&claims, log.current_root().as_ref()).unwrap();
+    index
+        .rebuild(&claims, &[], log.current_root().as_ref())
+        .unwrap();
 
     let overlay = Log::open_or_create(&dir.path().join(".kan/overlay"), &identity)
         .await
@@ -161,7 +163,9 @@ async fn reject_writes_a_rejects_claim_against_another_authors_claim() {
 
     let claims = log.iter_all().await.unwrap();
     let mut index = Index::open(&dir.path().join(".kan/index.sqlite")).unwrap();
-    index.rebuild(&claims, log.current_root().as_ref()).unwrap();
+    index
+        .rebuild(&claims, &[], log.current_root().as_ref())
+        .unwrap();
 
     let overlay = Log::open_or_create(&dir.path().join(".kan/overlay"), &identity)
         .await
@@ -218,7 +222,9 @@ async fn reject_refuses_the_callers_own_claim() {
 
     let claims = log.iter_all().await.unwrap();
     let mut index = Index::open(&dir.path().join(".kan/index.sqlite")).unwrap();
-    index.rebuild(&claims, log.current_root().as_ref()).unwrap();
+    index
+        .rebuild(&claims, &[], log.current_root().as_ref())
+        .unwrap();
 
     let overlay = Log::open_or_create(&dir.path().join(".kan/overlay"), &identity)
         .await

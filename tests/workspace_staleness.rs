@@ -138,11 +138,11 @@ fn index_built_from_root_round_trips() {
     let cid: atproto_dasl::Cid = "bafyreif4au544xcim6pd62nvks5vhgdj5u3tdkqecg4zvjsfqxfj66lnai"
         .parse()
         .unwrap();
-    index.rebuild(&[], Some(&cid)).unwrap();
+    index.rebuild(&[], &[], Some(&cid)).unwrap();
     assert_eq!(index.built_from_root().unwrap(), Some(cid));
 
     // A subsequent rebuild with no root (log went back to empty, in
     // principle) overwrites rather than leaving the old value stuck.
-    index.rebuild(&[], None).unwrap();
+    index.rebuild(&[], &[], None).unwrap();
     assert_eq!(index.built_from_root().unwrap(), None);
 }

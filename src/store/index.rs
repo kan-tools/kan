@@ -8,7 +8,45 @@ use std::path::Path;
 use atproto_dasl::Cid;
 use rusqlite::OptionalExtension;
 
+use crate::claim::AuthorId;
 use crate::store::log::StoredClaim;
+
+/// Bumped whenever the projected *shape* changes. A mismatch drops the
+/// projection and rebuilds it, which costs nothing that matters — the index
+/// is disposable by construction (`docs/SPEC.md` §10), so there is no
+/// migration to write and no data that exists only here.
+///
+/// This is why the version is needed at all: the tables are created with
+/// `IF NOT EXISTS`, so an index written by an older kan would otherwise keep
+/// its old columns and silently answer new questions wrongly — `origin`
+/// missing means every claim reads as neither log nor overlay, which would
+/// empty out `TrustBase::Local`.
+const SCHEMA_VERSION: u32 = 2;
+
+/// Which store a projected claim came from.
+///
+/// The distinction is load-bearing rather than bookkeeping: `Local` (the
+/// default trust base) is *every author with a claim in `.kan/log`*, and the
+/// log is what was written **through** this workspace where the overlay is
+/// what **arrived at** it as a committed `.claims/` file
+/// (`.design/identity-surface.md` RQ-2). Those are different acts, and the
+/// difference is the trust-relevant one — without it a merged pull request
+/// carrying a claims file would inject a stranger's claims into the
+/// maintainer's default view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    Log,
+    Overlay,
+}
+
+impl Origin {
+    fn as_str(self) -> &'static str {
+        match self {
+            Origin::Log => "log",
+            Origin::Overlay => "overlay",
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -67,20 +105,51 @@ impl Index {
         }
         let conn = rusqlite::Connection::open(path)?;
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS claims (
-                content_cid TEXT PRIMARY KEY,
-                rev         TEXT NOT NULL,
-                author_did  TEXT NOT NULL,
-                subject_key TEXT NOT NULL,
-                kind        TEXT NOT NULL,
-                raw         BLOB NOT NULL
-             );
-             CREATE INDEX IF NOT EXISTS claims_by_rev ON claims(rev);
-             CREATE INDEX IF NOT EXISTS claims_by_subject ON claims(subject_key);
-             CREATE TABLE IF NOT EXISTS meta (
+            "CREATE TABLE IF NOT EXISTS meta (
                 key   TEXT PRIMARY KEY,
                 value TEXT
              );",
+        )?;
+
+        // Discard a projection built to an older shape *before* creating the
+        // current one, so `CREATE TABLE IF NOT EXISTS` cannot quietly keep a
+        // table missing this version's columns. Dropping `built_from_root`
+        // with it is what forces the full rebuild: leaving it would let the
+        // freshness check conclude an empty projection was up to date.
+        let found: Option<String> = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        if found.as_deref() != Some(&SCHEMA_VERSION.to_string()) {
+            conn.execute_batch(
+                "DROP TABLE IF EXISTS claims;
+                 DELETE FROM meta WHERE key = 'built_from_root';",
+            )?;
+            conn.execute(
+                "INSERT INTO meta (key, value) VALUES ('schema_version', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                rusqlite::params![SCHEMA_VERSION.to_string()],
+            )?;
+        }
+
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS claims (
+                content_cid  TEXT PRIMARY KEY,
+                rev          TEXT NOT NULL,
+                author_did   TEXT NOT NULL,
+                author_agent BLOB,
+                origin       TEXT NOT NULL,
+                subject_key  TEXT NOT NULL,
+                kind         TEXT NOT NULL,
+                raw          BLOB NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS claims_by_rev ON claims(rev);
+             CREATE INDEX IF NOT EXISTS claims_by_subject ON claims(subject_key);
+             CREATE INDEX IF NOT EXISTS claims_by_origin ON claims(origin);",
         )?;
         Ok(Self { conn })
     }
@@ -95,27 +164,34 @@ impl Index {
     /// `built_from_root`'s caller.
     pub fn rebuild(
         &mut self,
-        claims: &[(Cid, StoredClaim)],
+        log_claims: &[(Cid, StoredClaim)],
+        overlay_claims: &[(Cid, StoredClaim)],
         built_from_root: Option<&Cid>,
     ) -> Result<(), Error> {
         let tx = self.conn.transaction()?;
         tx.execute("DELETE FROM claims", [])?;
-        for (cid, stored) in claims {
-            let subject_key = format!("{:?}", stored.claim.content.subject);
-            let kind = format!("{:?}", stored.claim.content.body.kind());
-            let raw = atproto_dasl::to_vec(stored)?;
-            tx.execute(
-                "INSERT INTO claims (content_cid, rev, author_did, subject_key, kind, raw)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![
-                    cid.to_string(),
-                    stored.rev,
-                    stored.claim.content.author.did,
-                    subject_key,
-                    kind,
-                    raw,
-                ],
-            )?;
+        let sources = [(Origin::Log, log_claims), (Origin::Overlay, overlay_claims)];
+        for (origin, claims) in sources {
+            for (cid, stored) in claims {
+                let subject_key = format!("{:?}", stored.claim.content.subject);
+                let kind = format!("{:?}", stored.claim.content.body.kind());
+                let raw = atproto_dasl::to_vec(stored)?;
+                tx.execute(
+                    "INSERT INTO claims
+                        (content_cid, rev, author_did, author_agent, origin, subject_key, kind, raw)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    rusqlite::params![
+                        cid.to_string(),
+                        stored.rev,
+                        stored.claim.content.author.did,
+                        stored.claim.content.author.agent,
+                        origin.as_str(),
+                        subject_key,
+                        kind,
+                        raw,
+                    ],
+                )?;
+            }
         }
         tx.execute(
             "INSERT INTO meta (key, value) VALUES ('built_from_root', ?1)
@@ -166,6 +242,39 @@ impl Index {
             let cid: Cid = cid_str.parse()?;
             let stored: StoredClaim = atproto_dasl::from_slice(&raw)?;
             out.push((cid, stored));
+        }
+        Ok(out)
+    }
+
+    /// Every distinct `AuthorId` with a claim in `.kan/log` — the membership
+    /// of `TrustBase::Local`, and the reason a default read needs no identity
+    /// (`.design/identity-surface.md` REQ-1).
+    ///
+    /// **Answered from the projection rather than from the log.** The log is
+    /// the source of truth, but walking it means verifying a signature per
+    /// claim — ADR-13's dominant cost, and the thing the index exists to
+    /// avoid paying on every read. The projection is rebuilt from the log
+    /// whenever the log's root moves, so this cannot drift from it.
+    ///
+    /// **`agent` is carried, not collapsed to the DID.** A v0.2–v0.6 claim
+    /// written with `KAN_AGENT` set has `AuthorId { did, agent: Some(h) }`,
+    /// and it is a member here on exactly the same footing as any other —
+    /// it is in the log. That is REQ-7 with no DID-matching special case:
+    /// the legacy author is trusted because it wrote here, not because its
+    /// DID resembles somebody's.
+    pub fn log_authors(&self) -> Result<Vec<AuthorId>, Error> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT DISTINCT author_did, author_agent FROM claims WHERE origin = 'log'")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(AuthorId {
+                did: row.get(0)?,
+                agent: row.get(1)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
         }
         Ok(out)
     }

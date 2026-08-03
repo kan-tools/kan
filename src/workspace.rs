@@ -173,7 +173,7 @@ impl Workspace {
         // optimization, deliberately not what this is.
         let mut current_root = index_fingerprint(log.current_root(), overlay.current_root());
         if current_root != index.built_from_root()? {
-            let mut claims = log.iter_all().await?;
+            let claims = log.iter_all().await?;
             let mut overlay_claims = overlay.iter_all().await?;
 
             // #150: recover a workspace already poisoned by the defect above,
@@ -233,8 +233,11 @@ impl Workspace {
                 }
             }
 
-            claims.extend(overlay_claims);
-            index.rebuild(&claims, current_root.as_ref())?;
+            // Kept apart rather than concatenated: the projection records
+            // which store each claim came from, because `TrustBase::Local`
+            // is the log's authors and nobody else's, and once these are one
+            // vector that distinction is unrecoverable.
+            index.rebuild(&claims, &overlay_claims, current_root.as_ref())?;
         }
 
         Ok(Self {
@@ -275,15 +278,30 @@ impl Workspace {
         }
     }
 
-    /// Trust only this process's own `AuthorId` — still the default for
-    /// every read that names no authors. Whether it is the *right* default
-    /// once a workspace holds several role identities is a live question
-    /// (#121) that v0.8 deliberately does not settle; what v0.8 adds is that
-    /// a read under this base now *discloses* what it excluded
-    /// (`fold::excluded_by_trust`), so a narrow default can no longer be
-    /// mistaken for a complete view.
+    /// Trust only this process's own `AuthorId`. **No longer the default** —
+    /// v0.11 moved that to [`Self::local_trust`] — but still reachable as
+    /// `--trust me`, which is the narrow frame "what did *I* write here"
+    /// (`.design/identity-surface.md` REQ-5).
+    ///
+    /// It stopped being the default because its member is *me*, which is the
+    /// single line that made every read resolve an identity in order to know
+    /// whom to trust (#149, #90, #121 are all downstream of it).
     pub fn solo_trust(&self) -> TrustBase {
         TrustBase::solo(self.my_author())
+    }
+
+    /// **The default base every read folds under**: every author with a
+    /// claim in `.kan/log` (`.design/identity-surface.md` REQ-1).
+    ///
+    /// Computed here rather than inside `fold` for a reason the fold cannot
+    /// work around: `fold` receives the log's claims and the overlay's
+    /// together, so it cannot tell which arrived as a committed `.claims/`
+    /// file. `Workspace` can, because the index records each claim's origin.
+    ///
+    /// Takes no identity, reads no key, and mints nothing — which is the
+    /// whole point of the milestone.
+    pub fn local_trust(&self) -> Result<TrustBase, Error> {
+        Ok(TrustBase::local(self.index.log_authors()?))
     }
 
     /// Resolve `--trust` arguments into the base a read folds under. No
@@ -314,8 +332,8 @@ impl Workspace {
     }
 
     /// Resolve `--trust` arguments into the base a read folds under. No
-    /// arguments means [`Self::solo_trust`] — the default is unchanged, and
-    /// only an explicit request moves off it.
+    /// arguments means [`Self::local_trust`] — every author that has written
+    /// into this workspace's log — and only an explicit request moves off it.
     ///
     /// **Per-invocation by construction.** Nothing here writes workspace
     /// state, so two reads in one session can name different author sets in
@@ -326,7 +344,7 @@ impl Workspace {
     /// invocation and never set by one, so the property holds.
     pub fn trust_from(&self, specs: &[String]) -> Result<TrustBase, Error> {
         if specs.is_empty() {
-            return Ok(self.solo_trust());
+            return self.local_trust();
         }
         let mut weights = std::collections::HashMap::new();
         for spec in specs {

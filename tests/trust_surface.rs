@@ -104,13 +104,15 @@ impl Roles {
 }
 
 /// AC-3, and `.design/kan-read-contract.md` AC-1: a read naming two authors
-/// returns both their claims, where the same read without the selector
-/// returns only the active identity's.
+/// returns both their claims — and since v0.11, so does the read with no
+/// selector at all.
 ///
-/// The Solo half is the dogfooded failure this milestone exists to fix —
-/// each role sees `1 live claim(s)` and nothing says the other's exists.
+/// The unselected half used to be `Solo`, where each role saw
+/// `1 live claim(s)` and nothing said the other's existed. v0.8 made that
+/// visible by disclosing the exclusion; v0.11 removes it by making the
+/// default `Local`. `--trust me` is what still shows one.
 #[test]
-fn peer_contested_shows_both_roles_where_solo_shows_one() {
+fn an_explicit_pair_and_the_default_both_show_both_roles() {
     let roles = Roles::new();
     let prover_did = roles.did(&roles.prover);
     let director_did = roles.did(&roles.director);
@@ -132,10 +134,26 @@ fn peer_contested_shows_both_roles_where_solo_shows_one() {
     );
     assert!(ok);
 
-    // Solo (no selector): one claim, the active identity's own.
-    let solo = roles.show_json(&roles.prover, &["claim-1"]);
-    assert_eq!(solo["claims"].as_array().unwrap().len(), 1);
-    assert_eq!(solo["claims"][0]["author"], prover_did);
+    // No selector (`Local`): both claims, because both authors wrote here.
+    let default = roles.show_json(&roles.prover, &["claim-1"]);
+    let default_authors: Vec<&str> = default["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["author"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        default_authors.len(),
+        2,
+        "the default read dropped a log author's claim: {default}"
+    );
+    assert!(default_authors.contains(&prover_did.as_str()));
+    assert!(default_authors.contains(&director_did.as_str()));
+
+    // `--trust me`: one claim, the active identity's own -- the old default.
+    let mine = roles.show_json(&roles.prover, &["claim-1", "--trust", "me"]);
+    assert_eq!(mine["claims"].as_array().unwrap().len(), 1);
+    assert_eq!(mine["claims"][0]["author"], prover_did);
 
     // PeerContested over both: both claims, attributed.
     let both = roles.show_json(
@@ -169,11 +187,27 @@ fn the_view_names_the_trust_base_that_produced_it() {
     );
     assert!(ok);
 
-    let solo = roles.show_json(&roles.prover, &["s"]);
-    assert_eq!(solo["trust"]["base"], "Solo");
-    assert_eq!(solo["trust"]["authors"].as_array().unwrap().len(), 1);
-    assert_eq!(solo["trust"]["authors"][0]["did"], prover_did);
-    assert_eq!(solo["trust"]["authors"][0]["weight"], 1.0);
+    // v0.11 AC-8: the default names `Local`, and every author it lists is one
+    // with a claim in the log. Only the prover has written here, so `Local`
+    // and the old `Solo` default report the same single author at the same
+    // weight -- the envelope *shape* is unchanged, which is RQ-4's whole
+    // point: a new value, not a new field.
+    let default = roles.show_json(&roles.prover, &["s"]);
+    assert_eq!(default["trust"]["base"], "Local");
+    assert_eq!(default["trust"]["authors"].as_array().unwrap().len(), 1);
+    assert_eq!(default["trust"]["authors"][0]["did"], prover_did);
+    assert_eq!(default["trust"]["authors"][0]["weight"], 1.0);
+    assert_ne!(
+        default["trust"]["authors"][0]["did"], director_did,
+        "the director has written nothing here and must not be in Local"
+    );
+
+    // `--trust me` still resolves to the active identity alone, so the narrow
+    // frame remains reachable and its author set is still exact. Which
+    // *variant name* that frame reports is REQ-5's question, not this one's.
+    let mine = roles.show_json(&roles.prover, &["s", "--trust", "me"]);
+    assert_eq!(mine["trust"]["authors"].as_array().unwrap().len(), 1);
+    assert_eq!(mine["trust"]["authors"][0]["did"], prover_did);
 
     // Weights, not a membership set: a role hierarchy is a weighting, and a
     // surface accepting only a set of authors would be a narrower thing
@@ -204,7 +238,7 @@ fn the_view_names_the_trust_base_that_produced_it() {
 
     // The two responses differ in a field day can read, not merely in day's
     // memory of what it asked for.
-    assert_ne!(solo["trust"], weighted["trust"]);
+    assert_ne!(default["trust"], weighted["trust"]);
 }
 
 /// `.design/kan-read-contract.md` AC-2 / REQ-2: trust selection is

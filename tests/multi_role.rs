@@ -148,15 +148,19 @@ fn an_undeclared_second_identity_is_still_refused() {
     );
 }
 
-/// AC-6: in a workspace with prover and director roles, a `PeerContested`
-/// read shows **both** roles' live claims attributed, where the `Solo`
-/// default shows only the active identity's.
+/// v0.11 AC-2 — #121's reproduction, and the assertion this test used to
+/// make in reverse.
 ///
-/// This is the exact dogfooded gap, and the research loop's TIER 1: for a
-/// director/prover loop, a read that silently drops the other role's claims
-/// presents as data loss.
+/// In a workspace with prover and director roles, the **default** read now
+/// shows both roles' live claims attributed, from either role and with no
+/// `--trust` argument. Until v0.11 the default was `Solo`, so this test
+/// asserted that the default showed *one* claim and disclosed the exclusion
+/// — the dogfooded gap that presents as data loss in a director/prover loop.
+/// v0.8 made it visible; v0.11 removes it.
+///
+/// `--trust me` is where that narrow frame went, and it is still exact.
 #[test]
-fn peer_contested_over_roles_shows_every_role_where_solo_shows_one() {
+fn the_default_read_shows_every_role_where_trust_me_shows_one() {
     let dir = git_repo();
     let prover = dir.path().join("keys/prover");
     let director = dir.path().join("keys/director");
@@ -185,14 +189,40 @@ fn peer_contested_over_roles_shows_every_role_where_solo_shows_one() {
         assert!(run.ok, "role write failed: {}", run.stderr);
     }
 
-    // Solo (the default): one claim, and the disclosure that says so.
-    let solo = kan_as(dir.path(), Some(&prover), &["show", "finding", "--json"]);
-    assert!(solo.ok);
-    let solo: serde_json::Value = serde_json::from_str(&solo.stdout).unwrap();
-    assert_eq!(solo["claims"].as_array().unwrap().len(), 1);
+    // The default (`Local`): both claims, from *either* role, nothing hidden.
+    for (who, key) in [("prover", &prover), ("director", &director)] {
+        let default = kan_as(dir.path(), Some(key), &["show", "finding", "--json"]);
+        assert!(
+            default.ok,
+            "default read as {who} failed: {}",
+            default.stderr
+        );
+        let default: serde_json::Value = serde_json::from_str(&default.stdout).unwrap();
+        assert_eq!(
+            default["trust"]["base"], "Local",
+            "the default base should be Local: {default}"
+        );
+        assert_eq!(
+            default["claims"].as_array().unwrap().len(),
+            2,
+            "the default read as {who} dropped the other role's claim -- this is #121: \
+             {default}"
+        );
+        assert_eq!(default["excluded_by_trust"], 0);
+    }
+
+    // `--trust me`: the old default, still exact, still disclosing.
+    let mine = kan_as(
+        dir.path(),
+        Some(&prover),
+        &["show", "finding", "--trust", "me", "--json"],
+    );
+    assert!(mine.ok);
+    let mine: serde_json::Value = serde_json::from_str(&mine.stdout).unwrap();
+    assert_eq!(mine["claims"].as_array().unwrap().len(), 1);
     assert_eq!(
-        solo["excluded_by_trust"], 1,
-        "the Solo view hid a role's claim without saying so: {solo}"
+        mine["excluded_by_trust"], 1,
+        "`--trust me` hid a role's claim without saying so: {mine}"
     );
 
     // `--trust roles`: every declared role, attributed.
@@ -578,23 +608,37 @@ fn a_role_reading_a_published_workspace_does_not_duplicate_the_log() {
         as_role.stderr
     );
 
-    // The primary's claims are not this role's to see under Solo, but the
-    // exclusion must be *disclosed* (ADR-57) rather than silent — the whole
-    // point of not letting this state look like an empty workspace.
-    assert!(
-        as_role
-            .stdout
-            .contains("excluded by this view's trust base"),
-        "a role saw the primary's claims as simply absent: {}",
-        as_role.stdout
+    // Under v0.11's `Local` default the primary is an author *in this log*,
+    // so the role simply sees its claims -- where until v0.11 they were
+    // excluded and this asserted the disclosure instead (ADR-57).
+    //
+    // The dedup property this test exists for is now checkable more directly
+    // than "no crash": the claim is in the log and in `.claims/`, and it must
+    // appear in the view exactly ONCE. A duplicate here is #146 part 2
+    // reaching the view rather than the index's UNIQUE constraint.
+    let as_role_json = kan_as(dir.path(), Some(&key), &["show", "shared", "--json"]);
+    assert!(as_role_json.ok, "{}", as_role_json.stderr);
+    let view: serde_json::Value = serde_json::from_str(&as_role_json.stdout).unwrap();
+    assert_eq!(
+        view["trust"]["base"], "Local",
+        "expected the default base: {view}"
     );
-
-    // And widening the base shows them, from one copy rather than two.
-    let widened = kan_as(dir.path(), Some(&key), &["status", "--trust", "roles"]);
-    assert!(widened.ok, "--trust roles failed: {}", widened.stderr);
-    assert!(
-        widened.stdout.contains("shared"),
-        "--trust roles did not surface the primary's subject: {}",
-        widened.stdout
+    assert_eq!(
+        view["excluded_by_trust"], 0,
+        "the primary wrote this log, so a role's default read excludes nothing: {view}"
+    );
+    let cids: Vec<&str> = view["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["cid"].as_str().unwrap())
+        .collect();
+    let unique: std::collections::HashSet<&&str> = cids.iter().collect();
+    assert!(!cids.is_empty(), "the role saw no claims at all: {view}");
+    assert_eq!(
+        cids.len(),
+        unique.len(),
+        "a published claim was folded twice -- once from the log, once from the overlay: \
+         {view}"
     );
 }

@@ -28,6 +28,33 @@ pub enum TrustBase {
     /// Trust exactly one author. Nothing is ever contested — there's only
     /// one timeline.
     Solo { trusted: AuthorId },
+    /// Trust every author that has written a claim into `.kan/log` — **the
+    /// default** since v0.11 (`.design/identity-surface.md` REQ-1).
+    ///
+    /// **Why this is the default and `Solo` is not.** `Solo`'s member is
+    /// "me", so every default read had to resolve an identity in order to
+    /// know whom to trust — which is why a read minted one (#149), why an
+    /// upgrade that re-minted took the whole log out of every read (#90),
+    /// and why two role identities in one workspace could not see each
+    /// other (#121). `Local` is defined over the claim set instead, so a
+    /// read needs no identity at all and those stop being separate defects.
+    ///
+    /// **Membership is the log, never the overlay.** The log is what was
+    /// written *through* this workspace; the overlay is what *arrived at* it
+    /// as a committed `.claims/` file (RQ-2). Foreign claims already arrive
+    /// without sync, so folding "everything present" would let a merged pull
+    /// request inject a stranger's claims into the maintainer's default
+    /// view. The set is therefore computed by `Workspace` from
+    /// `Index::log_authors` and carried here, rather than derived from
+    /// whatever claims a caller happens to pass to `fold` — `fold` sees log
+    /// and overlay claims together and could not tell them apart.
+    ///
+    /// For a single-author workspace this and `Solo` coincide exactly,
+    /// which is what makes the change behavioural rather than a break
+    /// (AC-1).
+    Local {
+        authors: std::collections::HashSet<AuthorId>,
+    },
     /// Per-author trust weight in `[0,1]`. An author with no entry (or
     /// weight `0.0`) is untrusted — their claims are invisible under this
     /// enrichment, not merely down-weighted.
@@ -130,6 +157,13 @@ impl TrustBase {
         Self::PeerContested { weights }
     }
 
+    /// Every author that has written into this workspace's log.
+    pub fn local(authors: impl IntoIterator<Item = AuthorId>) -> Self {
+        Self::Local {
+            authors: authors.into_iter().collect(),
+        }
+    }
+
     /// The authors this base names, with their weights, in a stable order
     /// (by DID) so a rendered or serialized view is reproducible. `Solo`
     /// reports its one author at weight `1.0`, so a consumer reads both
@@ -140,22 +174,34 @@ impl TrustBase {
     /// a consumer cannot honestly label — it has to assume kan honoured
     /// what it asked for rather than reading that it did
     /// (`.design/kan-read-contract.md` REQ-3).
+    /// `Local` reports every log author at weight `1.0`, exactly as `Solo`
+    /// reports its single author, so the envelope shape is unchanged and a
+    /// consumer reads all three variants the same way
+    /// (`.design/identity-surface.md` RQ-4).
     pub fn authors(&self) -> Vec<(AuthorId, f64)> {
         let mut out: Vec<(AuthorId, f64)> = match self {
             TrustBase::Solo { trusted } => vec![(trusted.clone(), 1.0)],
+            TrustBase::Local { authors } => authors.iter().map(|a| (a.clone(), 1.0)).collect(),
             TrustBase::PeerContested { weights } => {
                 weights.iter().map(|(a, w)| (a.clone(), *w)).collect()
             }
         };
-        out.sort_by(|a, b| a.0.did.cmp(&b.0.did));
+        // Sorted on the whole `AuthorId`, not just the DID. Both `Local` and
+        // `PeerContested` collect out of a hash container, whose iteration
+        // order is not stable between runs, and a DID-only comparison leaves
+        // two legacy `agent` variants of one DID tied — so a rendered or
+        // serialized view could reorder them run to run for no reason a
+        // reader could see.
+        out.sort_by(|a, b| (&a.0.did, &a.0.agent).cmp(&(&b.0.did, &b.0.agent)));
         out
     }
 
-    /// `"Solo"` or `"PeerContested"` — the variant name as a stable string
-    /// for the machine surface, not a `Debug` rendering.
+    /// `"Solo"`, `"Local"` or `"PeerContested"` — the variant name as a
+    /// stable string for the machine surface, not a `Debug` rendering.
     pub fn name(&self) -> &'static str {
         match self {
             TrustBase::Solo { .. } => "Solo",
+            TrustBase::Local { .. } => "Local",
             TrustBase::PeerContested { .. } => "PeerContested",
         }
     }
@@ -164,6 +210,10 @@ impl TrustBase {
     pub fn trusts(&self, author: &AuthorId) -> bool {
         match self {
             TrustBase::Solo { trusted } => author == trusted,
+            // Whole-`AuthorId` membership, so a legacy `agent: Some(h)`
+            // author is trusted for having written here rather than for
+            // resembling a DID that did (REQ-7).
+            TrustBase::Local { authors } => authors.contains(author),
             TrustBase::PeerContested { weights } => weights.get(author).is_some_and(|w| *w > 0.0),
         }
     }
