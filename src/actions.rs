@@ -2131,3 +2131,82 @@ pub fn context(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<Strin
     out.push_str(&excluded_note(excluded.total(), trust));
     Ok(out)
 }
+
+/// `kan identity authors` — every author with a claim in `.kan/log`, marked
+/// declared or not (`.design/identity-surface.md` REQ-9).
+///
+/// **`local` minus `roles`, made reachable.** Both halves became stateable
+/// only in v0.11: `Local` made log membership derivable, and narrowing
+/// `roles` to mean *only what was declared* made the difference mean
+/// something. An undeclared author is not an error — a third party who wrote
+/// directly to this log is legitimately this workspace's, and RQ-6 publishes
+/// their claims — it is a fact worth being able to see.
+pub fn authors(ws: &Workspace, json: bool) -> Result<String, Error> {
+    let all = ws
+        .index
+        .log_authors()
+        .map_err(crate::workspace::Error::from)?;
+    let undeclared: std::collections::HashSet<(String, Option<Vec<u8>>)> = ws
+        .undeclared_log_authors()?
+        .into_iter()
+        .map(|a| (a.did, a.agent))
+        .collect();
+
+    let mut rows: Vec<(String, Option<Vec<u8>>, bool)> = all
+        .into_iter()
+        .map(|a| {
+            let declared = !undeclared.contains(&(a.did.clone(), a.agent.clone()));
+            (a.did, a.agent, declared)
+        })
+        .collect();
+    rows.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+
+    if json {
+        let entries: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|(did, agent, declared)| {
+                serde_json::json!({
+                    "did": did,
+                    "declared": declared,
+                    // Present only for v0.2-v0.6 claims written with
+                    // KAN_AGENT set; a modern author has none.
+                    "legacy_agent": agent.is_some(),
+                })
+            })
+            .collect();
+        return Ok(format!(
+            "{}\n",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "v": 1,
+                "authors": entries,
+            }))
+            .map_err(|e| Error::Usage(e.to_string()))?
+        ));
+    }
+
+    if rows.is_empty() {
+        return Ok("no claims in this log yet, so no authors\n".to_string());
+    }
+    let mut out = String::new();
+    for (did, agent, declared) in &rows {
+        out.push_str(&format!(
+            "{did}  {}{}\n",
+            if *declared { "declared" } else { "UNDECLARED" },
+            if agent.is_some() {
+                "  (legacy KAN_AGENT author)"
+            } else {
+                ""
+            }
+        ));
+    }
+    let undeclared_count = rows.iter().filter(|(_, _, d)| !d).count();
+    if undeclared_count > 0 {
+        out.push_str(&format!(
+            "\n{undeclared_count} author(s) have written here without being declared as \
+             roles. That is not an error -- a third party who wrote directly to this log is \
+             legitimately this workspace's -- but if you did not expect it, `kan identity \
+             did` and `kan identity role list` are the two things to compare.\n"
+        ));
+    }
+    Ok(out)
+}

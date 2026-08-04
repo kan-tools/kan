@@ -381,6 +381,18 @@ pub enum IdentityAction {
         #[command(subcommand)]
         action: RoleAction,
     },
+    /// List every author with a claim in this log, marking which ones were
+    /// declared as roles.
+    ///
+    /// The undeclared ones are the signal that an unexpected identity has
+    /// written here — an upgrade that re-minted (#90), or an old `KAN_AGENT`
+    /// value (#136). Both otherwise present as "some claims seem to be
+    /// missing", which is the hardest shape to act on; this is the same fact
+    /// stated positively.
+    Authors {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -805,6 +817,9 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             unreachable!("read verbs are dispatched by `is_read_only`")
         }
         Command::Identity { action } => match action {
+            IdentityAction::Authors { json } => {
+                print!("{}", actions::authors(&ws, json)?)
+            }
             IdentityAction::Did => println!("{}", ws.identity()?.did()),
             IdentityAction::EncryptionKey => {
                 println!("{}", ws.identity()?.encryption_key().public_hex())
