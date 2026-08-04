@@ -315,7 +315,8 @@ async fn append(
     };
     let cid = ws.log.append(content, &ws.identity).await?;
     let claims = ws.log.iter_all().await?;
-    ws.index.rebuild(&claims, ws.log.current_root().as_ref())?;
+    ws.index
+        .rebuild(&claims, &[], ws.log.current_root().as_ref())?;
     Ok(AppendResult { cid, subject, kind })
 }
 
@@ -638,7 +639,7 @@ pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error>
         .map(|(cid, s)| (cid.clone(), s.rev.clone()))
         .collect();
 
-    let view = crate::fold::fold(stored, &ws.solo_trust());
+    let view = crate::fold::fold(stored, &ws.local_trust()?);
     let live = live_claims_for(&view, &subject_ref, &rev_of);
 
     let count = live.len();
@@ -1028,7 +1029,7 @@ pub async fn publish_all(ws: &mut Workspace) -> Result<String, Error> {
         .map(|(cid, s)| (cid.clone(), s.rev.clone()))
         .collect();
 
-    let view = crate::fold::fold(stored, &ws.solo_trust());
+    let view = crate::fold::fold(stored, &ws.local_trust()?);
     let all_live: Vec<(atproto_dasl::Cid, crate::claim::Claim)> = view
         .classes
         .iter()
@@ -1160,7 +1161,7 @@ fn normalize_subject_name(s: &str) -> String {
 /// names (`a` and `b`) against one shared view, not one.
 pub fn warn_similar_subjects(ws: &Workspace, candidates: &[&str]) -> Result<Vec<String>, Error> {
     let claims = ws.index.all_stored_claims()?;
-    let view = fold::fold(claims, &ws.solo_trust());
+    let view = fold::fold(claims, &ws.local_trust()?);
     let existing: Vec<&Rkey> = view
         .classes
         .iter()

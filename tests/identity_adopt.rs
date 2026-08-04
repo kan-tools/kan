@@ -89,21 +89,46 @@ fn orphaned_workspace() -> (tempfile::TempDir, std::path::PathBuf) {
     (dir, real_key)
 }
 
-/// AC-6: adopting the right key makes previously-invisible claims visible
-/// again.
+/// v0.11 AC-10, and the inversion of what this test used to assert.
+///
+/// **Until v0.11 this test read "adopting the right key brings the claims
+/// back", because under `Solo` a re-minted identity took the entire log out
+/// of every read** — the claims were on disk, verifiable, and invisible, and
+/// `adopt` was the way back. Under `Local` there is nothing to bring back:
+/// the claims are authored by an author *in the log*, so the default read
+/// shows them before `adopt` runs at all. #90's failure mode disappeared
+/// rather than being guarded against (`.design/identity-surface.md`, the
+/// consequence it states first).
+///
+/// So the test now pins both halves of that: the log stays visible through
+/// the re-mint, and `adopt` still does the job it still has — repointing the
+/// workspace at the key it should be *writing* under. Minting a second
+/// identity is still wrong; it just stopped being a data-visibility event.
 #[test]
-fn adopting_the_right_key_brings_the_claims_back() {
+fn a_re_minted_identity_no_longer_hides_the_log_and_adopt_still_repoints_writes() {
     let (dir, real_key) = orphaned_workspace();
+    let real_did = kan(dir.path(), Some(&real_key), &["identity", "did"]).stdout;
+    let orphan_did = kan(dir.path(), None, &["identity", "did"]).stdout;
+    assert_ne!(
+        real_did, orphan_did,
+        "the fixture is not in #90's shape: the workspace resolves the same key that \
+         wrote the log, so there is nothing to test"
+    );
 
-    // Before: the claims are on disk, verifiable, and invisible -- v0.8's
-    // disclosure is what lets the test see the difference at all.
+    // Before adopt: visible, and nothing excluded. This is the assertion that
+    // used to read `0` claims and `3` excluded.
     let before = kan(dir.path(), None, &["show", "work", "--json"]);
     assert!(before.ok, "{}", before.stderr);
     let before: serde_json::Value = serde_json::from_str(&before.stdout).unwrap();
-    assert_eq!(before["claims"].as_array().unwrap().len(), 0);
     assert_eq!(
-        before["excluded_by_trust"], 3,
-        "expected #90's shape -- claims present but excluded: {before}"
+        before["claims"].as_array().unwrap().len(),
+        3,
+        "a re-minted identity hid the log, which is exactly what `Local` exists to stop: \
+         {before}"
+    );
+    assert_eq!(
+        before["excluded_by_trust"], 0,
+        "nothing authored in this log should be excluded from a default read: {before}"
     );
 
     let adopted = kan(
@@ -118,16 +143,18 @@ fn adopting_the_right_key_brings_the_claims_back() {
         adopted.stdout
     );
 
-    // After: visible, with nothing excluded.
+    // After adopt: the reads are unchanged -- they were already right -- and
+    // the *writing* identity is now the log's own.
     let after = kan(dir.path(), None, &["show", "work", "--json"]);
     assert!(after.ok, "{}", after.stderr);
     let after: serde_json::Value = serde_json::from_str(&after.stdout).unwrap();
-    assert_eq!(
-        after["claims"].as_array().unwrap().len(),
-        3,
-        "the claims did not come back: {after}"
-    );
+    assert_eq!(after["claims"].as_array().unwrap().len(), 3);
     assert_eq!(after["excluded_by_trust"], 0);
+    assert_eq!(
+        kan(dir.path(), None, &["identity", "did"]).stdout,
+        real_did,
+        "adopt did not repoint the workspace at the adopted key"
+    );
 }
 
 /// AC-6's **negative control**: adopting a key that authored nothing here is

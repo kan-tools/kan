@@ -8,7 +8,59 @@ use std::path::Path;
 use atproto_dasl::Cid;
 use rusqlite::OptionalExtension;
 
+use crate::claim::AuthorId;
 use crate::store::log::StoredClaim;
+
+/// The projection's table, **named by schema version**, and the meta key
+/// recording what that table was built from.
+///
+/// **Why the version is in the name rather than in a row.** The index is
+/// disposable, so a shape change needs no migration — but it does need two
+/// kan binaries sharing one `.kan/` to stay out of each other's way, and
+/// that is not hypothetical: `day` shells out to the *installed* `kan`
+/// (ADR-42) while a checkout builds its own, so one workspace routinely sees
+/// both. A single `claims` table cannot serve both, and the failure is not
+/// subtle — v0.9.2 against a v0.11-written index dies with
+/// `NOT NULL constraint failed: claims.origin` on its next write, because
+/// `CREATE TABLE IF NOT EXISTS` leaves the newer table in place and the older
+/// binary's `INSERT` names no `origin`. Reproduced against the released
+/// binary before choosing this, rather than reasoned about.
+///
+/// Disjoint names mean each binary maintains its own projection and neither
+/// can corrupt or block the other. `built_from_root` is versioned with it for
+/// the same reason: a shared freshness key would have each binary trusting a
+/// projection the other built.
+///
+/// The cost is a stale table per superseded version, which is disk in a file
+/// that can be deleted at any time. Cleaning them up would reintroduce
+/// exactly the breakage this avoids.
+const CLAIMS_TABLE: &str = "claims_v2";
+const BUILT_FROM_ROOT_KEY: &str = "built_from_root_v2";
+
+/// Which store a projected claim came from.
+///
+/// The distinction is load-bearing rather than bookkeeping: `Local` (the
+/// default trust base) is *every author with a claim in `.kan/log`*, and the
+/// log is what was written **through** this workspace where the overlay is
+/// what **arrived at** it as a committed `.claims/` file
+/// (`.design/identity-surface.md` RQ-2). Those are different acts, and the
+/// difference is the trust-relevant one — without it a merged pull request
+/// carrying a claims file would inject a stranger's claims into the
+/// maintainer's default view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Origin {
+    Log,
+    Overlay,
+}
+
+impl Origin {
+    fn as_str(self) -> &'static str {
+        match self {
+            Origin::Log => "log",
+            Origin::Overlay => "overlay",
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -67,21 +119,33 @@ impl Index {
         }
         let conn = rusqlite::Connection::open(path)?;
         conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS claims (
-                content_cid TEXT PRIMARY KEY,
-                rev         TEXT NOT NULL,
-                author_did  TEXT NOT NULL,
-                subject_key TEXT NOT NULL,
-                kind        TEXT NOT NULL,
-                raw         BLOB NOT NULL
-             );
-             CREATE INDEX IF NOT EXISTS claims_by_rev ON claims(rev);
-             CREATE INDEX IF NOT EXISTS claims_by_subject ON claims(subject_key);
-             CREATE TABLE IF NOT EXISTS meta (
+            "CREATE TABLE IF NOT EXISTS meta (
                 key   TEXT PRIMARY KEY,
                 value TEXT
              );",
         )?;
+
+        // An older kan's `claims` table is left exactly where it is. It costs
+        // disk and nothing else, and dropping it is what would break the
+        // other binary.
+        conn.execute_batch(&format!(
+            "CREATE TABLE IF NOT EXISTS {CLAIMS_TABLE} (
+                content_cid  TEXT PRIMARY KEY,
+                rev          TEXT NOT NULL,
+                author_did   TEXT NOT NULL,
+                author_agent BLOB,
+                origin       TEXT NOT NULL,
+                subject_key  TEXT NOT NULL,
+                kind         TEXT NOT NULL,
+                raw          BLOB NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS {CLAIMS_TABLE}_by_rev
+                ON {CLAIMS_TABLE}(rev);
+             CREATE INDEX IF NOT EXISTS {CLAIMS_TABLE}_by_subject
+                ON {CLAIMS_TABLE}(subject_key);
+             CREATE INDEX IF NOT EXISTS {CLAIMS_TABLE}_by_origin
+                ON {CLAIMS_TABLE}(origin);"
+        ))?;
         Ok(Self { conn })
     }
 
@@ -95,31 +159,43 @@ impl Index {
     /// `built_from_root`'s caller.
     pub fn rebuild(
         &mut self,
-        claims: &[(Cid, StoredClaim)],
+        log_claims: &[(Cid, StoredClaim)],
+        overlay_claims: &[(Cid, StoredClaim)],
         built_from_root: Option<&Cid>,
     ) -> Result<(), Error> {
         let tx = self.conn.transaction()?;
-        tx.execute("DELETE FROM claims", [])?;
-        for (cid, stored) in claims {
-            let subject_key = format!("{:?}", stored.claim.content.subject);
-            let kind = format!("{:?}", stored.claim.content.body.kind());
-            let raw = atproto_dasl::to_vec(stored)?;
-            tx.execute(
-                "INSERT INTO claims (content_cid, rev, author_did, subject_key, kind, raw)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![
-                    cid.to_string(),
-                    stored.rev,
-                    stored.claim.content.author.did,
-                    subject_key,
-                    kind,
-                    raw,
-                ],
-            )?;
+        tx.execute(&format!("DELETE FROM {CLAIMS_TABLE}"), [])?;
+        let sources = [(Origin::Log, log_claims), (Origin::Overlay, overlay_claims)];
+        for (origin, claims) in sources {
+            for (cid, stored) in claims {
+                let subject_key = format!("{:?}", stored.claim.content.subject);
+                let kind = format!("{:?}", stored.claim.content.body.kind());
+                let raw = atproto_dasl::to_vec(stored)?;
+                tx.execute(
+                    &format!(
+                        "INSERT INTO {CLAIMS_TABLE}
+                            (content_cid, rev, author_did, author_agent, origin, subject_key,
+                             kind, raw)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
+                    ),
+                    rusqlite::params![
+                        cid.to_string(),
+                        stored.rev,
+                        stored.claim.content.author.did,
+                        stored.claim.content.author.agent,
+                        origin.as_str(),
+                        subject_key,
+                        kind,
+                        raw,
+                    ],
+                )?;
+            }
         }
         tx.execute(
-            "INSERT INTO meta (key, value) VALUES ('built_from_root', ?1)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            &format!(
+                "INSERT INTO meta (key, value) VALUES ('{BUILT_FROM_ROOT_KEY}', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+            ),
             rusqlite::params![built_from_root.map(|c| c.to_string())],
         )?;
         tx.commit()?;
@@ -136,7 +212,7 @@ impl Index {
         let value: Option<String> = self
             .conn
             .query_row(
-                "SELECT value FROM meta WHERE key = 'built_from_root'",
+                &format!("SELECT value FROM meta WHERE key = '{BUILT_FROM_ROOT_KEY}'"),
                 [],
                 |r| r.get::<_, Option<String>>(0),
             )
@@ -151,9 +227,9 @@ impl Index {
     /// All claims currently projected, in chronological (`rev`) order — the
     /// practical input to `crate::fold::fold`.
     pub fn all_stored_claims(&self) -> Result<Vec<(Cid, StoredClaim)>, Error> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT content_cid, raw FROM claims ORDER BY rev ASC")?;
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT content_cid, raw FROM {CLAIMS_TABLE} ORDER BY rev ASC"
+        ))?;
         let rows = stmt.query_map([], |row| {
             let cid_str: String = row.get(0)?;
             let raw: Vec<u8> = row.get(1)?;
@@ -170,10 +246,46 @@ impl Index {
         Ok(out)
     }
 
+    /// Every distinct `AuthorId` with a claim in `.kan/log` — the membership
+    /// of `TrustBase::Local`, and the reason a default read needs no identity
+    /// (`.design/identity-surface.md` REQ-1).
+    ///
+    /// **Answered from the projection rather than from the log.** The log is
+    /// the source of truth, but walking it means verifying a signature per
+    /// claim — ADR-13's dominant cost, and the thing the index exists to
+    /// avoid paying on every read. The projection is rebuilt from the log
+    /// whenever the log's root moves, so this cannot drift from it.
+    ///
+    /// **`agent` is carried, not collapsed to the DID.** A v0.2–v0.6 claim
+    /// written with `KAN_AGENT` set has `AuthorId { did, agent: Some(h) }`,
+    /// and it is a member here on exactly the same footing as any other —
+    /// it is in the log. That is REQ-7 with no DID-matching special case:
+    /// the legacy author is trusted because it wrote here, not because its
+    /// DID resembles somebody's.
+    pub fn log_authors(&self) -> Result<Vec<AuthorId>, Error> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT DISTINCT author_did, author_agent FROM {CLAIMS_TABLE} \
+                 WHERE origin = 'log'"
+        ))?;
+        let rows = stmt.query_map([], |row| {
+            Ok(AuthorId {
+                did: row.get(0)?,
+                agent: row.get(1)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
     pub fn len(&self) -> Result<usize, Error> {
-        let count: i64 = self
-            .conn
-            .query_row("SELECT COUNT(*) FROM claims", [], |r| r.get(0))?;
+        let count: i64 =
+            self.conn
+                .query_row(&format!("SELECT COUNT(*) FROM {CLAIMS_TABLE}"), [], |r| {
+                    r.get(0)
+                })?;
         Ok(count as usize)
     }
 

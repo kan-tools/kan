@@ -630,7 +630,8 @@ impl ServerHandler for KanServer {
         // the default view — the same thing `show` with no `trust` returns,
         // which is what the resource template advertises. A trust-selected
         // read is a tool call, where the selection has somewhere to live.
-        let text = actions::show(&ws, subject, &ws.solo_trust()).map_err(to_error)?;
+        let trust = ws.local_trust().map_err(open_error)?;
+        let text = actions::show(&ws, subject, &trust).map_err(to_error)?;
         Ok(ReadResourceResult::new(vec![ResourceContents::text(
             text,
             claims_uri(subject),

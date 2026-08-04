@@ -196,12 +196,37 @@ fn the_bulk_read_honours_the_trust_selector() {
     assert!(kan(dir.path(), &a, &["observe", "shared", "from a"]).1);
     assert!(kan(dir.path(), &b, &["observe", "shared", "from b"]).1);
 
-    let (solo, _) = kan(dir.path(), &a, &["show", "--all", "--json"]);
-    let solo: serde_json::Value = serde_json::from_str(&solo).unwrap();
-    assert_eq!(solo["trust"]["base"], "Solo");
+    // v0.11 (`.design/identity-surface.md` REQ-1): the default base is
+    // `Local`, so both authors are visible with no `--trust` argument and
+    // nothing is excluded. This assertion previously read `Solo` / 1
+    // excluded, which was #121's defect stated as an expectation -- two role
+    // identities writing to one log, each seeing only itself.
+    let (default, _) = kan(dir.path(), &a, &["show", "--all", "--json"]);
+    let default: serde_json::Value = serde_json::from_str(&default).unwrap();
+    assert_eq!(default["trust"]["base"], "Local");
     assert_eq!(
-        solo["excluded_by_trust"], 1,
-        "the bulk read hid a claim without disclosing it: {solo}"
+        default["excluded_by_trust"], 0,
+        "nothing in the log should be excluded under Local: {default}"
+    );
+    let default_claims = default["subjects"].as_array().unwrap()[0]["claims"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        default_claims.len(),
+        2,
+        "the default read should return both log authors' claims: {default}"
+    );
+
+    // `--trust me` is where the old default went, and it still narrows.
+    let (mine, _) = kan(
+        dir.path(),
+        &a,
+        &["show", "--all", "--json", "--trust", "me"],
+    );
+    let mine: serde_json::Value = serde_json::from_str(&mine).unwrap();
+    assert_eq!(
+        mine["excluded_by_trust"], 1,
+        "`--trust me` should still exclude the other author, and disclose it: {mine}"
     );
 
     let b_did = kan(dir.path(), &b, &["identity", "did"]).0;

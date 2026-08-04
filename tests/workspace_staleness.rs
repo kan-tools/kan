@@ -12,10 +12,31 @@
 
 use std::process::Command;
 
-use kan::{actions, store::index::Index, workspace::Workspace};
+use kan::{actions, sign::Identity, store::index::Index, workspace::Workspace};
 
+/// A git repo with a pre-made `.kan/identity` and the keychain switched off,
+/// so opening a workspace here never reaches the OS keychain.
+///
+/// Both parts are needed, and finding that out is the point: a key file alone
+/// still has the keychain consulted to encrypt that key at rest (ADR-66), so
+/// only `KAN_NO_KEYCHAIN` actually keeps this off the keychain.
+///
+/// Why it matters here — this is the one identity-touching test file that ran
+/// against the real keychain. An entry is authorised to the exact binary that
+/// created it, so *any* rebuild of this test target makes the request hang
+/// waiting for a prompt no test run will answer (#96). Not hypothetical:
+/// adding a single dev-dependency changed this binary and hung this test.
+///
+/// The env var is process-global, which is safe here only because it is set
+/// before any workspace is opened and no test in this file wants it unset.
 fn git_repo() -> tempfile::TempDir {
+    std::env::set_var(kan::sign::NO_KEYCHAIN_ENV, "1");
     let dir = tempfile::tempdir().unwrap();
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    Identity::generate()
+        .save(&kan_dir.join("identity"))
+        .unwrap();
     let run = |args: &[&str]| {
         let status = Command::new("git")
             .args(args)
@@ -49,7 +70,7 @@ fn tamper_with_stored_text(index_path: &std::path::Path, content_cid: &str, new_
     let conn = rusqlite::Connection::open(index_path).unwrap();
     let raw: Vec<u8> = conn
         .query_row(
-            "SELECT raw FROM claims WHERE content_cid = ?1",
+            "SELECT raw FROM claims_v2 WHERE content_cid = ?1",
             [content_cid],
             |r| r.get(0),
         )
@@ -61,7 +82,7 @@ fn tamper_with_stored_text(index_path: &std::path::Path, content_cid: &str, new_
     }
     let tampered_raw = atproto_dasl::to_vec(&stored).unwrap();
     conn.execute(
-        "UPDATE claims SET raw = ?1 WHERE content_cid = ?2",
+        "UPDATE claims_v2 SET raw = ?1 WHERE content_cid = ?2",
         rusqlite::params![tampered_raw, content_cid],
     )
     .unwrap();
@@ -138,11 +159,11 @@ fn index_built_from_root_round_trips() {
     let cid: atproto_dasl::Cid = "bafyreif4au544xcim6pd62nvks5vhgdj5u3tdkqecg4zvjsfqxfj66lnai"
         .parse()
         .unwrap();
-    index.rebuild(&[], Some(&cid)).unwrap();
+    index.rebuild(&[], &[], Some(&cid)).unwrap();
     assert_eq!(index.built_from_root().unwrap(), Some(cid));
 
     // A subsequent rebuild with no root (log went back to empty, in
     // principle) overwrites rather than leaving the old value stuck.
-    index.rebuild(&[], None).unwrap();
+    index.rebuild(&[], &[], None).unwrap();
     assert_eq!(index.built_from_root().unwrap(), None);
 }
