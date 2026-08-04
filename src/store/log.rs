@@ -80,6 +80,17 @@ pub enum Error {
     MissingHead,
     #[error("record key is not a valid CID: {0}")]
     InvalidCid(#[from] atproto_dasl::errors::DecodeError),
+    /// A write was attempted through a log opened read-only.
+    ///
+    /// This is an internal invariant, not something an operator can provoke:
+    /// the CLI routes write verbs to `Workspace::open` and read verbs to
+    /// `Workspace::open_read_only`. It exists so that routing is enforced by
+    /// the type rather than by everyone remembering.
+    #[error(
+        "internal error: a write reached a log opened read-only, which has no signing \
+         identity. A read path acquired a write it should not have."
+    )]
+    ReadOnly,
 }
 
 /// What's actually stored in the MST: the signed claim plus its log-revision
@@ -106,7 +117,14 @@ pub struct Log {
     /// re-serializing everything `mst.storage()` has ever seen.
     persisted: HashSet<Cid>,
     lock_path: std::path::PathBuf,
-    did: String,
+    /// The DID that goes into a commit this log writes — `None` for a log
+    /// opened read-only, which has no signing identity and cannot commit.
+    ///
+    /// Read-only is not a lesser mode: a *read* genuinely has no business
+    /// resolving an identity (`.design/identity-surface.md` REQ-2), and
+    /// making that unrepresentable in the type is what stops a read path
+    /// quietly acquiring one again.
+    did: Option<String>,
     tid: TidGenerator,
     /// Floor for the next `ClaimContent::recorded_at`, so two appends in the
     /// same wall-clock microsecond still get distinct values — without which
@@ -274,12 +292,54 @@ fn now_micros() -> u64 {
 }
 
 impl Log {
+    /// The DID a commit this log writes is stamped with, or [`Error::ReadOnly`]
+    /// if this log was opened without a signing identity.
+    fn writing_did(&self) -> Result<String, Error> {
+        self.did.clone().ok_or(Error::ReadOnly)
+    }
+
+    /// Open an existing log **without creating anything and without a signing
+    /// identity** — the read path (`.design/identity-surface.md` REQ-2).
+    ///
+    /// A directory that does not exist yields an empty log rather than an
+    /// error, and creates no directory. That is AC-3: `kan status` in a git
+    /// repo with no `.kan/` reports no subjects and leaves the repo exactly
+    /// as it found it. A read that vivifies a workspace is the defect (#149);
+    /// "read it if it is there" is the whole behaviour.
+    pub async fn open_read_only(dir: &Path) -> Result<Self, Error> {
+        if !dir.join("repo.car").exists() {
+            return Ok(Self::empty(dir, None));
+        }
+        Self::open_inner(dir, None).await
+    }
+
+    /// The in-memory shape of a log with nothing in it, for a directory that
+    /// may not exist. Touches no disk.
+    fn empty(dir: &Path, did: Option<String>) -> Self {
+        Self {
+            car_path: dir.join("repo.car"),
+            head_path: dir.join("HEAD"),
+            mst: Mst::new(MemoryStorage::new(), RepoConfig::default()),
+            commit_cid: None,
+            persisted: HashSet::new(),
+            lock_path: dir.join("LOCK"),
+            did,
+            tid: TidGenerator::new(),
+            last_recorded_at: 0,
+            needs_repair: false,
+            head_stale: false,
+        }
+    }
+
     pub async fn open_or_create(dir: &Path, identity: &Identity) -> Result<Self, Error> {
         fs::create_dir_all(dir).await?;
+        Self::open_inner(dir, Some(identity.did())).await
+    }
+
+    async fn open_inner(dir: &Path, did: Option<String>) -> Result<Self, Error> {
         let car_path = dir.join("repo.car");
         let head_path = dir.join("HEAD");
         let lock_path = dir.join("LOCK");
-        let did = identity.did();
 
         if car_path.exists() {
             let bytes = fs::read(&car_path).await?;
@@ -709,7 +769,7 @@ impl Log {
         self.mst.insert(&key, record_cid).await?;
 
         let unsigned = Commit::new_unsigned(
-            self.did.clone(),
+            self.writing_did()?,
             Cid::from(mst_root(&self.mst)?),
             self.tid.next(),
             self.commit_cid.clone(),
@@ -815,7 +875,7 @@ impl Log {
         self.mst.insert(&key, record_cid).await?;
 
         let unsigned = Commit::new_unsigned(
-            self.did.clone(),
+            self.writing_did()?,
             Cid::from(mst_root(&self.mst)?),
             self.tid.next(),
             self.commit_cid.clone(),

@@ -49,15 +49,26 @@ const BUILT_FROM_ROOT_KEY: &str = "built_from_root_v2";
 /// maintainer's default view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Origin {
+    /// This workspace's own log — the one medium kan writes, signs and ships.
     Log,
-    Overlay,
+    /// The tracked `.claims/` tree (`transport::git_tree`).
+    GitTree,
 }
 
 impl Origin {
+    /// Named for the **medium**, not for the store it currently lands in.
+    ///
+    /// `.kan/overlay` is on its way out (#164): the index becomes the
+    /// aggregate and each row carries the medium it arrived from, which is
+    /// what `fold(⋃ readable media, trust)` actually needs and what a single
+    /// conflated overlay erases. Spelling it `git-tree` now costs nothing --
+    /// the index is disposable, so this value can change at any time with no
+    /// migration -- and saves renaming it under a milestone that is already
+    /// churning this code.
     fn as_str(self) -> &'static str {
         match self {
             Origin::Log => "log",
-            Origin::Overlay => "overlay",
+            Origin::GitTree => "git-tree",
         }
     }
 }
@@ -113,11 +124,25 @@ pub struct Index {
 }
 
 impl Index {
+    /// A projection with nowhere to live — for reading a repo that has no
+    /// `.kan/` at all.
+    ///
+    /// AC-3: `kan status` in a git repo with no workspace reports no subjects
+    /// and **creates nothing**. Opening a file-backed index would create the
+    /// file and the directory holding it, which is the vivification #149 is
+    /// about, arriving through the back door.
+    pub fn open_in_memory() -> Result<Self, Error> {
+        Self::with_connection(rusqlite::Connection::open_in_memory()?)
+    }
+
     pub fn open(path: &Path) -> Result<Self, Error> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let conn = rusqlite::Connection::open(path)?;
+        Self::with_connection(rusqlite::Connection::open(path)?)
+    }
+
+    fn with_connection(conn: rusqlite::Connection) -> Result<Self, Error> {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS meta (
                 key   TEXT PRIMARY KEY,
@@ -160,12 +185,12 @@ impl Index {
     pub fn rebuild(
         &mut self,
         log_claims: &[(Cid, StoredClaim)],
-        overlay_claims: &[(Cid, StoredClaim)],
+        foreign_claims: &[(Cid, StoredClaim)],
         built_from_root: Option<&Cid>,
     ) -> Result<(), Error> {
         let tx = self.conn.transaction()?;
         tx.execute(&format!("DELETE FROM {CLAIMS_TABLE}"), [])?;
-        let sources = [(Origin::Log, log_claims), (Origin::Overlay, overlay_claims)];
+        let sources = [(Origin::Log, log_claims), (Origin::GitTree, foreign_claims)];
         for (origin, claims) in sources {
             for (cid, stored) in claims {
                 let subject_key = format!("{:?}", stored.claim.content.subject);

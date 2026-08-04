@@ -89,16 +89,16 @@ async fn retract_rejects_another_authors_claim_at_write_time() {
     let overlay = Log::open_or_create(&dir.path().join(".kan/overlay"), &identity)
         .await
         .unwrap();
-    let mut ws = Workspace {
-        root: dir.path().to_path_buf(),
+    let mut ws = Workspace::from_parts(
+        dir.path().to_path_buf(),
         identity,
         log,
         overlay,
         index,
-        published: Default::default(),
         anchor,
         git,
-    };
+        Default::default(),
+    );
 
     match actions::retract(&mut ws, &other_cid.to_string(), None).await {
         Err(actions::Error::NotYourClaim(_)) => {}
@@ -170,16 +170,16 @@ async fn reject_writes_a_rejects_claim_against_another_authors_claim() {
     let overlay = Log::open_or_create(&dir.path().join(".kan/overlay"), &identity)
         .await
         .unwrap();
-    let mut ws = Workspace {
-        root: dir.path().to_path_buf(),
+    let mut ws = Workspace::from_parts(
+        dir.path().to_path_buf(),
         identity,
         log,
         overlay,
         index,
-        published: Default::default(),
         anchor,
         git,
-    };
+        Default::default(),
+    );
 
     let result = actions::reject(&mut ws, &other_cid.to_string(), None)
         .await
@@ -229,16 +229,16 @@ async fn reject_refuses_the_callers_own_claim() {
     let overlay = Log::open_or_create(&dir.path().join(".kan/overlay"), &identity)
         .await
         .unwrap();
-    let mut ws = Workspace {
-        root: dir.path().to_path_buf(),
+    let mut ws = Workspace::from_parts(
+        dir.path().to_path_buf(),
         identity,
         log,
         overlay,
         index,
-        published: Default::default(),
         anchor,
         git,
-    };
+        Default::default(),
+    );
 
     match actions::reject(&mut ws, &cid.to_string(), None).await {
         Err(e @ actions::Error::CantRejectOwnClaim(_)) => {

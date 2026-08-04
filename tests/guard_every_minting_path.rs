@@ -94,6 +94,44 @@ fn workspace_with_claims() -> (tempfile::TempDir, std::path::PathBuf) {
     (dir, key)
 }
 
+/// The probe is a **write**, and that changed in v0.11.
+///
+/// These tests used `kan status`, because until v0.11 every read resolved a
+/// signing identity and so tripped every minting path. A read now resolves
+/// none (`.design/identity-surface.md` REQ-2), which is the fix for #149 --
+/// so a read is no longer capable of minting and no longer the way to catch a
+/// path that would. Probing with a read here would assert the guard holds
+/// while exercising nothing, which is precisely the class of test this
+/// project keeps finding.
+///
+/// Each test below therefore does both halves: the write is refused (the
+/// guard), and the read succeeds and returns the log (the milestone).
+fn probe_write() -> [&'static str; 4] {
+    ["observe", "a write that must be refused", "--subject", "s"]
+}
+
+/// The state these tests construct is exactly #90's, and under `Local` a read
+/// of it must show the log rather than refuse or hide it -- the failure mode
+/// disappearing rather than being guarded against.
+fn assert_read_still_works(dir: &Path, key: Option<&Path>, no_keychain: bool) {
+    let read = kan(dir, key, no_keychain, &["status"]);
+    assert!(
+        read.ok,
+        "a read of a workspace whose identity is unresolvable was refused; under `Local` \
+         it needs no identity and must simply work.\nstderr: {}",
+        read.stderr
+    );
+    assert!(
+        read.stdout.contains("a claim the log must not lose"),
+        "the read did not return the log it can plainly see: {}",
+        read.stdout
+    );
+    assert!(
+        !dir.join(".kan/identity").exists(),
+        "a read minted a key -- #149 exactly"
+    );
+}
+
 /// The reported defect, reproduced exactly: keychain-held identity, plaintext
 /// copy correctly deleted by ADR-53, `KAN_NO_KEYCHAIN=1` set.
 ///
@@ -110,7 +148,7 @@ fn no_keychain_cannot_mint_against_a_non_empty_log() {
         "precondition: no plaintext key, as ADR-53 leaves it"
     );
 
-    let run = kan(dir.path(), None, true, &["status"]);
+    let run = kan(dir.path(), None, true, &probe_write());
 
     assert!(
         !run.ok,
@@ -118,6 +156,7 @@ fn no_keychain_cannot_mint_against_a_non_empty_log() {
          stdout: {}\nstderr: {}",
         run.stdout, run.stderr
     );
+    assert_read_still_works(dir.path(), None, true);
     assert!(
         run.stderr.contains("already has claims"),
         "refusal must explain itself: {}",
@@ -140,7 +179,7 @@ fn seed_rooting_cannot_mint_against_a_non_empty_log() {
         "precondition: keychain never used, so the freshness check sees a fresh workspace"
     );
 
-    let run = kan(dir.path(), None, true, &["status"]);
+    let run = kan(dir.path(), None, true, &probe_write());
 
     assert!(
         !run.ok,
@@ -148,6 +187,7 @@ fn seed_rooting_cannot_mint_against_a_non_empty_log() {
          stdout: {}\nstderr: {}",
         run.stdout, run.stderr
     );
+    assert_read_still_works(dir.path(), None, true);
     assert!(
         !dir.path().join(".kan/seed-id").exists(),
         "refusing must not leave a seed behind"
@@ -161,7 +201,7 @@ fn identity_file_still_cannot_mint_against_a_non_empty_log() {
     let (dir, _key) = workspace_with_claims();
     let other = dir.path().join("a-different-key");
 
-    let run = kan(dir.path(), Some(&other), true, &["status"]);
+    let run = kan(dir.path(), Some(&other), true, &probe_write());
 
     assert!(
         !run.ok,
@@ -169,6 +209,7 @@ fn identity_file_still_cannot_mint_against_a_non_empty_log() {
         run.stdout
     );
     assert!(!other.exists(), "refusing must not create the key file");
+    assert_read_still_works(dir.path(), Some(&other), true);
 }
 
 /// The negative control, and the one that matters most for a guard: it must
@@ -241,7 +282,12 @@ fn the_remedy_the_refusal_names_actually_runs() {
     let (dir, key) = workspace_with_claims();
     std::fs::write(dir.path().join(".kan/identity-id"), "some-account-id").unwrap();
 
-    let refused = kan(dir.path(), None, true, &["status"]);
+    // The refusal is on the WRITE path now: a read of this state succeeds
+    // and returns the log, because it resolves no identity to be refused
+    // over (REQ-2). The remedy still has to be runnable, which is what this
+    // test is about.
+    assert_read_still_works(dir.path(), None, true);
+    let refused = kan(dir.path(), None, true, &probe_write());
     assert!(!refused.ok, "precondition: the guard should have fired");
     assert!(
         refused.stderr.contains("kan identity adopt --key"),

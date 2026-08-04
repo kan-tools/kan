@@ -252,12 +252,16 @@ fn an_ingested_record_keeps_its_own_signature_and_cid() {
     );
 }
 
-/// Ingest is idempotent: reading twice does not duplicate a claim, and the
-/// second read leaves the overlay byte-unchanged.
+/// Ingest is idempotent: reading twice does not duplicate a claim — and as
+/// of v0.11 a read leaves **no overlay at all**.
 ///
-/// `Workspace::open` runs on every single invocation, so a non-idempotent
-/// ingest would grow the overlay without bound and take a write lock on
-/// every command.
+/// The byte-comparison this used to make is gone because the thing it
+/// compared is gone. A read resolves no signing identity (REQ-2), so it
+/// cannot write `.kan/overlay` — whose commits that identity signs — and
+/// instead projects verified `.claims/` records straight into the disposable
+/// index. Asserting the overlay is *absent* is the stronger statement, and it
+/// is the property the old one was reaching for: a read that runs on every
+/// single invocation must not accumulate anything.
 #[test]
 fn re_reading_a_published_tree_changes_nothing() {
     let (clone, author_did) = publisher_then_clone("finding", "the other actor's claim");
@@ -272,7 +276,10 @@ fn re_reading_a_published_tree_changes_nothing() {
     let claim_count = first_value["claims"].as_array().unwrap().len();
     assert!(claim_count > 0, "nothing was ingested: {first_value}");
     let overlay = clone.path().join(".kan/overlay/repo.car");
-    let after_first = std::fs::read(&overlay).unwrap();
+    assert!(
+        !overlay.exists(),
+        "a read wrote an overlay, which it has no identity to sign the commits of"
+    );
 
     for _ in 0..3 {
         let again = kan_as(
@@ -289,10 +296,9 @@ fn re_reading_a_published_tree_changes_nothing() {
         );
     }
 
-    assert_eq!(
-        after_first,
-        std::fs::read(&overlay).unwrap(),
-        "a re-read rewrote the overlay -- ingest is not idempotent"
+    assert!(
+        !overlay.exists(),
+        "a re-read created an overlay -- a read acquired a write it should not have"
     );
 }
 

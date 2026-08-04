@@ -721,6 +721,47 @@ pub fn register_active(kan_dir: &Path, did: &Did, key_path: &Path) -> Result<(),
 /// A malformed line is skipped rather than fatal: this file gates nothing
 /// (it only *widens* a read), so a hand-edit typo should not take out every
 /// command that opens a workspace.
+/// This workspace's identity **if it already has one** — never creating,
+/// never minting, never seed-rooting.
+///
+/// The read path's answer to "who is `me`". `--trust me` and `--trust roles`
+/// name the active identity, so they genuinely need it — but a read must
+/// never bring one into existence (`.design/identity-surface.md` REQ-2,
+/// #149), and `load_or_create_for_workspace` cannot express that: creating is
+/// in its name and in its contract.
+///
+/// `None` means there is honestly no "me" here yet, which is a different
+/// answer from an error and lets the caller say so in those terms.
+///
+/// This *can* still reach the OS keychain, when the identity it is loading is
+/// stored there. That is the right trade: the cost is paid only by a read
+/// that explicitly asked to be framed around the active identity, rather than
+/// by every read as before.
+pub fn existing_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
+    let key_path = kan_dir.join("identity");
+
+    // The env override is checked first and used exclusively, mirroring
+    // `Identity::load_or_create` — which reads the variable itself, so
+    // gating on `.kan/identity` alone reports "no identity" for the very
+    // configuration (`KAN_IDENTITY_FILE`) that CI, containers, agents and
+    // `day` all use. Found by `--trust me` failing under exactly that setup.
+    if let Some(override_path) = std::env::var_os(IDENTITY_FILE_ENV) {
+        return match std::path::PathBuf::from(override_path).exists() {
+            true => Ok(Some(Identity::load_or_create(&key_path)?)),
+            false => Ok(None),
+        };
+    }
+
+    if key_path.exists() {
+        // Exists, so this loads rather than creates.
+        return Ok(Some(Identity::load_or_create(&key_path)?));
+    }
+    match Seed::load(kan_dir)? {
+        Some(seed) => Ok(Some(seed.signing_identity()?)),
+        None => Ok(None),
+    }
+}
+
 pub fn list_roles(kan_dir: &Path) -> Result<Vec<Role>, Error> {
     let path = kan_dir.join(ROLES_FILE);
     let Ok(text) = std::fs::read_to_string(&path) else {
