@@ -252,12 +252,16 @@ fn an_ingested_record_keeps_its_own_signature_and_cid() {
     );
 }
 
-/// Ingest is idempotent: reading twice does not duplicate a claim, and the
-/// second read leaves the overlay byte-unchanged.
+/// Ingest is idempotent: reading twice does not duplicate a claim — and as
+/// of v0.11 a read leaves **no overlay at all**.
 ///
-/// `Workspace::open` runs on every single invocation, so a non-idempotent
-/// ingest would grow the overlay without bound and take a write lock on
-/// every command.
+/// The byte-comparison this used to make is gone because the thing it
+/// compared is gone. A read resolves no signing identity (REQ-2), so it
+/// cannot write `.kan/overlay` — whose commits that identity signs — and
+/// instead projects verified `.claims/` records straight into the disposable
+/// index. Asserting the overlay is *absent* is the stronger statement, and it
+/// is the property the old one was reaching for: a read that runs on every
+/// single invocation must not accumulate anything.
 #[test]
 fn re_reading_a_published_tree_changes_nothing() {
     let (clone, author_did) = publisher_then_clone("finding", "the other actor's claim");
@@ -272,7 +276,10 @@ fn re_reading_a_published_tree_changes_nothing() {
     let claim_count = first_value["claims"].as_array().unwrap().len();
     assert!(claim_count > 0, "nothing was ingested: {first_value}");
     let overlay = clone.path().join(".kan/overlay/repo.car");
-    let after_first = std::fs::read(&overlay).unwrap();
+    assert!(
+        !overlay.exists(),
+        "a read wrote an overlay, which it has no identity to sign the commits of"
+    );
 
     for _ in 0..3 {
         let again = kan_as(
@@ -289,10 +296,9 @@ fn re_reading_a_published_tree_changes_nothing() {
         );
     }
 
-    assert_eq!(
-        after_first,
-        std::fs::read(&overlay).unwrap(),
-        "a re-read rewrote the overlay -- ingest is not idempotent"
+    assert!(
+        !overlay.exists(),
+        "a re-read created an overlay -- a read acquired a write it should not have"
     );
 }
 
@@ -343,5 +349,67 @@ fn a_tampered_published_record_is_refused_without_bricking_the_repo() {
         read.stderr.contains("warning"),
         "the tampered record was dropped silently: {}",
         read.stderr
+    );
+}
+
+/// A read-open and a write-open must agree about index freshness, or every
+/// alternation between them rebuilds the whole projection.
+///
+/// Caught by reviewing the v0.11 diff rather than by any test: the read path
+/// computed a `.claims/` content hash into the index fingerprint and the
+/// write path did not, so the two computed different fingerprints over the
+/// same unchanged workspace. Nothing was *wrong* — every view stayed correct
+/// — which is exactly why nothing failed. It would simply have rebuilt the
+/// whole projection on every command in any repo with a published tree.
+///
+/// **The signal is the first read after a write, not two reads in a row.**
+/// The first attempt at this test compared two consecutive reads, which
+/// agree with each other whatever the write path does — a test that could
+/// not fail, confirmed by mutating the write path and watching it pass. What
+/// discriminates is whether a read *accepts the projection a write just
+/// built*.
+#[test]
+fn a_read_accepts_the_projection_a_write_just_built() {
+    let (clone, author_did) = publisher_then_clone("finding", "the other actor's claim");
+
+    let built_from = || -> Option<String> {
+        let conn = rusqlite::Connection::open(clone.path().join(".kan/index.sqlite")).ok()?;
+        conn.query_row(
+            "SELECT value FROM meta WHERE key = 'built_from_root_v2'",
+            [],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+    };
+
+    // A write, which maintains `.kan/overlay` and rebuilds the projection.
+    let wrote = kan_as(
+        clone.path(),
+        None,
+        &["observe", "a claim of my own", "--subject", "mine"],
+    );
+    assert!(wrote.ok, "setup write failed: {}", wrote.stderr);
+    let after_write = built_from();
+    assert!(
+        after_write.is_some(),
+        "the write recorded nothing for a later read to be fresh against"
+    );
+
+    // Nothing has changed, so the read must find that projection fresh and
+    // leave it exactly as it is.
+    let read = kan_as(
+        clone.path(),
+        None,
+        &["show", "finding", "--trust", &author_did],
+    );
+    assert!(read.ok, "read failed: {}", read.stderr);
+
+    assert_eq!(
+        built_from(),
+        after_write,
+        "a read rebuilt a projection a write had just built over an unchanged workspace, \
+         so the two paths disagree about the freshness key -- every alternation between \
+         them pays a full rebuild"
     );
 }

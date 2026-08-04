@@ -367,6 +367,20 @@ impl KanServer {
     async fn workspace(&self) -> Result<Workspace, ErrorData> {
         Workspace::open(&self.cwd).await.map_err(open_error)
     }
+
+    /// The read tools' workspace: no identity resolved, no anchor computed,
+    /// nothing created (`.design/identity-surface.md` REQ-2).
+    ///
+    /// This matters more here than on the CLI. An MCP server is a long-lived
+    /// process with no terminal, so a keychain prompt raised by a read is one
+    /// nobody can answer (#96) -- `kan status` over MCP failed exactly that
+    /// way while this milestone was being built. A read that needs no
+    /// identity cannot raise it.
+    async fn reader(&self) -> Result<Workspace, ErrorData> {
+        Workspace::open_read_only(&self.cwd)
+            .await
+            .map_err(open_error)
+    }
 }
 
 #[tool_router]
@@ -519,7 +533,7 @@ impl KanServer {
 
     #[tool(description = "Show a subject's live claims.")]
     async fn show(&self, params: Parameters<SubjectParams>) -> Result<String, ErrorData> {
-        let ws = self.workspace().await?;
+        let ws = self.reader().await?;
         let trust = ws.trust_from(&params.0.trust).map_err(trust_error)?;
         actions::show(&ws, &params.0.subject, &trust).map_err(to_error)
     }
@@ -529,21 +543,21 @@ impl KanServer {
                        subject if omitted."
     )]
     async fn status(&self, params: Parameters<StatusParams>) -> Result<String, ErrorData> {
-        let ws = self.workspace().await?;
+        let ws = self.reader().await?;
         let trust = ws.trust_from(&params.0.trust).map_err(trust_error)?;
         actions::status(&ws, params.0.subject.as_deref(), &trust).map_err(to_error)
     }
 
     #[tool(description = "List open (not-yet-resolved) subjects.")]
     async fn issues(&self, params: Parameters<TrustParams>) -> Result<String, ErrorData> {
-        let ws = self.workspace().await?;
+        let ws = self.reader().await?;
         let trust = ws.trust_from(&params.0.trust).map_err(trust_error)?;
         actions::issues(&ws, &trust).map_err(to_error)
     }
 
     #[tool(description = "Assemble the maximal-value claim set that fits under a token budget.")]
     async fn context(&self, params: Parameters<ContextParams>) -> Result<String, ErrorData> {
-        let ws = self.workspace().await?;
+        let ws = self.reader().await?;
         let trust = ws.trust_from(&params.0.trust).map_err(trust_error)?;
         actions::context(&ws, params.0.budget.unwrap_or(DEFAULT_BUDGET), &trust).map_err(to_error)
     }
@@ -625,7 +639,7 @@ impl ServerHandler for KanServer {
                 None,
             ));
         };
-        let ws = self.workspace().await?;
+        let ws = self.reader().await?;
         // The resource URI carries a subject and nothing else, so this is
         // the default view — the same thing `show` with no `trust` returns,
         // which is what the resource template advertises. A trust-selected

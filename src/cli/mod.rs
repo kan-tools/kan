@@ -609,6 +609,16 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         return Ok(());
     }
 
+    // Read verbs open READ-ONLY, which is the milestone in one branch
+    // (`.design/identity-surface.md` REQ-2): no identity is resolved,
+    // derived or persisted, and no anchor is computed. Routing it here
+    // rather than inside each verb means a read cannot acquire a write's
+    // prerequisites by being called from the wrong place.
+    if is_read_only(&cli.command) {
+        let ws = Workspace::open_read_only(&cwd).await?;
+        return run_read(cli.command, &ws);
+    }
+
     let mut ws = Workspace::open(&cwd).await?;
     match cli.command {
         Command::Observe(args) => {
@@ -664,58 +674,6 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             )
             .await?;
             print_narrative_result(&result, verbose);
-        }
-        Command::Show {
-            subject,
-            all,
-            json,
-            trust,
-        } => {
-            let trust = ws.trust_from(&trust)?;
-            match (all, subject) {
-                (true, _) if !json => {
-                    return Err(actions::Error::Usage(
-                        "`kan show --all` needs `--json`. It exists for programs reading the \
-                         whole claim graph in one invocation; the rendered form is for \
-                         people, and forty subjects' full claim histories is not something \
-                         anyone reads at a terminal."
-                            .to_string(),
-                    )
-                    .into())
-                }
-                (true, _) => print!("{}", actions::show_all_json(&ws, &trust)?),
-                (false, None) => {
-                    return Err(actions::Error::Usage(
-                        "give a subject to show (`kan show <subject>`), or `--all --json` for \
-                         every subject at once"
-                            .to_string(),
-                    )
-                    .into())
-                }
-                (false, Some(subject)) => print!(
-                    "{}",
-                    if json {
-                        actions::show_json(&ws, &subject, &trust)?
-                    } else {
-                        actions::show(&ws, &subject, &trust)?
-                    }
-                ),
-            }
-        }
-        Command::Status {
-            subject,
-            json,
-            trust,
-        } => {
-            let trust = ws.trust_from(&trust)?;
-            print!(
-                "{}",
-                if json {
-                    actions::status_json(&ws, subject.as_deref(), &trust)?
-                } else {
-                    actions::status(&ws, subject.as_deref(), &trust)?
-                }
-            )
         }
         Command::Same {
             a,
@@ -839,37 +797,17 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             let result = actions::mark(&mut ws, &subject, value.into(), file).await?;
             print_result(&result, verbose);
         }
-        Command::Issues { json, trust } => {
-            let trust = ws.trust_from(&trust)?;
-            print!(
-                "{}",
-                if json {
-                    actions::issues_json(&ws, &trust)?
-                } else {
-                    actions::issues(&ws, &trust)?
-                }
-            )
-        }
-        Command::Context {
-            budget,
-            json,
-            trust,
-        } => {
-            let budget = budget.unwrap_or(DEFAULT_BUDGET);
-            let trust = ws.trust_from(&trust)?;
-            print!(
-                "{}",
-                if json {
-                    actions::context_json(&ws, budget, &trust)?
-                } else {
-                    actions::context(&ws, budget, &trust)?
-                }
-            );
+        // Routed to `run_read` above, before this workspace was opened.
+        Command::Show { .. }
+        | Command::Status { .. }
+        | Command::Issues { .. }
+        | Command::Context { .. } => {
+            unreachable!("read verbs are dispatched by `is_read_only`")
         }
         Command::Identity { action } => match action {
-            IdentityAction::Did => println!("{}", ws.identity.did()),
+            IdentityAction::Did => println!("{}", ws.identity()?.did()),
             IdentityAction::EncryptionKey => {
-                println!("{}", ws.identity.encryption_key().public_hex())
+                println!("{}", ws.identity()?.encryption_key().public_hex())
             }
             IdentityAction::Phrase { yes } => {
                 // Terminal-sensing gate. An MCP server, a CI job, and an AI
@@ -899,7 +837,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                     return Ok(());
                 }
                 let (phrase, root) =
-                    crate::sign::workspace_phrase(&ws.root.join(".kan"), &ws.identity)?;
+                    crate::sign::workspace_phrase(&ws.root.join(".kan"), ws.identity()?)?;
                 println!("{phrase}");
                 eprintln!("\nThese words are {}.", root.describe());
             }
@@ -934,9 +872,10 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                 // which. Rather than guess, report both and say which one --
                 // if either -- is this repo's.
                 let candidates = crate::sign::candidate_identities(&phrase)?;
+                let active_did = ws.identity()?.did();
                 let matched = candidates
                     .iter()
-                    .find(|(_, identity)| identity.did() == ws.identity.did());
+                    .find(|(_, identity)| identity.did() == active_did);
                 match matched {
                     Some((root, identity)) => println!(
                         "that phrase belongs to {} -- it matches this repo's identity.\n\nRead \
@@ -945,7 +884,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                         root.describe()
                     ),
                     None => {
-                        println!("this repo's identity is {}", ws.identity.did());
+                        println!("this repo's identity is {}", ws.identity()?.did());
                         println!(
                             "\nThat phrase does not match it. It could be read two ways, \
                                   and neither is this repo:"
@@ -983,7 +922,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                     // first role was declared.
                     crate::sign::register_active(
                         &kan_dir,
-                        &ws.identity.did(),
+                        &ws.identity()?.did(),
                         &kan_dir.join("identity"),
                     )?;
                     let role = crate::sign::add_role(&kan_dir, &name, &key_path)?;
@@ -1003,10 +942,10 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                     } else if roles.is_empty() {
                         println!(
                             "no declared roles. This workspace signs as one identity: {}",
-                            ws.identity.did()
+                            ws.identity()?.did()
                         );
                     } else {
-                        println!("active: {}", ws.identity.did());
+                        println!("active: {}", ws.identity()?.did());
                         for role in roles {
                             println!("{}\t{}\t{}", role.name, role.did, role.key_path.display());
                         }
@@ -1066,4 +1005,104 @@ fn print_paired_result(result: &actions::PairedAppendResult, verbose: bool) {
     } else {
         println!("{}", result.narrative.cid);
     }
+}
+
+/// The verbs that only ever read. Kept as one list rather than spread across
+/// the dispatch, so "is this a read" has a single answer.
+fn is_read_only(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Show { .. }
+            | Command::Status { .. }
+            | Command::Issues { .. }
+            | Command::Context { .. }
+    )
+}
+
+/// The read verbs, against a workspace opened without an identity.
+fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
+    match command {
+        Command::Show {
+            subject,
+            all,
+            json,
+            trust,
+        } => {
+            let trust = ws.trust_from(&trust)?;
+            match (all, subject) {
+                (true, _) if !json => {
+                    return Err(actions::Error::Usage(
+                        "`kan show --all` needs `--json`. It exists for programs reading the \
+                         whole claim graph in one invocation; the rendered form is for \
+                         people, and forty subjects' full claim histories is not something \
+                         anyone reads at a terminal."
+                            .to_string(),
+                    )
+                    .into())
+                }
+                (true, _) => print!("{}", actions::show_all_json(ws, &trust)?),
+                (false, None) => {
+                    return Err(actions::Error::Usage(
+                        "give a subject to show (`kan show <subject>`), or `--all --json` for \
+                         every subject at once"
+                            .to_string(),
+                    )
+                    .into())
+                }
+                (false, Some(subject)) => print!(
+                    "{}",
+                    if json {
+                        actions::show_json(ws, &subject, &trust)?
+                    } else {
+                        actions::show(ws, &subject, &trust)?
+                    }
+                ),
+            }
+        }
+        Command::Status {
+            subject,
+            json,
+            trust,
+        } => {
+            let trust = ws.trust_from(&trust)?;
+            print!(
+                "{}",
+                if json {
+                    actions::status_json(ws, subject.as_deref(), &trust)?
+                } else {
+                    actions::status(ws, subject.as_deref(), &trust)?
+                }
+            )
+        }
+        Command::Issues { json, trust } => {
+            let trust = ws.trust_from(&trust)?;
+            print!(
+                "{}",
+                if json {
+                    actions::issues_json(ws, &trust)?
+                } else {
+                    actions::issues(ws, &trust)?
+                }
+            )
+        }
+        Command::Context {
+            budget,
+            json,
+            trust,
+        } => {
+            let budget = budget.unwrap_or(DEFAULT_BUDGET);
+            let trust = ws.trust_from(&trust)?;
+            print!(
+                "{}",
+                if json {
+                    actions::context_json(ws, budget, &trust)?
+                } else {
+                    actions::context(ws, budget, &trust)?
+                }
+            );
+        }
+        // `is_read_only` is the gate, and it names exactly these four.
+        other => unreachable!("{other:?} is not a read verb"),
+    }
+    Ok(())
 }

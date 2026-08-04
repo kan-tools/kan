@@ -117,8 +117,26 @@ fn poisoned_workspace() -> tempfile::TempDir {
     dir
 }
 
+/// v0.11 splits this into two properties, and the user-facing half got
+/// *stronger*.
+///
+/// #150's title said the workspace was damaged **permanently**: one bad read
+/// under a role identity, and every subsequent command died on
+/// `UNIQUE constraint failed: claims.content_cid`. v0.9.2 fixed that by
+/// repairing the overlay on open — which needs a signing identity, because
+/// rebuilding it means re-ingesting `.claims/`.
+///
+/// A read no longer has one (REQ-2), and must not acquire one to repair a
+/// disposable cache. It does not need to: the read simply declines to project
+/// the duplicates, so a poisoned workspace **reads correctly and completely**
+/// without being repaired at all. The repair itself moves to the next write,
+/// where the identity already exists and where v0.9.2's loud rebuild is
+/// unchanged.
+///
+/// So: reading is no longer the thing that breaks, *and* no longer the thing
+/// that heals.
 #[test]
-fn a_poisoned_overlay_is_rebuilt_rather_than_bricking_the_workspace() {
+fn a_poisoned_overlay_reads_correctly_without_being_repaired() {
     let dir = poisoned_workspace();
 
     let run = kan(dir.path(), None, &["show", "test/a"]);
@@ -133,18 +151,44 @@ fn a_poisoned_overlay_is_rebuilt_rather_than_bricking_the_workspace() {
         "the sqlite constraint still leaks out: {}",
         run.stderr
     );
-    // Loud, not silent: a store that rearranges itself without saying so is
-    // not one anyone can reason about.
-    assert!(
-        run.stderr.contains("Rebuilding the overlay"),
-        "recovery happened silently: {}",
-        run.stderr
-    );
-    // And the claims are actually there afterwards.
     assert!(
         run.stdout.contains("a claim of my own"),
-        "recovered, but the claim is missing: {}",
+        "readable, but the claim is missing: {}",
         run.stdout
+    );
+    // A read repairs nothing, and says nothing about repairing: it has no
+    // identity to rebuild the overlay with, and inventing one would be #149.
+    assert!(
+        !run.stderr.contains("Rebuilding the overlay"),
+        "a read repaired the store -- which means it resolved an identity: {}",
+        run.stderr
+    );
+}
+
+/// The repair still happens, loudly, on the first write — v0.9.2's behaviour,
+/// relocated rather than removed.
+#[test]
+fn the_next_write_repairs_the_overlay_loudly() {
+    let dir = poisoned_workspace();
+
+    let wrote = kan(
+        dir.path(),
+        None,
+        &["observe", "a second claim", "--subject", "test/b"],
+    );
+    assert!(wrote.ok, "the write failed: {}", wrote.stderr);
+    assert!(
+        wrote.stderr.contains("Rebuilding the overlay"),
+        "the repair happened silently, or not at all: {}",
+        wrote.stderr
+    );
+    // And nothing was lost by repairing.
+    let after = kan(dir.path(), None, &["show", "test/a"]);
+    assert!(after.ok, "unreadable after repair: {}", after.stderr);
+    assert!(
+        after.stdout.contains("a claim of my own"),
+        "the repair dropped a claim: {}",
+        after.stdout
     );
 }
 
@@ -154,25 +198,34 @@ fn a_poisoned_overlay_is_rebuilt_rather_than_bricking_the_workspace() {
 fn recovery_happens_once_and_then_stays_quiet() {
     let dir = poisoned_workspace();
 
-    let first = kan(dir.path(), None, &["show", "test/a"]);
-    assert!(first.ok, "first open failed: {}", first.stderr);
+    let first = kan(
+        dir.path(),
+        None,
+        &["observe", "first write", "--subject", "test/b"],
+    );
+    assert!(first.ok, "first write failed: {}", first.stderr);
     assert!(
         first.stderr.contains("Rebuilding the overlay"),
         "expected the first open to repair: {}",
         first.stderr
     );
 
-    let second = kan(dir.path(), None, &["show", "test/a"]);
-    assert!(second.ok, "second open failed: {}", second.stderr);
+    let second = kan(
+        dir.path(),
+        None,
+        &["observe", "second write", "--subject", "test/c"],
+    );
+    assert!(second.ok, "second write failed: {}", second.stderr);
     assert!(
         !second.stderr.contains("Rebuilding the overlay"),
         "the repair did not stick -- it ran again: {}",
         second.stderr
     );
+    let after = kan(dir.path(), None, &["show", "test/a"]);
     assert!(
-        second.stdout.contains("a claim of my own"),
-        "claims lost on the second open: {}",
-        second.stdout
+        after.stdout.contains("a claim of my own"),
+        "claims lost after the second write: {}",
+        after.stdout
     );
 }
 

@@ -54,13 +54,35 @@ pub enum Error {
         first: String,
         did: String,
     },
+    #[error(
+        "this workspace was opened for reading, which resolves no signing identity, and \
+         something asked for one anyway.\n\n\
+         This is an internal routing error rather than anything you did: read verbs open \
+         read-only so that reading a repo never mints, derives or persists a key (#149). \
+         Please report it."
+    )]
+    NoIdentity,
+    #[error(
+        "`me` names this workspace's own identity, and this workspace does not have one \
+         yet -- nothing has been written here.\n\n\
+         Write a claim first, or name the author you meant with `--trust did:key:...`. \
+         Reading cannot create an identity, by design (#149)."
+    )]
+    NoIdentityToName,
 }
 
 pub struct Workspace {
     /// Repo root — the directory `.kan/` sits beside. Needed by anything
     /// that writes outside the private store, such as `kan publish`.
     pub root: std::path::PathBuf,
-    pub identity: Identity,
+    /// `None` for a workspace opened read-only.
+    ///
+    /// Private, with [`Workspace::identity`] as the accessor, so that every
+    /// place needing a signing identity has to say so and handle its absence.
+    /// The field was public and unconditional, and that is precisely how a
+    /// read came to resolve one (#149): nothing in the type ever asked
+    /// whether it should.
+    identity: Option<Identity>,
     pub log: Log,
     /// Claims by **other** authors, read out of the tracked `.claims/` tree
     /// and kept beside `log/` rather than inside it.
@@ -77,7 +99,12 @@ pub struct Workspace {
     /// mutating `log/` on a read path would not be.
     pub overlay: Log,
     pub index: Index,
-    pub anchor: Anchor,
+    /// `None` until something needs it, which in practice means until a
+    /// write. Computing it costs three `git` subprocesses — 28.2ms of kan's
+    /// ~42ms fixed per-invocation cost, roughly 70% — to derive a value that
+    /// cannot change for a repo and that no read consults, since every claim
+    /// carries its own anchor already (`.design/identity-surface.md` RQ-5).
+    anchor: Option<Anchor>,
     pub git: GitSubstrate,
     /// Which claims are in the tracked `.claims/` tree, by subject — built
     /// during the same read `ingest_published` already does, so the
@@ -98,6 +125,66 @@ pub struct Workspace {
 #[derive(Default)]
 pub struct PublishedIndex {
     by_subject: std::collections::HashMap<crate::claim::SubjectRef, std::collections::HashSet<Cid>>,
+    /// A hash over every published file's bytes, or `None` when there is no
+    /// `.claims/` tree — the freshness key for foreign claims.
+    ///
+    /// **Bytes rather than filenames**, because `file_name(subject)` is a
+    /// sanitized prefix plus a digest *of the subject name*: publishing more
+    /// claims rewrites the same file, so a filename-set fingerprint would
+    /// miss every update. Bytes are provably fresh and depend on no naming
+    /// scheme, which keeps this independent of the `.claims/` format work
+    /// (#131/#92).
+    ///
+    /// Affordable for a measured reason: reading every published file in full
+    /// is 0.66ms for 40 files, 15x cheaper than one `git` spawn
+    /// (`.design/identity-surface.md` RQ-5). The expensive part of ingestion
+    /// is parse and signature verification, and that is what this key skips.
+    ///
+    /// The tripwire, recorded so it is met rather than rediscovered: this is
+    /// O(published bytes). A repo with thousands of published subjects wants
+    /// a readdir-level key, which is where content-addressed filenames would
+    /// earn their keep.
+    content_hash: Option<String>,
+}
+
+/// Accumulates the `.claims/` freshness key.
+///
+/// **Shared by both ingestion paths deliberately.** They must agree byte for
+/// byte, or a read-open and a write-open compute different fingerprints over
+/// the same unchanged workspace and each invalidates the other's projection —
+/// a full rebuild per command, on exactly the repos that have a published
+/// tree. Two call sites hashing "the same thing" separately is how that
+/// happens, so there is one implementation and no second chance to diverge.
+///
+/// That is not hypothetical: the first version of this milestone hashed on
+/// the read path only, and nothing failed, because every view stayed correct.
+/// It would simply have rebuilt the whole projection on every command.
+///
+/// Order-stable because `GitTree::read_records` sorts its file list; the
+/// digest is over the *verified* records' CIDs, so an unverifiable record
+/// changes nothing here, exactly as it changes nothing in a view.
+#[derive(Default)]
+struct ClaimsDigest(Option<sha2::Sha256>);
+
+impl ClaimsDigest {
+    fn started() -> Self {
+        Self(Some(<sha2::Sha256 as sha2::Digest>::new()))
+    }
+
+    fn add(&mut self, cid: &Cid) {
+        if let Some(hasher) = &mut self.0 {
+            sha2::Digest::update(hasher, cid.to_bytes());
+        }
+    }
+
+    fn finish(self) -> Option<String> {
+        self.0.map(|hasher| {
+            sha2::Digest::finalize(hasher)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect()
+        })
+    }
 }
 
 impl PublishedIndex {
@@ -142,10 +229,16 @@ impl Workspace {
         // notice was true, which was the problem.
         //
         // It also narrows #149: in this one case a failed read no longer
-        // leaves a workspace behind. The general form of that -- reads should
-        // not vivify at all -- is still open.
+        // leaves a workspace behind. v0.11 closes the general form --
+        // `open_read_only` below -- and this ordering is what it was built on.
+        //
+        // The anchor is still resolved eagerly HERE, on the write path, and
+        // deliberately: #141's refusal (a repo with no commits cannot host a
+        // workspace) has to land before a keypair is minted, and `genesis()`
+        // is what detects it. What v0.11 removes is paying for it on reads,
+        // which never consult it.
         let git = GitSubstrate::open(&root)?;
-        let anchor = Anchor::Workspace(git.genesis()?);
+        let anchor = Some(Anchor::Workspace(git.genesis()?));
 
         let identity = Identity::load_or_create_for_workspace(&kan_dir)?;
         let mut log = Log::open_or_create(&kan_dir.join("log"), &identity).await?;
@@ -171,7 +264,11 @@ impl Workspace {
         // unconditional full rebuild; incremental *indexing* (partial
         // updates rather than skip-or-full-rebuild) stays a later
         // optimization, deliberately not what this is.
-        let mut current_root = index_fingerprint(log.current_root(), overlay.current_root());
+        let mut current_root = index_fingerprint(
+            log.current_root(),
+            overlay.current_root(),
+            published.content_hash.as_deref(),
+        );
         if current_root != index.built_from_root()? {
             let claims = log.iter_all().await?;
             let mut overlay_claims = overlay.iter_all().await?;
@@ -214,7 +311,11 @@ impl Workspace {
                 overlay = Log::open_or_create(&overlay_dir, &identity).await?;
                 published = ingest_published(&root, &identity, &log, &mut overlay).await?;
                 overlay_claims = overlay.iter_all().await?;
-                current_root = index_fingerprint(log.current_root(), overlay.current_root());
+                current_root = index_fingerprint(
+                    log.current_root(),
+                    overlay.current_root(),
+                    published.content_hash.as_deref(),
+                );
 
                 // Rebuilt and still overlapping means the repair did not hold,
                 // and continuing would hand sqlite the same duplicate. The
@@ -242,7 +343,7 @@ impl Workspace {
 
         Ok(Self {
             root,
-            identity,
+            identity: Some(identity),
             log,
             overlay,
             index,
@@ -250,6 +351,220 @@ impl Workspace {
             git,
             published,
         })
+    }
+
+    /// Open for reading: **no identity is resolved, derived or persisted, and
+    /// no anchor is computed** (`.design/identity-surface.md` REQ-2).
+    ///
+    /// This is the milestone in one function. Every default read folds under
+    /// `Local`, which is defined over the claims themselves rather than over
+    /// "me", so there is nothing left for a read to need an identity *for* —
+    /// and a read that resolves one is a read that can mint one (#149), take
+    /// a whole log out of view by re-minting (#90), or block on a keychain
+    /// prompt it has no business raising (#96).
+    ///
+    /// **It creates nothing.** A repo with no `.kan/` reads as an empty
+    /// workspace held entirely in memory: no directory, no key, no `seed-id`,
+    /// no index file (AC-3). "Read it if it is there" is the whole behaviour.
+    ///
+    /// **The anchor is skipped, not deferred cheaply.** `genesis()` is three
+    /// `git` subprocesses, 28.2ms of kan's ~42ms fixed cost, computing a
+    /// value no read consults — every claim carries its own anchor. It is a
+    /// write-time concern exactly as identity is, and [`Self::anchor`]
+    /// computes it on demand for the one caller that needs it.
+    pub async fn open_read_only(cwd: &Path) -> Result<Self, Error> {
+        let root = find_repo_root(cwd);
+        let kan_dir = root.join(".kan");
+
+        // Still opened, and still first: reads genuinely use git, for the
+        // computable relation providers (`fold::relations`). It is one
+        // subprocess and it is what turns "not a git repo" into a sentence
+        // rather than an empty view.
+        let git = GitSubstrate::open(&root)?;
+
+        let mut log = Log::open_read_only(&kan_dir.join("log")).await?;
+        let mut overlay = Log::open_read_only(&kan_dir.join("overlay")).await?;
+
+        // A workspace that does not exist gets a projection that does not
+        // touch disk. Where `.kan/` *is* present, the index file is fair game
+        // — it is disposable derived data inside a workspace that already
+        // exists, which is the same rule `Workspace::open` has always used.
+        let mut index = if kan_dir.exists() {
+            Index::open(&kan_dir.join("index.sqlite"))?
+        } else {
+            Index::open_in_memory()?
+        };
+
+        // Foreign claims are read straight into the projection rather than
+        // into `.kan/overlay`, because writing that store would need a
+        // signing identity to sign its commit -- which is the whole thing
+        // this function exists not to do.
+        //
+        // Transitional for one release, and the half that survives: #164
+        // retires `.kan/overlay` entirely in v0.12, at which point this
+        // becomes the only ingestion path. The write path still maintains
+        // the overlay meanwhile, and both produce the same rows -- this one
+        // reads the overlay too and adds only what it does not already hold,
+        // so a read-open and a write-open agree claim for claim.
+        let (published, arrived) = read_published(&root, &log, &overlay).await?;
+
+        let fingerprint = index_fingerprint(
+            log.current_root(),
+            overlay.current_root(),
+            published.content_hash.as_deref(),
+        );
+        if fingerprint != index.built_from_root()? {
+            let log_claims = log.iter_all().await?;
+            let mut foreign = overlay.iter_all().await?;
+            foreign.extend(arrived);
+
+            // #150's poisoned state, handled by *not projecting* the
+            // duplicates rather than by repairing the overlay.
+            //
+            // The write path discards and rebuilds the overlay, which needs a
+            // signing identity to re-ingest — so a read cannot do that, and
+            // must not acquire one in order to try. It does not have to:
+            // `content_cid` is a PRIMARY KEY, so all a duplicate does is fail
+            // the rebuild, and skipping it leaves a workspace that reads
+            // correctly and completely. Every claim is still projected, once,
+            // from the log.
+            //
+            // That makes a read of a poisoned workspace *work*, where before
+            // this milestone it was the thing that bricked it. The overlay is
+            // still repaired by the next write, loudly, exactly as v0.9.2
+            // made it.
+            let in_log: std::collections::HashSet<&Cid> =
+                log_claims.iter().map(|(c, _)| c).collect();
+            foreign.retain(|(cid, _)| !in_log.contains(cid));
+
+            index.rebuild(&log_claims, &foreign, fingerprint.as_ref())?;
+        }
+
+        Ok(Self {
+            root,
+            identity: None,
+            log,
+            overlay,
+            index,
+            anchor: None,
+            git,
+            published,
+        })
+    }
+
+    /// Assemble a workspace from components the caller already holds.
+    ///
+    /// For tests that need to control the identity or the store paths
+    /// directly. Production code goes through [`Self::open`] or
+    /// [`Self::open_read_only`], which is the point of the fields being
+    /// private: a *writable* workspace is now something you have to ask for
+    /// by name rather than something you get by filling in a struct.
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts(
+        root: PathBuf,
+        identity: Identity,
+        log: Log,
+        overlay: Log,
+        index: Index,
+        anchor: Anchor,
+        git: GitSubstrate,
+        published: PublishedIndex,
+    ) -> Self {
+        Self {
+            root,
+            identity: Some(identity),
+            log,
+            overlay,
+            index,
+            anchor: Some(anchor),
+            git,
+            published,
+        }
+    }
+
+    /// Rebuild the projection from every store this workspace holds, and
+    /// record the freshness key the *next* open will compute.
+    ///
+    /// Both halves were wrong on the write path and had been for as long as
+    /// there was an overlay. `append` rebuilt from `log.iter_all()` alone,
+    /// dropping every foreign claim from the projection, and recorded the
+    /// bare log root where an open computes a fingerprint over log, overlay
+    /// and `.claims/`.
+    ///
+    /// It was invisible because the two mistakes hid each other: the
+    /// mismatched key meant the very next open rebuilt from scratch, which
+    /// silently restored the foreign claims the write had dropped. So the
+    /// only symptom was a full rebuild after every write — a cost, not a
+    /// wrong answer, and nothing was watching for it.
+    ///
+    /// Fixing the key alone would have converted it into a wrong answer, by
+    /// telling the next open that a projection missing its foreign claims
+    /// was fresh. They have to be fixed together, which is why this is one
+    /// method rather than a fix at each call site.
+    pub async fn reproject(&mut self) -> Result<(), Error> {
+        let log_claims = self.log.iter_all().await?;
+        let foreign = self.overlay.iter_all().await?;
+        let fingerprint = index_fingerprint(
+            self.log.current_root(),
+            self.overlay.current_root(),
+            self.published.content_hash.as_deref(),
+        );
+        self.index
+            .rebuild(&log_claims, &foreign, fingerprint.as_ref())?;
+        Ok(())
+    }
+
+    /// The log and the signing identity together, borrowed disjointly.
+    ///
+    /// A write needs `&mut log` and `&identity` at once, and going through
+    /// [`Self::identity`] borrows the whole `Workspace`. Splitting the borrow
+    /// here keeps that a detail of this module rather than a reason to make
+    /// the identity field public again.
+    pub fn log_and_identity(&mut self) -> Result<(&mut Log, &Identity), Error> {
+        let identity = self.identity.as_ref().ok_or(Error::NoIdentity)?;
+        Ok((&mut self.log, identity))
+    }
+
+    /// The DID of the identity a read means by "me", loaded but **never
+    /// created**.
+    ///
+    /// `--trust me` and `--trust roles` name the active identity, so they
+    /// genuinely need one — and a read-only workspace holds none. Resolving
+    /// it here, from what is already on disk, is what keeps those selectors
+    /// working on a read without a read ever minting. A workspace that has
+    /// no identity yet gets a sentence saying so rather than a new keypair.
+    fn active_did(&self) -> Result<String, Error> {
+        if let Some(identity) = &self.identity {
+            return Ok(identity.did());
+        }
+        match crate::sign::existing_identity(&self.root.join(".kan"))? {
+            Some(identity) => Ok(identity.did()),
+            None => Err(Error::NoIdentityToName),
+        }
+    }
+
+    /// This workspace's signing identity, or an error naming what needs one.
+    ///
+    /// Every caller is a write, or a command whose subject *is* the identity
+    /// (`kan identity did`). A read reaching this is a routing bug, and the
+    /// message says so rather than silently resolving one.
+    pub fn identity(&self) -> Result<&Identity, Error> {
+        self.identity.as_ref().ok_or(Error::NoIdentity)
+    }
+
+    /// The workspace anchor, computed on first use.
+    ///
+    /// Only `append` consults it, which is why it is no longer resolved on
+    /// open: three `git` subprocesses for a constant that reads never look at
+    /// (RQ-5).
+    pub fn anchor(&mut self) -> Result<Anchor, Error> {
+        if let Some(anchor) = &self.anchor {
+            return Ok(anchor.clone());
+        }
+        let anchor = Anchor::Workspace(self.git.genesis()?);
+        self.anchor = Some(anchor.clone());
+        Ok(anchor)
     }
 
     /// This process's `AuthorId`. `agent` is always `None`.
@@ -271,11 +586,11 @@ impl Workspace {
     /// would have been the wrong lesson. Removing it also narrows
     /// `AuthorId` usage rather than widening it, which is the direction #30
     /// wants anyway.
-    pub fn my_author(&self) -> AuthorId {
-        AuthorId {
-            did: self.identity.did(),
+    pub fn my_author(&self) -> Result<AuthorId, Error> {
+        Ok(AuthorId {
+            did: self.identity()?.did(),
             agent: None,
-        }
+        })
     }
 
     /// Trust only this process's own `AuthorId`. **No longer the default** —
@@ -286,8 +601,8 @@ impl Workspace {
     /// It stopped being the default because its member is *me*, which is the
     /// single line that made every read resolve an identity in order to know
     /// whom to trust (#149, #90, #121 are all downstream of it).
-    pub fn solo_trust(&self) -> TrustBase {
-        TrustBase::solo(self.my_author())
+    pub fn solo_trust(&self) -> Result<TrustBase, Error> {
+        Ok(TrustBase::solo(self.my_author()?))
     }
 
     /// **The default base every read folds under**: every author with a
@@ -324,7 +639,7 @@ impl Workspace {
     /// wanting a role hierarchy rather than a flat union names the DIDs and
     /// weights explicitly.
     pub fn role_trust_entries(&self) -> Result<Vec<(String, f64)>, Error> {
-        let mut out = vec![(self.identity.did(), 1.0)];
+        let mut out = vec![(self.active_did()?, 1.0)];
         for role in crate::sign::list_roles(&self.root.join(".kan"))? {
             out.push((role.did, 1.0));
         }
@@ -356,7 +671,12 @@ impl Workspace {
             }
             let entry = crate::fold::trust::parse_entry(spec)?;
             let did = if entry.did == crate::fold::trust::SELF_ALIAS {
-                self.identity.did()
+                // `--trust me` names the active identity, so it genuinely
+                // needs one -- and on a read-only workspace there is none.
+                // Erroring is the honest answer: the question "what did I
+                // write here" has no answer without an identity, and
+                // resolving one to answer it would mint on a read.
+                self.active_did()?
             } else {
                 entry.did
             };
@@ -393,18 +713,95 @@ fn overlapping<'a>(
 /// together, so a change in either invalidates the index — which is the
 /// property the original skip depended on: not "probably fresh", provably
 /// fresh (`.design/v0.4-milestone.md` REQ-5, issue #26).
-fn index_fingerprint(log_root: Option<Cid>, overlay_root: Option<Cid>) -> Option<Cid> {
-    match (log_root, overlay_root) {
-        (log, None) => log,
-        (log, Some(overlay)) => {
+/// The `.claims/` content hash joins the two roots for a reason the read path
+/// forces: a read-only open projects published records straight into the
+/// index, so a change in `.claims/` alone must invalidate the projection.
+/// Both paths hash it, so a read-open and a write-open agree about freshness
+/// rather than each invalidating the other's work on every alternation.
+fn index_fingerprint(
+    log_root: Option<Cid>,
+    overlay_root: Option<Cid>,
+    claims_hash: Option<&str>,
+) -> Option<Cid> {
+    match (log_root, overlay_root, claims_hash) {
+        // Unchanged for the commonest workspace there is -- no published
+        // tree, no overlay -- so an index built by an earlier version stays
+        // valid and upgrading forces no spurious rebuild.
+        (log, None, None) => log,
+        (log, overlay, claims) => {
             let mut bytes = Vec::new();
             if let Some(log) = &log {
                 bytes.extend_from_slice(&log.to_bytes());
             }
-            bytes.extend_from_slice(&overlay.to_bytes());
+            if let Some(overlay) = &overlay {
+                bytes.extend_from_slice(&overlay.to_bytes());
+            }
+            if let Some(claims) = claims {
+                bytes.extend_from_slice(claims.as_bytes());
+            }
             Some(Cid::from(atproto_repo::compute_cid(&bytes)))
         }
     }
+}
+
+/// Read the tracked `.claims/` tree **without a signing identity**: which
+/// records are published (for the durability column), and which of them this
+/// workspace does not already hold.
+///
+/// The read-path counterpart to `ingest_published`. It writes nothing —
+/// no overlay, no lock, no commit — because a read has no identity to sign a
+/// commit with, and the records it returns go straight into the disposable
+/// index instead (#164 makes this the only path in v0.12).
+///
+/// **Own-vs-foreign is decided by log membership, not by identity.** That is
+/// both what makes this possible without a key and the more correct test: on
+/// a fresh clone a primary-authored record in `.claims/` genuinely *is*
+/// foreign to that workspace's log and should be read. Log membership answers
+/// "would this duplicate", which is the actual invariant; matching against
+/// the active identity only approximates it. It generalises the check v0.9.2
+/// introduced for #150.
+///
+/// A bad record warns and is skipped rather than failing the workspace,
+/// exactly as on the write path: `.claims/` is *tracked*, so anyone can
+/// hand-edit it and a bad merge can mangle it, and a repo whose every `kan`
+/// command aborts because a teammate's merge dropped a line is worse than one
+/// that says so and keeps working. The record is still refused, which is the
+/// part that matters.
+async fn read_published(
+    root: &Path,
+    log: &Log,
+    overlay: &Log,
+) -> Result<(PublishedIndex, Vec<(Cid, crate::store::log::StoredClaim)>), Error> {
+    let claims_dir = root.join(crate::transport::git_tree::CLAIMS_DIR);
+    if !claims_dir.exists() {
+        return Ok((PublishedIndex::default(), Vec::new()));
+    }
+
+    let tree = crate::transport::git_tree::GitTree::new_reader(root);
+    let mut published = PublishedIndex::default();
+    let mut arrived = Vec::new();
+    let mut digest = ClaimsDigest::started();
+    for record in tree.read_all_with_rev() {
+        match record {
+            Ok((cid, claim, rev)) => {
+                published.record(claim.content.subject.clone(), cid.clone());
+                digest.add(&cid);
+                if log.contains(&cid).await? || overlay.contains(&cid).await? {
+                    continue;
+                }
+                arrived.push((
+                    cid.clone(),
+                    crate::store::log::StoredClaim {
+                        claim,
+                        rev: rev.unwrap_or_else(|| cid.to_string()),
+                    },
+                ));
+            }
+            Err(e) => eprintln!("warning: skipping a published record: {e}"),
+        }
+    }
+    published.content_hash = digest.finish();
+    Ok((published, arrived))
 }
 
 /// Read the tracked `.claims/` tree and insert every **foreign-authored**
@@ -446,6 +843,7 @@ async fn ingest_published(
     let tree = crate::transport::git_tree::GitTree::new_reader(root);
     let mine = identity.did();
     let mut published = PublishedIndex::default();
+    let mut digest = ClaimsDigest::started();
     let mut pending = Vec::new();
     for record in tree.read_all_with_rev() {
         match record {
@@ -455,6 +853,7 @@ async fn ingest_published(
                 // in the tree", which is a question about the tree, not about
                 // whose claim it is.
                 published.record(claim.content.subject.clone(), cid.clone());
+                digest.add(&cid);
                 if claim.content.author.did == mine {
                     continue;
                 }
@@ -501,6 +900,7 @@ async fn ingest_published(
             eprintln!("warning: could not ingest a published record: {e}");
         }
     }
+    published.content_hash = digest.finish();
     Ok(published)
 }
 

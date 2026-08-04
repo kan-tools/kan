@@ -62,16 +62,16 @@ async fn open_workspace(dir: &std::path::Path) -> Workspace {
     let index = Index::open(&dir.join(".kan/index.sqlite")).unwrap();
     let git = GitSubstrate::open(dir).unwrap();
     let anchor = Anchor::Workspace(git.genesis().unwrap());
-    Workspace {
-        root: dir.to_path_buf(),
+    Workspace::from_parts(
+        dir.to_path_buf(),
         identity,
         log,
         overlay,
         index,
-        published: Default::default(),
         anchor,
         git,
-    }
+        Default::default(),
+    )
 }
 
 #[tokio::test]

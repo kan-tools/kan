@@ -109,14 +109,22 @@ fn ordinary_subject_names_are_untouched() {
 
 /// #141: a repo with no commits reported git's own `ambiguous argument
 /// 'HEAD'` prose, which names neither kan's requirement nor the fix.
+///
+/// **Probed with a write since v0.11.** The requirement is a *write-time*
+/// one — kan anchors every claim to the repo's root commit — and the anchor
+/// is no longer resolved on reads, which is where 28.2ms of a ~42ms
+/// invocation went (`.design/identity-surface.md` RQ-5). A read of a
+/// commitless repo now succeeds and reports nothing, which is the honest
+/// answer: there are no claims, and nothing about reading needs a root
+/// commit. #141's error is unchanged where it applies.
 #[test]
 fn a_repo_with_no_commits_says_what_it_needs() {
     let dir = git_repo(false);
     let key = dir.path().join("key");
 
-    let (_, err, ok) = kan(dir.path(), &key, &["status"]);
+    let (_, err, ok) = kan(dir.path(), &key, &["observe", "x", "--subject", "s"]);
 
-    assert!(!ok, "kan succeeded in a repo with no commits");
+    assert!(!ok, "a write succeeded in a repo with no commits");
     assert!(
         !err.contains("rev-list") && !err.contains("ambiguous argument"),
         "git's raw error is still leaking: {err}"
@@ -135,7 +143,7 @@ fn a_failed_open_in_a_commitless_repo_writes_nothing() {
     let dir = git_repo(false);
     let key = dir.path().join("key");
 
-    let (_, _, ok) = kan(dir.path(), &key, &["status"]);
+    let (_, _, ok) = kan(dir.path(), &key, &["observe", "x", "--subject", "s"]);
     assert!(!ok);
 
     assert!(
@@ -146,4 +154,36 @@ fn a_failed_open_in_a_commitless_repo_writes_nothing() {
         !key.exists(),
         "a signing key was minted despite the command failing"
     );
+}
+
+/// AC-3, and the general form of what #141 fixed in one case: a **read**
+/// creates nothing at all.
+///
+/// #141 stopped one failing path from leaving a workspace behind. v0.11
+/// stops every read from vivifying one (#149), which is why this asserts the
+/// whole `.kan/` directory is absent rather than just the key: no directory,
+/// no key, no `seed-id`, no index file. A repo you have only ever *read* is
+/// indistinguishable afterwards from one kan has never seen.
+#[test]
+fn a_read_creates_no_workspace() {
+    for has_commits in [true, false] {
+        let dir = git_repo(has_commits);
+        let key = dir.path().join("key");
+
+        let (out, err, ok) = kan(dir.path(), &key, &["status"]);
+
+        assert!(ok, "a read failed (commits: {has_commits}): {err}");
+        assert!(
+            out.contains("no subjects"),
+            "expected an empty-workspace report (commits: {has_commits}): {out}"
+        );
+        assert!(
+            !dir.path().join(".kan").exists(),
+            "a read created .kan/ (commits: {has_commits})"
+        );
+        assert!(
+            !key.exists(),
+            "a read minted a signing key (commits: {has_commits})"
+        );
+    }
 }

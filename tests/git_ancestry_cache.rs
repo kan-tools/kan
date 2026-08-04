@@ -178,11 +178,27 @@ async fn is_ancestor_is_not_re_invoked_for_a_pair_already_resolved() {
         .lines()
         .filter(|line| line.starts_with("merge-base --is-ancestor"))
         .collect();
-    assert_eq!(
-        is_ancestor_calls.len(),
-        2,
-        "expected exactly 2 real `git merge-base --is-ancestor` subprocess calls \
-         (one per distinct directed commit pair, cached after that), got {}: {:?}\n\
+    // **At most** two, not exactly two -- and the difference is a real
+    // flake this assertion had, caught by CI on 2026-08-04 after passing for
+    // months.
+    //
+    // `relations` asks `is_ancestor(b, a)` only when `is_ancestor(a, b)` was
+    // false (it is an `else if`), so the *second* directed pair is queried
+    // only when some claim pair happens to be visited descendant-first. That
+    // depends on the order `Log::iter_all` returns claims in, which is MST
+    // key order -- keyed on content CID, which is content-addressed over
+    // wall-clock `recorded_at`. So the order is effectively random per run,
+    // and with 4+4 claims the ~1.4% of runs where every commit-1 claim sorts
+    // before every commit-2 claim need only ONE real call.
+    //
+    // One call is the cache working *better*, and the old assertion failed
+    // on it. What AC-13 actually claims is that up to 16 claim pairs needing
+    // the same fact collapse to at most one call per distinct directed
+    // commit pair -- which is what this now says.
+    assert!(
+        (1..=2).contains(&is_ancestor_calls.len()),
+        "expected at most 2 real `git merge-base --is-ancestor` subprocess calls (one per \
+         distinct directed commit pair, cached after that) and at least 1, got {}: {:?}\n\
          full log: {log_contents:?}",
         is_ancestor_calls.len(),
         is_ancestor_calls,

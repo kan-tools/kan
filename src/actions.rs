@@ -299,24 +299,27 @@ async fn append(
     }
 
     let kind = body.kind();
+    // Resolved here rather than at open: the anchor is a write-time concern,
+    // and this is the only place that consults it
+    // (`.design/identity-surface.md` RQ-5).
+    let anchor = ws.anchor()?;
     let head = ws.git.head_commit()?;
     let mut artifacts = vec![ArtifactRef::Commit(head.clone())];
     if let Some(raw) = file {
         artifacts.push(parse_file_artifact(&raw, &head));
     }
     let content = ClaimContent {
-        author: ws.my_author(),
-        workspace: ws.anchor.clone(),
+        author: ws.my_author()?,
+        workspace: anchor,
         subject: subject.clone(),
         body,
         cites,
         artifacts,
         recorded_at: None,
     };
-    let cid = ws.log.append(content, &ws.identity).await?;
-    let claims = ws.log.iter_all().await?;
-    ws.index
-        .rebuild(&claims, &[], ws.log.current_root().as_ref())?;
+    let (log, identity) = ws.log_and_identity()?;
+    let cid = log.append(content, identity).await?;
+    ws.reproject().await?;
     Ok(AppendResult { cid, subject, kind })
 }
 
@@ -902,7 +905,7 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
         )));
     }
 
-    let mine = ws.identity.did();
+    let mine = ws.identity()?.did();
     let tree = crate::transport::git_tree::GitTree::new_reader(&ws.root);
     let mut restorable = Vec::new();
     let mut foreign_authors: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -937,7 +940,8 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
     let mut restored = 0usize;
     let mut already = 0usize;
     for stored in restorable {
-        match ws.log.ingest(stored, &ws.identity).await? {
+        let (log, identity) = ws.log_and_identity()?;
+        match log.ingest(stored, identity).await? {
             Some(_) => restored += 1,
             None => already += 1,
         }
@@ -1097,7 +1101,7 @@ pub async fn retract(
         .get_stored(target_cid.clone())
         .await?
         .ok_or_else(|| Error::UnknownClaim(target_cid.clone()))?;
-    if target.claim.content.author != ws.my_author() {
+    if target.claim.content.author != ws.my_author()? {
         return Err(Error::NotYourClaim(target_cid));
     }
     let subject = target.claim.content.subject.clone();
@@ -1128,7 +1132,7 @@ pub async fn reject(
         .get_stored(target_cid.clone())
         .await?
         .ok_or_else(|| Error::UnknownClaim(target_cid.clone()))?;
-    if target.claim.content.author == ws.my_author() {
+    if target.claim.content.author == ws.my_author()? {
         return Err(Error::CantRejectOwnClaim(target_cid));
     }
     let subject = target.claim.content.subject.clone();
@@ -2055,7 +2059,7 @@ pub fn context_json(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<
 pub fn roles_json(ws: &Workspace, roles: &[crate::sign::Role]) -> Result<String, Error> {
     to_json(&crate::json::RolesJson {
         v: crate::json::SCHEMA_VERSION,
-        active: ws.identity.did(),
+        active: ws.identity()?.did(),
         roles: roles
             .iter()
             .map(|r| crate::json::RoleJson {
