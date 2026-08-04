@@ -831,57 +831,62 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         | Command::Context { .. } => {
             unreachable!("read verbs are dispatched by `is_read_only`")
         }
-        Command::Identity { action } => match action {
-            IdentityAction::Did => println!("{}", ws.identity()?.did()),
-            IdentityAction::EncryptionKey => {
-                println!("{}", ws.identity()?.encryption_key().public_hex())
-            }
-            IdentityAction::Phrase { yes } => {
-                // Terminal-sensing gate. An MCP server, a CI job, and an AI
-                // agent's shell all have their output captured rather than
-                // attached to a terminal, so this refuses in exactly the
-                // places where the phrase would end up written down
-                // permanently by accident. `--yes` alone is a speed bump;
-                // this is the part that actually holds.
-                use std::io::IsTerminal;
-                if !std::io::stdout().is_terminal() || !std::io::stdin().is_terminal() {
-                    eprintln!(
-                        "refusing: `kan identity phrase` only runs in an interactive \
+        Command::Identity { action } => {
+            // `kan identity ...` is a command ABOUT the identity, so asking
+            // for it is the point rather than a side effect of asking for
+            // something else. The read-only actions are routed away above.
+            ws.commit_identity().await?;
+            match action {
+                IdentityAction::Did => println!("{}", ws.identity()?.did()),
+                IdentityAction::EncryptionKey => {
+                    println!("{}", ws.identity()?.encryption_key().public_hex())
+                }
+                IdentityAction::Phrase { yes } => {
+                    // Terminal-sensing gate. An MCP server, a CI job, and an AI
+                    // agent's shell all have their output captured rather than
+                    // attached to a terminal, so this refuses in exactly the
+                    // places where the phrase would end up written down
+                    // permanently by accident. `--yes` alone is a speed bump;
+                    // this is the part that actually holds.
+                    use std::io::IsTerminal;
+                    if !std::io::stdout().is_terminal() || !std::io::stdin().is_terminal() {
+                        eprintln!(
+                            "refusing: `kan identity phrase` only runs in an interactive \
                          terminal.\n\nstdout or stdin is not a TTY here, which means this \
                          output is being captured -- a pipe, a CI job, an MCP server, or an \
                          AI agent's shell. The phrase is your private signing key; kan will \
                          not emit it somewhere it is likely to be recorded.\n\nRun it \
                          directly in a terminal you trust."
-                    );
-                    return Ok(());
-                }
-                if !yes {
-                    eprintln!(
-                        "This prints your signing key as 24 words. Anyone who reads them \
+                        );
+                        return Ok(());
+                    }
+                    if !yes {
+                        eprintln!(
+                            "This prints your signing key as 24 words. Anyone who reads them \
                          can sign claims as you.\n\nWrite them on paper and store them the \
                          way you would a seed phrase. Re-run with --yes to print."
-                    );
-                    return Ok(());
+                        );
+                        return Ok(());
+                    }
+                    let (phrase, root) =
+                        crate::sign::workspace_phrase(&ws.root.join(".kan"), ws.identity()?)?;
+                    println!("{phrase}");
+                    eprintln!("\nThese words are {}.", root.describe());
                 }
-                let (phrase, root) =
-                    crate::sign::workspace_phrase(&ws.root.join(".kan"), ws.identity()?)?;
-                println!("{phrase}");
-                eprintln!("\nThese words are {}.", root.describe());
-            }
-            IdentityAction::Restore { phrase } => {
-                // argv is not a place a private key may go.
-                //
-                // Shell history keeps it indefinitely, `ps` exposes it to
-                // every other process for the life of the command, and it
-                // lands in terminal scrollback and any agent transcript.
-                // `kan identity phrase` is gated twice so the phrase never
-                // reaches somewhere permanent; accepting it here on the
-                // command line undid that entirely. Rejected rather than
-                // deprecated: using it once is already a leak, so accepting
-                // it "for compatibility" would preserve the defect.
-                if !phrase.is_empty() {
-                    return Err(actions::Error::Usage(
-                        "the recovery phrase must not be passed on the command line -- it \
+                IdentityAction::Restore { phrase } => {
+                    // argv is not a place a private key may go.
+                    //
+                    // Shell history keeps it indefinitely, `ps` exposes it to
+                    // every other process for the life of the command, and it
+                    // lands in terminal scrollback and any agent transcript.
+                    // `kan identity phrase` is gated twice so the phrase never
+                    // reaches somewhere permanent; accepting it here on the
+                    // command line undid that entirely. Rejected rather than
+                    // deprecated: using it once is already a leak, so accepting
+                    // it "for compatibility" would preserve the defect.
+                    if !phrase.is_empty() {
+                        return Err(actions::Error::Usage(
+                            "the recovery phrase must not be passed on the command line -- it \
                          is your private signing key, and argv is visible in shell history, \
                          in `ps` output to other processes, and in terminal scrollback.\n\n\
                          Run `kan identity restore` with no arguments and enter it at the \
@@ -889,94 +894,100 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                          cat phrase.txt | kan identity restore\n\n\
                          If you already ran it with the words as arguments, clear them from \
                          your shell history."
-                            .to_string(),
-                    )
-                    .into());
-                }
-                let phrase = read_secret_line("Recovery phrase (input hidden): ")?;
-                // A phrase is 32 bytes of BIP-39 entropy under both schemes,
-                // so it always has two readings and nothing in the words says
-                // which. Rather than guess, report both and say which one --
-                // if either -- is this repo's.
-                let candidates = crate::sign::candidate_identities(&phrase)?;
-                let active_did = ws.identity()?.did();
-                let matched = candidates
-                    .iter()
-                    .find(|(_, identity)| identity.did() == active_did);
-                match matched {
-                    Some((root, identity)) => println!(
+                                .to_string(),
+                        )
+                        .into());
+                    }
+                    let phrase = read_secret_line("Recovery phrase (input hidden): ")?;
+                    // A phrase is 32 bytes of BIP-39 entropy under both schemes,
+                    // so it always has two readings and nothing in the words says
+                    // which. Rather than guess, report both and say which one --
+                    // if either -- is this repo's.
+                    let candidates = crate::sign::candidate_identities(&phrase)?;
+                    let active_did = ws.identity()?.did();
+                    let matched = candidates
+                        .iter()
+                        .find(|(_, identity)| identity.did() == active_did);
+                    match matched {
+                        Some((root, identity)) => println!(
                         "that phrase belongs to {} -- it matches this repo's identity.\n\nRead \
                          as {}.",
                         identity.did(),
                         root.describe()
                     ),
-                    None => {
-                        println!("this repo's identity is {}", ws.identity()?.did());
-                        println!(
-                            "\nThat phrase does not match it. It could be read two ways, \
+                        None => {
+                            println!("this repo's identity is {}", ws.identity()?.did());
+                            println!(
+                                "\nThat phrase does not match it. It could be read two ways, \
                                   and neither is this repo:"
-                        );
-                        for (root, identity) in &candidates {
-                            println!("  as {:?}: {}", root, identity.did());
-                        }
-                        println!(
+                            );
+                            for (root, identity) in &candidates {
+                                println!("  as {:?}: {}", root, identity.did());
+                            }
+                            println!(
                             "\nkan does not overwrite an existing identity automatically: move \
                              `.kan/` aside, or point KAN_IDENTITY_FILE at a file holding the \
                              right key, so nothing is replaced by accident."
                         );
+                        }
                     }
                 }
-            }
-            IdentityAction::Adopt { .. } | IdentityAction::Authors { .. } => {
-                unreachable!("dispatched read-only by `is_read_only`")
-            }
-            IdentityAction::Role { action } => match action {
-                RoleAction::Add { name, key } => {
-                    let kan_dir = ws.root.join(".kan");
-                    let key_path = match key {
-                        Some(k) => std::path::PathBuf::from(k),
-                        None => kan_dir.join("roles.d").join(&name),
-                    };
-                    // Record the identity that was already signing here
-                    // before this role existed, while it is loaded and its
-                    // DID is in hand. Once KAN_IDENTITY_FILE points at a
-                    // role, kan never consults the keychain, so this is the
-                    // only cheap moment to learn it — and without it,
-                    // `--trust roles` omits everything written before the
-                    // first role was declared.
-                    crate::sign::register_active(
-                        &kan_dir,
-                        &ws.identity()?.did(),
-                        &kan_dir.join("identity"),
-                    )?;
-                    let role = crate::sign::add_role(&kan_dir, &name, &key_path)?;
-                    println!("declared role `{}`: {}", role.name, role.did);
-                    println!("key: {}", role.key_path.display());
-                    println!(
+                IdentityAction::Adopt { .. } | IdentityAction::Authors { .. } => {
+                    unreachable!("dispatched read-only by `is_read_only`")
+                }
+                IdentityAction::Role { action } => match action {
+                    RoleAction::Add { name, key } => {
+                        let kan_dir = ws.root.join(".kan");
+                        let key_path = match key {
+                            Some(k) => std::path::PathBuf::from(k),
+                            None => kan_dir.join("roles.d").join(&name),
+                        };
+                        // Record the identity that was already signing here
+                        // before this role existed, while it is loaded and its
+                        // DID is in hand. Once KAN_IDENTITY_FILE points at a
+                        // role, kan never consults the keychain, so this is the
+                        // only cheap moment to learn it — and without it,
+                        // `--trust roles` omits everything written before the
+                        // first role was declared.
+                        crate::sign::register_active(
+                            &kan_dir,
+                            &ws.identity()?.did(),
+                            &kan_dir.join("identity"),
+                        )?;
+                        let role = crate::sign::add_role(&kan_dir, &name, &key_path)?;
+                        println!("declared role `{}`: {}", role.name, role.did);
+                        println!("key: {}", role.key_path.display());
+                        println!(
                         "\nWrite as this role:\n    KAN_IDENTITY_FILE={} kan observe <subject> \
                          <text>\n\nRead every role's claims (the default Solo view shows only \
                          the active identity's):\n    kan show <subject> --trust roles",
                         role.key_path.display()
                     );
-                }
-                RoleAction::List { json } => {
-                    let roles = crate::sign::list_roles(&ws.root.join(".kan"))?;
-                    if json {
-                        print!("{}", actions::roles_json(&ws, &roles)?);
-                    } else if roles.is_empty() {
-                        println!(
-                            "no declared roles. This workspace signs as one identity: {}",
-                            ws.identity()?.did()
-                        );
-                    } else {
-                        println!("active: {}", ws.identity()?.did());
-                        for role in roles {
-                            println!("{}\t{}\t{}", role.name, role.did, role.key_path.display());
+                    }
+                    RoleAction::List { json } => {
+                        let roles = crate::sign::list_roles(&ws.root.join(".kan"))?;
+                        if json {
+                            print!("{}", actions::roles_json(&ws, &roles)?);
+                        } else if roles.is_empty() {
+                            println!(
+                                "no declared roles. This workspace signs as one identity: {}",
+                                ws.identity()?.did()
+                            );
+                        } else {
+                            println!("active: {}", ws.identity()?.did());
+                            for role in roles {
+                                println!(
+                                    "{}\t{}\t{}",
+                                    role.name,
+                                    role.did,
+                                    role.key_path.display()
+                                );
+                            }
                         }
                     }
-                }
-            },
-        },
+                },
+            }
+        }
         Command::Mcp { .. } => unreachable!("handled above"),
     }
     Ok(())

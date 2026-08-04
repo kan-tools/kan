@@ -308,6 +308,12 @@ async fn append(
     if let Some(raw) = file {
         artifacts.push(parse_file_artifact(&raw, &head));
     }
+    // Every precondition has now passed -- the subject name, the anchor, the
+    // HEAD commit, the artifact spec. THIS is the moment the workspace comes
+    // into existence: a command refused above leaves no key, no `seed-id`,
+    // no `identity-id` and no `.kan/` (REQ-3).
+    ws.commit_identity().await?;
+
     let content = ClaimContent {
         author: ws.my_author()?,
         workspace: anchor,
@@ -317,7 +323,7 @@ async fn append(
         artifacts,
         recorded_at: None,
     };
-    let (log, identity) = ws.log_and_identity()?;
+    let (log, identity) = ws.log_and_identity().await?;
     let cid = log.append(content, identity).await?;
     ws.reproject().await?;
     Ok(AppendResult { cid, subject, kind })
@@ -905,6 +911,7 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
         )));
     }
 
+    ws.commit_identity().await?;
     let mine = ws.identity()?.did();
     let tree = crate::transport::git_tree::GitTree::new_reader(&ws.root);
     let mut restorable = Vec::new();
@@ -940,7 +947,7 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
     let mut restored = 0usize;
     let mut already = 0usize;
     for stored in restorable {
-        let (log, identity) = ws.log_and_identity()?;
+        let (log, identity) = ws.log_and_identity().await?;
         match log.ingest(stored, identity).await? {
             Some(_) => restored += 1,
             None => already += 1,
@@ -1101,6 +1108,7 @@ pub async fn retract(
         .get_stored(target_cid.clone())
         .await?
         .ok_or_else(|| Error::UnknownClaim(target_cid.clone()))?;
+    ws.commit_identity().await?;
     if target.claim.content.author != ws.my_author()? {
         return Err(Error::NotYourClaim(target_cid));
     }
@@ -1132,6 +1140,7 @@ pub async fn reject(
         .get_stored(target_cid.clone())
         .await?
         .ok_or_else(|| Error::UnknownClaim(target_cid.clone()))?;
+    ws.commit_identity().await?;
     if target.claim.content.author == ws.my_author()? {
         return Err(Error::CantRejectOwnClaim(target_cid));
     }

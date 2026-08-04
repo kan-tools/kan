@@ -215,142 +215,113 @@ impl Workspace {
     /// across calls — cheap at today's scale, and avoids any question of
     /// staleness or concurrent-mutation safety (`docs/DECISIONS.md` ADR-15).
     pub async fn open(cwd: &Path) -> Result<Self, Error> {
-        let root = find_repo_root(cwd);
-        let kan_dir = root.join(".kan");
+        // A writable workspace is a readable one that has not needed its
+        // identity yet. Nothing is minted, persisted or created here --
+        // `commit_identity` does that, immediately before the first append
+        // and after every precondition has passed (REQ-3).
+        //
+        // The anchor is still resolved EAGERLY, and only on this path. #141:
+        // a repo with no commits cannot host a workspace, and `genesis()` is
+        // what detects it -- that refusal has to land before anything is
+        // written, and it costs three `git` subprocesses that a read has
+        // already been excused from paying.
+        let mut ws = Self::open_read_only(cwd).await?;
+        ws.anchor = Some(Anchor::Workspace(ws.git.genesis()?));
+        Ok(ws)
+    }
 
-        // #141: resolve the git substrate BEFORE touching identity.
-        //
-        // Both are prerequisites, but only one of them writes. Opening the
-        // anchor first means a repo that cannot host a workspace at all --
-        // no commits, so no root commit to derive an identity from -- is
-        // refused before `.kan/` exists and before a keypair is minted. The
-        // reported symptom was a keychain notice printed *first*, implying
-        // things were working, followed by a raw `git rev-list` failure; the
-        // notice was true, which was the problem.
-        //
-        // It also narrows #149: in this one case a failed read no longer
-        // leaves a workspace behind. v0.11 closes the general form --
-        // `open_read_only` below -- and this ordering is what it was built on.
-        //
-        // The anchor is still resolved eagerly HERE, on the write path, and
-        // deliberately: #141's refusal (a repo with no commits cannot host a
-        // workspace) has to land before a keypair is minted, and `genesis()`
-        // is what detects it. What v0.11 removes is paying for it on reads,
-        // which never consult it.
-        let git = GitSubstrate::open(&root)?;
-        let anchor = Some(Anchor::Workspace(git.genesis()?));
+    /// Bring this workspace's identity into existence, if it does not have
+    /// one yet, and make the stores writable.
+    ///
+    /// **The moment a workspace becomes real.** Called immediately before the
+    /// first append and after every validation, so a command that is going to
+    /// be refused is refused while the repo still looks untouched: no key, no
+    /// `seed-id`, no `identity-id`, no `.kan/` (REQ-3).
+    ///
+    /// **Persist before the append, not after.** REQ-3's text says "only
+    /// after the write it was minted for has succeeded", and that order is
+    /// the dangerous one: a failure between the append and the persist leaves
+    /// a claim signed by a key nothing on disk holds, after which the ADR-77
+    /// guard fires and the log is unreadable *and* the key unrecoverable.
+    /// Failing the other way round leaves an identity with an empty log,
+    /// which is exactly what `kan identity did` produces and costs nothing.
+    /// The property REQ-3 is for is its second sentence -- a refused write
+    /// leaves nothing behind -- and this order delivers it with no hazard.
+    ///
+    /// Idempotent, so every write verb can call it without tracking whether
+    /// somebody already did.
+    pub async fn commit_identity(&mut self) -> Result<(), Error> {
+        if self.identity.is_some() {
+            return Ok(());
+        }
+        let kan_dir = self.root.join(".kan");
 
+        // Resolving and persisting stay one step, inside `sign.rs`, because
+        // they genuinely are one step: a minted-but-unpersisted key is a
+        // hazardous state in its own right, and the defect was never that
+        // they were coupled -- only that they ran too early.
         let identity = Identity::load_or_create_for_workspace(&kan_dir)?;
-        let mut log = Log::open_or_create(&kan_dir.join("log"), &identity).await?;
-        let mut overlay = Log::open_or_create(&kan_dir.join("overlay"), &identity).await?;
-        let mut index = Index::open(&kan_dir.join("index.sqlite"))?;
 
-        // REQ-1: a published tree is actually consumed. `GitTree::read_all`
-        // already returned byte-complete, signature-verified records and had
-        // no caller anywhere outside its own tests (#97) — this is that
-        // caller.
-        let mut published = ingest_published(&root, &identity, &log, &mut overlay).await?;
+        // Now the stores can be writable, which is also where `.kan/` comes
+        // into existence.
+        self.log = Log::open_or_create(&kan_dir.join("log"), &identity).await?;
+        self.overlay = Log::open_or_create(&kan_dir.join("overlay"), &identity).await?;
+        self.index = Index::open(&kan_dir.join("index.sqlite"))?;
+        self.published =
+            ingest_published(&self.root, &identity, &self.log, &mut self.overlay).await?;
 
-        // Correctness-first (CLAUDE.md house rules), with one cheap,
-        // provably-safe skip (issue #26, `.design/v0.4-milestone.md`
-        // REQ-5): `Log::current_root` is already resident in memory (no
-        // I/O, no MST walk) from `open_or_create` above. When it matches
-        // what the index was last `rebuild`t from, content-addressing
-        // guarantees the log genuinely hasn't changed a single bit since
-        // then — not "probably fresh," provably fresh — so `iter_all`'s
-        // per-claim signature verification (ADR-13's dominant cost) can be
-        // skipped entirely. Any mismatch (or a fresh/recreated index with
-        // no recorded root yet) falls back to exactly the prior
-        // unconditional full rebuild; incremental *indexing* (partial
-        // updates rather than skip-or-full-rebuild) stays a later
-        // optimization, deliberately not what this is.
-        let mut current_root = index_fingerprint(
-            log.current_root(),
-            overlay.current_root(),
-            published.content_hash.as_deref(),
-        );
-        if current_root != index.built_from_root()? {
-            let claims = log.iter_all().await?;
-            let mut overlay_claims = overlay.iter_all().await?;
+        // #150's repair, which lives here because this is where the overlay
+        // is written and therefore the first moment it CAN be repaired.
+        //
+        // A read cannot do this -- rebuilding the overlay means re-ingesting
+        // `.claims/`, which needs a key to sign the commits with -- and does
+        // not need to: `open_read_only` simply declines to project the
+        // duplicates, so a poisoned workspace still reads correctly and
+        // completely. Reading stopped being the thing that breaks; this is
+        // where it stops being the thing that heals.
+        //
+        // Loud, not silent. #146's warning against tidying this away was
+        // about deduping at the INDEX, which would let a workspace open under
+        // a wrong identity and report "no subjects yet" against a full log.
+        // This repairs the store rather than papering over the read, and says
+        // so, because a store that quietly rearranges itself is not one
+        // anybody can reason about.
+        let log_claims = self.log.iter_all().await?;
+        if overlapping(&log_claims, &self.overlay.iter_all().await?).is_some() {
+            eprintln!(
+                "warning: this workspace's overlay held claims the log already had, which \
+                 is the corruption in issue #150 -- one read under a role identity, in a \
+                 workspace that had published its own claims.\n\
+                 \n\
+                 Rebuilding the overlay from .claims/. Nothing is lost: the overlay is \
+                 derived, and the log was never touched."
+            );
+            let overlay_dir = kan_dir.join("overlay");
+            std::fs::remove_dir_all(&overlay_dir)?;
+            self.overlay = Log::open_or_create(&overlay_dir, &identity).await?;
+            self.published =
+                ingest_published(&self.root, &identity, &self.log, &mut self.overlay).await?;
 
-            // #150: recover a workspace already poisoned by the defect above,
-            // rather than only declining to poison a fresh one.
-            //
-            // Skipping log-resident records at ingest stops this state being
-            // *created*. It does nothing for the workspaces that already have
-            // it -- and there, one bad read had made every subsequent command
-            // fail, as the primary identity too, permanently. A fix that
-            // leaves those unopenable fixes the defect and not the damage.
-            //
-            // Healing is safe here for a documented reason: the overlay is
-            // *disposable*. Everything in it is reconstructible from
-            // `.claims/`, which is why deleting it costs nothing but a
-            // re-parse. So the repair is to discard and rebuild it, which is
-            // exactly what the issue's reporter did by hand
-            // (`rm -rf .kan/overlay .kan/index.sqlite`).
-            //
-            // It is loud, not silent. #146's warning against tidying this away
-            // was about *deduping at the index*, which would have let a
-            // workspace open under a wrong identity and report "no subjects
-            // yet" against a full log. That cause is now blocked by the guard
-            // in `sign.rs`, and this repairs the store rather than papering
-            // over the read -- but it still says so, because a store that
-            // quietly rearranges itself is not one anybody can reason about.
-            if overlapping(&claims, &overlay_claims).is_some() {
-                eprintln!(
-                    "warning: this workspace's overlay held claims the log already had, which \
-                     is the corruption in issue #150 -- one read under a role identity, in a \
-                     workspace that had published its own claims.\n\
-                     \n\
-                     Rebuilding the overlay from .claims/. Nothing is lost: the overlay is \
-                     derived, and the log was never touched."
-                );
-
-                let overlay_dir = kan_dir.join("overlay");
-                std::fs::remove_dir_all(&overlay_dir)?;
-                overlay = Log::open_or_create(&overlay_dir, &identity).await?;
-                published = ingest_published(&root, &identity, &log, &mut overlay).await?;
-                overlay_claims = overlay.iter_all().await?;
-                current_root = index_fingerprint(
-                    log.current_root(),
-                    overlay.current_root(),
-                    published.content_hash.as_deref(),
-                );
-
-                // Rebuilt and still overlapping means the repair did not hold,
-                // and continuing would hand sqlite the same duplicate. The
-                // assertion stays for that case: it should be unreachable, and
-                // if it is reached it names the condition rather than a
-                // constraint violation.
-                if let Some(first) = overlapping(&claims, &overlay_claims) {
-                    return Err(Error::LogOverlayOverlap {
-                        count: overlay_claims
-                            .iter()
-                            .filter(|(c, _)| claims.iter().any(|(l, _)| l == c))
-                            .count(),
-                        first: first.to_string(),
-                        did: identity.did().to_string(),
-                    });
-                }
+            // Rebuilt and still overlapping means the repair did not hold,
+            // and continuing would hand sqlite the same duplicate. It should
+            // be unreachable; if it is reached it names the condition rather
+            // than a constraint violation.
+            let overlay_claims = self.overlay.iter_all().await?;
+            if let Some(first) = overlapping(&log_claims, &overlay_claims) {
+                return Err(Error::LogOverlayOverlap {
+                    count: overlay_claims
+                        .iter()
+                        .filter(|(c, _)| log_claims.iter().any(|(l, _)| l == c))
+                        .count(),
+                    first: first.to_string(),
+                    did: identity.did().to_string(),
+                });
             }
-
-            // Kept apart rather than concatenated: the projection records
-            // which store each claim came from, because `TrustBase::Local`
-            // is the log's authors and nobody else's, and once these are one
-            // vector that distinction is unrecoverable.
-            index.rebuild(&claims, &overlay_claims, current_root.as_ref())?;
         }
 
-        Ok(Self {
-            root,
-            identity: Some(identity),
-            log,
-            overlay,
-            index,
-            anchor,
-            git,
-            published,
-        })
+        self.identity = Some(identity);
+        self.reproject().await?;
+        Ok(())
     }
 
     /// Open for reading: **no identity is resolved, derived or persisted, and
@@ -521,7 +492,11 @@ impl Workspace {
     /// [`Self::identity`] borrows the whole `Workspace`. Splitting the borrow
     /// here keeps that a detail of this module rather than a reason to make
     /// the identity field public again.
-    pub fn log_and_identity(&mut self) -> Result<(&mut Log, &Identity), Error> {
+    pub async fn log_and_identity(&mut self) -> Result<(&mut Log, &Identity), Error> {
+        // The single place a write acquires an identity, so "resolve it as
+        // late as possible" is enforced by there being nowhere earlier to do
+        // it (REQ-3).
+        self.commit_identity().await?;
         let identity = self.identity.as_ref().ok_or(Error::NoIdentity)?;
         Ok((&mut self.log, identity))
     }
@@ -620,8 +595,8 @@ impl Workspace {
     }
 
     /// Resolve `--trust` arguments into the base a read folds under. No
-    /// arguments means [`Self::solo_trust`] — the default is unchanged, and
-    /// only an explicit request moves off it.
+    /// arguments means [`Self::local_trust`] — every author that has written
+    /// into this workspace's log — and only an explicit request moves off it.
     ///
     /// **Per-invocation by construction.** Nothing here reads or writes
     /// workspace state, so two reads in one session can name different
