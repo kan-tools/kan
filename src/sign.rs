@@ -188,10 +188,8 @@ impl Identity {
                     path,
                     "KAN_NO_KEYCHAIN, with no key file to fall back on",
                     "Unset KAN_NO_KEYCHAIN so kan can read the key from the OS keychain, or \
-                     point KAN_IDENTITY_FILE at the existing key file. If the key is in a file, adopt it with `KAN_IDENTITY_FILE=<path> kan identity \
-                     adopt --key <path>`, naming the same path twice -- adopt has to open the \
-                     workspace before it can repoint it, and this guard is what it would \
-                     otherwise trip on.",
+                     point KAN_IDENTITY_FILE at the existing key file. If the key is in a file, adopt it with `kan identity adopt \
+                     --key <path>`.",
                 )?;
             }
             return Self::load_or_create_plaintext(path);
@@ -268,10 +266,8 @@ impl Identity {
                              this workspace and no key file exists either",
                             "Do not write with this workspace until the original key is \
                              back. If the keychain entry is merely unreadable — a rebuilt \
-                             binary, a locked keychain — fix that and retry. If the key is in a file, adopt it with `KAN_IDENTITY_FILE=<path> kan identity \
-                     adopt --key <path>`, naming the same path twice -- adopt has to open the \
-                     workspace before it can repoint it, and this guard is what it would \
-                     otherwise trip on.",
+                             binary, a locked keychain — fix that and retry. If the key is in a file, adopt it with `kan identity adopt \
+                     --key <path>`.",
                         )?;
                         Self::generate()
                     }
@@ -470,10 +466,8 @@ impl Identity {
             &key_path,
             "seed-rooting this workspace, which has no identity file but a non-empty log",
             "This workspace had an identity and no longer has one on disk. Point \
-             KAN_IDENTITY_FILE at the existing key file if you have it. If the key is in a file, adopt it with `KAN_IDENTITY_FILE=<path> kan identity \
-                     adopt --key <path>`, naming the same path twice -- adopt has to open the \
-                     workspace before it can repoint it, and this guard is what it would \
-                     otherwise trip on.",
+             KAN_IDENTITY_FILE at the existing key file if you have it. If the key is in a file, adopt it with `kan identity adopt \
+                     --key <path>`.",
         )?;
 
         Seed::create(kan_dir)?.signing_identity()

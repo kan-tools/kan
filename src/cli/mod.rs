@@ -817,9 +817,6 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             unreachable!("read verbs are dispatched by `is_read_only`")
         }
         Command::Identity { action } => match action {
-            IdentityAction::Authors { json } => {
-                print!("{}", actions::authors(&ws, json)?)
-            }
             IdentityAction::Did => println!("{}", ws.identity()?.did()),
             IdentityAction::EncryptionKey => {
                 println!("{}", ws.identity()?.encryption_key().public_hex())
@@ -915,11 +912,8 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                     }
                 }
             }
-            IdentityAction::Adopt { key } => {
-                print!(
-                    "{}",
-                    actions::adopt_identity(&ws, &std::path::PathBuf::from(key))?
-                )
+            IdentityAction::Adopt { .. } | IdentityAction::Authors { .. } => {
+                unreachable!("dispatched read-only by `is_read_only`")
             }
             IdentityAction::Role { action } => match action {
                 RoleAction::Add { name, key } => {
@@ -1031,12 +1025,37 @@ fn is_read_only(command: &Command) -> bool {
             | Command::Status { .. }
             | Command::Issues { .. }
             | Command::Context { .. }
+            // Neither of these resolves an identity, and both are commands
+            // you reach for precisely when the identity IS the problem.
+            //
+            // `adopt` is #153: it repoints the workspace at a key it already
+            // has claims from, and taking a writable `&Workspace` meant
+            // `Workspace::open` — and with it identity resolution — had to
+            // succeed first. In the state adopt exists to repair, that trips
+            // the very guard adopt is the remedy for. It needs the index and
+            // the root, and nothing else.
+            //
+            // `identity authors` is the same shape: it reports which log
+            // authors were never declared, which is the #90/#136 diagnostic.
+            // Requiring a resolvable identity to run it would make it refuse
+            // in exactly the workspace it exists to explain.
+            | Command::Identity {
+                action: IdentityAction::Adopt { .. } | IdentityAction::Authors { .. }
+            }
     )
 }
 
 /// The read verbs, against a workspace opened without an identity.
 fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
     match command {
+        Command::Identity { action } => match action {
+            IdentityAction::Adopt { key } => print!(
+                "{}",
+                actions::adopt_identity(ws, &std::path::PathBuf::from(key))?
+            ),
+            IdentityAction::Authors { json } => print!("{}", actions::authors(ws, json)?),
+            other => unreachable!("{other:?} is not a read-only identity action"),
+        },
         Command::Show {
             subject,
             all,
