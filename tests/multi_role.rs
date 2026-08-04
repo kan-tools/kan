@@ -254,11 +254,22 @@ fn the_default_read_shows_every_role_where_trust_me_shows_one() {
     assert_eq!(authors.len(), 2, "both claims share one author: {all}");
 }
 
-/// `--trust roles` includes the **active** identity, not only the declared
-/// roles. Leaving it out would make the obvious command quietly drop the
-/// caller's own claims — a smaller instance of the bug this milestone fixes.
+/// `--trust roles` returns the primary's claims as well as the declared
+/// role's — and since v0.11 the reason matters, because it changed.
+///
+/// ADR-61 made `roles` expand to the declared set **plus the active
+/// identity**, so that "show me everything this workspace's own identities
+/// wrote" would not quietly drop the caller's own claims. v0.11 removes that
+/// injection (REQ-5): `roles` is now exactly what `.kan/roles` declares.
+///
+/// The property still holds, and this test's old comment said it held for a
+/// reason that was never true: it claimed the primary "is not itself a
+/// declared role". It is — `kan identity role add` registers the primary
+/// alongside the new role, so the registry is complete rather than
+/// describing only the non-primary identities. That auto-declaration is what
+/// carries ADR-61's concern now, and it is the thing this pins.
 #[test]
-fn trust_roles_includes_the_active_identity() {
+fn trust_roles_returns_the_auto_declared_primary_too() {
     let dir = workspace_with_claims(); // primary identity wrote "shared"
     let key = dir.path().join("keys/director");
     let add = kan_as(
@@ -281,7 +292,7 @@ fn trust_roles_includes_the_active_identity() {
     );
     assert!(write.ok);
 
-    // Read as the *primary* identity, which is not itself a declared role.
+    // Read as the primary identity, which `role add` declared above.
     let all = kan_as(
         dir.path(),
         None,
@@ -292,7 +303,7 @@ fn trust_roles_includes_the_active_identity() {
     assert_eq!(
         all["claims"].as_array().unwrap().len(),
         2,
-        "`--trust roles` dropped the active identity's own claims: {all}"
+        "`--trust roles` dropped the auto-declared primary's claims: {all}"
     );
 }
 

@@ -639,10 +639,34 @@ impl Workspace {
     /// wanting a role hierarchy rather than a flat union names the DIDs and
     /// weights explicitly.
     pub fn role_trust_entries(&self) -> Result<Vec<(String, f64)>, Error> {
-        let mut out = vec![(self.active_did()?, 1.0)];
-        for role in crate::sign::list_roles(&self.root.join(".kan"))? {
-            out.push((role.did, 1.0));
-        }
+        Ok(crate::sign::list_roles(&self.root.join(".kan"))?
+            .into_iter()
+            .map(|role| (role.did, 1.0))
+            .collect())
+    }
+
+    /// Authors with a claim in this log that no `.kan/roles` entry declares —
+    /// `local` minus `roles` (`.design/identity-surface.md` REQ-9).
+    ///
+    /// The signal that an unexpected identity has written here, as **data**
+    /// rather than as an absence. #90 and #136 both present as "some claims
+    /// are missing from a view", which is the hardest shape to act on; this
+    /// is the same fact stated positively, and it is only computable because
+    /// `Local` made log membership derivable and `roles` narrowed to mean
+    /// what it says.
+    pub fn undeclared_log_authors(&self) -> Result<Vec<AuthorId>, Error> {
+        let declared: std::collections::HashSet<String> =
+            crate::sign::list_roles(&self.root.join(".kan"))?
+                .into_iter()
+                .map(|role| role.did)
+                .collect();
+        let mut out: Vec<AuthorId> = self
+            .index
+            .log_authors()?
+            .into_iter()
+            .filter(|author| !declared.contains(&author.did))
+            .collect();
+        out.sort_by(|a, b| (&a.did, &a.agent).cmp(&(&b.did, &b.agent)));
         Ok(out)
     }
 
@@ -661,6 +685,23 @@ impl Workspace {
         if specs.is_empty() {
             return self.local_trust();
         }
+        // A lone `me` is `Solo` -- the same base the default used to be, and
+        // the narrow frame REQ-5 keeps nameable. Combined with anything else
+        // it is just one author among several, so `PeerContested` is right
+        // and this special case does not apply.
+        // Naming the default explicitly means the default, base and all --
+        // otherwise `--trust local` and no argument at all would report
+        // different frames for identical views.
+        if specs.len() == 1 && specs[0] == crate::fold::trust::LOCAL_ALIAS {
+            return self.local_trust();
+        }
+        if specs.len() == 1 && specs[0] == crate::fold::trust::SELF_ALIAS {
+            return Ok(TrustBase::solo(AuthorId {
+                did: self.active_did()?,
+                agent: None,
+            }));
+        }
+
         let mut weights = std::collections::HashMap::new();
         for spec in specs {
             if spec == crate::fold::trust::ROLES_ALIAS {
@@ -669,7 +710,39 @@ impl Workspace {
                 }
                 continue;
             }
+            if spec == crate::fold::trust::LOCAL_ALIAS {
+                // Whole `AuthorId`s, agent included -- a legacy
+                // `KAN_AGENT` author is a member of `local` on the same
+                // footing as any other, because it wrote here (REQ-7).
+                for author in self.index.log_authors()? {
+                    weights.insert(author, 1.0);
+                }
+                continue;
+            }
             let entry = crate::fold::trust::parse_entry(spec)?;
+            if let Some(name) = entry.did.strip_prefix(crate::fold::trust::ROLE_PREFIX) {
+                let roles = crate::sign::list_roles(&self.root.join(".kan"))?;
+                let found = roles.iter().find(|role| role.name == name);
+                let did = match found {
+                    Some(role) => role.did.clone(),
+                    None => {
+                        return Err(crate::fold::trust::SpecError::NoSuchRole {
+                            spec: spec.to_string(),
+                            declared: match roles.is_empty() {
+                                true => "none declared".to_string(),
+                                false => roles
+                                    .iter()
+                                    .map(|r| r.name.clone())
+                                    .collect::<Vec<_>>()
+                                    .join(", "),
+                            },
+                        }
+                        .into())
+                    }
+                };
+                weights.insert(AuthorId { did, agent: None }, entry.weight);
+                continue;
+            }
             let did = if entry.did == crate::fold::trust::SELF_ALIAS {
                 // `--trust me` names the active identity, so it genuinely
                 // needs one -- and on a read-only workspace there is none.

@@ -68,10 +68,35 @@ pub enum TrustBase {
 /// itself plus its peers.
 pub const SELF_ALIAS: &str = "me";
 
-/// The literal expanding to every identity this workspace declared, plus the
-/// active one — resolved by `Workspace`, which is the only layer that knows
-/// what a workspace has on disk. `fold` never reads a file.
+/// The literal expanding to every identity this workspace **declared** —
+/// resolved by `Workspace`, which is the only layer that knows what a
+/// workspace has on disk. `fold` never reads a file.
+///
+/// **A narrowing since v0.11, not a widening.** ADR-61 made this include the
+/// active identity, because omitting it gave the wrong answer to the obvious
+/// question — "show me everything this workspace's own identities wrote"
+/// would quietly drop the caller's own claims. Under `Local` the *default*
+/// answers that question, so `roles` is free to mean exactly what its name
+/// says: only the identities somebody declared.
+///
+/// That is what makes `local` minus `roles` meaningful: the authors present
+/// in this log but never declared — the #90/#136 anomaly as data rather than
+/// as an absence (`.design/identity-surface.md` RQ-3, REQ-9).
 pub const ROLES_ALIAS: &str = "roles";
+
+/// The literal for the default base itself: every author with a claim in
+/// `.kan/log`. Spelling it explicitly matters for composition — `--trust
+/// local --trust did:key:...` is "everyone who has written here, plus this
+/// one stranger", which is otherwise unsayable.
+pub const LOCAL_ALIAS: &str = "local";
+
+/// Prefix naming **one** declared role: `role:director`.
+///
+/// Roles are declared with a human name and `.kan/roles` is the only binding
+/// from that name to a `did:key:...`. Without this, framing a read around one
+/// role means pasting a 56-character DID that the workspace already knows the
+/// name of.
+pub const ROLE_PREFIX: &str = "role:";
 
 /// One parsed `--trust` argument: who, and how much.
 #[derive(Debug, Clone, PartialEq)]
@@ -90,14 +115,16 @@ pub enum SpecError {
     WeightOutOfRange { spec: String, weight: f64 },
     #[error(
         "`{spec}` does not name an author -- expected `did:key:...`, \
-         `did:key:...=<weight>`, `me`, or `roles`"
+         `did:key:...=<weight>`, `me`, `local`, `roles`, or `role:<name>`"
     )]
     NotAnAuthor { spec: String },
     #[error(
-        "`{spec}`: `roles` expands to every declared role and takes no weight. \
+        "`{spec}`: `{alias}` expands to a set of authors and takes no weight. \
          Name the DIDs individually to weight them differently."
     )]
-    RolesTakesNoWeight { spec: String },
+    SetTakesNoWeight { spec: String, alias: String },
+    #[error("`{spec}` names no role. Declared roles: {declared}")]
+    NoSuchRole { spec: String, declared: String },
 }
 
 /// Parses `did:key:z...`, `did:key:z...=0.5`, `me`, or `me=0.5`. An omitted
@@ -129,12 +156,25 @@ pub fn parse_entry(spec: &str) -> Result<TrustEntry, SpecError> {
         None => (spec.trim(), 1.0),
     };
 
-    // `roles` is resolved by `Workspace` before it ever reaches here, so
-    // seeing it at this point means it arrived with a weight (`roles=0.5`),
-    // which has no meaning: the alias expands to a set, not one author.
-    if did == ROLES_ALIAS {
-        return Err(SpecError::RolesTakesNoWeight {
-            spec: spec.to_string(),
+    // The set-valued aliases are resolved by `Workspace` before they ever
+    // reach here, so seeing one at this point means it arrived with a weight
+    // (`roles=0.5`), which has no meaning: they expand to a set, not to one
+    // author.
+    for alias in [ROLES_ALIAS, LOCAL_ALIAS] {
+        if did == alias {
+            return Err(SpecError::SetTakesNoWeight {
+                spec: spec.to_string(),
+                alias: alias.to_string(),
+            });
+        }
+    }
+    if did.starts_with(ROLE_PREFIX) {
+        // Also `Workspace`'s to resolve -- it is the only layer that reads
+        // `.kan/roles` -- but a weight on it is meaningful, since it names
+        // exactly one author.
+        return Ok(TrustEntry {
+            did: did.to_string(),
+            weight,
         });
     }
     if did != SELF_ALIAS && !did.starts_with("did:") {
