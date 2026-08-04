@@ -187,3 +187,50 @@ fn a_read_creates_no_workspace() {
         );
     }
 }
+
+/// v0.11 REQ-3 / AC-9: a write refused for a bad subject name leaves no
+/// newly-persisted key, no `seed-id`, no `identity-id` — and no `.kan/`.
+///
+/// #144's check lived inside `append`, which runs *after* `Workspace::open`.
+/// So `kan observe x --subject $'bad\nname'` in a fresh repo minted a signing
+/// key and created a workspace on its way to refusing, for a command that
+/// wrote nothing. Same ordering defect ADR-82 names — validate before acting
+/// — reached by a third route after #141 and #146.
+#[test]
+fn a_write_refused_for_its_subject_name_mints_nothing() {
+    let dir = git_repo(true);
+    let key = dir.path().join("key");
+
+    let (_, err, ok) = kan(
+        dir.path(),
+        &key,
+        &["observe", "x", "--subject", "bad\nname"],
+    );
+
+    assert!(!ok, "an invalid subject name was accepted");
+    assert!(
+        err.contains("control character"),
+        "the refusal should say what was wrong: {err}"
+    );
+    assert!(
+        !key.exists(),
+        "a refused write minted a signing key -- REQ-3: a minted identity is persisted \
+         only after the write it was minted for has succeeded"
+    );
+    assert!(
+        !dir.path().join(".kan").exists(),
+        "a refused write created a workspace: {:?}",
+        std::fs::read_dir(dir.path().join(".kan"))
+            .map(|d| d.flatten().map(|e| e.file_name()).collect::<Vec<_>>())
+            .unwrap_or_default()
+    );
+
+    // The check has to stay in `append` as well, since that is the single
+    // choke point every write verb reaches -- this is an earlier refusal,
+    // never the only one. A legitimate write still works afterwards.
+    let (_, err, ok) = kan(dir.path(), &key, &["observe", "real", "--subject", "fine"]);
+    assert!(
+        ok,
+        "a legitimate write was broken by the early check: {err}"
+    );
+}
