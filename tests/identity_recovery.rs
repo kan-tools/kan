@@ -73,10 +73,31 @@ fn a_mistyped_phrase_is_rejected_rather_than_silently_giving_another_key() {
 }
 
 /// Word order matters, and reversing it must not quietly yield a key.
+///
+/// **A fixed phrase, not a generated one, and that is a bug fix.** This
+/// generated a fresh identity each run and reversed its words. BIP-39's
+/// checksum is 8 bits over a 24-word phrase, so a reversal it happens not to
+/// catch is a 1-in-256 event — the test failed roughly every 256 runs, on a
+/// property that was never in doubt. Found when it fired in a full-suite run
+/// during v0.11.
+///
+/// The phrase below is a real one whose reversal is *verified* to fail its
+/// checksum, so this tests the mechanism deterministically. What it cannot
+/// test is the 255/256 — that is a property of BIP-39, not of kan, and a
+/// randomised test asserting it as if it were certain is how you get a suite
+/// that cries wolf.
 #[test]
 fn a_reordered_phrase_is_rejected() {
-    let identity = Identity::generate();
-    let phrase = recovery_phrase(&identity).unwrap();
+    let phrase = "huge similar size foam escape any exhibit forward color bounce horror \
+                  convince deny olympic grain garment ill embark strike during father mix \
+                  brown solid";
+    // The fixture has to be a phrase that restores, or the assertion below
+    // would pass for the wrong reason.
+    assert!(
+        from_recovery_phrase(phrase).is_ok(),
+        "the fixture phrase should itself be valid"
+    );
+
     let mut words: Vec<&str> = phrase.split_whitespace().collect();
     words.reverse();
     assert!(

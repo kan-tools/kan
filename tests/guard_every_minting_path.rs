@@ -295,10 +295,19 @@ fn the_remedy_the_refusal_names_actually_runs() {
         refused.stderr
     );
 
-    // Exactly what the message says: name the same path twice.
+    // v0.11 AC-4 / REQ-4: with `KAN_IDENTITY_FILE` **unset**.
+    //
+    // The old remedy was "name the same path twice" -- adopt had to open a
+    // writable workspace before it could repoint anything, so it tripped the
+    // very guard it is the remedy for, and the only way past was to hand it
+    // the answer first. That was a remedy you could only run if you already
+    // knew what it was going to tell you.
+    //
+    // Adopt now opens read-only: it needs the index and the root, and no
+    // identity at all. The workaround is gone rather than documented.
     let adopted = kan(
         dir.path(),
-        Some(&key),
+        None,
         true,
         &["identity", "adopt", "--key", key.to_str().unwrap()],
     );

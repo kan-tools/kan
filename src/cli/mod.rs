@@ -621,6 +621,21 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         return Ok(());
     }
 
+    // #144's subject-name check runs BEFORE any workspace is opened, so a
+    // refused name cannot mint an identity or create `.kan/` on its way to
+    // being refused (REQ-3, and ADR-82's ordering rule: validate before
+    // acting). It was inside `append`, which is after `Workspace::open` --
+    // so `kan observe x --subject $'bad\nname'` in a fresh repo left a
+    // signing key and a workspace behind, for a command that wrote nothing.
+    //
+    // Checked here rather than moved out of `append`: `append` is the single
+    // choke point every write verb reaches, and a check on some of them is a
+    // check on none (#144). This is a second, earlier check, not a
+    // relocation.
+    if let Some(subject) = declared_subject(&cli.command) {
+        actions::validate_subject_name(&subject)?;
+    }
+
     // Read verbs open READ-ONLY, which is the milestone in one branch
     // (`.design/identity-surface.md` REQ-2): no identity is resolved,
     // derived or persisted, and no anchor is computed. Routing it here
@@ -817,9 +832,6 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             unreachable!("read verbs are dispatched by `is_read_only`")
         }
         Command::Identity { action } => match action {
-            IdentityAction::Authors { json } => {
-                print!("{}", actions::authors(&ws, json)?)
-            }
             IdentityAction::Did => println!("{}", ws.identity()?.did()),
             IdentityAction::EncryptionKey => {
                 println!("{}", ws.identity()?.encryption_key().public_hex())
@@ -915,11 +927,8 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                     }
                 }
             }
-            IdentityAction::Adopt { key } => {
-                print!(
-                    "{}",
-                    actions::adopt_identity(&ws, &std::path::PathBuf::from(key))?
-                )
+            IdentityAction::Adopt { .. } | IdentityAction::Authors { .. } => {
+                unreachable!("dispatched read-only by `is_read_only`")
             }
             IdentityAction::Role { action } => match action {
                 RoleAction::Add { name, key } => {
@@ -1031,12 +1040,37 @@ fn is_read_only(command: &Command) -> bool {
             | Command::Status { .. }
             | Command::Issues { .. }
             | Command::Context { .. }
+            // Neither of these resolves an identity, and both are commands
+            // you reach for precisely when the identity IS the problem.
+            //
+            // `adopt` is #153: it repoints the workspace at a key it already
+            // has claims from, and taking a writable `&Workspace` meant
+            // `Workspace::open` — and with it identity resolution — had to
+            // succeed first. In the state adopt exists to repair, that trips
+            // the very guard adopt is the remedy for. It needs the index and
+            // the root, and nothing else.
+            //
+            // `identity authors` is the same shape: it reports which log
+            // authors were never declared, which is the #90/#136 diagnostic.
+            // Requiring a resolvable identity to run it would make it refuse
+            // in exactly the workspace it exists to explain.
+            | Command::Identity {
+                action: IdentityAction::Adopt { .. } | IdentityAction::Authors { .. }
+            }
     )
 }
 
 /// The read verbs, against a workspace opened without an identity.
 fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
     match command {
+        Command::Identity { action } => match action {
+            IdentityAction::Adopt { key } => print!(
+                "{}",
+                actions::adopt_identity(ws, &std::path::PathBuf::from(key))?
+            ),
+            IdentityAction::Authors { json } => print!("{}", actions::authors(ws, json)?),
+            other => unreachable!("{other:?} is not a read-only identity action"),
+        },
         Command::Show {
             subject,
             all,
@@ -1120,4 +1154,51 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
         other => unreachable!("{other:?} is not a read verb"),
     }
     Ok(())
+}
+
+/// The subject a write command names, if it names one — for validating it
+/// before anything is opened or minted.
+///
+/// Mirrors `subject_and_text`'s positional-or-flag rule rather than
+/// reimplementing it: when a second positional is present the first is the
+/// subject, otherwise `--subject` is. A command whose subject cannot be
+/// determined here returns `None` and is checked by `append` as before —
+/// this is an early refusal, never the only one.
+fn declared_subject(command: &Command) -> Option<String> {
+    let (first, second, flag) = match command {
+        Command::Observe(a) | Command::Plan(a) | Command::Decide(a) => {
+            (Some(&a.first), a.second.as_ref(), a.subject.as_ref())
+        }
+        Command::Block {
+            first,
+            second,
+            subject,
+            ..
+        }
+        | Command::Resolve {
+            first,
+            second,
+            subject,
+            ..
+        }
+        | Command::Result {
+            first,
+            second,
+            subject,
+            ..
+        } => (Some(first), second.as_ref(), subject.as_ref()),
+        Command::Mark { subject, .. }
+        | Command::Publish {
+            subject: Some(subject),
+            ..
+        } => return Some(subject.clone()),
+        _ => return None,
+    };
+    match (second, flag) {
+        (Some(_), None) => first.cloned(),
+        (None, Some(flag)) => Some(flag.clone()),
+        // Both or neither: `subject_and_text` has its own answer for these,
+        // and duplicating it here would be a second place to get it wrong.
+        _ => None,
+    }
 }

@@ -247,7 +247,7 @@ fn parse_file_artifact(raw: &str, head_sha: &crate::claim::Sha) -> ArtifactRef {
 /// in active use — `telos/raw-data-and-projections`, `schema/design-doc`.
 /// Only C0 controls and DEL are refused, because only they are unrepresentable
 /// rather than merely unusual.
-fn validate_subject_name(rkey: &str) -> Result<(), Error> {
+pub fn validate_subject_name(rkey: &str) -> Result<(), Error> {
     if let Some(ch) = rkey.chars().find(|c| c.is_control()) {
         let shown: String = rkey.chars().take(60).collect();
         return Err(Error::Usage(format!(
