@@ -911,8 +911,17 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
         )));
     }
 
-    ws.commit_identity().await?;
-    let mine = ws.identity()?.did();
+    // Resolved WITHOUT creating: `restore` decides what is restorable by
+    // comparing against this workspace's identity, and minting one first
+    // makes that comparison meaningless -- a fresh key matches nothing, so
+    // the command reports "nothing here was signed by this repo's identity"
+    // about an identity it invented one line earlier, and leaves it on disk.
+    //
+    // That is the exact failure `restore`'s own doc describes ("a
+    // freshly-minted identity reads it as someone else's"), reached by the
+    // code meant to avoid it, and it broke REQ-3/AC-9 on the one path where
+    // a wrongly-persisted identity is most expensive.
+    let mine = ws.active_did()?;
     let tree = crate::transport::git_tree::GitTree::new_reader(&ws.root);
     let mut restorable = Vec::new();
     let mut foreign_authors: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -943,6 +952,10 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
             &unreadable,
         )));
     }
+
+    // Something IS restorable, so the workspace is genuinely this
+    // identity's and may now come into existence (REQ-3).
+    ws.commit_identity().await?;
 
     let mut restored = 0usize;
     let mut already = 0usize;

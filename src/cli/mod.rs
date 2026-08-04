@@ -632,7 +632,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
     // choke point every write verb reaches, and a check on some of them is a
     // check on none (#144). This is a second, earlier check, not a
     // relocation.
-    if let Some(subject) = declared_subject(&cli.command) {
+    for subject in declared_subjects(&cli.command) {
         actions::validate_subject_name(&subject)?;
     }
 
@@ -1175,6 +1175,29 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
 /// subject, otherwise `--subject` is. A command whose subject cannot be
 /// determined here returns `None` and is checked by `append` as before —
 /// this is an early refusal, never the only one.
+fn declared_subjects(command: &Command) -> Vec<String> {
+    // `same` and `relate` name TWO subjects, and `append` only ever validates
+    // the one the claim is about -- so the second went unchecked, and #144's
+    // reported symptom came back verbatim on the CLI:
+    //
+    //     $ kan same good $'bad\nname'      # accepted
+    //     $ kan status --json | jq '[.subjects[].subject]'
+    //     ["bad\nname"]
+    //
+    // Worse than the original: the merge class then DISPLAYS under the bad
+    // name, so the good subject disappears from `status` entirely. MCP
+    // validated both all along, so this was a property of one surface out of
+    // two -- the shape "one surface: CLI + MCP" exists to prevent, inverted
+    // rather than closed.
+    if let Command::Same { a, b, .. } = command {
+        return vec![a.clone(), b.clone()];
+    }
+    if let Command::Relate { a, b, .. } = command {
+        return vec![a.clone(), b.clone()];
+    }
+    declared_subject(command).into_iter().collect()
+}
+
 fn declared_subject(command: &Command) -> Option<String> {
     let (first, second, flag) = match command {
         Command::Observe(a) | Command::Plan(a) | Command::Decide(a) => {

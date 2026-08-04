@@ -63,10 +63,14 @@ pub enum Error {
     )]
     NoIdentity,
     #[error(
-        "`me` names this workspace's own identity, and this workspace does not have one \
-         yet -- nothing has been written here.\n\n\
-         Write a claim first, or name the author you meant with `--trust did:key:...`. \
-         Reading cannot create an identity, by design (#149)."
+        "no signing identity is reachable here, so there is nothing for `me` to name.\n\n\
+         This says nothing about whether the log has claims in it -- it usually does. It \
+         means this workspace's key is not where kan looks: KAN_IDENTITY_FILE unset with \
+         the key held elsewhere, pointed at a path that does not exist, or a keychain \
+         entry this binary cannot read (#96).\n\n\
+         Name the author you meant with `--trust did:key:...`, or `kan identity adopt \
+         --key <path>` to point this workspace back at its key. Reading never creates an \
+         identity, by design (#149)."
     )]
     NoIdentityToName,
 }
@@ -509,7 +513,7 @@ impl Workspace {
     /// it here, from what is already on disk, is what keeps those selectors
     /// working on a read without a read ever minting. A workspace that has
     /// no identity yet gets a sentence saying so rather than a new keypair.
-    fn active_did(&self) -> Result<String, Error> {
+    pub fn active_did(&self) -> Result<String, Error> {
         if let Some(identity) = &self.identity {
             return Ok(identity.did());
         }
@@ -889,7 +893,6 @@ async fn ingest_published(
     }
 
     let tree = crate::transport::git_tree::GitTree::new_reader(root);
-    let mine = identity.did();
     let mut published = PublishedIndex::default();
     let mut digest = ClaimsDigest::started();
     let mut pending = Vec::new();
@@ -902,9 +905,19 @@ async fn ingest_published(
                 // whose claim it is.
                 published.record(claim.content.subject.clone(), cid.clone());
                 digest.add(&cid);
-                if claim.content.author.did == mine {
-                    continue;
-                }
+                // Log membership, not identity -- the SAME rule
+                // `read_published` uses. They used to differ (`author.did ==
+                // mine` here, log membership there), so a read-open and a
+                // write-open projected different row sets while recording the
+                // same freshness key, and neither could invalidate the
+                // other's work: one command returned two different answers
+                // over identical bytes depending on which path last touched a
+                // disposable cache.
+                //
+                // Log membership is also the more correct test on its own
+                // terms: on a fresh clone an own-authored record in
+                // `.claims/` genuinely is not in this log yet, and pretending
+                // otherwise hides it from every view.
                 if overlay.contains(&cid).await? {
                     continue;
                 }
