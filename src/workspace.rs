@@ -147,6 +147,46 @@ pub struct PublishedIndex {
     content_hash: Option<String>,
 }
 
+/// Accumulates the `.claims/` freshness key.
+///
+/// **Shared by both ingestion paths deliberately.** They must agree byte for
+/// byte, or a read-open and a write-open compute different fingerprints over
+/// the same unchanged workspace and each invalidates the other's projection —
+/// a full rebuild per command, on exactly the repos that have a published
+/// tree. Two call sites hashing "the same thing" separately is how that
+/// happens, so there is one implementation and no second chance to diverge.
+///
+/// That is not hypothetical: the first version of this milestone hashed on
+/// the read path only, and nothing failed, because every view stayed correct.
+/// It would simply have rebuilt the whole projection on every command.
+///
+/// Order-stable because `GitTree::read_records` sorts its file list; the
+/// digest is over the *verified* records' CIDs, so an unverifiable record
+/// changes nothing here, exactly as it changes nothing in a view.
+#[derive(Default)]
+struct ClaimsDigest(Option<sha2::Sha256>);
+
+impl ClaimsDigest {
+    fn started() -> Self {
+        Self(Some(<sha2::Sha256 as sha2::Digest>::new()))
+    }
+
+    fn add(&mut self, cid: &Cid) {
+        if let Some(hasher) = &mut self.0 {
+            sha2::Digest::update(hasher, cid.to_bytes());
+        }
+    }
+
+    fn finish(self) -> Option<String> {
+        self.0.map(|hasher| {
+            sha2::Digest::finalize(hasher)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect()
+        })
+    }
+}
+
 impl PublishedIndex {
     fn record(&mut self, subject: crate::claim::SubjectRef, cid: Cid) {
         self.by_subject.entry(subject).or_default().insert(cid);
@@ -443,6 +483,38 @@ impl Workspace {
         }
     }
 
+    /// Rebuild the projection from every store this workspace holds, and
+    /// record the freshness key the *next* open will compute.
+    ///
+    /// Both halves were wrong on the write path and had been for as long as
+    /// there was an overlay. `append` rebuilt from `log.iter_all()` alone,
+    /// dropping every foreign claim from the projection, and recorded the
+    /// bare log root where an open computes a fingerprint over log, overlay
+    /// and `.claims/`.
+    ///
+    /// It was invisible because the two mistakes hid each other: the
+    /// mismatched key meant the very next open rebuilt from scratch, which
+    /// silently restored the foreign claims the write had dropped. So the
+    /// only symptom was a full rebuild after every write — a cost, not a
+    /// wrong answer, and nothing was watching for it.
+    ///
+    /// Fixing the key alone would have converted it into a wrong answer, by
+    /// telling the next open that a projection missing its foreign claims
+    /// was fresh. They have to be fixed together, which is why this is one
+    /// method rather than a fix at each call site.
+    pub async fn reproject(&mut self) -> Result<(), Error> {
+        let log_claims = self.log.iter_all().await?;
+        let foreign = self.overlay.iter_all().await?;
+        let fingerprint = index_fingerprint(
+            self.log.current_root(),
+            self.overlay.current_root(),
+            self.published.content_hash.as_deref(),
+        );
+        self.index
+            .rebuild(&log_claims, &foreign, fingerprint.as_ref())?;
+        Ok(())
+    }
+
     /// The log and the signing identity together, borrowed disjointly.
     ///
     /// A write needs `&mut log` and `&identity` at once, and going through
@@ -708,16 +780,12 @@ async fn read_published(
     let tree = crate::transport::git_tree::GitTree::new_reader(root);
     let mut published = PublishedIndex::default();
     let mut arrived = Vec::new();
-    let mut hasher = <sha2::Sha256 as sha2::Digest>::new();
+    let mut digest = ClaimsDigest::started();
     for record in tree.read_all_with_rev() {
         match record {
             Ok((cid, claim, rev)) => {
                 published.record(claim.content.subject.clone(), cid.clone());
-                // Hashed over the *verified* records rather than over raw
-                // file bytes, so the key is a function of what was actually
-                // read. A record that fails verification changes nothing,
-                // which is right: it never enters a view either.
-                sha2::Digest::update(&mut hasher, cid.to_bytes());
+                digest.add(&cid);
                 if log.contains(&cid).await? || overlay.contains(&cid).await? {
                     continue;
                 }
@@ -732,8 +800,7 @@ async fn read_published(
             Err(e) => eprintln!("warning: skipping a published record: {e}"),
         }
     }
-    let digest = sha2::Digest::finalize(hasher);
-    published.content_hash = Some(digest.iter().map(|b| format!("{b:02x}")).collect());
+    published.content_hash = digest.finish();
     Ok((published, arrived))
 }
 
@@ -776,6 +843,7 @@ async fn ingest_published(
     let tree = crate::transport::git_tree::GitTree::new_reader(root);
     let mine = identity.did();
     let mut published = PublishedIndex::default();
+    let mut digest = ClaimsDigest::started();
     let mut pending = Vec::new();
     for record in tree.read_all_with_rev() {
         match record {
@@ -785,6 +853,7 @@ async fn ingest_published(
                 // in the tree", which is a question about the tree, not about
                 // whose claim it is.
                 published.record(claim.content.subject.clone(), cid.clone());
+                digest.add(&cid);
                 if claim.content.author.did == mine {
                     continue;
                 }
@@ -831,6 +900,7 @@ async fn ingest_published(
             eprintln!("warning: could not ingest a published record: {e}");
         }
     }
+    published.content_hash = digest.finish();
     Ok(published)
 }
 

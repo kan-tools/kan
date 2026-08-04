@@ -319,9 +319,7 @@ async fn append(
     };
     let (log, identity) = ws.log_and_identity()?;
     let cid = log.append(content, identity).await?;
-    let claims = ws.log.iter_all().await?;
-    ws.index
-        .rebuild(&claims, &[], ws.log.current_root().as_ref())?;
+    ws.reproject().await?;
     Ok(AppendResult { cid, subject, kind })
 }
 
