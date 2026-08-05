@@ -68,6 +68,26 @@ finished. It is the same substitution of familiarity for coverage that
 ADR-52's fix round made, and that both v0.11 cold reviews found in areas the
 author had already reasoned about and stopped.
 
+## Workflow: when a review keeps finding things
+Two consecutive reviews finding defects in the **same subsystem** is not two
+bugs — it is the second piece of evidence that the area has no specification.
+Stop fixing and go write one. Before the *second* fix in one area, write the
+table of its reachable configurations; patching an unspecified space generates
+roughly one new defect per patch.
+
+Triage before fixing: a finding that loses or misattributes data blocks a
+release, and a finding that is stale prose or a weak assertion gets filed.
+An unbounded "find defects" review against a large diff always returns
+something, so "is there a path where data is lost or misattributed?" is a
+separate and answerable question from "is anything wrong here?".
+
+And state what was actually checked rather than what was intended — verify
+mappings, not aggregates. Measured in full by
+`docs/POSTMORTEM-v0.11-review-loop.md`: five reviews, five blocking verdicts,
+every finding after the first round introduced by the previous round's fix,
+against a subsystem that needed one specification pass
+(`.design/identity-resolution.md`).
+
 ## Smell test
 The local-only path must be *dramatically* simpler than the multi-actor path
 (one log, all subjects Local, no SameAs stitching, no contest stage, latest-wins).
