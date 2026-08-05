@@ -554,8 +554,15 @@ fn a_lost_key_restore_names_the_tree_and_its_remedy_works() {
         still_stale.stdout
     );
     assert!(
-        still_stale.stderr.contains("second identity"),
-        "the refusal should name what it found: {}",
+        still_stale
+            .stderr
+            .contains("cannot tell which of these claims are yours"),
+        "expected `restore`'s own refusal, naming the tree it read: {}",
+        still_stale.stderr
+    );
+    assert!(
+        still_stale.stderr.contains(&did),
+        "the refusal should still name the authors in the tree: {}",
         still_stale.stderr
     );
 
@@ -600,7 +607,13 @@ fn a_lost_key_restore_names_the_tree_and_its_remedy_works() {
 #[test]
 fn a_missing_role_key_never_signs_as_somebody_else() {
     let dir = repo();
-    let human = dir.path().join("humankey");
+    // The human's key must live at `.kan/identity`, because that is the file
+    // the substitution reached for. Putting it anywhere else makes the
+    // substitution's precondition false, so the write gets refused by an
+    // unrelated arm of the guard and the test passes without exercising the
+    // defect at all -- which is what the first version of this test did.
+    let human = dir.path().join(".kan/identity");
+    std::fs::create_dir_all(dir.path().join(".kan")).unwrap();
     assert!(
         kan(
             dir.path(),
@@ -608,6 +621,11 @@ fn a_missing_role_key_never_signs_as_somebody_else() {
             &["observe", "the human's note", "--subject", "bug-7"]
         )
         .ok
+    );
+    assert!(
+        human.exists(),
+        "precondition: the human's key must be at .kan/identity, where the substitution \
+         looked"
     );
     let human_did = kan(dir.path(), Some(&human), &["identity", "did"]).stdout;
 
@@ -797,13 +815,19 @@ fn a_seed_rooted_workspace_is_not_re_minted_when_its_log_is_cleared() {
         "minting wrote a second root seed beside the recorded one -- the original \
          identity is now permanently shadowed, since Seed::load prefers the file"
     );
-    let after = kan(dir.path(), None, &["identity", "did"]);
+    // Deliberately NOT `assert!(!after.ok || after.stdout == original)` --
+    // the assertion above already establishes the guard fires, so that
+    // disjunction is satisfied by the failure and can never fail. It is the
+    // weaker relative of the `assert!(x || true)` clippy caught in this file.
+    //
+    // The positive form: the seed is still the only one, so nothing has been
+    // shadowed. `Seed::load` prefers the file, so a second seed beside the
+    // recorded one is what would make the original unrecoverable.
     assert!(
-        !after.ok || after.stdout == original,
-        "the workspace resolves a different identity than before ({} -> {})",
-        original,
-        after.stdout
+        !kan_dir.join("seed").exists(),
+        "minting wrote a second root seed beside the recorded one"
     );
+    let _ = original;
 }
 
 /// B4 from the fourth review: reads and writes must resolve the **same**
@@ -863,4 +887,75 @@ fn reads_and_writes_resolve_the_same_identity() {
          did` says {writing}, and `--trust me` cannot see that identity's own claim.\n{}",
         shown.stdout
     );
+}
+
+/// B2 from the fifth review: refusing a missing role key must not depend on
+/// the guard happening to find other evidence.
+///
+/// The previous round said "the caller named a key and that key is not there;
+/// refusing is the only safe answer" — but refusal ran through
+/// `refuse_second_identity`, which needs evidence. In the documented CI /
+/// agent / `day` configuration (ADR-42) the primary identity lives *outside*
+/// `.kan/`, so with an empty log there is no evidence at all: kan minted a
+/// fresh key at the missing role's path and signed with it.
+///
+/// The resulting claim carries a DID that appears in no `.kan/roles` line, so
+/// `--trust roles` — "everything this workspace wrote" — reports nothing on
+/// the subject just written. Same class as the substitution it replaced,
+/// reached by minting instead.
+#[test]
+fn a_missing_role_key_is_refused_even_with_no_other_evidence() {
+    let dir = repo();
+    // The primary lives outside `.kan/`, which is what leaves no evidence.
+    let primary = dir.path().join("primary-key");
+    assert!(kan(dir.path(), Some(&primary), &["identity", "did"]).ok);
+
+    let role_key = dir.path().join("prover-key");
+    let added = kan(
+        dir.path(),
+        Some(&primary),
+        &[
+            "identity",
+            "role",
+            "add",
+            "prover",
+            "--key",
+            role_key.to_str().unwrap(),
+        ],
+    );
+    assert!(added.ok, "role add failed: {}", added.stderr);
+    let role_did = kan(dir.path(), Some(&role_key), &["identity", "did"]).stdout;
+
+    // The role's key goes missing, and the log is empty -- no claims, so the
+    // guard has nothing to weigh.
+    std::fs::remove_file(&role_key).unwrap();
+    assert!(
+        !dir.path().join(".kan/log/repo.car").exists()
+            || std::fs::metadata(dir.path().join(".kan/log/repo.car"))
+                .map(|m| m.len() == 0)
+                .unwrap_or(true),
+        "precondition: the log must be empty, so the guard has no evidence"
+    );
+
+    let run = kan(
+        dir.path(),
+        Some(&role_key),
+        &["observe", "as the role", "--subject", "bug-2"],
+    );
+    assert!(
+        !run.ok,
+        "a missing declared-role key was minted rather than refused: {}",
+        run.stdout
+    );
+    assert!(
+        !role_key.exists(),
+        "a fresh key was minted at the declared role's path -- claims signed with it \
+         appear under no `.kan/roles` line, so `--trust roles` reports them as nothing"
+    );
+    assert!(
+        run.stderr.contains("prover"),
+        "the refusal should name the role whose key is missing: {}",
+        run.stderr
+    );
+    let _ = role_did;
 }

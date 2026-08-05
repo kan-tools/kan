@@ -83,6 +83,15 @@ pub enum Error {
         evidence: String,
     },
     #[error(
+        "the declared role `{name}` has no key at {path}.\n\n\
+         KAN_IDENTITY_FILE names that path, so this write asked to be signed as `{name}` \
+         -- and creating a fresh key there would sign it as an identity no `.kan/roles` \
+         line mentions, which `--trust roles` would then report as nothing at all.\n\n\
+         Restore the role's key file, or point KAN_IDENTITY_FILE at the identity you \
+         meant to write as."
+    )]
+    DeclaredRoleKeyMissing { name: String, path: String },
+    #[error(
         "a role named `{name}` is already declared in this workspace (key: {existing}). \
          Pick another name, or use the existing role."
     )]
@@ -170,6 +179,30 @@ impl Identity {
             // status` printed "no subjects yet" at exit 0 — verbatim REQ-5's
             // failure mode, reached through the release's recommended
             // workaround.
+            // Named by `.kan/roles` as a declared role's key, and not there.
+            // That is its own error and does not depend on the guard finding
+            // evidence: the caller asked to sign as a specific declared role,
+            // and that role's key is gone. Minting a fresh one here produces
+            // a claim signed by a DID that appears in no `.kan/roles` line --
+            // so `--trust roles`, "everything this workspace wrote", reports
+            // no claims on the subject just written.
+            //
+            // The previous round named this cause in its own commit message
+            // ("`.kan/roles` records that path as the role's key and this
+            // function never reads it") and then did not read it either.
+            if !override_path.exists() {
+                if let Some(kan_dir) = path.parent() {
+                    if let Ok(roles) = list_roles(kan_dir) {
+                        if let Some(role) = roles.iter().find(|r| r.key_path == override_path) {
+                            return Err(Error::DeclaredRoleKeyMissing {
+                                name: role.name.clone(),
+                                path: override_path.display().to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+
             // The named file is missing. That is NOT an invitation to sign
             // with some other key.
             //
@@ -815,23 +848,22 @@ pub fn existing_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
         if std::path::PathBuf::from(override_path).exists() {
             return Ok(Some(Identity::load_or_create(&key_path)?));
         }
-        // FALLS THROUGH when the named path is absent, rather than reporting
-        // "no identity". `Identity::load_or_create` treats this variable as
-        // exclusive because it is choosing a key to SIGN with, and a missing
-        // path there means "mint one here". This function only answers "does
-        // this workspace already have an identity", where the same
-        // exclusivity is a trap:
+        // Absent named path: report no identity, exactly as the write side
+        // refuses rather than substituting. The two must agree here, and it
+        // was the read side that was wrong.
         //
-        //   $ kan restore                       # refuses: no identity reachable
-        //   ... run `kan identity adopt --key <path>`
-        //   $ kan identity adopt --key backup   # "adopted did:key:..." -- writes .kan/identity
-        //   $ kan restore                       # IDENTICAL refusal, forever
+        // Falling through used to substitute this workspace's own key, which
+        // meant a role-scoped caller whose key file had gone missing got a
+        // refusal on write and THE HUMAN'S IDENTITY on read -- `--trust me`
+        // answering "what did I write here" with somebody else's claims, at
+        // exit 0 and with no warning. The read-side twin of the substitution
+        // the write side just had removed.
         //
-        // `adopt` writes `.kan/identity`, and this returned `None` without
-        // ever looking there — so the remedy the refusal advertised could not
-        // possibly work, under a condition that refusal itself enumerates.
-        // Found by the cold re-review of the fix round that introduced the
-        // routing.
+        // The `adopt` -> `restore` flow this fall-through was added for is
+        // served properly instead: the refusal now says the named path does
+        // not exist, and unsetting the variable resolves the adopted key on
+        // both sides.
+        return Ok(None);
     }
 
     // SEED BEFORE KEY FILE, matching `load_or_create_for_workspace`'s order
