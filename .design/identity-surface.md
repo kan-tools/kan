@@ -91,24 +91,24 @@ in the cases where today's answer is already wrong.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: A single-author workspace produces byte-identical `show`, `status`,
+- [x] AC-1: A single-author workspace produces byte-identical `show`, `status`,
   `issues` and `context` output before and after the change, on both the human
   and `--json` surfaces except for the `trust.base` field. Covers REQ-1.
 
-- [ ] AC-2: #121's reproduction — two role identities against one workspace,
+- [x] AC-2: #121's reproduction — two role identities against one workspace,
   each appending to one subject — returns **both** claims under the default
   read, from either role and with no `--trust` argument. Covers REQ-1, REQ-5.
 
-- [ ] AC-3: `kan status` in a git repo with a commit and no `.kan/` exits
+- [x] AC-3: `kan status` in a git repo with a commit and no `.kan/` exits
   successfully, reports no subjects, and creates **no** `.kan/` directory, no
   key file and no `seed-id`. Covers REQ-2, REQ-3.
 
-- [ ] AC-4: In the state that produces `WouldMintSecondIdentity` (log
+- [x] AC-4: In the state that produces `WouldMintSecondIdentity` (log
   non-empty, no key file, `KAN_NO_KEYCHAIN` set), `kan identity adopt --key K`
   succeeds with `KAN_IDENTITY_FILE` unset, and a subsequent default read shows
   the log's claims. Covers REQ-4.
 
-- [ ] AC-5: A workspace whose log contains claims authored under
+- [x] AC-5: A workspace whose log contains claims authored under
   `AuthorId { did: D, agent: Some(h) }` and others under
   `AuthorId { did: D, agent: None }` returns **all** of them under the default
   read, with no `--trust` argument and no adopt step. Covers REQ-7.
@@ -121,24 +121,24 @@ in the cases where today's answer is already wrong.
   claims in both the log and `.claims/`, asserting the log's fold and the
   file's do not. It lands with the v0.12 work.
 
-- [ ] AC-7: `--trust roles` returns only declared identities, and in a
+- [x] AC-7: `--trust roles` returns only declared identities, and in a
   workspace with an undeclared log author the `local` and `roles` results
   differ by exactly that author's claims. Covers REQ-5, REQ-9.
 
-- [ ] AC-8: `show --all --json` and `status --json` report
+- [x] AC-8: `show --all --json` and `status --json` report
   `trust.base == "Local"` by default, and every author they list is one with a
   claim in the log. Covers REQ-8.
 
-- [ ] AC-9: A write refused by the ADR-77 guard, and a write that fails after
+- [x] AC-9: A write refused by the ADR-77 guard, and a write that fails after
   identity resolution, both leave the workspace with no newly-persisted key,
   `seed-id` or `identity-id`. Verified by comparing the `.kan/` file set before
   and after. Covers REQ-3.
 
-- [ ] AC-10: A workspace whose active identity has been re-minted (the #90
+- [x] AC-10: A workspace whose active identity has been re-minted (the #90
   shape: `identity-id` present, key absent, log non-empty) still returns every
   claim in the log under the default read. Covers REQ-1.
 
-- [ ] AC-11: In a workspace whose log holds claims for one subject from two
+- [x] AC-11: In a workspace whose log holds claims for one subject from two
   role identities, `kan publish <subject>` writes **both** authors' live claims,
   and `kan show <subject>` and the published file agree claim-for-claim. A claim
   present only in `.kan/overlay` is never written. Covers REQ-10.

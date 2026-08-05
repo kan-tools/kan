@@ -3856,3 +3856,116 @@ kan has repeatedly validated after acting rather than before.
 gains a `v0.10.0-beta.1` row in `kan-compat.tsv`. The research loop's
 supersession chains and refuted register become fold-time views instead of
 hand-kept files.
+
+## ADR-83 — `TrustBase::Local` is the default: a read needs no identity
+**Date:** 2026-08-04
+**Status:** Accepted
+
+**Decision:** `.design/identity-surface.md` REQ-1. The base every read folds
+under, absent `--trust`, becomes `Local` — every `AuthorId` appearing on a
+claim in `.kan/log`. `Solo` remains reachable as `--trust me`.
+
+**Why the default and not `Solo`.** `Solo`'s member is *me*, so every default
+read had to resolve an identity in order to know whom to trust. That single
+line is why a read minted one (#149), why an upgrade that re-minted took the
+whole log out of every read (#90), why two role identities in one workspace
+could not see each other (#121), and why a legacy `KAN_AGENT` author was
+invisible (#136). Four issues and a deferred decision were one defect seen
+from five directions.
+
+**#90's failure mode disappears rather than being guarded against.** "A binary
+upgrade silently mints a new identity, taking the whole log out of every read"
+is a description of `Solo`. Under `Local` a re-minted identity is a nuisance:
+the claims already in the log are still authored by authors in the log. The
+ADR-77 guard stays because minting is still wrong; it stops being a
+data-visibility event.
+
+**It is a no-op for a single-author workspace, and that is checkable rather
+than asserted.** `tests/fixtures/golden/single-author-reads.txt` was generated
+against the pre-change binary and committed on its own PR *before* any
+behaviour changed; it has passed unmodified through every commit since. AC-1
+was the milestone's gate: had it not held, the approach was to be revisited
+before anything else was written.
+
+**Membership is the log, never the overlay.** The log is what was written
+*through* this workspace; the overlay is what *arrived at* it as a committed
+`.claims/` file. Foreign claims already arrive without sync, so folding
+"everything present" would let a merged pull request inject a stranger's
+claims into the maintainer's default view. The index records each claim's
+origin, because `fold` sees both sets together and cannot tell them apart.
+
+**Delivered at the level of authors, not claims.** `TrustBase` is a per-author
+predicate, so a `.claims/` file whose author has *also* written to this log is
+folded in without an explicit `--trust`. REQ-6's text was corrected to say so.
+The claim-level property needs the fold to see origin per claim, and is
+scheduled for v0.12 with #164 — decided, and recorded on the
+`identity-surface` subject: origin is a trust signal in its own right rather
+than inert packaging.
+
+**Consequences.** `publish` folds under the same base (REQ-10), so the sharing
+layer still cannot contradict the fold; a multi-role workspace's first
+`publish --all` after upgrading produces a visible diff as files gain the
+other roles' claims. The JSON envelope reports `base: "Local"` with every log
+author at weight 1.0, so ADR-57's shape is unchanged — a new value, not a new
+field.
+
+## ADR-84 — `--trust roles` narrows; ADR-61 is reversed
+**Date:** 2026-08-04
+**Status:** Accepted (reverses ADR-61)
+
+**Decision:** `--trust roles` expands to exactly the identities declared in
+`.kan/roles`, and no longer injects the active identity. A new `role:<name>`
+names one declared role without pasting a `did:key:…`.
+
+**Why the reversal is safe now.** ADR-61 widened `roles` to include the active
+identity because omitting it gave the wrong answer to the obvious question —
+"show me everything this workspace's own identities wrote" would quietly drop
+the caller's own claims. Under ADR-83 the *default* answers that question, so
+`roles` is free to mean what its name says without being a trap.
+
+**What it buys.** `local` minus `roles` becomes the set of authors present in
+this log but never declared — the #90/#136 anomaly as data rather than as an
+absence — and is reachable as `kan identity authors`. The concrete behaviour
+change: an identity nobody declared, reading `--trust roles`, no longer
+silently counts itself as a role.
+
+**Noted while testing, because it corrects a stated premise:** `kan identity
+role add` registers the *primary* too, under the name `primary`. An existing
+test asserted `roles` included the active identity and explained that the
+primary "is not itself a declared role", which was never true. The
+auto-declaration is what carries ADR-61's concern going forward.
+
+## ADR-85 — The index's schema version lives in its table name
+**Date:** 2026-08-04
+**Status:** Accepted
+
+**Decision:** the disposable SQLite projection's table is named for its schema
+version (`claims_v2`), with `built_from_root_v2` beside it. An older kan's
+`claims` table is left exactly where it is.
+
+**Reproduced against a released binary before choosing it.** Giving the
+projection an `origin` column while keeping the table called `claims` makes
+v0.9.2 die on its next write with `NOT NULL constraint failed: claims.origin`
+— `CREATE TABLE IF NOT EXISTS` leaves the newer table in place and the older
+binary's `INSERT` names no `origin`. A *disposable cache* made every command
+fail: the store intact and unreachable, which is #150's shape.
+
+**Not an exotic configuration.** `day` shells out to the installed `kan`
+(ADR-42) while a checkout runs its own, so a repo under active development
+sees both binaries against one `.kan/` routinely — including this one.
+
+**The freshness key is versioned for the same reason as the table.** A shared
+`built_from_root` would have each binary concluding that a projection the
+*other* built was up to date, so each would read the other's shape — quieter
+than the crash, and worse.
+
+**Rejected:** a `DEFAULT 'log'` on the column. It keeps the old binary running
+while silently marking its overlay rows as log-origin, putting overlay authors
+into `TrustBase::Local` — the exact boundary ADR-83 draws. A compatibility
+shim that breaks the invariant the change is about is not compatibility.
+
+**Consequences.** A stale table per superseded version, which is disk in a
+file that can be deleted at any time; cleaning them up would reintroduce the
+breakage. Since the index is disposable there is no migration to write, and
+the `origin` value is spelled for the *medium* (`log`, `git-tree`) rather than
+for the store it lands in, so #164's per-medium work does not rename it.

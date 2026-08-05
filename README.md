@@ -122,19 +122,27 @@ Declaring your first role also records the identity that was already signing
 here, as `primary` — so `--trust roles` covers claims written before the roles
 existed, not only after. `kan identity role list` shows the whole set.
 
-**Reading is the half that surprises people.** The default view is `Solo` —
-only the identity you are running as — so a role reads back only its own
-claims. Widen it:
+**Reading needs no identity at all.** The default view is `local` — every
+author with a claim in this workspace's log — so every role reads back every
+role's claims, and a read resolves, derives and persists no signing key.
+Narrow it when you want a specific frame:
 
 ```sh
-kan show finding --trust roles            # every declared role, plus the active one
+kan show finding --trust me               # the active identity alone
+kan show finding --trust roles            # only the identities declared in .kan/roles
+kan show finding --trust role:prover      # one declared role, by name
 kan show finding --trust did:key:zA --trust did:key:zB=0.5   # explicit, weighted
 ```
 
-Any read that leaves claims out now says so, on both the human output and
-`--json` (`excluded_by_trust`), so a partial view can no longer pass for a
-complete one. Whether `Solo` should stay the *default* once a workspace has
-several roles is open — [#121](https://github.com/kan-tools/kan/issues/121).
+Any read that leaves claims out says so, on both the human output and `--json`
+(`excluded_by_trust`), so a partial view cannot pass for a complete one. And
+`kan identity authors` lists every author in the log, marking which were
+declared — `local` minus `roles`, which is how an identity you did not expect
+shows up as data rather than as an absence.
+
+Claims that arrived as committed `.claims/` files are excluded from the
+default view unless their author has also written to this log; admit them by
+naming the author in `--trust`.
 
 Pointing `KAN_IDENTITY_FILE` at a *new* key file without declaring it is
 still refused whenever the log is non-empty. That refusal is the #90 guard,

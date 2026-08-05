@@ -370,15 +370,15 @@ impl KanServer {
 
     /// Open for writing, **refusing an unusable subject name first**.
     ///
-    /// `Workspace::open` is what mints an identity in a fresh workspace, and
-    /// `validate_subject_name` lives inside `append` — after it. So an MCP
-    /// write with a control character in its subject minted a signing key and
-    /// created `.kan/` on its way to refusing, for a call that wrote nothing.
+    /// An **early** refusal: a bad subject name is reported before a
+    /// workspace is opened, so the error arrives before any store I/O.
     ///
-    /// The CLI gained this check in the same milestone; MCP did not, which
-    /// made it a property of one surface out of two — the exact shape
-    /// CLAUDE.md's "one surface: CLI + MCP" exists to prevent, and the same
-    /// ordering defect ADR-82 names.
+    /// It is not what delivers REQ-3's "a refused write mints nothing" —
+    /// that comes from `commit_identity` running inside `append` after
+    /// validation, which holds for every failure cause rather than for the
+    /// ones anybody hoisted. This was written when it *was* the mechanism.
+    /// Kept because the CLI does the same and one surface should not refuse
+    /// later than the other (CLAUDE.md's "one surface: CLI + MCP").
     async fn writing_workspace(&self, subjects: &[Option<&str>]) -> Result<Workspace, ErrorData> {
         for subject in subjects.iter().flatten() {
             actions::validate_subject_name(subject).map_err(to_error)?;

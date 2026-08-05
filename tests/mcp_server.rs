@@ -518,7 +518,14 @@ async fn naming_nudge_appends_a_warning_to_the_confirmation_text() {
     let _ = child.kill().await;
 }
 
-/// The mint-nothing-on-a-refused-write property holds on **both** surfaces.
+/// A bad subject name is refused **early**, on both surfaces, and refusing
+/// leaves the repo untouched.
+///
+/// Note what this does and does not pin. The mint-nothing property comes from
+/// `commit_identity` running inside `append` after validation, not from the
+/// early check here — a cold review showed the suite stays green with both
+/// early checks deleted. What this pins is *where the error surfaces*, and
+/// that MCP does not refuse later than the CLI.
 ///
 /// v0.11 hoisted `validate_subject_name` ahead of `Workspace::open`, so a
 /// refused subject name cannot mint a signing key or create `.kan/` on its
