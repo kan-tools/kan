@@ -137,6 +137,90 @@ The properties that fall out, rather than being patched in:
 - Resolution has no side effects, so nothing observes state that asking
   created.
 
+## Prior art: what to borrow, and what has to stay kan's
+
+The **primitives are already borrowed** and none of the five rounds' defects
+were in them: `atrium-crypto` for the P-256 keypair and `did:key`, `keyring`
+for OS credential storage, `bip39` for the recovery phrase, HKDF for the
+X25519 derivation. That layer is not where the wheel got reinvented.
+
+The **resolution and selection layer is where kan invented, and invented
+worse**. The shape is well-trodden: an *ordered credential chain* with an
+*explicit profile selector*, kept separate from each other.
+
+- **AWS SDKs** — env → shared config → profile → instance metadata: ordered,
+  documented, testable, with `AWS_PROFILE` as a selector distinct from the
+  chain that resolves what a profile means.
+- **git** — config cascade (system → global → repo → `-c`), with
+  `user.signingkey` and `includeIf` for conditional selection.
+- **ssh** — `IdentityFile` per host, and `IdentitiesOnly` precisely because
+  *additive* identity resolution surprises people. kan hit the same surprise
+  from the other direction.
+
+This is a **specification to copy, not a dependency to add**. The prior art
+gives the shape; the inputs (`.kan/`, roles, seed) stay kan's, because `.kan/`
+being repo-local and travelling with the repo (ADR-3) is a real commitment a
+user-global cascade cannot express.
+
+### The agent pattern, and #96
+
+`ssh-agent` and `gpg-agent` exist for exactly kan's most persistent
+operational wound: a key held in a store that requires interactive unlock
+breaks every non-interactive caller — CI, containers, an MCP server, `day`
+shelling out (#96, and the reason `KAN_IDENTITY_FILE` exists at all).
+
+An agent holding the unlocked key and speaking over a socket is the canonical
+answer, and it dissolves **#170** as a side effect: "can a read learn who I am
+without raising a prompt" stops being a tension, because the prompt happened
+once at unlock rather than per invocation.
+
+This matters for the spec rather than being a separate feature, because
+`KAN_IDENTITY_FILE` is currently kan's *workaround* for the keychain being
+non-interactive — and half the defects in this milestone grew out of that
+workaround being a chain override. If the agent carries the non-interactive
+case, the selector can go back to being only a selector.
+
+**Treat as its own design question**, not a decision this document makes:
+whether kan runs an agent, reuses an existing one, or does something smaller.
+CLAUDE.md's crate rule applies to anything adopted here — stress-test it the
+way ADR-11/12 did, before building on it.
+
+### Authorization and delegation
+
+Adjacent, and worth naming so the next pass does not rediscover it:
+
+- **SPKI/SDSI local names** is the formal grounding for `.kan/roles`:
+  principals *are* keys, and names are **local** — "my `prover`", never a
+  global directory. kan already does this; it is worth knowing it is a known
+  design with known properties rather than an improvisation.
+- **Sigchains (Keybase) and atproto's `did:plc` rotation keys** are the prior
+  art for declaration and *revocation*, and they expose a real inconsistency:
+  **`.kan/roles` is workspace state that is not a claim.** kan's invariant is
+  that the record is the log and every projection folds over it — yet a role
+  declaration, which is exactly a signed policy statement ("`did:key:X` is my
+  role `prover`"), lives in a file the fold is forbidden to read.
+
+  Making role declarations *claims* would give them provenance, an author, and
+  revocation-by-retraction for free; make `--trust roles` a fold rather than a
+  file read; make REQ-9's "local minus roles" a fold difference rather than a
+  file diff; and put the role registry somewhere the resolver already looks —
+  which is precisely what the "missing role key mints an undeclared identity"
+  defect needed. Probably the single highest-value change adjacent to this
+  spec.
+- **UCAN** (DID-native, offline-verifiable, attenuable delegation) is the
+  standard answer if delegation ever needs to cross actors or be attenuated
+  — "this key may write only these subjects". Beyond v1, but it is the thing
+  to reach for rather than invent.
+- **PGP's web of trust** is the cautionary tale, and kan has already
+  rediscovered part of it: `TrustBase::PeerContested`'s per-author weights are
+  trust signatures by another name. What sank WoT was not the math but that
+  nobody could see why a given key was trusted. ADR-57's "a view names the
+  base that produced it" is the repair PGP lacked — worth keeping deliberately
+  rather than by accident.
+- **X.509 / hierarchical CAs** is the thing kan is deliberately *not* doing,
+  and it is worth one line in the spec saying so, since "why not just use
+  certificates" is a question this design will be asked.
+
 ## What this is not
 
 Not a rewrite of `sign.rs`'s crypto, keychain handling, seed derivation, or
@@ -149,6 +233,10 @@ Not ADR-75's author→claim trust generalisation, and not #164's medium work.
 
 **v0.12**, alongside #164 and B1 (the origin-aware fold), because it wants
 the same thing they do: a specification before code.
+
+It should open by choosing between the agent pattern and the status quo,
+because that choice decides whether `KAN_IDENTITY_FILE` is still load-bearing
+— and if it is not, most of the cell table collapses.
 
 Two things it must ship with, learned the expensive way:
 
