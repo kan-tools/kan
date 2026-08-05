@@ -39,7 +39,15 @@ pub enum TrustBase {
     /// other (#121). `Local` is defined over the claim set instead, so a
     /// read needs no identity at all and those stop being separate defects.
     ///
-    /// **Membership is the log, never the overlay.** The log is what was
+    /// **Membership is computed from the log, never the overlay.**
+    ///
+    /// Note the level: this makes an author a member or not. It does NOT
+    /// keep that author's *`.claims/`-borne* claims out of the view -- a
+    /// per-author predicate cannot express that, and v0.11 ships without
+    /// it. #164 makes the fold origin-aware in v0.12; until then a
+    /// collaborator who has written here can put claims into the default
+    /// view via a merged pull request.
+    /// The log is what was
     /// written *through* this workspace; the overlay is what *arrived at* it
     /// as a committed `.claims/` file (RQ-2). Foreign claims already arrive
     /// without sync, so folding "everything present" would let a merged pull

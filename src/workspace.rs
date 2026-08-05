@@ -290,8 +290,17 @@ impl Workspace {
         // This repairs the store rather than papering over the read, and says
         // so, because a store that quietly rearranges itself is not one
         // anybody can reason about.
-        let log_claims = self.log.iter_all().await?;
-        if overlapping(&log_claims, &self.overlay.iter_all().await?).is_some() {
+        // Gated on the overlay existing at all, which is the overwhelmingly
+        // common case and costs one in-memory root check. The old code got
+        // this for free by sitting behind the index-freshness check; hoisting
+        // it into `commit_identity` made it unconditional, and it is two
+        // `iter_all()` calls -- per-claim signature verification, ADR-13's
+        // dominant cost -- so every append paid for a corruption that can
+        // only exist where there is an overlay to hold it.
+        if self.overlay.current_root().is_some()
+            && overlapping(&self.log.iter_all().await?, &self.overlay.iter_all().await?).is_some()
+        {
+            let log_claims = self.log.iter_all().await?;
             eprintln!(
                 "warning: this workspace's overlay held claims the log already had, which \
                  is the corruption in issue #150 -- one read under a role identity, in a \
@@ -324,7 +333,10 @@ impl Workspace {
         }
 
         self.identity = Some(identity);
-        self.reproject().await?;
+        // Deliberately does NOT reproject. Every caller either appends
+        // immediately (and `append` reprojects over the new log) or does not
+        // read the index at all (`kan identity did`). Reprojecting here meant
+        // every write rebuilt the projection twice.
         Ok(())
     }
 
