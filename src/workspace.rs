@@ -502,6 +502,25 @@ impl Workspace {
         Ok(())
     }
 
+    /// Discard and rebuild `.kan/overlay` from `.claims/`, then reproject.
+    ///
+    /// The overlay is derived, so this costs a re-parse and nothing else. It
+    /// exists for callers that move claims INTO the log which the overlay
+    /// already holds -- `restore` is the one -- because that leaves the same
+    /// claim in both stores, which is precisely what the #150 alarm treats as
+    /// corruption.
+    pub async fn rebuild_overlay(&mut self) -> Result<(), Error> {
+        let identity = self.identity.as_ref().ok_or(Error::NoIdentity)?;
+        let overlay_dir = self.root.join(".kan").join("overlay");
+        if overlay_dir.exists() {
+            std::fs::remove_dir_all(&overlay_dir)?;
+        }
+        self.overlay = Log::open_or_create(&overlay_dir, identity).await?;
+        self.published =
+            ingest_published(&self.root, identity, &self.log, &mut self.overlay).await?;
+        self.reproject().await
+    }
+
     /// The log and the signing identity together, borrowed disjointly.
     ///
     /// A write needs `&mut log` and `&identity` at once, and going through

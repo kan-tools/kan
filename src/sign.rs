@@ -64,11 +64,12 @@ pub enum Error {
     #[error("recovery phrase: {0}")]
     Recovery(String),
     #[error(
-        "this repo already has claims written under an existing identity, and {attempt} \
-         would give it a second identity.\n\n\
-         The claims already in the log are signed by the first identity, and a fold trusts a \
-         single author, so they would all disappear from every read at exit 0 while still \
-         being on disk.\n\n\
+        "this repo already has an identity -- {evidence} -- and {attempt} would give it a \
+         second identity.\n\n\
+         Two identities in one workspace means the one kan resolves is the one that signs, \
+         and that is decided by environment and file layout rather than by anything you \
+         said. Authorship of everything written from here on would depend on which key won \
+         that race.\n\n\
          {remedy}\n\n\
          If you meant to add a second *role* to this workspace -- a director and a prover \
          signing separately, say -- that is a supported thing and this is not the way to ask \
@@ -76,7 +77,11 @@ pub enum Error {
          deliberately and registers it, then read with `--trust roles` so both roles' claims \
          are visible."
     )]
-    WouldMintSecondIdentity { attempt: String, remedy: String },
+    WouldMintSecondIdentity {
+        attempt: String,
+        remedy: String,
+        evidence: String,
+    },
     #[error(
         "a role named `{name}` is already declared in this workspace (key: {existing}). \
          Pick another name, or use the existing role."
@@ -165,6 +170,28 @@ impl Identity {
             // status` printed "no subjects yet" at exit 0 — verbatim REQ-5's
             // failure mode, reached through the release's recommended
             // workaround.
+            // The named file is missing. Before treating that as "mint one
+            // here", prefer the identity this workspace already has -- which
+            // is what `existing_identity` does on the READ side, and the two
+            // must agree or reads and writes resolve different keys.
+            //
+            // That asymmetry is exactly how `adopt` became a no-op twice
+            // over: the read side learned to see `.kan/identity` while the
+            // sign side kept minting at the absent override path, so
+            // `kan restore` succeeded at exit 0 under a brand-new DID and
+            // split the log across two authors. Fixing one side and not the
+            // other moved the defect rather than removing it.
+            if !override_path.exists() && path.exists() {
+                eprintln!(
+                    "warning: KAN_IDENTITY_FILE names {}, which does not exist. Using this \
+                     workspace's own key at {} instead of creating one -- a second identity \
+                     here would decide authorship by file layout rather than by anything \
+                     you asked for.",
+                    override_path.display(),
+                    path.display()
+                );
+                return Self::load_or_create_plaintext(path);
+            }
             if !override_path.exists() {
                 refuse_second_identity(
                     path,
@@ -570,10 +597,20 @@ fn refuse_second_identity(
     attempt: impl Into<String>,
     remedy: impl Into<String>,
 ) -> Result<(), Error> {
-    if log_has_claims(identity_path) {
+    let evidence = match (
+        log_has_claims(identity_path),
+        existing_identity_evidence(identity_path),
+    ) {
+        (true, Some(what)) => Some(format!("claims in its log, and {what}")),
+        (true, None) => Some("claims in its log".to_string()),
+        (false, Some(what)) => Some(what.to_string()),
+        (false, None) => None,
+    };
+    if let Some(evidence) = evidence {
         return Err(Error::WouldMintSecondIdentity {
             attempt: attempt.into(),
             remedy: remedy.into(),
+            evidence,
         });
     }
     Ok(())
@@ -584,6 +621,40 @@ fn refuse_second_identity(
 /// Deliberately a file-existence check rather than a read: `sign` must not
 /// depend on `store`, and the question here is only "has anything ever been
 /// written," which a non-empty CAR answers without decoding a single claim.
+/// What evidence there is that this workspace ALREADY has an identity,
+/// beyond a non-empty log.
+///
+/// The guard used to weigh only `log/repo.car`, which misses the case that
+/// matters most for recovery: `kan restore` exists precisely when the log is
+/// EMPTY and the claims are in `.claims/`. A workspace there can hold an
+/// adopted `.kan/identity` and still look "fresh" to a log-only test, so
+/// minting sailed straight past the one guard meant to stop it -- and the
+/// operator ended up with the adopted key in `.kan/identity`, a freshly
+/// minted key at the `KAN_IDENTITY_FILE` path, the second one winning every
+/// signature, and a log split across two authors.
+///
+/// A key file, a seed, or an `identity-id` each mean this workspace has an
+/// identity. Minting a different one is what the guard is for, whether or
+/// not anything has been written yet.
+fn existing_identity_evidence(identity_path: &Path) -> Option<&'static str> {
+    let dir = identity_path.parent()?;
+    if identity_path.exists() {
+        return Some("a signing key at .kan/identity");
+    }
+    if dir.join(SEED_FILE).exists() {
+        return Some("a root seed at .kan/seed");
+    }
+    // `identity-id` is deliberately NOT evidence. `keychain_account` writes
+    // it on the way into the keychain branch -- BEFORE the guard runs -- so
+    // counting it would make the guard fire on evidence its own invocation
+    // had just created, refusing every first-run keychain workspace. Caught
+    // by five pre-existing v0.7 tests going red the moment it was added.
+    //
+    // It is not needed either: the cases it would cover are already covered
+    // by a key file, a seed, or a non-empty log.
+    None
+}
+
 fn log_has_claims(identity_path: &Path) -> bool {
     identity_path
         .parent()
@@ -727,10 +798,11 @@ pub fn register_active(kan_dir: &Path, did: &Did, key_path: &Path) -> Result<(),
 /// `None` means there is honestly no "me" here yet, which is a different
 /// answer from an error and lets the caller say so in those terms.
 ///
-/// This *can* still reach the OS keychain, when the identity it is loading is
-/// stored there. That is the right trade: the cost is paid only by a read
-/// that explicitly asked to be framed around the active identity, rather than
-/// by every read as before.
+/// The key-file branch below uses `load_existing`, which reads the file and
+/// nothing else -- so it cannot reach the keychain, write `identity-id`, or
+/// migrate and delete the plaintext copy the way `load_or_create` does. A
+/// read must not do any of those. Only the seed branch can still reach the
+/// keychain, and only for a seed-rooted workspace that has no key file.
 pub fn existing_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
     let key_path = kan_dir.join("identity");
 

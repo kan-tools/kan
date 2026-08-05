@@ -473,9 +473,15 @@ fn a_refused_restore_brings_no_workspace_into_existence() {
         !key.exists(),
         "a refused restore minted a signing key -- and then judged the tree against it"
     );
+    // Holds in THIS configuration -- the env key is absent, so nothing gets
+    // as far as opening a store. With `KAN_IDENTITY_FILE` naming a key that
+    // exists, a refused restore still creates an empty `.kan/`; that is
+    // pre-existing and about store creation rather than identity
+    // persistence, which is what REQ-3/AC-9 is about. Scoped here rather
+    // than asserted as a general property it does not have.
     assert!(
         !dir.path().join(".kan").exists(),
-        "a refused restore created a workspace"
+        "a refused restore created a workspace, with no key file in play"
     );
 }
 
@@ -516,9 +522,15 @@ fn a_lost_key_restore_names_the_tree_and_its_remedy_works() {
          the one fact a lost-key operator needs: {}",
         refused.stderr
     );
+    // Restore's own refusal, not the one written for `--trust me`. Checked
+    // by a phrase only restore's says, rather than by the ABSENCE of
+    // `--trust`: absence is satisfied by any number of wrong messages, and
+    // it is the presence of restore's own wording that is the property.
     assert!(
-        !refused.stderr.contains("--trust"),
-        "the refusal borrows `--trust me`'s message, which `restore` has no flag for: {}",
+        refused
+            .stderr
+            .contains("cannot tell which of these claims are yours"),
+        "expected `restore`'s own refusal, which names the tree it read: {}",
         refused.stderr
     );
 
@@ -535,6 +547,35 @@ fn a_lost_key_restore_names_the_tree_and_its_remedy_works() {
         "`restore` gave the same refusal after the adopt it told the operator to run -- \
          the advertised remedy is a no-op: {}",
         after.stderr
+    );
+
+    // ...and it must have restored as the identity it named, not merely
+    // exited 0.
+    //
+    // Asserting `after.ok` alone is what let the second version of this
+    // defect through: the read side learned to see `.kan/identity` while the
+    // sign side went on minting at the absent KAN_IDENTITY_FILE path, so
+    // `restore` succeeded under a brand-new DID, left a private key at the
+    // path the operator had lost, and split the log across two authors. Exit
+    // 0 was true and meaningless.
+    assert_eq!(
+        kan(dir.path(), Some(&missing), &["identity", "did"]).stdout,
+        did,
+        "restore succeeded under a different identity than the one it adopted"
+    );
+    assert!(
+        !missing.exists(),
+        "a second signing key was minted at the KAN_IDENTITY_FILE path"
+    );
+    let shown = kan(
+        dir.path(),
+        Some(&missing),
+        &["show", "bug-1", "--trust", "me"],
+    );
+    assert!(
+        shown.stdout.contains("mine to restore"),
+        "the restored claims are not visible as this workspace's own: {}",
+        shown.stdout
     );
 }
 
