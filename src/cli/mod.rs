@@ -235,11 +235,13 @@ pub enum Command {
         /// and is free to change; this shape is versioned and additive-only.
         #[arg(long)]
         json: bool,
-        /// Fold under `PeerContested` over these authors instead of the
-        /// `Solo` default: `did:key:...`, `did:key:...=<weight>`, or `me`
-        /// for this workspace's own identity. Repeat for several authors.
-        /// Weight defaults to 1.0 and must be in [0,1]; an author you do
-        /// not name is invisible, not merely down-weighted.
+        /// Narrow or widen the trust base. The default is `local` — every
+        /// author with a claim in this workspace's log. Also accepts `me`
+        /// (the active identity alone), `roles` (only the identities
+        /// declared in `.kan/roles`), `role:<name>` (one declared role), a
+        /// bare `did:key:...`, or `did:key:...=<weight>`. Repeat for several
+        /// authors. Weight defaults to 1.0 and must be in [0,1]; an author
+        /// you do not name is invisible, not merely down-weighted.
         #[arg(long = "trust", value_name = "AUTHOR[=WEIGHT]")]
         trust: Vec<String>,
     },
@@ -621,17 +623,21 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         return Ok(());
     }
 
-    // #144's subject-name check runs BEFORE any workspace is opened, so a
-    // refused name cannot mint an identity or create `.kan/` on its way to
-    // being refused (REQ-3, and ADR-82's ordering rule: validate before
-    // acting). It was inside `append`, which is after `Workspace::open` --
-    // so `kan observe x --subject $'bad\nname'` in a fresh repo left a
-    // signing key and a workspace behind, for a command that wrote nothing.
+    // An EARLY refusal, so a bad subject name is reported before a workspace
+    // is opened at all. Cheaper, and the error arrives before any store I/O.
     //
-    // Checked here rather than moved out of `append`: `append` is the single
-    // choke point every write verb reaches, and a check on some of them is a
-    // check on none (#144). This is a second, earlier check, not a
-    // relocation.
+    // It is no longer what delivers REQ-3's "a refused write mints nothing":
+    // that comes from `commit_identity` running inside `append` AFTER
+    // validation, so the property holds for every failure cause rather than
+    // for the ones anybody hoisted. This check was written when it WAS the
+    // mechanism, and a cold review showed the suite stays green with both
+    // hoists deleted -- so treat the tests beside it as pinning where the
+    // error surfaces, not whether an identity is minted.
+    //
+    // Kept rather than removed, and kept in addition to `append`'s own check
+    // rather than replacing it: `append` is the single choke point every
+    // write verb reaches, and a check on some of them is a check on none
+    // (#144).
     for subject in declared_subjects(&cli.command) {
         actions::validate_subject_name(&subject)?;
     }
@@ -959,8 +965,9 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                         println!("key: {}", role.key_path.display());
                         println!(
                         "\nWrite as this role:\n    KAN_IDENTITY_FILE={} kan observe <subject> \
-                         <text>\n\nRead every role's claims (the default Solo view shows only \
-                         the active identity's):\n    kan show <subject> --trust roles",
+                         <text>\n\nEvery role's claims are in the default view already -- it \
+                         trusts every author in this log. `--trust roles` NARROWS to just the \
+                         declared ones:\n    kan show <subject> --trust roles",
                         role.key_path.display()
                     );
                     }
