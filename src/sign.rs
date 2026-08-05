@@ -170,35 +170,29 @@ impl Identity {
             // status` printed "no subjects yet" at exit 0 — verbatim REQ-5's
             // failure mode, reached through the release's recommended
             // workaround.
-            // The named file is missing. Before treating that as "mint one
-            // here", prefer the identity this workspace already has -- which
-            // is what `existing_identity` does on the READ side, and the two
-            // must agree or reads and writes resolve different keys.
+            // The named file is missing. That is NOT an invitation to sign
+            // with some other key.
             //
-            // That asymmetry is exactly how `adopt` became a no-op twice
-            // over: the read side learned to see `.kan/identity` while the
-            // sign side kept minting at the absent override path, so
-            // `kan restore` succeeded at exit 0 under a brand-new DID and
-            // split the log across two authors. Fixing one side and not the
-            // other moved the defect rather than removing it.
-            if !override_path.exists() && path.exists() {
-                eprintln!(
-                    "warning: KAN_IDENTITY_FILE names {}, which does not exist. Using this \
-                     workspace's own key at {} instead of creating one -- a second identity \
-                     here would decide authorship by file layout rather than by anything \
-                     you asked for.",
-                    override_path.display(),
-                    path.display()
-                );
-                return Self::load_or_create_plaintext(path);
-            }
+            // A previous round substituted `.kan/identity` here, calling it
+            // symmetry with the read side. It fabricated authorship: a
+            // declared role whose key file had gone missing signed as the
+            // HUMAN, silently, at exit 0 -- `.kan/roles` records that path as
+            // a role's key and this function never reads it. A loud refusal
+            // became a wrong-author success, which is exactly the trade the
+            // round before had been fixing. The only signal was stderr, which
+            // `day` and MCP callers do not surface.
+            //
+            // So: refuse, and let the guard below say what it found. An
+            // operator whose KAN_IDENTITY_FILE names a stale path needs to
+            // be told that, not quietly given a different identity.
             if !override_path.exists() {
                 refuse_second_identity(
                     path,
                     format!("creating a key at {}", override_path.display()),
-                    "Point KAN_IDENTITY_FILE at the existing key file, or unset it and let \
-                     kan use the keychain. To restore from a recovery phrase, write the key \
-                     to that path first.",
+                    "KAN_IDENTITY_FILE names a path that does not exist. Point it at the \
+                     key you meant, or unset it and let kan use this workspace's own \
+                     identity. To restore from a recovery phrase, write the key to that \
+                     path first.",
                 )?;
             }
             return Self::load_or_create_plaintext(&override_path);
@@ -616,11 +610,6 @@ fn refuse_second_identity(
     Ok(())
 }
 
-/// Whether this repo's log already holds claims.
-///
-/// Deliberately a file-existence check rather than a read: `sign` must not
-/// depend on `store`, and the question here is only "has anything ever been
-/// written," which a non-empty CAR answers without decoding a single claim.
 /// What evidence there is that this workspace ALREADY has an identity,
 /// beyond a non-empty log.
 ///
@@ -633,16 +622,22 @@ fn refuse_second_identity(
 /// minted key at the `KAN_IDENTITY_FILE` path, the second one winning every
 /// signature, and a log split across two authors.
 ///
-/// A key file, a seed, or an `identity-id` each mean this workspace has an
-/// identity. Minting a different one is what the guard is for, whether or
-/// not anything has been written yet.
+/// A key file or a root seed each mean this workspace has an identity.
+/// Minting a different one is what the guard is for, whether or not anything
+/// has been written yet.
 fn existing_identity_evidence(identity_path: &Path) -> Option<&'static str> {
     let dir = identity_path.parent()?;
     if identity_path.exists() {
         return Some("a signing key at .kan/identity");
     }
-    if dir.join(SEED_FILE).exists() {
-        return Some("a root seed at .kan/seed");
+    if dir.join(SEED_FILE).exists() || dir.join(SEED_ID_FILE).exists() {
+        // BOTH, matching `Identity::is_seed_rooted`. A seed-rooted workspace
+        // on macOS has `seed-id` and no `seed` -- the default first-run
+        // layout -- and `Seed::load` returns `None` under KAN_NO_KEYCHAIN, so
+        // `seed-id` is the ONLY on-disk trace that this workspace is
+        // seed-rooted at all. Checking `seed` alone left the guard blind in
+        // precisely the empty-log case this function exists for.
+        return Some("a root seed for this workspace");
     }
     // `identity-id` is deliberately NOT evidence. `keychain_account` writes
     // it on the way into the keychain branch -- BEFORE the guard runs -- so
@@ -655,6 +650,11 @@ fn existing_identity_evidence(identity_path: &Path) -> Option<&'static str> {
     None
 }
 
+/// Whether this repo's log already holds claims.
+///
+/// Deliberately a file-existence check rather than a read: `sign` must not
+/// depend on `store`, and the question here is only "has anything ever been
+/// written," which a non-empty CAR answers without decoding a single claim.
 fn log_has_claims(identity_path: &Path) -> bool {
     identity_path
         .parent()
@@ -834,6 +834,24 @@ pub fn existing_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
         // routing.
     }
 
+    // SEED BEFORE KEY FILE, matching `load_or_create_for_workspace`'s order
+    // exactly.
+    //
+    // This function checked the key file first, and the write side checks
+    // the seed first -- so in any workspace holding both, reads and writes
+    // resolved DIFFERENT identities. `kan identity did` named one, `--trust
+    // me` folded under the other and reported "no claims" against a full
+    // log, and `restore` reported the operator's own claims as somebody
+    // else's. Two functions with inverted precedence is the structural cause
+    // of every identity defect this milestone's review rounds found; they
+    // are patched one layer at a time until the orders agree.
+    //
+    // Reads follow writes rather than the reverse, because the write side's
+    // order is what actually signs: a read that disagrees with it is a read
+    // that lies about who wrote what.
+    if let Some(seed) = Seed::load(kan_dir)? {
+        return Ok(Some(seed.signing_identity()?));
+    }
     if key_path.exists() {
         // `load_existing`, NOT `load_or_create`. The latter consults
         // `KAN_IDENTITY_FILE` itself, so on the fall-through above -- env set,
@@ -845,10 +863,7 @@ pub fn existing_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
         // yours. Caught by the regression test for the original defect.
         return Ok(Some(Identity::load_existing(&key_path)?));
     }
-    match Seed::load(kan_dir)? {
-        Some(seed) => Ok(Some(seed.signing_identity()?)),
-        None => Ok(None),
-    }
+    Ok(None)
 }
 
 pub fn list_roles(kan_dir: &Path) -> Result<Vec<Role>, Error> {

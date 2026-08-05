@@ -534,32 +534,42 @@ fn a_lost_key_restore_names_the_tree_and_its_remedy_works() {
         refused.stderr
     );
 
-    // The remedy it advertises has to actually work.
+    // The remedy it advertises has to actually work -- and a stale
+    // KAN_IDENTITY_FILE must be reported rather than worked around.
     let adopted = kan(
         dir.path(),
         Some(&missing),
         &["identity", "adopt", "--key", key.to_str().unwrap()],
     );
     assert!(adopted.ok, "adopt failed: {}", adopted.stderr);
-    let after = kan(dir.path(), Some(&missing), &["restore"]);
+
+    // Still pointing at a path that does not exist: REFUSED, naming the
+    // guard's evidence. Substituting `.kan/identity` here instead would sign
+    // as whatever the workspace happens to hold, which fabricates authorship
+    // when the missing path is a declared role's key.
+    let still_stale = kan(dir.path(), Some(&missing), &["restore"]);
     assert!(
-        after.ok,
-        "`restore` gave the same refusal after the adopt it told the operator to run -- \
-         the advertised remedy is a no-op: {}",
-        after.stderr
+        !still_stale.ok,
+        "a stale KAN_IDENTITY_FILE was silently substituted rather than reported: {}",
+        still_stale.stdout
+    );
+    assert!(
+        still_stale.stderr.contains("second identity"),
+        "the refusal should name what it found: {}",
+        still_stale.stderr
     );
 
-    // ...and it must have restored as the identity it named, not merely
-    // exited 0.
-    //
-    // Asserting `after.ok` alone is what let the second version of this
-    // defect through: the read side learned to see `.kan/identity` while the
-    // sign side went on minting at the absent KAN_IDENTITY_FILE path, so
-    // `restore` succeeded under a brand-new DID, left a private key at the
-    // path the operator had lost, and split the log across two authors. Exit
-    // 0 was true and meaningless.
+    // With the variable out of the way, the adopted key is this workspace's
+    // and the restore lands under it.
+    let after = kan(dir.path(), None, &["restore"]);
+    assert!(
+        after.ok,
+        "`restore` still refused after the adopt it told the operator to run -- the \
+         advertised remedy is a no-op: {}",
+        after.stderr
+    );
     assert_eq!(
-        kan(dir.path(), Some(&missing), &["identity", "did"]).stdout,
+        kan(dir.path(), None, &["identity", "did"]).stdout,
         did,
         "restore succeeded under a different identity than the one it adopted"
     );
@@ -567,14 +577,77 @@ fn a_lost_key_restore_names_the_tree_and_its_remedy_works() {
         !missing.exists(),
         "a second signing key was minted at the KAN_IDENTITY_FILE path"
     );
-    let shown = kan(
-        dir.path(),
-        Some(&missing),
-        &["show", "bug-1", "--trust", "me"],
-    );
+    let shown = kan(dir.path(), None, &["show", "bug-1", "--trust", "me"]);
     assert!(
         shown.stdout.contains("mine to restore"),
         "the restored claims are not visible as this workspace's own: {}",
+        shown.stdout
+    );
+}
+
+/// B1 from the fourth review: a claim must never be signed by an identity the
+/// caller did not ask for.
+///
+/// A previous round made an absent `KAN_IDENTITY_FILE` fall back to
+/// `.kan/identity`, calling it symmetry with the read side. It fabricated
+/// authorship — writing as a declared role whose key file had gone missing
+/// silently signed as the *human*, at exit 0, with only an stderr line that
+/// `day` and MCP callers never surface. `.kan/roles` records that path as the
+/// role's key; the resolver never reads it.
+///
+/// A loud refusal is the only safe answer: the caller named a key, and that
+/// key is not there.
+#[test]
+fn a_missing_role_key_never_signs_as_somebody_else() {
+    let dir = repo();
+    let human = dir.path().join("humankey");
+    assert!(
+        kan(
+            dir.path(),
+            Some(&human),
+            &["observe", "the human's note", "--subject", "bug-7"]
+        )
+        .ok
+    );
+    let human_did = kan(dir.path(), Some(&human), &["identity", "did"]).stdout;
+
+    let role_key = dir.path().join("roles.d-prover");
+    let added = kan(
+        dir.path(),
+        Some(&human),
+        &[
+            "identity",
+            "role",
+            "add",
+            "prover",
+            "--key",
+            role_key.to_str().unwrap(),
+        ],
+    );
+    assert!(added.ok, "role add failed: {}", added.stderr);
+    let role_did = kan(dir.path(), Some(&role_key), &["identity", "did"]).stdout;
+    assert_ne!(human_did, role_did, "precondition: two distinct identities");
+
+    // The role's key goes missing — lost, cleaned up, not yet provisioned.
+    std::fs::remove_file(&role_key).unwrap();
+
+    let run = kan(
+        dir.path(),
+        Some(&role_key),
+        &["observe", "written as the role", "--subject", "bug-8"],
+    );
+    assert!(
+        !run.ok,
+        "writing with a missing key file succeeded -- and therefore signed as somebody \
+         else: {}",
+        run.stdout
+    );
+
+    // Nothing was written at all, so nothing can carry the wrong author.
+    let shown = kan(dir.path(), Some(&human), &["show", "bug-8"]);
+    assert!(
+        !shown.stdout.contains("written as the role"),
+        "the claim was recorded despite the refusal, under {human_did}: {}",
         shown.stdout
     );
 }
@@ -659,5 +732,135 @@ fn a_missing_key_does_not_claim_the_log_is_empty() {
         !refused.stderr.contains("nothing has been written here"),
         "the error contradicts the workspace it is describing: {}",
         refused.stderr
+    );
+}
+
+/// B3 from the fourth review: the second-identity guard must count a root
+/// **seed** as an identity, in the layout a real first run actually leaves.
+///
+/// The guard weighed only `log/repo.car`, then only `seed`. A seed-rooted
+/// workspace on macOS has `seed-id` and no `seed` — the default first-run
+/// shape — and `Seed::load` returns `None` under `KAN_NO_KEYCHAIN`, so
+/// `seed-id` is the *only* on-disk trace that the workspace is seed-rooted at
+/// all. That left the guard blind in precisely the empty-log case it had just
+/// been widened for: with the log cleared and the claims in `.claims/`,
+/// minting sailed straight past it and shadowed the original identity
+/// permanently.
+#[test]
+fn a_seed_rooted_workspace_is_not_re_minted_when_its_log_is_cleared() {
+    let dir = repo();
+    let kan_dir = dir.path().join(".kan");
+
+    // A seed-rooted workspace: no key file, a seed recorded, claims written.
+    assert!(
+        kan(
+            dir.path(),
+            None,
+            &["observe", "seeded work", "--subject", "bug-1"]
+        )
+        .ok
+    );
+    assert!(
+        kan_dir.join("seed").exists() || kan_dir.join("seed-id").exists(),
+        "precondition: the workspace should be seed-rooted"
+    );
+    assert!(
+        !kan_dir.join("identity").exists(),
+        "precondition: seed-rooted workspaces hold no plaintext key file"
+    );
+    let original = kan(dir.path(), None, &["identity", "did"]).stdout;
+
+    // `seed-id` only — the shape a keychain-backed first run leaves, and the
+    // one the guard could not see.
+    let _ = std::fs::remove_file(kan_dir.join("seed"));
+    std::fs::write(kan_dir.join("seed-id"), "some-account-id").unwrap();
+
+    // The restore precondition: the log is gone, the claims are elsewhere.
+    for dead in ["log", "overlay", "index.sqlite"] {
+        let p = kan_dir.join(dead);
+        let _ = std::fs::remove_dir_all(&p);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    let run = kan(
+        dir.path(),
+        None,
+        &["observe", "after the log went", "--subject", "bug-2"],
+    );
+    assert!(
+        !run.ok,
+        "a seed-rooted workspace with an empty log was re-minted: {}\n{}",
+        run.stdout, run.stderr
+    );
+    assert!(
+        !kan_dir.join("seed").exists(),
+        "minting wrote a second root seed beside the recorded one -- the original \
+         identity is now permanently shadowed, since Seed::load prefers the file"
+    );
+    let after = kan(dir.path(), None, &["identity", "did"]);
+    assert!(
+        !after.ok || after.stdout == original,
+        "the workspace resolves a different identity than before ({} -> {})",
+        original,
+        after.stdout
+    );
+}
+
+/// B4 from the fourth review: reads and writes must resolve the **same**
+/// identity in a workspace holding both a seed and a key file.
+///
+/// `sign::existing_identity` (reads: `--trust me`, `--trust roles`, `restore`)
+/// checked the key file first; `load_or_create_for_workspace` (writes) checks
+/// the seed first. Wherever both existed the two disagreed, and the symptom
+/// was the one this milestone exists to end: `kan identity did` naming one
+/// identity while `--trust me` folded under another and reported "no claims"
+/// against a full log.
+///
+/// Two resolvers with inverted precedence was the structural cause of every
+/// identity defect the v0.11 review rounds found. This pins that they agree.
+#[test]
+fn reads_and_writes_resolve_the_same_identity() {
+    let dir = repo();
+    let kan_dir = dir.path().join(".kan");
+
+    assert!(
+        kan(
+            dir.path(),
+            None,
+            &["observe", "seed rooted note", "--subject", "bug-1"]
+        )
+        .ok
+    );
+    let writing = kan(dir.path(), None, &["identity", "did"]).stdout;
+    assert!(
+        !writing.is_empty(),
+        "precondition: the workspace has an identity"
+    );
+
+    // Give the workspace a key file as well as its seed -- the state where
+    // the two resolvers diverged. The key is minted in a SEPARATE repo so
+    // this one's guard is not involved, then dropped in beside the seed.
+    let elsewhere = repo();
+    let spare = elsewhere.path().join("spare-key");
+    assert!(
+        kan(elsewhere.path(), Some(&spare), &["identity", "did"]).ok,
+        "could not mint a spare key"
+    );
+    std::fs::copy(&spare, kan_dir.join("identity")).unwrap();
+    assert!(
+        kan_dir.join("identity").exists()
+            && (kan_dir.join("seed").exists() || kan_dir.join("seed-id").exists()),
+        "precondition: the workspace must hold BOTH a key file and a seed"
+    );
+
+    // The read side must fold under the same identity the write side signs
+    // with, or it reports somebody else's log as empty.
+    let shown = kan(dir.path(), None, &["show", "bug-1", "--trust", "me"]);
+    assert!(shown.ok, "`--trust me` failed: {}", shown.stderr);
+    assert!(
+        shown.stdout.contains("seed rooted note"),
+        "the read side resolved a different identity than the write side: `kan identity \
+         did` says {writing}, and `--trust me` cannot see that identity's own claim.\n{}",
+        shown.stdout
     );
 }
