@@ -740,15 +740,38 @@ pub fn existing_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
     // configuration (`KAN_IDENTITY_FILE`) that CI, containers, agents and
     // `day` all use. Found by `--trust me` failing under exactly that setup.
     if let Some(override_path) = std::env::var_os(IDENTITY_FILE_ENV) {
-        return match std::path::PathBuf::from(override_path).exists() {
-            true => Ok(Some(Identity::load_or_create(&key_path)?)),
-            false => Ok(None),
-        };
+        if std::path::PathBuf::from(override_path).exists() {
+            return Ok(Some(Identity::load_or_create(&key_path)?));
+        }
+        // FALLS THROUGH when the named path is absent, rather than reporting
+        // "no identity". `Identity::load_or_create` treats this variable as
+        // exclusive because it is choosing a key to SIGN with, and a missing
+        // path there means "mint one here". This function only answers "does
+        // this workspace already have an identity", where the same
+        // exclusivity is a trap:
+        //
+        //   $ kan restore                       # refuses: no identity reachable
+        //   ... run `kan identity adopt --key <path>`
+        //   $ kan identity adopt --key backup   # "adopted did:key:..." -- writes .kan/identity
+        //   $ kan restore                       # IDENTICAL refusal, forever
+        //
+        // `adopt` writes `.kan/identity`, and this returned `None` without
+        // ever looking there — so the remedy the refusal advertised could not
+        // possibly work, under a condition that refusal itself enumerates.
+        // Found by the cold re-review of the fix round that introduced the
+        // routing.
     }
 
     if key_path.exists() {
-        // Exists, so this loads rather than creates.
-        return Ok(Some(Identity::load_or_create(&key_path)?));
+        // `load_existing`, NOT `load_or_create`. The latter consults
+        // `KAN_IDENTITY_FILE` itself, so on the fall-through above -- env set,
+        // named path absent -- it would mint a fresh key at that path and
+        // hand it back as this workspace's identity. Which is exactly the
+        // no-op the fall-through exists to fix, moved one line down: `adopt`
+        // writes `.kan/identity`, and the next `restore` would read a
+        // brand-new DID instead and report that nothing in the tree is
+        // yours. Caught by the regression test for the original defect.
+        return Ok(Some(Identity::load_existing(&key_path)?));
     }
     match Seed::load(kan_dir)? {
         Some(seed) => Ok(Some(seed.signing_identity()?)),

@@ -921,7 +921,42 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
     // freshly-minted identity reads it as someone else's"), reached by the
     // code meant to avoid it, and it broke REQ-3/AC-9 on the one path where
     // a wrongly-persisted identity is most expensive.
-    let mine = ws.active_did()?;
+    // `restore`'s own refusal when no key is reachable, rather than the
+    // generic one.
+    //
+    // The generic message is written for `--trust me` and says so: it talks
+    // about naming an author with `--trust`, about what `me` means, and about
+    // reading never creating an identity -- none of which apply to a write
+    // verb with no `--trust` flag. Worse, it drops the one fact a lost-key
+    // operator needs and the old refusal had: WHO signed the claims sitting
+    // in the tree.
+    let mine = match ws.active_did() {
+        Ok(did) => did,
+        Err(_) => {
+            let tree = crate::transport::git_tree::GitTree::new_reader(&ws.root);
+            let mut authors: std::collections::BTreeSet<String> = Default::default();
+            for (_, claim) in tree.read_all().into_iter().flatten() {
+                authors.insert(claim.content.author.did.clone());
+            }
+            let listed = match authors.is_empty() {
+                true => "  (none could be read)\n".to_string(),
+                false => authors
+                    .iter()
+                    .map(|d| format!("  {d}\n"))
+                    .collect::<String>(),
+            };
+            return Err(Error::Usage(format!(
+                "no signing key is reachable here, so kan cannot tell which of these claims \
+                 are yours to restore.\n\n\
+                 Claims found in {}, by author:\n{listed}\n\
+                 If one of those is you, point this workspace at that key -- \
+                 `kan identity adopt --key <path>` if you have the file, or `kan identity \
+                 restore` to recover it from your phrase -- then run `kan restore` again.\n\n\
+                 If KAN_IDENTITY_FILE is set, check it names a file that exists.",
+                crate::transport::git_tree::CLAIMS_DIR
+            )));
+        }
+    };
     let tree = crate::transport::git_tree::GitTree::new_reader(&ws.root);
     let mut restorable = Vec::new();
     let mut foreign_authors: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();

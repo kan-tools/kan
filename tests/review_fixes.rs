@@ -277,3 +277,346 @@ fn a_mixed_subject_legacy_file_is_not_authenticated() {
             .collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// v0.11's pre-release adversarial review, round two.
+//
+// The first round found six defects; they were fixed and the fixes shipped
+// with NO tests at all. The re-review proved it the only way that counts --
+// it reverted the entire source diff of the fix commits and the suite still
+// passed 287/0. Nothing in the repo would have noticed the fixes vanishing.
+//
+// That is this project's own recurring failure in its purest form. The
+// milestone those fixes belong to was *about* claims nothing checks, and
+// rewrote nine tests that could not fail. Then its fix round wrote none.
+//
+// These run the real binary, because every one of these defects is about what
+// the binary does across separate invocations -- an index left behind by one
+// process and read by the next, a refusal that must leave the filesystem
+// untouched. A library-level test cannot see any of it.
+// ---------------------------------------------------------------------------
+
+use std::process::Command;
+
+struct Run {
+    stdout: String,
+    stderr: String,
+    ok: bool,
+}
+
+fn kan(dir: &std::path::Path, key: Option<&std::path::Path>, args: &[&str]) -> Run {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_kan"));
+    cmd.args(args).current_dir(dir).env("KAN_NO_KEYCHAIN", "1");
+    match key {
+        Some(k) => {
+            cmd.env("KAN_IDENTITY_FILE", k);
+        }
+        None => {
+            cmd.env_remove("KAN_IDENTITY_FILE");
+        }
+    }
+    let out = cmd.output().expect("failed to run kan binary");
+    Run {
+        stdout: String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        stderr: String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        ok: out.status.success(),
+    }
+}
+
+fn git(dir: &std::path::Path, args: &[&str]) {
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .status()
+        .expect("failed to run git");
+    assert!(status.success(), "git {args:?} failed");
+}
+
+fn repo() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    git(dir.path(), &["init", "-q"]);
+    git(
+        dir.path(),
+        &[
+            "-c",
+            "user.email=kan-test@example.com",
+            "-c",
+            "user.name=kan-test",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "init",
+        ],
+    );
+    dir
+}
+
+/// A workspace whose `.claims/` holds an **own-authored** record that its log
+/// does not have — a restored clone, or a workspace whose log was rebuilt.
+///
+/// Built by publishing, committing, then deleting `.kan/` while keeping the
+/// key, which is the state a `kan restore` exists to resolve.
+fn own_claims_not_in_log() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = repo();
+    let key = dir.path().join("key");
+    let run = kan(
+        dir.path(),
+        Some(&key),
+        &["observe", "a claim of mine", "--subject", "bug-1"],
+    );
+    assert!(run.ok, "setup write failed: {}", run.stderr);
+    let run = kan(dir.path(), Some(&key), &["publish", "bug-1"]);
+    assert!(run.ok, "setup publish failed: {}", run.stderr);
+    git(dir.path(), &["add", "-A"]);
+    git(
+        dir.path(),
+        &[
+            "-c",
+            "user.email=kan-test@example.com",
+            "-c",
+            "user.name=kan-test",
+            "commit",
+            "-qm",
+            "publish",
+        ],
+    );
+    std::fs::remove_dir_all(dir.path().join(".kan")).unwrap();
+    (dir, key)
+}
+
+/// B2: one command must not return two different answers over identical
+/// bytes, depending on which code path last touched a *disposable cache*.
+///
+/// The read path decided own-vs-foreign by log membership and the write path
+/// by `author.did == mine`, so they projected different row sets — and both
+/// recorded the same index fingerprint, so neither could invalidate the
+/// other's work. `kan show` returned 1 live claim or 0 depending on whether a
+/// read or a write had last rebuilt the index, and deleting
+/// `.kan/index.sqlite` — a file the code calls disposable derived data —
+/// changed the answer.
+#[test]
+fn a_read_and_a_write_project_the_same_claims() {
+    let (dir, key) = own_claims_not_in_log();
+    let count = |label: &str| -> usize {
+        let run = kan(dir.path(), Some(&key), &["show", "bug-1", "--json"]);
+        assert!(run.ok, "{label}: show failed: {}", run.stderr);
+        let v: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
+        v["claims"].as_array().unwrap().len()
+    };
+
+    // One write first, so the log has an author and `Local` is non-empty
+    // throughout. Without it the first read legitimately returns 0 -- an
+    // empty log trusts nobody -- and the comparison would be measuring the
+    // trust base changing rather than the two paths disagreeing.
+    let run = kan(dir.path(), Some(&key), &["mark", "seed", "open"]);
+    assert!(run.ok, "seed write failed: {}", run.stderr);
+
+    // A read rebuilds the projection first.
+    std::fs::remove_file(dir.path().join(".kan/index.sqlite")).unwrap();
+    let after_read = count("after a read-open");
+
+    // Then a write rebuilds it by the other path.
+    let run = kan(dir.path(), Some(&key), &["mark", "unrelated", "open"]);
+    assert!(run.ok, "write failed: {}", run.stderr);
+    let after_write = count("after a write-open");
+
+    // Then the projection is discarded entirely and rebuilt from scratch.
+    std::fs::remove_file(dir.path().join(".kan/index.sqlite")).unwrap();
+    let after_discard = count("after discarding the index");
+
+    assert_eq!(
+        (after_read, after_write),
+        (after_write, after_discard),
+        "`kan show bug-1` returned {after_read}, then {after_write}, then \
+         {after_discard} live claims over identical on-disk bytes -- the read and write \
+         paths project different row sets while recording the same freshness key, so \
+         neither can invalidate the other"
+    );
+}
+
+/// B3: `restore` must refuse before bringing a workspace into existence.
+///
+/// It resolved (and so minted and persisted) an identity, then reported that
+/// nothing in the tree was signed by "this repo's identity" — about an
+/// identity it had invented one line earlier and left on disk. That is the
+/// exact failure `restore`'s own doc describes, reached by the code meant to
+/// avoid it, and it broke REQ-3/AC-9 on the path where a wrongly-persisted
+/// identity is most expensive.
+#[test]
+fn a_refused_restore_brings_no_workspace_into_existence() {
+    let dir = repo();
+    // A published tree signed by somebody else entirely.
+    let stranger = repo();
+    let stranger_key = stranger.path().join("key");
+    assert!(
+        kan(
+            stranger.path(),
+            Some(&stranger_key),
+            &["observe", "not yours", "--subject", "theirs"]
+        )
+        .ok
+    );
+    assert!(kan(stranger.path(), Some(&stranger_key), &["publish", "theirs"]).ok);
+    let claims = dir.path().join(".claims");
+    std::fs::create_dir_all(&claims).unwrap();
+    for entry in std::fs::read_dir(stranger.path().join(".claims")).unwrap() {
+        let entry = entry.unwrap();
+        std::fs::copy(entry.path(), claims.join(entry.file_name())).unwrap();
+    }
+
+    let key = dir.path().join("key-that-does-not-exist");
+    let run = kan(dir.path(), Some(&key), &["restore"]);
+
+    assert!(!run.ok, "restore should have refused: {}", run.stdout);
+    assert!(
+        !key.exists(),
+        "a refused restore minted a signing key -- and then judged the tree against it"
+    );
+    assert!(
+        !dir.path().join(".kan").exists(),
+        "a refused restore created a workspace"
+    );
+}
+
+/// B3, second half: the refusal must name the authors actually in the tree,
+/// and must not advertise a remedy that cannot work.
+///
+/// The generic no-identity message is written for `--trust me` — it talks
+/// about naming an author with `--trust`, about what `me` means, and about
+/// reading never creating an identity, none of which apply to a write verb
+/// with no `--trust` flag. And `kan identity adopt`, the remedy it named, was
+/// a **no-op** here: `existing_identity` checked `KAN_IDENTITY_FILE` first and
+/// exclusively, so it never looked at the `.kan/identity` adopt had just
+/// written, and `restore` refused identically forever.
+#[test]
+fn a_lost_key_restore_names_the_tree_and_its_remedy_works() {
+    let dir = repo();
+    let key = dir.path().join("key");
+    assert!(
+        kan(
+            dir.path(),
+            Some(&key),
+            &["observe", "mine to restore", "--subject", "bug-1"]
+        )
+        .ok
+    );
+    assert!(kan(dir.path(), Some(&key), &["publish", "bug-1"]).ok);
+    let did = kan(dir.path(), Some(&key), &["identity", "did"]).stdout;
+    // The key becomes unreachable: `.kan/` gone, and the env var points at a
+    // path that no longer exists.
+    std::fs::remove_dir_all(dir.path().join(".kan")).unwrap();
+    let missing = dir.path().join("gone");
+
+    let refused = kan(dir.path(), Some(&missing), &["restore"]);
+    assert!(!refused.ok, "expected a refusal: {}", refused.stdout);
+    assert!(
+        refused.stderr.contains(&did),
+        "the refusal must name the authors whose claims are sitting in the tree -- it is \
+         the one fact a lost-key operator needs: {}",
+        refused.stderr
+    );
+    assert!(
+        !refused.stderr.contains("--trust"),
+        "the refusal borrows `--trust me`'s message, which `restore` has no flag for: {}",
+        refused.stderr
+    );
+
+    // The remedy it advertises has to actually work.
+    let adopted = kan(
+        dir.path(),
+        Some(&missing),
+        &["identity", "adopt", "--key", key.to_str().unwrap()],
+    );
+    assert!(adopted.ok, "adopt failed: {}", adopted.stderr);
+    let after = kan(dir.path(), Some(&missing), &["restore"]);
+    assert!(
+        after.ok,
+        "`restore` gave the same refusal after the adopt it told the operator to run -- \
+         the advertised remedy is a no-op: {}",
+        after.stderr
+    );
+}
+
+/// N2: #144's subject name must be refused on **both** of the two subjects
+/// that `same` and `relate` name.
+///
+/// `append` validates only the subject the claim is about, so the second went
+/// unchecked on the CLI — and the merge class then *displays* under the bad
+/// name, so the good subject disappears from `status` entirely. MCP had
+/// validated both all along, making it a property of one surface out of two.
+#[test]
+fn both_subjects_of_a_two_subject_verb_are_validated() {
+    for verb in [
+        vec!["same", "good", "bad\nname"],
+        vec!["relate", "good", "blocks", "bad\nname"],
+    ] {
+        let dir = repo();
+        let key = dir.path().join("key");
+        assert!(
+            kan(
+                dir.path(),
+                Some(&key),
+                &["observe", "seed", "--subject", "good"]
+            )
+            .ok
+        );
+
+        let run = kan(dir.path(), Some(&key), &verb);
+        assert!(
+            !run.ok,
+            "`kan {}` accepted a control character in its second subject",
+            verb.join(" ")
+        );
+
+        let status = kan(dir.path(), Some(&key), &["status", "--json"]);
+        assert!(status.ok);
+        assert!(
+            !status.stdout.contains("bad\\nname"),
+            "the bad name reached the log via `{}` -- and a merge class displays under it, \
+             so `good` vanishes from status: {}",
+            verb.join(" "),
+            status.stdout
+        );
+    }
+}
+
+/// N5: an error must not assert the log is empty when it is not.
+///
+/// `--trust me` with no reachable key said "nothing has been written here" in
+/// a workspace whose log is full. It fires when no KEY is reachable, which is
+/// a different fact. Saying "there is nothing here" when there is plenty is
+/// the complete-looking wrong answer this project keeps meeting — shipped in
+/// a message written during the milestone about ending it.
+#[test]
+fn a_missing_key_does_not_claim_the_log_is_empty() {
+    let dir = repo();
+    let key = dir.path().join("key");
+    assert!(
+        kan(
+            dir.path(),
+            Some(&key),
+            &["observe", "plenty has been written here", "--subject", "s"]
+        )
+        .ok
+    );
+    let missing = dir.path().join("not-a-key");
+
+    // The claim is plainly readable without any identity...
+    let readable = kan(dir.path(), Some(&missing), &["show", "s"]);
+    assert!(readable.ok, "the default read should not need a key");
+    assert!(
+        readable.stdout.contains("plenty has been written here"),
+        "precondition: the log is readable and non-empty: {}",
+        readable.stdout
+    );
+
+    // ...so an error about the missing key must not deny it.
+    let refused = kan(dir.path(), Some(&missing), &["show", "s", "--trust", "me"]);
+    assert!(!refused.ok, "expected `--trust me` to fail with no key");
+    assert!(
+        !refused.stderr.contains("nothing has been written here"),
+        "the error contradicts the workspace it is describing: {}",
+        refused.stderr
+    );
+}
