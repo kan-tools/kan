@@ -158,8 +158,13 @@ fn no_keychain_cannot_mint_against_a_non_empty_log() {
     );
     assert_read_still_works(dir.path(), None, true);
     assert!(
-        run.stderr.contains("already has claims"),
-        "refusal must explain itself: {}",
+        // The refusal names its EVIDENCE, which is the part an operator can
+        // act on -- v0.11 widened the guard from "the log has claims" to
+        // "this workspace already has an identity", of which a non-empty log
+        // is one form. A refusal that cannot say which it saw is one nobody
+        // can check.
+        run.stderr.contains("claims in its log"),
+        "refusal must name the evidence it acted on: {}",
         run.stderr
     );
     assert!(

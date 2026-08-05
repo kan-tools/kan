@@ -517,3 +517,100 @@ async fn naming_nudge_appends_a_warning_to_the_confirmation_text() {
     drop(stdin);
     let _ = child.kill().await;
 }
+
+/// The mint-nothing-on-a-refused-write property holds on **both** surfaces.
+///
+/// v0.11 hoisted `validate_subject_name` ahead of `Workspace::open`, so a
+/// refused subject name cannot mint a signing key or create `.kan/` on its
+/// way to being refused (REQ-3). It went into the CLI only — which made it a
+/// property of one surface out of two, and CLAUDE.md's "one surface: CLI +
+/// MCP" exists precisely so that cannot be a sentence anyone has to write.
+///
+/// This asserts the property of MCP directly, and the CLI's equivalent lives
+/// in `tests/write_guards.rs`. Two tests rather than one because they are two
+/// process entry points; the thing that must not drift is the outcome.
+#[tokio::test]
+async fn an_mcp_write_refused_for_its_subject_name_mints_nothing() {
+    let dir = git_repo();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
+        .arg("mcp")
+        .current_dir(dir.path())
+        .env("KAN_NO_KEYCHAIN", "1")
+        .env("KAN_IDENTITY_FILE", dir.path().join("key"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("failed to spawn kan mcp");
+
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let send = |v: Value| serde_json::to_string(&v).unwrap() + "\n";
+    let mut recv_line = String::new();
+    macro_rules! recv {
+        () => {{
+            recv_line.clear();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                stdout.read_line(&mut recv_line),
+            )
+            .await
+            .expect("timed out waiting for kan mcp response")
+            .expect("failed to read from kan mcp stdout");
+            serde_json::from_str::<Value>(&recv_line).expect("response was not valid JSON")
+        }};
+    }
+
+    stdin
+        .write_all(
+            send(json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "mint-test", "version": "0.0.1"}
+                }
+            }))
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let _ = recv!();
+    stdin
+        .write_all(
+            send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"})).as_bytes(),
+        )
+        .await
+        .unwrap();
+
+    stdin
+        .write_all(
+            send(json!({
+                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "params": {
+                    "name": "observe",
+                    "arguments": {"text": "x", "subject": "bad\nname"}
+                }
+            }))
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let refused = recv!();
+    let rendered = serde_json::to_string(&refused).unwrap();
+    assert!(
+        rendered.contains("control character"),
+        "the invalid subject name was not refused: {rendered}"
+    );
+
+    assert!(
+        !dir.path().join("key").exists(),
+        "a refused MCP write minted a signing key"
+    );
+    assert!(
+        !dir.path().join(".kan").exists(),
+        "a refused MCP write created a workspace"
+    );
+}

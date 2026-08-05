@@ -44,9 +44,14 @@ const BUILT_FROM_ROOT_KEY: &str = "built_from_root_v2";
 /// log is what was written **through** this workspace where the overlay is
 /// what **arrived at** it as a committed `.claims/` file
 /// (`.design/identity-surface.md` RQ-2). Those are different acts, and the
-/// difference is the trust-relevant one — without it a merged pull request
-/// carrying a claims file would inject a stranger's claims into the
+/// difference is the trust-relevant one -- without it a merged pull request
+/// carrying a claims file would inject a STRANGER's claims into the
 /// maintainer's default view.
+///
+/// It stops there, and the limit is worth stating where the column is
+/// defined: origin decides `Local`'s MEMBERSHIP and nothing else. The fold
+/// never sees it, so a claims file from an author who has already written
+/// here still folds in. #164 gives the fold origin per row in v0.12.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Origin {
     /// This workspace's own log — the one medium kan writes, signs and ships.

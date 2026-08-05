@@ -234,3 +234,76 @@ fn a_write_refused_for_its_subject_name_mints_nothing() {
         "a legitimate write was broken by the early check: {err}"
     );
 }
+
+/// REQ-3 / AC-9 in full: **no** refused write leaves an identity behind,
+/// whatever refused it.
+///
+/// The earlier version of this pinned one cause (a bad subject name) by
+/// hoisting one check. That is a check-shaped fix to a state-shaped problem:
+/// every *other* way a write can fail after `Workspace::open` still minted,
+/// and the list of those is not one anybody should have to keep complete.
+///
+/// v0.11 moves the state change instead. `Workspace::open` resolves no
+/// identity; `commit_identity` runs immediately before the append, once every
+/// precondition has passed. So the property holds for causes nobody
+/// enumerated, which is the only version of it worth having.
+///
+/// **Persist before the append, not after**, deliberately departing from
+/// REQ-3's wording ("only after the write ... has succeeded"). Failing
+/// between persist and append leaves an identity with an empty log — exactly
+/// what `kan identity did` produces. Failing the other way round leaves a
+/// claim signed by a key nothing on disk holds, which the ADR-77 guard then
+/// refuses to open: log unreadable, key unrecoverable.
+#[test]
+fn no_refused_write_leaves_an_identity_behind() {
+    // (label, repo has commits, args)
+    let cases: &[(&str, bool, &[&str])] = &[
+        (
+            "a control character in the subject",
+            true,
+            &["observe", "x", "--subject", "bad\nname"],
+        ),
+        (
+            "a repo with no commits",
+            false,
+            &["observe", "x", "--subject", "s"],
+        ),
+        (
+            "an unparseable --cites CID",
+            true,
+            &["observe", "x", "--subject", "s", "--cites", "not-a-cid"],
+        ),
+    ];
+
+    for (label, has_commits, args) in cases {
+        let dir = git_repo(*has_commits);
+        let key = dir.path().join("key");
+
+        let (_, err, ok) = kan(dir.path(), &key, args);
+
+        assert!(!ok, "{label}: the write was expected to be refused");
+        assert!(
+            !key.exists(),
+            "{label}: a refused write minted a signing key ({err})"
+        );
+        assert!(
+            !dir.path().join(".kan").exists(),
+            "{label}: a refused write created a workspace ({err})"
+        );
+    }
+
+    // The negative control, and the one that makes the rest mean something:
+    // a write that is NOT refused still brings the workspace into existence.
+    let dir = git_repo(true);
+    let key = dir.path().join("key");
+    let (_, err, ok) = kan(dir.path(), &key, &["observe", "real", "--subject", "s"]);
+    assert!(ok, "a legitimate write failed: {err}");
+    assert!(
+        key.exists(),
+        "a successful write did not persist an identity"
+    );
+    assert!(
+        dir.path().join(".kan/log").exists(),
+        "a successful write did not create the log"
+    );
+}

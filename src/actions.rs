@@ -308,6 +308,12 @@ async fn append(
     if let Some(raw) = file {
         artifacts.push(parse_file_artifact(&raw, &head));
     }
+    // Every precondition has now passed -- the subject name, the anchor, the
+    // HEAD commit, the artifact spec. THIS is the moment the workspace comes
+    // into existence: a command refused above leaves no key, no `seed-id`,
+    // no `identity-id` and no `.kan/` (REQ-3).
+    ws.commit_identity().await?;
+
     let content = ClaimContent {
         author: ws.my_author()?,
         workspace: anchor,
@@ -317,7 +323,7 @@ async fn append(
         artifacts,
         recorded_at: None,
     };
-    let (log, identity) = ws.log_and_identity()?;
+    let (log, identity) = ws.log_and_identity().await?;
     let cid = log.append(content, identity).await?;
     ws.reproject().await?;
     Ok(AppendResult { cid, subject, kind })
@@ -905,7 +911,74 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
         )));
     }
 
-    let mine = ws.identity()?.did();
+    // Resolved WITHOUT creating: `restore` decides what is restorable by
+    // comparing against this workspace's identity, and minting one first
+    // makes that comparison meaningless -- a fresh key matches nothing, so
+    // the command reports "nothing here was signed by this repo's identity"
+    // about an identity it invented one line earlier, and leaves it on disk.
+    //
+    // That is the exact failure `restore`'s own doc describes ("a
+    // freshly-minted identity reads it as someone else's"), reached by the
+    // code meant to avoid it, and it broke REQ-3/AC-9 on the one path where
+    // a wrongly-persisted identity is most expensive.
+    // Resolve the identity WITHOUT creating one, and refuse in `restore`'s
+    // own words when there is none -- not the generic one.
+    //
+    // The generic message is written for `--trust me` and says so: it talks
+    // about naming an author with `--trust`, about what `me` means, and about
+    // reading never creating an identity -- none of which apply to a write
+    // verb with no `--trust` flag. Worse, it drops the one fact a lost-key
+    // operator needs and the old refusal had: WHO signed the claims sitting
+    // in the tree.
+    let mine = match ws.active_did() {
+        Ok(did) => did,
+        // Only "there is no identity here" gets restore's own refusal. A
+        // corrupt key file or an unreachable keychain is a DIFFERENT fact
+        // and propagates as itself -- diagnosing either as "no signing key
+        // is reachable" would send someone hunting for a key that is
+        // present and broken.
+        Err(e) if !matches!(e, crate::workspace::Error::NoIdentityToName) => return Err(e.into()),
+        Err(_) => {
+            let tree = crate::transport::git_tree::GitTree::new_reader(&ws.root);
+            let mut authors: std::collections::BTreeSet<String> = Default::default();
+            let mut unreadable = 0usize;
+            for record in tree.read_all() {
+                match record {
+                    Ok((_, claim)) => {
+                        authors.insert(claim.content.author.did.clone());
+                    }
+                    // Counted rather than dropped. "(none could be read)"
+                    // with no reason, in a repo whose `.claims/` a bad merge
+                    // mangled, is a dead end -- and this is the message
+                    // somebody reads when they have already lost their key.
+                    Err(_) => unreadable += 1,
+                }
+            }
+            let mut listed = authors
+                .iter()
+                .map(|d| format!("  {d}\n"))
+                .collect::<String>();
+            if authors.is_empty() {
+                listed.push_str("  (no record could be read)\n");
+            }
+            if unreadable > 0 {
+                listed.push_str(&format!(
+                    "  ...and {unreadable} record(s) that could not be verified. Run \
+                     `kan restore` again once an identity is reachable for the details.\n"
+                ));
+            }
+            return Err(Error::Usage(format!(
+                "no signing key is reachable here, so kan cannot tell which of these claims \
+                 are yours to restore.\n\n\
+                 Claims found in {}, by author:\n{listed}\n\
+                 If one of those is you, point this workspace at that key -- \
+                 `kan identity adopt --key <path>` if you have the file, or `kan identity \
+                 restore` to recover it from your phrase -- then run `kan restore` again.\n\n\
+                 If KAN_IDENTITY_FILE is set, check it names a file that exists.",
+                crate::transport::git_tree::CLAIMS_DIR
+            )));
+        }
+    };
     let tree = crate::transport::git_tree::GitTree::new_reader(&ws.root);
     let mut restorable = Vec::new();
     let mut foreign_authors: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -937,14 +1010,51 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
         )));
     }
 
+    // Something IS restorable, so the workspace is genuinely this
+    // identity's and may now come into existence (REQ-3).
+    ws.commit_identity().await?;
+
+    // And it must have come into existence as the identity we just judged
+    // the tree against. `mine` is resolved by a read-side lookup and the
+    // signing key by a separate write-side one; when those disagreed,
+    // `restore` reported success while writing under a freshly minted DID
+    // and splitting the log across two authors. The two paths are now
+    // symmetric, and this is the assertion that keeps them so rather than
+    // leaving it to the comment.
+    let signing = ws.identity()?.did();
+    if signing != mine {
+        return Err(Error::Usage(format!(
+            "refusing to restore: the claims here were judged against {mine}, but this \
+             workspace signs as {signing}.\n\n\
+             Restoring would write them under an identity that did not author them. This \
+             is an internal inconsistency rather than anything you did -- check whether \
+             KAN_IDENTITY_FILE names a different key than .kan/identity, and please \
+             report it."
+        )));
+    }
+
     let mut restored = 0usize;
     let mut already = 0usize;
     for stored in restorable {
-        let (log, identity) = ws.log_and_identity()?;
+        let (log, identity) = ws.log_and_identity().await?;
         match log.ingest(stored, identity).await? {
             Some(_) => restored += 1,
             None => already += 1,
         }
+    }
+
+    // The restored claims are now in BOTH stores: the log has them, and the
+    // overlay still holds the copies it ingested from `.claims/` before they
+    // were restored. That overlap is what the #150 alarm looks for, so the
+    // next command after a successful `restore` warned about corruption on
+    // the documented recovery path -- and then tore down and rebuilt the
+    // overlay to "repair" a state that ordinary operation had just produced.
+    //
+    // Rebuilding it here costs nothing (it is derived, and the rebuild skips
+    // whatever the log now holds) and means the alarm keeps meaning what it
+    // says.
+    if restored > 0 {
+        ws.rebuild_overlay().await?;
     }
 
     let mut out = format!(
@@ -1101,6 +1211,7 @@ pub async fn retract(
         .get_stored(target_cid.clone())
         .await?
         .ok_or_else(|| Error::UnknownClaim(target_cid.clone()))?;
+    ws.commit_identity().await?;
     if target.claim.content.author != ws.my_author()? {
         return Err(Error::NotYourClaim(target_cid));
     }
@@ -1132,6 +1243,7 @@ pub async fn reject(
         .get_stored(target_cid.clone())
         .await?
         .ok_or_else(|| Error::UnknownClaim(target_cid.clone()))?;
+    ws.commit_identity().await?;
     if target.claim.content.author == ws.my_author()? {
         return Err(Error::CantRejectOwnClaim(target_cid));
     }

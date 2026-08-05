@@ -47,10 +47,29 @@ in the cases where today's answer is already wrong.
   `.kan/roles`), and `role:<name>` (one declared role, named rather than
   spelled as a `did:key:…`). A bare `did:key:…` continues to work unchanged.
 
-- REQ-6: `.kan/overlay` authors are never members of `Local`. A claim that
-  arrived as a committed `.claims/` file is disclosed by
-  `fold::excluded_by_trust` but not folded, until admitted by an explicit
-  `--trust`.
+- REQ-6: `.kan/overlay` authors are never members of `Local` — membership is
+  computed from `.kan/log` alone.
+
+  **Delivered in v0.11 at the level of *authors*, not *claims*.** `TrustBase`
+  is a per-author predicate, so a claim that arrived as a committed
+  `.claims/` file is excluded only when its author has never written to this
+  log. An author who *has* written here — a declared role, a collaborator
+  whose PR you merged — has their published claims folded into the default
+  view without an explicit `--trust`. That is RQ-2's stated threat surviving
+  for exactly the people whose pull requests you merge, and it was found by
+  the milestone's cold adversarial review rather than by AC-6, which tests
+  only the disjoint-author case.
+
+  The stronger claim-level property — "a claim that arrived as a committed
+  `.claims/` file is disclosed but not folded, until admitted by an explicit
+  `--trust`" — needs the fold to see each claim's **origin**, and is
+  scheduled for v0.12 with #164, which introduces a medium per row for its
+  own reasons. Decided with Maxine and recorded on the `identity-surface`
+  subject: origin is a trust signal in its own right rather than inert
+  packaging — "this person contributed locally" is real, deterministically
+  computable data, so it folds in as data. That is not ADR-75's
+  author→claim *weight* generalisation, which is driven by vouching claims;
+  origin is where the bytes were found, not something an actor said.
 
 - REQ-7: Claims carrying a legacy `AuthorId { agent: Some(_) }` (v0.2–v0.6 with
   `KAN_AGENT` set) are visible under `Local` without any DID-matching special
@@ -94,10 +113,13 @@ in the cases where today's answer is already wrong.
   `AuthorId { did: D, agent: None }` returns **all** of them under the default
   read, with no `--trust` argument and no adopt step. Covers REQ-7.
 
-- [ ] AC-6: A workspace holding a `.claims/` file authored by a DID that has
+- [x] AC-6: A workspace holding a `.claims/` file authored by a DID that has
   never written to the log excludes those claims from the default read and
   reports them in `excluded_by_trust`; naming that DID in `--trust` includes
-  them. Covers REQ-6.
+  them. Covers REQ-6 **for a disjoint author only** — see REQ-6. The test
+  that would have caught the gap is the *overlapping* case: an author with
+  claims in both the log and `.claims/`, asserting the log's fold and the
+  file's do not. It lands with the v0.12 work.
 
 - [ ] AC-7: `--trust roles` returns only declared identities, and in a
   workspace with an undeclared log author the `local` and `roles` results

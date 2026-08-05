@@ -368,6 +368,24 @@ impl KanServer {
         Workspace::open(&self.cwd).await.map_err(open_error)
     }
 
+    /// Open for writing, **refusing an unusable subject name first**.
+    ///
+    /// `Workspace::open` is what mints an identity in a fresh workspace, and
+    /// `validate_subject_name` lives inside `append` — after it. So an MCP
+    /// write with a control character in its subject minted a signing key and
+    /// created `.kan/` on its way to refusing, for a call that wrote nothing.
+    ///
+    /// The CLI gained this check in the same milestone; MCP did not, which
+    /// made it a property of one surface out of two — the exact shape
+    /// CLAUDE.md's "one surface: CLI + MCP" exists to prevent, and the same
+    /// ordering defect ADR-82 names.
+    async fn writing_workspace(&self, subjects: &[Option<&str>]) -> Result<Workspace, ErrorData> {
+        for subject in subjects.iter().flatten() {
+            actions::validate_subject_name(subject).map_err(to_error)?;
+        }
+        Workspace::open(&self.cwd).await.map_err(open_error)
+    }
+
     /// The read tools' workspace: no identity resolved, no anchor computed,
     /// nothing created (`.design/identity-surface.md` REQ-2).
     ///
@@ -389,8 +407,8 @@ impl KanServer {
         description = "Record something you noticed -- a fact about the current state, not something you did (ClaimBody::Observation). Use result instead for the outcome of an action you took."
     )]
     async fn observe(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
-        let mut ws = self.workspace().await?;
         let p = params.0;
+        let mut ws = self.writing_workspace(&[p.subject.as_deref()]).await?;
         let warnings = subject_warnings(&ws, p.subject.as_deref())?;
         actions::observe(
             &mut ws, p.text, p.subject, p.cites, p.file, p.status, p.title, p.kind,
@@ -402,8 +420,8 @@ impl KanServer {
 
     #[tool(description = "Record an intended approach (ClaimBody::Plan).")]
     async fn plan(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
-        let mut ws = self.workspace().await?;
         let p = params.0;
+        let mut ws = self.writing_workspace(&[p.subject.as_deref()]).await?;
         let warnings = subject_warnings(&ws, p.subject.as_deref())?;
         actions::plan(
             &mut ws, p.text, p.subject, p.cites, p.file, p.status, p.title, p.kind,
@@ -415,8 +433,8 @@ impl KanServer {
 
     #[tool(description = "Record a choice made (ClaimBody::Decision).")]
     async fn decide(&self, params: Parameters<NarrativeParams>) -> Result<String, ErrorData> {
-        let mut ws = self.workspace().await?;
         let p = params.0;
+        let mut ws = self.writing_workspace(&[p.subject.as_deref()]).await?;
         let warnings = subject_warnings(&ws, p.subject.as_deref())?;
         actions::decide(
             &mut ws, p.text, p.subject, p.cites, p.file, p.status, p.title, p.kind,
@@ -430,8 +448,8 @@ impl KanServer {
         description = "Record that a subject is blocked: pairs a Blocker claim with a Status{Blocked} claim citing it."
     )]
     async fn block(&self, params: Parameters<BlockParams>) -> Result<String, ErrorData> {
-        let mut ws = self.workspace().await?;
         let p = params.0;
+        let mut ws = self.writing_workspace(&[Some(p.subject.as_str())]).await?;
         let warnings = subject_warnings(&ws, Some(&p.subject))?;
         actions::block(&mut ws, &p.subject, &p.text, p.file, p.title, p.kind)
             .await
@@ -443,8 +461,8 @@ impl KanServer {
         description = "Record that a subject is now resolved -- an outcome that also closes the subject out; use result instead when it doesn't. Pairs a Resolution claim with a Status{Resolved} claim citing it."
     )]
     async fn resolve(&self, params: Parameters<ResolveParams>) -> Result<String, ErrorData> {
-        let mut ws = self.workspace().await?;
         let p = params.0;
+        let mut ws = self.writing_workspace(&[Some(p.subject.as_str())]).await?;
         let warnings = subject_warnings(&ws, Some(&p.subject))?;
         actions::resolve(
             &mut ws, &p.subject, &p.text, p.cites, p.file, p.title, p.kind,
@@ -458,8 +476,8 @@ impl KanServer {
         description = "Record the outcome of an action you just took -- what happened after you ran something, changed something, or executed a step (ClaimBody::Result). Use resolve instead when the outcome also means this subject's work is done."
     )]
     async fn result(&self, params: Parameters<ResultParams>) -> Result<String, ErrorData> {
-        let mut ws = self.workspace().await?;
         let p = params.0;
+        let mut ws = self.writing_workspace(&[Some(p.subject.as_str())]).await?;
         let warnings = subject_warnings(&ws, Some(&p.subject))?;
         actions::result(
             &mut ws, &p.subject, &p.text, p.cites, p.file, p.status, p.title, p.kind,
@@ -471,8 +489,10 @@ impl KanServer {
 
     #[tool(description = "Assert that two subjects are the same (Relation::SameAs).")]
     async fn same(&self, params: Parameters<SameParams>) -> Result<String, ErrorData> {
-        let mut ws = self.workspace().await?;
         let p = params.0;
+        let mut ws = self
+            .writing_workspace(&[Some(p.a.as_str()), Some(p.b.as_str())])
+            .await?;
         let warnings = actions::warn_similar_subjects(&ws, &[&p.a, &p.b]).map_err(to_error)?;
         actions::same(&mut ws, &p.a, &p.b, p.cites, p.file)
             .await
@@ -487,8 +507,10 @@ impl KanServer {
                        identity -- use `same` for that."
     )]
     async fn relate(&self, params: Parameters<RelateParams>) -> Result<String, ErrorData> {
-        let mut ws = self.workspace().await?;
         let p = params.0;
+        let mut ws = self
+            .writing_workspace(&[Some(p.a.as_str()), Some(p.b.as_str())])
+            .await?;
         let warnings = actions::warn_similar_subjects(&ws, &[&p.a, &p.b]).map_err(to_error)?;
         actions::relate(&mut ws, &p.a, p.kind.into(), &p.b, p.cites, p.file)
             .await
@@ -522,8 +544,8 @@ impl KanServer {
 
     #[tool(description = "Write a bare Status claim with no paired narrative.")]
     async fn mark(&self, params: Parameters<MarkParams>) -> Result<String, ErrorData> {
-        let mut ws = self.workspace().await?;
         let p = params.0;
+        let mut ws = self.writing_workspace(&[Some(p.subject.as_str())]).await?;
         let warnings = subject_warnings(&ws, Some(&p.subject))?;
         actions::mark(&mut ws, &p.subject, p.value, p.file)
             .await
