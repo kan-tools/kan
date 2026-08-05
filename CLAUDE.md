@@ -50,6 +50,24 @@ work rather than treating "out for v1" as still open-ended.
 - One surface: CLI + MCP. No second/third UI.
 - Provenance is sacred: never fabricate or drop `cites` edges.
 
+## Workflow: answering a review
+A fix that answers a review finding ships **with a test that fails without
+it**, in the same commit. Verify it the way the gap gets found: revert the
+fix hunk, watch the test go red, restore it.
+
+This is a rule because the alternative was measured. v0.11's fix round
+answered six findings correctly and wrote no tests at all; the re-review
+reverted the entire source diff and the suite still passed 287/0 — nothing
+in the repo would have noticed the fixes vanishing. `tests/review_fixes.rs`
+exists for these and had existed since v0.7.
+
+The reason it happens is worth naming, because knowing the rule is not
+protection: a review finding arrives already reproduced, so the defect feels
+*established* rather than hypothetical, and a fix verified once by hand feels
+finished. It is the same substitution of familiarity for coverage that
+ADR-52's fix round made, and that both v0.11 cold reviews found in areas the
+author had already reasoned about and stopped.
+
 ## Smell test
 The local-only path must be *dramatically* simpler than the multi-actor path
 (one log, all subjects Local, no SameAs stitching, no contest stage, latest-wins).
