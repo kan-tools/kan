@@ -68,11 +68,15 @@ impl Fixture {
         let dir = git_repo();
         let first = dir.path().join("keys/first");
         let second = dir.path().join("keys/second");
+        // Created with the library rather than by naming a missing path:
+        // REQ-2 makes `KAN_IDENTITY_FILE` a selection, so a missing target is
+        // an error instead of a mint.
         let mut minted: Vec<(String, PathBuf)> = Vec::new();
         for key in [first, second] {
-            let (did, stderr, ok) = kan_as(dir.path(), Some(&key), &["identity", "did"]);
-            assert!(ok, "minting {} failed: {stderr}", key.display());
-            minted.push((did.trim().to_string(), key));
+            std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+            let identity = Identity::generate();
+            identity.save(&key).unwrap();
+            minted.push((identity.did(), key));
         }
         minted.sort();
         let bob = minted.pop().unwrap().1;

@@ -243,7 +243,11 @@ impl Built {
         if cell.log_has_claims {
             // A throwaway identity, named by the environment so this write
             // touches none of the four artifacts under test.
+            // The key is created explicitly: REQ-2 means naming a missing
+            // path is an error, not a way to mint one.
             let writer = dir.path().join("keys/log-writer");
+            std::fs::create_dir_all(writer.parent().unwrap()).unwrap();
+            Identity::generate().save(&writer).unwrap();
             let (_, stderr, ok) = kan(
                 dir.path(),
                 Some(&writer),

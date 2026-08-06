@@ -264,7 +264,15 @@ impl Workspace {
         // they genuinely are one step: a minted-but-unpersisted key is a
         // hazardous state in its own right, and the defect was never that
         // they were coupled -- only that they ran too early.
-        let identity = Identity::load_or_create_for_workspace(&kan_dir)?;
+        // REQ-1/REQ-2: ask the two questions separately. `signing_identity`
+        // resolves a selection and errors if its target is missing;
+        // `create_workspace_identity` is the only thing that writes one, and
+        // is reached only when this workspace genuinely has none.
+        let selection = crate::sign::Selection::from_env();
+        let identity = match crate::sign::signing_identity(&kan_dir, &selection)? {
+            Some(identity) => identity,
+            None => crate::sign::create_workspace_identity(&kan_dir)?,
+        };
 
         // Now the stores can be writable, which is also where `.kan/` comes
         // into existence.
@@ -548,7 +556,18 @@ impl Workspace {
         if let Some(identity) = &self.identity {
             return Ok(identity.did());
         }
-        match crate::sign::existing_identity(&self.root.join(".kan"))? {
+        // Question 2, not question 1. "me" is the identity that would SIGN
+        // here -- which for a role-scoped caller (`day`, CI, an agent with
+        // KAN_IDENTITY_FILE set) is the role, not the workspace's own key.
+        // Routing this through `workspace_identity` would answer "what does
+        // this workspace have", so a role asking "what did I write" would get
+        // the human's claims: the read-side substitution v0.11 round 4 found,
+        // reintroduced from the other direction.
+        //
+        // A selection whose target is missing errors here rather than falling
+        // back, for the same reason it does on the write path.
+        let selection = crate::sign::Selection::from_env();
+        match crate::sign::signing_identity(&self.root.join(".kan"), &selection)? {
             Some(identity) => Ok(identity.did()),
             None => Err(Error::NoIdentityToName),
         }

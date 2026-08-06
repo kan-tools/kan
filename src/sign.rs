@@ -92,6 +92,15 @@ pub enum Error {
     )]
     DeclaredRoleKeyMissing { name: String, path: String },
     #[error(
+        "KAN_IDENTITY_FILE names {path}, which does not exist.\n\n\
+         That variable SELECTS which identity signs this write; it does not define which \
+         identity this workspace has. A selection whose target is missing is an error -- \
+         kan will not create a key there, and will not quietly sign as somebody else.\n\n\
+         Point it at the key you meant, or unset it to use this workspace's own identity. \
+         To restore from a recovery phrase, write the key to that path first."
+    )]
+    SelectionMissing { path: String },
+    #[error(
         "a role named `{name}` is already declared in this workspace (key: {existing}). \
          Pick another name, or use the existing role."
     )]
@@ -625,7 +634,7 @@ fn refuse_second_identity(
     remedy: impl Into<String>,
 ) -> Result<(), Error> {
     let evidence = match (
-        log_has_claims(identity_path),
+        log_has_claims(identity_path.parent().unwrap_or(Path::new("."))),
         existing_identity_evidence(identity_path),
     ) {
         (true, Some(what)) => Some(format!("claims in its log, and {what}")),
@@ -688,10 +697,8 @@ fn existing_identity_evidence(identity_path: &Path) -> Option<&'static str> {
 /// Deliberately a file-existence check rather than a read: `sign` must not
 /// depend on `store`, and the question here is only "has anything ever been
 /// written," which a non-empty CAR answers without decoding a single claim.
-fn log_has_claims(identity_path: &Path) -> bool {
-    identity_path
-        .parent()
-        .map(|dir| dir.join("log").join("repo.car"))
+fn log_has_claims(kan_dir: &Path) -> bool {
+    Some(kan_dir.join("log").join("repo.car"))
         .filter(|car| car.exists())
         .and_then(|car| std::fs::metadata(car).ok())
         .is_some_and(|m| m.len() > 0)
@@ -836,14 +843,224 @@ pub fn register_active(kan_dir: &Path, did: &Did, key_path: &Path) -> Result<(),
 /// migrate and delete the plaintext copy the way `load_or_create` does. A
 /// read must not do any of those. Only the seed branch can still reach the
 /// keychain, and only for a seed-rooted workspace that has no key file.
-pub fn existing_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
+/// **Question 1: which identity does this workspace *have*?**
+///
+/// Pure. Never creates, never writes, never migrates. `None` means there is
+/// honestly no identity here yet, which is a different answer from an error.
+///
+/// **One precedence order, used by reads and writes alike**, which is the
+/// whole of REQ-1. The two previous implementations (`existing_identity` and
+/// `load_or_create*`) drifted in a different direction every review round —
+/// one learned `.kan/identity` and the other did not, their orders inverted,
+/// one consulted the keychain and the other did not (#170).
+///
+/// The order follows what actually signs, and **includes the keychain**
+/// (decided with Maxine): a read that explicitly asks who `me` is may pay a
+/// keychain lookup, because the alternative is reads and writes disagreeing
+/// until REQ-3 lands. ADR-83 is intact — a read with no `--trust me` resolves
+/// nothing and never reaches here.
+///
+/// `KAN_IDENTITY_FILE` is deliberately **not** consulted. That variable
+/// selects which identity signs a write (question 2); it does not redefine
+/// which identity a workspace has. Conflating the two is the substitution
+/// `.design/identity-resolution.md` traces every v0.11 defect back to.
+pub fn workspace_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
+    // 1 & 2: a root seed, from `.kan/seed` or from the keychain via
+    // `.kan/seed-id`. `Seed::load` decides from files before any keychain
+    // call and creates nothing.
+    if let Some(seed) = Seed::load(kan_dir)? {
+        return Ok(Some(seed.signing_identity()?));
+    }
+    // 3: a keychain-held signing key, named by `.kan/identity-id`. This is
+    // the branch the read side never had, and its absence *was* #170.
+    if let Some(identity) = keychain_identity(kan_dir)? {
+        return Ok(Some(identity));
+    }
+    // 4: a plaintext key file.
+    let key_path = kan_dir.join("identity");
+    if key_path.exists() {
+        return Ok(Some(Identity::load_existing(&key_path)?));
+    }
+    Ok(None)
+}
+
+/// The keychain-held signing key for this workspace, if it has one.
+///
+/// **Reads `.kan/identity-id`; never writes it.** `keychain_account` wrote
+/// that file while resolving, so the ADR-77 guard could observe state its own
+/// invocation had just created — widening the guard's evidence to include
+/// `identity-id` turned every first-run keychain workspace into a refusal.
+/// A pure question 1 cannot do that, so the account id is read or the answer
+/// is `None`.
+///
+/// A keychain that cannot be reached at all is `None`, not an error: "I
+/// cannot tell whether there is a key here" and "there is no key here" differ,
+/// but the caller that matters — `create_workspace_identity` — also consults
+/// the log, which is the fact a broken keychain cannot hide.
+fn keychain_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
+    if keychain_disabled() {
+        return Ok(None);
+    }
+    let account = match std::fs::read_to_string(kan_dir.join(IDENTITY_ID_FILE)) {
+        Ok(id) if !id.trim().is_empty() => id.trim().to_string(),
+        _ => return Ok(None),
+    };
+    let Ok(entry) = keyring::Entry::new(KEYCHAIN_SERVICE, &account) else {
+        return Ok(None);
+    };
+    let _warn = SlowKeychainWarning::start("reading this repo's signing key");
+    match entry.get_secret() {
+        Ok(bytes) => Ok(Some(Identity {
+            keypair: P256Keypair::import(&bytes)?,
+        })),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(Error::KeychainUnreachable {
+            detail: e.to_string(),
+        }),
+    }
+}
+
+/// Which identity a caller asked to sign as.
+///
+/// **A selection, not a redefinition.** `kan identity role add`'s own help
+/// says "run kan with `KAN_IDENTITY_FILE` set to the role's key *to write as
+/// that role*" — that is a selection, and implementing it as an override of
+/// question 1 is what let a missing target invite creating one, shadow an
+/// adopted key, and skip validation against `.kan/roles`.
+#[derive(Debug, Clone)]
+pub enum Selection {
+    /// Whatever identity the workspace has.
+    Primary,
+    /// A specific key file, named by `KAN_IDENTITY_FILE`.
+    KeyFile(PathBuf),
+}
+
+impl Selection {
+    pub fn from_env() -> Self {
+        match std::env::var_os(IDENTITY_FILE_ENV) {
+            Some(p) => Selection::KeyFile(PathBuf::from(p)),
+            None => Selection::Primary,
+        }
+    }
+}
+
+/// **Question 2: which identity should sign *this write*?**
+///
+/// `Ok(None)` only for `Primary` in a workspace that has no identity yet —
+/// the one case where creating one is the caller's next move.
+///
+/// **A selection naming something absent is always an error.** Never a mint,
+/// never a fallback, never a substitution of another key. That single rule
+/// removes four of v0.11's five review findings: a missing role key minting an
+/// undeclared identity, a missing path silently signing as the human, `adopt`
+/// being shadowed by the variable, and the read reporting somebody else's
+/// claims as yours.
+pub fn signing_identity(kan_dir: &Path, selection: &Selection) -> Result<Option<Identity>, Error> {
+    match selection {
+        Selection::Primary => workspace_identity(kan_dir),
+        Selection::KeyFile(path) => {
+            if path.exists() {
+                return Ok(Some(Identity::load_existing(path)?));
+            }
+            // Named by `.kan/roles`? Then say so: the caller asked to write as
+            // a specific declared role and that role's key is gone.
+            if let Ok(roles) = list_roles(kan_dir) {
+                if let Some(role) = roles.iter().find(|r| &r.key_path == path) {
+                    return Err(Error::DeclaredRoleKeyMissing {
+                        name: role.name.clone(),
+                        path: path.display().to_string(),
+                    });
+                }
+            }
+            Err(Error::SelectionMissing {
+                path: path.display().to_string(),
+            })
+        }
+    }
+}
+
+/// **Question 3: may kan *create* an identity here?**
+///
+/// The only function that writes one. ADR-77's guard in full, with **no
+/// enumerated evidence set to maintain**: it refuses whenever question 1
+/// already has an answer. The old guard hand-listed the files that count as
+/// evidence and was wrong in both directions — blind to `.kan/seed-id`, and
+/// self-triggering on `.kan/identity-id`.
+///
+/// The log is checked as well, and it is not an evidence set: it is the one
+/// fact a *missing* identity cannot account for. A workspace with claims and
+/// no resolvable identity is one whose key went missing (#90), and minting
+/// there takes the whole log out of every read.
+///
+/// This also closes #180 by construction. The old `load_or_create` had five
+/// branches that could mint and four of them called the guard; the one that
+/// did not — `keyring::Entry::new` failing — is now just another way for
+/// question 1 to answer `None`, and every creation route passes through here.
+/// On-disk evidence that this workspace **has** an identity, whether or not
+/// one can be resolved right now.
+///
+/// Not a substitute for question 1 — it answers a different question. A
+/// workspace whose secret lives in the keychain still holds `.kan/seed-id` or
+/// `.kan/identity-id` when the keychain is unreachable or disabled, and there
+/// `workspace_identity` honestly returns `None`. **"I cannot tell" must not
+/// become "there is none"**, because the difference between them is a second
+/// identity that permanently shadows the first.
+///
+/// `.kan/identity-id` counts here, and it could not before. The old guard had
+/// to exclude it because `keychain_account` *wrote* that file while resolving,
+/// so counting it made the guard fire on evidence its own invocation had
+/// created. Nothing writes it during resolution any more, which is a
+/// consequence of REQ-1 rather than a separate fix — making question 1 pure is
+/// what let the guard get stronger.
+fn identity_evidence(kan_dir: &Path) -> Option<&'static str> {
+    if kan_dir.join("identity").exists() {
+        return Some("a signing key at .kan/identity");
+    }
+    if kan_dir.join(SEED_FILE).exists() || kan_dir.join(SEED_ID_FILE).exists() {
+        return Some("a root seed for this workspace");
+    }
+    if kan_dir.join(IDENTITY_ID_FILE).exists() {
+        return Some("a signing key filed in the OS keychain");
+    }
+    None
+}
+
+pub fn create_workspace_identity(kan_dir: &Path) -> Result<Identity, Error> {
+    if let Some(evidence) = identity_evidence(kan_dir) {
+        return Err(Error::WouldMintSecondIdentity {
+            attempt: "creating a new one".to_string(),
+            remedy: "This workspace already has an identity, even if kan cannot resolve it                      right now -- an unreachable or disabled keychain is the usual reason.                      Fix that, or adopt the key with `kan identity adopt --key <path>`.                      Minting here would take every existing claim out of every read."
+                .to_string(),
+            evidence: evidence.to_string(),
+        });
+    }
+    if workspace_identity(kan_dir)?.is_some() {
+        return Err(Error::WouldMintSecondIdentity {
+            attempt: "creating an identity for it".to_string(),
+            remedy: "Use the identity this workspace already has, or move `.kan/` aside if \
+                     you meant to start over."
+                .to_string(),
+            evidence: "an identity this workspace already resolves".to_string(),
+        });
+    }
+    if log_has_claims(kan_dir) {
+        return Err(Error::WouldMintSecondIdentity {
+            attempt: "creating a new identity".to_string(),
+            remedy: "This workspace had an identity and no longer resolves one. Restore the \
+                     key, or adopt it with `kan identity adopt --key <path>`. If the key is \
+                     in the OS keychain and the keychain is unreachable, fix that first -- \
+                     minting here would take every existing claim out of every read."
+                .to_string(),
+            evidence: "claims in its log".to_string(),
+        });
+    }
+    Seed::create(kan_dir)?.signing_identity()
+}
+
+#[allow(dead_code)]
+fn retired_existing_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
     let key_path = kan_dir.join("identity");
 
-    // The env override is checked first and used exclusively, mirroring
-    // `Identity::load_or_create` — which reads the variable itself, so
-    // gating on `.kan/identity` alone reports "no identity" for the very
-    // configuration (`KAN_IDENTITY_FILE`) that CI, containers, agents and
-    // `day` all use. Found by `--trust me` failing under exactly that setup.
     if let Some(override_path) = std::env::var_os(IDENTITY_FILE_ENV) {
         if std::path::PathBuf::from(override_path).exists() {
             return Ok(Some(Identity::load_or_create(&key_path)?));
