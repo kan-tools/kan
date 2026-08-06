@@ -50,44 +50,6 @@ work rather than treating "out for v1" as still open-ended.
 - One surface: CLI + MCP. No second/third UI.
 - Provenance is sacred: never fabricate or drop `cites` edges.
 
-## Workflow: answering a review
-A fix that answers a review finding ships **with a test that fails without
-it**, in the same commit. Verify it the way the gap gets found: revert the
-fix hunk, watch the test go red, restore it.
-
-This is a rule because the alternative was measured. v0.11's fix round
-answered six findings correctly and wrote no tests at all; the re-review
-reverted the entire source diff and the suite still passed 287/0 — nothing
-in the repo would have noticed the fixes vanishing. `tests/review_fixes.rs`
-exists for these and had existed since v0.7.
-
-The reason it happens is worth naming, because knowing the rule is not
-protection: a review finding arrives already reproduced, so the defect feels
-*established* rather than hypothetical, and a fix verified once by hand feels
-finished. It is the same substitution of familiarity for coverage that
-ADR-52's fix round made, and that both v0.11 cold reviews found in areas the
-author had already reasoned about and stopped.
-
-## Workflow: when a review keeps finding things
-Two consecutive reviews finding defects in the **same subsystem** is not two
-bugs — it is the second piece of evidence that the area has no specification.
-Stop fixing and go write one. Before the *second* fix in one area, write the
-table of its reachable configurations; patching an unspecified space generates
-roughly one new defect per patch.
-
-Triage before fixing: a finding that loses or misattributes data blocks a
-release, and a finding that is stale prose or a weak assertion gets filed.
-An unbounded "find defects" review against a large diff always returns
-something, so "is there a path where data is lost or misattributed?" is a
-separate and answerable question from "is anything wrong here?".
-
-And state what was actually checked rather than what was intended — verify
-mappings, not aggregates. Measured in full by
-`docs/POSTMORTEM-v0.11-review-loop.md`: five reviews, five blocking verdicts,
-every finding after the first round introduced by the previous round's fix,
-against a subsystem that needed one specification pass
-(`.design/identity-resolution.md`).
-
 ## Smell test
 The local-only path must be *dramatically* simpler than the multi-actor path
 (one log, all subjects Local, no SameAs stitching, no contest stage, latest-wins).
@@ -128,48 +90,26 @@ soon write through kan's CLI, making kan's write-verb ergonomics a
 dependency of a program rather than only of agents. Send a process/workflow
 feature request there, not here.
 
-## Design docs
-Feature-level design work goes through `/design` (see `.claude/commands/design.md`)
-and lands in `.design/<slug>.md` before implementation — this is kan's own
-crosslink-free descendant of that workflow, adapted to record into kan's own log
-(`kan observe`/`plan`/`decide`) once the CLI exists, rather than a shared store.
+## Process lives in `day`, not here
+**This file describes kan the artifact. It does not describe how work
+proceeds.** Process — designing, building, reviewing, opening a PR, cutting a
+release — is declared as `day` process atoms, which are `atom/*` claims in
+kan's own log and are injected into each session by day's hook. Read them
+there (`kan show atom/<slug>`), revise them there (`day atom declare`), and do
+not restate them here.
+
+The reason is the same one the identity work keeps proving: two
+implementations of one fact drift. This file and `atom/pull-request` both
+described the one-PR-per-milestone workflow in their own words, and
+`atom/release` and this file both described the release ritual. Everything
+those sections held now lives in `atom/adversarial-review`,
+`atom/generative-build`, `atom/pull-request` and `atom/release`, which is also
+where `day doctor` can check that the vocabulary composes and `day status` can
+say where the work sits.
+
+Feature-level design work still goes through `/design` and lands in
+`.design/<slug>.md` before implementation; that atom is `atom/design`.
 
 ## Provenance
 Clean-room successor to `crosslink`. Build forward from SPEC.md; consult crosslink
 only as lessons-learned (its sync model is what we're fixing), not a codebase to port.
-
-## Workflow: one PR per milestone
-Each milestone — the original spine (`.design/kan-spine.md`'s M1–M6 roadmap)
-and every release since (`.design/v0.2-milestone.md`, `v0.3-milestone.md`,
-`v0.4-milestone.md`, …) — is its own branch and PR, not a direct commit to
-`main` — branch off `main`, commit, push, `gh pr create`, wait for CI
-(`.github/workflows/ci.yml`) to go green, then `gh pr merge --merge
---delete-branch` (regular merge, not squash, so the milestone's internal
-commits stay visible in history). Keeps each PR's diff scoped to exactly one
-milestone. A milestone doc frequently breaks into several requirement-scoped
-PRs (see any `.design/vX.Y-milestone.md`'s own PR breakdown) — each still
-gets this same branch → PR → CI → merge treatment individually, and if two
-PRs both land new `docs/DECISIONS.md` ADR entries at the tail of the file
-before either merges, expect (and resolve, don't avoid) a same-spot merge
-conflict — reorder by ADR number, don't drop either entry.
-
-## Workflow: release
-Bump `Cargo.toml`'s `version` on `main`, then push a tag matching `v*.*.*`
-(e.g. `v0.1.1-beta.1`) — `.github/workflows/release.yml` re-verifies
-build/test/clippy/fmt, checks the tag matches `Cargo.toml`'s version, and
-publishes to crates.io via the `crates-io` GitHub Environment (tag-restricted
-to `v*.*.*` as a second guard beyond the workflow's own trigger filter).
-**Add the migration-expectation rows for the version you are cutting, in the
-release commit** — `tests/fixtures/migration-expectations.tsv`, one row per
-`mode`. The matrix excludes the tag being released but needs that tag as a
-*writer* at the next release, so a version whose rows are not added at cut
-time makes the next release red. That is not hypothetical: v0.9.0 and v0.9.1
-had no rows, the v0.9.1 tag push failed accordingly, and nobody read it for
-two days (ADR-78).
-
-Requires a `CARGO_REGISTRY_TOKEN` secret scoped to that environment (`gh
-secret set CARGO_REGISTRY_TOKEN --env crates-io`, never through a chat
-session — it's a credential Claude Code should never see). See ADR-19 for
-the version-scheme/trigger rationale and ADR-20 for the environment (and the
-required-reviewer gate that isn't available on `kan-tools`'s current GitHub
-plan).
