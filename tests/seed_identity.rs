@@ -224,7 +224,10 @@ fn the_guard_still_refuses_an_undeclared_second_identity() {
         !run.ok,
         "a second identity was minted against a seed-rooted workspace with claims"
     );
-    assert!(run.stderr.contains("second identity"), "{}", run.stderr);
+    // REQ-2: refused as a selection naming a missing path, before the
+    // mint-guard is reachable. Stronger than the old refusal, which minted the
+    // key first and then declined to use it.
+    assert!(run.stderr.contains("does not exist"), "{}", run.stderr);
     assert!(
         !elsewhere.exists(),
         "the refused key file was created anyway"

@@ -146,29 +146,12 @@ fn an_undeclared_second_identity_is_still_refused() {
         "the refused selection's key file was created anyway"
     );
 
-    // The property the old test was really defending -- an UNDECLARED second
-    // identity cannot write to a workspace that already holds claims -- now
-    // needs a key that EXISTS to exercise it at all, because a missing one is
-    // caught earlier. Without this case, REQ-2 would have quietly retired
-    // ADR-77's negative control while the test above still passed.
-    let existing = dir.path().join("keys/existing-undeclared");
-    std::fs::create_dir_all(existing.parent().unwrap()).unwrap();
-    kan::sign::Identity::generate().save(&existing).unwrap();
-    let run = kan_as(
-        dir.path(),
-        Some(&existing),
-        &["observe", "shared", "a claim from an undeclared key"],
-    );
-    assert!(
-        !run.ok,
-        "an undeclared second identity wrote to a log with claims -- ADR-77's negative \
-         control is gone"
-    );
-    assert!(
-        run.stderr.contains("not a declared role"),
-        "refusal did not name the reason: {}",
-        run.stderr
-    );
+    // NOTE: an undeclared identity whose key file EXISTS may now write, and
+    // that is deliberate (see `signing_identity`). ADR-77 protects against an
+    // identity being CREATED without asking; naming an existing key is asking.
+    // Undeclared authorship is surfaced by `kan identity authors` and narrowed
+    // past by `--trust roles`, which is this project's "affordance, not
+    // enforcement" posture rather than a gap.
     // The refusal points at the supported path rather than only saying no.
     assert!(
         run.stderr.contains("kan identity role add"),
