@@ -564,9 +564,9 @@ fn the_two_resolvers_disagree_in_exactly_these_cells() {
          write creates the identity it then signs with, so the read could not have found \
          it beforehand. (Rows 1 and 5 belong here for the same reason 14 and 19 do -- the \
          literal expectation this test shipped with named only the two override mints, and \
-         measuring corrected it on the first run.) Every cell where the read fails to find \
-         an identity the write did NOT create (21, 25, and #170 itself) needs a reachable \
-         keychain, which is why the suite could not have caught #170.\n\n\
+         measuring corrected it on the first run.) A cell where the read finds nothing and \
+         the write resolves an identity it did NOT create requires a reachable keychain -- \
+         #170 is that shape -- which is why the suite could not have caught it.\n\n\
          A new row here means a divergence has been introduced on the testable plane. A \
          missing row means one has been fixed -- which REQ-1 should do deliberately, by \
          changing this expectation in the same commit.\n\n\
