@@ -3,39 +3,56 @@
 //! atproto expects later, so local-only and future sync share one identity
 //! model without re-signing history.
 //!
-//! `load_or_create` resolves the key in a fixed order:
+//! # Resolution: three questions, three functions
 //!
-//! 1. **`KAN_IDENTITY_FILE`**, if set — a dedicated key file, used
-//!    exclusively, keychain never consulted.
-//! 2. The OS keychain (ADR-25, `keyring` crate, spiked before it was trusted
-//!    per CLAUDE.md's crate-trust rule), filed under a stable random account
-//!    id kept in `.kan/identity-id`.
-//! 3. The plaintext file at `.kan/identity`, with a loud warning, when the
-//!    keychain genuinely isn't available (headless CI, a Linux box with no
-//!    Secret Service daemon).
+//! `.design/identity-resolution.md` traced every defect of the v0.11 review
+//! loop to one cause — kan conflated three questions into one function and
+//! answered them with side effects. They are now separate:
 //!
-//! (1) exists because the keychain is not usable non-interactively. On macOS
-//! the entry is ACL'd to the binary that created it, so *a different kan
-//! binary* — every upgrade, and every `cargo build` during development —
-//! blocks forever on an authorization prompt that never arrives in CI, a
-//! container, an MCP server, or `day` shelling out (ADR-42). It is a hang,
-//! not a failure, which is the worst shape: a caller cannot tell it from
-//! slowness.
+//! - [`workspace_identity`] — *which identity does this workspace have?* Pure.
+//!   Never creates, writes or migrates. **One precedence order**, used by
+//!   reads and writes alike: `.kan/seed`, then a seed in the keychain via
+//!   `.kan/seed-id`, then a signing key in the keychain via
+//!   `.kan/identity-id`, then `.kan/identity`.
+//! - [`signing_identity`] — *which identity should sign this write?* A
+//!   [`Selection`], parsed from `KAN_IDENTITY_FILE`. A selection naming
+//!   something absent is **always** an error: never a mint, never a fallback,
+//!   never a substitution of another key.
+//! - [`create_workspace_identity`] — *may kan create one?* The only function
+//!   that writes an identity, so the ADR-77 guard is a property of the
+//!   workspace rather than of whichever code path reached it.
 //!
-//! (2)'s account id **was** the canonicalized `.kan/identity` path, so moving
-//! a checkout missed the lookup and silently minted a new identity, taking
-//! every prior claim out of every read at exit 0. The id file travels with
-//! `.kan/`, so the identity now travels with the repo.
+//! `KAN_IDENTITY_FILE` selects; it does not redefine what identity a
+//! workspace has. Conflating those is the substitution every v0.11 round's
+//! defect turned out to be.
 //!
-//! **Every one of those paths can mint, so every one is guarded**
-//! (`refuse_second_identity`, ADR-77, issue #146). The guard used to live
-//! inside (1) alone, which made it a property of a code path rather than of
-//! the workspace — and `KAN_NO_KEYCHAIN`, the ADR-66 escape hatch that makes
-//! (2) avoidable, walked straight past it into (3) and minted against a
-//! non-empty log. `Identity::load_or_create_for_workspace`'s seed-rooting is a
-//! fourth minting path and is guarded for the same reason: it judges freshness
-//! from identity files only, deliberately (a keychain probe there can hang,
-//! #96), so the log is the tiebreaker those files cannot see.
+//! # Why the keychain is in the chain
+//!
+//! Because the alternative is reads and writes disagreeing. Consulting it
+//! only on the write side was #170: `kan identity did` resolved and
+//! `--trust me` reported no identity, in the same workspace. A read with no
+//! `--trust me` resolves nothing and never reaches here, so ADR-83 is intact.
+//!
+//! On macOS a keychain entry is ACL'd to the binary that created it, so a
+//! rebuilt or upgraded kan blocks on an authorization prompt that never
+//! arrives in CI, a container, an MCP server, or `day` shelling out (#96,
+//! #69 — one cause, two issue numbers, and it is code signing rather than
+//! keychains). `KAN_NO_KEYCHAIN` (ADR-66) opts out entirely; every identity
+//! test sets it, which is why the keychain-reachable plane is unreachable
+//! from the suite and documented in prose instead
+//! (`.design/identity-resolution-cells.md`).
+//!
+//! # Retired, but still referenced by tests
+//!
+//! `Identity::load_or_create`, `load_or_create_for_workspace`,
+//! `keychain_account`, `refuse_second_identity` and
+//! `existing_identity_evidence` are **no longer called from `src/`** — they
+//! are the pre-REQ-1 resolver. Roughly 46 test call sites still reach them
+//! directly, so they cannot be deleted without rewriting those, and until
+//! that happens those tests assert behaviour the product no longer has
+//! (keychain migration, deleting a redundant plaintext copy, repairing `0644`
+//! to `0600` on load). Tracked; do not read them as documentation of what kan
+//! does.
 
 use std::path::{Path, PathBuf};
 
@@ -831,44 +848,6 @@ pub fn register_active(kan_dir: &Path, did: &Did, key_path: &Path) -> Result<(),
 /// A malformed line is skipped rather than fatal: this file gates nothing
 /// (it only *widens* a read), so a hand-edit typo should not take out every
 /// command that opens a workspace.
-/// This workspace's identity **if it already has one** — never creating,
-/// never minting, never seed-rooting.
-///
-/// The read path's answer to "who is `me`". `--trust me` and `--trust roles`
-/// name the active identity, so they genuinely need it — but a read must
-/// never bring one into existence (`.design/identity-surface.md` REQ-2,
-/// #149), and `load_or_create_for_workspace` cannot express that: creating is
-/// in its name and in its contract.
-///
-/// `None` means there is honestly no "me" here yet, which is a different
-/// answer from an error and lets the caller say so in those terms.
-///
-/// The key-file branch below uses `load_existing`, which reads the file and
-/// nothing else -- so it cannot reach the keychain, write `identity-id`, or
-/// migrate and delete the plaintext copy the way `load_or_create` does. A
-/// read must not do any of those. Only the seed branch can still reach the
-/// keychain, and only for a seed-rooted workspace that has no key file.
-/// **Question 1: which identity does this workspace *have*?**
-///
-/// Pure. Never creates, never writes, never migrates. `None` means there is
-/// honestly no identity here yet, which is a different answer from an error.
-///
-/// **One precedence order, used by reads and writes alike**, which is the
-/// whole of REQ-1. The two previous implementations (`existing_identity` and
-/// `load_or_create*`) drifted in a different direction every review round —
-/// one learned `.kan/identity` and the other did not, their orders inverted,
-/// one consulted the keychain and the other did not (#170).
-///
-/// The order follows what actually signs, and **includes the keychain**
-/// (decided with Maxine): a read that explicitly asks who `me` is may pay a
-/// keychain lookup, because the alternative is reads and writes disagreeing
-/// until REQ-3 lands. ADR-83 is intact — a read with no `--trust me` resolves
-/// nothing and never reaches here.
-///
-/// `KAN_IDENTITY_FILE` is deliberately **not** consulted. That variable
-/// selects which identity signs a write (question 2); it does not redefine
-/// which identity a workspace has. Conflating the two is the substitution
-/// `.design/identity-resolution.md` traces every v0.11 defect back to.
 pub fn workspace_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
     // 1 & 2: a root seed, from `.kan/seed` or from the keychain via
     // `.kan/seed-id`. `Seed::load` decides from files before any keychain
@@ -1007,13 +986,35 @@ pub fn signing_identity(kan_dir: &Path, selection: &Selection) -> Result<Option<
     }
 }
 
+fn identity_evidence(kan_dir: &Path) -> Option<&'static str> {
+    if kan_dir.join("identity").exists() {
+        return Some("a signing key at .kan/identity");
+    }
+    if kan_dir.join(SEED_FILE).exists() || kan_dir.join(SEED_ID_FILE).exists() {
+        return Some("a root seed for this workspace");
+    }
+    if kan_dir.join(IDENTITY_ID_FILE).exists() {
+        return Some("a signing key filed in the OS keychain");
+    }
+    None
+}
+
 /// **Question 3: may kan *create* an identity here?**
 ///
-/// The only function that writes one. ADR-77's guard in full, with **no
-/// enumerated evidence set to maintain**: it refuses whenever question 1
-/// already has an answer. The old guard hand-listed the files that count as
-/// evidence and was wrong in both directions — blind to `.kan/seed-id`, and
-/// self-triggering on `.kan/identity-id`.
+/// The only function that writes one, which is what makes the guard a
+/// property of the workspace rather than of whichever code path happened to
+/// reach it. It refuses on three grounds, in order: the log already holds
+/// claims; there is on-disk evidence of an identity (see
+/// [`identity_evidence`]); or question 1 resolves one.
+///
+/// `.design/identity-resolution.md` argued for "no evidence set to maintain",
+/// and that turned out to be half right. The old guard's evidence set was
+/// wrong in both directions — blind to `.kan/seed-id`, self-triggering on
+/// `.kan/identity-id` — but removing it entirely let a seed-rooted workspace
+/// with an unreachable keychain re-mint and shadow its own identity, which is
+/// v0.11 round 5's B3 defect. The set stays, and is now *correct* rather than
+/// absent, because a pure question 1 means nothing writes the evidence while
+/// asking.
 ///
 /// The log is checked as well, and it is not an evidence set: it is the one
 /// fact a *missing* identity cannot account for. A workspace with claims and
@@ -1040,19 +1041,6 @@ pub fn signing_identity(kan_dir: &Path, selection: &Selection) -> Result<Option<
 /// created. Nothing writes it during resolution any more, which is a
 /// consequence of REQ-1 rather than a separate fix — making question 1 pure is
 /// what let the guard get stronger.
-fn identity_evidence(kan_dir: &Path) -> Option<&'static str> {
-    if kan_dir.join("identity").exists() {
-        return Some("a signing key at .kan/identity");
-    }
-    if kan_dir.join(SEED_FILE).exists() || kan_dir.join(SEED_ID_FILE).exists() {
-        return Some("a root seed for this workspace");
-    }
-    if kan_dir.join(IDENTITY_ID_FILE).exists() {
-        return Some("a signing key filed in the OS keychain");
-    }
-    None
-}
-
 pub fn create_workspace_identity(kan_dir: &Path) -> Result<Identity, Error> {
     // The log first: "this workspace has claims already" is the most
     // informative thing a refusal can say, and it is the evidence a missing
@@ -1091,64 +1079,13 @@ pub fn create_workspace_identity(kan_dir: &Path) -> Result<Identity, Error> {
     Seed::create(kan_dir)?.signing_identity()
 }
 
-#[allow(dead_code)]
-fn retired_existing_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
-    let key_path = kan_dir.join("identity");
-
-    if let Some(override_path) = std::env::var_os(IDENTITY_FILE_ENV) {
-        if std::path::PathBuf::from(override_path).exists() {
-            return Ok(Some(Identity::load_or_create(&key_path)?));
-        }
-        // Absent named path: report no identity, exactly as the write side
-        // refuses rather than substituting. The two must agree here, and it
-        // was the read side that was wrong.
-        //
-        // Falling through used to substitute this workspace's own key, which
-        // meant a role-scoped caller whose key file had gone missing got a
-        // refusal on write and THE HUMAN'S IDENTITY on read -- `--trust me`
-        // answering "what did I write here" with somebody else's claims, at
-        // exit 0 and with no warning. The read-side twin of the substitution
-        // the write side just had removed.
-        //
-        // The `adopt` -> `restore` flow this fall-through was added for is
-        // served properly instead: the refusal now says the named path does
-        // not exist, and unsetting the variable resolves the adopted key on
-        // both sides.
-        return Ok(None);
-    }
-
-    // SEED BEFORE KEY FILE, matching `load_or_create_for_workspace`'s order
-    // exactly.
-    //
-    // This function checked the key file first, and the write side checks
-    // the seed first -- so in any workspace holding both, reads and writes
-    // resolved DIFFERENT identities. `kan identity did` named one, `--trust
-    // me` folded under the other and reported "no claims" against a full
-    // log, and `restore` reported the operator's own claims as somebody
-    // else's. Two functions with inverted precedence is the structural cause
-    // of every identity defect this milestone's review rounds found; they
-    // are patched one layer at a time until the orders agree.
-    //
-    // Reads follow writes rather than the reverse, because the write side's
-    // order is what actually signs: a read that disagrees with it is a read
-    // that lies about who wrote what.
-    if let Some(seed) = Seed::load(kan_dir)? {
-        return Ok(Some(seed.signing_identity()?));
-    }
-    if key_path.exists() {
-        // `load_existing`, NOT `load_or_create`. The latter consults
-        // `KAN_IDENTITY_FILE` itself, so on the fall-through above -- env set,
-        // named path absent -- it would mint a fresh key at that path and
-        // hand it back as this workspace's identity. Which is exactly the
-        // no-op the fall-through exists to fix, moved one line down: `adopt`
-        // writes `.kan/identity`, and the next `restore` would read a
-        // brand-new DID instead and report that nothing in the tree is
-        // yours. Caught by the regression test for the original defect.
-        return Ok(Some(Identity::load_existing(&key_path)?));
-    }
-    Ok(None)
-}
-
+/// Every declared role, in declaration order.
+///
+/// A missing file is no roles rather than an error — the overwhelmingly
+/// common case is a workspace that has never declared one — and a malformed
+/// line is skipped rather than fatal, because this file gates nothing (it
+/// only *widens* a read), so a hand-edit typo should not take out every
+/// command that opens a workspace.
 pub fn list_roles(kan_dir: &Path) -> Result<Vec<Role>, Error> {
     let path = kan_dir.join(ROLES_FILE);
     let Ok(text) = std::fs::read_to_string(&path) else {

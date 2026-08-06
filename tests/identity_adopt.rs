@@ -334,3 +334,53 @@ fn adopt_moves_a_displaced_seed_aside_rather_than_deleting_it() {
         "the preserved seed is not the one that was displaced"
     );
 }
+
+/// **Adopt must retire every root, not just the seed.**
+///
+/// `.kan/identity-id` names the keychain entry that roots a workspace's
+/// signing key. `adopt` retired the seed (and `seed-id`, the seed's keychain
+/// pointer) but left this one, which was harmless while the read path had no
+/// keychain branch at all.
+///
+/// REQ-1 gave both paths ONE precedence order that consults the keychain, so
+/// a surviving `identity-id` outranks the key adopt just wrote: adopt reports
+/// "This workspace now signs and reads as that identity" and the keychain
+/// keeps signing. That is the adopt→restore dead end v0.11 rounds 2 and 3
+/// found twice, and adopt's own comment about the seed says why it is the
+/// worst outcome available to a recovery command:
+///
+/// > writing the adopted key without retiring the seed would leave adopt
+/// > reporting success and changing nothing.
+///
+/// Asserted at the file level rather than through the keychain, because the
+/// keychain plane is unreachable from this suite (#96) — and the file is the
+/// thing that decides, so it is the honest probe either way.
+#[test]
+fn adopt_retires_the_keychain_pointer_as_well_as_the_seed() {
+    let dir = git_repo();
+    let key = dir.path().join("adopted-key");
+    kan::sign::Identity::generate().save(&key).unwrap();
+
+    // A workspace that is keychain-rooted, as this repository's own is: the
+    // pointer exists and no key file does.
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    std::fs::write(kan_dir.join("identity-id"), "kan-some-account").unwrap();
+
+    let out = kan(
+        dir.path(),
+        None,
+        &["identity", "adopt", "--key", key.to_str().unwrap()],
+    );
+    assert!(out.ok, "adopt failed: {}", out.stderr);
+
+    assert!(
+        !kan_dir.join("identity-id").exists(),
+        "adopt left the keychain pointer in place, so the keychain still outranks the key it \
+         just adopted -- adopt reports success and changes nothing"
+    );
+    assert!(
+        kan_dir.join("identity").exists(),
+        "adopt did not write the adopted key"
+    );
+}

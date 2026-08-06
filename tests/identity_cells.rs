@@ -652,3 +652,66 @@ fn a_read_that_resolves_nothing_has_no_side_effects() {
         "a read that names no identity created .kan/"
     );
 }
+
+/// AC-8's **other** path: purity when the identity comes from the workspace
+/// itself rather than from a selection.
+///
+/// `a_read_that_resolves_an_identity_has_no_side_effects` sets
+/// `KAN_IDENTITY_FILE`, so it exercises `signing_identity`'s KeyFile branch
+/// exclusively. That left `workspace_identity`'s own key-file branch with no
+/// purity test at all — and a cold review proved it, by changing that branch
+/// from `load_existing` to `load_or_create_plaintext` (which chmods on load,
+/// AC-8's exact violation) and watching the entire suite stay green.
+///
+/// AC-8 says "on either path". This is the other one.
+#[test]
+fn a_read_resolving_the_workspaces_own_key_has_no_side_effects() {
+    let dir = git_repo();
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    let key_path = kan_dir.join("identity");
+    Identity::generate().save(&key_path).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+    // The index is deliberately excluded: it is a disposable projection that
+    // a read is entitled to build (ADR-15), and rebuilding it is not identity
+    // resolution having a side effect. Everything that ROOTS an identity is
+    // in scope.
+    let roots = || {
+        ["identity", "identity-id", "seed", "seed-id"]
+            .iter()
+            .map(|n| (n.to_string(), kan_dir.join(n).exists()))
+            .collect::<Vec<_>>()
+    };
+    let before = roots();
+
+    // No selection: `me` is the workspace's own identity.
+    let (stdout, stderr, ok) = kan(
+        dir.path(),
+        None,
+        &["show", "nothing", "--trust", "me", "--json"],
+    );
+    assert!(ok, "the read failed: {stderr}");
+    assert!(
+        stdout.contains("\"authors\""),
+        "the read resolved no identity, so it exercises nothing: {stdout}"
+    );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&key_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o644,
+            "resolving the workspace's own key changed its permissions"
+        );
+    }
+    assert_eq!(
+        before,
+        roots(),
+        "resolving the workspace's own key created or removed an identity root"
+    );
+}

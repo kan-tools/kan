@@ -361,3 +361,37 @@ fn no_refused_write_leaves_an_identity_behind() {
         "a successful write did not create the log"
     );
 }
+
+/// The refusal guarantees, **with no selection at all**.
+///
+/// Every other refusal case in this file now pre-creates a key and runs with a
+/// valid `KAN_IDENTITY_FILE`, because REQ-2 made a missing selection an error
+/// in its own right. A cold review pointed out what that costs: with a valid
+/// selection, `create_workspace_identity` is never reached, so the
+/// "no identity was brought into existence" assertions cannot fail there. The
+/// file named after the property had stopped testing it.
+///
+/// This is the configuration where creation IS reachable — no selection, so a
+/// refused write is refused *after* passing through the one function that
+/// writes an identity.
+#[test]
+fn a_refused_write_with_no_selection_creates_no_identity() {
+    for (label, args) in [
+        (
+            "a control character in the subject",
+            vec!["observe", "text", "--subject", "bad\u{7}name"],
+        ),
+        ("an empty subject", vec!["observe", "text", "--subject", ""]),
+    ] {
+        let dir = git_repo(true);
+        let (_, err, ok) = kan_no_selection(dir.path(), &args);
+        assert!(!ok, "{label}: the write was expected to be refused");
+        let kan_dir = dir.path().join(".kan");
+        assert!(
+            !kan_dir.join("seed").exists()
+                && !kan_dir.join("seed-id").exists()
+                && !kan_dir.join("identity").exists(),
+            "{label}: a refused write brought an identity into existence ({err})"
+        );
+    }
+}
