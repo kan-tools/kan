@@ -1,0 +1,36 @@
+# derived cell table -- KAN_IDENTITY_FILE=missing-declared
+# keychain: DISABLED for every row (KAN_NO_KEYCHAIN); the reachable-keychain
+# plane is unreachable from this suite (#96) and lives in prose instead.
+
+env=missing-declared identity=-        id=-  seed=-    seed-id=-       log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=-  seed=-    seed-id=-       log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=-  seed=-    seed-id=-       log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=-  seed=-    seed-id=-       log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=id seed=-    seed-id=-       log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=id seed=-    seed-id=-       log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=id seed=-    seed-id=-       log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=id seed=-    seed-id=-       log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=-  seed=seed seed-id=-       log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=-  seed=seed seed-id=-       log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=-  seed=seed seed-id=-       log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=-  seed=seed seed-id=-       log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=id seed=seed seed-id=-       log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=id seed=seed seed-id=-       log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=id seed=seed seed-id=-       log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=id seed=seed seed-id=-       log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=-  seed=-    seed-id=seed-id log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=-  seed=-    seed-id=seed-id log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=-  seed=-    seed-id=seed-id log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=-  seed=-    seed-id=seed-id log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=id seed=-    seed-id=seed-id log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=id seed=-    seed-id=seed-id log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=id seed=-    seed-id=seed-id log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=id seed=-    seed-id=seed-id log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=-  seed=seed seed-id=seed-id log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=-  seed=seed seed-id=seed-id log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=-  seed=seed seed-id=seed-id log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=-  seed=seed seed-id=seed-id log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=id seed=seed seed-id=seed-id log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=-        id=id seed=seed seed-id=seed-id log=claims  ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=id seed=seed seed-id=seed-id log=empty   ->  read=none                 write=refused:role-key-missing
+env=missing-declared identity=identity id=id seed=seed seed-id=seed-id log=claims  ->  read=none                 write=refused:role-key-missing
