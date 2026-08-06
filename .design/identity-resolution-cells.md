@@ -50,9 +50,18 @@ W3  fresh = !.kan/identity && !.kan/identity-id
               entry found          -> that key; deletes a matching plaintext copy
               no entry + file      -> import file, store to keychain
               no entry + no file   -> guard, then generate + store
-              backend unavailable  -> warn, fall back to plaintext file
-      fresh     -> guard, then Seed::create (keychain-preferred)
+              Entry::new failed    -> warn, fall back to plaintext file
+              get_secret errored:                          (src/sign.rs:413)
+                  key file present -> warn, fall back to plaintext file
+                  no key file      -> Err(KeychainUnreachable)
+      fresh     -> guard, then Seed::create (keychain-preferred, src/sign.rs:1290)
 ```
+
+The `get_secret` error branch is distinct from `NoEntry` and is the one #96
+actually produces — a keychain that answers with neither the key nor "no such
+entry", because it is waiting on an authorization prompt nobody can answer.
+The first draft of this document omitted it while documenting its mirror on
+the read side, which is the same asymmetry the whole table exists to expose.
 
 The guard is `refuse_second_identity` (`src/sign.rs:622`): refuse if the log
 is non-empty **or** `existing_identity_evidence` finds `.kan/identity`,
@@ -62,8 +71,19 @@ evidence, because `keychain_account` writes it before the guard runs
 
 ## What collapses
 
-The space looks like 3 × 2 × 2 × 2 × 3 × 2 × 2 = 288. It is not, because
-every dimension after the first decided one stops mattering:
+There are **eight** input dimensions: `KAN_IDENTITY_FILE` (3) × `.kan/identity`
+× `.kan/identity-id` × `.kan/seed` × `.kan/seed-id` × keychain (4: off,
+reachable-with-entry, reachable-no-entry, errored) × log × a `.kan/roles`
+entry — 3 × 2 × 2 × 2 × 2 × 4 × 2 × 2 = **768**.
+
+*(The first draft wrote "3 × 2 × 2 × 2 × 3 × 2 × 2 = 288" — seven factors for
+eight dimensions. The omitted one was `.kan/identity-id`, which is the single
+artifact row 5's correction and #170 both turn on, and the one the guard
+deliberately ignores. Dropping precisely that dimension from the count is how
+rows 19 and 26 came to be missing.)*
+
+It collapses, because every dimension after the first decided one stops
+mattering:
 
 - **`KAN_IDENTITY_FILE` set and present short-circuits everything.** Layout,
   keychain, seed and log are all irrelevant on both paths. 96 raw
@@ -74,8 +94,9 @@ every dimension after the first decided one stops mattering:
   dimension of the guard, not of resolution.
 - **`.kan/roles` only matters when the override path is missing.**
 
-What remains is 23 reachable cells, of which **15 are exercisable in CI** —
-see "What CI cannot reach" below.
+What remains is **27 reachable cells, of which 20 are exercisable in CI** —
+see "What CI cannot reach" below. Rows 1–20 each have their own `#[test]` in
+`tests/identity_cells.rs`; rows 21–27 have none and cannot.
 
 ## The table
 
@@ -102,17 +123,30 @@ resolves nothing while the write resolves a definite one — the #170 shape;
 | 10 | unset | `seed`+`identity` | off | either | seed-derived | seed-derived | ✓ |
 | 11 | unset | `seed-id`+`identity` | off | either | the key file | the key file | ✓ |
 | 12 | unset | `id`+`identity` | off | either | the key file | the key file | ✓ |
-| 13 | exists | *any* | either | either | the override key | the override key | ✓ |
+| 13 | exists | *any* | either | either | the override key †| the override key | ✓ |
 | 14 | missing | *empty* | off | empty | None | **mints at the override path** | — |
 | 15 | missing | *empty* | off | claims | None | **refuses** (guard: log) | — |
 | 16 | missing | `identity` | off | empty | None | **refuses** (guard: key file) | — |
 | 17 | missing | `seed` | off | empty | None | **refuses** (guard: seed) | — |
-| 18 | missing, in `roles` | *any* | either | either | None | `DeclaredRoleKeyMissing` | — |
-| 19 | unset | `id` | on | either | **None** | the keychain key | ✗ **#170** |
-| 20 | unset | *empty* | on | empty | None | mints a seed into the keychain | — |
-| 21 | unset | `seed-id` | on | either | seed from keychain | seed from keychain | ✓ |
-| 22 | unset | `identity` | on, no entry | either | the key file | key file, **migrated in** | ~ |
-| 23 | unset | `id` | on, no entry | claims | None | **refuses** | — |
+| 18 | missing | `seed-id` | off | empty | None | **refuses** (guard: seed-id) | — |
+| 19 | missing | `id` | off | empty | None | **mints at the override path** | — |
+| 20 | missing, in `roles` | *any* | either | either | None | `DeclaredRoleKeyMissing` | — |
+| 21 | unset | `id` | on, entry | either | **None** | the keychain key | ✗ **#170** |
+| 22 | unset | *empty* | on | empty | None | mints a seed into the keychain | — |
+| 23 | unset | `seed-id` | on | either | seed from keychain | seed from keychain | ✓ |
+| 24 | unset | `identity` | on, no entry | either | the key file | key file, **migrated in** | ~ |
+| 25 | unset | `id` | on, no entry | claims | None | **refuses** | — |
+| 26 | unset | `id` | on, no entry | empty | None | **mints a new DID into the keychain** | — |
+| 27 | unset | `identity` | errored | either | the key file | key file, with a warning | ✓ |
+
+† Row 13's read is **not side-effect free** — see below.
+
+**Rows 18, 19, 26 and 27 were missing from the first draft**, all found by a
+cold adversarial review. The pattern in the omissions is worth more than the
+rows: every one of them is a cell where `.kan/identity-id` or a keychain
+*error* is the deciding input, which are exactly the two things dropped from
+the dimension count above. An enumeration is only as complete as its list of
+dimensions, and mine was short by one.
 
 **Row 5 corrected while writing the test.** The first draft of this table said
 the write seed-roots there. It does not: `fresh` is
@@ -124,20 +158,22 @@ what makes it a measurement.
 
 ## Where the two disagree, and what each costs
 
-**Row 19 is #170**, and it is this repository's own layout: `identity-id`
+**Row 21 is #170**, and it is this repository's own layout: `identity-id`
 present, no key file, no seed, no `seed-id`. `kan identity did` — which is a
 **write**-path command (`src/cli/mod.rs:846` calls `ws.identity()` after
 `commit_identity`) — resolves the keychain key. `--trust me` calls
 `existing_identity`, which has no keychain branch, and reports no identity.
 One workspace, two answers, depending on which verb you asked.
 
-**Row 19 is the only `✗` in the table, and that is the finding.** With the
+**Row 21 is the only `✗` in the table, and that is the finding.** With the
 keychain disabled, the two resolvers never disagree about *which* identity a
-workspace has — they only ever both fail to find one. Every divergence
-`.design/identity-resolution.md` catalogues needs a reachable keychain, which
-is why the suite could not have caught #170 and why five adversarial review
-rounds did not either. `tests/identity_cells.rs` asserts that set is empty on
-the testable plane, so a *new* divergence introduced there fails loudly.
+workspace has — they only ever both fail to find one, or the write creates the
+one it signs with. Every divergence `.design/identity-resolution.md`
+catalogues needs a reachable keychain, which is why the suite could not have
+caught #170 and why five adversarial review rounds did not either.
+`the_two_resolvers_disagree_in_exactly_these_cells` **measures** both
+resolvers per cell and pins the set to the four minting rows, so a new
+divergence on the testable plane fails loudly.
 
 **Rows 5, 6, 8 and 9 are the softer version of the same shape.** The read
 reports nothing; the write either refuses on evidence the read never
@@ -145,46 +181,93 @@ consulted (`seed-id` in rows 8–9) or mints. Not a misattribution, but
 `--trust me` still answers "no identity" in a workspace the write path treats
 as having one.
 
-**Row 14 is the surviving mint hazard.** `KAN_IDENTITY_FILE` naming a path
-that does not exist, in a workspace with nothing else and an empty log, still
-creates a key there. That is REQ-2's target: a selection naming something
-absent is *always* an error. Today it is an error only when the guard finds
-evidence — so the guard's evidence set is doing work that the *selection*
-semantics should make unnecessary.
+**Rows 14, 19 and 26 are mint hazards, not one.** The first draft called row
+14 "the surviving mint hazard", singular, and that was wrong twice over:
 
-**Row 22 is a write with a side effect a read would never have**: resolution
+- **Row 19** is the same shape with `.kan/identity-id` present — a workspace
+  that demonstrably *has had* an identity. It mints at the override path and
+  signs at exit 0, because `identity-id` is the one artifact
+  `existing_identity_evidence` deliberately ignores (`src/sign.rs:675`). The
+  guard is blind here by design, for a reason that is correct on its own terms
+  (`keychain_account` writes that file before the guard runs), and the cost is
+  this cell.
+- **Row 26** is the quietest of the three and cannot be tested: an empty log
+  plus a keychain that answers `NoEntry` sends `load_or_create` to
+  `Self::generate()` and then `set_secret` (`src/sign.rs:304–331`), filing a
+  **brand-new DID into the keychain** for a workspace that had one.
+
+All three are REQ-2's target: a selection naming something absent is *always*
+an error, and an identity is never created as a side effect of failing to find
+one. Today they are errors only when the guard finds evidence — so the guard's
+evidence set is doing work that *selection* semantics should make unnecessary,
+and it is doing it with a known blind spot.
+
+**Row 13's read is not side-effect free**, which the first draft asserted only
+writes could be. `existing_identity`'s env branch calls
+`Identity::load_or_create` (`src/sign.rs:849`), not `load_existing`, so
+`kan show <subject> --trust me` with `KAN_IDENTITY_FILE` set to an existing
+key **creates `.kan/`** and **tightens that key's permissions** to `0600`.
+Measured, with the control that isolates the cause:
+
+```
+KAN_IDENTITY_FILE=…/key  kan show nothing --trust me --json
+  before: .kan/ absent, key mode 644
+  after:  .kan/ PRESENT, key mode 600
+same read WITHOUT --trust me:  .kan/ absent, key 644
+```
+
+`src/sign.rs:833-838` says the key-file branch "uses `load_existing` … so it
+cannot reach the keychain, write `identity-id`, or migrate" — true of the
+branch it sits above (R3), false of the env branch three lines earlier (R1a).
+`tests/write_guards.rs::a_read_creates_no_workspace` misses it because it
+points the variable at a path that does not exist, so the resolving branch is
+never entered. Pinned by
+`a_read_that_resolves_an_identity_still_has_side_effects`, which REQ-1 must
+**invert** in the commit that makes `workspace_identity` pure.
+
+**Row 24 is a write with a side effect the *seed* path never has**: resolution
 migrates the plaintext key into the keychain and deletes the redundant copy.
-Correct behaviour, but it means "ask who I am" and "ask who I am, in a way
-that might write" are different questions — REQ-1's whole point, and AC-8's
-byte-identical-`.kan/` assertion.
+Correct behaviour, but together with row 13 it means "ask who I am" and "ask
+who I am, in a way that might write" are the same question today — REQ-1's
+whole point, and what AC-8's byte-identical-`.kan/` assertion has to cover on
+both paths rather than only on the write.
 
 ## What CI cannot reach, and why that matters
 
-**Rows 19–23 require a reachable OS keychain and cannot run in CI or in this
+**Rows 21–27 require a reachable OS keychain and cannot run in CI or in this
 suite.** `KAN_NO_KEYCHAIN=1` is set by every test that touches identity,
 because a rebuilt binary blocks forever on a macOS authorization prompt (#96)
 — a suite that hangs locally and passes on CI is worse than one that fails.
 
 So the plane containing #170 is exactly the plane the suite cannot exercise.
 That is not a coincidence and it is worth stating plainly: **#170 survived
-five adversarial review rounds because no test could have caught it.** The
-rows above are the substitute — an enumeration a reader can check by hand
-where a machine cannot.
+five adversarial review rounds because no test could have caught it.** Rows
+21–27 are the substitute — an enumeration a reader can check by hand where a
+machine cannot, which also means they carry no guarantee beyond one reader's
+care. Row 26 is derived from source and has never been executed by anyone.
 
 It is also the strongest practical argument for REQ-3. Retiring the keychain
-from the default path does not merely simplify the table; it moves rows 19–23
-into the testable plane, where rows 1–18 already live.
+from the default path does not merely simplify the table; it moves rows 21–27
+into the testable plane, where rows 1–20 already live — turning an
+unfalsifiable defect class into a falsifiable one.
 
 ## Sequencing note
 
-Rows 1–18 are pinned by `tests/identity_cells.rs`, one assertion per cell,
-against both probes:
+Rows 1–20 are pinned by `tests/identity_cells.rs` with **one `#[test]` per
+cell per path**, so each fails alone and AC-3's revert-the-hunk method is
+implementable. A `for` loop over cells cannot deliver that: the first failing
+cell aborts the rest, so eight moved cells report one failure. Both probes:
 
 - **read probe** — `kan show <subject> --trust me --json`, which calls
-  `existing_identity` and cannot mint.
+  `existing_identity`.
 - **write probe** — `kan observe`, which calls `commit_identity` →
   `load_or_create_for_workspace`.
 
 Probing both matters. Nine v0.11 tests had to change probe rather than
 expectation because they used a read to detect a minting path, and a read can
 no longer mint — asserting the guard held while exercising nothing.
+
+The three minting outcomes assert **who signed**, not merely that a file
+appeared: a write that creates a key and then signs as somebody else is the
+misattribution this project exists to prevent, and the first draft's
+file-exists assertion would have passed it.
