@@ -81,6 +81,7 @@ fn workspace_with_claims() -> tempfile::TempDir {
 fn a_declared_role_may_write_to_a_non_empty_workspace() {
     let dir = workspace_with_claims();
     let key = dir.path().join("keys/director");
+    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
 
     let add = kan_as(
         dir.path(),
@@ -131,8 +132,40 @@ fn an_undeclared_second_identity_is_still_refused() {
         !run.ok,
         "an undeclared second identity was allowed to write -- the #90 guard is gone"
     );
+    // REQ-2 changed WHY this is refused, and the change is deliberate: the
+    // selection names a path that does not exist, so the write is refused
+    // before the mint-guard is even reachable. Strictly stronger than the old
+    // behaviour, which minted a key there and then refused.
     assert!(
-        run.stderr.contains("second identity"),
+        run.stderr.contains("does not exist"),
+        "refusal did not name the reason: {}",
+        run.stderr
+    );
+    assert!(
+        !undeclared.exists(),
+        "the refused selection's key file was created anyway"
+    );
+
+    // The property the old test was really defending -- an UNDECLARED second
+    // identity cannot write to a workspace that already holds claims -- now
+    // needs a key that EXISTS to exercise it at all, because a missing one is
+    // caught earlier. Without this case, REQ-2 would have quietly retired
+    // ADR-77's negative control while the test above still passed.
+    let existing = dir.path().join("keys/existing-undeclared");
+    std::fs::create_dir_all(existing.parent().unwrap()).unwrap();
+    kan::sign::Identity::generate().save(&existing).unwrap();
+    let run = kan_as(
+        dir.path(),
+        Some(&existing),
+        &["observe", "shared", "a claim from an undeclared key"],
+    );
+    assert!(
+        !run.ok,
+        "an undeclared second identity wrote to a log with claims -- ADR-77's negative \
+         control is gone"
+    );
+    assert!(
+        run.stderr.contains("not a declared role"),
         "refusal did not name the reason: {}",
         run.stderr
     );
@@ -163,7 +196,9 @@ fn an_undeclared_second_identity_is_still_refused() {
 fn the_default_read_shows_every_role_where_trust_me_shows_one() {
     let dir = git_repo();
     let prover = dir.path().join("keys/prover");
+    { std::fs::create_dir_all(prover.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&prover).unwrap(); }
     let director = dir.path().join("keys/director");
+    { std::fs::create_dir_all(director.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&director).unwrap(); }
 
     for (name, key) in [("prover", &prover), ("director", &director)] {
         let add = kan_as(
@@ -272,6 +307,7 @@ fn the_default_read_shows_every_role_where_trust_me_shows_one() {
 fn trust_roles_returns_the_auto_declared_primary_too() {
     let dir = workspace_with_claims(); // primary identity wrote "shared"
     let key = dir.path().join("keys/director");
+    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
     let add = kan_as(
         dir.path(),
         None,
@@ -444,6 +480,7 @@ fn trust_roles_covers_claims_written_before_any_role_existed() {
 fn declared_roles_are_listed_with_their_dids() {
     let dir = workspace_with_claims();
     let key = dir.path().join("keys/director");
+    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
     let add = kan_as(
         dir.path(),
         None,
@@ -494,6 +531,7 @@ fn declared_roles_are_listed_with_their_dids() {
 fn re_declaring_a_role_never_overwrites_its_key() {
     let dir = workspace_with_claims();
     let key = dir.path().join("keys/director");
+    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
     let first = kan_as(
         dir.path(),
         None,
@@ -565,6 +603,7 @@ fn re_declaring_a_role_never_overwrites_its_key() {
 fn a_role_reading_a_published_workspace_does_not_duplicate_the_log() {
     let dir = workspace_with_claims();
     let key = dir.path().join("keys/prover");
+    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
 
     let published = kan_as(dir.path(), None, &["publish", "shared"]);
     assert!(published.ok, "publish failed: {}", published.stderr);

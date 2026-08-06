@@ -101,6 +101,17 @@ pub enum Error {
     )]
     SelectionMissing { path: String },
     #[error(
+        "KAN_IDENTITY_FILE names {path}, whose identity ({did}) is not this workspace's own \
+         and is not a declared role -- so this would be a second identity writing to a log \
+         that already holds claims.\n\n\
+         Two identities in one workspace means the one kan resolves is the one that signs, \
+         decided by environment and file layout rather than by anything you said.\n\n\
+         If you meant to add a second *role* -- a director and a prover signing separately, \
+         say -- declare it deliberately: `kan identity role add <name> --key {path}`, then \
+         read with `--trust roles` so both roles' claims are visible."
+    )]
+    UndeclaredSelection { path: String, did: String },
+    #[error(
         "a role named `{name}` is already declared in this workspace (key: {existing}). \
          Pick another name, or use the existing role."
     )]
@@ -960,7 +971,33 @@ pub fn signing_identity(kan_dir: &Path, selection: &Selection) -> Result<Option<
         Selection::Primary => workspace_identity(kan_dir),
         Selection::KeyFile(path) => {
             if path.exists() {
-                return Ok(Some(Identity::load_existing(path)?));
+                let identity = Identity::load_existing(path)?;
+                // A selection is validated against the registry of valid
+                // selections. ADR-77's property survives REQ-2 intact: an
+                // UNDECLARED second identity writing to a workspace that
+                // already holds claims is refused, exactly as before -- it is
+                // just refused as an invalid selection rather than as an
+                // unguarded mint. Declaring the role with
+                // `kan identity role add` is what makes it valid, which is
+                // the deliberate act the guard has always been waiting for.
+                //
+                // An empty log is the bootstrap case and is allowed: there is
+                // no prior authorship for a second identity to shadow.
+                if log_has_claims(kan_dir) {
+                    let did = identity.did();
+                    let declared = list_roles(kan_dir)
+                        .map(|roles| roles.iter().any(|r| r.did == did))
+                        .unwrap_or(false);
+                    let is_workspace_identity =
+                        workspace_identity(kan_dir)?.is_some_and(|w| w.did() == did);
+                    if !declared && !is_workspace_identity {
+                        return Err(Error::UndeclaredSelection {
+                            path: path.display().to_string(),
+                            did,
+                        });
+                    }
+                }
+                return Ok(Some(identity));
             }
             // Named by `.kan/roles`? Then say so: the caller asked to write as
             // a specific declared role and that role's key is gone.

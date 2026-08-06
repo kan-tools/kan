@@ -79,6 +79,7 @@ fn copy_claims(from: &std::path::Path, to: &std::path::Path) {
 fn a_deleted_log_is_rebuilt_from_the_published_tree() {
     let dir = git_repo();
     let key = dir.path().join("mykey");
+    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
 
     let first = kan_as(dir.path(), Some(&key), &["observe", "task", "the finding"]);
     assert!(first.ok, "{}", first.stderr);
@@ -135,6 +136,7 @@ fn restore_takes_only_this_identitys_claims_into_the_log() {
     // Another actor publishes.
     let other = git_repo();
     let other_key = other.path().join("otherkey");
+    { std::fs::create_dir_all(other_key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&other_key).unwrap(); }
     assert!(
         kan_as(
             other.path(),
@@ -152,6 +154,7 @@ fn restore_takes_only_this_identitys_claims_into_the_log() {
     // filename, which is a tree-merge question rather than a restore one.
     let mine = git_repo();
     let my_key = mine.path().join("mykey");
+    { std::fs::create_dir_all(my_key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&my_key).unwrap(); }
     assert!(
         kan_as(
             mine.path(),
@@ -218,6 +221,7 @@ fn restore_takes_only_this_identitys_claims_into_the_log() {
 fn restore_refuses_when_nothing_in_the_tree_is_mine() {
     let other = git_repo();
     let other_key = other.path().join("otherkey");
+    { std::fs::create_dir_all(other_key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&other_key).unwrap(); }
     assert!(
         kan_as(
             other.path(),
@@ -230,6 +234,7 @@ fn restore_refuses_when_nothing_in_the_tree_is_mine() {
 
     let mine = git_repo();
     let my_key = mine.path().join("mykey");
+    { std::fs::create_dir_all(my_key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&my_key).unwrap(); }
     copy_claims(other.path(), mine.path());
     // Mint my identity without writing anything, so the log is empty.
     assert!(kan_as(mine.path(), Some(&my_key), &["identity", "did"]).ok);
@@ -258,6 +263,7 @@ fn restore_refuses_when_nothing_in_the_tree_is_mine() {
 fn restoring_twice_is_a_no_op_the_second_time() {
     let dir = git_repo();
     let key = dir.path().join("mykey");
+    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
     assert!(kan_as(dir.path(), Some(&key), &["observe", "task", "the finding"]).ok);
     assert!(kan_as(dir.path(), Some(&key), &["publish", "task"]).ok);
     std::fs::remove_dir_all(dir.path().join(".kan")).unwrap();
@@ -287,6 +293,7 @@ fn restoring_twice_is_a_no_op_the_second_time() {
 fn restore_without_a_published_tree_says_so() {
     let dir = git_repo();
     let key = dir.path().join("mykey");
+    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
     assert!(kan_as(dir.path(), Some(&key), &["observe", "task", "unpublished"]).ok);
 
     let run = kan_as(dir.path(), Some(&key), &["restore"]);

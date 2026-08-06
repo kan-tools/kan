@@ -68,8 +68,11 @@ fn git_repo() -> tempfile::TempDir {
 fn orphaned_workspace() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = git_repo();
     let real_key = dir.path().join("the-real-key");
+    { std::fs::create_dir_all(real_key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&real_key).unwrap(); }
     let other_key = dir.path().join("some-other-key");
+    { std::fs::create_dir_all(other_key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&other_key).unwrap(); }
     let stranger = dir.path().join("stranger");
+    { std::fs::create_dir_all(stranger.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&stranger).unwrap(); }
     // All minted while the log is empty. Minting later would trip the #90
     // guard -- correctly, but that is a different test than this one.
     for key in [&real_key, &other_key, &stranger] {
@@ -169,6 +172,7 @@ fn a_re_minted_identity_no_longer_hides_the_log_and_adopt_still_repoints_writes(
 fn adopting_a_key_that_authored_nothing_is_refused() {
     let (dir, _real_key) = orphaned_workspace();
     let stranger = dir.path().join("stranger");
+    { std::fs::create_dir_all(stranger.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&stranger).unwrap(); }
 
     let identity_before = std::fs::read(dir.path().join(".kan/identity")).unwrap();
 

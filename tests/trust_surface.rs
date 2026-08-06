@@ -70,7 +70,9 @@ impl Roles {
     fn new() -> Self {
         let dir = git_repo();
         let prover = dir.path().join("keys/prover");
+        { std::fs::create_dir_all(prover.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&prover).unwrap(); }
         let director = dir.path().join("keys/director");
+        { std::fs::create_dir_all(director.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&director).unwrap(); }
         // Mint both before either writes, per the struct doc.
         for key in [&prover, &director] {
             let (_, ok) = kan_as(dir.path(), Some(key), &["identity", "did"]);
