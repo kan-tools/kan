@@ -360,6 +360,7 @@ fn repo() -> tempfile::TempDir {
 fn own_claims_not_in_log() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = repo();
     let key = dir.path().join("key");
+    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
     let run = kan(
         dir.path(),
         Some(&key),
@@ -449,6 +450,7 @@ fn a_refused_restore_brings_no_workspace_into_existence() {
     // A published tree signed by somebody else entirely.
     let stranger = repo();
     let stranger_key = stranger.path().join("key");
+    { std::fs::create_dir_all(stranger_key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&stranger_key).unwrap(); }
     assert!(
         kan(
             stranger.path(),
@@ -499,6 +501,7 @@ fn a_refused_restore_brings_no_workspace_into_existence() {
 fn a_lost_key_restore_names_the_tree_and_its_remedy_works() {
     let dir = repo();
     let key = dir.path().join("key");
+    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
     assert!(
         kan(
             dir.path(),
@@ -514,7 +517,12 @@ fn a_lost_key_restore_names_the_tree_and_its_remedy_works() {
     std::fs::remove_dir_all(dir.path().join(".kan")).unwrap();
     let missing = dir.path().join("gone");
 
-    let refused = kan(dir.path(), Some(&missing), &["restore"]);
+    // No selection at all: the operator has LOST the key, which is the state
+    // `restore` exists for. Pointing KAN_IDENTITY_FILE at a stale path models
+    // a different failure since REQ-2 -- the selection is refused before
+    // restore can enumerate the tree, which is correct but is not this test's
+    // subject.
+    let refused = kan(dir.path(), None, &["restore"]);
     assert!(!refused.ok, "expected a refusal: {}", refused.stdout);
     assert!(
         refused.stderr.contains(&did),
@@ -553,16 +561,23 @@ fn a_lost_key_restore_names_the_tree_and_its_remedy_works() {
         "a stale KAN_IDENTITY_FILE was silently substituted rather than reported: {}",
         still_stale.stdout
     );
+    // REQ-2 changed WHICH refusal this is, deliberately, and the new one is
+    // a better answer to the question the operator actually asked. Before, a
+    // stale selection fell through to restore's lost-key refusal, which
+    // listed the tree's authors -- useful, but it answered "who wrote this?"
+    // when the operator's problem was "the key you named is not there".
+    // Now the selection is reported as what it is. The property the test
+    // defends is unchanged: a stale KAN_IDENTITY_FILE is REPORTED, never
+    // silently substituted with whatever the workspace happens to hold.
     assert!(
-        still_stale
-            .stderr
-            .contains("cannot tell which of these claims are yours"),
-        "expected `restore`'s own refusal, naming the tree it read: {}",
+        still_stale.stderr.contains("does not exist"),
+        "expected the stale selection to be named: {}",
         still_stale.stderr
     );
     assert!(
-        still_stale.stderr.contains(&did),
-        "the refusal should still name the authors in the tree: {}",
+        !still_stale.stderr.contains(&did),
+        "a stale selection should be reported on its own terms, not answered with the \
+         workspace's identity: {}",
         still_stale.stderr
     );
 
@@ -614,6 +629,7 @@ fn a_missing_role_key_never_signs_as_somebody_else() {
     // defect at all -- which is what the first version of this test did.
     let human = dir.path().join(".kan/identity");
     std::fs::create_dir_all(dir.path().join(".kan")).unwrap();
+    { std::fs::create_dir_all(human.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&human).unwrap(); }
     assert!(
         kan(
             dir.path(),
@@ -630,6 +646,7 @@ fn a_missing_role_key_never_signs_as_somebody_else() {
     let human_did = kan(dir.path(), Some(&human), &["identity", "did"]).stdout;
 
     let role_key = dir.path().join("roles.d-prover");
+    { std::fs::create_dir_all(role_key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&role_key).unwrap(); }
     let added = kan(
         dir.path(),
         Some(&human),
@@ -685,6 +702,7 @@ fn both_subjects_of_a_two_subject_verb_are_validated() {
     ] {
         let dir = repo();
         let key = dir.path().join("key");
+        { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
         assert!(
             kan(
                 dir.path(),
@@ -724,6 +742,7 @@ fn both_subjects_of_a_two_subject_verb_are_validated() {
 fn a_missing_key_does_not_claim_the_log_is_empty() {
     let dir = repo();
     let key = dir.path().join("key");
+    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
     assert!(
         kan(
             dir.path(),
@@ -866,6 +885,7 @@ fn reads_and_writes_resolve_the_same_identity() {
     // this one's guard is not involved, then dropped in beside the seed.
     let elsewhere = repo();
     let spare = elsewhere.path().join("spare-key");
+    { std::fs::create_dir_all(spare.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&spare).unwrap(); }
     assert!(
         kan(elsewhere.path(), Some(&spare), &["identity", "did"]).ok,
         "could not mint a spare key"
@@ -908,9 +928,11 @@ fn a_missing_role_key_is_refused_even_with_no_other_evidence() {
     let dir = repo();
     // The primary lives outside `.kan/`, which is what leaves no evidence.
     let primary = dir.path().join("primary-key");
+    { std::fs::create_dir_all(primary.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&primary).unwrap(); }
     assert!(kan(dir.path(), Some(&primary), &["identity", "did"]).ok);
 
     let role_key = dir.path().join("prover-key");
+    { std::fs::create_dir_all(role_key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&role_key).unwrap(); }
     let added = kan(
         dir.path(),
         Some(&primary),
