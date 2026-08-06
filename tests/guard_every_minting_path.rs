@@ -80,7 +80,10 @@ fn git_repo() -> tempfile::TempDir {
 fn workspace_with_claims() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = git_repo();
     let key = dir.path().join("key");
-    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
     let wrote = kan(
         dir.path(),
         Some(&key),
@@ -206,7 +209,6 @@ fn seed_rooting_cannot_mint_against_a_non_empty_log() {
 fn identity_file_still_cannot_mint_against_a_non_empty_log() {
     let (dir, _key) = workspace_with_claims();
     let other = dir.path().join("a-different-key");
-    { std::fs::create_dir_all(other.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&other).unwrap(); }
 
     let run = kan(dir.path(), Some(&other), true, &probe_write());
 
@@ -229,7 +231,10 @@ fn an_empty_log_still_mints_freely_on_every_path() {
     {
         let dir = git_repo();
         let key = dir.path().join("key");
-        { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
+        {
+            std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+            kan::sign::Identity::generate().save(&key).unwrap();
+        }
         let key = key_file.then_some(key);
 
         let run = kan(

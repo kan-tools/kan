@@ -154,10 +154,13 @@ enum Expect {
     Refuses,
     /// Seed-rooted the workspace, and signed with the seed it created.
     MintsSeed,
-    /// Created `.kan/identity`, and signed with it.
-    MintsKeyFile,
-    /// Created a key at the `KAN_IDENTITY_FILE` path, and signed with it.
-    MintsAtOverride,
+    // `MintsKeyFile` and `MintsAtOverride` used to live here. REQ-1 gave
+    // creation a single implementation (`create_workspace_identity`, which
+    // seed-roots) and REQ-2 stopped a selection from ever creating its own
+    // target, so no cell in the table produces either outcome any more. They
+    // are deleted rather than silenced: an expectation variant nothing can
+    // produce is a slot for a future test to be written against a behaviour
+    // that does not exist.
     /// REQ-2: the selection names a path that does not exist. On BOTH paths --
     /// `--trust me` no longer answers with somebody else's identity either.
     SelectionMissing,
@@ -489,36 +492,6 @@ fn run_write(row: u32) {
                 built.claim_author(row),
                 derived,
                 "row {row}: the write seed-rooted the workspace but signed with a different key"
-            );
-        }
-        Expect::MintsKeyFile => {
-            assert!(ok, "row {row}: the write failed: {stderr}");
-            let key_path = kan_dir.join("identity");
-            assert!(
-                key_path.exists(),
-                "row {row}: the write succeeded without creating .kan/identity"
-            );
-            assert!(
-                !kan_dir.join("seed").exists(),
-                "row {row}: the write seed-rooted the workspace instead of minting a key file"
-            );
-            assert_eq!(
-                built.claim_author(row),
-                Identity::load_existing(&key_path).unwrap().did(),
-                "row {row}: the write created .kan/identity but signed with a different key"
-            );
-        }
-        Expect::MintsAtOverride => {
-            assert!(ok, "row {row}: the write failed: {stderr}");
-            let key_path = built.env_path.clone().unwrap();
-            assert!(
-                key_path.exists(),
-                "row {row}: the write succeeded without creating the override key"
-            );
-            assert_eq!(
-                built.claim_author(row),
-                Identity::load_existing(&key_path).unwrap().did(),
-                "row {row}: the write created the override key but signed with a different key"
             );
         }
         Expect::None_ => panic!("row {row}: a write cannot resolve to nothing"),

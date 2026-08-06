@@ -9,6 +9,21 @@
 
 use std::process::Command;
 
+fn kan_no_selection(dir: &std::path::Path, args: &[&str]) -> (String, String, bool) {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(args)
+        .current_dir(dir)
+        .env("KAN_NO_KEYCHAIN", "1")
+        .env_remove("KAN_IDENTITY_FILE")
+        .output()
+        .expect("failed to run kan");
+    (
+        String::from_utf8_lossy(&out.stdout).to_string(),
+        String::from_utf8_lossy(&out.stderr).to_string(),
+        out.status.success(),
+    )
+}
+
 fn kan(dir: &std::path::Path, key: &std::path::Path, args: &[&str]) -> (String, String, bool) {
     let out = Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(args)
@@ -59,6 +74,10 @@ fn git_repo(with_commit: bool) -> tempfile::TempDir {
 fn a_subject_name_with_a_newline_is_refused() {
     let dir = git_repo(true);
     let key = dir.path().join("key");
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
 
     let (_, err, ok) = kan(
         dir.path(),
@@ -85,6 +104,10 @@ fn a_subject_name_with_a_newline_is_refused() {
 fn ordinary_subject_names_are_untouched() {
     let dir = git_repo(true);
     let key = dir.path().join("key");
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
 
     for name in [
         "telos/raw-data-and-projections",
@@ -121,6 +144,10 @@ fn ordinary_subject_names_are_untouched() {
 fn a_repo_with_no_commits_says_what_it_needs() {
     let dir = git_repo(false);
     let key = dir.path().join("key");
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
 
     let (_, err, ok) = kan(dir.path(), &key, &["observe", "x", "--subject", "s"]);
 
@@ -142,6 +169,10 @@ fn a_repo_with_no_commits_says_what_it_needs() {
 fn a_failed_open_in_a_commitless_repo_writes_nothing() {
     let dir = git_repo(false);
     let key = dir.path().join("key");
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
 
     let (_, _, ok) = kan(dir.path(), &key, &["observe", "x", "--subject", "s"]);
     assert!(!ok);
@@ -151,8 +182,10 @@ fn a_failed_open_in_a_commitless_repo_writes_nothing() {
         ".kan/ was created despite the command failing"
     );
     assert!(
-        !key.exists(),
-        "a signing key was minted despite the command failing"
+        !dir.path().join(".kan/seed").exists()
+            && !dir.path().join(".kan/seed-id").exists()
+            && !dir.path().join(".kan/identity").exists(),
+        "brought an identity into existence despite the command failing"
     );
 }
 
@@ -169,6 +202,10 @@ fn a_read_creates_no_workspace() {
     for has_commits in [true, false] {
         let dir = git_repo(has_commits);
         let key = dir.path().join("key");
+        {
+            std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+            kan::sign::Identity::generate().save(&key).unwrap();
+        }
 
         let (out, err, ok) = kan(dir.path(), &key, &["status"]);
 
@@ -182,8 +219,10 @@ fn a_read_creates_no_workspace() {
             "a read created .kan/ (commits: {has_commits})"
         );
         assert!(
-            !key.exists(),
-            "a read minted a signing key (commits: {has_commits})"
+            !dir.path().join(".kan/seed").exists()
+                && !dir.path().join(".kan/seed-id").exists()
+                && !dir.path().join(".kan/identity").exists(),
+            "a read brought an identity into existence (commits: {has_commits})"
         );
     }
 }
@@ -200,6 +239,10 @@ fn a_read_creates_no_workspace() {
 fn a_write_refused_for_its_subject_name_mints_nothing() {
     let dir = git_repo(true);
     let key = dir.path().join("key");
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
 
     let (_, err, ok) = kan(
         dir.path(),
@@ -213,8 +256,10 @@ fn a_write_refused_for_its_subject_name_mints_nothing() {
         "the refusal should say what was wrong: {err}"
     );
     assert!(
-        !key.exists(),
-        "a refused write minted a signing key -- REQ-3: a minted identity is persisted \
+        !dir.path().join(".kan/seed").exists()
+            && !dir.path().join(".kan/seed-id").exists()
+            && !dir.path().join(".kan/identity").exists(),
+        "a refused write brought an identity into existence -- REQ-3: a minted identity is persisted \
          only after the write it was minted for has succeeded"
     );
     assert!(
@@ -278,13 +323,19 @@ fn no_refused_write_leaves_an_identity_behind() {
     for (label, has_commits, args) in cases {
         let dir = git_repo(*has_commits);
         let key = dir.path().join("key");
+        {
+            std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+            kan::sign::Identity::generate().save(&key).unwrap();
+        }
 
         let (_, err, ok) = kan(dir.path(), &key, args);
 
         assert!(!ok, "{label}: the write was expected to be refused");
         assert!(
-            !key.exists(),
-            "{label}: a refused write minted a signing key ({err})"
+            !dir.path().join(".kan/seed").exists()
+                && !dir.path().join(".kan/seed-id").exists()
+                && !dir.path().join(".kan/identity").exists(),
+            "{label}: a refused write brought an identity into existence ({err})"
         );
         assert!(
             !dir.path().join(".kan").exists(),
@@ -294,13 +345,16 @@ fn no_refused_write_leaves_an_identity_behind() {
 
     // The negative control, and the one that makes the rest mean something:
     // a write that is NOT refused still brings the workspace into existence.
+    // Re-expressed for REQ-2: a write never creates the key a SELECTION
+    // names, so the negative control has to use no selection at all. The
+    // property is unchanged -- a write that is not refused brings an identity
+    // into existence -- it just lands where kan puts one, which is the seed.
     let dir = git_repo(true);
-    let key = dir.path().join("key");
-    let (_, err, ok) = kan(dir.path(), &key, &["observe", "real", "--subject", "s"]);
+    let (_, err, ok) = kan_no_selection(dir.path(), &["observe", "real", "--subject", "s"]);
     assert!(ok, "a legitimate write failed: {err}");
     assert!(
-        key.exists(),
-        "a successful write did not persist an identity"
+        dir.path().join(".kan/seed").exists() || dir.path().join(".kan/seed-id").exists(),
+        "a successful write did not bring an identity into existence"
     );
     assert!(
         dir.path().join(".kan/log").exists(),

@@ -84,11 +84,23 @@ impl Workspace {
     fn new() -> Self {
         let dir = git_repo();
         let primary = dir.path().join("primary-key");
-        { std::fs::create_dir_all(primary.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&primary).unwrap(); }
-        { std::fs::create_dir_all(primary.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&primary).unwrap(); }
+        {
+            std::fs::create_dir_all(primary.parent().unwrap()).unwrap();
+            kan::sign::Identity::generate().save(&primary).unwrap();
+        }
+        {
+            std::fs::create_dir_all(primary.parent().unwrap()).unwrap();
+            kan::sign::Identity::generate().save(&primary).unwrap();
+        }
         let role = dir.path().join("keys/prover");
-        { std::fs::create_dir_all(role.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&role).unwrap(); }
-        { std::fs::create_dir_all(role.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&role).unwrap(); }
+        {
+            std::fs::create_dir_all(role.parent().unwrap()).unwrap();
+            kan::sign::Identity::generate().save(&role).unwrap();
+        }
+        {
+            std::fs::create_dir_all(role.parent().unwrap()).unwrap();
+            kan::sign::Identity::generate().save(&role).unwrap();
+        }
 
         let wrote = kan(
             dir.path(),
@@ -222,11 +234,23 @@ fn each_selector_returns_the_set_its_name_claims() {
 fn undeclared_workspace() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     let dir = git_repo();
     let a = dir.path().join("key-a");
-    { std::fs::create_dir_all(a.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&a).unwrap(); }
-    { std::fs::create_dir_all(a.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&a).unwrap(); }
+    {
+        std::fs::create_dir_all(a.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&a).unwrap();
+    }
+    {
+        std::fs::create_dir_all(a.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&a).unwrap();
+    }
     let b = dir.path().join("key-b");
-    { std::fs::create_dir_all(b.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&b).unwrap(); }
-    { std::fs::create_dir_all(b.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&b).unwrap(); }
+    {
+        std::fs::create_dir_all(b.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&b).unwrap();
+    }
+    {
+        std::fs::create_dir_all(b.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&b).unwrap();
+    }
     for key in [&a, &b] {
         assert!(kan(dir.path(), Some(key), &["identity", "did"]).ok);
     }
@@ -317,9 +341,15 @@ fn local_minus_roles_is_the_undeclared_authors_and_the_cli_says_so() {
 fn an_undeclared_reader_is_not_silently_included_in_roles() {
     let dir = git_repo();
     let primary = dir.path().join("primary-key");
-    { std::fs::create_dir_all(primary.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&primary).unwrap(); }
-    { std::fs::create_dir_all(primary.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&primary).unwrap(); }
+    {
+        std::fs::create_dir_all(primary.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&primary).unwrap();
+    }
     let stranger = dir.path().join("stranger-key");
+    {
+        std::fs::create_dir_all(stranger.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&stranger).unwrap();
+    }
     // Both minted while the log is empty, so neither trips the guard.
     for key in [&primary, &stranger] {
         assert!(kan(dir.path(), Some(key), &["identity", "did"]).ok);

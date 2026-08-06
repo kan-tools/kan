@@ -57,7 +57,10 @@ fn git_repo() -> tempfile::TempDir {
 fn varied_log() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = git_repo();
     let key = dir.path().join("key");
-    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
     let k = |args: &[&str]| {
         let (out, ok) = kan(dir.path(), &key, args);
         assert!(ok, "{args:?} failed: {out}");
@@ -189,9 +192,15 @@ fn each_entry_is_shaped_exactly_like_a_single_show() {
 fn the_bulk_read_honours_the_trust_selector() {
     let dir = git_repo();
     let a = dir.path().join("a");
-    { std::fs::create_dir_all(a.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&a).unwrap(); }
+    {
+        std::fs::create_dir_all(a.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&a).unwrap();
+    }
     let b = dir.path().join("b");
-    { std::fs::create_dir_all(b.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&b).unwrap(); }
+    {
+        std::fs::create_dir_all(b.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&b).unwrap();
+    }
     // Both minted while the log is empty, so neither trips the #90 guard.
     for key in [&a, &b] {
         assert!(kan(dir.path(), key, &["identity", "did"]).1);
@@ -284,7 +293,10 @@ fn the_bulk_read_refuses_shapes_that_would_not_help_anyone() {
 fn show_all_never_omits_a_subject_that_status_reports() {
     let dir = git_repo();
     let key = dir.path().join("key");
-    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
 
     for s in ["alpha", "beta", "gamma/nested", "delta with spaces"] {
         let (_, ok) = kan(dir.path(), &key, &["observe", "a claim", "--subject", s]);
@@ -325,7 +337,10 @@ fn show_all_never_omits_a_subject_that_status_reports() {
 fn retracting_a_subjects_only_claim_does_not_remove_the_subject() {
     let dir = git_repo();
     let key = dir.path().join("key");
-    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
 
     let (cid, ok) = kan(
         dir.path(),

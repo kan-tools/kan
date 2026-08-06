@@ -57,7 +57,10 @@ fn git_repo() -> tempfile::TempDir {
 fn three_states() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = git_repo();
     let key = dir.path().join("key");
-    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
 
     // unpublished: written, never published.
     assert!(kan(dir.path(), &key, &["observe", "never-shared", "local only"]).ok);
@@ -194,7 +197,10 @@ fn republishing_clears_stale() {
 fn a_repo_that_never_published_reports_every_subject_unpublished() {
     let dir = git_repo();
     let key = dir.path().join("key");
-    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
     assert!(kan(dir.path(), &key, &["observe", "a", "one"]).ok);
     assert!(kan(dir.path(), &key, &["observe", "b", "two"]).ok);
 

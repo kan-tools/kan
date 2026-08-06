@@ -1054,10 +1054,27 @@ fn identity_evidence(kan_dir: &Path) -> Option<&'static str> {
 }
 
 pub fn create_workspace_identity(kan_dir: &Path) -> Result<Identity, Error> {
+    // The log first: "this workspace has claims already" is the most
+    // informative thing a refusal can say, and it is the evidence a missing
+    // identity cannot account for.
+    if log_has_claims(kan_dir) {
+        return Err(Error::WouldMintSecondIdentity {
+            attempt: "creating a new identity".to_string(),
+            remedy: "This workspace had an identity and no longer resolves one. Restore the \
+                     key, or adopt it with `kan identity adopt --key <path>`. If the key is \
+                     in the OS keychain and the keychain is unreachable, fix that first -- \
+                     minting here would take every existing claim out of every read."
+                .to_string(),
+            evidence: "claims in its log".to_string(),
+        });
+    }
     if let Some(evidence) = identity_evidence(kan_dir) {
         return Err(Error::WouldMintSecondIdentity {
             attempt: "creating a new one".to_string(),
-            remedy: "This workspace already has an identity, even if kan cannot resolve it                      right now -- an unreachable or disabled keychain is the usual reason.                      Fix that, or adopt the key with `kan identity adopt --key <path>`.                      Minting here would take every existing claim out of every read."
+            remedy: "This workspace already has an identity, even if kan cannot resolve it \
+                     right now -- an unreachable or disabled keychain is the usual reason. \
+                     Fix that, or adopt the key with `kan identity adopt --key <path>`. \
+                     Minting here would take every existing claim out of every read."
                 .to_string(),
             evidence: evidence.to_string(),
         });
@@ -1069,17 +1086,6 @@ pub fn create_workspace_identity(kan_dir: &Path) -> Result<Identity, Error> {
                      you meant to start over."
                 .to_string(),
             evidence: "an identity this workspace already resolves".to_string(),
-        });
-    }
-    if log_has_claims(kan_dir) {
-        return Err(Error::WouldMintSecondIdentity {
-            attempt: "creating a new identity".to_string(),
-            remedy: "This workspace had an identity and no longer resolves one. Restore the \
-                     key, or adopt it with `kan identity adopt --key <path>`. If the key is \
-                     in the OS keychain and the keychain is unreachable, fix that first -- \
-                     minting here would take every existing claim out of every read."
-                .to_string(),
-            evidence: "claims in its log".to_string(),
         });
     }
     Seed::create(kan_dir)?.signing_identity()

@@ -360,7 +360,10 @@ fn repo() -> tempfile::TempDir {
 fn own_claims_not_in_log() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = repo();
     let key = dir.path().join("key");
-    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
     let run = kan(
         dir.path(),
         Some(&key),
@@ -450,7 +453,10 @@ fn a_refused_restore_brings_no_workspace_into_existence() {
     // A published tree signed by somebody else entirely.
     let stranger = repo();
     let stranger_key = stranger.path().join("key");
-    { std::fs::create_dir_all(stranger_key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&stranger_key).unwrap(); }
+    {
+        std::fs::create_dir_all(stranger_key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&stranger_key).unwrap();
+    }
     assert!(
         kan(
             stranger.path(),
@@ -501,7 +507,10 @@ fn a_refused_restore_brings_no_workspace_into_existence() {
 fn a_lost_key_restore_names_the_tree_and_its_remedy_works() {
     let dir = repo();
     let key = dir.path().join("key");
-    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
     assert!(
         kan(
             dir.path(),
@@ -629,7 +638,10 @@ fn a_missing_role_key_never_signs_as_somebody_else() {
     // defect at all -- which is what the first version of this test did.
     let human = dir.path().join(".kan/identity");
     std::fs::create_dir_all(dir.path().join(".kan")).unwrap();
-    { std::fs::create_dir_all(human.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&human).unwrap(); }
+    {
+        std::fs::create_dir_all(human.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&human).unwrap();
+    }
     assert!(
         kan(
             dir.path(),
@@ -646,7 +658,10 @@ fn a_missing_role_key_never_signs_as_somebody_else() {
     let human_did = kan(dir.path(), Some(&human), &["identity", "did"]).stdout;
 
     let role_key = dir.path().join("roles.d-prover");
-    { std::fs::create_dir_all(role_key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&role_key).unwrap(); }
+    {
+        std::fs::create_dir_all(role_key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&role_key).unwrap();
+    }
     let added = kan(
         dir.path(),
         Some(&human),
@@ -702,7 +717,10 @@ fn both_subjects_of_a_two_subject_verb_are_validated() {
     ] {
         let dir = repo();
         let key = dir.path().join("key");
-        { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
+        {
+            std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+            kan::sign::Identity::generate().save(&key).unwrap();
+        }
         assert!(
             kan(
                 dir.path(),
@@ -742,7 +760,10 @@ fn both_subjects_of_a_two_subject_verb_are_validated() {
 fn a_missing_key_does_not_claim_the_log_is_empty() {
     let dir = repo();
     let key = dir.path().join("key");
-    { std::fs::create_dir_all(key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&key).unwrap(); }
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
     assert!(
         kan(
             dir.path(),
@@ -885,7 +906,10 @@ fn reads_and_writes_resolve_the_same_identity() {
     // this one's guard is not involved, then dropped in beside the seed.
     let elsewhere = repo();
     let spare = elsewhere.path().join("spare-key");
-    { std::fs::create_dir_all(spare.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&spare).unwrap(); }
+    {
+        std::fs::create_dir_all(spare.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&spare).unwrap();
+    }
     assert!(
         kan(elsewhere.path(), Some(&spare), &["identity", "did"]).ok,
         "could not mint a spare key"
@@ -928,11 +952,17 @@ fn a_missing_role_key_is_refused_even_with_no_other_evidence() {
     let dir = repo();
     // The primary lives outside `.kan/`, which is what leaves no evidence.
     let primary = dir.path().join("primary-key");
-    { std::fs::create_dir_all(primary.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&primary).unwrap(); }
+    {
+        std::fs::create_dir_all(primary.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&primary).unwrap();
+    }
     assert!(kan(dir.path(), Some(&primary), &["identity", "did"]).ok);
 
     let role_key = dir.path().join("prover-key");
-    { std::fs::create_dir_all(role_key.parent().unwrap()).unwrap(); kan::sign::Identity::generate().save(&role_key).unwrap(); }
+    {
+        std::fs::create_dir_all(role_key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&role_key).unwrap();
+    }
     let added = kan(
         dir.path(),
         Some(&primary),
