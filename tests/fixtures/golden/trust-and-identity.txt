@@ -1,0 +1,791 @@
+$ kan identity did
+exit: ok
+--- stdout ---
+<DID-0>
+--- stderr ---
+=====================================================
+$ kan identity did
+exit: ok
+--- stdout ---
+<DID-1>
+--- stderr ---
+=====================================================
+$ kan identity role list
+exit: ok
+--- stdout ---
+no declared roles. This workspace signs as one identity: <DID-0>
+--- stderr ---
+=====================================================
+$ kan show shared
+exit: ok
+--- stdout ---
+shared (4 live claim(s)):
+  <CID-0>  [Local("shared")] Observation: alice wrote this through the workspace
+      recorded: <TIME>
+      author:   <DID-0>
+      artifact: Commit("<GENESIS>")
+  <CID-1>  [Local("shared")] Subject: Issue "A subject two authors touch"
+      recorded: <TIME>
+      author:   <DID-0>
+      artifact: Commit("<GENESIS>")
+  <CID-2>  [Local("shared")] Observation: bob wrote this through the workspace
+      recorded: <TIME>
+      author:   <DID-1>
+      artifact: Commit("<GENESIS>")
+  <CID-3>  [Local("shared")] Publication: published to GitTree
+      recorded: <TIME>
+      author:   <DID-0>
+      artifact: Commit("<GENESIS>")
+--- stderr ---
+=====================================================
+$ kan show shared --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subject": "shared",
+  "subjects": [
+    "shared"
+  ],
+  "claims": [
+    {
+      "cid": "<CID-0>",
+      "kind": "Observation",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "alice wrote this through the workspace",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-1>",
+      "kind": "Subject",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "title": "A subject two authors touch",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-2>",
+      "kind": "Observation",
+      "subject": "shared",
+      "author": "<DID-1>",
+      "recorded_at": <MICROS>,
+      "text": "bob wrote this through the workspace",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-3>",
+      "kind": "Publication",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    }
+  ],
+  "trust": {
+    "base": "<BASE>",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      },
+      {
+        "did": "<DID-1>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 0
+}
+--- stderr ---
+=====================================================
+$ kan show foreign --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subject": "foreign",
+  "subjects": [
+    "foreign"
+  ],
+  "claims": [],
+  "trust": {
+    "base": "<BASE>",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      },
+      {
+        "did": "<DID-1>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 1
+}
+--- stderr ---
+=====================================================
+$ kan show overlap --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subject": "overlap",
+  "subjects": [
+    "overlap"
+  ],
+  "claims": [
+    {
+      "cid": "<CID-4>",
+      "kind": "Observation",
+      "subject": "overlap",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "alice also wrote here",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-5>",
+      "kind": "Observation",
+      "subject": "overlap",
+      "author": "<DID-0>",
+      "text": "alice's record, arrived as a file"
+    }
+  ],
+  "trust": {
+    "base": "<BASE>",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      },
+      {
+        "did": "<DID-1>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 0
+}
+--- stderr ---
+=====================================================
+$ kan show --all --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "trust": {
+    "base": "<BASE>",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      },
+      {
+        "did": "<DID-1>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 1,
+  "subjects": [
+    {
+      "v": 1,
+      "subject": "overlap",
+      "subjects": [
+        "overlap"
+      ],
+      "claims": [
+        {
+          "cid": "<CID-4>",
+          "kind": "Observation",
+          "subject": "overlap",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "text": "alice also wrote here",
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        },
+        {
+          "cid": "<CID-5>",
+          "kind": "Observation",
+          "subject": "overlap",
+          "author": "<DID-0>",
+          "text": "alice's record, arrived as a file"
+        }
+      ],
+      "trust": {
+        "base": "<BASE>",
+        "authors": [
+          {
+            "did": "<DID-0>",
+            "weight": 1.0
+          },
+          {
+            "did": "<DID-1>",
+            "weight": 1.0
+          }
+        ]
+      },
+      "excluded_by_trust": 0
+    },
+    {
+      "v": 1,
+      "subject": "shared",
+      "subjects": [
+        "shared"
+      ],
+      "claims": [
+        {
+          "cid": "<CID-0>",
+          "kind": "Observation",
+          "subject": "shared",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "text": "alice wrote this through the workspace",
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        },
+        {
+          "cid": "<CID-1>",
+          "kind": "Subject",
+          "subject": "shared",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "title": "A subject two authors touch",
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        },
+        {
+          "cid": "<CID-2>",
+          "kind": "Observation",
+          "subject": "shared",
+          "author": "<DID-1>",
+          "recorded_at": <MICROS>,
+          "text": "bob wrote this through the workspace",
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        },
+        {
+          "cid": "<CID-3>",
+          "kind": "Publication",
+          "subject": "shared",
+          "author": "<DID-0>",
+          "recorded_at": <MICROS>,
+          "artifacts": [
+            "Commit(\"<GENESIS>\")"
+          ]
+        }
+      ],
+      "trust": {
+        "base": "<BASE>",
+        "authors": [
+          {
+            "did": "<DID-0>",
+            "weight": 1.0
+          },
+          {
+            "did": "<DID-1>",
+            "weight": 1.0
+          }
+        ]
+      },
+      "excluded_by_trust": 0
+    }
+  ]
+}
+--- stderr ---
+=====================================================
+$ kan status --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subjects": [
+    {
+      "subject": "overlap",
+      "subjects": [
+        "overlap"
+      ],
+      "state": "Unclassified",
+      "excluded_by_trust": 0,
+      "durability": "stale"
+    },
+    {
+      "subject": "shared",
+      "subjects": [
+        "shared"
+      ],
+      "state": "Unclassified",
+      "excluded_by_trust": 0,
+      "durability": "published"
+    }
+  ],
+  "trust": {
+    "base": "<BASE>",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      },
+      {
+        "did": "<DID-1>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 1
+}
+--- stderr ---
+=====================================================
+$ kan issues
+exit: ok
+--- stdout ---
+shared: Publication — Publication { layer: GitTree }  (<CID-3>)  [published]
+  note: 1 live claim(s) here are excluded by this view's trust base (Local) -- pass --trust <did>[=<weight>] (or --trust me) to widen it
+--- stderr ---
+=====================================================
+$ kan context --budget 400 --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "claims": [
+    {
+      "cid": "<CID-3>",
+      "kind": "Publication",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-5>",
+      "kind": "Observation",
+      "subject": "overlap",
+      "author": "<DID-0>",
+      "text": "alice's record, arrived as a file"
+    },
+    {
+      "cid": "<CID-2>",
+      "kind": "Observation",
+      "subject": "shared",
+      "author": "<DID-1>",
+      "recorded_at": <MICROS>,
+      "text": "bob wrote this through the workspace",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-4>",
+      "kind": "Observation",
+      "subject": "overlap",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "alice also wrote here",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-1>",
+      "kind": "Subject",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "title": "A subject two authors touch",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-0>",
+      "kind": "Observation",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "alice wrote this through the workspace",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    }
+  ],
+  "tokens": <TOKENS>,
+  "budget": 400,
+  "omitted_claims": 0,
+  "trust": {
+    "base": "<BASE>",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      },
+      {
+        "did": "<DID-1>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 1
+}
+--- stderr ---
+=====================================================
+$ kan show shared --trust me --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subject": "shared",
+  "subjects": [
+    "shared"
+  ],
+  "claims": [
+    {
+      "cid": "<CID-0>",
+      "kind": "Observation",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "alice wrote this through the workspace",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-1>",
+      "kind": "Subject",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "title": "A subject two authors touch",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-3>",
+      "kind": "Publication",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    }
+  ],
+  "trust": {
+    "base": "<BASE>",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 1
+}
+--- stderr ---
+=====================================================
+$ kan show overlap --trust me --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subject": "overlap",
+  "subjects": [
+    "overlap"
+  ],
+  "claims": [
+    {
+      "cid": "<CID-4>",
+      "kind": "Observation",
+      "subject": "overlap",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "alice also wrote here",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-5>",
+      "kind": "Observation",
+      "subject": "overlap",
+      "author": "<DID-0>",
+      "text": "alice's record, arrived as a file"
+    }
+  ],
+  "trust": {
+    "base": "<BASE>",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 0
+}
+--- stderr ---
+=====================================================
+$ kan show shared --trust roles --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subject": "shared",
+  "subjects": [
+    "shared"
+  ],
+  "claims": [],
+  "trust": {
+    "base": "PeerContested",
+    "authors": []
+  },
+  "excluded_by_trust": 4
+}
+--- stderr ---
+=====================================================
+$ kan show shared --trust role:primary --json
+exit: FAILED
+--- stdout ---
+
+--- stderr ---
+error: `role:primary` names no role. Declared roles: none declared
+=====================================================
+$ kan show shared --trust <DID-0> --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subject": "shared",
+  "subjects": [
+    "shared"
+  ],
+  "claims": [
+    {
+      "cid": "<CID-0>",
+      "kind": "Observation",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "alice wrote this through the workspace",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-1>",
+      "kind": "Subject",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "title": "A subject two authors touch",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-3>",
+      "kind": "Publication",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    }
+  ],
+  "trust": {
+    "base": "PeerContested",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 1
+}
+--- stderr ---
+=====================================================
+$ kan show shared --trust <DID-1> --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subject": "shared",
+  "subjects": [
+    "shared"
+  ],
+  "claims": [
+    {
+      "cid": "<CID-2>",
+      "kind": "Observation",
+      "subject": "shared",
+      "author": "<DID-1>",
+      "recorded_at": <MICROS>,
+      "text": "bob wrote this through the workspace",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    }
+  ],
+  "trust": {
+    "base": "PeerContested",
+    "authors": [
+      {
+        "did": "<DID-1>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 3
+}
+--- stderr ---
+=====================================================
+$ kan show overlap --trust <DID-0> --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subject": "overlap",
+  "subjects": [
+    "overlap"
+  ],
+  "claims": [
+    {
+      "cid": "<CID-4>",
+      "kind": "Observation",
+      "subject": "overlap",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "alice also wrote here",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-5>",
+      "kind": "Observation",
+      "subject": "overlap",
+      "author": "<DID-0>",
+      "text": "alice's record, arrived as a file"
+    }
+  ],
+  "trust": {
+    "base": "PeerContested",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 1.0
+      }
+    ]
+  },
+  "excluded_by_trust": 0
+}
+--- stderr ---
+=====================================================
+$ kan show shared --trust <DID-0>=0.5 --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "subject": "shared",
+  "subjects": [
+    "shared"
+  ],
+  "claims": [
+    {
+      "cid": "<CID-0>",
+      "kind": "Observation",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "text": "alice wrote this through the workspace",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-1>",
+      "kind": "Subject",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "title": "A subject two authors touch",
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    },
+    {
+      "cid": "<CID-3>",
+      "kind": "Publication",
+      "subject": "shared",
+      "author": "<DID-0>",
+      "recorded_at": <MICROS>,
+      "artifacts": [
+        "Commit(\"<GENESIS>\")"
+      ]
+    }
+  ],
+  "trust": {
+    "base": "PeerContested",
+    "authors": [
+      {
+        "did": "<DID-0>",
+        "weight": 0.5
+      }
+    ]
+  },
+  "excluded_by_trust": 1
+}
+--- stderr ---
+=====================================================
+$ kan show shared --trust me --json
+exit: FAILED
+--- stdout ---
+
+--- stderr ---
+error: no signing identity is reachable here, so there is nothing for `me` to name.
+
+This says nothing about whether the log has claims in it -- it usually does. It means this workspace's key is not where kan looks: KAN_IDENTITY_FILE unset with the key held elsewhere, pointed at a path that does not exist, or a keychain entry this binary cannot read (#96).
+
+Name the author you meant with `--trust did:key:...`, or `kan identity adopt --key <path>` to point this workspace back at its key. Reading never creates an identity, by design (#149).
+=====================================================
+$ find .kan -printf '%P\n' | sort
+index.sqlite
+log/
+log/HEAD
+log/LOCK
+log/repo.car
+overlay/
+overlay/HEAD
+overlay/LOCK
+overlay/repo.car
+=====================================================
+$ find .claims -printf '%P\n' | sort
+foreign.65677190.md
+overlap.fe55bd22.md
+shared.a4d26868.md
+=====================================================
