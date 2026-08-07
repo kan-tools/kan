@@ -4024,3 +4024,170 @@ reviews were not the expensive part; patching an unspecified space was.
 **Next:** v0.12 takes `.design/identity-resolution.md` (opening with the
 agent-pattern decision, since it determines whether `KAN_IDENTITY_FILE` is
 still load-bearing), #164 retiring `.kan/overlay`, and the origin-aware fold.
+
+## ADR-87 — Identity at rest: kan follows the ssh model
+**Date:** 2026-08-06
+**Status:** Accepted (REQ-3 implements)
+
+**Decision:** the key lives in a **file**; encryption at rest is an **opt-in
+passphrase**; a platform keystore is one place to put that passphrase rather
+than a higher tier; and an **agent is a later, well-triggered follow-up**
+rather than v0.12's opening move.
+
+**The correction that produced it.** `.design/identity-resolution.md` opened
+on "agent pattern vs status quo" and treated an agent as an *alternative* to a
+key file. It is not one. In ssh and gpg alike the key lives in an encrypted
+file and the agent holds the *decrypted* copy in memory after one unlock,
+acting as a signing oracle. The agent is not the storage layer.
+
+Three layers kan had been making one mechanism do:
+
+1. **At rest, encrypted** — a passphrase-encrypted file *or* a platform
+   keystore. The keystore is an alternative to a passphrase, not a tier above.
+2. **In use** — the agent, caching one unlock per session.
+3. **Non-interactive** — an unencrypted `0600` file, *deliberately*. A GitHub
+   Actions deploy key is exactly this. This layer is part of the design.
+
+kan's error was never that `KAN_IDENTITY_FILE` exists. It is that the variable
+was implemented as *redefine this workspace's identity* (question 1) rather
+than *here is where the key is* (layer 3). ADR-88 separates those.
+
+**The consequence, which inverts the spec's own sequencing:** an agent is only
+worth having if the key is encrypted at rest, because its entire job is
+caching an unlock. kan's key today is in the keychain or in a plaintext file;
+in neither case is there an unlock to cache. So the agent question is
+*downstream* of the at-rest question, and asking it first was backwards. The
+trigger for building one is stated rather than vague: when `kan identity
+protect` has enough adoption that typing the passphrase gets old.
+
+**#96 and #69 are one cause, and it is code signing.** A macOS keychain item
+carries an ACL of trusted applications; "Always Allow" binds the grant to the
+calling binary's *code identity*, and an unsigned binary gets a new one every
+rebuild. Signed, notarized applications do not have this. Established by
+reading the dependency rather than assuming: kan resolves `keyring 4.1.5` with
+default features `["v1"]` → `apple-native-keyring-store/keychain`, the
+**legacy file keychain**, which is exactly the store that ACL belongs to. The
+crate's `protected` backend targets the modern data-protection keychain, which
+has no trusted-application list, but needs an entitlement and therefore a
+signed binary — unverified, and permitted one timeboxed spike.
+
+**What REQ-3 does and does not buy.** It makes the keychain opt-in, so #96
+stops firing on the default path. That is a lesser claim than fixing it, and
+#96 is re-scoped to say so. The larger prize is testability: every identity
+test must set `KAN_NO_KEYCHAIN` or a rebuilt binary hangs, so the
+keychain-reachable plane is **unreachable from the suite** — #170, #180 and
+the `adopt` defect of ADR-88 all lived there, and none could have been caught
+by a test. Moving the default off the keychain moves that plane into the
+falsifiable one.
+
+**Passphraseless by default**, on structural grounds rather than preference:
+kan has no `kan init`, so the only place a prompt could go is inside the first
+write, which would hang CI, `day` and the MCP server. `kan identity protect`
+is where prompting belongs, and `read_secret_line`'s off-TTY branch means
+`echo "$PASS" | kan identity protect` works, so provisioning scripts need no
+terminal. An explicit `kan init` is filed as #173.
+
+## ADR-88 — Identity resolution: three functions, one question each
+**Date:** 2026-08-06
+**Status:** Accepted (shipped in #182)
+
+**Decision:** `workspace_identity` / `signing_identity` /
+`create_workspace_identity`, replacing `existing_identity` and
+`load_or_create`'s tri-purpose behaviour. `.design/identity-resolution.md`'s
+shape, executed.
+
+- **`workspace_identity`** — *which identity does this workspace have?* Pure:
+  never creates, writes or migrates. **One precedence order**, used by reads
+  and writes alike, and it **includes the keychain**, which is what closes
+  #170. `KAN_IDENTITY_FILE` is deliberately not consulted here.
+- **`signing_identity`** — *which identity should sign this write?* A
+  selection naming something absent is **always** an error: never a mint,
+  never a fallback, never a substitution.
+- **`create_workspace_identity`** — the only function that writes an identity,
+  which makes the ADR-77 guard a property of the workspace rather than of
+  whichever code path reached it. #180 closes **by construction**: the old
+  `load_or_create` had five branches that could mint and four called the
+  guard; the one that did not is now simply another way for question 1 to
+  answer `None`.
+
+**`--trust me` routes through question 2**, not question 1 — "me" is the
+identity that would *sign* here, so a role-scoped caller asking "what did I
+write" gets the role rather than the human's claims.
+
+**The evidence set stays, and that reverses part of the spec.**
+`.design/identity-resolution.md` argued for "no evidence set to maintain".
+Removing it entirely let a seed-rooted workspace with an unreachable keychain
+re-mint and shadow its own identity — v0.11 round 5's B3 defect, reintroduced.
+Caught on the first run by `tests/derived_cells.rs`. The set stays and is now
+*correct* rather than absent, and the repair was available **only because
+question 1 became pure**: `identity_evidence` can count `.kan/identity-id`,
+which the old guard had to exclude because `keychain_account` *wrote* that
+file while resolving. Making resolution pure made the guard stronger, as a
+consequence rather than as a separate fix.
+
+**Role-registry validation was tried and reverted**, and the measurement is
+the argument: requiring a selection to name a declared role took the suite
+from 41 failures to 78, because in the CI/`day`/agent workflow
+`KAN_IDENTITY_FILE` *is* the identity and the workspace never gets a
+`.kan/identity`, so `workspace_identity` is `None` forever and every write
+after the first is refused. It broke the configuration the variable exists
+for. CLAUDE.md's "affordance, not enforcement" covers the rest: naming an
+existing key is asking, and undeclared authorship is surfaced by `kan identity
+authors` and narrowed past by `--trust roles`.
+
+**A keychain that errors is not a fallback to a key file.** ADR-53 *deletes* a
+plaintext copy matching the keychain and keeps one only when it **differs**,
+so a surviving `.kan/identity` beside a live entry is disproportionately the
+mismatched case — falling back would sign as a DID that is not this
+workspace's identity. A fallback also makes a workspace resolve differently
+depending on transient reachability, which is #170's disagreement class moved
+from across-paths to across-time.
+
+**`adopt` now retires every root, not one.** It retired the seed and
+`seed-id` but never `.kan/identity-id`, which was harmless until this ADR gave
+both paths one keychain-consulting order — after which a surviving pointer
+outranks the key adopt just wrote, and adopt reports "this workspace now signs
+and reads as that identity" while the keychain keeps signing. That is the
+adopt→restore dead end of v0.11 rounds 2 and 3, reintroduced by the precedence
+choice and found by a cold review, in the command whose own comment calls that
+outcome the worst available to a recovery tool (#153).
+
+**Method, because it is the transferable part.** The change landed against a
+**derived** cell table (`tests/derived_cells.rs` enumerates the product of the
+dimensions and probes both resolvers — 128 configurations) rather than a
+curated list, after two cold reviews each found rows missing from a
+hand-written one. Its `unset` plane now shows read and write agreeing on every
+row. Two cold reviews of the change itself found: a test hollowed out by the
+fixture migration, AC-8 defended on one of the two paths it names, and the
+`adopt` defect above — none of which the author would have found, and all of
+which the suite reported as green.
+
+## ADR-89 — Process description lives in `day`, not `CLAUDE.md`
+**Date:** 2026-08-06
+**Status:** Accepted
+
+**Decision:** `CLAUDE.md` describes kan the artifact. How work proceeds —
+designing, building, reviewing, opening a PR, cutting a release — is declared
+as `day` process atoms, which are `atom/*` claims in kan's own log and are
+injected into every session by day's hook.
+
+**The duplication was real and was this project's own defect class.**
+`atom/pull-request` already described the one-PR-per-milestone workflow, and
+`CLAUDE.md` described it again in its own words; `atom/release` and
+`CLAUDE.md` both described the release ritual. Two implementations of one
+fact, with no shared definition — which is precisely what
+`.design/identity-resolution.md` Consequence 3 says about identity
+resolution's two resolvers, and those drifted in a different direction every
+review round.
+
+Atoms are also *checkable* in a way prose is not: `day doctor` verifies the
+vocabulary composes and `day status` reports where work sits. Moving the
+sections revealed that `atom/adversarial-review` and `atom/generative-build`
+declared each other as `next`, forming a cycle day could not order — it had
+been warning about this at every session start. `next` is forward-only; the
+edge that sends you back is `revisits`. `day doctor` now reports
+`composition: ok` for the first time.
+
+**What stays in `CLAUDE.md`:** the fold invariant, the crate-trust rule, the
+spine, the CLI vocabulary, the kan/`day` scope boundary, the smell test — all
+statements about the artifact. 170 lines → 115.
