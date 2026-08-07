@@ -125,6 +125,20 @@ posture would have no on-ramp at all.
   `.kan/seed` → `.kan/seed-id`, `.kan/identity` → `.kan/identity-id`. A
   workspace already in the keychain is told so and nothing is written.
 
+  **A stale reference is retired, not silently replaced.** Where a pointer
+  already exists for the secret being protected, `protect` mints a fresh
+  account and removes the old pointer with an explanation, exactly as
+  `retire_seed` does (`src/actions.rs:887` — the reference goes, *"the keychain
+  entry itself is left alone"*). Orphaning an entry is already this codebase's
+  accepted behaviour and the entry stays reachable through Keychain Access;
+  doing it **silently** is the only part that was ever wrong.
+
+  **And `protect` reports every at-rest secret it did not move.** Protecting
+  the signing secret while `.kan/identity` still sits beside it leaves a
+  plaintext key on disk under a command whose whole promise is that none
+  remains. It need not move them — precedence says they are not signing — but
+  it must not claim a property the workspace does not have.
+
   **#112's negative control comes back with this requirement.** REQ-3.5 deletes
   `a_different_key_plaintext_file_survives_a_keychain_hit`, which is correct
   *today* — after REQ-1 nothing in `src/` deletes a secret at all. `protect`
@@ -252,6 +266,12 @@ posture would have no on-ramp at all.
   it was merely pointed at (REQ-2: a selection is not a redefinition). Neither
   refusal writes anything.
 
+- **AC-3.7 — each new assertion is verified by reverting its own hunk**, per
+  the milestone's AC-3 and the house rule that a fix answering a review ships
+  with a test that fails without it. The mapping is checked, not the aggregate:
+  "the suite went red" is not "this test defends this hunk." And per the
+  instrument register, the revert probe must mutate the **code under test**,
+  not the fixture the test reads.
 - **AC-3.8 — the migration matrix carries a row for REQ-3, and it is
   dispatched by hand before merge.** REQ-3 changes what a fresh workspace
   *writes* at rest, so `.github/workflows/migration-matrix.yml` must answer
@@ -267,12 +287,26 @@ posture would have no on-ramp at all.
   did not re-fire on #182's final commit, so path membership is not sufficient
   evidence that the check ran.
 
-- **AC-3.7 — each new assertion is verified by reverting its own hunk**, per
-  the milestone's AC-3 and the house rule that a fix answering a review ships
-  with a test that fails without it. The mapping is checked, not the aggregate:
-  "the suite went red" is not "this test defends this hunk." And per the
-  instrument register, the revert probe must mutate the **code under test**,
-  not the fixture the test reads.
+- **AC-3.9 — `unprotect` never writes over a differing secret.** The negative
+  control: a workspace with `.kan/identity-id` naming key B and `.kan/identity`
+  holding key A — the state ADR-53 deliberately produces — and `unprotect` must
+  **refuse**, name both DIDs, and leave A byte-identical on disk. Verified by
+  reverting the comparison and watching *that* test go red, because the passing
+  case (same bytes, proceeds) cannot distinguish a working guard from an absent
+  one. This is #112's lesson restated: its predecessor was a tautology that
+  never read the file, and it passed for exactly that reason.
+
+  A second control: the same layout with the keychain **unreachable**, which
+  must also refuse. "I cannot tell" and "they match" must not collapse into one
+  answer — that collapse is the whole of the degradation to option 1.
+
+- **AC-3.10 — `protect` retires a stale reference audibly, and accounts for
+  what it left.** Where a pointer already existed, its removal is named in the
+  output along with the orphaned account, so the operator can find the entry in
+  Keychain Access. And where other at-rest secrets remain, they are listed — a
+  `protect` that leaves `.kan/identity` in place while reporting success is
+  claiming #6's property without delivering it.
+
 
 ## Architecture
 
@@ -358,15 +392,41 @@ is the duplication this project keeps paying for. Cheap to overrule.
 
 *unprotect* (keychain → file):
 1. read the secret from the keychain — this may prompt, and that is fine here;
-2. write `.kan/seed` or `.kan/identity` at `0600` via the existing
+2. **if the destination file already exists, compare before writing.** Same
+   bytes → proceed (it is a redundant copy). Different bytes → **refuse**,
+   naming both DIDs. Cannot tell → **refuse**. This step is the invariant, not
+   a nicety: see "the overlap" below;
+3. write `.kan/seed` or `.kan/identity` at `0600` via the existing
    `restrict_permissions` path;
-3. compare the DID;
-4. remove the pointer file — **after** the write, never before, or a failed
+4. compare the DID;
+5. remove the pointer file — **after** the write, never before, or a failed
    write leaves the workspace with no identity at all;
-5. leave the keychain entry alone, following `retire_seed`'s precedent
+6. leave the keychain entry alone, following `retire_seed`'s precedent
    (`src/actions.rs:887`: *"the keychain entry itself is left alone"*), and
    print the account name **before** deleting the pointer file that holds it,
    so the operator can find it in Keychain Access.
+
+**The overlap, and why step 2 is the whole of it.** `.kan/identity` holding
+key A beside `.kan/identity-id` naming key B is not a hypothetical: **kan
+produces it deliberately.** ADR-53 deletes a plaintext copy only when it
+*matches* the keychain and keeps it when it **differs** — which is exactly
+what #112's negative control existed to protect. `identity-id` outranks
+`identity`, so B signs and A sits there as the only copy of another identity.
+
+Without step 2, `unprotect` writes B over A and reports success. That is the
+sole path in this design that **destroys a secret**, it is reachable from a
+state kan itself created, and it is the #90/#107 shape that CLAUDE.md's
+invariant exists to forbid. Refusing when the comparison cannot be made is
+part of the rule rather than a fallback: "I cannot tell whether this file
+holds a different identity" and "this file holds the same identity" are
+different answers, and only one of them permits a write.
+
+*Note the asymmetry, which is the reason `protect` and `unprotect` do not get
+the same rule.* `protect` cannot destroy anything once its read-back and DID
+checks pass — the worst it can do is orphan a keychain entry, and an orphaned
+entry is still reachable through Keychain Access. `unprotect` writes over a
+file. Symmetry would have been tidier and would have got this wrong in one
+direction or the other.
 
 **These commands must not route through `commit_identity()`.**
 `Command::Identity` currently calls `ws.commit_identity()` before dispatch
@@ -400,36 +460,11 @@ here.
 *(Q1 — what becomes of the superseded plaintext file — is resolved; see
 "Deleting the superseded plaintext copy" above.)*
 
-<!-- OPEN: Q2 -->
-### Q2: what does `protect` do when a workspace holds a plaintext secret *and* a pointer?
+*(Q2 — a workspace holding both a plaintext secret and a pointer — is
+resolved; see "The overlap" under the executor, and REQ-3.2's stale-reference
+rule.)*
 
-Reopened by a cold review, which caught this document asserting "None remain"
-over a real gap.
-
-`at_rest` collapses a 16-cell file-presence space to 5 by ranking, so a
-workspace holding **both** `.kan/seed` and `.kan/seed-id` reports `SeedFile`.
-The executor as specified then mints a **fresh** account (step 2) and writes
-the pointer (step 5) — overwriting the existing `.kan/seed-id` and silently
-orphaning whatever keychain entry it named. `retire_seed`
-(`src/actions.rs:872`) sets the opposite precedent: it says what it is
-superseding and never destroys a root reference quietly.
-
-That configuration is not hypothetical — it is what a *declined* `protect`
-leaves behind if the moved-aside file is ever moved back, and what a
-half-finished `unprotect` leaves on a crash between steps 2 and 4.
-
-**Options:** enumerate the overlap cells in `at_rest` and specify each; or
-refuse outright when a pointer already exists, telling the operator which
-entry it found. The refusal is smaller and matches REQ-2's "a selection naming
-something absent is always an error" temperament — kan does not silently pick
-for you when the workspace is ambiguous.
-
-**Recommendation:** refuse, name the existing pointer, and require
-`unprotect` first. `protect` is a deliberate act; there is no cost to making
-the ambiguous case explicit.
-
-**To resolve**: decide, then fold into REQ-3.2 and the executor's steps 2/5.
-<!-- /OPEN -->
+None remain.
 
 ## Out of Scope
 
