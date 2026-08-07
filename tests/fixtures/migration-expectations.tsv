@@ -25,7 +25,26 @@
 #                  disabled, so the secret goes to the OS keychain and the
 #                  reader must find it there       [macos-latest, v0.12+]
 #
-# THE `keychain` MODE HAS NO ROWS YET, DELIBERATELY. Its outcomes are not
+# WHAT A GREEN `keychain` ROW DOES AND DOES NOT MEAN -- read this before
+# treating one as coverage of #96.
+#
+# The axis covers the STORAGE dimension: a secret filed in the OS keychain by
+# one binary is found and used by a DIFFERENT, later binary, and the log reads
+# correctly across the upgrade. All fourteen cells confirm the keychain was
+# genuinely in use rather than degrading to a plaintext file.
+#
+# It does NOT cover the ACL dimension, and #96 DID NOT REPRODUCE on the hosted
+# runner. On a developer's Mac a keychain entry is authorised to the exact
+# binary that created it, so a rebuilt or upgraded kan waits on an
+# authorization prompt -- that is #96, and it is the failure this whole
+# milestone is routed around. The runner did not raise it. The `keychain-blocked`
+# outcome exists for it and no cell has yet produced one. So a green keychain
+# row must not be read as "#96 cannot happen"; it means the storage path works
+# when the ACL does not intervene. Stated as a bounded limit rather than left
+# for someone to infer from a green check.
+#
+# (Historical note, now resolved:)
+# THE `keychain` MODE HAD NO ROWS AT FIRST, DELIBERATELY. Its outcomes are not
 # knowable without running it, and inventing them would be exactly the
 # prediction-as-measurement problem the confidence token above exists to
 # stop. The first macOS run will fail with "has no committed expectation"
@@ -173,3 +192,17 @@ v0.10.0-beta.1	identity-file	ok	MEASURED -- in run 31038419269 (v0.11.0-beta.1 t
 v0.10.0-beta.1	seed	ok	MEASURED -- in run 31038419269 (v0.11.0-beta.1 tag push) and again in 31151700728. Was PREDICTED at cut time; converted by v0.12's matrix work.
 v0.11.0-beta.1	identity-file	ok	MEASURED -- in run 31151700728 (reader: post-REQ-1/REQ-2 main), a cache miss. v0.11.0 could not be its own historical writer at its own tag push, so this is its first measurement. Was PREDICTED at cut time.
 v0.11.0-beta.1	seed	ok	MEASURED -- in run 31151700728 (reader: post-REQ-1/REQ-2 main), a cache miss. First measurement, for the same reason. Was PREDICTED at cut time.
+v0.1.1-beta.1	keychain	keychain-unused	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Predates OS-keychain support entirely, so the writer left a plaintext secret and this cell did NOT exercise the keychain plane. Recorded as such rather than as `ok`, which is what it scored before the mode was made to prove it used the keychain.
+v0.2.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.1 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
+v0.3.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.1 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
+v0.4.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.1 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
+v0.5.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.1 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
+v0.6.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.1 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
+v0.7.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain-held SIGNING KEY, pointer .kan/identity-id (v0.7 REQ-5). This is the grandfathered layout a pre-v0.9 workspace still has, and it had never been executed by any cell on any platform before v0.12.
+v0.7.1-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain-held SIGNING KEY, pointer .kan/identity-id (v0.7 REQ-5). This is the grandfathered layout a pre-v0.9 workspace still has, and it had never been executed by any cell on any platform before v0.12.
+v0.8.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain-held SIGNING KEY, pointer .kan/identity-id (v0.7 REQ-5). This is the grandfathered layout a pre-v0.9 workspace still has, and it had never been executed by any cell on any platform before v0.12.
+v0.9.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain-held SEED, pointer .kan/seed-id (ADR-63). The at-rest shape v0.12 REQ-3 moves the DEFAULT away from; this row is the before-picture that REQ-3 must be measured against.
+v0.9.1-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain-held SEED, pointer .kan/seed-id (ADR-63). The at-rest shape v0.12 REQ-3 moves the DEFAULT away from; this row is the before-picture that REQ-3 must be measured against.
+v0.9.2-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain-held SEED, pointer .kan/seed-id (ADR-63). The at-rest shape v0.12 REQ-3 moves the DEFAULT away from; this row is the before-picture that REQ-3 must be measured against.
+v0.10.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain-held SEED, pointer .kan/seed-id (ADR-63). The at-rest shape v0.12 REQ-3 moves the DEFAULT away from; this row is the before-picture that REQ-3 must be measured against.
+v0.11.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain-held SEED, pointer .kan/seed-id (ADR-63). The at-rest shape v0.12 REQ-3 moves the DEFAULT away from; this row is the before-picture that REQ-3 must be measured against.
