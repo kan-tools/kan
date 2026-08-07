@@ -44,6 +44,10 @@ impl Repo {
                 .output()
                 .unwrap();
         }
+        // The selection must exist: REQ-2 means naming a missing path is an
+        // error rather than a way to mint one.
+        let key = dir.path().join("key");
+        kan::sign::Identity::generate().save(&key).unwrap();
         Self { dir }
     }
 

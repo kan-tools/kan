@@ -140,7 +140,11 @@ impl Built {
         if cfg.log_has_claims {
             // A throwaway identity named by the environment, so seeding the
             // log touches none of the four artifacts under test.
+            // The key is created explicitly: REQ-2 means naming a missing
+            // path is an error, not a way to mint one.
             let writer = dir.path().join("keys/log-writer");
+            std::fs::create_dir_all(writer.parent().unwrap()).unwrap();
+            Identity::generate().save(&writer).unwrap();
             let (_, stderr, ok) = kan_as(
                 dir.path(),
                 Some(&writer),
@@ -241,11 +245,16 @@ fn read_outcome(built: &Built) -> String {
         &["show", "cell", "--trust", "me", "--json"],
     );
     if !ok {
-        return if stderr.contains("nothing for `me` to name") {
-            "none".to_string()
-        } else {
-            "error".to_string()
-        };
+        if stderr.contains("nothing for `me` to name") {
+            return "none".to_string();
+        }
+        if stderr.contains("which does not exist") {
+            return "selection-missing".to_string();
+        }
+        if stderr.contains("has no key at") {
+            return "role-key-missing".to_string();
+        }
+        return "error".to_string();
     }
     let v: serde_json::Value = match serde_json::from_str(&stdout) {
         Ok(v) => v,
@@ -271,6 +280,9 @@ fn write_outcome(built: &Built) -> String {
         }
         if stderr.contains("has no key at") {
             return "refused:role-key-missing".to_string();
+        }
+        if stderr.contains("which does not exist") {
+            return "refused:selection-missing".to_string();
         }
         return "refused:other".to_string();
     }

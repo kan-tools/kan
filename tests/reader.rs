@@ -73,6 +73,10 @@ fn git_repo() -> tempfile::TempDir {
 fn publisher_then_clone(subject: &str, text: &str) -> (tempfile::TempDir, String) {
     let author_dir = git_repo();
     let author_key = author_dir.path().join("author-key");
+    {
+        std::fs::create_dir_all(author_key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&author_key).unwrap();
+    }
     let write = kan_as(
         author_dir.path(),
         Some(&author_key),
@@ -196,6 +200,10 @@ fn ingesting_a_foreign_claim_leaves_the_local_log_byte_unchanged() {
 fn an_ingested_record_keeps_its_own_signature_and_cid() {
     let author_dir = git_repo();
     let author_key = author_dir.path().join("author-key");
+    {
+        std::fs::create_dir_all(author_key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&author_key).unwrap();
+    }
     let write = kan_as(
         author_dir.path(),
         Some(&author_key),

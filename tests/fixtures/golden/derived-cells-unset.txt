@@ -6,7 +6,7 @@ env=unset            identity=-        id=-  seed=-    seed-id=-       log=empty
 env=unset            identity=-        id=-  seed=-    seed-id=-       log=claims  ->  read=none                 write=refused:guard
 env=unset            identity=identity id=-  seed=-    seed-id=-       log=empty   ->  read=resolved:identity    write=signed:identity
 env=unset            identity=identity id=-  seed=-    seed-id=-       log=claims  ->  read=resolved:identity    write=signed:identity
-env=unset            identity=-        id=id seed=-    seed-id=-       log=empty   ->  read=none                 write=signed:identity
+env=unset            identity=-        id=id seed=-    seed-id=-       log=empty   ->  read=none                 write=refused:guard
 env=unset            identity=-        id=id seed=-    seed-id=-       log=claims  ->  read=none                 write=refused:guard
 env=unset            identity=identity id=id seed=-    seed-id=-       log=empty   ->  read=resolved:identity    write=signed:identity
 env=unset            identity=identity id=id seed=-    seed-id=-       log=claims  ->  read=resolved:identity    write=signed:identity

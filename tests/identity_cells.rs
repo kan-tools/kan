@@ -154,10 +154,16 @@ enum Expect {
     Refuses,
     /// Seed-rooted the workspace, and signed with the seed it created.
     MintsSeed,
-    /// Created `.kan/identity`, and signed with it.
-    MintsKeyFile,
-    /// Created a key at the `KAN_IDENTITY_FILE` path, and signed with it.
-    MintsAtOverride,
+    // `MintsKeyFile` and `MintsAtOverride` used to live here. REQ-1 gave
+    // creation a single implementation (`create_workspace_identity`, which
+    // seed-roots) and REQ-2 stopped a selection from ever creating its own
+    // target, so no cell in the table produces either outcome any more. They
+    // are deleted rather than silenced: an expectation variant nothing can
+    // produce is a slot for a future test to be written against a behaviour
+    // that does not exist.
+    /// REQ-2: the selection names a path that does not exist. On BOTH paths --
+    /// `--trust me` no longer answers with somebody else's identity either.
+    SelectionMissing,
     RoleKeyMissing,
 }
 
@@ -185,7 +191,7 @@ fn cells() -> Vec<Cell> {
         // `identity-id` alone makes `fresh` false (`src/sign.rs:508`), so the
         // write falls to the plaintext branch and mints a KEY FILE rather
         // than seed-rooting.
-        Cell { row: 5,  env: Unset, layout: ID,      log_has_claims: false, read: None_, write: MintsKeyFile },
+        Cell { row: 5,  env: Unset, layout: ID,      log_has_claims: false, read: None_, write: Refuses },
         Cell { row: 6,  env: Unset, layout: ID,      log_has_claims: true,  read: None_, write: Refuses },
         Cell { row: 7,  env: Unset, layout: SEED,    log_has_claims: false, read: SeedDerived, write: SeedDerived },
         Cell { row: 8,  env: Unset, layout: SEED_ID, log_has_claims: false, read: None_, write: Refuses },
@@ -194,10 +200,10 @@ fn cells() -> Vec<Cell> {
         Cell { row: 11, env: Unset, layout: SEED_ID_AND_KEY, log_has_claims: true, read: Key, write: Key },
         Cell { row: 12, env: Unset, layout: ID_AND_KEY,      log_has_claims: true, read: Key, write: Key },
         Cell { row: 13, env: Exists,  layout: NOTHING, log_has_claims: true,  read: Override, write: Override },
-        Cell { row: 14, env: Missing, layout: NOTHING, log_has_claims: false, read: None_, write: MintsAtOverride },
-        Cell { row: 15, env: Missing, layout: NOTHING, log_has_claims: true,  read: None_, write: Refuses },
-        Cell { row: 16, env: Missing, layout: KEY,     log_has_claims: false, read: None_, write: Refuses },
-        Cell { row: 17, env: Missing, layout: SEED,    log_has_claims: false, read: None_, write: Refuses },
+        Cell { row: 14, env: Missing, layout: NOTHING, log_has_claims: false, read: SelectionMissing, write: SelectionMissing },
+        Cell { row: 15, env: Missing, layout: NOTHING, log_has_claims: true,  read: SelectionMissing, write: SelectionMissing },
+        Cell { row: 16, env: Missing, layout: KEY,     log_has_claims: false, read: SelectionMissing, write: SelectionMissing },
+        Cell { row: 17, env: Missing, layout: SEED,    log_has_claims: false, read: SelectionMissing, write: SelectionMissing },
         // Rows 18 and 19 were MISSING from the table's first draft and were
         // found by a cold adversarial review. 18 completes the guard's
         // three-member evidence set (`src/sign.rs:661`), which the first draft
@@ -205,9 +211,9 @@ fn cells() -> Vec<Cell> {
         // denied: `identity-id` is the one artifact
         // `existing_identity_evidence` deliberately ignores, so a workspace
         // that demonstrably HAS had an identity mints a second one here.
-        Cell { row: 18, env: Missing, layout: SEED_ID, log_has_claims: false, read: None_, write: Refuses },
-        Cell { row: 19, env: Missing, layout: ID,      log_has_claims: false, read: None_, write: MintsAtOverride },
-        Cell { row: 20, env: MissingDeclared, layout: NOTHING, log_has_claims: false, read: None_, write: RoleKeyMissing },
+        Cell { row: 18, env: Missing, layout: SEED_ID, log_has_claims: false, read: SelectionMissing, write: SelectionMissing },
+        Cell { row: 19, env: Missing, layout: ID,      log_has_claims: false, read: SelectionMissing, write: SelectionMissing },
+        Cell { row: 20, env: MissingDeclared, layout: NOTHING, log_has_claims: false, read: RoleKeyMissing, write: RoleKeyMissing },
     ]
 }
 
@@ -243,7 +249,11 @@ impl Built {
         if cell.log_has_claims {
             // A throwaway identity, named by the environment so this write
             // touches none of the four artifacts under test.
+            // The key is created explicitly: REQ-2 means naming a missing
+            // path is an error, not a way to mint one.
             let writer = dir.path().join("keys/log-writer");
+            std::fs::create_dir_all(writer.parent().unwrap()).unwrap();
+            Identity::generate().save(&writer).unwrap();
             let (_, stderr, ok) = kan(
                 dir.path(),
                 Some(&writer),
@@ -392,6 +402,23 @@ fn run_read(row: u32) {
                  cell is asserting the wrong thing.\nstderr: {stderr}"
             );
         }
+        Expect::SelectionMissing | Expect::RoleKeyMissing => {
+            let (stdout, stderr, ok) = kan(
+                built.path(),
+                built.env_path.as_deref(),
+                &["show", "cell", "--trust", "me", "--json"],
+            );
+            assert!(!ok, "row {row}: the read succeeded: {stdout}");
+            let want = if cell.read == Expect::SelectionMissing {
+                "does not exist"
+            } else {
+                "has no key at"
+            };
+            assert!(
+                stderr.contains(want),
+                "row {row}: the read failed for the wrong reason (wanted {want:?})\nstderr: {stderr}"
+            );
+        }
         named => {
             let got = read_resolves(&built)
                 .unwrap_or_else(|| panic!("row {row}: the read resolved no identity"));
@@ -426,6 +453,17 @@ fn run_write(row: u32) {
                  cell asserts nothing about it.\nstderr: {stderr}"
             );
         }
+        Expect::SelectionMissing => {
+            assert!(!ok, "row {row}: the write succeeded: {stdout}");
+            assert!(
+                stderr.contains("does not exist"),
+                "row {row}: expected the missing-selection refusal.\nstderr: {stderr}"
+            );
+            assert!(
+                built.env_path.as_ref().is_none_or(|p| !p.exists()),
+                "row {row}: a refused selection created the key file anyway"
+            );
+        }
         Expect::RoleKeyMissing => {
             assert!(!ok, "row {row}: the write succeeded: {stdout}");
             assert!(
@@ -454,36 +492,6 @@ fn run_write(row: u32) {
                 built.claim_author(row),
                 derived,
                 "row {row}: the write seed-rooted the workspace but signed with a different key"
-            );
-        }
-        Expect::MintsKeyFile => {
-            assert!(ok, "row {row}: the write failed: {stderr}");
-            let key_path = kan_dir.join("identity");
-            assert!(
-                key_path.exists(),
-                "row {row}: the write succeeded without creating .kan/identity"
-            );
-            assert!(
-                !kan_dir.join("seed").exists(),
-                "row {row}: the write seed-rooted the workspace instead of minting a key file"
-            );
-            assert_eq!(
-                built.claim_author(row),
-                Identity::load_existing(&key_path).unwrap().did(),
-                "row {row}: the write created .kan/identity but signed with a different key"
-            );
-        }
-        Expect::MintsAtOverride => {
-            assert!(ok, "row {row}: the write failed: {stderr}");
-            let key_path = built.env_path.clone().unwrap();
-            assert!(
-                key_path.exists(),
-                "row {row}: the write succeeded without creating the override key"
-            );
-            assert_eq!(
-                built.claim_author(row),
-                Identity::load_existing(&key_path).unwrap().did(),
-                "row {row}: the write created the override key but signed with a different key"
             );
         }
         Expect::None_ => panic!("row {row}: a write cannot resolve to nothing"),
@@ -557,10 +565,10 @@ fn the_two_resolvers_disagree_in_exactly_these_cells() {
     let rows: Vec<u32> = disagreements.iter().map(|(r, _)| *r).collect();
     assert_eq!(
         rows,
-        vec![1, 5, 14, 19],
+        vec![1],
         "the measured set of cells where the read reports no identity while the write \
          resolves one has changed.\n\n\
-         These four are expected, and they are exactly the cells whose write MINTS: the \
+         Row 1 is expected and is now the ONLY minting cell: the write creates the \
          write creates the identity it then signs with, so the read could not have found \
          it beforehand. (Rows 1 and 5 belong here for the same reason 14 and 19 do -- the \
          literal expectation this test shipped with named only the two override mints, and \
@@ -574,57 +582,54 @@ fn the_two_resolvers_disagree_in_exactly_these_cells() {
     );
 }
 
-/// **A read that resolves an identity is not side-effect free today.**
+/// **A read that resolves an identity is side-effect free.** AC-8.
 ///
-/// `existing_identity`'s `KAN_IDENTITY_FILE` branch calls
-/// `Identity::load_or_create` (`src/sign.rs:849`), not `load_existing`, so a
-/// pure read `create_dir_all`s `.kan/` and tightens the named key's
-/// permissions. `src/sign.rs:833-838`'s own comment says the key-file branch
-/// "uses `load_existing` ... so it cannot ... write" — true of the branch it
-/// sits above, false of the env branch three lines earlier.
+/// This test was written INVERTED, pinning the defect: before REQ-1,
+/// `existing_identity`'s `KAN_IDENTITY_FILE` branch called
+/// `Identity::load_or_create`, so `kan show --trust me` would `create_dir_all`
+/// a `.kan/` and tighten the named key's permissions to `0600`. It was the
+/// only test in the whole suite that noticed.
 ///
-/// This pins the **defect**, not the desired behaviour: REQ-1 makes
-/// `workspace_identity` pure, and AC-8 asserts `.kan/` is byte-identical
-/// across a read. When that lands this test must be inverted in the same
-/// commit — which is the point of pinning it now rather than discovering it
-/// then.
-///
-/// `tests/write_guards.rs::a_read_creates_no_workspace` misses this because it
-/// points `KAN_IDENTITY_FILE` at a path that does not exist, so the resolving
-/// branch is never entered.
+/// REQ-1 made question 1 pure and routed `--trust me` through question 2
+/// (`signing_identity`, which uses `load_existing`), so the read now touches
+/// nothing. Inverting this test in the same commit is the proof, and was the
+/// plan recorded when it was first written.
 #[test]
-fn a_read_that_resolves_an_identity_still_has_side_effects() {
+fn a_read_that_resolves_an_identity_has_no_side_effects() {
     let dir = git_repo();
     let key = dir.path().join("keys/k");
     std::fs::create_dir_all(key.parent().unwrap()).unwrap();
     Identity::generate().save(&key).unwrap();
-    // `save` already restricts; loosen it so the chmod is observable.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o644)).unwrap();
     }
     std::fs::remove_dir_all(dir.path().join(".kan")).ok();
-    assert!(!dir.path().join(".kan").exists(), "setup left a .kan/");
 
-    let (_, _, ok) = kan(
+    let (stdout, stderr, ok) = kan(
         dir.path(),
         Some(&key),
         &["show", "nothing", "--trust", "me", "--json"],
     );
-    assert!(ok, "the read failed");
+    assert!(ok, "the read failed: {stderr}");
+    assert!(
+        stdout.contains("\"authors\""),
+        "the read did not resolve an identity, so it exercises nothing: {stdout}"
+    );
 
     assert!(
-        dir.path().join(".kan").exists(),
-        "a read no longer creates .kan/ -- if REQ-1 landed, invert this test in that commit"
+        !dir.path().join(".kan").exists(),
+        "a read created .kan/ -- resolution has regained a side effect"
     );
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(&key).unwrap().permissions().mode() & 0o777;
         assert_eq!(
-            mode, 0o600,
-            "a read no longer tightens the named key's permissions"
+            mode, 0o644,
+            "a read changed the named key's permissions -- resolution has regained a side \
+             effect"
         );
     }
 }
@@ -645,5 +650,68 @@ fn a_read_that_resolves_nothing_has_no_side_effects() {
     assert!(
         !dir.path().join(".kan").exists(),
         "a read that names no identity created .kan/"
+    );
+}
+
+/// AC-8's **other** path: purity when the identity comes from the workspace
+/// itself rather than from a selection.
+///
+/// `a_read_that_resolves_an_identity_has_no_side_effects` sets
+/// `KAN_IDENTITY_FILE`, so it exercises `signing_identity`'s KeyFile branch
+/// exclusively. That left `workspace_identity`'s own key-file branch with no
+/// purity test at all — and a cold review proved it, by changing that branch
+/// from `load_existing` to `load_or_create_plaintext` (which chmods on load,
+/// AC-8's exact violation) and watching the entire suite stay green.
+///
+/// AC-8 says "on either path". This is the other one.
+#[test]
+fn a_read_resolving_the_workspaces_own_key_has_no_side_effects() {
+    let dir = git_repo();
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    let key_path = kan_dir.join("identity");
+    Identity::generate().save(&key_path).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+    // The index is deliberately excluded: it is a disposable projection that
+    // a read is entitled to build (ADR-15), and rebuilding it is not identity
+    // resolution having a side effect. Everything that ROOTS an identity is
+    // in scope.
+    let roots = || {
+        ["identity", "identity-id", "seed", "seed-id"]
+            .iter()
+            .map(|n| (n.to_string(), kan_dir.join(n).exists()))
+            .collect::<Vec<_>>()
+    };
+    let before = roots();
+
+    // No selection: `me` is the workspace's own identity.
+    let (stdout, stderr, ok) = kan(
+        dir.path(),
+        None,
+        &["show", "nothing", "--trust", "me", "--json"],
+    );
+    assert!(ok, "the read failed: {stderr}");
+    assert!(
+        stdout.contains("\"authors\""),
+        "the read resolved no identity, so it exercises nothing: {stdout}"
+    );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&key_path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o644,
+            "resolving the workspace's own key changed its permissions"
+        );
+    }
+    assert_eq!(
+        before,
+        roots(),
+        "resolving the workspace's own key created or removed an identity root"
     );
 }

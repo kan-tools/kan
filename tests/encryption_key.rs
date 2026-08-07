@@ -58,6 +58,10 @@ fn git_repo() -> tempfile::TempDir {
 fn one_key_reproduces_both_the_did_and_the_encryption_key() {
     let dir = git_repo();
     let key = dir.path().join("key");
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
 
     let (did, ok) = kan(dir.path(), &key, &["identity", "did"]);
     assert!(ok);
@@ -88,6 +92,10 @@ fn one_key_reproduces_both_the_did_and_the_encryption_key() {
 fn the_encryption_key_is_not_a_conversion_of_the_signing_key() {
     let dir = git_repo();
     let key = dir.path().join("key");
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
     let (did, _) = kan(dir.path(), &key, &["identity", "did"]);
     let (enc, _) = kan(dir.path(), &key, &["identity", "encryption-key"]);
 
@@ -101,6 +109,10 @@ fn the_encryption_key_is_not_a_conversion_of_the_signing_key() {
     // Two different identities differ in both slots, so neither is a
     // constant that merely looks derived.
     let other_key = dir.path().join("other");
+    {
+        std::fs::create_dir_all(other_key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&other_key).unwrap();
+    }
     let (other_did, _) = kan(dir.path(), &other_key, &["identity", "did"]);
     let (other_enc, _) = kan(dir.path(), &other_key, &["identity", "encryption-key"]);
     assert_ne!(did, other_did);
@@ -122,6 +134,10 @@ fn the_encryption_key_is_not_a_conversion_of_the_signing_key() {
 fn an_existing_workspace_gains_an_encryption_key_without_migrating() {
     let dir = git_repo();
     let key = dir.path().join("key");
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
     assert!(
         kan(
             dir.path(),

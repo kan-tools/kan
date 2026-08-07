@@ -846,7 +846,16 @@ pub fn adopt_identity(ws: &Workspace, key_path: &Path) -> Result<String, Error> 
     ))
 }
 
-/// Stop a seed from rooting this workspace's identity, without destroying it.
+/// Stop whatever currently roots this workspace's identity from doing so,
+/// without destroying anything.
+///
+/// **Every root, not just the seed.** `.kan/identity-id` names the keychain
+/// entry holding a workspace's signing key, and since REQ-1 gave both paths
+/// one precedence order that consults the keychain, a surviving pointer
+/// outranks the key `adopt` just wrote — so adopt would report "this
+/// workspace now signs and reads as that identity" and the keychain would
+/// keep signing. That is exactly what the seed comment below warns about,
+/// with a different file in the blank.
 ///
 /// Moved aside, never deleted: it is a root secret, and the operator running
 /// `adopt` has already lost track of one identity. A keychain-held seed is
@@ -868,6 +877,16 @@ fn retire_seed(kan_dir: &Path) -> Result<String, Error> {
              has been moved to {} rather than deleted.\n",
             moved.display()
         ));
+    }
+    let identity_id = kan_dir.join(crate::sign::IDENTITY_ID_FILE);
+    if identity_id.exists() {
+        std::fs::remove_file(&identity_id)
+            .map_err(|e| Error::Usage(format!("could not clear the keychain reference: {e}")))?;
+        notes.push_str(
+            "\nThis workspace's signing key was held in the OS keychain. The reference to \
+             it has been removed so it no longer roots this identity; the keychain entry \
+             itself is left alone.\n",
+        );
     }
     let seed_id = kan_dir.join(crate::sign::SEED_ID_FILE);
     if seed_id.exists() {

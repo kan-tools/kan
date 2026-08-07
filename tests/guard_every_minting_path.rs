@@ -80,6 +80,10 @@ fn git_repo() -> tempfile::TempDir {
 fn workspace_with_claims() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = git_repo();
     let key = dir.path().join("key");
+    {
+        std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+        kan::sign::Identity::generate().save(&key).unwrap();
+    }
     let wrote = kan(
         dir.path(),
         Some(&key),
@@ -227,6 +231,10 @@ fn an_empty_log_still_mints_freely_on_every_path() {
     {
         let dir = git_repo();
         let key = dir.path().join("key");
+        {
+            std::fs::create_dir_all(key.parent().unwrap()).unwrap();
+            kan::sign::Identity::generate().save(&key).unwrap();
+        }
         let key = key_file.then_some(key);
 
         let run = kan(
