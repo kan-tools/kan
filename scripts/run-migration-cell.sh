@@ -21,6 +21,12 @@
 #   claims-altered    the right NUMBER of claims, but not the same claims --
 #                     the CID set moved, so a body, author or subject changed
 #                     under a migration that reported success
+#   keychain-unused   the cell asked for the keychain and did not get it: the
+#                     writer predates keychain support, or the runner's
+#                     keychain was unreachable. The workspace is plaintext, so
+#                     this cell did NOT exercise the keychain plane. Recorded
+#                     rather than scored `ok`, so the table shows exactly which
+#                     versions that plane actually covers.
 #   keychain-blocked  the read never returned: a keychain entry created by the
 #                     writer is ACL'd to that binary, so the reader waits on an
 #                     authorization prompt nobody answers (#96). A hang is not
@@ -211,6 +217,34 @@ if [ "$wrote" -eq 0 ]; then
   exit 0
 fi
 say "old binary wrote $wrote claim(s)"
+
+# DID THE KEYCHAIN MODE ACTUALLY USE THE KEYCHAIN?
+#
+# Asked positively, because the first run of this mode returned `ok` for all
+# fourteen tags and the only evidence that the keychain was involved was the
+# ABSENCE of a fallback warning. An instrument must prove it measured what it
+# claims, and two different things produce a silent plaintext workspace here:
+# a runner whose keychain cannot be reached, and a writer old enough to
+# predate keychain support altogether. Either way the cell would score `ok`
+# for a plane it never touched -- a plausible green, which is the failure
+# shape this whole harness keeps finding.
+#
+# So the secret's location is checked directly. A keychain-held secret leaves
+# a POINTER and no plaintext; a degraded one leaves the plaintext.
+if [ "$MODE" = keychain ]; then
+  if [ -f .kan/seed ] || [ -f .kan/identity ]; then
+    say "keychain mode degraded to a plaintext secret -- this writer either predates"
+    say "keychain support or the runner's keychain was unreachable. NOT a keychain test."
+    echo "keychain-unused"
+    exit 0
+  fi
+  if [ ! -f .kan/seed-id ] && [ ! -f .kan/identity-id ]; then
+    say "keychain mode left neither a plaintext secret nor a keychain pointer"
+    echo "unwritable"
+    exit 0
+  fi
+  say "keychain confirmed in use: $(ls .kan/seed-id .kan/identity-id 2>/dev/null | tr '\n' ' ')"
+fi
 
 # Point the reader at whatever key the *writer* actually used.
 #

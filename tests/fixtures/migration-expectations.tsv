@@ -77,6 +77,15 @@
 #                     three claims and corrupting all three bodies scored `ok`.
 #                     kan is content-addressed, which makes the strong check
 #                     cheap -- equal CIDs mean byte-identical claims.
+#   keychain-unused   the cell asked for the keychain and did not get it -- the
+#                     writer predates keychain support, or the runner's
+#                     keychain was unreachable -- so the workspace is plaintext
+#                     and this cell did NOT exercise the keychain plane.
+#                     Recorded rather than scored `ok`, so the table shows
+#                     which versions that plane actually covers. Added after
+#                     the mode's FIRST run returned `ok` for all fourteen tags
+#                     with no evidence the keychain was involved beyond the
+#                     absence of a fallback warning.
 #   keychain-blocked  the read never returned. A keychain entry is ACL'd to the
 #                     binary that created it, so the reader waits on an
 #                     authorization prompt no runner can answer (#96). A hang
