@@ -9,12 +9,21 @@
 //! the deliberate way in now). They exercised `Identity::load_or_create`,
 //! which `src/` no longer calls.
 //!
-//! Two of them had a second problem worth recording, because it is the
-//! milestone's own theme: they **self-skipped whenever no keychain served the
-//! entry** — `if path.exists() { return; }` — so on `ubuntu-latest`, which has
-//! no Secret Service, they returned early every single run. Their deletion
-//! removes two tests that had never once executed their own assertions on CI,
-//! and one that tested a function nothing calls.
+//! One of them had a second problem worth recording, because it is the
+//! milestone's own theme: `a_different_key_plaintext_file_survives_a_keychain_hit`
+//! **self-skipped whenever no keychain served the entry** — `load_or_create`,
+//! then `if path.exists() { return; }` with nothing asserted before it — so on
+//! `ubuntu-latest`, which has no Secret Service, it returned early every run
+//! having asserted nothing at all.
+//!
+//! *Corrected by a cold review, which is the point of having one.* The first
+//! version of this note claimed **two of four** deleted tests never executed
+//! their assertions. Both numbers were wrong: **three** tests were deleted (the
+//! fourth survives, below), and only **one** asserts nothing before returning.
+//! `a_migrated_plaintext_identity_is_removed_once_the_keychain_holds_it` runs
+//! three assertions on CI before and inside its early-return branch. Overstating
+//! what was verified is the exact failure `atom/adversarial-review` names, and
+//! it is worse in a note whose subject is tests that do not check what they claim.
 //!
 //! What remains is the test that was always the valuable one, because it goes
 //! through the **binary** rather than the library and therefore asserts what a

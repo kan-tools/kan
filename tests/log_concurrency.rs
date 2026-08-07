@@ -48,8 +48,18 @@ async fn concurrent_processes_do_not_lose_appends() {
     // Child: append exactly one claim, tagged with our index, then exit.
     if let Ok(idx) = std::env::var(CHILD_ENV) {
         let dir = std::path::PathBuf::from(std::env::var(DIR_ENV).unwrap());
-        let identity = Identity::generate();
-        identity.save(&dir.join("identity")).unwrap();
+        // LOAD, never generate. The parent wrote this key before spawning, and
+        // every child must sign as that one identity — the scenario is one
+        // workspace under concurrent commands ("several agents plus `day`
+        // shelling out to the same binary", above), not eight strangers.
+        //
+        // v0.12 REQ-3.5 briefly rewrote this to `Identity::generate()` +
+        // `save()` along with 28 genuinely incidental fixtures, which made the
+        // eight children mint eight DIDs and race to overwrite a key file
+        // nothing then read. Nothing went red — the reachability assertion
+        // still held — so it was caught by a cold review counting distinct
+        // authors in the final log: 1 before, 9 after.
+        let identity = Identity::load_existing(&dir.join("identity")).unwrap();
         let mut log = Log::open_or_create(&dir.join("log"), &identity)
             .await
             .unwrap();
@@ -137,6 +147,30 @@ async fn concurrent_processes_do_not_lose_appends() {
         stored.len(),
         N + 1,
         "seed claim plus every concurrent append"
+    );
+
+    // ONE WORKSPACE, ONE IDENTITY — the premise of the whole scenario, and
+    // until v0.12 nothing checked it.
+    //
+    // A fixture rewrite made each child mint its own key, so eight processes
+    // signed as eight different DIDs and raced to overwrite a key file nothing
+    // read. Every assertion above still passed: reachability does not care who
+    // signed. A cold review found it by counting distinct authors (1 before,
+    // 9 after), which is exactly the check that was missing, so it lives here
+    // now instead of in a reviewer's head.
+    let authors: std::collections::BTreeSet<&str> = stored
+        .iter()
+        .map(|(_, s)| s.claim.content.author.did.as_str())
+        .collect();
+    assert_eq!(
+        authors.len(),
+        1,
+        "every append must be signed by the workspace's single identity, but {} \
+         distinct authors reached the log: {:?}. Concurrent commands in ONE \
+         workspace share ONE key -- if a child minted its own, this test is no \
+         longer exercising the race it exists for.",
+        authors.len(),
+        authors
     );
 }
 

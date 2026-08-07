@@ -44,7 +44,7 @@ reachable by accident.
 
 REQ-3 reverses a decision recorded twice — ADR-63 (`docs/DECISIONS.md:3020`,
 *"Where the root lives: the OS keychain when available, a `0600` file when
-not"*) and `Seed::create`'s own doc comment (`src/sign.rs:1472`):
+not"*) and `Seed::create`'s own doc comment (`src/sign.rs:996`):
 
 > Taking the file-always reading would have reopened issue #6 for every new
 > workspace — the root secret in plaintext where the key it replaces was
@@ -112,7 +112,7 @@ posture would have no on-ramp at all.
 ## Requirements
 
 - **REQ-3.1 — `Seed::create` stops preferring the keychain.**
-  `Seed::create` (`src/sign.rs:1478`) writes `.kan/seed` at `0600`
+  `Seed::create` (`src/sign.rs:1002`) writes `.kan/seed` at `0600`
   unconditionally and never calls `keyring::Entry`. Its "OS keychain
   unavailable" `eprintln!` is not an unavailability warning any more and must
   not read as one: it becomes a single line stating where the root secret is,
@@ -124,6 +124,17 @@ posture would have no on-ramp at all.
   unchanged:
   `.kan/seed` → `.kan/seed-id`, `.kan/identity` → `.kan/identity-id`. A
   workspace already in the keychain is told so and nothing is written.
+
+  **#112's negative control comes back with this requirement.** REQ-3.5 deletes
+  `a_different_key_plaintext_file_survives_a_keychain_hit`, which is correct
+  *today* — after REQ-1 nothing in `src/` deletes a secret at all. `protect`
+  step 6 reintroduces exactly that operation, so the property returns with it:
+  **the plaintext copy is deleted only on a byte match**, asserted by a control
+  that puts a *different* key at the path and requires it to survive. #112's
+  actual history is that the guard was a tautology
+  (`bytes == import(bytes).export()`) which never read the file and therefore
+  could not discriminate — so steps 3 and 4 must be verified by a test that
+  fails when the comparison is inverted, not merely by their own existence.
 
 - **REQ-3.3 — `kan identity unprotect`.** The inverse:
   `.kan/seed-id` → `.kan/seed`, `.kan/identity-id` → `.kan/identity`. This is
@@ -150,19 +161,32 @@ posture would have no on-ramp at all.
   `refuse_second_identity` and `existing_identity_evidence`. Rewrite the ~46
   test call sites that reach them to `Identity::generate().save(path)`, which
   is what they mean. Delete or rewrite the tests whose subject is the retired
-  behaviour — `tests/keychain_identity.rs`'s four migration tests, and
+  behaviour — `tests/keychain_identity.rs`'s **three** retired tests, and
   `tests/identity_retrievability.rs`'s `0644`→`0600` repair-on-load assertion,
   which #183 confirmed by execution no longer happens.
 
 - **REQ-3.6 — `KAN_NO_KEYCHAIN` re-documented, and demoted.** Its doc comment
-  (`src/sign.rs:1259`) describes it as "the missing middle" — the only way to
+  (`src/sign.rs:783`) describes it as "the missing middle" — the only way to
   avoid a keychain prompt without naming a key file. After REQ-3 that is the
   default, and its remaining job is narrower: suppress keychain lookups for a
   *grandfathered* workspace's pointer files, and let the suite run. It is also
-  **no longer data-affecting**: #146's hazard was that it walked past the mint
-  guard into `load_or_create_plaintext`, and REQ-1 closed that by construction
-  — the derived goldens already show `write=refused:guard` for every
-  `id=id` / `seed-id=seed-id` row with `log=claims`.
+  **no longer a *minting* hazard**: #146's hazard was that it walked past the
+  mint guard into `load_or_create_plaintext`, and REQ-1 closed that by
+  construction.
+
+  *Narrowed by a cold review, and it was wrong in two ways. "No longer
+  data-affecting" is too strong: the flag still changes **which DID signs** in
+  a workspace holding both a keychain root and a plaintext `.kan/identity`,
+  because `Seed::load` returns `None` under it (`src/sign.rs:953`) and
+  resolution falls through to the key file. That is misattributed authorship
+  rather than minting, and this project's own operating notes treat the flag
+  as data-affecting for exactly that reason. The same sentence cited the
+  derived goldens as showing `write=refused:guard` for **every**
+  `id=id`/`seed-id=seed-id` row with `log=claims`; of the 12 such rows in
+  `derived-cells-unset.txt`, **3** do. The conclusion survives — the other 9
+  sign with an identity that already exists, so nothing mints — but the
+  evidence as stated was false, which is the failure this milestone keeps
+  naming in other people's work.*
 
 ## Acceptance Criteria
 
@@ -174,6 +198,13 @@ posture would have no on-ramp at all.
   default path without risking #96's hang — and it must run on macOS CI, not
   only Linux. It is milestone AC-4 made mechanical.
 
+  *Which means REQ-3 must also add a macOS job.* `.github/workflows/ci.yml` is
+  a single `runs-on: ubuntu-latest`, so "must run on macOS CI" currently names
+  a runner that does not exist. Flagged by a cold review: an acceptance
+  criterion whose infrastructure is not in any requirement is one that gets
+  quietly satisfied on Linux and called done. The migration matrix gained a
+  `macos-latest` cell for the keychain axis; `ci.yml` has not.
+
 - **AC-3.2 — the derived-cells goldens come out byte-identical.** Every row of
   `tests/fixtures/golden/derived-cells-*.txt` runs under `KAN_NO_KEYCHAIN`,
   where `Seed::create` *already* writes `.kan/seed`. So REQ-3.1 must not move
@@ -184,8 +215,21 @@ posture would have no on-ramp at all.
 - **AC-3.3 — the planner is derived, with two invariants asserted per row.**
   `at_rest` is emitted as a third column over all 128 configurations, and in
   every row: (a) `at_rest` is `None` exactly when `identity_evidence` is
-  `None`; (b) when `workspace_identity` returns `Some`, `at_rest` names the
-  source it resolved from. `src/sign.rs` currently holds three different
+  `None`; (b) when `workspace_identity` returns `Some` **and every source
+  `at_rest` outranks is reachable**, `at_rest` names the source it resolved
+  from.
+
+  *The reachability condition is not a hedge — (b) was written without it and
+  was already false against a checked-in fixture. `tests/derived_cells.rs`
+  runs every row under `KAN_NO_KEYCHAIN`, where `Seed::load` skips `seed-id`
+  (`src/sign.rs:953`) and `keychain_identity` skips `identity-id`, so a
+  workspace holding `identity` plus a pointer resolves to the key file while a
+  pure file-existence ranking names the pointer.
+  `tests/fixtures/golden/derived-cells-unset.txt` holds **6 such rows**.
+  Unconditional, (b) would have been "fixed" later either by weakening it or
+  by making `at_rest` consult the keychain — and that second repair makes
+  `protect` prompt, which is #96 reopened by the requirement that exists to
+  close it.* `src/sign.rs` currently holds three different
   orderings over these four files — `workspace_identity`'s, `identity_evidence`'s
   and `Seed::load`'s — and (b) is what stops `at_rest` becoming a fourth.
 
@@ -232,23 +276,23 @@ posture would have no on-ramp at all.
 
 ## Architecture
 
-**Where the flip lands.** `Seed::create` (`src/sign.rs:1478`) is the entire
+**Where the flip lands.** `Seed::create` (`src/sign.rs:1002`) is the entire
 default-side change: drop the `keyring::Entry` branch and the
 `fresh_account()` call, always `seed.save(&kan_dir.join(SEED_FILE))`. Nothing
 in `workspace_identity` / `signing_identity` / `create_workspace_identity`
 moves — REQ-1's three functions already read `.kan/seed` first
-(`Seed::load`, `src/sign.rs:1429`, decides from files before any keychain
+(`Seed::load`, `src/sign.rs:953`, decides from files before any keychain
 call). REQ-3 is a change to what gets *written*, not to how anything is
 resolved, which is why AC-3.2 predicts an unchanged golden.
 
 **The precedence trap, and it is the load-bearing detail.**
-`workspace_identity` (`src/sign.rs:851`) resolves in the order: `Seed::load`
+`workspace_identity` (`src/sign.rs:385`) resolves in the order: `Seed::load`
 (`.kan/seed`, then `.kan/seed-id`) → `keychain_identity` (`.kan/identity-id`)
 → `.kan/identity`. Note that **`.kan/identity-id` outranks `.kan/identity`**,
 which is not the order anyone writes from memory. `at_rest` must reproduce
 exactly that, or `protect` picks up a secret the signer is not using — one
 actor's write mutating what another reads, which CLAUDE.md's invariant forbids
-and which is #170 wearing a new hat. `identity_evidence` (`src/sign.rs:989`)
+and which is #170 wearing a new hat. `identity_evidence` (`src/sign.rs:524`)
 uses a *third* order; that is fine, because it only selects a message and
 answers a yes/no question, but it is exactly why AC-3.3(b) exists.
 
@@ -271,7 +315,7 @@ pure and enumerable. The executor is the only thing that calls
 
 *protect* (file → keychain):
 1. read the secret from the file;
-2. write it to a fresh account (`fresh_account()`, `src/sign.rs:1114`) under
+2. write it to a fresh account (`fresh_account()`, `src/sign.rs:649`) under
    the right service — `SEED_KEYCHAIN_SERVICE` for a seed, `KEYCHAIN_SERVICE`
    for a grandfathered key;
 3. **read it back and compare bytes** — a store that silently truncates would
@@ -356,7 +400,36 @@ here.
 *(Q1 — what becomes of the superseded plaintext file — is resolved; see
 "Deleting the superseded plaintext copy" above.)*
 
-None remain.
+<!-- OPEN: Q2 -->
+### Q2: what does `protect` do when a workspace holds a plaintext secret *and* a pointer?
+
+Reopened by a cold review, which caught this document asserting "None remain"
+over a real gap.
+
+`at_rest` collapses a 16-cell file-presence space to 5 by ranking, so a
+workspace holding **both** `.kan/seed` and `.kan/seed-id` reports `SeedFile`.
+The executor as specified then mints a **fresh** account (step 2) and writes
+the pointer (step 5) — overwriting the existing `.kan/seed-id` and silently
+orphaning whatever keychain entry it named. `retire_seed`
+(`src/actions.rs:872`) sets the opposite precedent: it says what it is
+superseding and never destroys a root reference quietly.
+
+That configuration is not hypothetical — it is what a *declined* `protect`
+leaves behind if the moved-aside file is ever moved back, and what a
+half-finished `unprotect` leaves on a crash between steps 2 and 4.
+
+**Options:** enumerate the overlap cells in `at_rest` and specify each; or
+refuse outright when a pointer already exists, telling the operator which
+entry it found. The refusal is smaller and matches REQ-2's "a selection naming
+something absent is always an error" temperament — kan does not silently pick
+for you when the workspace is ambiguous.
+
+**Recommendation:** refuse, name the existing pointer, and require
+`unprotect` first. `protect` is a deliberate act; there is no cost to making
+the ambiguous case explicit.
+
+**To resolve**: decide, then fold into REQ-3.2 and the executor's steps 2/5.
+<!-- /OPEN -->
 
 ## Out of Scope
 
