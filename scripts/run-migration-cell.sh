@@ -180,13 +180,25 @@ seed_the_key_file() {
   [ -f "$target" ]
 }
 
+# BEST-EFFORT, NEVER FATAL -- and the first version of this got that wrong.
+#
+# Making a failed seed fatal broke the six OLDEST tags (v0.1.1 through
+# v0.6.0), which CI caught as `unwritable` against an expected `ok`. Neither
+# route exists that far back: `KAN_IDENTITY_FILE` is not honoured yet, and
+# `identity role add` does not exist yet. Those writers were always handled
+# correctly further down -- they ignore the variable, write `.kan/identity`,
+# and the reader is repointed at it, exactly as a real upgrade would be. The
+# early exit ran before that could happen.
+#
+# So a fix aimed at FUTURE writers broke PAST ones, which is the hazard of
+# repairing a harness whose whole job is spanning versions. Seeding helps
+# where it can and stays out of the way where it cannot.
 if [ "$MODE" = identity-file ]; then
   if seed_the_key_file "$KAN_IDENTITY_FILE"; then
     say "seeded the selected key file at $KAN_IDENTITY_FILE"
   else
-    say "could not create a key file with this writer by any supported route"
-    echo unwritable
-    exit 0
+    say "could not seed a key file with this writer -- continuing; if it predates"
+    say "KAN_IDENTITY_FILE it will write .kan/identity and the reader follows it"
   fi
 fi
 
@@ -203,7 +215,7 @@ wrote=0
 written_cids=""
 for i in 1 2 3; do
   if out="$("$OLD_BIN" observe "claim number $i written by the old binary" \
-              --subject "migration-subject" 2>/dev/null)"; then
+              --subject "migration-subject" 2>>"$work/writer.log")"; then
     wrote=$((wrote + 1))
     cid="$(printf '%s\n' "$out" | grep -oE '^baf[a-z0-9]+$' | head -1)"
     [ -n "$cid" ] && written_cids="$written_cids$cid
@@ -212,7 +224,17 @@ for i in 1 2 3; do
 done
 
 if [ "$wrote" -eq 0 ]; then
-  say "the old binary wrote nothing -- CLI shape too different to drive"
+  # SAY WHY, not just that. `unwritable` was reported for five tags on the
+  # keychain axis with no captured reason, which is not a result anyone can
+  # act on -- and this harness had already produced one `unwritable` that was
+  # its own bug rather than a property of the writer, so an unexplained one
+  # is not safe to record as an expectation.
+  say "the old binary wrote nothing. Its stderr:"
+  if [ -s "$work/writer.log" ]; then
+    tail -20 "$work/writer.log" >&2
+  else
+    say "  (nothing on stderr either -- CLI shape too different to drive)"
+  fi
   echo "unwritable"
   exit 0
 fi
