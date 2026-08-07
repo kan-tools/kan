@@ -48,7 +48,8 @@ async fn concurrent_processes_do_not_lose_appends() {
     // Child: append exactly one claim, tagged with our index, then exit.
     if let Ok(idx) = std::env::var(CHILD_ENV) {
         let dir = std::path::PathBuf::from(std::env::var(DIR_ENV).unwrap());
-        let identity = Identity::load_or_create(&dir.join("identity")).unwrap();
+        let identity = Identity::generate();
+        identity.save(&dir.join("identity")).unwrap();
         let mut log = Log::open_or_create(&dir.join("log"), &identity)
             .await
             .unwrap();
@@ -68,7 +69,8 @@ async fn concurrent_processes_do_not_lose_appends() {
 
     const N: usize = 8;
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
 
     // Seed one claim so the CAR, HEAD and header already exist — the
     // interesting race is contention over an *existing* root, not the
@@ -147,7 +149,8 @@ async fn concurrent_appends_get_strictly_distinct_recording_times() {
         return; // this test spawns no children; guard against the shared harness
     }
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
 
     // Separate `Log` instances over one directory, each unaware of the
     // others — the in-process analogue of separate commands, and enough to
@@ -184,7 +187,8 @@ async fn head_is_replaced_atomically_and_leaves_no_debris() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
     let log_dir = dir.path().join("log");
     let mut log = Log::open_or_create(&log_dir, &identity).await.unwrap();
 

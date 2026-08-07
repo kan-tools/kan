@@ -42,17 +42,35 @@
 //! from the suite and documented in prose instead
 //! (`.design/identity-resolution-cells.md`).
 //!
-//! # Retired, but still referenced by tests
+//! # The pre-REQ-1 resolver is gone (#183)
 //!
 //! `Identity::load_or_create`, `load_or_create_for_workspace`,
-//! `keychain_account`, `refuse_second_identity` and
-//! `existing_identity_evidence` are **no longer called from `src/`** — they
-//! are the pre-REQ-1 resolver. Roughly 46 test call sites still reach them
-//! directly, so they cannot be deleted without rewriting those, and until
-//! that happens those tests assert behaviour the product no longer has
-//! (keychain migration, deleting a redundant plaintext copy, repairing `0644`
-//! to `0600` on load). Tracked; do not read them as documentation of what kan
-//! does.
+//! `keychain_account`, `refuse_second_identity`, `existing_identity_evidence`
+//! and `warn_keychain_unavailable` were deleted by v0.12 REQ-3.5. They had
+//! stopped being called from `src/` when REQ-1 landed, and survived only
+//! because ~46 test call sites reached them directly — so the suite was
+//! reporting coverage for behaviour the product no longer performed, which is
+//! the same shape as a test that cannot fail.
+//!
+//! Three behaviours went with them, all deliberately:
+//!
+//! - **plaintext→keychain migration**, and the deletion of the redundant
+//!   plaintext copy (ADR-25/ADR-53). Retired as a *feature*, not merely moved
+//!   off the resolution path: a capability that only ever fired as a side
+//!   effect of `kan show` was never one an operator could ask for, see, or
+//!   undo. [`super::sign`]'s replacement is `kan identity protect`, which is
+//!   explicit, covers all four at-rest states, and has an inverse.
+//! - **repairing a `0644` key file to `0600` on load** — a *read* changing a
+//!   file's permissions, which is one of the three violations
+//!   `.design/v0.12-milestone.md` AC-8 required to go. Anything kan itself
+//!   writes is still owner-only ([`Identity::save`], [`Seed::save`]); a file
+//!   kan did not write is the operator's.
+//! - **minting from a selection**. `KAN_IDENTITY_FILE` naming a missing path
+//!   is an error (REQ-2), so there is no longer a create-here branch to guard.
+//!
+//! `Identity::load_or_create_plaintext` is **not** in that list and is still
+//! live: [`add_role`] calls it, because minting a role key is the one
+//! deliberate creation that is not `create_workspace_identity`'s job.
 
 use std::path::{Path, PathBuf};
 
@@ -163,296 +181,6 @@ impl Identity {
         }
     }
 
-    /// Load the identity for the checkout whose `.kan/identity` would be
-    /// `path`, or generate and persist a new one if none exists yet.
-    ///
-    /// `KAN_IDENTITY_FILE` short-circuits everything below when set (see the
-    /// module doc): a dedicated key file, keychain never touched.
-    ///
-    /// Otherwise tries the OS keychain, filed under the stable account id in
-    /// `.kan/identity-id` (so each checkout — `.kan/` is repo-local, ADR-3 —
-    /// gets its own entry, and keeps it across a move). Three cases:
-    /// - Already in the keychain: read it from there, done.
-    /// - Not yet in the keychain, but a plaintext file exists at `path`:
-    ///   migrate it in (write to the keychain) and deliberately *leave the
-    ///   plaintext file in place* as a fallback copy (ADR-25's explicit
-    ///   choice for REQ-16's open question) rather than deleting it.
-    /// - Not yet in the keychain, no plaintext file either: generate fresh
-    ///   and write only to the keychain — no plaintext file created, the
-    ///   real point of encryption-at-rest (issue #6).
-    ///
-    /// If the keychain is genuinely unavailable at any point in this (no
-    /// backend, access denied, locked, etc.), falls back entirely to the
-    /// original plaintext-file-only behavior, with a warning on stderr.
-    pub fn load_or_create(path: &Path) -> Result<Self, Error> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        // Explicit override, checked first and used exclusively: a dedicated
-        // key file named by the environment. This is the terminal-compatible
-        // path — CI, containers, agents, `day` (ADR-42), anything that has no
-        // GUI to answer a keychain prompt — and it never consults the
-        // keychain at all, so it cannot block.
-        if let Some(override_path) = std::env::var_os(IDENTITY_FILE_ENV) {
-            let override_path = std::path::PathBuf::from(override_path);
-            if let Some(parent) = override_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            // Refuse to mint a second identity for a repo that already has
-            // one, exactly as the keychain branch does.
-            //
-            // Without this the guard existed on only one of two paths, and
-            // the *other* path is the one `KeychainUnreachable`'s own message
-            // recommends. Following that advice against a repo whose key had
-            // already been migrated created a fresh keypair and a new DID,
-            // and `TrustBase::Solo` then hid every existing claim: `kan
-            // status` printed "no subjects yet" at exit 0 — verbatim REQ-5's
-            // failure mode, reached through the release's recommended
-            // workaround.
-            // Named by `.kan/roles` as a declared role's key, and not there.
-            // That is its own error and does not depend on the guard finding
-            // evidence: the caller asked to sign as a specific declared role,
-            // and that role's key is gone. Minting a fresh one here produces
-            // a claim signed by a DID that appears in no `.kan/roles` line --
-            // so `--trust roles`, "everything this workspace wrote", reports
-            // no claims on the subject just written.
-            //
-            // The previous round named this cause in its own commit message
-            // ("`.kan/roles` records that path as the role's key and this
-            // function never reads it") and then did not read it either.
-            if !override_path.exists() {
-                if let Some(kan_dir) = path.parent() {
-                    if let Ok(roles) = list_roles(kan_dir) {
-                        if let Some(role) = roles.iter().find(|r| r.key_path == override_path) {
-                            return Err(Error::DeclaredRoleKeyMissing {
-                                name: role.name.clone(),
-                                path: override_path.display().to_string(),
-                            });
-                        }
-                    }
-                }
-            }
-
-            // The named file is missing. That is NOT an invitation to sign
-            // with some other key.
-            //
-            // A previous round substituted `.kan/identity` here, calling it
-            // symmetry with the read side. It fabricated authorship: a
-            // declared role whose key file had gone missing signed as the
-            // HUMAN, silently, at exit 0 -- `.kan/roles` records that path as
-            // a role's key and this function never reads it. A loud refusal
-            // became a wrong-author success, which is exactly the trade the
-            // round before had been fixing. The only signal was stderr, which
-            // `day` and MCP callers do not surface.
-            //
-            // So: refuse, and let the guard below say what it found. An
-            // operator whose KAN_IDENTITY_FILE names a stale path needs to
-            // be told that, not quietly given a different identity.
-            if !override_path.exists() {
-                refuse_second_identity(
-                    path,
-                    format!("creating a key at {}", override_path.display()),
-                    "KAN_IDENTITY_FILE names a path that does not exist. Point it at the \
-                     key you meant, or unset it and let kan use this workspace's own \
-                     identity. To restore from a recovery phrase, write the key to that \
-                     path first.",
-                )?;
-            }
-            return Self::load_or_create_plaintext(&override_path);
-        }
-
-        if keychain_disabled() {
-            // #146: this branch is how the defect was actually reached. On a
-            // workspace whose key is in the keychain, ADR-53 has *correctly*
-            // deleted the plaintext copy — so `path` does not exist, and
-            // without this check the loader below mints a fresh keypair and a
-            // new DID against a log full of claims signed by the old one.
-            if !path.exists() {
-                refuse_second_identity(
-                    path,
-                    "KAN_NO_KEYCHAIN, with no key file to fall back on",
-                    "Unset KAN_NO_KEYCHAIN so kan can read the key from the OS keychain, or \
-                     point KAN_IDENTITY_FILE at the existing key file. If the key is in a file, adopt it with `kan identity adopt \
-                     --key <path>`.",
-                )?;
-            }
-            return Self::load_or_create_plaintext(path);
-        }
-        let account = keychain_account(path)?;
-        let entry = match keyring::Entry::new(KEYCHAIN_SERVICE, &account) {
-            Ok(entry) => entry,
-            Err(_) => {
-                warn_keychain_unavailable(path);
-                return Self::load_or_create_plaintext(path);
-            }
-        };
-
-        let _warn = SlowKeychainWarning::start("reading this repo's signing key");
-        match entry.get_secret() {
-            Ok(bytes) => {
-                let identity = Self {
-                    keypair: P256Keypair::import(&bytes)?,
-                };
-                // The keychain already had it — so a plaintext copy sitting
-                // beside it is redundant *and* unprotected, and must go.
-                // Anyone whose key reached the keychain under a version
-                // before this branch existed kept an unencrypted duplicate
-                // indefinitely; "encrypted at rest" was notional for them.
-                //
-                // The comparison is against **the file's own bytes**, not
-                // against the keychain key round-tripped through itself. An
-                // adversarial review caught the earlier form —
-                // `bytes == P256Keypair::import(&bytes).export()` — as a
-                // tautology that never read the file, reducing the guard to
-                // `path.exists()`: a plaintext file holding a *different*
-                // key would have been deleted with no copy. Only a file that
-                // holds exactly the key the keychain returned is redundant,
-                // and only a redundant copy is safe to remove.
-                if let Ok(file_bytes) = std::fs::read(path) {
-                    if file_bytes == bytes {
-                        if let Err(e) = std::fs::remove_file(path) {
-                            eprintln!(
-                                "warning: your signing key is in the keychain, but the \
-                                 redundant plaintext copy at {} could not be removed ({e}) \
-                                 -- delete it by hand; it is an unprotected copy of the same \
-                                 key",
-                                path.display()
-                            );
-                        }
-                    } else {
-                        eprintln!(
-                            "warning: {} holds a different key than the keychain — leaving it \
-                             in place rather than deleting a key kan cannot reproduce. If it \
-                             is stale, remove it by hand; if it is the one you want, move the \
-                             keychain entry aside.",
-                            path.display()
-                        );
-                    }
-                }
-                Ok(identity)
-            }
-            Err(keyring::Error::NoEntry) => {
-                let identity = match std::fs::read(path) {
-                    Ok(bytes) => Self {
-                        keypair: P256Keypair::import(&bytes)?,
-                    },
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                        // The keychain has no entry and there is no file, yet
-                        // the log has claims — so this workspace's key was
-                        // reachable once and is not now. Minting here is the
-                        // same silent-loss shape as #146's, arrived at by a
-                        // keychain that answered "no entry" rather than by an
-                        // escape hatch (#90's `unwrap_or(false)` conflation is
-                        // one way to get that answer wrongly).
-                        refuse_second_identity(
-                            path,
-                            "generating a fresh key, because the keychain has no entry for \
-                             this workspace and no key file exists either",
-                            "Do not write with this workspace until the original key is \
-                             back. If the keychain entry is merely unreadable — a rebuilt \
-                             binary, a locked keychain — fix that and retry. If the key is in a file, adopt it with `kan identity adopt \
-                     --key <path>`.",
-                        )?;
-                        Self::generate()
-                    }
-                    Err(e) => return Err(e.into()),
-                };
-                let _warn = SlowKeychainWarning::start("storing this repo's signing key");
-                match entry.set_secret(&identity.keypair.export()) {
-                    Ok(()) => {
-                        // Encrypted at rest, by default and in fact.
-                        //
-                        // ADR-25 wrote the key into the keychain and
-                        // **deliberately left the plaintext file in place**
-                        // as a fallback. The effect was that every migrated
-                        // identity kept an unprotected copy of the same 32
-                        // bytes beside the protected one -- world-readable
-                        // at 0644 on this author's own machine -- so the
-                        // keychain imposed its full cost and protected
-                        // nothing. "Encryption at rest" only ever held for
-                        // identities generated fresh after ADR-25.
-                        //
-                        // The plaintext copy is now removed once the
-                        // keychain has it, but only after reading it back
-                        // and confirming it matches: deleting the sole
-                        // remaining copy of a signing key on the strength of
-                        // a write that returned `Ok` is not a trade worth
-                        // making, and `load_or_create` would then silently
-                        // mint a *new* identity, taking every prior claim
-                        // out of every read.
-                        // Point at the recovery phrase, without printing it.
-                        //
-                        // Once the plaintext copy is gone the keychain is the
-                        // only place the key lives, and `.kan/` is gitignored
-                        // (ADR-3), so nothing else on the machine or in the
-                        // remote has it. A user who never learns the phrase
-                        // exists has a single point of failure they did not
-                        // agree to. Printing the phrase here instead would
-                        // undo the encryption in the same breath -- straight
-                        // into a terminal scrollback, a CI log, or an agent
-                        // transcript.
-                        eprintln!(
-                            "kan: this repo's signing key is now encrypted at rest in the OS \
-                             keychain.\n      It is the only copy. Run `kan identity phrase` \
-                             in a private terminal to write down a\n      24-word recovery \
-                             phrase -- without it, losing .kan/ loses the identity, and \
-                             every\n      claim you have written drops out of every read."
-                        );
-                        if path.exists() {
-                            match entry.get_secret() {
-                                Ok(stored) if stored == identity.keypair.export() => {
-                                    if let Err(e) = std::fs::remove_file(path) {
-                                        eprintln!(
-                                            "warning: identity is in the keychain but the \
-                                             plaintext copy at {} could not be removed ({e}) \
-                                             -- delete it by hand; it is an unprotected copy \
-                                             of your signing key",
-                                            path.display()
-                                        );
-                                    }
-                                }
-                                _ => eprintln!(
-                                    "warning: wrote the identity to the keychain but could \
-                                     not read it back to confirm, so the plaintext copy at \
-                                     {} was kept. Your key is not encrypted at rest.",
-                                    path.display()
-                                ),
-                            }
-                        }
-                        Ok(identity)
-                    }
-                    Err(_) => {
-                        warn_keychain_unavailable(path);
-                        identity.save(path)?;
-                        Ok(identity)
-                    }
-                }
-            }
-            // The keychain exists and answered, but not with the key and not
-            // with "no such entry" — it is locked, access was denied, or the
-            // entry is ACL'd to a different binary (the macOS case that
-            // *hangs*, `IDENTITY_FILE_ENV`'s doc comment).
-            //
-            // Falling through to `load_or_create_plaintext` here would
-            // generate a brand-new keypair whenever no plaintext file exists,
-            // which is now the normal state — and a new DID means
-            // `TrustBase::Solo` drops every prior claim from every read, at
-            // exit 0. Silently minting a second identity for a repo that
-            // already has one is the worst available outcome, so this refuses
-            // instead, and names the way out.
-            Err(e) => {
-                if path.exists() {
-                    warn_keychain_unavailable(path);
-                    return Self::load_or_create_plaintext(path);
-                }
-                Err(Error::KeychainUnreachable {
-                    detail: e.to_string(),
-                })
-            }
-        }
-    }
-
     pub(crate) fn load_or_create_plaintext(path: &Path) -> Result<Self, Error> {
         match std::fs::read(path) {
             Ok(bytes) => {
@@ -486,76 +214,21 @@ impl Identity {
         })
     }
 
+    /// Write this key to `path` at `0600`, creating its parent if needed.
+    ///
+    /// The `create_dir_all` matches [`Seed::save`] and is not new behaviour
+    /// moving: the retired `load_or_create` did it at the top of the function,
+    /// so every caller that named a path inside a not-yet-existing `.kan/`
+    /// relied on it. Keeping it here is what lets `Identity::generate()` +
+    /// `save` be a drop-in for `load_or_create` (#183) rather than a
+    /// rewrite that quietly needs a `create_dir_all` at every call site.
     pub fn save(&self, path: &Path) -> Result<(), Error> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         std::fs::write(path, self.keypair.export())?;
         restrict_permissions(path)?;
         Ok(())
-    }
-
-    /// [`Self::load_or_create`], seed-rooting a workspace that has **never**
-    /// had an identity (v0.9 REQ-4/REQ-6).
-    ///
-    /// The whole of the migration decision lives in one predicate. A
-    /// workspace that already has an identity by any route is left completely
-    /// alone — same key, same DID, same claims, no seed file, nothing
-    /// rewritten. Only a genuinely fresh workspace gets a seed, and from then
-    /// on its signing key is derived from that seed rather than generated.
-    ///
-    /// **Grandfathering is the whole point (REQ-6).** The alternative —
-    /// migrating existing identities onto a seed — has to either preserve the
-    /// signing key (in which case the seed is decorative) or replace it (in
-    /// which case every existing DID moves and every claim vanishes from
-    /// every read). That second outcome is #90 and #107 exactly, and it is
-    /// not a risk worth taking for an internal tidiness. Two schemes coexist
-    /// permanently, which ADR-55 anticipated and accepted.
-    ///
-    /// **Freshness is decided from files only, never by probing the
-    /// keychain.** A keychain probe on this path can hang for a rebuilt
-    /// binary (#96, and it hung during this milestone's own dogfooding), and
-    /// hanging while deciding whether to mint an identity is the worst place
-    /// to do it. `.kan/identity-id` exists iff the keychain has ever been
-    /// used for this workspace, so its absence plus the absence of a key file
-    /// is a sound, cheap "nothing here yet".
-    pub fn load_or_create_for_workspace(kan_dir: &Path) -> Result<Self, Error> {
-        let key_path = kan_dir.join("identity");
-
-        // An explicit key file is its own answer: if it exists, that is the
-        // identity; if it does not, `load_or_create`'s guard decides whether
-        // creating one is allowed, and that judgement must not be bypassed
-        // here.
-        if std::env::var_os(IDENTITY_FILE_ENV).is_some() {
-            return Self::load_or_create(&key_path);
-        }
-
-        // Already seed-rooted: derive and return. The signing key is never
-        // written anywhere -- it is a pure function of the seed, so storing
-        // it would be a second copy of the same secret for no gain, and
-        // fewer secrets at rest is the whole point of keeping the seed in
-        // the keychain.
-        if let Some(seed) = Seed::load(kan_dir)? {
-            return seed.signing_identity();
-        }
-
-        let fresh = !key_path.exists() && !kan_dir.join(IDENTITY_ID_FILE).exists();
-        if !fresh {
-            return Self::load_or_create(&key_path);
-        }
-
-        // "Fresh" is decided from identity files only, deliberately (a
-        // keychain probe here can hang, #96). But a workspace with no identity
-        // file and a non-empty log is not fresh — it is one whose identity
-        // went missing, and seed-rooting it now would mint a new DID and hide
-        // every claim already written. The log is the tiebreaker the file
-        // check cannot see, and consulting it costs one `metadata` call.
-        refuse_second_identity(
-            &key_path,
-            "seed-rooting this workspace, which has no identity file but a non-empty log",
-            "This workspace had an identity and no longer has one on disk. Point \
-             KAN_IDENTITY_FILE at the existing key file if you have it. If the key is in a file, adopt it with `kan identity adopt \
-                     --key <path>`.",
-        )?;
-
-        Seed::create(kan_dir)?.signing_identity()
     }
 
     /// Whether this workspace's identity is rooted in a seed, which is what
@@ -573,145 +246,6 @@ impl Identity {
     pub fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, Error> {
         Ok(self.keypair.sign(msg)?)
     }
-}
-
-/// The keychain "account" this checkout's key is filed under: a random,
-/// stable id kept beside the identity in `.kan/`.
-///
-/// **Was the canonicalized `.kan/identity` path**, which meant moving or
-/// renaming a checkout missed the lookup, silently generated a new keypair
-/// and DID, and — because `TrustBase::Solo` trusts exactly one `AuthorId` —
-/// made every prior claim vanish from every read at exit 0
-/// (`.design/v0.7-milestone.md` REQ-5). A `did:key` is meant to be
-/// self-certifying; its retrievability must not hang on a mutable
-/// environment string.
-///
-/// The id file travels with `.kan/`, so the identity survives a move. It is
-/// not secret — it names a keychain entry, it does not authorize access to
-/// it.
-fn keychain_account(identity_path: &Path) -> Result<String, Error> {
-    let dir = identity_path.parent().unwrap_or(Path::new("."));
-    let id_path = dir.join(IDENTITY_ID_FILE);
-
-    match std::fs::read_to_string(&id_path) {
-        Ok(id) if !id.trim().is_empty() => return Ok(id.trim().to_string()),
-        Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(e.into()),
-    }
-
-    // No id yet. If this checkout already has a keychain entry under the old
-    // path-derived account, keep using that name rather than orphaning the
-    // key — an upgrade must not cost anyone their identity.
-    //
-    // Probe only when there is plausibly something to preserve: an existing
-    // key file, or an existing log beside it. A directory with neither is a
-    // brand-new checkout, and probing there would spend a keychain round trip
-    // per invocation to answer a question whose answer is always "no" —
-    // including once per temp directory across the test suite, which is real
-    // load on a real OS keychain.
-    let has_prior_state = identity_path.exists() || dir.join("log").exists();
-    let account = if has_prior_state {
-        let legacy = std::fs::canonicalize(identity_path)
-            .unwrap_or_else(|_| identity_path.to_path_buf())
-            .display()
-            .to_string();
-        if keyring::Entry::new(KEYCHAIN_SERVICE, &legacy)
-            .map(|e| e.get_secret().is_ok())
-            .unwrap_or(false)
-        {
-            legacy
-        } else {
-            fresh_account()
-        }
-    } else {
-        fresh_account()
-    };
-
-    std::fs::write(&id_path, &account)?;
-    Ok(account)
-}
-
-/// Refuse to mint an identity for a workspace whose log already holds claims.
-///
-/// **The condition has nothing to do with which mechanism is minting** (#146).
-/// The guard originally lived inside the `KAN_IDENTITY_FILE` branch, which
-/// made it a property of one code path rather than of the workspace, and
-/// `KAN_NO_KEYCHAIN` — added by ADR-66 so this milestone's own tests could run
-/// on macOS — walked straight past it into `load_or_create_plaintext` and
-/// minted a second identity against a 3.7 MB log. The escape hatch reopened
-/// the defect its own milestone was hardening against.
-///
-/// So the rule is stated once, here, and every path that can create a key
-/// calls it. `attempt` names what was about to mint and `remedy` what to do
-/// about *that* mechanism; the consequence is identical either way, so the
-/// explanation of the consequence lives in the error, not the call site.
-///
-/// `add_role` is the one deliberate bypass and reaches
-/// [`Identity::load_or_create_plaintext`] directly — minting a role is an
-/// explicit act, which is exactly the signal this guard is waiting for.
-fn refuse_second_identity(
-    identity_path: &Path,
-    attempt: impl Into<String>,
-    remedy: impl Into<String>,
-) -> Result<(), Error> {
-    let evidence = match (
-        log_has_claims(identity_path.parent().unwrap_or(Path::new("."))),
-        existing_identity_evidence(identity_path),
-    ) {
-        (true, Some(what)) => Some(format!("claims in its log, and {what}")),
-        (true, None) => Some("claims in its log".to_string()),
-        (false, Some(what)) => Some(what.to_string()),
-        (false, None) => None,
-    };
-    if let Some(evidence) = evidence {
-        return Err(Error::WouldMintSecondIdentity {
-            attempt: attempt.into(),
-            remedy: remedy.into(),
-            evidence,
-        });
-    }
-    Ok(())
-}
-
-/// What evidence there is that this workspace ALREADY has an identity,
-/// beyond a non-empty log.
-///
-/// The guard used to weigh only `log/repo.car`, which misses the case that
-/// matters most for recovery: `kan restore` exists precisely when the log is
-/// EMPTY and the claims are in `.claims/`. A workspace there can hold an
-/// adopted `.kan/identity` and still look "fresh" to a log-only test, so
-/// minting sailed straight past the one guard meant to stop it -- and the
-/// operator ended up with the adopted key in `.kan/identity`, a freshly
-/// minted key at the `KAN_IDENTITY_FILE` path, the second one winning every
-/// signature, and a log split across two authors.
-///
-/// A key file or a root seed each mean this workspace has an identity.
-/// Minting a different one is what the guard is for, whether or not anything
-/// has been written yet.
-fn existing_identity_evidence(identity_path: &Path) -> Option<&'static str> {
-    let dir = identity_path.parent()?;
-    if identity_path.exists() {
-        return Some("a signing key at .kan/identity");
-    }
-    if dir.join(SEED_FILE).exists() || dir.join(SEED_ID_FILE).exists() {
-        // BOTH, matching `Identity::is_seed_rooted`. A seed-rooted workspace
-        // on macOS has `seed-id` and no `seed` -- the default first-run
-        // layout -- and `Seed::load` returns `None` under KAN_NO_KEYCHAIN, so
-        // `seed-id` is the ONLY on-disk trace that this workspace is
-        // seed-rooted at all. Checking `seed` alone left the guard blind in
-        // precisely the empty-log case this function exists for.
-        return Some("a root seed for this workspace");
-    }
-    // `identity-id` is deliberately NOT evidence. `keychain_account` writes
-    // it on the way into the keychain branch -- BEFORE the guard runs -- so
-    // counting it would make the guard fire on evidence its own invocation
-    // had just created, refusing every first-run keychain workspace. Caught
-    // by five pre-existing v0.7 tests going red the moment it was added.
-    //
-    // It is not needed either: the cases it would cover are already covered
-    // by a key file, a seed, or a non-empty log.
-    None
 }
 
 /// Whether this repo's log already holds claims.
@@ -870,7 +404,8 @@ pub fn workspace_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
 
 /// The keychain-held signing key for this workspace, if it has one.
 ///
-/// **Reads `.kan/identity-id`; never writes it.** `keychain_account` wrote
+/// **Reads `.kan/identity-id`; never writes it.** The retired
+/// `keychain_account` (deleted by REQ-3.5, #183) wrote
 /// that file while resolving, so the ADR-77 guard could observe state its own
 /// invocation had just created — widening the guard's evidence to include
 /// `identity-id` turned every first-run keychain workspace into a refusal.
@@ -1036,7 +571,7 @@ fn identity_evidence(kan_dir: &Path) -> Option<&'static str> {
 /// identity that permanently shadows the first.
 ///
 /// `.kan/identity-id` counts here, and it could not before. The old guard had
-/// to exclude it because `keychain_account` *wrote* that file while resolving,
+/// to exclude it because the retired `keychain_account` *wrote* that file while resolving,
 /// so counting it made the guard fire on evidence its own invocation had
 /// created. Nothing writes it during resolution any more, which is a
 /// consequence of REQ-1 rather than a separate fix — making question 1 pure is
@@ -1126,17 +661,6 @@ fn fresh_account() -> String {
 /// Proven by running two builds against copies of one log: the hang follows
 /// whichever binary touches the identity second.
 pub const IDENTITY_FILE_ENV: &str = "KAN_IDENTITY_FILE";
-
-fn warn_keychain_unavailable(path: &Path) {
-    eprintln!(
-        "warning: OS keychain unavailable -- falling back to a plaintext identity file at {} \
-         (the identity key is not encrypted at rest in this mode; this is expected on \
-         headless/CI environments with no keychain daemon running). Set {} to choose a \
-         dedicated key file explicitly and skip the keychain entirely.",
-        path.display(),
-        IDENTITY_FILE_ENV
-    );
-}
 
 /// Owner-only permissions for a file holding a private key.
 ///

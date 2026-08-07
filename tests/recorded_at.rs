@@ -40,7 +40,8 @@ fn observation(text: &str) -> ClaimBody {
 
 async fn fresh() -> (tempfile::TempDir, Log, Identity) {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
     let log = Log::open_or_create(&dir.path().join("log"), &identity)
         .await
         .unwrap();

@@ -9,9 +9,16 @@
 //! answers and the interesting ones are where they differ:
 //!
 //! - the **read** probe is `kan show <subject> --trust me --json`, which
-//!   calls `sign::existing_identity`;
+//!   calls `sign::workspace_identity` (via `Selection::Primary`);
 //! - the **write** probe is `kan observe`, which calls
-//!   `Workspace::commit_identity` → `Identity::load_or_create_for_workspace`.
+//!   `Workspace::commit_identity` → `sign::signing_identity`, falling through
+//!   to `sign::create_workspace_identity` only when the workspace has none.
+//!
+//! Both probes therefore share **one** precedence order (REQ-1/REQ-4), which
+//! is the property #170 existed for. Before v0.12 they were
+//! `sign::existing_identity` and `Identity::load_or_create_for_workspace` —
+//! two implementations of question 1, which is exactly how they came to
+//! disagree.
 //!
 //! `kan identity did` is a *write*-path command (`src/cli/mod.rs:846`), which
 //! is why #170 reads as "`identity did` resolves fine but `--trust me` does
@@ -209,7 +216,7 @@ fn cells() -> Vec<Cell> {
         // three-member evidence set (`src/sign.rs:661`), which the first draft
         // enumerated two-thirds of. 19 is a mint the table's prose explicitly
         // denied: `identity-id` is the one artifact
-        // `existing_identity_evidence` deliberately ignores, so a workspace
+        // the retired `existing_identity_evidence` deliberately ignored, so a workspace
         // that demonstrably HAS had an identity mints a second one here.
         Cell { row: 18, env: Missing, layout: SEED_ID, log_has_claims: false, read: SelectionMissing, write: SelectionMissing },
         Cell { row: 19, env: Missing, layout: ID,      log_has_claims: false, read: SelectionMissing, write: SelectionMissing },

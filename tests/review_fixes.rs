@@ -37,7 +37,8 @@ fn signed(identity: &Identity, subject: &str, text: &str) -> kan::claim::Claim {
 #[test]
 fn a_file_named_for_the_wrong_subject_is_reported() {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
     let subject = SubjectRef::Local(Rkey::from("real-subject"));
 
     let path = git_tree::write_subject(
@@ -58,7 +59,8 @@ fn a_file_named_for_the_wrong_subject_is_reported() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let results = rt.block_on(async {
-        let id = Identity::load_or_create(&dir.path().join("reader-id")).unwrap();
+        let id = Identity::generate();
+        id.save(&dir.path().join("reader-id")).unwrap();
         let log = kan::store::log::Log::open_or_create(&dir.path().join("reader-log"), &id)
             .await
             .unwrap();
@@ -90,7 +92,8 @@ fn a_file_named_for_the_wrong_subject_is_reported() {
 #[test]
 fn publishing_a_merged_subject_writes_only_that_subjects_claims() {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
 
     for (subject, text) in [("alpha", "about alpha"), ("beta", "about beta")] {
         git_tree::write_subject(
@@ -125,7 +128,8 @@ fn publishing_a_merged_subject_writes_only_that_subjects_claims() {
 #[test]
 fn a_v0_6_published_file_still_verifies_and_is_retired_on_republish() {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
     let subject = SubjectRef::Local(Rkey::from("bug-42"));
     let claim = signed(&identity, "bug-42", "written before the rename");
 
@@ -145,7 +149,8 @@ fn a_v0_6_published_file_still_verifies_and_is_retired_on_republish() {
     // only the naming convention changed.
     let rt = tokio::runtime::Runtime::new().unwrap();
     let results = rt.block_on(async {
-        let id = Identity::load_or_create(&dir.path().join("reader-id")).unwrap();
+        let id = Identity::generate();
+        id.save(&dir.path().join("reader-id")).unwrap();
         let log = kan::store::log::Log::open_or_create(&dir.path().join("reader-log"), &id)
             .await
             .unwrap();
@@ -192,7 +197,8 @@ fn a_v0_6_published_file_still_verifies_and_is_retired_on_republish() {
 #[test]
 fn publishing_does_not_retire_a_colliding_subjects_file() {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
 
     // `telos_x` has a genuine v0.6 file of its own.
     let neighbour = SubjectRef::Local(Rkey::from("telos_x"));
@@ -240,7 +246,8 @@ fn publishing_does_not_retire_a_colliding_subjects_file() {
 #[test]
 fn a_mixed_subject_legacy_file_is_not_authenticated() {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
 
     // Two subjects that both map to `telos_x.md` under the v0.6 scheme.
     let a = signed(&identity, "telos/x", "record about telos/x");
@@ -257,7 +264,8 @@ fn a_mixed_subject_legacy_file_is_not_authenticated() {
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let results = rt.block_on(async {
-        let id = Identity::load_or_create(&dir.path().join("reader-id")).unwrap();
+        let id = Identity::generate();
+        id.save(&dir.path().join("reader-id")).unwrap();
         let log = kan::store::log::Log::open_or_create(&dir.path().join("reader-log"), &id)
             .await
             .unwrap();
@@ -873,9 +881,11 @@ fn a_seed_rooted_workspace_is_not_re_minted_when_its_log_is_cleared() {
 /// B4 from the fourth review: reads and writes must resolve the **same**
 /// identity in a workspace holding both a seed and a key file.
 ///
-/// `sign::existing_identity` (reads: `--trust me`, `--trust roles`, `restore`)
-/// checked the key file first; `load_or_create_for_workspace` (writes) checks
-/// the seed first. Wherever both existed the two disagreed, and the symptom
+/// The retired `sign::existing_identity` (reads: `--trust me`, `--trust
+/// roles`, `restore`) checked the key file first; the retired
+/// `load_or_create_for_workspace` (writes) checked the seed first. Both were
+/// deleted by v0.12 REQ-3.5 (#183) once `workspace_identity` replaced them
+/// with a single order; this test is what pins that they cannot re-diverge. Wherever both existed the two disagreed, and the symptom
 /// was the one this milestone exists to end: `kan identity did` naming one
 /// identity while `--trust me` folded under another and reported "no claims"
 /// against a full log.
@@ -938,7 +948,7 @@ fn reads_and_writes_resolve_the_same_identity() {
 ///
 /// The previous round said "the caller named a key and that key is not there;
 /// refusing is the only safe answer" — but refusal ran through
-/// `refuse_second_identity`, which needs evidence. In the documented CI /
+/// `refuse_second_identity` (retired, #183), which needs evidence. In the documented CI /
 /// agent / `day` configuration (ADR-42) the primary identity lives *outside*
 /// `.kan/`, so with an empty log there is no evidence at all: kan minted a
 /// fresh key at the missing role's path and signed with it.

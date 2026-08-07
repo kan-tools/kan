@@ -14,132 +14,128 @@
 //! (2) cannot be reproduced in-process — it needs two differently-signed
 //! binaries and a GUI — so what is tested here is the escape hatch that makes
 //! it survivable: an explicit key file that never touches the keychain.
+//!
+//! **Rewritten by v0.12 REQ-3.5 (#183).** These tests reached
+//! `Identity::load_or_create`, which `src/` no longer calls, and they drove it
+//! through `KAN_IDENTITY_FILE` — which REQ-2 demoted from "redefine this
+//! workspace's identity" to a *selection*. The properties are unchanged and
+//! still worth asserting; what changed is that they are now asserted against
+//! the functions the product actually uses (`workspace_identity`,
+//! `signing_identity`), so they can fail when those break.
 
-use kan::sign::{Identity, IDENTITY_FILE_ENV};
+use kan::sign::{signing_identity, workspace_identity, Identity, Selection};
 
 /// REQ-5, axis 1: a checkout that moves keeps its identity.
 ///
-/// The identity-id file travels with `.kan/`, so the keychain account name
-/// travels with it too.
+/// Asserted against `workspace_identity`, which is the single precedence order
+/// both reads and writes now share (REQ-1/REQ-4) — so this covers `kan
+/// identity did` and `--trust me` at once rather than one of them.
+///
+/// Hermetic by construction: the workspace is rooted in a key file inside
+/// `.kan/`, so no keychain is consulted on any platform and the test cannot
+/// depend on the developer's own login keychain.
 #[test]
 fn a_moved_checkout_keeps_its_did() {
     let root = tempfile::tempdir().unwrap();
-    let before_dir = root.path().join("before");
-    std::fs::create_dir_all(&before_dir).unwrap();
+    let before = root.path().join("before/.kan");
 
-    // Use the explicit-file path so this test is hermetic: it must not touch
-    // (or depend on) the developer's real OS keychain.
-    let key_file = before_dir.join("identity");
-    let did_before = {
-        temp_env_var(IDENTITY_FILE_ENV, Some(key_file.as_os_str()), || {
-            Identity::load_or_create(&before_dir.join("identity"))
-                .unwrap()
-                .did()
-        })
-    };
+    let original = Identity::generate();
+    original.save(&before.join("identity")).unwrap();
 
-    let after_dir = root.path().join("after");
-    std::fs::rename(&before_dir, &after_dir).unwrap();
+    let did_before = workspace_identity(&before)
+        .unwrap()
+        .expect("a workspace holding a key file must resolve an identity")
+        .did();
 
-    let moved_key_file = after_dir.join("identity");
-    let did_after = temp_env_var(IDENTITY_FILE_ENV, Some(moved_key_file.as_os_str()), || {
-        Identity::load_or_create(&after_dir.join("identity"))
-            .unwrap()
-            .did()
-    });
+    let after = root.path().join("after/.kan");
+    std::fs::create_dir_all(after.parent().unwrap()).unwrap();
+    std::fs::rename(before.parent().unwrap(), after.parent().unwrap()).unwrap();
+
+    let did_after = workspace_identity(&after)
+        .unwrap()
+        .expect("the moved workspace must still resolve an identity")
+        .did();
 
     assert_eq!(
         did_before, did_after,
         "moving a checkout must not silently mint a new identity -- every \
          prior claim would drop out of every read under Solo trust"
     );
+    assert_eq!(
+        original.did(),
+        did_after,
+        "and it must be the SAME key, not merely a stable one -- a resolver \
+         that consistently returned the wrong identity would satisfy the \
+         comparison above"
+    );
 }
 
-/// REQ-5, axis 2: the escape hatch is real. With the override set, the
+/// REQ-5, axis 2: the escape hatch is real. With a key file selected, the
 /// keychain is never consulted, so no ACL prompt can block — the property CI,
 /// containers, MCP servers and `day` (ADR-42) depend on.
+///
+/// **The selection no longer creates the key** (REQ-2): a selection naming
+/// something absent is always an error, never a mint. So the key is written
+/// first and the assertion is that the selection *uses* it, which is what the
+/// escape hatch was ever about.
 #[test]
 fn the_explicit_key_file_is_used_and_is_stable() {
     let dir = tempfile::tempdir().unwrap();
+    let kan_dir = dir.path().join(".kan");
     let key_file = dir.path().join("ci-key");
 
-    let first = temp_env_var(IDENTITY_FILE_ENV, Some(key_file.as_os_str()), || {
-        Identity::load_or_create(&dir.path().join("unused-identity"))
-            .unwrap()
-            .did()
-    });
+    let expected = Identity::generate();
+    expected.save(&key_file).unwrap();
 
-    assert!(
-        key_file.exists(),
-        "the override path must be where the key actually lands"
+    let selection = Selection::KeyFile(key_file.clone());
+    let first = signing_identity(&kan_dir, &selection)
+        .unwrap()
+        .expect("a selection naming an existing key must resolve it")
+        .did();
+
+    assert_eq!(
+        expected.did(),
+        first,
+        "the selected key file must be the one that signs"
     );
     assert!(
-        !dir.path().join("unused-identity").exists(),
-        "with the override set, the default location must not be written at all"
+        !kan_dir.join("identity").exists(),
+        "with a key file selected, the workspace's own location must not be written at all"
+    );
+    assert!(
+        !kan_dir.join("seed").exists() && !kan_dir.join("seed-id").exists(),
+        "and no root seed may be created either -- resolution has no side effects (AC-8)"
     );
 
-    let second = temp_env_var(IDENTITY_FILE_ENV, Some(key_file.as_os_str()), || {
-        Identity::load_or_create(&dir.path().join("unused-identity"))
-            .unwrap()
-            .did()
-    });
+    let second = signing_identity(&kan_dir, &selection)
+        .unwrap()
+        .expect("resolution must be repeatable")
+        .did();
     assert_eq!(first, second, "the same key file must yield the same DID");
 }
 
-/// A file holding a private key must not be world-readable. This repo's own
-/// `.kan/identity` shipped as `0644`, so the check runs on load as well as
-/// save — an existing loose file gets tightened rather than merely not
-/// re-loosened.
+/// A file holding a private key must not be world-readable.
+///
+/// **The repair-on-load half of this test was deleted by v0.12 REQ-3.5**, and
+/// the deletion is the point rather than a casualty. It asserted that loading
+/// an existing `0644` key file tightened it to `0600` — a *read* changing a
+/// file's permissions, which is exactly one of the three violations
+/// `.design/v0.12-milestone.md` AC-8 required to go, and which #183 confirmed
+/// by execution no longer happens.
+///
+/// What remains is the half that is still true and still load-bearing:
+/// anything **kan itself writes** is owner-only. A key file kan did not write
+/// is the operator's to chmod, and kan will no longer silently reach into it.
 #[cfg(unix)]
 #[test]
-fn the_key_file_is_owner_only_and_loose_permissions_are_repaired() {
+fn a_key_file_kan_writes_is_owner_only() {
     use std::os::unix::fs::PermissionsExt;
 
     let dir = tempfile::tempdir().unwrap();
-    let key_file = dir.path().join("key");
+    let key_file = dir.path().join("nested/key");
 
-    temp_env_var(IDENTITY_FILE_ENV, Some(key_file.as_os_str()), || {
-        Identity::load_or_create(&dir.path().join("identity")).unwrap();
-    });
+    Identity::generate().save(&key_file).unwrap();
+
     let mode = std::fs::metadata(&key_file).unwrap().permissions().mode();
     assert_eq!(mode & 0o777, 0o600, "a freshly written key must be 0600");
-
-    // Loosen it the way a pre-v0.7 kan would have left it, then load again.
-    let mut perms = std::fs::metadata(&key_file).unwrap().permissions();
-    perms.set_mode(0o644);
-    std::fs::set_permissions(&key_file, perms).unwrap();
-
-    temp_env_var(IDENTITY_FILE_ENV, Some(key_file.as_os_str()), || {
-        Identity::load_or_create(&dir.path().join("identity")).unwrap();
-    });
-    let mode = std::fs::metadata(&key_file).unwrap().permissions().mode();
-    assert_eq!(
-        mode & 0o777,
-        0o600,
-        "loading an existing world-readable key file must tighten it"
-    );
-}
-
-/// Serializes every env-var manipulation in this binary. Rust runs tests in
-/// one process on parallel threads, so without this the tests clobber each
-/// other's `KAN_IDENTITY_FILE` and read each other's keys — which is exactly
-/// what happened the first time these were run.
-static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// Set an env var for the duration of `f`, then restore it. Tests in one
-/// binary share a process, so leaking this would silently redirect every
-/// later test's identity.
-fn temp_env_var<T>(key: &str, value: Option<&std::ffi::OsStr>, f: impl FnOnce() -> T) -> T {
-    let _serialized = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let previous = std::env::var_os(key);
-    match value {
-        Some(v) => unsafe { std::env::set_var(key, v) },
-        None => unsafe { std::env::remove_var(key) },
-    }
-    let out = f();
-    match previous {
-        Some(v) => unsafe { std::env::set_var(key, v) },
-        None => unsafe { std::env::remove_var(key) },
-    }
-    out
 }
