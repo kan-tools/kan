@@ -1591,7 +1591,15 @@ fn related_subjects_by_file(
         .iter()
         .flat_map(|c| c.claims.iter().cloned())
         .collect();
-    let edges = relations::compute_default(&all_claims, git);
+    // ONLY the provider whose edges this function keeps. `compute_default`
+    // also runs `GitAncestry`, which spawns `git merge-base --is-ancestor`
+    // per distinct commit pair -- over every live claim in the workspace,
+    // because a same-file relation is inherently cross-subject -- and the
+    // loop below then discards 100% of what that bought. Measured at 141
+    // SECONDS on day's 12 MB log, against 72 ms for `show --json`, which
+    // never calls this at all (#181). The whole difference was one call.
+    let providers: [&dyn relations::RelationProvider; 1] = [&relations::GitSameFile];
+    let edges = relations::compute_all(&all_claims, git, &providers);
     let mine: std::collections::HashSet<&Cid> =
         subject_view.claims.iter().map(|(cid, _)| cid).collect();
 
