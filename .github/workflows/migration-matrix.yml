@@ -50,7 +50,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tags: ${{ steps.tags.outputs.json }}
+      cells: ${{ steps.cells.outputs.json }}
       reader: ${{ steps.hash.outputs.reader }}
+      harness: ${{ steps.hash.outputs.harness }}
       rustc: ${{ steps.hash.outputs.rustc }}
     steps:
       - uses: actions/checkout@v4
@@ -72,23 +74,55 @@ jobs:
           echo "matrix: $json"
 
       - id: hash
-        name: Hash the reader side of the key
+        name: Hash the reader and the harness
         run: |
-          # The *reader* is what changes: this build. Hashing the modules that
-          # decide how a workspace is opened and an identity resolved means a
-          # change there invalidates every cell, and nothing else does. A
-          # released tag is immutable, so the writer side of each cell is
-          # already pinned by its commit sha.
-          reader=$(cat src/sign.rs src/workspace.rs src/store/log.rs \
-                       src/store/index.rs src/transport/git_tree.rs \
-                       scripts/run-migration-cell.sh \
+          # DERIVED, NOT CURATED. This used to hash a hand-written list of five
+          # source files -- and it omitted `src/claim.rs` and `src/fold/`, so a
+          # change to how a claim DECODES invalidated nothing and every cell
+          # served a stale `ok`. That is this milestone's own lesson (where an
+          # enumeration keeps missing entries, derive it) applied to a cache
+          # key: `HEAD:src` is git's tree object for the whole directory, so
+          # there is no list to keep up to date. Docs-only commits still hit
+          # the cache, which is most of this repo's churn.
+          reader=$(printf '%s-%s' "$(git rev-parse HEAD:src)" \
+                                  "$(git rev-parse HEAD:Cargo.lock)" \
                    | sha256sum | cut -d' ' -f1)
+
+          # THE HARNESS IS ITS OWN KEY COMPONENT: "what we currently consider a
+          # correct migration". The cell script was already folded into the
+          # reader hash; the WORKFLOW was not, so strengthening the checks in
+          # this file invalidated nothing. Splitting it out is what makes the
+          # table self-refilling: strengthen the harness, the hash moves once,
+          # every cell re-measures under the new definition, and the next tag
+          # is cheap again.
+          harness=$(printf '%s-%s' \
+                      "$(git rev-parse HEAD:scripts/run-migration-cell.sh)" \
+                      "$(git rev-parse HEAD:.github/workflows/migration-matrix.yml)" \
+                    | sha256sum | cut -d' ' -f1)
+
           echo "reader=$reader" >> "$GITHUB_OUTPUT"
+          echo "harness=$harness" >> "$GITHUB_OUTPUT"
           echo "rustc=$(rustc --version | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "reader=$reader harness=$harness"
+
+      - id: cells
+        name: Decide which (platform, mode) cells this event runs
+        run: |
+          # The keychain axis needs a real Secret Service, which only the macOS
+          # runner has -- and macOS minutes bill at ten times Linux. So PRs run
+          # the two Linux modes and a tag or a manual dispatch runs all three.
+          # Stated here rather than silently: a PR's green matrix does NOT
+          # cover the keychain plane.
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            echo 'json=[{"os":"ubuntu-latest","mode":"identity-file"},{"os":"ubuntu-latest","mode":"seed"}]' >> "$GITHUB_OUTPUT"
+            echo "::notice title=matrix scope::PR run -- Linux modes only; the keychain plane is not covered here."
+          else
+            echo 'json=[{"os":"ubuntu-latest","mode":"identity-file"},{"os":"ubuntu-latest","mode":"seed"},{"os":"macos-latest","mode":"keychain"}]' >> "$GITHUB_OUTPUT"
+          fi
 
   matrix:
     needs: plan
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.cell.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -98,7 +132,14 @@ jobs:
         # short-circuits the other two -- so seed-rooting had never been run
         # against an older workspace, and #146's defect lived where no cell
         # could reach it.
-        mode: [identity-file, seed]
+        #
+        # `keychain` is the third, added because the first two share a blind
+        # spot: on Linux there is no Secret Service, so BOTH degrade to a
+        # plaintext key on disk and the OS-keychain plane -- where #90, #96,
+        # #107, #170 and #180 all lived -- had never been executed by any
+        # cell, on any version. The mode implies its platform, so (tag, mode)
+        # still identifies a row uniquely.
+        cell: ${{ fromJSON(needs.plan.outputs.cells) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -117,8 +158,9 @@ jobs:
         with:
           path: migration-outcome.txt
           key: >-
-            kan-migration-v2-${{ matrix.mode }}-${{ steps.writer.outputs.sha
-            }}-${{ needs.plan.outputs.reader }}-${{ needs.plan.outputs.rustc }}
+            kan-migration-v3-${{ matrix.cell.mode }}-${{ steps.writer.outputs.sha
+            }}-${{ needs.plan.outputs.reader }}-${{ needs.plan.outputs.harness
+            }}-${{ needs.plan.outputs.rustc }}
 
       - uses: dtolnay/rust-toolchain@stable
         if: steps.cached.outputs.cache-hit != 'true'
@@ -158,34 +200,64 @@ jobs:
           scripts/run-migration-cell.sh \
             /tmp/writer/target/release/kan \
             "$PWD/target/release/kan" \
-            "${{ matrix.mode }}" > migration-outcome.txt
+            "${{ matrix.cell.mode }}" > migration-outcome.txt
           cat migration-outcome.txt
 
       - name: Report the actual outcome, then compare against the expectation
         run: |
           outcome=$(cat migration-outcome.txt)
           # Skip comment lines, then take the outcome and its recorded reason.
-          expected=$(awk -v t="${{ matrix.tag }}" -v m="${{ matrix.mode }}" \
+          expected=$(awk -v t="${{ matrix.tag }}" -v m="${{ matrix.cell.mode }}" \
                      -F'\t' '!/^#/ && $1==t && $2==m {print $3}' \
                      tests/fixtures/migration-expectations.tsv)
-          why=$(awk -v t="${{ matrix.tag }}" -v m="${{ matrix.mode }}" \
+          why=$(awk -v t="${{ matrix.tag }}" -v m="${{ matrix.cell.mode }}" \
                 -F'\t' '!/^#/ && $1==t && $2==m {print $4}' \
                 tests/fixtures/migration-expectations.tsv)
 
           # The actual result is reported unconditionally, before any
           # comparison: the table is checked against reality, never a
           # substitute for it.
-          echo "::notice title=${{ matrix.tag }} (${{ matrix.mode }})::actual=$outcome expected=${expected:-<none>}"
+          echo "::notice title=${{ matrix.tag }} (${{ matrix.cell.mode }})::actual=$outcome expected=${expected:-<none>}"
           {
             printf '| %s | `%s` | `%s` | `%s` | %s |\n' \
-              "${{ matrix.tag }}" "${{ matrix.mode }}" "$outcome" "${expected:-—}" "${why:-—}"
+              "${{ matrix.tag }}" "${{ matrix.cell.mode }}" "$outcome" "${expected:-—}" "${why:-—}"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ -z "$expected" ]; then
-            echo "::error::${{ matrix.tag }} (${{ matrix.mode }}) has no committed expectation. Add a row to tests/fixtures/migration-expectations.tsv -- what this build does with an older version's workspace is a decision, not a default."
+            echo "::error::${{ matrix.tag }} (${{ matrix.cell.mode }}) has no committed expectation. Add a row to tests/fixtures/migration-expectations.tsv -- what this build does with an older version's workspace is a decision, not a default."
             exit 1
           fi
           if [ "$outcome" != "$expected" ]; then
-            echo "::error::${{ matrix.tag }} (${{ matrix.mode }}): expected '$expected', got '$outcome'. A change in this build moved what it does with an older workspace. Recorded reason for the expectation: ${why:-none given}. If the move is intended, update the outcome AND its reason in the same commit that changed the behaviour -- and be sure 'intended' is not 'ok' quietly becoming 'claims-lost'."
+            echo "::error::${{ matrix.tag }} (${{ matrix.cell.mode }}): expected '$expected', got '$outcome'. A change in this build moved what it does with an older workspace. Recorded reason for the expectation: ${why:-none given}. If the move is intended, update the outcome AND its reason in the same commit that changed the behaviour -- and be sure 'intended' is not 'ok' quietly becoming 'claims-lost'."
+            exit 1
+          fi
+
+          # A PREDICTION MAY NOT SURVIVE ITS OWN MEASUREMENT.
+          #
+          # Rows written at release time say "PREDICTED at cut time ...
+          # confirmed or corrected at the next release". Three of them
+          # (v0.9.2, v0.10.0, v0.11.0) were measured twice over and still said
+          # PREDICTED, because nothing failed when the confirmation step was
+          # skipped -- so in that file a prediction was indistinguishable from
+          # a measurement, and the table under-reported its own confidence.
+          #
+          # This closes it structurally rather than by ritual: if the cell
+          # actually EXECUTED this run (not a cache hit) and the row still
+          # calls itself a prediction, that is an error with a one-line fix.
+          # Same philosophy as "a tag with no row is an error, not a pass".
+          # Anchored on a LEADING status token rather than a substring
+          # search. The first version grepped for `PREDICTED` anywhere in the
+          # reason and so fired on rows whose text merely said "was PREDICTED
+          # at cut time, now measured" -- a gate that cannot tell a claim from
+          # a reference to one. The `why` column therefore starts with
+          # MEASURED or PREDICTED, which also makes each row state its own
+          # confidence in its first word.
+          case "$why" in
+            PREDICTED*) predicted=yes ;;
+            *)          predicted=no  ;;
+          esac
+          if [ "${{ steps.cached.outputs.cache-hit }}" != 'true' ] \
+             && [ "$predicted" = yes ]; then
+            echo "::error::${{ matrix.tag }} (${{ matrix.cell.mode }}) is recorded as PREDICTED, but this run MEASURED it as '$outcome'. Replace the prediction with the measurement (and this run's id) in tests/fixtures/migration-expectations.tsv. A prediction that is never converted is indistinguishable from a measurement, which is how three rows stayed 'PREDICTED' across two releases that had already confirmed them."
             exit 1
           fi
 

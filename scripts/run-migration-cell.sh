@@ -18,7 +18,19 @@
 #   unwritable        the tag builds but could not create a workspace here
 #   claims-lost       this build sees fewer claims than the old binary wrote
 #   identity-changed  claims are present but excluded by trust (the #90 shape)
+#   claims-altered    the right NUMBER of claims, but not the same claims --
+#                     the CID set moved, so a body, author or subject changed
+#                     under a migration that reported success
+#   keychain-blocked  the read never returned: a keychain entry created by the
+#                     writer is ACL'd to that binary, so the reader waits on an
+#                     authorization prompt nobody answers (#96). A hang is not
+#                     a pass and is not a crash, so it gets its own word.
 set -uo pipefail
+
+# How long the reader may take before a hang is called a hang. Generous: a
+# cold index rebuild over a small log is well under a second, and #96's wait
+# is unbounded, so anything in between is not ambiguous.
+READ_TIMEOUT="${READ_TIMEOUT:-120}"
 
 OLD_BIN="${1:?usage: run-migration-cell.sh <old-kan-binary> <new-kan-binary> [mode]}"
 NEW_BIN="${2:?usage: run-migration-cell.sh <old-kan-binary> <new-kan-binary> [mode]}"
@@ -69,6 +81,23 @@ case "$MODE" in
     # versions that do not simply fall back to a plaintext `.kan/identity`,
     # which is equally fine here -- the point is a workspace, not which path
     # produced it.
+    #
+    # NAMING A PATH THAT DOES NOT EXIST STOPPED BEING A WAY TO CREATE ONE.
+    # This mode used to point the variable at `$work/key` and rely on the
+    # WRITER minting it. Every released writer does. v0.12's REQ-2 made a
+    # selection naming an absent target an error on principle -- never a mint,
+    # never a fallback -- so from v0.12 on, a writer driven this way writes
+    # NOTHING and the cell scores `unwritable`.
+    #
+    # `unwritable` is a legitimate recorded outcome, so that would not have
+    # gone red. The axis would simply have stopped testing anything, quietly,
+    # for every writer from v0.12 onward -- which is #146's finding exactly:
+    # a harness that drives one shape cannot see a defect that lives in the
+    # other. Caught before v0.12 shipped, by running the current build as a
+    # writer by hand.
+    #
+    # So the key is made to EXIST first, by whatever means the writer of the
+    # day supports, and only then named on both sides. See `seed_the_key_file`.
     export KAN_IDENTITY_FILE="$work/key"
     ;;
   seed)
@@ -78,6 +107,24 @@ case "$MODE" in
     # on-disk result.
     export KAN_NO_KEYCHAIN=1
     ;;
+  keychain)
+    # The plane no cell has ever run, and the one every identity defect has
+    # lived on: #90, #96, #107, #170 and #180.
+    #
+    # Neither side names a key file and the keychain is NOT disabled, so the
+    # writer files its secret in the OS keychain and the reader must find it
+    # there. On Linux there is no Secret Service and this degrades to the
+    # plaintext path, which is why this mode is only scheduled on macOS.
+    #
+    # EXPECT THIS TO BLOCK, and that is the measurement rather than a broken
+    # cell. Writer and reader are different binaries, so the entry's
+    # trusted-application ACL does not match on the second one and macOS
+    # raises an authorization prompt no CI runner can answer. That is #96, and
+    # recording it as `keychain-blocked` turns it from an anecdote into a
+    # migration outcome with a row in the table.
+    unset KAN_IDENTITY_FILE
+    unset KAN_NO_KEYCHAIN
+    ;;
   *)
     say "unknown mode: $MODE"
     echo "unwritable"
@@ -85,14 +132,76 @@ case "$MODE" in
     ;;
 esac
 
+# Make the selected key EXIST before the writer is asked to use it.
+#
+# Two routes, because which one works depends on the writer's vintage, and
+# the harness must not silently lose the axis when the first stops working
+# (see the identity-file note above).
+seed_the_key_file() {
+  target="$1"
+  scratch="$(mktemp -d)"
+  (
+    cd "$scratch" || exit 1
+    git init -q .
+    git -c user.email=matrix@example.com -c user.name=matrix commit -q --allow-empty -m init
+    # This scratch workspace exists ONLY to mint a key file, so it must not
+    # touch the OS keychain: an entry here would be junk that outlives the
+    # run, and on macOS reaching for one is #96 -- the hang this harness is
+    # trying to measure, fired somewhere it would just look like a broken
+    # cell. Not setting this is what made the first version of route 2 fail.
+    export KAN_NO_KEYCHAIN=1
+    # And it must NOT inherit the selection the caller just exported. The mode
+    # block sets KAN_IDENTITY_FILE to the very path being created, so leaving
+    # it set makes route 2's own `commit_identity` resolve a selection whose
+    # target does not exist yet and fail with SelectionMissing -- the command
+    # that exists to create the key refusing because the key is not there.
+    unset KAN_IDENTITY_FILE
+    # Route 1: pre-v0.12 writers mint at a named-but-absent path.
+    KAN_IDENTITY_FILE="$target" "$OLD_BIN" observe seed --subject seed \
+      >/dev/null 2>>"$scratch/seed.log"
+    if [ ! -f "$target" ]; then
+      # Route 2: v0.12+ refuses to mint from a selection (REQ-2), so ask for a
+      # key deliberately. `role add` is the supported way to create one.
+      "$OLD_BIN" identity role add matrix --key "$target" \
+        >/dev/null 2>>"$scratch/seed.log"
+    fi
+  )
+  if [ ! -f "$target" ] && [ -s "$scratch/seed.log" ]; then
+    say "--- key seeding failed; writer said: ---"
+    tail -5 "$scratch/seed.log" >&2
+  fi
+  rm -rf "$scratch"
+  [ -f "$target" ]
+}
+
+if [ "$MODE" = identity-file ]; then
+  if seed_the_key_file "$KAN_IDENTITY_FILE"; then
+    say "seeded the selected key file at $KAN_IDENTITY_FILE"
+  else
+    say "could not create a key file with this writer by any supported route"
+    echo unwritable
+    exit 0
+  fi
+fi
+
 # `--subject` rather than a positional: the positional form only arrived in
 # v0.7.1 (Wave 1, ADR-53), and this script has to drive every released
 # version, including the ones that predate it.
+#
+# STDOUT IS CAPTURED RATHER THAN DISCARDED, because a write verb prints the
+# CID it just appended. Those CIDs are what make an integrity check possible
+# at all: kan is content-addressed, so equal CIDs before and after mean
+# byte-identical claim content -- no need for a richer corpus to detect a
+# corrupted body.
 wrote=0
+written_cids=""
 for i in 1 2 3; do
-  if "$OLD_BIN" observe "claim number $i written by the old binary" \
-       --subject "migration-subject" >/dev/null 2>&1; then
+  if out="$("$OLD_BIN" observe "claim number $i written by the old binary" \
+              --subject "migration-subject" 2>/dev/null)"; then
     wrote=$((wrote + 1))
+    cid="$(printf '%s\n' "$out" | grep -oE '^baf[a-z0-9]+$' | head -1)"
+    [ -n "$cid" ] && written_cids="$written_cids$cid
+"
   fi
 done
 
@@ -137,7 +246,29 @@ fi
 
 # Now the upgrade: this build, same workspace, no migration command run. The
 # whole point is that opening it is enough.
-out="$("$NEW_BIN" show migration-subject --json 2>/dev/null)"
+#
+# Under a DEADLINE, because on the keychain axis the failure mode is a hang
+# rather than an error: an entry the writer created is ACL'd to the writer's
+# binary, so the reader waits on an authorization prompt that never comes
+# (#96). `timeout(1)` is GNU and absent from a stock macOS runner, so this is
+# done with a background job and a watchdog instead of assuming coreutils.
+read_out="$work/read.json"
+"$NEW_BIN" show migration-subject --json >"$read_out" 2>/dev/null &
+reader_pid=$!
+( sleep "$READ_TIMEOUT"; kill -9 "$reader_pid" 2>/dev/null ) >/dev/null 2>&1 &
+watchdog_pid=$!
+if wait "$reader_pid" 2>/dev/null; then reader_rc=0; else reader_rc=$?; fi
+kill "$watchdog_pid" 2>/dev/null
+wait "$watchdog_pid" 2>/dev/null
+
+# 137 = SIGKILL: the watchdog fired, so the read never returned on its own.
+if [ "$reader_rc" -eq 137 ]; then
+  say "the read did not return within ${READ_TIMEOUT}s -- blocked, not failed"
+  echo "keychain-blocked"
+  exit 0
+fi
+
+out="$(cat "$read_out" 2>/dev/null)"
 if [ -z "$out" ]; then
   say "this build produced no output for the migrated workspace"
   echo "claims-lost"
@@ -162,6 +293,37 @@ fi
 if [ "$visible" -lt "$wrote" ]; then
   echo "claims-lost"
   exit 0
+fi
+
+# INTEGRITY, not just arithmetic. Until now this script compared two integers
+# and nothing else -- so a migration that preserved three claims while
+# corrupting every one of their bodies scored `ok`. kan is content-addressed,
+# which makes the strong check cheap: if the CID set the reader sees equals
+# the CID set the writer produced, every claim is byte-identical, including
+# its author, subject, kind and text.
+#
+# Conditional on having captured the writer's CIDs: the oldest tags may print
+# something this cannot parse. Where that happens the count check still
+# applies and the weaker coverage is SAID rather than assumed -- a silent
+# downgrade would be the table claiming a guarantee it did not check.
+if [ -n "$written_cids" ]; then
+  expected="$(printf '%s' "$written_cids" | grep -c . || true)"
+  if [ "$expected" -eq "$wrote" ]; then
+    read_cids="$(printf '%s' "$out" \
+      | python3 -c 'import json,sys; print("\n".join(sorted(c["cid"] for c in json.load(sys.stdin)["claims"])))' \
+      2>/dev/null)"
+    want="$(printf '%s' "$written_cids" | grep . | sort)"
+    if [ "$read_cids" != "$want" ]; then
+      say "CID set moved: the claim count survived but the claims did not"
+      echo "claims-altered"
+      exit 0
+    fi
+    say "integrity: all $wrote claim CIDs match what the writer produced"
+  else
+    say "integrity: only $expected of $wrote CIDs were parseable -- count check only"
+  fi
+else
+  say "integrity: writer printed no parseable CIDs -- count check only"
 fi
 
 echo "ok"
