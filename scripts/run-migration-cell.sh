@@ -260,12 +260,28 @@ if [ "$MODE" = keychain ]; then
     echo "keychain-unused"
     exit 0
   fi
-  if [ ! -f .kan/seed-id ] && [ ! -f .kan/identity-id ]; then
-    say "keychain mode left neither a plaintext secret nor a keychain pointer"
-    echo "unwritable"
-    exit 0
+  # NO PLAINTEXT IS THE SIGNAL. A POINTER FILE IS NOT.
+  #
+  # The first version of this treated "no plaintext AND no pointer" as
+  # `unwritable`, which turned five tags (v0.2.0..v0.6.0) red for a layout
+  # that is working correctly. Those versions predate `.kan/identity-id`
+  # entirely: the keychain account was derived from the canonicalized
+  # `.kan/identity` PATH, so the secret went into the keychain leaving no
+  # pointer at all. That is exactly the scheme v0.7's REQ-5 replaced, because
+  # a path-derived account meant a moved checkout silently minted a new DID.
+  #
+  # So a guard added to stop a false green produced a false red, on the
+  # oldest and least-exercised layout in the corpus. The sound inference is
+  # the simple one: if no plaintext secret exists, the secret is in the
+  # keychain, because there is nowhere else for it to be.
+  pointer="$(ls .kan/seed-id .kan/identity-id 2>/dev/null | tr '\n' ' ')"
+  if [ -n "$pointer" ]; then
+    say "keychain confirmed in use, pointer: $pointer"
+  else
+    say "keychain confirmed in use with NO pointer file -- the pre-v0.7.1"
+    say "path-derived account scheme. This is the legacy layout, exercised here"
+    say "for the first time by any cell."
   fi
-  say "keychain confirmed in use: $(ls .kan/seed-id .kan/identity-id 2>/dev/null | tr '\n' ' ')"
 fi
 
 # Point the reader at whatever key the *writer* actually used.
