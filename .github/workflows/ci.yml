@@ -12,6 +12,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # BEFORE the build: neither check needs a toolchain, and a sub-second
+      # text check should not cost a full build+test cycle to learn about.
+      #
+      # The self-test runs FIRST and is the point. A checker that has silently
+      # stopped detecting things is worse than no checker -- it converts an
+      # unchecked area into one that merely looks checked, which is exactly
+      # what the first version of this script did while its own header claimed
+      # otherwise. The fixture proves each defect class is still caught before
+      # any repository result is believed.
+      - run: ./scripts/check-citations.sh --self-test
+      - run: ./scripts/check-citations.sh
+
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --all-targets
       - run: cargo test --workspace

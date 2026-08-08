@@ -148,7 +148,7 @@ in the cases where today's answer is already wrong.
 **`src/fold/trust.rs`** holds `TrustBase` (`Solo { trusted }`,
 `PeerContested { weights }`) plus `SELF_ALIAS` (`me`) and `ROLES_ALIAS`
 (`roles`). `Local` joins them as a third variant. `TrustBase::trusts(author)`
-is the single predicate the fold consults (`trust.rs:166`), so `Local`'s
+is the single predicate the fold consults (`src/fold/trust.rs::trusts`), so `Local`'s
 membership test lands there. Because `Local` is defined over the claim set
 rather than over a stored author, the variant carries the author set computed
 at fold entry rather than a reference to the workspace.
@@ -185,7 +185,7 @@ takes the read-only workspace instead. `status`, `show`, `show_all_json`,
 **`src/cli/mod.rs`** and **`src/mcp.rs`** carry the `--trust` surface and its
 MCP mirror. REQ-5's `role:<name>` spelling parses in `Workspace::trust_from`,
 which is the only layer that reads `.kan/roles` — `fold` never reads a file
-(`trust.rs:44-47`).
+(`src/fold/trust.rs::TrustBase`).
 
 **`.kan/roles`** (`sign.rs:ROLES_FILE`) survives for the one thing it uniquely
 holds: the binding from a `did:key:…` to a human name. Membership becomes
