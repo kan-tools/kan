@@ -36,7 +36,7 @@ recovery.
 - REQ-3: Restore refuses, writing nothing, when the local identity's DID
   (`sign::Identity::did`, `src/sign.rs::did`) does not match the author of the
   `.claims/` records it is asked to restore. The message names the recovery
-  phrase (`kan identity restore`, `src/cli/mod.rs:759`) as the fix. This is
+  phrase (`kan identity restore`, `src/cli/mod.rs::IdentityAction`) as the fix. This is
   the "identity recovery gates log recovery" rule (#93) enforced at the one
   place it bites, and it is the #90 failure ("a binary upgrade silently mints
   a new identity, taking the whole log out of every read") made loud instead
@@ -56,7 +56,7 @@ recovery.
   published) — computed by comparing the fold's live claims per subject
   against `git_tree::published_subjects` (`src/transport/git_tree.rs:900`).
   It surfaces in both `actions::status` (`src/actions.rs:1088`) and
-  `actions::status_json` (`src/actions.rs:1392`). This is the kan-native move:
+  `actions::status_json` (`src/actions.rs::status_json`). This is the kan-native move:
   make the gap **data**, a column, not a nag or a hook — the same shape as
   `context`'s omission reporting, the tool refusing to let a partial picture
   look complete.
@@ -119,7 +119,7 @@ enclave/escrow shape it lands on:
   log recovery.
 - IREQ-2 (one secret reproduces the DID): restore is only a restore if one
   escrowed secret reproduces the exact signing DID. This holds today
-  (`sign::from_recovery_phrase` → `did`, `src/sign.rs:485`). Every #105
+  (`sign::from_recovery_phrase` → `did`, `src/sign.rs::from_recovery_phrase`). Every #105
   candidate resolution — enclave-held derived key, escrowed master seed, device
   key + escrowed identity — must preserve it; a design under which the phrase
   cannot reproduce the DID breaks REQ-2 outright.
@@ -167,7 +167,7 @@ placement key is the content's own signed identity, never a name derived from
 it. Same author → `log/repo.car` (restore). Different author → the overlay
 (ingest). The overlay is a second store beside `log/`; the simplest honest form
 is a separate CAR (`.kan/overlay.car`) folded in alongside `log/` by
-`Workspace::open` (`src/workspace.rs:53`), with the index rebuilt over the
+`Workspace::open` (`src/workspace.rs::open`), with the index rebuilt over the
 union — the index is already disposable and rebuilt from the log on open, so
 extending its input set is the small change, not a new persistence model. The
 overlay is the local shard of the future AppView, so nothing here is undone when
@@ -190,7 +190,7 @@ against `.claims/`: `git_tree::published_subjects` (`src/transport/git_tree.rs:9
 returns the published set. The state is a pure comparison — live-claim CIDs per
 subject vs. the CIDs present in that subject's `.claims/` file — yielding
 `unpublished` / `published` / `stale`. It threads into the existing per-subject
-render (`write_state`) and the JSON path (`status_json`, `src/actions.rs:1392`).
+render (`write_state`) and the JSON path (`status_json`, `src/actions.rs::status_json`).
 No new claim, no new fold: this is a read projection over data kan already holds,
 which is squarely kan-owned under ADR-18.
 

@@ -32,15 +32,24 @@ parse() {
 # answer is unreachable unless a control with known failures reproduces
 # exactly -- the probe that shipped before this printed "safe to trust"
 # unconditionally, on the line after the check.
-if [ "${1:-}" = --verify ]; then
-  control=$(printf 'test result: ok. 10 passed; 0 failed; 0 ignored\ntest result: FAILED. 3 passed; 2 failed; 0 ignored\n' | parse)
-  if [ "$control" = "13 2 2" ]; then
-    echo "parser verified against a 13-passed/2-failed control: discriminates"
-    exit 0
-  fi
-  echo "PARSER BROKEN: control returned '$control', expected '13 2 2'"
-  exit 1
-fi
+#
+# Any argument other than a recognised one is an error rather than a silent
+# fall-through to the slow path: `-verify` used to run the whole suite while
+# the caller waited for a one-line answer.
+case "${1:-}" in
+  "") ;;
+  --verify)
+    control=$(printf 'test result: ok. 10 passed; 0 failed; 0 ignored\ntest result: FAILED. 3 passed; 2 failed; 0 ignored\n' | parse)
+    if [ "$control" = "13 2 2" ]; then
+      echo "parser verified against a 13-passed/2-failed control: discriminates"
+      exit 0
+    fi
+    echo "PARSER BROKEN: control returned '$control', expected '13 2 2'"
+    exit 1 ;;
+  *)
+    echo "unknown argument: $1 (expected --verify or nothing)" >&2
+    exit 2 ;;
+esac
 
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
@@ -56,12 +65,35 @@ clippy_out=$(cargo clippy --workspace --all-targets -- -D warnings 2>&1); clippy
 [ "$fmt_rc" -eq 0 ]    && fmt="clean"    || fmt="DIRTY"
 [ "$clippy_rc" -eq 0 ] && clippy="clean" || clippy="WARNINGS"
 
-echo "\`$(git rev-parse --abbrev-ref HEAD)\` at \`$(git rev-parse --short HEAD)\`. \
-${passed} tests, clippy ${clippy}, fmt ${fmt}."
+# A ZERO DENOMINATOR IS NOT A PASS. If nothing produced a `test result:` line
+# -- a build failure, a filter that matched nothing, a harness change -- then
+# "0 tests" is the absence of a measurement, not a measurement of zero.
+if [ "$lines" -eq 0 ]; then
+  echo "no test result lines parsed (cargo exit ${test_rc}) -- refusing to report a count" >&2
+  tail -20 "$log" >&2
+  exit 1
+fi
 
-if [ "$failed" -ne 0 ] || [ "$test_rc" -ne 0 ]; then
+# THE TESTS FIELD MUST DISCLOSE ITS OWN FAILURE, in the line itself. It was the
+# only field that did not: two failures rendered as a bare "105 tests" while
+# clippy and fmt correctly rendered WARNINGS and DIRTY, and the warning sat
+# BELOW the line most likely to be copied. A footnote saying "do not paste the
+# line above" is a discipline; putting the failure inside the line is a
+# construction.
+if [ "$failed" -ne 0 ]; then tests="${passed} tests (${failed} FAILING)"; else tests="${passed} tests"; fi
+
+# A dirty tree attributes its numbers to a commit that did not produce them.
+dirty=""
+[ -n "$(git status --porcelain 2>/dev/null)" ] && dirty=" +uncommitted changes"
+
+echo "\`$(git rev-parse --abbrev-ref HEAD)\` at \`$(git rev-parse --short HEAD)\`${dirty}. \
+${tests}, clippy ${clippy}, fmt ${fmt}."
+
+if [ "$failed" -ne 0 ] || [ "$test_rc" -ne 0 ] || [ "$fmt_rc" -ne 0 ] || [ "$clippy_rc" -eq 1 ]; then
   echo
-  echo "NOT A CLEAN TREE: ${failed} failing across ${lines} result lines (cargo exit ${test_rc})."
-  echo "Do not paste the line above into a status block as though it were green."
+  echo "NOT A CLEAN TREE. Diagnostics:" >&2
+  [ "$fmt_rc" -ne 0 ] && printf '%s\n' "$fmt_out" | head -20 >&2
+  [ "$clippy_rc" -ne 0 ] && printf '%s\n' "$clippy_out" | grep -E "^(error|warning)" | head -20 >&2
+  [ "$failed" -ne 0 ] && grep -E "^(test .* FAILED|---- .* stdout)" "$log" | head -20 >&2
   exit 1
 fi
