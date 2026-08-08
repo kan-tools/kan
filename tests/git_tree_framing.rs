@@ -77,7 +77,8 @@ fn hostile_texts() -> Vec<(&'static str, String)> {
 #[test]
 fn every_hostile_text_round_trips_byte_exactly() {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
 
     let mut broken = Vec::new();
     for (label, text) in hostile_texts() {
@@ -119,7 +120,8 @@ fn every_hostile_text_round_trips_byte_exactly() {
 #[test]
 fn a_separator_in_prose_does_not_tear_a_multi_record_file() {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
 
     let claims: Vec<_> = [
         "ordinary first claim",
@@ -157,7 +159,8 @@ fn a_separator_in_prose_does_not_tear_a_multi_record_file() {
 #[test]
 fn a_future_format_version_is_named_rather_than_misreported() {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
     let record = git_tree::to_record(&signed(&identity, "hello")).unwrap();
 
     let bumped = record.replacen("\"v\": 2", "\"v\": 99", 1);
@@ -181,7 +184,8 @@ fn a_future_format_version_is_named_rather_than_misreported() {
 #[test]
 fn a_version_one_record_without_a_declared_length_still_reads() {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
     let claim = signed(&identity, "written by an older kan");
     let expected = kan::cid::content_cid(&claim.content).unwrap();
 
@@ -240,7 +244,8 @@ fn subjects_differing_only_in_case_get_different_files() {
 #[test]
 fn publishing_two_colliding_subjects_keeps_both() {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
 
     for name in ["telos/legible-process", "telos_legible-process"] {
         let mut claim = signed(&identity, &format!("claim about {name}"));

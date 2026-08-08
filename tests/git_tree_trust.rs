@@ -42,7 +42,8 @@ fn signed(identity: &Identity, subject: &str, text: &str) -> kan::claim::Claim {
 #[test]
 fn each_forged_field_is_rejected_by_name() {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
     let record =
         git_tree::to_record(&signed(&identity, "bug-42", "an ordinary observation")).unwrap();
 
@@ -87,7 +88,8 @@ fn each_forged_field_is_rejected_by_name() {
 #[test]
 fn deleting_a_record_is_reported() {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
     let subject = SubjectRef::Local(Rkey::from("bug-42"));
 
     let claims: Vec<_> = ["first", "second", "third"]
@@ -120,7 +122,8 @@ fn deleting_a_record_is_reported() {
 #[test]
 fn an_intact_file_reports_no_missing_records() {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
     let subject = SubjectRef::Local(Rkey::from("bug-42"));
     let claims: Vec<_> = ["first", "second"]
         .iter()
@@ -144,7 +147,8 @@ fn read_all_at(
 ) -> Vec<Result<(atproto_dasl::Cid, kan::claim::Claim), git_tree::Error>> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        let identity = Identity::load_or_create(&root.join("reader-identity")).unwrap();
+        let identity = Identity::generate();
+        identity.save(&root.join("reader-identity")).unwrap();
         let log = kan::store::log::Log::open_or_create(&root.join("reader-log"), &identity)
             .await
             .unwrap();

@@ -48,7 +48,8 @@ fn git_repo() -> tempfile::TempDir {
 #[tokio::test]
 async fn retract_rejects_another_authors_claim_at_write_time() {
     let dir = git_repo();
-    let identity = Identity::load_or_create(&dir.path().join(".kan/identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join(".kan/identity")).unwrap();
     let mut log = Log::open_or_create(&dir.path().join(".kan/log"), &identity)
         .await
         .unwrap();
@@ -132,7 +133,8 @@ async fn retract_rejects_another_authors_claim_at_write_time() {
 #[tokio::test]
 async fn reject_writes_a_rejects_claim_against_another_authors_claim() {
     let dir = git_repo();
-    let identity = Identity::load_or_create(&dir.path().join(".kan/identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join(".kan/identity")).unwrap();
     let mut log = Log::open_or_create(&dir.path().join(".kan/log"), &identity)
         .await
         .unwrap();
@@ -192,7 +194,8 @@ async fn reject_writes_a_rejects_claim_against_another_authors_claim() {
 #[tokio::test]
 async fn reject_refuses_the_callers_own_claim() {
     let dir = git_repo();
-    let identity = Identity::load_or_create(&dir.path().join(".kan/identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join(".kan/identity")).unwrap();
     let mut log = Log::open_or_create(&dir.path().join(".kan/log"), &identity)
         .await
         .unwrap();

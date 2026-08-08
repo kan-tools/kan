@@ -37,7 +37,8 @@ fn content(identity: &Identity, text: &str) -> ClaimContent {
 /// Build a log with `n` claims and hand back its directory.
 async fn seeded(n: usize) -> (tempfile::TempDir, Identity, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
     let log_dir = dir.path().join("log");
     let mut log = Log::open_or_create(&log_dir, &identity).await.unwrap();
     for i in 0..n {

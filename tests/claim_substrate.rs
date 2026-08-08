@@ -207,7 +207,8 @@ async fn subject_claim_round_trips_through_the_log() {
 async fn log_reopens_and_preserves_prior_claims() {
     let dir = tempfile::tempdir().unwrap();
     let log_path = dir.path().join("log");
-    let identity = Identity::load_or_create(&dir.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
 
     let claim_cid = {
         let mut log = Log::open_or_create(&log_path, &identity).await.unwrap();

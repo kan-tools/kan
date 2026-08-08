@@ -1,18 +1,36 @@
-//! REQ-14..16: `Identity::load_or_create` tries the OS keychain first,
-//! falling back to (and migrating from) the plaintext file. These
-//! assertions are written to hold regardless of which backend actually
-//! engages on the machine running the test — CI (`ubuntu-latest`, per
-//! `.github/workflows/ci.yml`) has no Secret Service daemon by default, so
-//! it exercises the real fallback path (AC-9); local dev on macOS
-//! typically has a real keychain, exercising the primary path. The one
-//! test that specifically distinguishes the two branches
-//! (`keychain_or_plaintext_fallback_both_work_non_interactively`) checks
-//! the CLI's actual observed behavior rather than assuming which branch
-//! ran, so it's meaningful either way.
+//! What a brand-new workspace leaves at rest, checked through the binary.
+//!
+//! **Three tests were deleted here by v0.12 REQ-3.5 (#183), not moved.** They
+//! were `load_or_create_is_idempotent_across_separate_calls`,
+//! `a_migrated_plaintext_identity_is_removed_once_the_keychain_holds_it` and
+//! `a_different_key_plaintext_file_survives_a_keychain_hit`, and all three
+//! asserted the plaintext→keychain migration that REQ-1 removed from the
+//! resolution path and REQ-3 retired as a feature (`kan identity protect` is
+//! the deliberate way in now). They exercised `Identity::load_or_create`,
+//! which `src/` no longer calls.
+//!
+//! One of them had a second problem worth recording, because it is the
+//! milestone's own theme: `a_different_key_plaintext_file_survives_a_keychain_hit`
+//! **self-skipped whenever no keychain served the entry** — `load_or_create`,
+//! then `if path.exists() { return; }` with nothing asserted before it — so on
+//! `ubuntu-latest`, which has no Secret Service, it returned early every run
+//! having asserted nothing at all.
+//!
+//! *Corrected by a cold review, which is the point of having one.* The first
+//! version of this note claimed **two of four** deleted tests never executed
+//! their assertions. Both numbers were wrong: **three** tests were deleted (the
+//! fourth survives, below), and only **one** asserts nothing before returning.
+//! `a_migrated_plaintext_identity_is_removed_once_the_keychain_holds_it` runs
+//! three assertions on CI before and inside its early-return branch. Overstating
+//! what was verified is the exact failure `atom/adversarial-review` names, and
+//! it is worse in a note whose subject is tests that do not check what they claim.
+//!
+//! What remains is the test that was always the valuable one, because it goes
+//! through the **binary** rather than the library and therefore asserts what a
+//! user actually gets. REQ-3.1 turns it into the canary of
+//! `.design/identity-at-rest.md` AC-3.1.
 
 use std::process::Command;
-
-use kan::sign::Identity;
 
 fn git_repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -37,136 +55,6 @@ fn git_repo() -> tempfile::TempDir {
         "init",
     ]);
     dir
-}
-
-#[test]
-fn load_or_create_is_idempotent_across_separate_calls() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("identity");
-
-    let first = Identity::load_or_create(&path).unwrap();
-    let second = Identity::load_or_create(&path).unwrap();
-    assert_eq!(first.did(), second.did());
-}
-
-/// A pre-existing plaintext identity is migrated in (read correctly, same
-/// DID) and the plaintext copy is then **removed** — reversing ADR-25's
-/// choice to keep it.
-///
-/// ADR-25 kept it as a fallback, with the effect that every migrated identity
-/// retained an unprotected copy of the same 32 bytes beside the protected one
-/// — world-readable at 0644 on this author's own machine. The keychain
-/// therefore imposed its full cost and protected nothing: "encryption at
-/// rest" only ever held for identities generated fresh after ADR-25, not for
-/// any that were migrated. Removing the copy is what makes the default
-/// actually encrypted at rest (ADR-48).
-///
-/// The deletion is conditional on reading the secret back and confirming it
-/// matches, because deleting the sole remaining copy of a signing key on the
-/// strength of a write that returned `Ok` is not a trade worth making.
-///
-/// Skipped where no keychain is available (headless CI, no Secret Service):
-/// there the plaintext file is the only store and must stay.
-#[test]
-fn a_migrated_plaintext_identity_is_removed_once_the_keychain_holds_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("identity");
-
-    let original = Identity::generate();
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    original.save(&path).unwrap();
-    assert!(path.exists());
-
-    let loaded = Identity::load_or_create(&path).unwrap();
-    assert_eq!(
-        original.did(),
-        loaded.did(),
-        "migration must preserve the identity -- a new DID would drop every \
-         existing claim out of every read"
-    );
-
-    if path.exists() {
-        // No keychain here, so the file is the only copy and correctly kept.
-        // Assert the fallback still round-trips rather than silently passing.
-        let reloaded = Identity::load_or_create(&path).unwrap();
-        assert_eq!(original.did(), reloaded.did());
-        return;
-    }
-
-    // Keychain served it: the unprotected copy is gone, and the identity is
-    // still reachable without it.
-    let reloaded = Identity::load_or_create(&path).unwrap();
-    assert_eq!(
-        original.did(),
-        reloaded.did(),
-        "the identity must survive deletion of the plaintext copy -- if it \
-         does not, that copy was load-bearing and must not have been removed"
-    );
-    assert!(
-        !path.exists(),
-        "the plaintext copy must not be recreated on a later load"
-    );
-}
-
-/// #112 (the D-B negative control): a plaintext file holding a **different**
-/// key than the keychain's must **survive** a keychain hit.
-///
-/// PR #109 fixed the keychain-hit deletion guard to read the file and delete
-/// it only if its bytes equal the keychain's, replacing the tautology
-/// `bytes == import(bytes).export()` that never read the file. Every existing
-/// test exercises the *matching* (migration) deletion; none asserted the
-/// discriminating behaviour that is the whole point — that a non-matching file
-/// is kept. The tautology passed precisely because nothing distinguished, so
-/// this is the test that fails when the guard is inverted (delete-when-
-/// different), which for a signing key is the worst outcome: deleting a key
-/// the keychain does not hold.
-///
-/// Environment-gated exactly like the migration test: it can only run where a
-/// real keychain serves the entry (so the deletion branch is even reached).
-/// On a machine with no Secret Service (headless CI) the first load keeps the
-/// file, the keychain-hit branch never runs, and the test skips.
-#[test]
-fn a_different_key_plaintext_file_survives_a_keychain_hit() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("identity");
-
-    // First load establishes the keychain entry (and, where a keychain
-    // exists, removes any plaintext copy). Its DID is what the keychain holds.
-    let keychain_identity = Identity::load_or_create(&path).unwrap();
-
-    if path.exists() {
-        // No keychain here: the file is the only store and the keychain-hit
-        // deletion branch never runs. Nothing to discriminate — skip.
-        return;
-    }
-
-    // Keychain serves the identity. Drop a *different* key's file beside it.
-    let other = Identity::generate();
-    assert_ne!(
-        keychain_identity.did(),
-        other.did(),
-        "the two identities must differ for this to test anything"
-    );
-    other.save(&path).unwrap();
-    assert!(path.exists());
-
-    // Load again: keychain hit returns its own identity; the file holds a
-    // different key, so the guard must KEEP it (delete only on a byte match).
-    let loaded = Identity::load_or_create(&path).unwrap();
-    assert_eq!(
-        keychain_identity.did(),
-        loaded.did(),
-        "the keychain is authoritative on a hit; the stray file must not shadow it"
-    );
-    assert!(
-        path.exists(),
-        "a plaintext file holding a DIFFERENT key than the keychain must survive — deleting it \
-         would destroy a key the keychain does not hold (the D-B false-positive delete)"
-    );
-    // And the surviving file is untouched: still the other key, not rewritten.
-    let from_file = Identity::load_or_create(&path).unwrap();
-    assert_eq!(keychain_identity.did(), from_file.did());
-    assert!(path.exists());
 }
 
 /// AC-9: with no OS keychain available (simulated / CI), `kan` still works

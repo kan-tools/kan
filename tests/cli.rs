@@ -734,7 +734,7 @@ fn naming_nudge_is_silent_for_a_genuinely_different_subject() {
     assert!(ok);
     // Not asserting stderr is entirely empty: headless/CI environments
     // print an unrelated (and correct) keychain-fallback warning here
-    // (`sign::Identity::load_or_create`) that has nothing to do with the
+    // (`sign::Seed::create`) that has nothing to do with the
     // naming nudge -- check specifically for the nudge's own absence.
     assert!(
         !err.contains("looks similar to existing subject"),

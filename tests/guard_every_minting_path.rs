@@ -141,8 +141,10 @@ fn assert_read_still_works(dir: &Path, key: Option<&Path>, no_keychain: bool) {
 ///
 /// `identity-id` is what makes this the *reported* case rather than the
 /// seed-rooting one — its presence means the keychain has been used for this
-/// workspace, so `load_or_create_for_workspace` reads the workspace as
-/// non-fresh and hands off to `load_or_create`, which is where the hole was.
+/// workspace, so the retired `load_or_create_for_workspace` read the
+/// workspace as non-fresh and handed off to `load_or_create`, which is where
+/// the hole was. Both were deleted by REQ-3.5 (#183); the hole is closed by
+/// construction now, and this test is the negative control that says so.
 #[test]
 fn no_keychain_cannot_mint_against_a_non_empty_log() {
     let (dir, _key) = workspace_with_claims();

@@ -62,7 +62,8 @@ fn a_concurrent_merge_never_silently_loses_a_claim() {
     let root = tempfile::tempdir().unwrap();
     let repo = root.path().join("repo");
     std::fs::create_dir_all(&repo).unwrap();
-    let identity = Identity::load_or_create(&root.path().join("identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&root.path().join("identity")).unwrap();
     let subject = SubjectRef::Local(Rkey::from("shared"));
 
     git(&repo, &["init", "-q", "."]);

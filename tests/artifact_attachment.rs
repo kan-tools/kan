@@ -52,7 +52,8 @@ fn head_sha(dir: &std::path::Path) -> String {
 }
 
 async fn open_workspace(dir: &std::path::Path) -> Workspace {
-    let identity = Identity::load_or_create(&dir.join(".kan/identity")).unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.join(".kan/identity")).unwrap();
     let log = Log::open_or_create(&dir.join(".kan/log"), &identity)
         .await
         .unwrap();
