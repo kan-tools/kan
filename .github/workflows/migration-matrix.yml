@@ -132,7 +132,7 @@ jobs:
             echo 'json=[{"os":"ubuntu-latest","mode":"identity-file"},{"os":"ubuntu-latest","mode":"seed"}]' >> "$GITHUB_OUTPUT"
             echo "::notice title=matrix scope::PR run -- Linux modes only; the keychain plane is not covered here."
           else
-            echo 'json=[{"os":"ubuntu-latest","mode":"identity-file"},{"os":"ubuntu-latest","mode":"seed"},{"os":"macos-latest","mode":"keychain"}]' >> "$GITHUB_OUTPUT"
+            echo 'json=[{"os":"ubuntu-latest","mode":"identity-file"},{"os":"ubuntu-latest","mode":"seed"},{"os":"macos-latest","mode":"keychain"},{"os":"macos-latest","mode":"keychain-recovery"}]' >> "$GITHUB_OUTPUT"
           fi
 
   matrix:

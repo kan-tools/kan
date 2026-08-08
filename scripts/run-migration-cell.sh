@@ -21,6 +21,15 @@
 #   claims-altered    the right NUMBER of claims, but not the same claims --
 #                     the CID set moved, so a body, author or subject changed
 #                     under a migration that reported success
+#   fix-route-missing the documented remedy for this cell's failure does not
+#                     exist in this build yet. Recorded rather than omitted, so
+#                     the table says a remedy is OWED rather than staying silent.
+#   fix-route-blocked the remedy is itself blocked by the condition it exists to
+#                     remedy -- `unprotect` must READ the keychain to move the
+#                     secret out of it, and reading is what #96 prevents. If a
+#                     cell ever produces this, the exit from the trap is inside
+#                     the trap and that is a design finding, not a flaky run.
+#   fix-route-failed  the remedy ran and returned non-zero.
 #   identity-unresolvable
 #                     the claims fold, but this build cannot resolve an
 #                     identity for the workspace at all -- so it cannot sign
@@ -53,6 +62,28 @@ NEW_BIN="${2:?usage: run-migration-cell.sh <old-kan-binary> <new-kan-binary> [mo
 MODE="${3:-identity-file}"
 
 say() { echo "$@" >&2; }
+
+# THE KEYCHAIN MODES REFUSE TO RUN ON A DEVELOPER MACHINE.
+#
+# They deliberately unset KAN_NO_KEYCHAIN, so they write to the REAL login
+# keychain and can block on an authorization prompt. Every operational note in
+# this project says not to do that outside CI, and the author of this guard ran
+# `keychain-recovery` locally minutes after telling two reviewers not to. The
+# run was harmless only because the keychain write happened to fail.
+#
+# A rule that its own author breaks within the hour is a rule that wanted to be
+# a guard. CI sets CI=true; a human who genuinely means it can set
+# KAN_ALLOW_KEYCHAIN_CELL=1.
+case "${MODE:-}" in
+  keychain|keychain-recovery)
+    if [ -z "${CI:-}" ] && [ -z "${KAN_ALLOW_KEYCHAIN_CELL:-}" ]; then
+      say "refusing: mode '$MODE' uses the REAL OS keychain and can block on an"
+      say "authorization prompt. It is meant for CI. Set KAN_ALLOW_KEYCHAIN_CELL=1"
+      say "if you genuinely intend to write to your login keychain."
+      echo "refused-locally"
+      exit 0
+    fi ;;
+esac
 
 # Absolute, because this script cds into a scratch workspace and a relative
 # binary path would silently stop resolving there -- which presents as
@@ -121,6 +152,21 @@ case "$MODE" in
     # plaintext anyway on a machine with no keychain, which is the same
     # on-disk result.
     export KAN_NO_KEYCHAIN=1
+    ;;
+  keychain-recovery)
+    # DOES THE DOCUMENTED FIX ROUTE ACTUALLY WORK?
+    #
+    # The `keychain` mode records that upgrading a keychain-rooted workspace
+    # BLOCKS (#96). A table that records a failure and never tests its remedy
+    # tells half the story -- and the remedy is the part a user actually needs,
+    # so it is the part most worth knowing is broken.
+    #
+    # Same setup as `keychain`; the difference is what happens after the block.
+    # The reader attempts `kan identity unprotect`, which is REQ-3.3's exit for
+    # a grandfathered workspace, and the cell records whether that command
+    # exists and whether it succeeds.
+    unset KAN_IDENTITY_FILE
+    unset KAN_NO_KEYCHAIN
     ;;
   keychain)
     # The plane no cell has ever run, and the one every identity defect has
@@ -262,7 +308,7 @@ say "old binary wrote $wrote claim(s)"
 #
 # So the secret's location is checked directly. A keychain-held secret leaves
 # a POINTER and no plaintext; a degraded one leaves the plaintext.
-if [ "$MODE" = keychain ]; then
+if [ "$MODE" = keychain ] || [ "$MODE" = keychain-recovery ]; then
   if [ -f .kan/seed ] || [ -f .kan/identity ]; then
     say "keychain mode degraded to a plaintext secret -- this writer either predates"
     say "keychain support or the runner's keychain was unreachable. NOT a keychain test."
@@ -382,6 +428,42 @@ say "this build sees $visible claim(s), $excluded excluded by trust"
 # routes through `commit_identity` (src/cli/mod.rs::IdentityAction), which is
 # the same path a post-upgrade write takes. Under the same deadline, because
 # on the keychain axis this is where a #96 block would actually surface.
+# THE REMEDY, ATTEMPTED BEFORE THE IDENTITY PROBE, so what the probe measures
+# is the state a user would be in AFTER following the documented advice rather
+# than before it.
+if [ "$MODE" = keychain-recovery ]; then
+  if ! "$NEW_BIN" identity unprotect --help >/dev/null 2>&1; then
+    say "the documented fix route does not exist in this build"
+    echo "fix-route-missing"
+    exit 0
+  fi
+  say "attempting the fix route: kan identity unprotect"
+  "$NEW_BIN" identity unprotect --yes >/dev/null 2>"$work/unprotect.err" &
+  fix_pid=$!
+  ( sleep "$READ_TIMEOUT"; kill -9 "$fix_pid" 2>/dev/null ) >/dev/null 2>&1 &
+  fix_watchdog=$!
+  if wait "$fix_pid" 2>/dev/null; then fix_rc=0; else fix_rc=$?; fi
+  kill "$fix_watchdog" 2>/dev/null; wait "$fix_watchdog" 2>/dev/null
+
+  if [ "$fix_rc" -eq 137 ]; then
+    # The sharpest outcome this harness can produce: the remedy for the block
+    # is itself blocked. `unprotect` must READ the keychain to move the secret
+    # out of it, and reading is what #96 prevents -- so the exit from the trap
+    # may be inside the trap.
+    say "the fix route itself did not return within ${READ_TIMEOUT}s:"
+    [ -s "$work/unprotect.err" ] && tail -10 "$work/unprotect.err" >&2
+    echo "fix-route-blocked"
+    exit 0
+  fi
+  if [ "$fix_rc" -ne 0 ]; then
+    say "the fix route failed:"
+    [ -s "$work/unprotect.err" ] && tail -10 "$work/unprotect.err" >&2
+    echo "fix-route-failed"
+    exit 0
+  fi
+  say "fix route completed; measuring the workspace it left behind"
+fi
+
 author="$(printf '%s' "$out" \
   | python3 -c 'import json,sys; c=json.load(sys.stdin)["claims"]; print(c[0]["author"] if c else "")' \
   2>/dev/null)"
@@ -395,7 +477,13 @@ if wait "$did_pid" 2>/dev/null; then did_rc=0; else did_rc=$?; fi
 kill "$did_watchdog" 2>/dev/null; wait "$did_watchdog" 2>/dev/null
 
 if [ "$did_rc" -eq 137 ]; then
-  say "resolving an identity did not return within ${READ_TIMEOUT}s"
+  say "resolving an identity did not return within ${READ_TIMEOUT}s. Its stderr:"
+  # kan prints its own slow-keychain warning after 1.5s
+  # (src/sign.rs::SlowKeychainWarning), and that warning names the cause. The
+  # first version of this branch discarded it -- so the log recorded THAT the
+  # read blocked and threw away the tool's own account of WHY, on the one axis
+  # added to observe keychain behaviour.
+  if [ -s "$work/did.err" ]; then tail -20 "$work/did.err" >&2; else say "  (nothing on stderr)"; fi
   if [ "$MODE" = keychain ]; then echo "keychain-blocked"; else echo "read-hung"; fi
   exit 0
 fi
