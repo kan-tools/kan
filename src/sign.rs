@@ -489,6 +489,254 @@ pub fn at_rest_all(kan_dir: &Path) -> Vec<AtRest> {
     .collect()
 }
 
+/// What `protect` or `unprotect` would do here — decided from files alone.
+///
+/// Pure, so it joins the derived cell table alongside the resolvers instead of
+/// being a hand-kept list of cases.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Plan {
+    /// Move the secret into the keychain. `stale_pointer` is a pointer file
+    /// that already exists for this secret kind and will be retired.
+    Protect {
+        from: AtRest,
+        stale_pointer: Option<&'static str>,
+    },
+    /// Move the secret out of the keychain into a `0600` file. `occupied` is a
+    /// destination file that already exists — the case AC-3.9 turns on.
+    Unprotect {
+        from: AtRest,
+        occupied: Option<&'static str>,
+    },
+    /// Already in the state asked for; nothing is written.
+    AlreadyThere(AtRest),
+    /// This workspace has no identity of its own to move.
+    NoIdentity,
+}
+
+/// [`Plan`] for `kan identity protect`.
+pub fn plan_protect(kan_dir: &Path) -> Plan {
+    match at_rest(kan_dir) {
+        AtRest::None_ => Plan::NoIdentity,
+        a if a.is_protected() => Plan::AlreadyThere(a),
+        from => Plan::Protect {
+            from,
+            // A pointer for this secret kind that already exists. Retired
+            // audibly rather than silently overwritten: orphaning a keychain
+            // entry is this codebase's accepted behaviour (`retire_seed` does
+            // it deliberately and the entry stays reachable in Keychain
+            // Access) — doing it without saying so is the part that was wrong.
+            stale_pointer: match from {
+                AtRest::SeedFile if kan_dir.join(SEED_ID_FILE).exists() => Some(SEED_ID_FILE),
+                AtRest::KeyFile if kan_dir.join(IDENTITY_ID_FILE).exists() => {
+                    Some(IDENTITY_ID_FILE)
+                }
+                _ => None,
+            },
+        },
+    }
+}
+
+/// [`Plan`] for `kan identity unprotect`.
+pub fn plan_unprotect(kan_dir: &Path) -> Plan {
+    match at_rest(kan_dir) {
+        AtRest::None_ => Plan::NoIdentity,
+        a if !a.is_protected() => Plan::AlreadyThere(a),
+        from => Plan::Unprotect {
+            from,
+            // The destination already holding something is the ONLY case that
+            // can destroy a secret in this design, and it is reachable from a
+            // state kan itself creates: ADR-53 keeps a plaintext copy exactly
+            // when it DIFFERS from the keychain. See `unprotect_to`.
+            occupied: match from {
+                AtRest::SeedKeychain if kan_dir.join(SEED_FILE).exists() => Some(SEED_FILE),
+                AtRest::KeyKeychain if kan_dir.join("identity").exists() => Some("identity"),
+                _ => None,
+            },
+        },
+    }
+}
+
+/// Which keychain service holds a given secret kind.
+fn service_for(a: AtRest) -> &'static str {
+    match a {
+        AtRest::SeedFile | AtRest::SeedKeychain => SEED_KEYCHAIN_SERVICE,
+        _ => KEYCHAIN_SERVICE,
+    }
+}
+
+/// The DID a secret of this kind derives, without installing it anywhere.
+fn did_of(kind: AtRest, bytes: &[u8]) -> Result<Did, Error> {
+    match kind {
+        AtRest::SeedFile | AtRest::SeedKeychain => {
+            let mut b = [0u8; 32];
+            if bytes.len() != 32 {
+                return Err(Error::Recovery(format!(
+                    "expected a 32-byte seed, got {} bytes",
+                    bytes.len()
+                )));
+            }
+            b.copy_from_slice(bytes);
+            Ok(Seed::from_entropy(b).signing_identity()?.did())
+        }
+        _ => Ok(Identity {
+            keypair: P256Keypair::import(bytes)?,
+        }
+        .did()),
+    }
+}
+
+/// **AC-3.9's whole substance, extracted from the executor so it can be
+/// tested.**
+///
+/// `unprotect` reads from the keychain, which is the plane no test can reach
+/// (#96) — so a guard living inside that read is a guard no test can exercise,
+/// and #112's history is precisely a guard that was never exercised because it
+/// was a tautology (`bytes == import(bytes).export()`, which never read the
+/// file). Taking the decision out and passing the bytes in is the same move
+/// that made `at_rest` derivable: the part that can be wrong becomes the part
+/// that is checked.
+///
+/// Refuses on a DIFFERENT secret, and refuses on an unreadable one. "I cannot
+/// tell whether this file holds a different identity" and "this file holds the
+/// same identity" are different answers; only the second permits a write.
+pub fn refuse_to_overwrite_a_different_secret(
+    dest: &Path,
+    incoming: &[u8],
+    kind: AtRest,
+    incoming_did: &Did,
+    account: &str,
+) -> Result<(), Error> {
+    if !dest.exists() {
+        return Ok(());
+    }
+    let existing = std::fs::read(dest)?;
+    if existing == incoming {
+        return Ok(());
+    }
+    // Deliberately NOT "keep the newer" or "keep both". The operator is the
+    // only one who knows which identity they mean, and choosing here destroys
+    // the other one silently.
+    let other = did_of(kind, &existing)
+        .map(|d| d.to_string())
+        .unwrap_or_else(|_| "an unreadable secret".to_string());
+    Err(Error::Recovery(format!(
+        "refusing to unprotect: {} already exists and holds a DIFFERENT secret.\n\n\
+         the keychain holds {incoming_did}\n\
+         that file holds  {other}\n\n\
+         Writing the keychain's copy over that file would destroy the only copy of the \
+         second identity, and any claims signed by it would drop out of every read. kan \
+         will not choose for you.\n\n\
+         Move that file aside if you want the keychain's identity, or delete the keychain \
+         entry ({account}) if you want the file's.",
+        dest.display()
+    )))
+}
+
+/// Execute `Plan::Unprotect`: move the secret from the keychain into a `0600`
+/// file, and **never write over a different one**.
+///
+/// **AC-3.9, and it is the only path in this design that can destroy a secret.**
+/// `.kan/identity` holding key A beside `.kan/identity-id` naming key B is not
+/// hypothetical — kan produces it deliberately, because ADR-53 deletes a
+/// plaintext copy only when it MATCHES the keychain and keeps it when it
+/// DIFFERS (which is what #112's negative control existed to protect).
+/// `identity-id` outranks `identity`, so B signs and A sits there as the only
+/// copy of another identity. Writing B over A and reporting success is the
+/// #90/#107 shape that CLAUDE.md's invariant forbids.
+///
+/// So: same bytes, proceed. Different, refuse naming both DIDs. **Cannot tell,
+/// refuse** — that is part of the rule rather than a fallback, because "I
+/// cannot tell whether this file holds a different identity" and "this file
+/// holds the same identity" are different answers and only one permits a write.
+pub fn unprotect_to(kan_dir: &Path, from: AtRest, dest_name: &str) -> Result<Did, Error> {
+    let account_file = from.file().expect("a protected state names a pointer file");
+    let account = std::fs::read_to_string(kan_dir.join(account_file))?
+        .trim()
+        .to_string();
+    let entry = keyring::Entry::new(service_for(from), &account).map_err(|e| {
+        Error::KeychainUnreachable {
+            detail: e.to_string(),
+        }
+    })?;
+    let _warn =
+        SlowKeychainWarning::start("reading this repo's secret to move it out of the keychain");
+    let bytes = entry.get_secret().map_err(|e| Error::KeychainUnreachable {
+        detail: e.to_string(),
+    })?;
+    let did = did_of(from, &bytes)?;
+
+    let dest = kan_dir.join(dest_name);
+    refuse_to_overwrite_a_different_secret(&dest, &bytes, from, &did, &account)?;
+
+    let restored = match from {
+        AtRest::SeedKeychain => {
+            let mut b = [0u8; 32];
+            b.copy_from_slice(&bytes);
+            Seed::from_entropy(b).save(&dest)?;
+            did_of(from, &bytes)?
+        }
+        _ => {
+            let identity = Identity {
+                keypair: P256Keypair::import(&bytes)?,
+            };
+            identity.save(&dest)?;
+            identity.did()
+        }
+    };
+    if restored != did {
+        return Err(Error::Recovery(
+            "the secret written to disk does not derive the DID the keychain's copy did -- \
+             refusing to retire the pointer, so nothing is lost."
+                .to_string(),
+        ));
+    }
+
+    // The pointer goes AFTER the write, never before: a failed write would
+    // otherwise leave the workspace with no identity at all.
+    std::fs::remove_file(kan_dir.join(account_file))?;
+    Ok(restored)
+}
+
+/// Execute `Plan::Protect`: move the secret into the keychain, verifying it
+/// round-trips before anything on disk is disturbed.
+pub fn protect_from(kan_dir: &Path, from: AtRest) -> Result<(Did, String), Error> {
+    let src = kan_dir.join(from.file().expect("an unprotected state names a file"));
+    let bytes = std::fs::read(&src)?;
+    let did = did_of(from, &bytes)?;
+
+    let account = fresh_account();
+    let entry = keyring::Entry::new(service_for(from), &account).map_err(|e| {
+        Error::KeychainUnreachable {
+            detail: e.to_string(),
+        }
+    })?;
+    let _warn = SlowKeychainWarning::start("storing this repo's secret in the keychain");
+    entry
+        .set_secret(&bytes)
+        .map_err(|e| Error::KeychainUnreachable {
+            detail: e.to_string(),
+        })?;
+
+    // Read back and compare BEFORE the plaintext is touched. A store that
+    // silently truncated would otherwise destroy the only copy.
+    let stored = entry.get_secret().map_err(|e| Error::KeychainUnreachable {
+        detail: e.to_string(),
+    })?;
+    if stored != bytes || did_of(from, &stored)? != did {
+        return Err(Error::Recovery(format!(
+            "the keychain did not return what was written to it (account {account}) -- \
+             refusing to go further. Nothing on disk has been changed."
+        )));
+    }
+
+    let pointer = match from {
+        AtRest::SeedFile => SEED_ID_FILE,
+        _ => IDENTITY_ID_FILE,
+    };
+    std::fs::write(kan_dir.join(pointer), &account)?;
+    Ok((did, account))
+}
+
 /// The keychain-held signing key for this workspace, if it has one.
 ///
 /// **Reads `.kan/identity-id`; never writes it.** The retired
