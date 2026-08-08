@@ -13,12 +13,15 @@
 # rather than about a tree from last week.
 #
 # THE TEST COUNT IS SUMMED FROM `test result:` LINES, and the parser is worth a
-# note because its predecessor was wrong: `grep -o` returns only the matched
-# substring, which shifts awk's fields, so `$5`/`$7` are the WORDS "passed;"
-# and "failed" rather than the numbers, and a string in arithmetic context is
-# zero. It reported "failed: 0" against a control containing two failures. The
-# fields here are `$4`/`$6`, and `--verify` proves that against a known control
-# before you trust a run.
+# note because the ad-hoc one it replaces was wrong. `grep -o` returns only the
+# matched substring, which shifts awk's fields: `$5`/`$7` are the WORDS
+# "passed;" and "failed" rather than the numbers, and a string in arithmetic
+# context is zero -- so it reported "failed: 0" against a control containing
+# two failures. That version was typed at a shell during v0.12 and never
+# committed; this file has always used `$4`/`$6`. Saying otherwise implied a
+# fix to a committed defect that does not exist in the history, which is the
+# same drift-between-prose-and-artifact this script is part of closing.
+# `--verify` proves the parser discriminates before a run is trusted.
 #
 # Usage:  scripts/status-line.sh [--verify]
 set -uo pipefail
@@ -57,6 +60,8 @@ trap 'rm -f "$log"' EXIT
 cargo test --workspace >"$log" 2>&1
 test_rc=$?
 read -r passed failed lines < <(parse <"$log")
+ignored=$(grep -oE "[0-9]+ ignored" "$log" | awk '{i+=$1} END {print i+0}')
+total=$((passed + failed + ignored))
 
 fmt_out=$(cargo fmt --all -- --check 2>&1); fmt_rc=$?
 clippy_out=$(cargo clippy --workspace --all-targets -- -D warnings 2>&1); clippy_rc=$?
@@ -80,7 +85,13 @@ fi
 # BELOW the line most likely to be copied. A footnote saying "do not paste the
 # line above" is a discipline; putting the failure inside the line is a
 # construction.
-if [ "$failed" -ne 0 ]; then tests="${passed} tests (${failed} FAILING)"; else tests="${passed} tests"; fi
+# REPORT THE TOTAL, not the passed count. "347 tests" meaning "347 passed"
+# diverges from the total the moment anything fails or is ignored -- and a
+# test count that quietly means something else is precisely the 347-vs-350
+# drift this script was written to stop.
+tests="${total} tests"
+[ "$failed" -ne 0 ] && tests="${tests} (${failed} FAILING)"
+[ "$ignored" -ne 0 ] && tests="${tests} (${ignored} ignored)"
 
 # A dirty tree attributes its numbers to a commit that did not produce them.
 dirty=""
@@ -89,7 +100,13 @@ dirty=""
 echo "\`$(git rev-parse --abbrev-ref HEAD)\` at \`$(git rev-parse --short HEAD)\`${dirty}. \
 ${tests}, clippy ${clippy}, fmt ${fmt}."
 
-if [ "$failed" -ne 0 ] || [ "$test_rc" -ne 0 ] || [ "$fmt_rc" -ne 0 ] || [ "$clippy_rc" -eq 1 ]; then
+# `-ne 0` on every clause. This one said `-eq 1`, and `cargo clippy -- -D
+# warnings` exits 101 -- so the gate never fired, the diagnostics block never
+# ran, and a tree with clippy warnings exited 0 while printing "clippy
+# WARNINGS". A verdict computed from the wrong constant is not computed; it
+# is printed with extra steps, which is the rule this script added and then
+# broke in the same commit.
+if [ "$failed" -ne 0 ] || [ "$test_rc" -ne 0 ] || [ "$fmt_rc" -ne 0 ] || [ "$clippy_rc" -ne 0 ]; then
   echo
   echo "NOT A CLEAN TREE. Diagnostics:" >&2
   [ "$fmt_rc" -ne 0 ] && printf '%s\n' "$fmt_out" | head -20 >&2

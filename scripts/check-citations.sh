@@ -4,8 +4,10 @@
 # WHY THIS EXISTS. A `file.rs:385` citation is a curated enumeration of
 # something derivable, and it rots the moment anything above it moves. v0.12
 # shipped six of them wrong in one PR -- verified when written, then
-# invalidated by a LATER COMMIT IN THE SAME PR that deleted ~476 lines above
-# them. No amount of care fixes that class, because the citation was correct
+# invalidated by a LATER COMMIT IN THE SAME PR that deleted 517 lines from
+# that file (the ~476 figure a first draft used was the NET of 517 deletions
+# against 41 insertions -- a citation moves by the net, but the sentence was
+# describing the deletion, so it was the wrong number for what it claimed). No amount of care fixes that class, because the citation was correct
 # when checked and wrong when merged. So it is checked mechanically, at the
 # tip, every time.
 #
@@ -29,8 +31,10 @@
 #   path/to/file.rs:385            positional -- existence and plausibility
 #   path/to/file.rs::symbol_name   symbolic   -- resolved to a real definition
 #
-# Symbolic citations cannot rot: `src/sign.rs::workspace_identity` names the
-# thing rather than where the thing currently sits. Positional ones are still
+# Symbolic citations do not rot the way line numbers do -- they resolve or
+# fail, rather than silently coming to mean something else. They are NOT
+# infallible: resolution is unscoped, so a symbol defined twice in one file
+# resolves to whichever definition exists without saying which was meant. Positional ones are still
 # accepted, because a line is sometimes genuinely what you mean, and are
 # checked only for plausibility -- which is all that is knowable without
 # guessing at intent, and is stated that way in the summary rather than
@@ -46,12 +50,20 @@ set -uo pipefail
 # That is what excludes `// mentions fn x`, `/// see \`fn x\``, and
 # `let s = "fn x"` -- all of which the previous plain grep accepted.
 definition_re() {
-  printf '^[[:space:]]*(pub([[:space:]]*\\([^)]*\\))?[[:space:]]+)?(async[[:space:]]+)?(unsafe[[:space:]]+)?(extern[[:space:]]+"[^"]*"[[:space:]]+)?(fn|struct|enum|trait|type|const|static|mod|union|macro_rules!)[[:space:]]+%s\\b' "$1"
+  # Qualifiers may stack in any of the orders rustc accepts, so they are each
+  # optional and independent rather than a fixed sequence. The first version
+  # put `const` only in the KEYWORD alternation, so `pub const fn x` consumed
+  # `const` and then demanded the symbol where `fn` sits -- `const fn`,
+  # `static mut` and `macro_rules!` were all UNRESOLVED. Caught by widening the
+  # self-test fixture to one citation per keyword branch, which is what that
+  # fixture is for.
+  local sym="${1%!}"
+  printf '^[[:space:]]*((pub([[:space:]]*\\([^)]*\\))?|default)[[:space:]]+)*((const|async|unsafe)[[:space:]]+)*(extern[[:space:]]+"[^"]*"[[:space:]]+)?(fn|struct|enum|trait|type|const|static([[:space:]]+mut)?|mod|union)[[:space:]]+%s\\b|^[[:space:]]*macro_rules![[:space:]]+%s\\b' "$sym" "$sym"
 }
 
 scan() {
   local -a files=("$@")
-  fail=0; checked_sym=0; checked_pos=0
+  fail=0; checked_sym=0; checked_pos=0; skipped_pos=0
 
   # ------------------------------------------------- symbolic: file::symbol
   local doc ref path sym
@@ -84,9 +96,15 @@ scan() {
   while IFS= read -r doc; do
     while IFS= read -r ref; do
       path="${ref%:*}"; line="${ref##*:}"
+      # `.md` is in this list because the most rot-prone line citation in the
+      # repo pointed into one: `docs/DECISIONS.md` is 4000+ lines and grows by
+      # ADR, and a citation into it was neither checked, counted, nor reported
+      # -- the `case` skipped before the counter, so it was invisible in both
+      # directions. That is B2's class surviving inside the branch that fixed
+      # B2, for anything outside the whitelist.
       case "$path" in
-        *.rs|*.toml|*.sh|*.yml|*.yaml) ;;
-        *) continue ;;
+        *.rs|*.toml|*.sh|*.yml|*.yaml|*.md) ;;
+        *) skipped_pos=$((skipped_pos + 1)); continue ;;
       esac
       checked_pos=$((checked_pos + 1))
       if [ ! -f "$path" ]; then
@@ -121,7 +139,16 @@ if [ "${1:-}" = --self-test ]; then
   [ -d "$fx" ] || { echo "self-test: fixture directory missing at $fx"; exit 1; }
   cd "$fx" || exit 1
 
-  bad_out=$(scan bad.md; :)
+  # THE VERDICT IS ASSERTED, NOT JUST THE FINDINGS. The first version grepped
+  # the OUTPUT and never consulted the exit status -- so a checker that
+  # detected all eight defects and then exited 0 passed it, and a cold review
+  # built exactly that by deleting the `fail=1` assignments: two rotten
+  # citations listed, a green summary printed under them, CI green.
+  #
+  # `status-line.sh --verify` asserts its verdict. This asserted only that the
+  # detector still prints. That asymmetry was the tell.
+  bad_out=$(scan bad.md; printf 'RC=%s' "$fail")
+  bad_rc="${bad_out##*RC=}"; bad_out="${bad_out%RC=*}"
   expected=(
     "src/real.rs::ghost_in_comment"        # mention inside a line comment
     "src/real.rs::doc_comment_symbol"      # mention inside a doc comment
@@ -137,8 +164,19 @@ if [ "${1:-}" = --self-test ]; then
     printf '%s\n' "$bad_out" | grep -qF -- "$e" || { echo "self-test: NOT DETECTED -> $e"; missed=1; }
   done
 
-  good_out=$(scan good.md; :)
+  if [ "$bad_rc" != "1" ]; then
+    echo "self-test: DETECTED the defects but did not FAIL on them (fail=$bad_rc)."
+    echo "           A checker that reports rot and exits 0 is a checker CI passes."
+    missed=1
+  fi
+
+  good_out=$(scan good.md; printf 'RC=%s' "$fail")
+  good_rc="${good_out##*RC=}"; good_out="${good_out%RC=*}"
   spurious=0
+  if [ "$good_rc" != "0" ]; then
+    echo "self-test: FAILED on citations that should resolve (fail=$good_rc)"
+    spurious=1
+  fi
   if [ -n "$(printf '%s\n' "$good_out" | tr -d '[:space:]')" ]; then
     echo "self-test: FALSE POSITIVES on citations that should resolve:"
     printf '%s\n' "$good_out"
@@ -146,7 +184,7 @@ if [ "${1:-}" = --self-test ]; then
   fi
 
   if [ "$missed" -eq 0 ] && [ "$spurious" -eq 0 ]; then
-    echo "self-test: all ${#expected[@]} defect classes detected, no false positives"
+    echo "self-test: ${#expected[@]} bad citations reported AND exit 1; good citations resolved AND exit 0"
     exit 0
   fi
   echo "self-test: FAILED -- this checker no longer detects what its header claims"
@@ -188,6 +226,7 @@ if [ "$fail" -eq 0 ]; then
   # pointing at a struct field invisible: positional citations are checked for
   # PLAUSIBILITY, never for meaning anything.
   echo "citations: $checked_sym symbolic resolved to definitions, $checked_pos positional in range and non-blank"
+  [ "$skipped_pos" -gt 0 ] && echo "           $skipped_pos positional citation(s) SKIPPED by extension -- not checked, not a pass"
   echo "           (positional citations are checked for plausibility, not for pointing at what the prose claims)"
 else
   echo "citations: FAILURES ABOVE ($checked_sym symbolic, $checked_pos positional checked)"

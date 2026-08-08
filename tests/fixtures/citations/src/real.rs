@@ -7,3 +7,11 @@ fn string_holder() {
 pub fn real_definition() {}
 struct RealStruct;
 const REAL_CONST: u8 = 0;
+
+pub enum RealEnum {}
+pub trait RealTrait {}
+pub type RealAlias = u8;
+pub mod real_mod {}
+pub static REAL_STATIC: u8 = 0;
+pub const fn const_fn_form() {}
+macro_rules! real_macro { () => {}; }
