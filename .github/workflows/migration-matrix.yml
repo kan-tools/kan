@@ -33,13 +33,22 @@ on:
       - "v*.*.*"
   pull_request:
     paths:
-      # A change to how a workspace is opened, an identity resolved, or a log
-      # read is exactly when this needs to run before merging rather than
-      # after tagging.
-      - "src/sign.rs"
-      - "src/workspace.rs"
-      - "src/store/**"
-      - "src/transport/**"
+      # DERIVED, NOT CURATED -- the whole of `src/`.
+      #
+      # This was a hand-written list of four paths, and it omitted
+      # `src/claim.rs` and `src/fold/**`. The commit that derived the CACHE KEY
+      # from `HEAD:src` named that exact omission as having "served a stale
+      # ok" -- and left this list, six lines above it, untouched. Deriving the
+      # cache key only fixes staleness for runs that HAPPEN; a PR changing only
+      # claim decoding or the fold did not trigger this workflow at all, so
+      # there was nothing to invalidate.
+      #
+      # The release gate was always intact (tag pushes are unfiltered). It was
+      # the merge gate that had the hole, which is the worse half: a defect
+      # caught at tag time has already been merged.
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "scripts/run-migration-cell.sh"
       - "tests/fixtures/migration-expectations.tsv"
       - ".github/workflows/migration-matrix.yml"
@@ -84,8 +93,14 @@ jobs:
           # key: `HEAD:src` is git's tree object for the whole directory, so
           # there is no list to keep up to date. Docs-only commits still hit
           # the cache, which is most of this repo's churn.
-          reader=$(printf '%s-%s' "$(git rev-parse HEAD:src)" \
-                                  "$(git rev-parse HEAD:Cargo.lock)" \
+          # Cargo.toml is in here because feature selection (keyring's backend,
+          # for one) and [profile.release] change the reader binary while
+          # leaving both `src` and Cargo.lock untouched. The previous key had
+          # two of the three and described itself as having "no list to keep up
+          # to date"; it was still a list, and still missing an entry.
+          reader=$(printf '%s-%s-%s' "$(git rev-parse HEAD:src)" \
+                                     "$(git rev-parse HEAD:Cargo.lock)" \
+                                     "$(git rev-parse HEAD:Cargo.toml)" \
                    | sha256sum | cut -d' ' -f1)
 
           # THE HARNESS IS ITS OWN KEY COMPONENT: "what we currently consider a
@@ -123,6 +138,11 @@ jobs:
   matrix:
     needs: plan
     runs-on: ${{ matrix.cell.os }}
+    # The writer's three `observe` calls have no deadline of their own, and on
+    # the keychain axis a writer can block on an authorization prompt nobody
+    # answers. Without this the job runs to GitHub's 6h default -- at 10x macOS
+    # billing, per cell, across 14 cells.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:

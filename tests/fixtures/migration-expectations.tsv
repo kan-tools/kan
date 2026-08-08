@@ -28,10 +28,21 @@
 # WHAT A GREEN `keychain` ROW DOES AND DOES NOT MEAN -- read this before
 # treating one as coverage of #96.
 #
-# The axis covers the STORAGE dimension: a secret filed in the OS keychain by
-# one binary is found and used by a DIFFERENT, later binary, and the log reads
-# correctly across the upgrade. All fourteen cells confirm the keychain was
-# genuinely in use rather than degrading to a plaintext file.
+# CORRECTED AFTER A COLD REVIEW, and the correction is the point: the first
+# version of this paragraph claimed the axis covers "a secret filed in the OS
+# keychain by one binary is found and used by a DIFFERENT, later binary". IT
+# DID NOT. The cell's only reader action was `show --json`, and a read resolves
+# no identity at all (`src/workspace.rs::open_read_only`, ADR-83) -- so every
+# outcome was independent of whether the upgraded binary could reach the
+# writer's secret. A workspace this build could read but could neither write to
+# nor name its own DID in scored `ok`.
+#
+# The cell now runs `kan identity did` after the read and compares the resolved
+# DID against the claims' author, so the retrieval the paragraph described is
+# actually performed. Thirteen of the fourteen cells exercised the keychain on
+# the writer side (v0.1.1 predates it and is recorded `keychain-unused`); the
+# reader side is measured for the first time by this change, and the rows
+# below were re-measured under it.
 #
 # It does NOT cover the ACL dimension, and #96 DID NOT REPRODUCE on the hosted
 # runner. On a developer's Mac a keychain entry is authorised to the exact
@@ -193,11 +204,11 @@ v0.10.0-beta.1	seed	ok	MEASURED -- in run 31038419269 (v0.11.0-beta.1 tag push) 
 v0.11.0-beta.1	identity-file	ok	MEASURED -- in run 31151700728 (reader: post-REQ-1/REQ-2 main), a cache miss. v0.11.0 could not be its own historical writer at its own tag push, so this is its first measurement. Was PREDICTED at cut time.
 v0.11.0-beta.1	seed	ok	MEASURED -- in run 31151700728 (reader: post-REQ-1/REQ-2 main), a cache miss. First measurement, for the same reason. Was PREDICTED at cut time.
 v0.1.1-beta.1	keychain	keychain-unused	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Predates OS-keychain support entirely, so the writer left a plaintext secret and this cell did NOT exercise the keychain plane. Recorded as such rather than as `ok`, which is what it scored before the mode was made to prove it used the keychain.
-v0.2.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.1 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
-v0.3.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.1 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
-v0.4.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.1 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
-v0.5.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.1 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
-v0.6.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.1 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
+v0.2.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.0 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
+v0.3.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.0 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
+v0.4.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.0 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
+v0.5.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.0 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
+v0.6.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain in use with NO pointer file: the pre-v0.7.0 account was derived from the canonicalized .kan/identity PATH, the scheme v0.7 REQ-5 replaced because a moved checkout silently minted a new DID. The oldest keychain layout in the corpus, exercised here for the first time by any cell.
 v0.7.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain-held SIGNING KEY, pointer .kan/identity-id (v0.7 REQ-5). This is the grandfathered layout a pre-v0.9 workspace still has, and it had never been executed by any cell on any platform before v0.12.
 v0.7.1-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain-held SIGNING KEY, pointer .kan/identity-id (v0.7 REQ-5). This is the grandfathered layout a pre-v0.9 workspace still has, and it had never been executed by any cell on any platform before v0.12.
 v0.8.0-beta.1	keychain	ok	MEASURED in run 31215100338 (macos-latest, reader: v0.12 matrix work). Keychain-held SIGNING KEY, pointer .kan/identity-id (v0.7 REQ-5). This is the grandfathered layout a pre-v0.9 workspace still has, and it had never been executed by any cell on any platform before v0.12.

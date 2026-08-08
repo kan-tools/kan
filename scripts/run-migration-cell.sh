@@ -21,6 +21,15 @@
 #   claims-altered    the right NUMBER of claims, but not the same claims --
 #                     the CID set moved, so a body, author or subject changed
 #                     under a migration that reported success
+#   identity-unresolvable
+#                     the claims fold, but this build cannot resolve an
+#                     identity for the workspace at all -- so it cannot sign
+#                     here and cannot name its own DID. Readable, not writable.
+#                     Previously invisible: the cell's only reader action was a
+#                     read, and a read resolves no identity (ADR-83).
+#   read-hung         the read did not return, on an axis where the keychain is
+#                     not in play. Distinguished from keychain-blocked so an
+#                     unexplained hang is not given a known cause's name.
 #   keychain-unused   the cell asked for the keychain and did not get it: the
 #                     writer predates keychain support, or the runner's
 #                     keychain was unreachable. The workspace is plaintext, so
@@ -278,7 +287,7 @@ if [ "$MODE" = keychain ]; then
   if [ -n "$pointer" ]; then
     say "keychain confirmed in use, pointer: $pointer"
   else
-    say "keychain confirmed in use with NO pointer file -- the pre-v0.7.1"
+    say "keychain confirmed in use with NO pointer file -- the pre-v0.7.0"
     say "path-derived account scheme. This is the legacy layout, exercised here"
     say "for the first time by any cell."
   fi
@@ -286,7 +295,8 @@ fi
 
 # Point the reader at whatever key the *writer* actually used.
 #
-# `KAN_IDENTITY_FILE` did not exist before v0.2, so an early tag ignores it
+# `KAN_IDENTITY_FILE` did not exist before v0.7.0 (checked against every tag,
+# not inferred), so an early tag ignores it
 # and writes `.kan/identity` instead. Leaving the env var pointing at a file
 # that was never created makes this build meet a non-empty log with a
 # would-be-new identity, trip the `WouldMintSecondIdentity` guard, and exit --
@@ -336,7 +346,10 @@ wait "$watchdog_pid" 2>/dev/null
 # 137 = SIGKILL: the watchdog fired, so the read never returned on its own.
 if [ "$reader_rc" -eq 137 ]; then
   say "the read did not return within ${READ_TIMEOUT}s -- blocked, not failed"
-  echo "keychain-blocked"
+  # Only the keychain axis can be blocked BY the keychain. Calling a Linux
+  # seed-mode hang, an OOM kill or a slow runner "keychain-blocked" would name
+  # a known cause for an unexplained failure.
+  if [ "$MODE" = keychain ]; then echo "keychain-blocked"; else echo "read-hung"; fi
   exit 0
 fi
 
@@ -353,10 +366,66 @@ visible="${visible:-0}"
 excluded="${excluded:-0}"
 say "this build sees $visible claim(s), $excluded excluded by trust"
 
-# The #90 shape, which v0.8's disclosure is what makes detectable at all: the
-# claims are on disk and verifiable, and invisible because the identity moved.
-# Before `excluded_by_trust` existed this was indistinguishable from an empty
-# log, which is precisely why it shipped twice.
+# DOES THIS BUILD STILL RESOLVE THE WORKSPACE'S IDENTITY? Until now the cell
+# never asked, and that was its largest hole.
+#
+# The only reader action was `show --json`, and a read resolves NO identity at
+# all -- `Workspace::open_read_only` says so in its own comment, and ADR-83
+# makes it deliberate. So every outcome this script produced was independent of
+# whether the upgraded binary could reach the writer's key. The keychain axis
+# in particular claimed, in the expectations table, that "a secret filed by one
+# binary is found and used by a DIFFERENT, later binary" -- and measured
+# nothing of the kind. A workspace this build can read but can neither write to
+# nor name its own DID in was scored `ok`.
+#
+# `kan identity did` is the cheapest reader action that DOES resolve one: it
+# routes through `commit_identity` (src/cli/mod.rs::IdentityAction), which is
+# the same path a post-upgrade write takes. Under the same deadline, because
+# on the keychain axis this is where a #96 block would actually surface.
+author="$(printf '%s' "$out" \
+  | python3 -c 'import json,sys; c=json.load(sys.stdin)["claims"]; print(c[0]["author"] if c else "")' \
+  2>/dev/null)"
+
+did_out="$work/did.txt"
+"$NEW_BIN" identity did >"$did_out" 2>"$work/did.err" &
+did_pid=$!
+( sleep "$READ_TIMEOUT"; kill -9 "$did_pid" 2>/dev/null ) >/dev/null 2>&1 &
+did_watchdog=$!
+if wait "$did_pid" 2>/dev/null; then did_rc=0; else did_rc=$?; fi
+kill "$did_watchdog" 2>/dev/null; wait "$did_watchdog" 2>/dev/null
+
+if [ "$did_rc" -eq 137 ]; then
+  say "resolving an identity did not return within ${READ_TIMEOUT}s"
+  if [ "$MODE" = keychain ]; then echo "keychain-blocked"; else echo "read-hung"; fi
+  exit 0
+fi
+
+resolved="$(tr -d '[:space:]' <"$did_out" 2>/dev/null)"
+if [ "$did_rc" -ne 0 ] || [ -z "$resolved" ]; then
+  # Readable but not writable. A real and previously invisible migration
+  # outcome: the claims fold, and the upgraded binary cannot sign here or even
+  # name the workspace's own identity.
+  say "this build cannot resolve an identity for the migrated workspace:"
+  tail -5 "$work/did.err" >&2 2>/dev/null
+  echo "identity-unresolvable"
+  exit 0
+fi
+
+if [ -n "$author" ] && [ "$resolved" != "$author" ]; then
+  # #90, detected directly rather than inferred from a trust exclusion.
+  say "identity moved: claims authored by $author, this build resolves $resolved"
+  echo "identity-changed"
+  exit 0
+fi
+say "identity resolves to $resolved, matching the claims' author"
+
+# The trust-exclusion form of the same question, kept as a secondary signal.
+# NOTE it cannot fire on a single-writer workspace under the current default:
+# `local_trust` trusts EVERY author in the log (src/workspace.rs::local_trust),
+# so `excluded_by_trust` is structurally 0 here. It was the only #90 detector
+# this harness had, and it had been dead since Local became the default base --
+# which is why the DID comparison above exists rather than a tightened
+# threshold.
 if [ "$excluded" -gt 0 ] && [ "$visible" -lt "$wrote" ]; then
   echo "identity-changed"
   exit 0
@@ -384,7 +453,7 @@ if [ -n "$written_cids" ]; then
     read_cids="$(printf '%s' "$out" \
       | python3 -c 'import json,sys; print("\n".join(sorted(c["cid"] for c in json.load(sys.stdin)["claims"])))' \
       2>/dev/null)"
-    want="$(printf '%s' "$written_cids" | grep . | sort)"
+    want="$(printf '%s' "$written_cids" | grep . | LC_ALL=C sort)"
     if [ "$read_cids" != "$want" ]; then
       say "CID set moved: the claim count survived but the claims did not"
       echo "claims-altered"
