@@ -334,6 +334,27 @@ fn read_secret_line(prompt: &str) -> Result<String, Error> {
     }
 }
 
+/// A yes/no confirmation, for an act that destroys something.
+///
+/// Sibling of [`read_secret_line`], and gated the same way: this repository
+/// already treats an interactive terminal as the signal that a human is
+/// present to answer for a sensitive irreversible act (`kan identity phrase`).
+/// Anything other than an explicit yes is a no -- a bare Enter must not delete
+/// a secret.
+pub fn confirm(question: &str) -> Result<bool, actions::Error> {
+    use std::io::Write;
+    eprint!("{question} [y/N] ");
+    let _ = std::io::stderr().flush();
+    let mut line = String::new();
+    std::io::stdin()
+        .read_line(&mut line)
+        .map_err(|e| actions::Error::Usage(format!("could not read the answer: {e}")))?;
+    Ok(matches!(
+        line.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes"
+    ))
+}
+
 #[derive(Debug, Subcommand)]
 pub enum IdentityAction {
     /// Print this repo's `did:key` identifier. Public, safe to share.
@@ -394,6 +415,26 @@ pub enum IdentityAction {
     Authors {
         #[arg(long)]
         json: bool,
+    },
+    /// Move this repo's secret into the OS keychain.
+    ///
+    /// The opt-in. Since v0.12 a fresh workspace roots in a `0600` file, and
+    /// this is how you choose the keychain instead. It never changes the DID.
+    Protect {
+        /// Delete the plaintext copy without asking once the keychain holds it.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Move this repo's secret out of the OS keychain into a `0600` file.
+    ///
+    /// The exit for a workspace created before v0.12. On macOS a keychain
+    /// entry is authorised to the binary that created it, so an upgraded kan
+    /// blocks on a prompt that never arrives in CI, a container, an MCP server
+    /// or a `day` subprocess (#96) -- this is the way out of that.
+    Unprotect {
+        /// Proceed without confirming.
+        #[arg(long)]
+        yes: bool,
     },
 }
 
@@ -938,8 +979,11 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                         }
                     }
                 }
-                IdentityAction::Adopt { .. } | IdentityAction::Authors { .. } => {
-                    unreachable!("dispatched read-only by `is_read_only`")
+                IdentityAction::Adopt { .. }
+                | IdentityAction::Authors { .. }
+                | IdentityAction::Protect { .. }
+                | IdentityAction::Unprotect { .. } => {
+                    unreachable!("dispatched without an identity by `is_read_only`")
                 }
                 IdentityAction::Role { action } => match action {
                     RoleAction::Add { name, key } => {
@@ -1073,7 +1117,16 @@ fn is_read_only(command: &Command) -> bool {
             // Requiring a resolvable identity to run it would make it refuse
             // in exactly the workspace it exists to explain.
             | Command::Identity {
-                action: IdentityAction::Adopt { .. } | IdentityAction::Authors { .. }
+                action: IdentityAction::Adopt { .. }
+                    | IdentityAction::Authors { .. }
+                    // `protect`/`unprotect` MOVE a secret; they never create
+                    // one. Routing them through `commit_identity` would mean
+                    // minting an identity in order to protect it -- a creation
+                    // as a side effect of a command that is not about creating
+                    // one, which is AC-8's class. They resolve via `at_rest`
+                    // and refuse when there is nothing to move.
+                    | IdentityAction::Protect { .. }
+                    | IdentityAction::Unprotect { .. }
             }
     )
 }
@@ -1087,6 +1140,12 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
                 actions::adopt_identity(ws, &std::path::PathBuf::from(key))?
             ),
             IdentityAction::Authors { json } => print!("{}", actions::authors(ws, json)?),
+            IdentityAction::Protect { yes } => {
+                print!("{}", actions::protect_identity(ws, yes)?)
+            }
+            IdentityAction::Unprotect { yes } => {
+                print!("{}", actions::unprotect_identity(ws, yes)?)
+            }
             other => unreachable!("{other:?} is not a read-only identity action"),
         },
         Command::Show {

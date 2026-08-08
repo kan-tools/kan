@@ -2349,3 +2349,167 @@ pub fn authors(ws: &Workspace, json: bool) -> Result<String, Error> {
     }
     Ok(out)
 }
+
+/// `kan identity protect` — move this workspace's secret into the OS keychain.
+///
+/// Never routes through `commit_identity`: it moves a secret, it does not
+/// create one, and minting an identity in order to protect it would be a
+/// creation as a side effect of a command that is not about creating one.
+pub fn protect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
+    use crate::sign::{at_rest_all, plan_protect, protect_from, Plan};
+    let kan_dir = ws.root.join(".kan");
+
+    // THE TERMINAL GATE IS AT THE TOP, not at the deletion step. Refusing
+    // BEFORE the keychain write is what guarantees there is no half-state to
+    // reason about -- a refusal after step 2 would leave a keychain entry and
+    // a pointer with the plaintext still present.
+    use std::io::IsTerminal;
+    if !yes && (!std::io::stdout().is_terminal() || !std::io::stdin().is_terminal()) {
+        return Err(Error::Usage(
+            "refusing: `kan identity protect` deletes the plaintext copy of your secret \
+             once the keychain holds it, and this is not an interactive terminal.\n\n\
+             Run it in a terminal you can answer, or pass --yes if you mean it \
+             unattended."
+                .to_string(),
+        ));
+    }
+
+    match plan_protect(&kan_dir) {
+        Plan::NoIdentity => Err(Error::Usage(
+            "this workspace has no identity of its own to protect.\n\n\
+             If KAN_IDENTITY_FILE names a key, that file is yours to manage -- kan does \
+             not move a secret it was merely pointed at."
+                .to_string(),
+        )),
+        Plan::AlreadyThere(a) => Ok(format!(
+            "already protected: this repo's secret is in the OS keychain, named by \
+             .kan/{}.\n\nNothing was written.\n",
+            a.file().unwrap_or("?")
+        )),
+        Plan::Protect {
+            from,
+            stale_pointer,
+        } => {
+            let (did, account) =
+                protect_from(&kan_dir, from).map_err(|e| Error::Usage(e.to_string()))?;
+            let mut out = format!(
+                "protected: this repo's secret is now in the OS keychain.\n\n\
+                 identity: {did}  (unchanged)\naccount:  {account}\n"
+            );
+
+            // A stale pointer is RETIRED AUDIBLY. Orphaning a keychain entry is
+            // accepted here -- `retire_seed` does it deliberately and the entry
+            // stays reachable in Keychain Access -- but doing it silently is
+            // not, so the account it named is printed before the file goes.
+            if let Some(ptr) = stale_pointer {
+                let old = std::fs::read_to_string(kan_dir.join(ptr))
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                std::fs::remove_file(kan_dir.join(ptr)).map_err(|e| {
+                    Error::Usage(format!("could not retire the previous pointer: {e}"))
+                })?;
+                out.push_str(&format!(
+                    "\nA previous keychain reference (.kan/{ptr} -> {old}) was retired. That \
+                     entry is left in the keychain; delete it in Keychain Access if you no \
+                     longer want it.\n"
+                ));
+            }
+
+            let src = kan_dir.join(from.file().unwrap());
+            let deleted = if yes {
+                true
+            } else {
+                crate::cli::confirm(&format!("Delete the plaintext copy at {}?", src.display()))?
+            };
+            if deleted {
+                std::fs::remove_file(&src).map_err(|e| {
+                    Error::Usage(format!("could not delete the plaintext copy: {e}"))
+                })?;
+                out.push_str(
+                    "\nThe plaintext copy is deleted. `kan identity phrase` still reproduces \
+                     this secret -- that is your backup, and it is not on this disk.\n",
+                );
+            } else {
+                // It may NOT be left where it is: `.kan/seed` outranks
+                // `.kan/seed-id`, so leaving it means the workspace still
+                // resolves from the plaintext file and this command reported
+                // success while changing nothing.
+                let stamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let moved = kan_dir.join(format!("{}.protected-{stamp}", from.file().unwrap()));
+                std::fs::rename(&src, &moved)
+                    .map_err(|e| Error::Usage(format!("could not move the copy aside: {e}")))?;
+                out.push_str(&format!(
+                    "\nKept, moved to {}. It could not stay where it was: that path outranks \
+                     the keychain in resolution, so leaving it would mean this command \
+                     changed nothing. #6's property is not restored until it is gone.\n",
+                    moved.display()
+                ));
+            }
+
+            // What was NOT moved. Protecting the signing secret while another
+            // plaintext secret sits beside it leaves a claim this command
+            // cannot honestly make.
+            let left: Vec<&str> = at_rest_all(&kan_dir)
+                .into_iter()
+                .filter(|a| !a.is_protected() && *a != from)
+                .filter_map(|a| a.file())
+                .collect();
+            if !left.is_empty() {
+                out.push_str(&format!(
+                    "\nStill plaintext in .kan/: {}. Precedence says these are not signing, \
+                     but they are still secrets on this disk.\n",
+                    left.join(", ")
+                ));
+            }
+            Ok(out)
+        }
+        Plan::Unprotect { .. } => unreachable!("plan_protect never returns Unprotect"),
+    }
+}
+
+/// `kan identity unprotect` — move this workspace's secret out of the OS
+/// keychain into a `0600` file.
+pub fn unprotect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
+    use crate::sign::{plan_unprotect, unprotect_to, AtRest, Plan};
+    let kan_dir = ws.root.join(".kan");
+
+    match plan_unprotect(&kan_dir) {
+        Plan::NoIdentity => Err(Error::Usage(
+            "this workspace has no identity of its own to unprotect.".to_string(),
+        )),
+        Plan::AlreadyThere(a) => Ok(format!(
+            "already unprotected: this repo's secret is in .kan/{}, not the keychain.\n\n\
+             Nothing was written.\n",
+            a.file().unwrap_or("?")
+        )),
+        Plan::Unprotect { from, occupied } => {
+            let dest_name = match from {
+                AtRest::SeedKeychain => crate::sign::SEED_FILE,
+                _ => "identity",
+            };
+            if occupied.is_some() && !yes {
+                // Not a blanket refusal -- the guard inside `unprotect_to`
+                // decides on the BYTES. This is only the warning that the
+                // decision is about to be made.
+                eprintln!(
+                    "kan: .kan/{dest_name} already exists. If it holds the same secret this \
+                     is a no-op; if it holds a different one, kan will refuse rather than \
+                     choose for you."
+                );
+            }
+            let did =
+                unprotect_to(&kan_dir, from, dest_name).map_err(|e| Error::Usage(e.to_string()))?;
+            Ok(format!(
+                "unprotected: this repo's secret is now in .kan/{dest_name}, a 0600 file.\n\n\
+                 identity: {did}  (unchanged)\n\n\
+                 The keychain entry itself is left alone -- delete it in Keychain Access if \
+                 you no longer want it. This workspace will not consult the keychain again.\n"
+            ))
+        }
+        Plan::Protect { .. } => unreachable!("plan_unprotect never returns Protect"),
+    }
+}

@@ -649,6 +649,15 @@ pub fn refuse_to_overwrite_a_different_secret(
 /// cannot tell whether this file holds a different identity" and "this file
 /// holds the same identity" are different answers and only one permits a write.
 pub fn unprotect_to(kan_dir: &Path, from: AtRest, dest_name: &str) -> Result<Did, Error> {
+    // Same rule, opposite reason: unprotect must READ the keychain to move the
+    // secret out of it, so with the flag set there is nothing it can do.
+    if keychain_disabled() {
+        return Err(Error::Recovery(
+            "refusing: KAN_NO_KEYCHAIN is set, and `unprotect` must READ the keychain to \
+             move the secret out of it.\n\nUnset it and try again."
+                .to_string(),
+        ));
+    }
     let account_file = from.file().expect("a protected state names a pointer file");
     let account = std::fs::read_to_string(kan_dir.join(account_file))?
         .trim()
@@ -700,6 +709,18 @@ pub fn unprotect_to(kan_dir: &Path, from: AtRest, dest_name: &str) -> Result<Did
 /// Execute `Plan::Protect`: move the secret into the keychain, verifying it
 /// round-trips before anything on disk is disturbed.
 pub fn protect_from(kan_dir: &Path, from: AtRest) -> Result<(Did, String), Error> {
+    // REQ-3.6 / AC-3.6. `KAN_NO_KEYCHAIN` means "behave as though no keychain
+    // exists", and a command that writes to it anyway is not honouring that --
+    // it is ignoring it. Found by running `protect --yes` with the flag set in
+    // a temp workspace and watching it succeed, which wrote a real entry to the
+    // author's login keychain. Every other keychain path in this module checks
+    // this; the newest one did not.
+    if keychain_disabled() {
+        return Err(Error::Recovery(
+            "refusing: KAN_NO_KEYCHAIN is set, which tells kan to behave as though no OS              keychain exists -- so `protect`, whose only job is to put a secret INTO it,              cannot honour both.\n\nUnset it if you want the keychain."
+                .to_string(),
+        ));
+    }
     let src = kan_dir.join(from.file().expect("an unprotected state names a file"));
     let bytes = std::fs::read(&src)?;
     let did = did_of(from, &bytes)?;
