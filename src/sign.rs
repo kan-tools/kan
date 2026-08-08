@@ -1002,27 +1002,23 @@ impl Seed {
     pub fn create(kan_dir: &Path) -> Result<Self, Error> {
         std::fs::create_dir_all(kan_dir)?;
         let seed = Self::generate();
-        let account = fresh_account();
+        seed.save(&kan_dir.join(SEED_FILE))?;
 
-        let stored = !keychain_disabled() && {
-            let _warn = SlowKeychainWarning::start("storing this repo's root seed");
-            keyring::Entry::new(SEED_KEYCHAIN_SERVICE, &account)
-                .ok()
-                .and_then(|entry| entry.set_secret(&seed.0).ok())
-                .is_some()
-        };
-
-        if stored {
-            std::fs::write(kan_dir.join(SEED_ID_FILE), &account)?;
-        } else {
-            eprintln!(
-                "kan: OS keychain unavailable -- this repo's root seed is stored as a \
-                 plaintext file at {}, readable by anything running as you. Take its \
-                 recovery phrase (`kan identity phrase`) and keep it somewhere safe.",
-                kan_dir.join(SEED_FILE).display()
-            );
-            seed.save(&kan_dir.join(SEED_FILE))?;
-        }
+        // Not a warning any more, and it must not read as one. Before REQ-3
+        // this line meant "the keychain was unavailable, so you got the worse
+        // outcome"; now the file IS the outcome, and the sentence has to say
+        // where the secret is, what the off-disk backup is, and how to move it
+        // -- without implying anything went wrong.
+        eprintln!(
+            "kan: this repo's identity is rooted in {}, a 0600 file readable by \
+             anything running as you.\n\
+             \n\
+             `kan identity phrase` prints its 24-word recovery phrase -- that is the \
+             backup, and it is the only copy not on this disk.\n\
+             `kan identity protect` moves the secret into the OS keychain if you want \
+             it there.",
+            kan_dir.join(SEED_FILE).display()
+        );
         Ok(seed)
     }
 
