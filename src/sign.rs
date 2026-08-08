@@ -402,6 +402,93 @@ pub fn workspace_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
     Ok(None)
 }
 
+/// Where this workspace's secret sits **at rest**, decided from files alone.
+///
+/// **This must mirror [`workspace_identity`]'s precedence exactly**, and that
+/// is the single most likely way REQ-3 goes wrong. Get it wrong and `protect`
+/// moves a secret that is not the one signing — which is #170's disagreement
+/// class (two answers to one question) wearing a new hat, in a command whose
+/// whole job is to move a secret without changing the DID.
+///
+/// Note that **`.kan/identity-id` outranks `.kan/identity`**, which is not the
+/// order anyone writes from memory. `src/sign.rs` already holds three
+/// orderings over these four files — this one, [`identity_evidence`]'s (which
+/// only selects a message, so its order is not a precedence claim) and
+/// [`Seed::load`]'s. This is deliberately not a fourth.
+///
+/// Pure: file existence only, no keychain call, nothing created. That is what
+/// lets `plan_protect` and `plan_unprotect` be enumerated by
+/// `tests/derived_cells.rs` over the same configurations the resolvers are,
+/// rather than hand-listed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AtRest {
+    /// `.kan/seed` — a passphraseless root seed. The default from v0.12.
+    SeedFile,
+    /// `.kan/seed-id` — a root seed in the OS keychain.
+    SeedKeychain,
+    /// `.kan/identity-id` — a grandfathered signing key in the OS keychain.
+    KeyKeychain,
+    /// `.kan/identity` — a grandfathered plaintext signing key.
+    KeyFile,
+    /// No at-rest secret of this workspace's own.
+    None_,
+}
+
+impl AtRest {
+    /// Whether the secret is already in the OS keychain.
+    pub fn is_protected(self) -> bool {
+        matches!(self, AtRest::SeedKeychain | AtRest::KeyKeychain)
+    }
+
+    /// The file that holds or names it, relative to `.kan/`.
+    pub fn file(self) -> Option<&'static str> {
+        match self {
+            AtRest::SeedFile => Some(SEED_FILE),
+            AtRest::SeedKeychain => Some(SEED_ID_FILE),
+            AtRest::KeyKeychain => Some(IDENTITY_ID_FILE),
+            AtRest::KeyFile => Some("identity"),
+            AtRest::None_ => None,
+        }
+    }
+}
+
+/// See [`AtRest`]. Mirrors [`workspace_identity`]'s order: seed, seed-id,
+/// identity-id, identity.
+pub fn at_rest(kan_dir: &Path) -> AtRest {
+    if kan_dir.join(SEED_FILE).exists() {
+        return AtRest::SeedFile;
+    }
+    if kan_dir.join(SEED_ID_FILE).exists() {
+        return AtRest::SeedKeychain;
+    }
+    if kan_dir.join(IDENTITY_ID_FILE).exists() {
+        return AtRest::KeyKeychain;
+    }
+    if kan_dir.join("identity").exists() {
+        return AtRest::KeyFile;
+    }
+    AtRest::None_
+}
+
+/// Every at-rest artifact present, in precedence order — not just the winner.
+///
+/// `protect` must report what it did **not** move: protecting the signing
+/// secret while `.kan/identity` still sits beside it leaves a plaintext key on
+/// disk under a command whose entire promise is that none remains. Precedence
+/// says the others are not signing; that is not the same as their not being
+/// there.
+pub fn at_rest_all(kan_dir: &Path) -> Vec<AtRest> {
+    [
+        AtRest::SeedFile,
+        AtRest::SeedKeychain,
+        AtRest::KeyKeychain,
+        AtRest::KeyFile,
+    ]
+    .into_iter()
+    .filter(|a| a.file().is_some_and(|f| kan_dir.join(f).exists()))
+    .collect()
+}
+
 /// The keychain-held signing key for this workspace, if it has one.
 ///
 /// **Reads `.kan/identity-id`; never writes it.** The retired
@@ -521,7 +608,7 @@ pub fn signing_identity(kan_dir: &Path, selection: &Selection) -> Result<Option<
     }
 }
 
-fn identity_evidence(kan_dir: &Path) -> Option<&'static str> {
+pub fn identity_evidence(kan_dir: &Path) -> Option<&'static str> {
     if kan_dir.join("identity").exists() {
         return Some("a signing key at .kan/identity");
     }

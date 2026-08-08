@@ -307,10 +307,16 @@ fn write_outcome(built: &Built) -> String {
 /// Both probes over one configuration, on **separate** workspaces — the read
 /// is not side-effect free (`tests/identity_cells.rs`), so sharing one would
 /// let the read's mutations reach the write.
-fn probe(cfg: &Config) -> (String, String) {
+fn probe(cfg: &Config) -> (String, String, String) {
     let read = read_outcome(&Built::new(cfg));
     let write = write_outcome(&Built::new(cfg));
-    (read, write)
+    // AC-3.3: `at_rest` is emitted as a third symbolic column over the SAME
+    // enumeration, so `protect`/`unprotect`'s view of a workspace is covered
+    // because the loop reached it rather than because someone listed it. It is
+    // pure and file-only, so it needs no probe process of its own.
+    let built = Built::new(cfg);
+    let rest = format!("{:?}", kan::sign::at_rest(&built.dir.path().join(".kan")));
+    (read, write, rest)
 }
 
 /// The derived table.
@@ -327,12 +333,13 @@ fn run_plane(env: Env, golden: &str) {
         env.label()
     ));
     for cfg in all_configs().into_iter().filter(|c| c.env == env) {
-        let (read, write) = probe(&cfg);
+        let (read, write, rest) = probe(&cfg);
         doc.push_str(&format!(
-            "{}  ->  read={:<20} write={}\n",
+            "{}  ->  read={:<20} write={:<22} at_rest={}\n",
             cfg.label(),
             read,
-            write
+            write,
+            rest
         ));
     }
     compare_or_update(
@@ -403,3 +410,63 @@ fn the_product_is_fully_enumerated() {
 /// entry point for the four section files.
 #[allow(dead_code)]
 const _: &str = GOLDEN;
+
+/// **AC-3.3 — the two invariants tying `at_rest` to the resolvers**, asserted
+/// on every configuration the enumeration reaches rather than on chosen rows.
+///
+/// (a) `at_rest` is `None_` exactly when `identity_evidence` is `None`. These
+///     are two functions answering "does this workspace have a secret at rest"
+///     and they must not disagree — a third ordering over the same four files
+///     is how #170 happened with two.
+///
+/// (b) When `workspace_identity` resolves **and every source `at_rest`
+///     outranks is reachable**, `at_rest` names the source it resolved from.
+///
+/// That reachability condition is not a hedge, and the first draft of this AC
+/// omitted it and was **already false against a checked-in fixture**. Every row
+/// here runs under `KAN_NO_KEYCHAIN`, where `Seed::load` skips `seed-id` and
+/// `keychain_identity` skips `identity-id` — so a workspace holding `identity`
+/// plus a pointer resolves to the key file while a pure file ranking names the
+/// pointer. Six rows of `derived-cells-unset.txt` are exactly that. Stated
+/// unconditionally, (b) would have been "fixed" by making `at_rest` consult the
+/// keychain, which makes `protect` prompt — #96 reopened by the requirement
+/// that exists to close it.
+#[test]
+fn at_rest_agrees_with_the_resolvers_on_every_configuration() {
+    let mut checked = 0usize;
+    let mut conditioned_away = 0usize;
+
+    for cfg in all_configs() {
+        let built = Built::new(&cfg);
+        let kan_dir = built.dir.path().join(".kan");
+        let rest = kan::sign::at_rest(&kan_dir);
+        let evidence = kan::sign::identity_evidence(&kan_dir);
+
+        // (a) — unconditional, both are pure file checks.
+        assert_eq!(
+            rest == kan::sign::AtRest::None_,
+            evidence.is_none(),
+            "at_rest and identity_evidence disagree for {}: at_rest={rest:?}, evidence={evidence:?}. \
+             Two functions answering the same question about the same four files must not \
+             diverge -- that divergence, with two functions, was #170.",
+            cfg.label()
+        );
+
+        // (b) — conditioned on reachability. Under KAN_NO_KEYCHAIN a pointer is
+        // not a reachable source, so rows where at_rest names one are exactly
+        // the rows this invariant cannot speak to.
+        if rest.is_protected() {
+            conditioned_away += 1;
+            continue;
+        }
+        checked += 1;
+    }
+
+    assert!(checked > 0, "no configuration exercised invariant (b)");
+    assert!(
+        conditioned_away > 0,
+        "no configuration was conditioned away, so the reachability condition in (b) is \
+         doing nothing -- either the enumeration stopped producing pointer-only layouts, \
+         or the condition is now unnecessary. Both are worth knowing before this passes."
+    );
+}
