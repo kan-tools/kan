@@ -34,7 +34,7 @@ recovery.
   and it preserves #88's verified property that a backup of `log/` alone is
   sufficient.
 - REQ-3: Restore refuses, writing nothing, when the local identity's DID
-  (`sign::Identity::did`, `src/sign.rs:329`) does not match the author of the
+  (`sign::Identity::did`, `src/sign.rs::did`) does not match the author of the
   `.claims/` records it is asked to restore. The message names the recovery
   phrase (`kan identity restore`, `src/cli/mod.rs:759`) as the fix. This is
   the "identity recovery gates log recovery" rule (#93) enforced at the one

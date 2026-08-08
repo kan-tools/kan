@@ -17,3 +17,9 @@ jobs:
       - run: cargo test --workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo fmt --all -- --check
+
+      # A citation is an instrument: trusted rather than examined, and it rots
+      # by construction. v0.12 shipped six wrong in one PR -- each verified
+      # when written, then invalidated by a LATER COMMIT IN THE SAME PR. Care
+      # cannot catch that, so it is checked at the tip on every run.
+      - run: ./scripts/check-citations.sh

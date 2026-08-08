@@ -3807,7 +3807,7 @@ merge classes. There is no per-subject operation that could fail for one
 subject and succeed for the others, so the only reachable outcomes are a
 complete answer or a propagated error. A future change that introduced
 per-subject reads would break this, which is why it is pinned by a test
-(`bulk_read.rs::show_all_never_omits_a_subject_that_status_reports`) rather
+(`tests/bulk_read.rs::show_all_never_omits_a_subject_that_status_reports`) rather
 than left as a property of the current shape.
 
 **The second guarantee day's mitigation rests on, also now stated: a subject
