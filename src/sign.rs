@@ -705,7 +705,7 @@ pub fn unprotect_to(kan_dir: &Path, from: AtRest, dest_name: &str) -> Result<Did
 
 /// Execute `Plan::Protect`: move the secret into the keychain, verifying it
 /// round-trips before anything on disk is disturbed.
-pub fn protect_from(kan_dir: &Path, from: AtRest) -> Result<(Did, String), Error> {
+pub fn protect_from(kan_dir: &Path, from: AtRest) -> Result<(Did, String, Option<String>), Error> {
     // REQ-3.6 / AC-3.6. `KAN_NO_KEYCHAIN` means "behave as though no keychain
     // exists", and a command that writes to it anyway is not honouring that --
     // it is ignoring it. Found by running `protect --yes` with the flag set in
@@ -748,8 +748,27 @@ pub fn protect_from(kan_dir: &Path, from: AtRest) -> Result<(Did, String), Error
         AtRest::SeedFile => SEED_ID_FILE,
         _ => IDENTITY_ID_FILE,
     };
+
+    // THE OLD ACCOUNT IS READ HERE, BEFORE THE OVERWRITE, AND RETURNED --
+    // because the caller cannot read it afterwards and must not try.
+    //
+    // The first version had the caller "retire" the stale pointer after this
+    // function returned: read `.kan/seed-id`, then delete it. But this write
+    // has already replaced that file's contents with the NEW account, so the
+    // caller read the new account, reported it as the old one, and DELETED THE
+    // POINTER IT HAD JUST WRITTEN -- leaving the secret in the keychain with
+    // nothing naming it, and a workspace that could no longer resolve its own
+    // identity. In the command whose one job is to move a secret safely.
+    //
+    // Writing the pointer IS the retirement; there is nothing left to delete.
+    // Returning the displaced account is what lets the caller say which entry
+    // was orphaned, which is the part that must not be silent.
+    let orphaned = std::fs::read_to_string(kan_dir.join(pointer))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && *s != account);
     std::fs::write(kan_dir.join(pointer), &account)?;
-    Ok((did, account))
+    Ok((did, account, orphaned))
 }
 
 /// The keychain-held signing key for this workspace, if it has one.

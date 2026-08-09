@@ -2390,7 +2390,7 @@ pub fn protect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
             from,
             stale_pointer,
         } => {
-            let (did, account) =
+            let (did, account, orphaned) =
                 protect_from(&kan_dir, from).map_err(|e| Error::Usage(e.to_string()))?;
             let mut out = format!(
                 "protected: this repo's secret is now in the OS keychain.\n\n\
@@ -2401,18 +2401,14 @@ pub fn protect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
             // accepted here -- `retire_seed` does it deliberately and the entry
             // stays reachable in Keychain Access -- but doing it silently is
             // not, so the account it named is printed before the file goes.
-            if let Some(ptr) = stale_pointer {
-                let old = std::fs::read_to_string(kan_dir.join(ptr))
-                    .unwrap_or_default()
-                    .trim()
-                    .to_string();
-                std::fs::remove_file(kan_dir.join(ptr)).map_err(|e| {
-                    Error::Usage(format!("could not retire the previous pointer: {e}"))
-                })?;
+            // REPORTED, NEVER DELETED. `protect_from` overwrote the pointer,
+            // which IS the retirement -- deleting it here would remove the
+            // reference just written and leave the secret unreachable.
+            if let (Some(ptr), Some(old)) = (stale_pointer, orphaned) {
                 out.push_str(&format!(
-                    "\nA previous keychain reference (.kan/{ptr} -> {old}) was retired. That \
-                     entry is left in the keychain; delete it in Keychain Access if you no \
-                     longer want it.\n"
+                    "\n.kan/{ptr} previously named {old}. That keychain entry is now orphaned \
+                     and is left alone; delete it in Keychain Access if you no longer want \
+                     it.\n"
                 ));
             }
 
