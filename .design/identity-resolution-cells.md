@@ -230,7 +230,7 @@ KAN_IDENTITY_FILE=…/key  kan show nothing --trust me --json
 same read WITHOUT --trust me:  .kan/ absent, key 644
 ```
 
-`src/sign.rs:833-838` says the key-file branch "uses `load_existing` … so it
+`src/sign.rs::signing_identity` says the key-file branch "uses `load_existing` … so it
 cannot reach the keychain, write `identity-id`, or migrate" — true of the
 branch it sits above (R3), false of the env branch three lines earlier (R1a).
 `tests/write_guards.rs::a_read_creates_no_workspace` misses it because it
