@@ -658,15 +658,17 @@ impl Workspace {
     /// frames is two reads rather than a sequence of mutations
     /// (`.design/kan-read-contract.md` REQ-2).
     /// `--trust roles` expands to every identity this workspace declared
-    /// (`kan identity role add`) **plus the active one**, all at full
-    /// weight.
+    /// (`kan identity role add`), all at full weight — and to **nothing
+    /// else**. The active identity is *not* injected on top.
     ///
-    /// The active identity is included because leaving it out would make
-    /// the obvious command — "show me everything this workspace's own
-    /// identities wrote" — quietly drop the caller's own claims, which is a
-    /// smaller version of the bug this milestone exists to fix. A caller
-    /// wanting a role hierarchy rather than a flat union names the DIDs and
-    /// weights explicitly.
+    /// *This paragraph said the opposite until v0.12, and was wrong from the
+    /// moment v0.11 narrowed the alias.* It described the active identity as
+    /// included, and argued the case at length, while the body below has only
+    /// ever mapped the declared set. `tests/trust_vocabulary.rs:203` pins the
+    /// narrowing in words. The reason `roles` no longer over-reports is that
+    /// `Local` became the default: "everything this workspace wrote" is
+    /// already answered, so `roles` is free to mean exactly what it says,
+    /// which is what makes `local` minus `roles` a meaningful difference.
     pub fn role_trust_entries(&self) -> Result<Vec<(String, f64)>, Error> {
         Ok(crate::sign::list_roles(&self.root.join(".kan"))?
             .into_iter()
