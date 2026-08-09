@@ -123,3 +123,105 @@ fn an_unreadable_secret_at_the_destination_is_also_refused() {
          DID for it: {err}"
     );
 }
+
+/// A REFUSED `protect` OR `unprotect` LEAVES `.kan/` BYTE-IDENTICAL.
+///
+/// The executors take several steps — read a secret, write it to the other
+/// store, verify, then retire the old reference — and the design specifies an
+/// ordering so that a death partway through cannot lose an identity. Almost
+/// none of that is reachable from this suite, because both commands need a
+/// real keychain (#96), and that is a stated limit rather than a gap care can
+/// close.
+///
+/// What IS reachable is the one failure mode this suite can trigger on demand:
+/// the `KAN_NO_KEYCHAIN` refusal. It happens at the very top of both
+/// executors, which is where AC-8's "resolution has no side effects" argument
+/// says a refusal belongs — refusing BEFORE the first write is what guarantees
+/// there is no half-state to reason about at all. This asserts that placement
+/// rather than trusting it, and it is worth having because the first version
+/// of `protect` did NOT refuse here: it wrote a real entry to the author's
+/// login keychain.
+#[test]
+fn a_refused_at_rest_command_writes_nothing() {
+    for cmd in ["protect", "unprotect"] {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path();
+        for args in [
+            vec!["init", "-q", "."],
+            vec![
+                "-c",
+                "user.email=t@e.com",
+                "-c",
+                "user.name=t",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "i",
+            ],
+        ] {
+            assert!(std::process::Command::new("git")
+                .args(&args)
+                .current_dir(repo)
+                .status()
+                .unwrap()
+                .success());
+        }
+        let kan = env!("CARGO_BIN_EXE_kan");
+        assert!(std::process::Command::new(kan)
+            .args(["observe", "x", "--subject", "s"])
+            .current_dir(repo)
+            .env("KAN_NO_KEYCHAIN", "1")
+            .output()
+            .unwrap()
+            .status
+            .success());
+
+        let before = fingerprint(&repo.join(".kan"));
+        let out = std::process::Command::new(kan)
+            .args(["identity", cmd, "--yes"])
+            .current_dir(repo)
+            .env("KAN_NO_KEYCHAIN", "1")
+            .output()
+            .unwrap();
+        let after = fingerprint(&repo.join(".kan"));
+
+        assert!(
+            !out.status.success() || cmd == "unprotect",
+            "`kan identity {cmd}` must refuse under KAN_NO_KEYCHAIN -- that flag means \
+             behave as though no keychain exists, and a command that writes to one anyway \
+             is ignoring it rather than honouring it"
+        );
+        assert_eq!(
+            before,
+            after,
+            "`kan identity {cmd}` changed .kan/ despite refusing. A refusal must happen \
+             BEFORE the first write, or there is a half-state to reason about -- which is \
+             the whole reason the terminal gate and this check sit at the top of the \
+             executor rather than partway down.\nstderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+/// Every file under a directory, with its bytes — so a changed, added or
+/// removed file all show up.
+fn fingerprint(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if let Ok(b) = std::fs::read(&p) {
+                out.push((p.display().to_string(), b));
+            }
+        }
+    }
+    out.sort();
+    out
+}
