@@ -1,5 +1,6 @@
 name: Field report
 description: What happened when you used kan on something real
+labels: ["field-report"]
 body:
   - type: markdown
     attributes:
