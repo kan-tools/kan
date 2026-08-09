@@ -773,6 +773,33 @@ This says nothing about whether the log has claims in it -- it usually does. It 
 
 Name the author you meant with `--trust did:key:...`, or `kan identity adopt --key <path>` to point this workspace back at its key. Reading never creates an identity, by design (#149).
 =====================================================
+$ kan identity role add reviewer
+exit: FAILED
+--- stdout ---
+
+--- stderr ---
+error: identity error: this workspace has no identity of its own, so a role declared here could never be honoured.
+
+Only the identity a workspace RESOLVES TO may declare a role, and this one resolves to none -- kan is signing as <DID-0>, selected with KAN_IDENTITY_FILE. Writing the declaration would succeed and grant nothing: it would appear in `kan show` and never in `--trust roles`.
+
+Give the workspace an identity of its own first (`kan identity adopt --key <path>` names a key it already has claims from), then declare the role.
+=====================================================
+$ kan identity role list
+exit: ok
+--- stdout ---
+no declared roles. This workspace signs as one identity: <DID-0>
+--- stderr ---
+=====================================================
+$ kan identity role list --json
+exit: ok
+--- stdout ---
+{
+  "v": 1,
+  "active": "<DID-0>",
+  "roles": []
+}
+--- stderr ---
+=====================================================
 $ find .kan -printf '%P\n' | sort
 index.sqlite
 log/

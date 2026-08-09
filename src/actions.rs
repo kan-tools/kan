@@ -772,6 +772,126 @@ pub fn durability_of(ws: &Workspace, class: &SubjectView) -> Durability {
 /// documented workaround was editing `.kan/identity-id` from a stack trace,
 /// which is not a recovery path so much as an invitation to make it worse.
 ///
+/// `kan identity role add <name>` — mint a role key and **declare it as a
+/// claim** (`.design/role-declarations.md` REQ-3/REQ-6/REQ-7).
+///
+/// Three acts in one command, and the order matters: mint the key, refuse if
+/// this is not the workspace's own identity, then append. Minting first means
+/// a refusal leaves a key file behind but no claim, which is recoverable —
+/// the reverse would leave a declaration naming a key that does not exist.
+///
+/// **The subject is `role/<name>`**, so the declaration has a readable history
+/// of its own: `kan show role/prover` is when it was declared, retracted, and
+/// re-declared, which is how a retraction is aimed without hunting a CID out
+/// of a shared registry.
+///
+/// The primary is auto-declared alongside the first role, for the reason
+/// `sign::primary_role_name` records: without it, `--trust roles` omits every
+/// claim written before the roles existed.
+/// `sign::Error` reaches `actions::Error` through `workspace::Error`, and
+/// there is no blanket two-hop `From`. Named once rather than spelled out at
+/// each of the five call sites below.
+fn sign_error(e: crate::sign::Error) -> Error {
+    Error::Workspace(crate::workspace::Error::Sign(e))
+}
+
+pub async fn declare_role(
+    ws: &mut Workspace,
+    name: &str,
+    key_path: &Path,
+) -> Result<crate::sign::Role, Error> {
+    // REQ-7: a declaration by anyone but the workspace identity grants
+    // nothing, so writing one is worse than refusing -- it is a
+    // complete-looking write with no effect, which is the defect class this
+    // milestone exists to close.
+    let workspace_did = crate::sign::workspace_identity(&ws.root.join(".kan"))
+        .map_err(sign_error)?
+        .map(|identity| identity.did());
+    let signer = ws.identity()?.did();
+    // BOTH arms refuse, and the `None` one is not a formality. Written first
+    // as `if let Some(workspace) = ...`, which skipped the check entirely when
+    // a workspace had no identity of its own -- so `role add` succeeded,
+    // printed "declared role `reviewer`", and `--trust roles` could never
+    // honour it, because resolution had no identity to match the author
+    // against. A guard with a silent hole in exactly the shape it guards
+    // against. Found by the change-ledger golden, which had never run
+    // `role list` against a workspace with a role in it.
+    match &workspace_did {
+        None => {
+            return Err(sign_error(
+                crate::sign::Error::NoWorkspaceIdentityToDeclare { signer },
+            ))
+        }
+        Some(workspace) if workspace != &signer => {
+            return Err(sign_error(crate::sign::Error::NotTheWorkspaceIdentity {
+                signer,
+                workspace: workspace.clone(),
+            }))
+        }
+        Some(_) => {}
+    }
+
+    let declared = ws.declared_roles()?;
+    if let Some(clash) = declared.roles().iter().find(|role| role.name == name) {
+        return Err(sign_error(crate::sign::Error::RoleNameTaken {
+            name: name.to_string(),
+            existing: clash.did.clone(),
+        }));
+    }
+
+    let role = crate::sign::mint_role_key(name, key_path).map_err(sign_error)?;
+    if let Some(clash) = declared.roles().iter().find(|r| r.did == role.did) {
+        return Err(sign_error(crate::sign::Error::RoleAlreadyRegistered {
+            did: role.did.clone(),
+            name: clash.name.clone(),
+        }));
+    }
+
+    // The primary first, so that a reader of `role/primary` sees it declared
+    // before the role whose declaration prompted it.
+    if declared.roles().is_empty() {
+        if let Some(workspace) = workspace_did {
+            let taken: Vec<String> = Vec::new();
+            let primary = crate::sign::primary_role_name(&workspace, &taken);
+            append(
+                ws,
+                SubjectRef::Local(Rkey::from(format!("role/{primary}"))),
+                ClaimBody::RoleDeclaration {
+                    did: workspace,
+                    name: primary,
+                },
+                vec![],
+                None,
+            )
+            .await?;
+        }
+    }
+
+    append(
+        ws,
+        SubjectRef::Local(Rkey::from(format!("role/{name}"))),
+        ClaimBody::RoleDeclaration {
+            did: role.did.clone(),
+            name: name.to_string(),
+        },
+        vec![],
+        None,
+    )
+    .await?;
+
+    Ok(role)
+}
+
+/// `kan identity adopt --key <path>` — point this workspace at a signing key
+/// it already has claims from (v0.9 REQ-8, issue #90).
+///
+/// **The supported way back from a lost identity.** #90's shape is a
+/// workspace whose keychain entry became unreachable — a moved checkout, a
+/// rebuilt binary, an upgrade — after which kan either refuses to open or
+/// (before the guard existed) minted a new DID and hid the whole log. The
+/// documented workaround was editing `.kan/identity-id` from a stack trace,
+/// which is not a recovery path so much as an invitation to make it worse.
+///
 /// **It verifies before it switches, and that is the whole difference between
 /// this and hand-editing.** A key that authored none of the log's claims is
 /// refused, with the DIDs the log *does* contain named — because the one
@@ -2195,7 +2315,7 @@ pub fn context_json(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<
 }
 
 /// `kan identity role list --json`.
-pub fn roles_json(ws: &Workspace, roles: &[crate::sign::Role]) -> Result<String, Error> {
+pub fn roles_json(ws: &Workspace, roles: &[crate::roles::DeclaredRole]) -> Result<String, Error> {
     to_json(&crate::json::RolesJson {
         v: crate::json::SCHEMA_VERSION,
         active: ws.identity()?.did(),
@@ -2204,7 +2324,6 @@ pub fn roles_json(ws: &Workspace, roles: &[crate::sign::Role]) -> Result<String,
             .map(|r| crate::json::RoleJson {
                 name: r.name.clone(),
                 did: r.did.clone(),
-                key_path: r.key_path.display().to_string(),
             })
             .collect(),
     })

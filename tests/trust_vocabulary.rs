@@ -109,6 +109,23 @@ impl Workspace {
         );
         assert!(wrote.ok, "primary write failed: {}", wrote.stderr);
 
+        // v0.12: the workspace has to have an identity of ITS OWN before it
+        // can declare a role, because a declaration is now a claim and only
+        // the identity a workspace resolves to may author one
+        // (`.design/role-declarations.md` REQ-7). This fixture builds the
+        // identity-file-only shape -- primary named by KAN_IDENTITY_FILE, no
+        // `.kan/` identity -- which resolves to none, so `role add` would
+        // otherwise be refused. Adopting the key that already authored the
+        // claim above changes nothing this file asserts: every test here is
+        // about what the `--trust` selectors return, not about where the key
+        // sits.
+        let adopt = kan(
+            dir.path(),
+            Some(&primary),
+            &["identity", "adopt", "--key", primary.to_str().unwrap()],
+        );
+        assert!(adopt.ok, "adopt failed: {}", adopt.stderr);
+
         let added = kan(
             dir.path(),
             Some(&primary),
@@ -365,6 +382,19 @@ fn an_undeclared_reader_is_not_silently_included_in_roles() {
         );
         assert!(run.ok, "setup write failed: {}", run.stderr);
     }
+    // v0.12/REQ-7: the workspace must resolve to an identity of its own before
+    // it can declare. Adopting the primary is what makes it "the primary's
+    // workspace" rather than one driven purely by KAN_IDENTITY_FILE -- and it
+    // sharpens this test rather than weakening it, because the stranger is now
+    // definitively not the workspace identity rather than merely one of two
+    // keys pointed at the same directory.
+    let adopt = kan(
+        dir.path(),
+        Some(&primary),
+        &["identity", "adopt", "--key", primary.to_str().unwrap()],
+    );
+    assert!(adopt.ok, "adopt failed: {}", adopt.stderr);
+
     // Declaring any role registers the primary too, but never the stranger.
     let role_key = dir.path().join("keys/prover");
     let added = kan(

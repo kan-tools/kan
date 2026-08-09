@@ -57,7 +57,8 @@ migration population.
 2. The third column of `.kan/roles` — the key path — is **already fiction for
    one row in four**. `sheaf-games`'s `primary` row records
    `…/sheaf-games/.kan/identity`, a file that does not exist there; that
-   workspace is keychain-rooted. `src/sign.rs::register_active` writes that
+   workspace is keychain-rooted. `register_active` (deleted by this requirement;
+   see Architecture) wrote that
    path unconditionally, whether or not anything is at it. The registry has
    been recording an unchecked path since roles existed.
 
@@ -120,10 +121,28 @@ migration population.
   DIDs resolves to the later. The write-time refusals (`RoleNameTaken`,
   `RoleAlreadyRegistered`) stay as **affordance** — they warn before the log
   grows a shape that needs a tiebreak, they do not enforce.
-- REQ-7: **Declaring refuses when the signer is not the workspace identity.**
-  Running `kan identity role add|import` with `KAN_IDENTITY_FILE` pointing at a
-  role would write a claim that folds as inert — a complete-looking write that
+- REQ-7: **Declaring refuses when the signer is not the workspace identity, and
+  when there is no workspace identity at all.** Running
+  `kan identity role add|import` with `KAN_IDENTITY_FILE` pointing at a role
+  would write a claim that folds as inert — a complete-looking write that
   grants nothing. It errors instead, naming both DIDs.
+
+  *Both arms refuse, and the second is not a formality.* Written first as
+  "compare the signer against the workspace identity **if there is one**",
+  which skipped the check entirely for a workspace that has none — so
+  `role add` reported success, printed `declared role`, and nothing could ever
+  honour the result. A guard with a hole in exactly the shape it guards
+  against. Found by the change-ledger golden when it was extended to cover a
+  populated role listing.
+
+  **This removes a capability from identity-file-only workspaces**, which is
+  the CI/`day`/agent configuration `.design/v0.12-milestone.md`'s REQ-2
+  amendment describes — under `.kan/roles` they could declare, because a file
+  read needs no identity. Decided with Maxine to accept: roles require a
+  workspace identity, and the refusal names `kan identity adopt --key <path>`
+  as the way to get one. Exactly one existing test asserted the old behaviour
+  (`tests/guard_every_minting_path.rs`), so the blast radius is measured rather
+  than estimated. The lost-key hazard this raises is answered in REQ-9.
 - REQ-8: **`--trust roles` reports three states rather than one empty frame.**
   It stays an empty frame — never an error — and the disclosure says *which*
   empty: (a) nothing declared; (b) no workspace identity is resolvable, so no
@@ -147,7 +166,8 @@ migration population.
   honoured — and could not be retracted either, retraction being self-only.
   Under `.kan/roles` this did not arise, because adopt never touched the file.
   At adopt time kan holds both DIDs and can resolve the current set, so it
-  appends one fresh declaration per role. `src/sign.rs::register_active` is the
+  appends one fresh declaration per role. `src/sign.rs::primary_role_name` (the
+  surviving half of `register_active`) is the
   precedent and the same argument: it fires at the one moment the identity is
   loaded and its DID is known.
 
@@ -158,6 +178,28 @@ migration population.
   explicit write command, prints every claim it appends, is undone by
   `kan retract`, and is independently askable as `kan identity role import`.
   Visible, deliberate, reversible — the three properties #183 found absent.
+
+  **It resolves the set from the declaration authors, not from the workspace
+  identity, and that is what makes it work when it is needed.** Asking
+  `declared_roles()` would ask `workspace_identity` — which is *precisely what
+  is missing* in the case adopt exists for. Lose the key and the chain is:
+  resolution returns `NoWorkspaceIdentity`, the set is empty, and adopt
+  re-declares nothing, silently. Writing the new key first makes it worse, as
+  the identity then resolves to a DID that has authored no declarations, so the
+  set is empty for a second reason. So adopt captures the set **before**
+  switching keys and resolves it by asking *who has authored `RoleDeclaration`
+  claims here* — answerable with no identity at all, since every claim carries
+  its author. One such author: carry its live set across and say so. Several:
+  report them and re-declare none, rather than guess which was the workspace.
+
+  *Raised by Maxine asking whether requiring a workspace identity breaks when
+  identity files get lost.* It does, and this is the same shape as the
+  succession-claim problem recorded above — the case that needs the mitigation
+  is the case that cannot satisfy its precondition. `role import` does not cover
+  it either: only a *migrated* workspace has a `.kan/roles` to re-read, and one
+  created after v0.12 never had one. With this, role declarations survive
+  exactly as well as the claims themselves, which is what the whole
+  make-it-a-claim argument was buying.
 
   *Narrower than it first appears*: `src/actions.rs::adopt_identity` **refuses a key
   that authored none of the log's claims**, so the adopted identity is always
@@ -227,13 +269,25 @@ mechanical witness the criterion says so and is marked **intent**.
       `tests/role_declarations.rs` (new), test `adopt_carries_the_role_registry_across`,
       comparing the set before and after rather than counting it, so a set that
       changed membership while keeping its size cannot pass.
-- [ ] AC-11: For REQ-4 + the surfaces that move, the change-ledger golden
-      records exactly what changed in `kan identity role list` and
-      `kan identity authors` output, human and `--json`. *Witness*:
+- [ ] AC-11: For REQ-4, `kan identity role list` reports name and DID and **no
+      key path**, human and `--json`. *Witness*:
+      `tests/role_declarations.rs` (new), test `role_list_reports_two_columns_and_no_key_path`.
+
+      *This criterion originally named the change-ledger golden as its witness,
+      and the golden structurally cannot be one.* Its fixture workspace is
+      driven entirely by `KAN_IDENTITY_FILE` and has no identity of its own, so
+      under REQ-7 it can never hold a declared role — it can only ever freeze
+      the **empty** listing, which is what it had been doing since roles
+      existed. Corrected during implementation, when extending the fixture to
+      cover the populated case is what surfaced that it could not.
+- [ ] AC-11b: For REQ-7, the change-ledger golden freezes the **refusal** —
+      `kan identity role add` in a workspace with no identity of its own fails,
+      naming why the declaration could never be honoured. *Witness*:
       `tests/golden_trust_and_identity.rs` and
       `tests/fixtures/golden/trust-and-identity.txt`; AC-2 of the milestone
       says this fixture is expected to change and that a diff is accepted only
-      in a commit naming its requirement.
+      in a commit naming its requirement. This is the surface the golden
+      **can** hold, and adding it is what found the hole in REQ-7's guard.
 - [ ] AC-12: **Intent, no mechanical witness.** A kan older than v0.12 reading
       a v0.12 log sees declarations as `Unknown` and reports only whatever the
       leftover `.kan/roles` still says. Stated precisely rather than measured;
@@ -251,16 +305,25 @@ mechanical witness the criterion says so and is marked **intent**.
   and will fail to compile without the new arm. That non-exhaustive match is
   the compiler doing the enumeration work, which is why no checklist is needed
   here.
-- `src/sign.rs` — `list_roles` (`src/sign.rs:1022`) survives only as the
-  importer's reader. `add_role` (`src/sign.rs:301`) stops appending a line and
-  appends a claim; `register_active` (`src/sign.rs:363`) becomes a
-  self-declaration by the workspace identity, which depth 0 permits because it
-  is the primary declaring itself. `ROLES_FILE` (`src/sign.rs:274`) keeps its
-  constant for the importer, and its docstring is the reversal recorded below.
-- `src/workspace.rs` — `role_trust_entries` (`src/workspace.rs:670`),
-  `undeclared_log_authors` (`src/workspace.rs:686`) and `trust_from`'s
-  `role:<name>` branch (`src/workspace.rs:752`) all move from
-  `sign::list_roles` to the log-backed resolver.
+- `src/roles.rs` — **new, and deliberately not under `src/fold/`.** Role
+  resolution is not part of the fold; it produces an *input* to it. The rule
+  itself is a pure function (`src/roles.rs::declared`) taking the claims and
+  the workspace DID as arguments, so it is testable without a workspace, a key
+  or a filesystem — the seam drawn one layer deeper than REQ-3's review found
+  it drawn last time. `src/roles.rs::Declared` is total, so an empty answer
+  always carries its reason (REQ-8).
+- `src/sign.rs` — `src/sign.rs::list_roles` survives only as the importer's
+  reader. `add_role` and `register_active` are **gone**: the first becomes
+  `src/sign.rs::mint_role_key` (a key, no registration — registration is a
+  claim now, and the clash checks moved to where the declared set is
+  resolvable), the second becomes `src/sign.rs::primary_role_name`, with the
+  append itself in `src/actions.rs::declare_role`. `src/sign.rs::ROLES_FILE`
+  keeps its constant for the importer, and its docstring is the reversal
+  recorded below.
+- `src/workspace.rs` — `src/workspace.rs::role_trust_entries`,
+  `src/workspace.rs::undeclared_log_authors` and `trust_from`'s `role:<name>`
+  branch all move to `src/workspace.rs::declared_roles`, which supplies the two
+  inputs the pure resolver needs and does nothing else.
 
   *A drift found while reading it, in the exact function REQ-3 rewrites.*
   `Workspace::role_trust_entries`'s docstring says `--trust roles` expands to

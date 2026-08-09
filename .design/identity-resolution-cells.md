@@ -39,7 +39,14 @@ R4  otherwise -> None
 **The read never consults the keychain for the signing key.** Only for a
 *seed*, and only when `.kan/seed-id` exists. That single fact is #170.
 
-### Write: `Identity::load_or_create_for_workspace` (`src/sign.rs:488`)
+### Write: `Identity::load_or_create_for_workspace` (**deleted**)
+
+*Historical, and kept as the analysis that motivated REQ-1.* This function and
+the `load_or_create` it called were retired by v0.12 REQ-3.5 (#183, ADR-88), so
+the line citations that were here pointed at code that no longer exists — one
+of them still resolving to a live but unrelated line, which is the positional
+citation rot `scripts/check-citations.sh` exists to catch. They are removed
+rather than repointed.
 
 ```
 W1  KAN_IDENTITY_FILE set -> load_or_create:
@@ -58,7 +65,7 @@ W3  fresh = !.kan/identity && !.kan/identity-id
               no entry + file      -> import file, store to keychain
               no entry + no file   -> guard, then generate + store
               Entry::new failed    -> warn, fall back to plaintext file
-              get_secret errored:                          (src/sign.rs:413)
+              get_secret errored:
                   key file present -> warn, fall back to plaintext file
                   no key file      -> Err(KeychainUnreachable)
       fresh     -> guard, then Seed::create (keychain-preferred, src/sign.rs::create)

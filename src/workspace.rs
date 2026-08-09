@@ -269,7 +269,40 @@ impl Workspace {
         // `create_workspace_identity` is the only thing that writes one, and
         // is reached only when this workspace genuinely has none.
         let selection = crate::sign::Selection::from_env();
-        let identity = match crate::sign::signing_identity(&kan_dir, &selection)? {
+        let resolved = match crate::sign::signing_identity(&kan_dir, &selection) {
+            Ok(resolved) => resolved,
+            // REQ-4: name the roles this workspace declares. `sign` cannot --
+            // the declared set is a projection over claims and that layer is
+            // below the log -- so the clause is filled here, the first place
+            // that can see both the selection and the log. This replaces
+            // `DeclaredRoleKeyMissing`, which answered the same question by
+            // matching the missing path against a registry column that no
+            // longer exists, and only for keys kan itself had minted.
+            Err(crate::sign::Error::SelectionMissing { path, .. }) => {
+                let names: Vec<String> = self
+                    .declared_roles()
+                    .map(|declared| {
+                        declared
+                            .roles()
+                            .iter()
+                            .map(|role| role.name.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                return Err(Error::Sign(crate::sign::Error::SelectionMissing {
+                    path,
+                    declared: match names.is_empty() {
+                        true => String::new(),
+                        false => format!(
+                            "\n\nThis workspace declares these roles: {}.",
+                            names.join(", ")
+                        ),
+                    },
+                }));
+            }
+            Err(e) => return Err(e.into()),
+        };
+        let identity = match resolved {
             Some(identity) => identity,
             None => crate::sign::create_workspace_identity(&kan_dir)?,
         };
@@ -670,10 +703,45 @@ impl Workspace {
     /// already answered, so `roles` is free to mean exactly what it says,
     /// which is what makes `local` minus `roles` a meaningful difference.
     pub fn role_trust_entries(&self) -> Result<Vec<(String, f64)>, Error> {
-        Ok(crate::sign::list_roles(&self.root.join(".kan"))?
-            .into_iter()
-            .map(|role| (role.did, 1.0))
+        Ok(self
+            .declared_roles()?
+            .roles()
+            .iter()
+            .map(|role| (role.did.clone(), 1.0))
             .collect())
+    }
+
+    /// The roles this workspace has declared, resolved from the log
+    /// (`.design/role-declarations.md` REQ-3).
+    ///
+    /// Supplies the two inputs `roles::declared` needs and does nothing else,
+    /// so the rule itself stays pure and testable without a workspace.
+    ///
+    /// **Resolves the workspace identity, never a selection.** It asks
+    /// `sign::workspace_identity` — question 1, "which identity does this
+    /// workspace *have*" — rather than `signing_identity`, so a caller running
+    /// with `KAN_IDENTITY_FILE` pointed at a role cannot shift which
+    /// declarations are honoured. Reads no key it does not already need and
+    /// creates nothing: `workspace_identity` is pure by REQ-1.
+    ///
+    /// An unreachable identity is [`crate::roles::Declared::NoWorkspaceIdentity`]
+    /// rather than an error, because "who did this workspace vouch for" is a
+    /// legitimate question with a legitimate empty answer, and an erroring
+    /// alias would make `--trust roles,did:key:…` fail as a whole when one
+    /// member could not expand.
+    pub fn declared_roles(&self) -> Result<crate::roles::Declared, Error> {
+        let workspace_did = match crate::sign::workspace_identity(&self.root.join(".kan")) {
+            Ok(Some(identity)) => Some(identity.did()),
+            // Unreachable is indistinguishable from absent *for this
+            // question*: either way no declaration can be honoured, and
+            // saying so beats propagating a keychain error into every read
+            // that happens to name `roles` (#96).
+            Ok(None) | Err(_) => None,
+        };
+        Ok(crate::roles::declared(
+            &self.index.all_stored_claims()?,
+            workspace_did.as_deref(),
+        ))
     }
 
     /// Authors with a claim in this log that no `.kan/roles` entry declares —
@@ -686,11 +754,12 @@ impl Workspace {
     /// `Local` made log membership derivable and `roles` narrowed to mean
     /// what it says.
     pub fn undeclared_log_authors(&self) -> Result<Vec<AuthorId>, Error> {
-        let declared: std::collections::HashSet<String> =
-            crate::sign::list_roles(&self.root.join(".kan"))?
-                .into_iter()
-                .map(|role| role.did)
-                .collect();
+        let declared: std::collections::HashSet<String> = self
+            .declared_roles()?
+            .roles()
+            .iter()
+            .map(|role| role.did.clone())
+            .collect();
         let mut out: Vec<AuthorId> = self
             .index
             .log_authors()?
@@ -752,15 +821,22 @@ impl Workspace {
             }
             let entry = crate::fold::trust::parse_entry(spec)?;
             if let Some(name) = entry.did.strip_prefix(crate::fold::trust::ROLE_PREFIX) {
-                let roles = crate::sign::list_roles(&self.root.join(".kan"))?;
+                let declared = self.declared_roles()?;
+                let roles = declared.roles();
                 let found = roles.iter().find(|role| role.name == name);
                 let did = match found {
                     Some(role) => role.did.clone(),
                     None => {
                         return Err(crate::fold::trust::SpecError::NoSuchRole {
                             spec: spec.to_string(),
+                            // Naming *why* the set is empty rather than only
+                            // that it is: "none declared" is a different
+                            // problem from "this workspace's identity is
+                            // unreachable, so none can be honoured", and a
+                            // caller who cannot tell them apart debugs the
+                            // wrong one.
                             declared: match roles.is_empty() {
-                                true => "none declared".to_string(),
+                                true => crate::roles::empty_reason(&declared).to_string(),
                                 false => roles
                                     .iter()
                                     .map(|r| r.name.clone())
@@ -768,7 +844,7 @@ impl Workspace {
                                     .join(", "),
                             },
                         }
-                        .into())
+                        .into());
                     }
                 };
                 weights.insert(AuthorId { did, agent: None }, entry.weight);

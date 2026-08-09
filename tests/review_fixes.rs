@@ -957,6 +957,20 @@ fn reads_and_writes_resolve_the_same_identity() {
 /// `--trust roles` — "everything this workspace wrote" — reports nothing on
 /// the subject just written. Same class as the substitution it replaced,
 /// reached by minting instead.
+///
+/// **v0.12 makes the original scenario unreachable, and this test now says so
+/// rather than pretending to still build it.** The setup asserted an *empty
+/// log*, because that was what left the guard no evidence to weigh. Declaring
+/// a role is now a claim (`.design/role-declarations.md`), so a workspace with
+/// a declared role always has a non-empty log: "declared role" and "empty log"
+/// became mutually exclusive by construction, and the precondition could no
+/// longer be satisfied at the same time as the premise.
+///
+/// The property under test is unchanged and still worth pinning — a selection
+/// naming a missing key is **refused, never minted** (AC-9) — so what replaces
+/// the precondition is an assertion of the new invariant: declaring wrote to
+/// the log, which is *why* the evidence-free variant is gone. Deleting the
+/// precondition without that would have quietly reduced this to a weaker test.
 #[test]
 fn a_missing_role_key_is_refused_even_with_no_other_evidence() {
     let dir = repo();
@@ -967,6 +981,20 @@ fn a_missing_role_key_is_refused_even_with_no_other_evidence() {
         kan::sign::Identity::generate().save(&primary).unwrap();
     }
     assert!(kan(dir.path(), Some(&primary), &["identity", "did"]).ok);
+
+    // v0.12: a role can only be declared by the identity the workspace
+    // RESOLVES to, and the shape this test builds -- primary outside `.kan/`,
+    // named by KAN_IDENTITY_FILE -- resolves to none. Adopting first gives the
+    // workspace that identity without changing what this test is about, which
+    // is that a *missing* declared-role key is refused rather than minted
+    // (`.design/role-declarations.md` REQ-7 for the adopt, AC-9 for the
+    // subject).
+    let adopt = kan(
+        dir.path(),
+        Some(&primary),
+        &["identity", "adopt", "--key", primary.to_str().unwrap()],
+    );
+    assert!(adopt.ok, "adopt failed: {}", adopt.stderr);
 
     let role_key = dir.path().join("prover-key");
     {
@@ -988,15 +1016,21 @@ fn a_missing_role_key_is_refused_even_with_no_other_evidence() {
     assert!(added.ok, "role add failed: {}", added.stderr);
     let role_did = kan(dir.path(), Some(&role_key), &["identity", "did"]).stdout;
 
-    // The role's key goes missing, and the log is empty -- no claims, so the
-    // guard has nothing to weigh.
+    // The role's key goes missing.
     std::fs::remove_file(&role_key).unwrap();
+
+    // The invariant that replaced the old "the log must be empty"
+    // precondition: declaring a role APPENDED to the log, so the state the
+    // original defect needed -- a declared role beside an empty log -- can no
+    // longer be constructed. Asserted rather than assumed, because it is the
+    // reason the precondition went away.
+    let car = dir.path().join(".kan/log/repo.car");
     assert!(
-        !dir.path().join(".kan/log/repo.car").exists()
-            || std::fs::metadata(dir.path().join(".kan/log/repo.car"))
-                .map(|m| m.len() == 0)
-                .unwrap_or(true),
-        "precondition: the log must be empty, so the guard has no evidence"
+        std::fs::metadata(&car)
+            .map(|m| m.len() > 0)
+            .unwrap_or(false),
+        "declaring a role should have written a claim, which is what makes the \
+         evidence-free variant of this defect unreachable"
     );
 
     let run = kan(
@@ -1014,9 +1048,27 @@ fn a_missing_role_key_is_refused_even_with_no_other_evidence() {
         "a fresh key was minted at the declared role's path -- claims signed with it \
          appear under no `.kan/roles` line, so `--trust roles` reports them as nothing"
     );
+    // v0.12 moved WHERE this comes from, and the assertion is written so it
+    // cannot pass by accident. `DeclaredRoleKeyMissing` used to name the role
+    // by matching the missing path against the registry's key-path column;
+    // REQ-4 deletes that column and that error, and `SelectionMissing` now
+    // lists the roles this workspace declares. The key file here is
+    // `prover-key`, so its PATH also contains "prover" -- a bare
+    // `contains("prover")` would therefore pass even if the role listing were
+    // dropped entirely. Assert on the clause that carries it.
     assert!(
-        run.stderr.contains("prover"),
-        "the refusal should name the role whose key is missing: {}",
+        run.stderr.contains("This workspace declares these roles:"),
+        "the refusal should list the workspace's declared roles: {}",
+        run.stderr
+    );
+    let declared_clause = run
+        .stderr
+        .split("This workspace declares these roles:")
+        .nth(1)
+        .unwrap_or_default();
+    assert!(
+        declared_clause.contains("prover"),
+        "the declared-roles clause should name `prover`: {}",
         run.stderr
     );
     let _ = role_did;

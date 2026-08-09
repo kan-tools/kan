@@ -12,6 +12,7 @@ pub mod git;
 pub mod json;
 pub mod mcp;
 pub mod relations;
+pub mod roles;
 pub mod sign;
 pub mod store;
 pub mod transport;

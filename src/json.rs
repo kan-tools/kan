@@ -311,11 +311,16 @@ pub struct RolesJson {
     pub roles: Vec<RoleJson>,
 }
 
+/// **No `key_path` since v0.12** (`.design/role-declarations.md` REQ-4). A
+/// declaration binds a name to a DID; where that DID's key happens to sit is
+/// local, unverifiable from the claim, and was already fiction for any
+/// keychain-rooted workspace, whose primary row named a `.kan/identity` that
+/// never existed. A consumer wanting to write as a role sets
+/// `KAN_IDENTITY_FILE` to a path it already knows.
 #[derive(Debug, Serialize)]
 pub struct RoleJson {
     pub name: String,
     pub did: String,
-    pub key_path: String,
 }
 
 /// A `SubjectRef` as a plain name, matching what the read verbs accept back.

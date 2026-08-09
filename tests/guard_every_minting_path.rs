@@ -258,10 +258,37 @@ fn an_empty_log_still_mints_freely_on_every_path() {
 /// against a non-empty log — that is the whole distinction the guard draws,
 /// so a fix that refused here would have broken the feature rather than the
 /// defect.
+///
+/// **The workspace adopts its key first, and that step is new in v0.12.**
+/// `workspace_with_claims` builds the identity-file-only shape — a key named
+/// by `KAN_IDENTITY_FILE` and no `.kan/` identity of its own — which is the
+/// CI/`day`/agent configuration. Since role declarations became claims, only
+/// the identity a workspace *resolves to* may declare one
+/// (`.design/role-declarations.md` REQ-7), so that shape can no longer declare
+/// at all: the declaration would be written by a DID the workspace does not
+/// resolve to, and nothing would ever honour it.
+///
+/// Adopting first restores the precondition without weakening this test's
+/// actual subject, which is that a **declared** role gets past the
+/// `WouldMintSecondIdentity` guard where an undeclared second identity does
+/// not. `an_undeclared_second_identity_is_still_refused` is the other half and
+/// is untouched.
 #[test]
 fn declaring_a_role_is_still_the_deliberate_way_past_the_guard() {
     let (dir, key) = workspace_with_claims();
     let role_key = dir.path().join("prover-key");
+
+    let adopt = kan(
+        dir.path(),
+        Some(&key),
+        true,
+        &["identity", "adopt", "--key", key.to_str().unwrap()],
+    );
+    assert!(
+        adopt.ok,
+        "the workspace could not adopt the key that authored its claims: {}",
+        adopt.stderr
+    );
 
     let run = kan(
         dir.path(),

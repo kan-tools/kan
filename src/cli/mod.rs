@@ -996,19 +996,13 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                             Some(k) => std::path::PathBuf::from(k),
                             None => kan_dir.join("roles.d").join(&name),
                         };
-                        // Record the identity that was already signing here
-                        // before this role existed, while it is loaded and its
-                        // DID is in hand. Once KAN_IDENTITY_FILE points at a
-                        // role, kan never consults the keychain, so this is the
-                        // only cheap moment to learn it — and without it,
-                        // `--trust roles` omits everything written before the
-                        // first role was declared.
-                        crate::sign::register_active(
-                            &kan_dir,
-                            &ws.identity()?.did(),
-                            &kan_dir.join("identity"),
-                        )?;
-                        let role = crate::sign::add_role(&kan_dir, &name, &key_path)?;
+                        // Minting the key, refusing a non-workspace signer,
+                        // auto-declaring the primary and appending the
+                        // declaration all live in one action now, because
+                        // they are one atomic intent and splitting them across
+                        // the CLI is how the file version came to check a
+                        // clash in a different place from where it wrote.
+                        let role = actions::declare_role(&mut ws, &name, &key_path).await?;
                         println!("declared role `{}`: {}", role.name, role.did);
                         println!("key: {}", role.key_path.display());
                         println!(
@@ -1020,23 +1014,43 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                     );
                     }
                     RoleAction::List { json } => {
-                        let roles = crate::sign::list_roles(&ws.root.join(".kan"))?;
+                        let declared = ws.declared_roles()?;
+                        let roles = declared.roles().to_vec();
                         if json {
                             print!("{}", actions::roles_json(&ws, &roles)?);
                         } else if roles.is_empty() {
-                            println!(
-                                "no declared roles. This workspace signs as one identity: {}",
-                                ws.identity()?.did()
-                            );
+                            // REQ-8's three states. Matched here rather than
+                            // rendered through `roles::empty_reason`, which is
+                            // a short clause for `--trust role:<name>`'s error
+                            // and drops what this surface should keep: the
+                            // common case names the identity this workspace
+                            // signs as, which is the next thing an operator
+                            // asks.
+                            match &declared {
+                                crate::roles::Declared::NoWorkspaceIdentity => println!(
+                                    "no role can be honoured here: this workspace's own \
+                                     identity is unreachable, and only the identity a \
+                                     workspace resolves to may declare roles."
+                                ),
+                                crate::roles::Declared::OnlyForeign { count } => println!(
+                                    "no declared roles. {count} declaration(s) in this log \
+                                     were authored by other identities, which grants them \
+                                     nothing."
+                                ),
+                                _ => println!(
+                                    "no declared roles. This workspace signs as one \
+                                     identity: {}",
+                                    ws.identity()?.did()
+                                ),
+                            }
                         } else {
                             println!("active: {}", ws.identity()?.did());
                             for role in roles {
-                                println!(
-                                    "{}\t{}\t{}",
-                                    role.name,
-                                    role.did,
-                                    role.key_path.display()
-                                );
+                                // Two columns, not three: REQ-4 drops the key
+                                // path, which was machine-specific, unchecked,
+                                // and for a keychain-rooted primary named a
+                                // file that never existed.
+                                println!("{}\t{}", role.name, role.did);
                             }
                         }
                     }

@@ -123,34 +123,76 @@ pub enum Error {
         remedy: String,
         evidence: String,
     },
-    #[error(
-        "the declared role `{name}` has no key at {path}.\n\n\
-         KAN_IDENTITY_FILE names that path, so this write asked to be signed as `{name}` \
-         -- and creating a fresh key there would sign it as an identity no `.kan/roles` \
-         line mentions, which `--trust roles` would then report as nothing at all.\n\n\
-         Restore the role's key file, or point KAN_IDENTITY_FILE at the identity you \
-         meant to write as."
-    )]
-    DeclaredRoleKeyMissing { name: String, path: String },
+    /// **`DeclaredRoleKeyMissing` was here and is deleted** (REQ-4). It named
+    /// the role whose key had gone missing, by matching the path against the
+    /// registry's third column — and the registry no longer has one, because a
+    /// path is machine-specific and unverifiable from a claim. A DID cannot
+    /// substitute for it: computing one means loading the key that is missing.
+    ///
+    /// Rebuilding it by convention was specified and then rejected — it would
+    /// have kept the specific message only for keys kan itself minted at
+    /// `.kan/roles.d/<name>`, which is the case least likely to have gone
+    /// missing, and told the operator who typed `--key /elsewhere` nothing.
+    /// [`Error::SelectionMissing`] carries the facts instead, in every case.
     #[error(
         "KAN_IDENTITY_FILE names {path}, which does not exist.\n\n\
          That variable SELECTS which identity signs this write; it does not define which \
          identity this workspace has. A selection whose target is missing is an error -- \
          kan will not create a key there, and will not quietly sign as somebody else.\n\n\
          Point it at the key you meant, or unset it to use this workspace's own identity. \
-         To restore from a recovery phrase, write the key to that path first.\n\n\
+         To restore from a recovery phrase, write the key to that path first.{declared}\n\n\
          If you meant to add a second *role* to this workspace -- a director and a prover \
          signing separately, say -- that is supported and this is not the way to ask for \
-         it: run `kan identity role add <name> --key <path>`, which mints the role key \
-         deliberately and registers it, then read with `--trust roles` so both roles' \
-         claims are visible."
+         it: run `kan identity role add <name>`, which mints the role key at \
+         .kan/roles.d/<name> and declares it, then read with `--trust roles` so both \
+         roles' claims are visible."
     )]
-    SelectionMissing { path: String },
+    SelectionMissing {
+        path: String,
+        /// A pre-rendered clause naming this workspace's declared roles, or
+        /// empty when they are not knowable here.
+        ///
+        /// **Pre-rendered rather than a `Vec<String>`, and filled in by the
+        /// caller, because of where this is raised.** `signing_identity` sits
+        /// below the log: it resolves keys and knows nothing about claims, and
+        /// the declared set is now a projection over claims. So `sign` raises
+        /// this with the clause empty and
+        /// `Workspace::commit_identity` refills it, which is the first layer
+        /// that can see both the selection and the log. One variant either
+        /// way — REQ-4 deletes a variant and adds none.
+        declared: String,
+    },
     #[error(
-        "a role named `{name}` is already declared in this workspace (key: {existing}). \
-         Pick another name, or use the existing role."
+        "a role named `{name}` is already declared in this workspace, as {existing}. \
+         Pick another name, or use the existing role.\n\n\
+         Declaring it again would not fail -- the log is append-only and the later \
+         declaration would simply win -- which is why this refuses BEFORE the write \
+         rather than after."
     )]
     RoleNameTaken { name: String, existing: String },
+    #[error(
+        "only this workspace's own identity can declare a role, and right now kan is \
+         signing as {signer}.\n\n\
+         This workspace's identity is {workspace}. A declaration written by anyone else \
+         is a valid claim that grants NOTHING -- it would appear in `kan show` and never \
+         in `--trust roles` -- so kan refuses rather than writing one that silently does \
+         nothing.\n\n\
+         Unset KAN_IDENTITY_FILE to declare as this workspace. A role that needs to \
+         declare roles is a second workspace identity, and the honest way to say that is \
+         to be one (`.design/role-declarations.md`, depth 0)."
+    )]
+    NotTheWorkspaceIdentity { signer: Did, workspace: Did },
+    #[error(
+        "this workspace has no identity of its own, so a role declared here could never \
+         be honoured.\n\n\
+         Only the identity a workspace RESOLVES TO may declare a role, and this one \
+         resolves to none -- kan is signing as {signer}, selected with KAN_IDENTITY_FILE. \
+         Writing the declaration would succeed and grant nothing: it would appear in `kan \
+         show` and never in `--trust roles`.\n\n\
+         Give the workspace an identity of its own first (`kan identity adopt --key \
+         <path>` names a key it already has claims from), then declare the role."
+    )]
+    NoWorkspaceIdentityToDeclare { signer: Did },
     #[error(
         "that key already belongs to the declared role `{name}` ({did}). Registering one \
          identity under two role names would make attribution ambiguous in every read."
@@ -267,10 +309,25 @@ fn log_has_claims(kan_dir: &Path) -> bool {
 }
 
 /// The file recording this workspace's declared role identities, one per
-/// line as `<did>\t<name>\t<key path>`. Lives inside `.kan/` (gitignored,
-/// repo-local per ADR-3) because a role is a local process arrangement, not
-/// something to share — the *claims* roles write are the shareable part, and
-/// they already carry their own author.
+/// line as `<did>\t<name>\t<key path>`.
+///
+/// **Read-only since v0.12, and kept only as `kan identity role import`'s
+/// input.** Nothing writes it any more; the registry is
+/// `ClaimBody::RoleDeclaration` claims (`.design/role-declarations.md`).
+///
+/// *This docstring used to argue the opposite, and the reversal is the point.*
+/// It said the file lives in `.kan/` "because a role is a local process
+/// arrangement, not something to share — the *claims* roles write are the
+/// shareable part, and they already carry their own author." That reasoning
+/// holds for a **path**, which is why REQ-4 keeps the path out of the claim.
+/// It does not hold for the **binding**: that this workspace vouched for a DID
+/// under a name is exactly the attributable, revocable assertion kan exists to
+/// record, and keeping it in a file is what cost it provenance, an author, and
+/// revocation-by-retraction.
+///
+/// kan neither rewrites nor deletes this file. `import` says it is safe to
+/// remove and names the one reason to keep it — a kan older than v0.12 reads
+/// it and cannot interpret a declaration.
 pub const ROLES_FILE: &str = "roles";
 
 /// One declared role: a signing identity this workspace was deliberately
@@ -298,16 +355,15 @@ pub struct Role {
 /// The guard is therefore not weakened — an *undeclared* second identity
 /// against a non-empty log is refused exactly as before, which is
 /// `.design/v0.8-milestone.md` AC-4's negative control.
-pub fn add_role(kan_dir: &Path, name: &str, key_path: &Path) -> Result<Role, Error> {
+/// **Registration is now a claim, so this only mints the key.** The clash
+/// checks moved to `actions::declare_role`, where the declared set is
+/// resolvable from the log; they survive as write-time *affordance* — an
+/// append-only log cannot refuse a duplicate, so the warning happens before
+/// the log grows a shape that needs a tiebreak (`.design/role-declarations.md`
+/// REQ-6).
+pub fn mint_role_key(name: &str, key_path: &Path) -> Result<Role, Error> {
     if let Some(parent) = key_path.parent() {
         std::fs::create_dir_all(parent)?;
-    }
-    let existing = list_roles(kan_dir)?;
-    if let Some(clash) = existing.iter().find(|r| r.name == name) {
-        return Err(Error::RoleNameTaken {
-            name: name.to_string(),
-            existing: clash.key_path.display().to_string(),
-        });
     }
 
     // Straight to the plaintext loader, which is what makes this the
@@ -315,26 +371,9 @@ pub fn add_role(kan_dir: &Path, name: &str, key_path: &Path) -> Result<Role, Err
     // here. An existing key file is loaded rather than overwritten, so
     // registering a role twice is idempotent instead of destroying a key.
     let identity = Identity::load_or_create_plaintext(key_path)?;
-    let did = identity.did();
-
-    if let Some(clash) = existing.iter().find(|r| r.did == did) {
-        return Err(Error::RoleAlreadyRegistered {
-            did,
-            name: clash.name.clone(),
-        });
-    }
-
-    std::fs::create_dir_all(kan_dir)?;
-    let line = format!("{}\t{}\t{}\n", did, name, key_path.display());
-    use std::io::Write;
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(kan_dir.join(ROLES_FILE))?;
-    file.write_all(line.as_bytes())?;
 
     Ok(Role {
-        did,
+        did: identity.did(),
         name: name.to_string(),
         key_path: key_path.to_path_buf(),
     })
@@ -358,27 +397,18 @@ pub fn add_role(kan_dir: &Path, name: &str, key_path: &Path) -> Result<Role, Err
 /// so the primary's DID is not discoverable at read time — recording it
 /// while it is in hand is the only cheap option.
 ///
-/// `key_path` is where the primary key is *looked up*, which for a keychain
-/// identity is the account path rather than a file that exists.
-pub fn register_active(kan_dir: &Path, did: &Did, key_path: &Path) -> Result<(), Error> {
-    let existing = list_roles(kan_dir)?;
-    if existing.iter().any(|r| &r.did == did) {
-        return Ok(());
+/// **Now a claim, appended by `actions::declare_role`.** The reasoning above
+/// is unchanged and is why the auto-declaration survived the move; only the
+/// medium changed, and with it the last argument for the registry carrying a
+/// key path — the primary's `key_path` was always the path it is *looked up*
+/// at, which for a keychain-rooted workspace is a file that does not exist.
+/// Measured in exactly that state: `sheaf-games` records its primary at
+/// `.kan/identity`, which has never been there.
+pub fn primary_role_name(did: &Did, taken: &[String]) -> String {
+    match taken.iter().any(|name| name == "primary") {
+        true => format!("primary-{}", &did[did.len().saturating_sub(8)..]),
+        false => "primary".to_string(),
     }
-    let name = if existing.iter().any(|r| r.name == "primary") {
-        format!("primary-{}", &did[did.len().saturating_sub(8)..])
-    } else {
-        "primary".to_string()
-    };
-
-    std::fs::create_dir_all(kan_dir)?;
-    use std::io::Write;
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(kan_dir.join(ROLES_FILE))?;
-    file.write_all(format!("{}\t{}\t{}\n", did, name, key_path.display()).as_bytes())?;
-    Ok(())
 }
 
 /// Every declared role, in declaration order. A missing file is no roles,
@@ -902,18 +932,13 @@ pub fn signing_identity(kan_dir: &Path, selection: &Selection) -> Result<Option<
                 let identity = Identity::load_existing(path)?;
                 return Ok(Some(identity));
             }
-            // Named by `.kan/roles`? Then say so: the caller asked to write as
-            // a specific declared role and that role's key is gone.
-            if let Ok(roles) = list_roles(kan_dir) {
-                if let Some(role) = roles.iter().find(|r| &r.key_path == path) {
-                    return Err(Error::DeclaredRoleKeyMissing {
-                        name: role.name.clone(),
-                        path: path.display().to_string(),
-                    });
-                }
-            }
+            // The declared roles are a projection over claims, which this
+            // layer cannot see. `Workspace::commit_identity` fills the clause
+            // in; raising it empty here keeps this function's dependencies
+            // exactly what they were.
             Err(Error::SelectionMissing {
                 path: path.display().to_string(),
+                declared: String::new(),
             })
         }
     }

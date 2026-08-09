@@ -295,6 +295,37 @@ fn capture_document(fixture: &Fixture) -> String {
         &mut doc,
     );
 
+    // A **populated** role listing, and it is last on purpose.
+    //
+    // Until v0.12 this document only ever ran `identity role list` against a
+    // workspace with nothing declared, so the change ledger froze the empty
+    // case and nothing else — and `.design/role-declarations.md` AC-11 named
+    // this fixture as the witness for `role list`'s output changing. It could
+    // not have witnessed it: the columns only appear when a role exists.
+    //
+    // Declaring a role appends claims, so every capture *after* it would move.
+    // Putting it at the end keeps the diff purely additive, which is what lets
+    // a reviewer see REQ-4's two-column change on its own rather than mixed
+    // into a document-wide reflow.
+    capture(
+        dir,
+        Some(&fixture.alice),
+        &["identity", "role", "add", "reviewer"],
+        &mut doc,
+    );
+    capture(
+        dir,
+        Some(&fixture.alice),
+        &["identity", "role", "list"],
+        &mut doc,
+    );
+    capture(
+        dir,
+        Some(&fixture.alice),
+        &["identity", "role", "list", "--json"],
+        &mut doc,
+    );
+
     tree_listing(dir, ".kan", &mut doc);
     tree_listing(dir, ".claims", &mut doc);
 
