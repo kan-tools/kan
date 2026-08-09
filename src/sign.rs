@@ -662,11 +662,8 @@ pub fn unprotect_to(kan_dir: &Path, from: AtRest, dest_name: &str) -> Result<Did
     let account = std::fs::read_to_string(kan_dir.join(account_file))?
         .trim()
         .to_string();
-    let entry = keyring::Entry::new(service_for(from), &account).map_err(|e| {
-        Error::KeychainUnreachable {
-            detail: e.to_string(),
-        }
-    })?;
+    let entry = keychain_entry(service_for(from), &account)?
+        .ok_or_else(|| Error::Recovery("the keychain is disabled".to_string()))?;
     let _warn =
         SlowKeychainWarning::start("reading this repo's secret to move it out of the keychain");
     let bytes = entry.get_secret().map_err(|e| Error::KeychainUnreachable {
@@ -726,11 +723,8 @@ pub fn protect_from(kan_dir: &Path, from: AtRest) -> Result<(Did, String), Error
     let did = did_of(from, &bytes)?;
 
     let account = fresh_account();
-    let entry = keyring::Entry::new(service_for(from), &account).map_err(|e| {
-        Error::KeychainUnreachable {
-            detail: e.to_string(),
-        }
-    })?;
+    let entry = keychain_entry(service_for(from), &account)?
+        .ok_or_else(|| Error::Recovery("the keychain is disabled".to_string()))?;
     let _warn = SlowKeychainWarning::start("storing this repo's secret in the keychain");
     entry
         .set_secret(&bytes)
@@ -780,7 +774,10 @@ fn keychain_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
         Ok(id) if !id.trim().is_empty() => id.trim().to_string(),
         _ => return Ok(None),
     };
-    let Ok(entry) = keyring::Entry::new(KEYCHAIN_SERVICE, &account) else {
+    // An unopenable entry stays `None` rather than an error -- #180: that was
+    // the one minting path which never consulted the guard, and it is now just
+    // another way for question 1 to answer "no identity here".
+    let Ok(Some(entry)) = keychain_entry(KEYCHAIN_SERVICE, &account) else {
         return Ok(None);
     };
     let _warn = SlowKeychainWarning::start("reading this repo's signing key");
@@ -1238,6 +1235,37 @@ impl Drop for SlowKeychainWarning {
     }
 }
 
+/// **The only place in kan that opens a keychain entry.**
+///
+/// `KAN_NO_KEYCHAIN` is an OPT-OUT, and opt-outs fail open: every call site had
+/// to independently remember `keychain_disabled()`, and the default for
+/// forgetting is "touch the developer's real login keychain". There were four
+/// such sites, and the two newest -- `protect_from` and `unprotect_to`, written
+/// against the design doc rather than against this module's conventions --
+/// both forgot. Running `kan identity protect --yes` with the flag set wrote a
+/// real entry to the author's keychain.
+///
+/// That is four implementations of one decision, which is the same shape as
+/// question 1 having two implementations -- the defect this entire milestone
+/// exists to fix, reproduced inside the guard that protects against it.
+///
+/// So the decision lives here and nowhere else. A fifth path cannot forget,
+/// because there is nothing left to remember, and
+/// `tests/keychain_one_door.rs` asserts a fifth path cannot be added quietly.
+///
+/// `Ok(None)` means "kan is behaving as though no keychain exists" -- callers
+/// decide whether that is an absence or an error.
+fn keychain_entry(service: &str, account: &str) -> Result<Option<keyring::Entry>, Error> {
+    if keychain_disabled() {
+        return Ok(None);
+    }
+    keyring::Entry::new(service, account)
+        .map(Some)
+        .map_err(|e| Error::KeychainUnreachable {
+            detail: e.to_string(),
+        })
+}
+
 fn keychain_disabled() -> bool {
     std::env::var_os(NO_KEYCHAIN_ENV).is_some()
 }
@@ -1318,11 +1346,9 @@ impl Seed {
             return Ok(None);
         };
         let account = account.trim().to_string();
-        let entry = keyring::Entry::new(SEED_KEYCHAIN_SERVICE, &account).map_err(|e| {
-            Error::KeychainUnreachable {
-                detail: e.to_string(),
-            }
-        })?;
+        let Some(entry) = keychain_entry(SEED_KEYCHAIN_SERVICE, &account)? else {
+            return Ok(None);
+        };
         let _warn = SlowKeychainWarning::start("reading this repo's root seed");
         match entry.get_secret() {
             Ok(bytes) if bytes.len() == 32 => {
