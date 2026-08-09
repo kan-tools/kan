@@ -1,0 +1,70 @@
+name: Field report
+description: What happened when you used kan on something real
+labels: ["field-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        These are the highest-leverage reports this project gets. #47, #101 and
+        #114 each changed a release. You do not need a diagnosis or a proposed
+        fix — what you did and where it got in the way is enough.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: What you were doing
+      description: >
+        The actual work — the project, whether it was one agent or several, how
+        long you ran, which verbs you used. Context is what makes a report
+        actionable rather than anecdotal.
+    validations:
+      required: true
+
+  - type: textarea
+    id: worked
+    attributes:
+      label: What worked
+      description: >
+        Genuinely useful, not politeness — knowing which parts pay for
+        themselves is what keeps them from being redesigned away.
+    validations:
+      required: false
+
+  - type: textarea
+    id: friction
+    attributes:
+      label: What got in the way
+      description: >
+        Ordered by cost, if you can. Distinguish things that cost you a retry
+        from things that cost you work.
+    validations:
+      required: true
+
+  - type: textarea
+    id: measurements
+    attributes:
+      label: Measurements
+      description: >
+        If any of it was about speed, numbers rather than impressions —
+        wall time, invocation counts, log size. A measurement usually changes
+        which fix is the right one.
+    validations:
+      required: false
+
+  - type: textarea
+    id: untested
+    attributes:
+      label: What you did not exercise
+      description: >
+        Just as useful as what you did. It tells us which claims your report
+        does not support.
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "kan 0.11.0-beta.1"
+    validations:
+      required: false

@@ -2,10 +2,21 @@
 name = "kan"
 version = "0.11.0-beta.1"
 edition = "2021"
+# Verified, not inferred: CI's `msrv` job reads this value and builds with
+# exactly it, so the declaration cannot drift from the truth. The floor is set
+# by libsqlite3-sys's use of `cfg_select!`, which is unstable before 1.95 --
+# 1.94 and below fail to compile the build script. Bumping this line
+# re-points the CI job automatically; there is nothing else to update.
+rust-version = "1.95"
+authors = ["Maxine Levesque"]
 license = "MIT"
 description = "Local reasoning, global coherence — memory for AI agents."
 repository = "https://github.com/kan-tools/kan"
+homepage = "https://github.com/kan-tools/kan"
+documentation = "https://docs.rs/kan"
 readme = "README.md"
+keywords = ["agents", "provenance", "append-only", "content-addressed", "mcp"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 atproto-dasl = "0.14.5"

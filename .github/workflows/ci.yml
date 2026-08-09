@@ -30,6 +30,55 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo fmt --all -- --check
 
+  # THE DECLARED MSRV IS ONLY WORTH DECLARING IF SOMETHING CHECKS IT.
+  # `rust-version` in Cargo.toml is a promise to consumers: cargo refuses to
+  # build kan on an older toolchain and says why. Nothing makes that promise
+  # TRUE, though -- a dependency bump can raise the real floor above the
+  # declared one, and the declaration keeps reading fine while being wrong.
+  # That is the "stated guarantee nobody checks" shape (#95), applied to the
+  # build.
+  #
+  # THE VALUE IS READ FROM Cargo.toml RATHER THAN REPEATED HERE, so the job and
+  # the manifest cannot drift. Bumping rust-version re-points this job with no
+  # second edit -- a hardcoded version here would be a second source of truth
+  # about one fact, which is the thing this repo keeps filing issues about.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the declared MSRV
+        id: msrv
+        run: |
+          v=$(sed -n 's/^rust-version *= *"\(.*\)"/\1/p' Cargo.toml)
+          if [ -z "$v" ]; then
+            echo "::error::Cargo.toml declares no rust-version, so this job has nothing to verify. Either add one or delete this job -- a job that silently checks nothing is worse than no job."
+            exit 1
+          fi
+          echo "Declared MSRV: $v"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      # RUSTUP_TOOLCHAIN is required, not decorative: rust-toolchain.toml pins
+      # `stable` and takes precedence over the toolchain installed above, so
+      # without this the job would silently test stable and pass no matter what
+      # the declared MSRV said. Confirmed by running it both ways.
+      #
+      # `check` rather than `test`: this verifies the crate COMPILES on the
+      # declared floor, which is what rust-version promises. Runtime behaviour
+      # is covered by the test job on stable.
+      - name: Build on the declared MSRV
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.version }}
+        run: |
+          rustc --version
+          cargo check --workspace --all-targets
+
   # AC-3.1 OF `.design/identity-at-rest.md` NAMED A RUNNER THAT DID NOT EXIST.
   # It requires the canary -- the one test that runs kan's DEFAULT path, with
   # no KAN_NO_KEYCHAIN -- to run "on macOS CI, not only Linux", and this
