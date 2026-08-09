@@ -2390,8 +2390,8 @@ pub fn protect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
             from,
             stale_pointer,
         } => {
-            let (did, account, orphaned) =
-                protect_from(&kan_dir, from).map_err(|e| Error::Usage(e.to_string()))?;
+            let (did, account, orphaned) = protect_from(&kan_dir, from, &crate::sign::OsKeychain)
+                .map_err(|e| Error::Usage(e.to_string()))?;
             let mut out = format!(
                 "protected: this repo's secret is now in the OS keychain.\n\n\
                  identity: {did}  (unchanged)\naccount:  {account}\n"
@@ -2497,8 +2497,8 @@ pub fn unprotect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
                      choose for you."
                 );
             }
-            let did =
-                unprotect_to(&kan_dir, from, dest_name).map_err(|e| Error::Usage(e.to_string()))?;
+            let did = unprotect_to(&kan_dir, from, dest_name, &crate::sign::OsKeychain)
+                .map_err(|e| Error::Usage(e.to_string()))?;
             Ok(format!(
                 "unprotected: this repo's secret is now in .kan/{dest_name}, a 0600 file.\n\n\
                  identity: {did}  (unchanged)\n\n\

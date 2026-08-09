@@ -648,7 +648,12 @@ pub fn refuse_to_overwrite_a_different_secret(
 /// refuse** — that is part of the rule rather than a fallback, because "I
 /// cannot tell whether this file holds a different identity" and "this file
 /// holds the same identity" are different answers and only one permits a write.
-pub fn unprotect_to(kan_dir: &Path, from: AtRest, dest_name: &str) -> Result<Did, Error> {
+pub fn unprotect_to(
+    kan_dir: &Path,
+    from: AtRest,
+    dest_name: &str,
+    store: &dyn SecretStore,
+) -> Result<Did, Error> {
     // Same rule, opposite reason: unprotect must READ the keychain to move the
     // secret out of it, so with the flag set there is nothing it can do.
     if keychain_disabled() {
@@ -662,12 +667,13 @@ pub fn unprotect_to(kan_dir: &Path, from: AtRest, dest_name: &str) -> Result<Did
     let account = std::fs::read_to_string(kan_dir.join(account_file))?
         .trim()
         .to_string();
-    let entry = keychain_entry(service_for(from), &account)?
-        .ok_or_else(|| Error::Recovery("the keychain is disabled".to_string()))?;
     let _warn =
         SlowKeychainWarning::start("reading this repo's secret to move it out of the keychain");
-    let bytes = entry.get_secret().map_err(|e| Error::KeychainUnreachable {
-        detail: e.to_string(),
+    let bytes = store.get(service_for(from), &account)?.ok_or_else(|| {
+        Error::Recovery(format!(
+            "the keychain holds nothing under {account}, which .kan/{account_file} names. \
+             Nothing has been changed."
+        ))
     })?;
     let did = did_of(from, &bytes)?;
 
@@ -689,13 +695,20 @@ pub fn unprotect_to(kan_dir: &Path, from: AtRest, dest_name: &str) -> Result<Did
             identity.did()
         }
     };
-    if restored != did {
+    // RE-READ FROM DISK, not recomputed from the bytes in hand. The first
+    // version derived `restored` from the same `bytes` the check compares
+    // against, so it could not fire -- #112's exact shape, in a step the design
+    // specifies as protection against a bad write. What must be verified is
+    // that the FILE holds the secret, which means reading the file.
+    let written = std::fs::read(&dest)?;
+    if written != bytes || did_of(from, &written)? != did {
         return Err(Error::Recovery(
-            "the secret written to disk does not derive the DID the keychain's copy did -- \
-             refusing to retire the pointer, so nothing is lost."
+            "the secret on disk does not match the one taken from the keychain -- refusing \
+             to retire the pointer, so nothing is lost."
                 .to_string(),
         ));
     }
+    let _ = restored;
 
     // The pointer goes AFTER the write, never before: a failed write would
     // otherwise leave the workspace with no identity at all.
@@ -705,7 +718,11 @@ pub fn unprotect_to(kan_dir: &Path, from: AtRest, dest_name: &str) -> Result<Did
 
 /// Execute `Plan::Protect`: move the secret into the keychain, verifying it
 /// round-trips before anything on disk is disturbed.
-pub fn protect_from(kan_dir: &Path, from: AtRest) -> Result<(Did, String, Option<String>), Error> {
+pub fn protect_from(
+    kan_dir: &Path,
+    from: AtRest,
+    store: &dyn SecretStore,
+) -> Result<(Did, String, Option<String>), Error> {
     // REQ-3.6 / AC-3.6. `KAN_NO_KEYCHAIN` means "behave as though no keychain
     // exists", and a command that writes to it anyway is not honouring that --
     // it is ignoring it. Found by running `protect --yes` with the flag set in
@@ -723,19 +740,17 @@ pub fn protect_from(kan_dir: &Path, from: AtRest) -> Result<(Did, String, Option
     let did = did_of(from, &bytes)?;
 
     let account = fresh_account();
-    let entry = keychain_entry(service_for(from), &account)?
-        .ok_or_else(|| Error::Recovery("the keychain is disabled".to_string()))?;
     let _warn = SlowKeychainWarning::start("storing this repo's secret in the keychain");
-    entry
-        .set_secret(&bytes)
-        .map_err(|e| Error::KeychainUnreachable {
-            detail: e.to_string(),
-        })?;
+    store.set(service_for(from), &account, &bytes)?;
 
     // Read back and compare BEFORE the plaintext is touched. A store that
     // silently truncated would otherwise destroy the only copy.
-    let stored = entry.get_secret().map_err(|e| Error::KeychainUnreachable {
-        detail: e.to_string(),
+    let stored = store.get(service_for(from), &account)?.ok_or_else(|| {
+        Error::Recovery(
+            "the keychain returned nothing for the entry just written -- refusing to go \
+             further. Nothing on disk has been changed."
+                .to_string(),
+        )
     })?;
     if stored != bytes || did_of(from, &stored)? != did {
         return Err(Error::Recovery(format!(
@@ -1254,6 +1269,53 @@ impl Drop for SlowKeychainWarning {
     }
 }
 
+/// The secret store `protect`/`unprotect` move a secret between.
+///
+/// **The seam a cold review said was drawn one layer too shallow, and it was
+/// right.** v0.12 extracted `at_rest`, the planners and the overwrite guard so
+/// the parts that can be wrong became the parts that are checked — and every
+/// extracted part was correct. The one defect that could destroy a secret
+/// (`protect` deleting the pointer it had just written) was in the executor,
+/// which nothing could reach because it called `keyring` directly. The
+/// reviewer proved the fix costs nothing by stubbing three calls in a throwaway
+/// clone and driving the whole command.
+///
+/// So the executors take a store. Production passes [`OsKeychain`]; tests pass
+/// an in-memory one and exercise the real code path end to end.
+pub trait SecretStore {
+    fn get(&self, service: &str, account: &str) -> Result<Option<Vec<u8>>, Error>;
+    fn set(&self, service: &str, account: &str, bytes: &[u8]) -> Result<(), Error>;
+}
+
+/// The real one. Honours `KAN_NO_KEYCHAIN` via [`keychain_entry`], which is
+/// still the single door.
+pub struct OsKeychain;
+
+impl SecretStore for OsKeychain {
+    fn get(&self, service: &str, account: &str) -> Result<Option<Vec<u8>>, Error> {
+        let Some(entry) = keychain_entry(service, account)? else {
+            return Ok(None);
+        };
+        match entry.get_secret() {
+            Ok(b) => Ok(Some(b)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(Error::KeychainUnreachable {
+                detail: e.to_string(),
+            }),
+        }
+    }
+
+    fn set(&self, service: &str, account: &str, bytes: &[u8]) -> Result<(), Error> {
+        let entry = keychain_entry(service, account)?
+            .ok_or_else(|| Error::Recovery("the keychain is disabled".to_string()))?;
+        entry
+            .set_secret(bytes)
+            .map_err(|e| Error::KeychainUnreachable {
+                detail: e.to_string(),
+            })
+    }
+}
+
 /// **The only place in kan that opens a keychain entry.**
 ///
 /// `KAN_NO_KEYCHAIN` is an OPT-OUT, and opt-outs fail open: every call site had
@@ -1336,7 +1398,7 @@ impl Seed {
         Ok(Some(Self(seed)))
     }
 
-    fn save(&self, path: &Path) -> Result<(), Error> {
+    pub fn save(&self, path: &Path) -> Result<(), Error> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }

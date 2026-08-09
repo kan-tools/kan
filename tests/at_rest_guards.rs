@@ -225,3 +225,150 @@ fn fingerprint(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
     out.sort();
     out
 }
+
+// ------------------------------------------------------------ the executors
+//
+// Reachable at last. A cold review found the one defect here that could
+// destroy a secret -- `protect` deleting the pointer it had just written --
+// and observed that the seam had been drawn one layer too shallow: every
+// EXTRACTED part was correct and defended, while the executor nothing could
+// reach was the part that was wrong. `SecretStore` is that seam, and these
+// tests drive the real `protect_from` / `unprotect_to`.
+
+use kan::sign::{at_rest, protect_from, unprotect_to, SecretStore, Seed};
+use std::sync::Mutex;
+
+/// An in-memory store. What the reviewer proved costs almost nothing.
+#[derive(Default)]
+struct FakeStore(Mutex<std::collections::HashMap<(String, String), Vec<u8>>>);
+
+impl SecretStore for FakeStore {
+    fn get(&self, s: &str, a: &str) -> Result<Option<Vec<u8>>, kan::sign::Error> {
+        Ok(self.0.lock().unwrap().get(&(s.into(), a.into())).cloned())
+    }
+    fn set(&self, s: &str, a: &str, b: &[u8]) -> Result<(), kan::sign::Error> {
+        self.0
+            .lock()
+            .unwrap()
+            .insert((s.into(), a.into()), b.to_vec());
+        Ok(())
+    }
+}
+
+/// THE REGRESSION TEST FOR THE POINTER BUG. A workspace holding a seed AND a
+/// stale `seed-id` must come out of `protect` still resolvable.
+///
+/// Before the fix: `protect_from` wrote the new account into `.kan/seed-id`,
+/// the caller read that file back, reported the new account as the old one,
+/// and deleted it — leaving the secret in the keychain with nothing naming it.
+/// The reviewer reproduced it end to end: exit 0, "protected", and every
+/// subsequent write refused.
+#[test]
+fn protect_over_a_stale_pointer_leaves_the_workspace_resolvable() {
+    let dir = tempfile::tempdir().unwrap();
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+
+    let seed = Seed::generate();
+    seed.save(&kan_dir.join("seed")).unwrap();
+    std::fs::write(kan_dir.join("seed-id"), "kan-STALEACCOUNT").unwrap();
+    let before = seed.signing_identity().unwrap().did();
+
+    let store = FakeStore::default();
+    let (did, account, orphaned) = protect_from(&kan_dir, AtRest::SeedFile, &store).unwrap();
+
+    assert_eq!(did, before, "protect must never change the DID");
+    assert_eq!(
+        orphaned.as_deref(),
+        Some("kan-STALEACCOUNT"),
+        "the displaced account must be reported so the orphaned entry is not silent -- and \
+         it must be the OLD one, not the new one that was just written"
+    );
+    assert_eq!(
+        std::fs::read_to_string(kan_dir.join("seed-id"))
+            .unwrap()
+            .trim(),
+        account,
+        "the pointer must name the NEW account. It was being deleted here, which left the \
+         secret in the store with nothing naming it"
+    );
+    assert_eq!(
+        store.get("dev.kan.seed", &account).unwrap().unwrap(),
+        std::fs::read(kan_dir.join("seed")).unwrap(),
+        "the store must hold exactly the bytes the file held"
+    );
+}
+
+/// `unprotect` round-trips the DID, and the pointer only goes after the write.
+#[test]
+fn unprotect_restores_the_same_identity_and_retires_the_pointer_last() {
+    let dir = tempfile::tempdir().unwrap();
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+
+    let seed = Seed::generate();
+    let bytes = {
+        let p = kan_dir.join("scratch");
+        seed.save(&p).unwrap();
+        let b = std::fs::read(&p).unwrap();
+        std::fs::remove_file(&p).unwrap();
+        b
+    };
+    let store = FakeStore::default();
+    store.set("dev.kan.seed", "kan-ACC", &bytes).unwrap();
+    std::fs::write(kan_dir.join("seed-id"), "kan-ACC").unwrap();
+    assert_eq!(at_rest(&kan_dir), AtRest::SeedKeychain);
+
+    let did = unprotect_to(&kan_dir, AtRest::SeedKeychain, "seed", &store).unwrap();
+
+    assert_eq!(
+        did,
+        seed.signing_identity().unwrap().did(),
+        "the DID must not move"
+    );
+    assert_eq!(std::fs::read(kan_dir.join("seed")).unwrap(), bytes);
+    assert!(
+        !kan_dir.join("seed-id").exists(),
+        "the pointer is retired once the file holds the secret"
+    );
+    assert_eq!(at_rest(&kan_dir), AtRest::SeedFile);
+}
+
+/// The destroy-class guard, now through the real executor rather than the
+/// extracted predicate: a DIFFERENT secret at the destination survives.
+#[test]
+fn unprotect_through_the_executor_refuses_to_clobber_a_differing_secret() {
+    let dir = tempfile::tempdir().unwrap();
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+
+    let on_disk = Seed::generate();
+    on_disk.save(&kan_dir.join("seed")).unwrap();
+    let untouched = std::fs::read(kan_dir.join("seed")).unwrap();
+
+    let in_store = Seed::generate();
+    let other = {
+        let p = kan_dir.join("scratch");
+        in_store.save(&p).unwrap();
+        let b = std::fs::read(&p).unwrap();
+        std::fs::remove_file(&p).unwrap();
+        b
+    };
+    let store = FakeStore::default();
+    store.set("dev.kan.seed", "kan-ACC", &other).unwrap();
+    std::fs::write(kan_dir.join("seed-id"), "kan-ACC").unwrap();
+
+    let err = unprotect_to(&kan_dir, AtRest::SeedKeychain, "seed", &store)
+        .expect_err("a differing secret at the destination must be refused");
+    assert!(err.to_string().contains("DIFFERENT"), "{err}");
+    assert_eq!(
+        std::fs::read(kan_dir.join("seed")).unwrap(),
+        untouched,
+        "the file must survive byte-identical"
+    );
+    assert!(
+        kan_dir.join("seed-id").exists(),
+        "and the pointer must survive too -- a refusal that retired it would strand the \
+         store's copy"
+    );
+}
