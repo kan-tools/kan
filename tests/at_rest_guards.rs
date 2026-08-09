@@ -124,84 +124,135 @@ fn an_unreadable_secret_at_the_destination_is_also_refused() {
     );
 }
 
-/// A REFUSED `protect` OR `unprotect` LEAVES `.kan/` BYTE-IDENTICAL.
+/// **B1 + B5 of the re-review.** The `KAN_IDENTITY_FILE` refusal — the blocking
+/// finding of the previous round — shipped with NO test: deleting both blocks
+/// left the suite byte-for-byte green, which is the branch's own AC-3.7
+/// violated by the commit answering a review.
 ///
-/// The executors take several steps — read a secret, write it to the other
-/// store, verify, then retire the old reference — and the design specifies an
-/// ordering so that a death partway through cannot lose an identity. Almost
-/// none of that is reachable from this suite, because both commands need a
-/// real keychain (#96), and that is a stated limit rather than a gap care can
-/// close.
+/// And its predecessor here defended neither refusal it named. It asserted
+/// `!out.status.success() || cmd == "unprotect"`, unconditionally true for half
+/// the loop; and the `protect` half stayed green with the guard removed,
+/// because `keychain_entry` independently returns `None`. A test that passes
+/// when the thing it names is deleted is not a test of that thing.
 ///
-/// What IS reachable is the one failure mode this suite can trigger on demand:
-/// the `KAN_NO_KEYCHAIN` refusal. It happens at the very top of both
-/// executors, which is where AC-8's "resolution has no side effects" argument
-/// says a refusal belongs — refusing BEFORE the first write is what guarantees
-/// there is no half-state to reason about at all. This asserts that placement
-/// rather than trusting it, and it is worth having because the first version
-/// of `protect` did NOT refuse here: it wrote a real entry to the author's
-/// login keychain.
+/// So: one test per refusal, each naming the exact condition, each verified by
+/// deleting its own guard.
 #[test]
-fn a_refused_at_rest_command_writes_nothing() {
-    for cmd in ["protect", "unprotect"] {
-        let dir = tempfile::tempdir().unwrap();
-        let repo = dir.path();
-        for args in [
-            vec!["init", "-q", "."],
-            vec![
-                "-c",
-                "user.email=t@e.com",
-                "-c",
-                "user.name=t",
-                "commit",
-                "-q",
-                "--allow-empty",
-                "-m",
-                "i",
-            ],
-        ] {
-            assert!(std::process::Command::new("git")
-                .args(&args)
-                .current_dir(repo)
-                .status()
-                .unwrap()
-                .success());
-        }
-        let kan = env!("CARGO_BIN_EXE_kan");
-        assert!(std::process::Command::new(kan)
-            .args(["observe", "x", "--subject", "s"])
-            .current_dir(repo)
-            .env("KAN_NO_KEYCHAIN", "1")
-            .output()
+fn protect_refuses_when_a_selection_is_active_and_writes_nothing() {
+    let (dir, kan) = workspace();
+    let key = dir.path().join("role.key");
+    std::fs::write(&key, [0u8; 32]).unwrap();
+
+    let before = fingerprint(&dir.path().join(".kan"));
+    let out = std::process::Command::new(&kan)
+        .args(["identity", "protect", "--yes"])
+        .current_dir(dir.path())
+        .env("KAN_IDENTITY_FILE", &key)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "protect must refuse under a selection.\n{stderr}"
+    );
+    assert!(
+        stderr.contains("KAN_IDENTITY_FILE") && stderr.contains(&key.display().to_string()),
+        "the refusal must NAME the selection -- `protect` moves the identity the WORKSPACE \
+         owns, and the operator needs to see which other identity kan thinks is signing.\n{stderr}"
+    );
+    assert_eq!(
+        before,
+        fingerprint(&dir.path().join(".kan")),
+        "a refusal must happen before any write"
+    );
+}
+
+#[test]
+fn unprotect_refuses_when_a_selection_is_active_and_writes_nothing() {
+    let (dir, kan) = workspace();
+    let key = dir.path().join("role.key");
+    std::fs::write(&key, [0u8; 32]).unwrap();
+
+    let before = fingerprint(&dir.path().join(".kan"));
+    let out = std::process::Command::new(&kan)
+        .args(["identity", "unprotect", "--yes"])
+        .current_dir(dir.path())
+        .env("KAN_IDENTITY_FILE", &key)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "unprotect must refuse under a selection.\n{stderr}"
+    );
+    assert!(stderr.contains("KAN_IDENTITY_FILE"), "{stderr}");
+    assert_eq!(before, fingerprint(&dir.path().join(".kan")));
+}
+
+/// `protect` under `KAN_NO_KEYCHAIN` refuses AND writes nothing.
+///
+/// Separated from the selection tests because the previous combined version
+/// could not fail: with the guard deleted, `keychain_entry` still returns
+/// `None`, so behaviour stayed safe and the test stayed green while asserting
+/// it had proved the guard. This asserts the message, which only the guard
+/// produces.
+#[test]
+fn protect_refuses_under_no_keychain_and_writes_nothing() {
+    let (dir, kan) = workspace();
+    let before = fingerprint(&dir.path().join(".kan"));
+    let out = std::process::Command::new(&kan)
+        .args(["identity", "protect", "--yes"])
+        .current_dir(dir.path())
+        .env("KAN_NO_KEYCHAIN", "1")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(!out.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("KAN_NO_KEYCHAIN is set"),
+        "the refusal must come from the KAN_NO_KEYCHAIN guard specifically, not from a \
+         downstream failure that happens to also stop the write.\n{stderr}"
+    );
+    assert_eq!(before, fingerprint(&dir.path().join(".kan")));
+}
+
+/// A workspace with one claim, and the path to the built binary.
+fn workspace() -> (tempfile::TempDir, String) {
+    let dir = tempfile::tempdir().unwrap();
+    for args in [
+        vec!["init", "-q", "."],
+        vec![
+            "-c",
+            "user.email=t@e.com",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "i",
+        ],
+    ] {
+        assert!(std::process::Command::new("git")
+            .args(&args)
+            .current_dir(dir.path())
+            .status()
             .unwrap()
-            .status
             .success());
-
-        let before = fingerprint(&repo.join(".kan"));
-        let out = std::process::Command::new(kan)
-            .args(["identity", cmd, "--yes"])
-            .current_dir(repo)
-            .env("KAN_NO_KEYCHAIN", "1")
-            .output()
-            .unwrap();
-        let after = fingerprint(&repo.join(".kan"));
-
-        assert!(
-            !out.status.success() || cmd == "unprotect",
-            "`kan identity {cmd}` must refuse under KAN_NO_KEYCHAIN -- that flag means \
-             behave as though no keychain exists, and a command that writes to one anyway \
-             is ignoring it rather than honouring it"
-        );
-        assert_eq!(
-            before,
-            after,
-            "`kan identity {cmd}` changed .kan/ despite refusing. A refusal must happen \
-             BEFORE the first write, or there is a half-state to reason about -- which is \
-             the whole reason the terminal gate and this check sit at the top of the \
-             executor rather than partway down.\nstderr: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
     }
+    let kan = env!("CARGO_BIN_EXE_kan").to_string();
+    assert!(std::process::Command::new(&kan)
+        .args(["observe", "x", "--subject", "s"])
+        .current_dir(dir.path())
+        .env("KAN_NO_KEYCHAIN", "1")
+        .output()
+        .unwrap()
+        .status
+        .success());
+    (dir, kan)
 }
 
 /// Every file under a directory, with its bytes — so a changed, added or
@@ -370,5 +421,55 @@ fn unprotect_through_the_executor_refuses_to_clobber_a_differing_secret() {
         kan_dir.join("seed-id").exists(),
         "and the pointer must survive too -- a refusal that retired it would strand the \
          store's copy"
+    );
+}
+
+/// **B4 of the re-review: the regression test defended the wrong hunk.**
+///
+/// The shipped bug was `protect_identity` calling `remove_file` on the pointer
+/// after `protect_from` had just written it — the secret left in the keychain
+/// with nothing naming it. The regression test added for it drives
+/// `protect_from` directly, so reintroducing the bug where it actually lived
+/// left the whole suite green. A cold review proved that by putting the
+/// `remove_file` back.
+///
+/// `protect_identity` cannot be driven from here — it needs a `Workspace` and
+/// the real `OsKeychain`. So this defends the hunk structurally instead: the
+/// caller must never remove a pointer file. Writing the pointer IS the
+/// retirement; there is nothing left for the caller to delete, and a future
+/// edit that reintroduces one fails here.
+///
+/// Crude, and precise about the thing that was wrong — which is the trade the
+/// one-door test makes too.
+#[test]
+fn the_protect_caller_never_removes_a_pointer_file() {
+    let src = std::fs::read_to_string("src/actions.rs").unwrap();
+    let start = src
+        .find("pub fn protect_identity")
+        .expect("protect_identity moved; update this test");
+    let end = src[start..]
+        .find("\npub fn unprotect_identity")
+        .map(|o| start + o)
+        .unwrap_or(src.len());
+    let body = &src[start..end];
+
+    // Narrowly: a POINTER removal. Deleting the plaintext copy is this
+    // command's job and must stay allowed -- the first version of this test
+    // banned every `remove_file` and failed on correct code, which is its own
+    // small lesson about assertions written from the shape of a bug rather
+    // than from the property being protected.
+    let offenders: Vec<&str> = body
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .filter(|l| l.contains("remove_file"))
+        .filter(|l| l.contains("ptr") || l.contains("_ID_FILE"))
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "`protect_identity` removes a file: {offenders:?}\n\n\
+         It must not. `protect_from` writes the pointer, which IS the retirement of any \
+         previous one -- a `remove_file` here deletes the reference just written and leaves \
+         the secret in the keychain with nothing naming it. That shipped once, exited 0 \
+         saying \"protected\", and made every subsequent write refuse."
     );
 }

@@ -2385,9 +2385,9 @@ pub fn protect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
     // where a selection is NOT in play.
     if let crate::sign::Selection::KeyFile(path) = crate::sign::Selection::from_env() {
         return Err(Error::Usage(format!(
-            "refusing: KAN_IDENTITY_FILE selects {} as the identity that signs here, and              `protect` moves the identity this WORKSPACE owns -- they are not the same              thing, and moving one while you are signing as the other is how a secret ends              up somewhere its owner does not expect.
+            "refusing: KAN_IDENTITY_FILE selects {} as the identity that signs here, and `protect` moves the identity this WORKSPACE owns -- they are not the same thing, and moving one while you are signing as the other is how a secret ends up somewhere its owner does not expect.
 
-             A key file you pointed kan at is yours to manage; kan does not move a secret              it was merely shown. Unset KAN_IDENTITY_FILE to protect this workspace's own              identity.",
+ A key file you pointed kan at is yours to manage; kan does not move a secret it was merely shown. Unset KAN_IDENTITY_FILE to protect this workspace's own identity.",
             path.display()
         )));
     }
@@ -2493,7 +2493,7 @@ pub fn unprotect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
 
     if let crate::sign::Selection::KeyFile(path) = crate::sign::Selection::from_env() {
         return Err(Error::Usage(format!(
-            "refusing: KAN_IDENTITY_FILE selects {} as the identity that signs here, and              `unprotect` writes this WORKSPACE's own secret into .kan/. Unset it to act on              the workspace's identity.",
+            "refusing: KAN_IDENTITY_FILE selects {} as the identity that signs here, and `unprotect` writes this WORKSPACE's own secret into .kan/. Unset it to act on the workspace's identity.",
             path.display()
         )));
     }

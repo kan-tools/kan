@@ -432,7 +432,10 @@ pub enum IdentityAction {
     /// blocks on a prompt that never arrives in CI, a container, an MCP server
     /// or a `day` subprocess (#96) -- this is the way out of that.
     Unprotect {
-        /// Proceed without confirming.
+        /// Suppress the warning printed when `.kan/` already holds a secret
+        /// at the destination. It does NOT skip a confirmation: unprotect has
+        /// none, because it never deletes anything -- a differing secret there
+        /// is refused outright rather than confirmed past.
         #[arg(long)]
         yes: bool,
     },

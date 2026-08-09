@@ -533,6 +533,11 @@ pub fn plan_protect(kan_dir: &Path) -> Plan {
             // Access) — doing it without saying so is the part that was wrong.
             stale_pointer: match from {
                 AtRest::SeedFile if kan_dir.join(SEED_ID_FILE).exists() => Some(SEED_ID_FILE),
+                // UNREACHABLE: `at_rest` returns `KeyKeychain` before `KeyFile`, so
+                // `from` is never `KeyFile` while identity-id exists. A cold
+                // review enumerated all 16 layouts and confirmed it never
+                // fires. Kept with this note rather than deleted, so the next
+                // reader does not wonder whether the case was forgotten.
                 AtRest::KeyFile if kan_dir.join(IDENTITY_ID_FILE).exists() => {
                     Some(IDENTITY_ID_FILE)
                 }
@@ -554,6 +559,8 @@ pub fn plan_unprotect(kan_dir: &Path) -> Plan {
             // state kan itself creates: ADR-53 keeps a plaintext copy exactly
             // when it DIFFERS from the keychain. See `unprotect_to`.
             occupied: match from {
+                // Unreachable for the mirror reason: `at_rest` returns
+                // `SeedFile` before `SeedKeychain`.
                 AtRest::SeedKeychain if kan_dir.join(SEED_FILE).exists() => Some(SEED_FILE),
                 AtRest::KeyKeychain if kan_dir.join("identity").exists() => Some("identity"),
                 _ => None,
@@ -713,7 +720,6 @@ pub fn unprotect_to(
                 .to_string(),
         ));
     }
-    let _ = restored;
 
     // The pointer goes AFTER the write, never before: a failed write would
     // otherwise leave the workspace with no identity at all.
@@ -1453,20 +1459,21 @@ impl Seed {
         }
     }
 
-    /// Create this workspace's seed, preferring the OS keychain.
+    /// Create this workspace's seed: a passphraseless `0600` file, always.
     ///
-    /// Stored exactly the way the signing key is stored today (ADR-25): in
-    /// the keychain when one is available, in a `0600` file when it is not,
-    /// with the same warning. ADR-55's "at-rest protection is OS file
-    /// permissions **plus the existing keychain path where present**" is read
-    /// as sanctioning this rather than as requiring a plaintext root.
+    /// **REQ-3.1 reversed what this comment used to argue**, and the comment
+    /// outlived the change by five commits. It read "preferring the OS
+    /// keychain... in the keychain when one is available, in a `0600` file when
+    /// it is not", and warned that "taking the file-always reading would have
+    /// reopened issue #6". The function now does exactly the file-always thing
+    /// that comment called a strictly worse posture.
     ///
-    /// Taking the file-always reading would have reopened issue #6 for every
-    /// new workspace — the root secret in plaintext where the key it replaces
-    /// was encrypted — which is a strictly worse at-rest posture than the
-    /// version it upgrades from. Callers who genuinely need no-prompt (CI,
-    /// agents, `day`) already set `KAN_IDENTITY_FILE`, which bypasses all of
-    /// this and is unchanged.
+    /// The argument is not dismissed, it is outweighed and paid for by a
+    /// command: on macOS the at-rest protection ADR-63 bought is delivered by
+    /// the trusted-application ACL, which is the same mechanism as #96 -- it
+    /// cannot be kept without keeping the hang. `kan identity protect` restores
+    /// #6's property deliberately. Full accounting in
+    /// `.design/identity-at-rest.md`.
     pub fn create(kan_dir: &Path) -> Result<Self, Error> {
         std::fs::create_dir_all(kan_dir)?;
         let seed = Self::generate();
