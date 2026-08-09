@@ -148,6 +148,12 @@ fn protect_refuses_when_a_selection_is_active_and_writes_nothing() {
         .args(["identity", "protect", "--yes"])
         .current_dir(dir.path())
         .env("KAN_IDENTITY_FILE", &key)
+        // Belt as well as braces: if the guard under test is ever removed or
+        // reordered, without this `cargo test` writes a real entry into the
+        // developer's login keychain. That has happened twice in this repo.
+        // A cold review measured that it does not weaken the test -- with the
+        // guard deleted AND this set, it still goes red.
+        .env("KAN_NO_KEYCHAIN", "1")
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -179,6 +185,12 @@ fn unprotect_refuses_when_a_selection_is_active_and_writes_nothing() {
         .args(["identity", "unprotect", "--yes"])
         .current_dir(dir.path())
         .env("KAN_IDENTITY_FILE", &key)
+        // Belt as well as braces: if the guard under test is ever removed or
+        // reordered, without this `cargo test` writes a real entry into the
+        // developer's login keychain. That has happened twice in this repo.
+        // A cold review measured that it does not weaken the test -- with the
+        // guard deleted AND this set, it still goes red.
+        .env("KAN_NO_KEYCHAIN", "1")
         .output()
         .unwrap();
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -434,13 +446,15 @@ fn unprotect_through_the_executor_refuses_to_clobber_a_differing_secret() {
 /// `remove_file` back.
 ///
 /// `protect_identity` cannot be driven from here — it needs a `Workspace` and
-/// the real `OsKeychain`. So this defends the hunk structurally instead: the
-/// caller must never remove a pointer file. Writing the pointer IS the
-/// retirement; there is nothing left for the caller to delete, and a future
-/// edit that reintroduces one fails here.
+/// the real `OsKeychain`. So this catches **the verbatim regression** and
+/// nothing more: a `remove_file` on the same line as `ptr`.
 ///
-/// Crude, and precise about the thing that was wrong — which is the trade the
-/// one-door test makes too.
+/// It does not generalise, and a cold review showed both edges: binding the
+/// path to a local first (`let stale = kan_dir.join(ptr);`) walks past it, and
+/// a `write` or `rename` strands the secret just as thoroughly while passing.
+/// Renaming an unrelated local to contain `ptr` makes it false-red. Stated
+/// rather than repaired, because a source-text assertion cannot be made to
+/// mean more than this and pretending otherwise is the failure it is guarding.
 #[test]
 fn the_protect_caller_never_removes_a_pointer_file() {
     let src = std::fs::read_to_string("src/actions.rs").unwrap();
@@ -472,4 +486,44 @@ fn the_protect_caller_never_removes_a_pointer_file() {
          the secret in the keychain with nothing naming it. That shipped once, exited 0 \
          saying \"protected\", and made every subsequent write refuse."
     );
+}
+
+/// `unprotect` under `KAN_NO_KEYCHAIN` refuses, and the refusal comes from
+/// that guard rather than from a downstream absence.
+///
+/// **B1's exact shape, surviving in the commit that answered B1.** The
+/// previous round replaced a combined test with "three tests, one per guard" —
+/// but there are four guards in this family (protect/unprotect × selection ×
+/// no-keychain) and only three were written. Deleting this one left the full
+/// suite byte-identical.
+///
+/// Without the guard `unprotect` still refuses, because `keychain_entry`
+/// returns `None` and the executor reports an empty store — so nothing is lost.
+/// It blames the keychain for an absence kan itself was told to invent, which
+/// is why the assertion is on the message and not on the exit code.
+#[test]
+fn unprotect_refuses_under_no_keychain_and_writes_nothing() {
+    let (dir, kan) = workspace();
+    let kan_dir = dir.path().join(".kan");
+    // A pointer, so `plan_unprotect` reaches the executor rather than
+    // answering "already unprotected" before the guard is consulted.
+    std::fs::write(kan_dir.join("seed-id"), "kan-TESTACCOUNT").unwrap();
+    std::fs::remove_file(kan_dir.join("seed")).ok();
+
+    let before = fingerprint(&kan_dir);
+    let out = std::process::Command::new(&kan)
+        .args(["identity", "unprotect", "--yes"])
+        .current_dir(dir.path())
+        .env("KAN_NO_KEYCHAIN", "1")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(!out.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("KAN_NO_KEYCHAIN is set"),
+        "the refusal must come from the KAN_NO_KEYCHAIN guard, not from a downstream \
+         empty-store report that happens to also stop the write.\nstderr: {stderr}"
+    );
+    assert_eq!(before, fingerprint(&kan_dir));
 }

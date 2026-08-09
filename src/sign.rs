@@ -1462,7 +1462,7 @@ impl Seed {
     /// Create this workspace's seed: a passphraseless `0600` file, always.
     ///
     /// **REQ-3.1 reversed what this comment used to argue**, and the comment
-    /// outlived the change by five commits. It read "preferring the OS
+    /// outlived the change by several commits. It read "preferring the OS
     /// keychain... in the keychain when one is available, in a `0600` file when
     /// it is not", and warned that "taking the file-always reading would have
     /// reopened issue #6". The function now does exactly the file-always thing

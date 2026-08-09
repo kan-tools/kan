@@ -1,4 +1,9 @@
-//! There is exactly one place in `src/` that opens a keychain entry.
+//! Exactly one call to `keyring::Entry::new` exists in `src/`.
+//!
+//! Note the wording: it counts CALLS, and does not check that the one call is
+//! inside `keychain_entry`. An earlier version computed that and used it only
+//! in a failure message that cannot render while the count is 1 -- a cold
+//! review moved the call out of the chokepoint and the test still passed.
 //!
 //! `KAN_NO_KEYCHAIN` is an OPT-OUT, and opt-outs fail open: each call site had
 //! to independently remember `keychain_disabled()`, and the cost of forgetting
@@ -40,33 +45,25 @@ fn is_code(line: &str) -> bool {
 }
 
 #[test]
-fn only_one_function_opens_a_keychain_entry() {
-    let mut offenders = Vec::new();
-    let mut total = 0usize;
+fn only_one_call_to_keyring_entry_new_exists_in_src() {
+    let mut sites = Vec::new();
     for entry in walk("src") {
         let text = std::fs::read_to_string(&entry).unwrap();
         for (i, line) in text.lines().enumerate() {
             if line.contains("keyring::Entry::new") && is_code(line) {
-                total += 1;
-                // The chokepoint itself is the one legitimate caller.
-                let in_chokepoint = text[..text.find(line).unwrap_or(0)]
-                    .rsplit("fn ")
-                    .next()
-                    .map(|f| f.starts_with("keychain_entry"))
-                    .unwrap_or(false);
-                if !in_chokepoint {
-                    offenders.push(format!("{}:{}", entry.display(), i + 1));
-                }
+                sites.push(format!("{}:{}", entry.display(), i + 1));
             }
         }
     }
     assert_eq!(
-        total, 1,
-        "expected exactly ONE call to keyring::Entry::new in src/, found {total} \
-         ({offenders:?}).\n\nEvery keychain call site must go through `sign::keychain_entry`, \
-         which is the single place that honours KAN_NO_KEYCHAIN. A second door is a path \
-         that can touch a user's real login keychain when kan was told no keychain exists -- \
-         which has already happened three times (#146, and twice during v0.12)."
+        sites.len(),
+        1,
+        "expected exactly ONE call to keyring::Entry::new in src/, found {}: {sites:?}\n\n\
+         It must live in `sign::keychain_entry`, the single place that honours \
+         KAN_NO_KEYCHAIN. A second door is a path that can touch a user's real login \
+         keychain when kan was told no keychain exists -- which has happened three times \
+         (#146, and twice during v0.12).",
+        sites.len()
     );
 }
 

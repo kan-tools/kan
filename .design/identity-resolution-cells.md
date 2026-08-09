@@ -5,6 +5,13 @@ second rule — *before the second fix in one area, write the table.* Five
 review rounds patched this space; none enumerated it.
 
 **This describes kan as it is at `a14b585`, not as REQ-1 will make it.** It is
+
+> **Its `file:line` citations are as of `a14b585` and are not maintained.**
+> Several name functions REQ-3.5 has since deleted. The citation checker only
+> tests positional references for plausibility, so it cannot see this — a cold
+> review found six in this state after one of them had been "fixed" to
+> symbolic form, which implied the others were current. They are left as the
+> snapshot they are; read them against `a14b585`, not against `main`.
 the before-picture. Every cell REQ-1/REQ-2/REQ-3 changes should be visible as
 a diff against this document and against `tests/identity_cells.rs`.
 

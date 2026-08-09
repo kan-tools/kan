@@ -434,8 +434,9 @@ pub enum IdentityAction {
     Unprotect {
         /// Suppress the warning printed when `.kan/` already holds a secret
         /// at the destination. It does NOT skip a confirmation: unprotect has
-        /// none, because it never deletes anything -- a differing secret there
-        /// is refused outright rather than confirmed past.
+        /// none, because it never deletes a SECRET -- a differing one at the
+        /// destination is refused outright rather than confirmed past. (It does
+        /// remove the pointer file, once the secret is safely on disk.)
         #[arg(long)]
         yes: bool,
     },

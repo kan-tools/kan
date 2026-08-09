@@ -312,8 +312,12 @@ posture would have no on-ramp at all.
   answer — that collapse is the whole of the degradation to option 1.
 
 - **AC-3.10 — `protect` retires a stale reference audibly, and accounts for
-  what it left.** Where a pointer already existed, its removal is named in the
-  output along with the orphaned account, so the operator can find the entry in
+  what it left.** *Corrected: this said the pointer's "removal" is named in the
+  output. Since the pointer-deletion defect was fixed, `protect` OVERWRITES the
+  pointer and never removes it — writing it is the retirement. An AC that
+  described the behaviour the fix removed had merged and gone unnoticed for two
+  review rounds.* Where a pointer already existed, the account it previously
+  named is reported as orphaned, so the operator can find the entry in
   Keychain Access. And where other at-rest secrets remain, they are listed — a
   `protect` that leaves `.kan/identity` in place while reporting success is
   claiming #6's property without delivering it.
