@@ -2,10 +2,15 @@
 name = "kan"
 version = "0.11.0-beta.1"
 edition = "2021"
+authors = ["Maxine Levesque"]
 license = "MIT"
 description = "Local reasoning, global coherence — memory for AI agents."
 repository = "https://github.com/kan-tools/kan"
+homepage = "https://github.com/kan-tools/kan"
+documentation = "https://docs.rs/kan"
 readme = "README.md"
+keywords = ["agents", "provenance", "append-only", "content-addressed", "mcp"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 atproto-dasl = "0.14.5"
