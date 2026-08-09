@@ -82,14 +82,29 @@ migration population.
   `sign::workspace_identity(kan_dir)`, minus those in
   `fold::identity::excluded_by_retraction`. That function is
   **trust-independent** — self-retraction only — so resolving roles is not
-  circular with the trust base it feeds. `sign::list_roles` stops being the
-  source for `Workspace::role_trust_entries`, `Workspace::undeclared_log_authors`,
-  `--trust role:<name>`, and `kan identity authors`.
-- REQ-4: **The registry drops the key path.** The claim carries `{did, name}`
-  only. A local absolute path is machine-specific, is already unchecked (see
-  above), and under REQ-2 would be publishable. `kan identity role add` keeps
-  minting at `.kan/roles.d/<name>`, so the path stays derivable by convention
-  where kan created it; `KAN_IDENTITY_FILE` continues to name a path directly.
+  circular with the trust base it feeds. Role resolution consults
+  `excluded_by_retraction` and **deliberately not**
+  `src/fold/identity.rs::excluded_by_rejection`: a rejection is another author's
+  suppression of a claim, honoured only by folds that trust the rejecter, and
+  letting one suppress a declaration would hand a third party a revocation
+  power the declaring workspace never granted. `sign::list_roles` stops being
+  the source for `Workspace::role_trust_entries`,
+  `Workspace::undeclared_log_authors`, `--trust role:<name>`, and
+  `kan identity authors`.
+- REQ-4: **The registry drops the key path, and `SelectionMissing` absorbs the
+  case it served.** The claim carries `{did, name}` only — a local absolute
+  path is machine-specific, is already unchecked (see above), and under REQ-2
+  would be publishable. `kan identity role add` keeps minting at
+  `.kan/roles.d/<name>`; `KAN_IDENTITY_FILE` continues to name a path directly.
+  `Error::DeclaredRoleKeyMissing` is **deleted rather than reconstructed**: it
+  matched a missing path against the registry's third column, and a DID cannot
+  substitute, because computing one requires loading the key that is missing.
+  Instead `Error::SelectionMissing` — which today says only "no key at
+  `<path>`" — carries the path, the role names this workspace declares, and
+  where kan mints role keys. That answers the operator's actual question
+  (*which key did I mean, and where should it be*) in **every** case, including
+  a role minted with `--key` elsewhere, which the deleted error never could.
+  Strictly more information than the status quo, and one fewer variant.
 - REQ-5: **`kan identity role import`** — one-shot, explicit. Reads
   `.kan/roles`, writes one `RoleDeclaration` per row, and is idempotent
   (a row whose DID and name already have a live declaration is skipped, not
@@ -109,12 +124,44 @@ migration population.
   Running `kan identity role add|import` with `KAN_IDENTITY_FILE` pointing at a
   role would write a claim that folds as inert — a complete-looking write that
   grants nothing. It errors instead, naming both DIDs.
-- REQ-8: **`--trust roles` distinguishes "nothing declared" from "no identity to
-  ask about".** Nothing declared stays what it is today — an empty frame that
-  discloses what it excluded. A workspace whose own identity cannot be resolved
-  errors, because "who did this workspace vouch for" has no answer without
-  knowing who this workspace is. This distinction is **new**: the file version
-  could not make it, since a file read needs no identity.
+- REQ-8: **`--trust roles` reports three states rather than one empty frame.**
+  It stays an empty frame — never an error — and the disclosure says *which*
+  empty: (a) nothing declared; (b) no workspace identity is resolvable, so no
+  declaration can be honoured; (c) declarations exist but none were authored by
+  this workspace. State (c) is information the file version could not produce
+  at all.
+
+  *Specified as an error first, and reversed.* The argument for erroring was
+  consistency with `--trust me`, which raises `NoIdentityToName`. It is weaker
+  than it looks: `me` **is** the identity, so the question is meaningless
+  without one, whereas "the set this workspace vouched for" is a legitimate
+  question whose answer is legitimately empty. What actually decided it is
+  **composition** — `--trust roles,did:key:abc…` is valid today, and an
+  erroring alias means one member of a set failing to expand kills the whole
+  read, so an alias that composes stops composing. It also sits badly with
+  REQ-1's ethos: a read that *errors* because it could not resolve an identity
+  is one step from a read that *needs* one.
+- REQ-9: **`kan identity adopt` re-declares the live role set under the new
+  identity, and prints what it re-declared.** Adopt changes the workspace DID,
+  so every declaration authored by the previous identity would stop being
+  honoured — and could not be retracted either, retraction being self-only.
+  Under `.kan/roles` this did not arise, because adopt never touched the file.
+  At adopt time kan holds both DIDs and can resolve the current set, so it
+  appends one fresh declaration per role. `src/sign.rs::register_active` is the
+  precedent and the same argument: it fires at the one moment the identity is
+  loaded and its DID is known.
+
+  *This is a write side effect of another command, which is the shape #183
+  retired, so the distinction has to be earned rather than assumed.* #183's
+  migration moved a **secret**, fired during *resolution* (so `kan show` could
+  trigger it), and could be neither seen nor undone. This one fires during an
+  explicit write command, prints every claim it appends, is undone by
+  `kan retract`, and is independently askable as `kan identity role import`.
+  Visible, deliberate, reversible — the three properties #183 found absent.
+
+  *Narrower than it first appears*: `src/actions.rs::adopt_identity` **refuses a key
+  that authored none of the log's claims**, so the adopted identity is always
+  an existing co-author rather than a stranger.
 
 ## Acceptance Criteria
 
@@ -161,9 +208,25 @@ mechanical witness the criterion says so and is marked **intent**.
       `kan identity role add` refuse, and **no claim is appended**. *Witness*:
       `tests/role_declarations.rs` (new), test `a_role_cannot_declare_a_role`, asserting the
       log length is unchanged — depth 0's negative control.
-- [ ] AC-10: For REQ-8, a workspace with no resolvable identity errors on
-      `--trust roles` rather than returning an empty frame. *Witness*:
-      `tests/role_declarations.rs` (new), test `roles_without_an_identity_is_an_error`.
+- [ ] AC-10: For REQ-8, all three empty states are reachable and each reports a
+      *different* disclosure, and none of them errors. The composition case is
+      the point: `--trust roles,did:key:…` returns the named author's claims
+      even when `roles` expands to nothing. *Witness*:
+      `tests/role_declarations.rs` (new), test `three_empty_roles_frames_read_differently`,
+      asserting the three messages differ pairwise rather than merely that each
+      is non-empty — an assertion that every state says *something* is one a
+      single hardcoded string would pass.
+- [ ] AC-10b: For REQ-3's rejection rule, a `Rejects` claim naming a live role
+      declaration — authored by a trusted author, so the fold would honour it
+      anywhere else — leaves `--trust roles` unchanged. *Witness*:
+      `tests/role_declarations.rs` (new), test `a_rejection_cannot_revoke_a_role`. The
+      negative control for the hole a later symmetry-minded reader would open.
+- [ ] AC-10c: For REQ-9, `kan identity adopt` leaves `--trust roles` returning
+      the **same author set** it returned before the adopt, and names each
+      re-declared role on stdout. *Witness*:
+      `tests/role_declarations.rs` (new), test `adopt_carries_the_role_registry_across`,
+      comparing the set before and after rather than counting it, so a set that
+      changed membership while keeping its size cannot pass.
 - [ ] AC-11: For REQ-4 + the surfaces that move, the change-ledger golden
       records exactly what changed in `kan identity role list` and
       `kan identity authors` output, human and `--json`. *Witness*:
@@ -232,6 +295,48 @@ subject. REQ-5 strengthens both: a role's existence stops being a mutable file
 line and becomes an append-only, attributable claim. Retraction removes it from
 a *view*, retaining it in history — §8's palimpsest, unchanged.
 
+### Who can change a role, and what the trust root actually is
+
+Asked by Maxine, and worth answering as a closed set rather than a reassurance,
+because a privilege-granting claim invites the question. **Change is closed to
+the workspace identity, by four independent mechanisms:**
+
+- **Declare** — only the workspace identity; anyone else's declaration folds as
+  an ordinary claim and grants nothing (AC-5).
+- **Retract** — `excluded_by_retraction` is *self-retraction only*, so a
+  `Retraction` takes effect only against a claim by the same author. Nobody
+  else can revoke a declaration.
+- **Reject** — cannot suppress a declaration at all, per REQ-3. This falls out
+  of the resolver as specified, which is exactly why it is written down: a
+  later reader adding rejection handling *for symmetry* would open the hole
+  without noticing, and symmetry is a persuasive reason to do the wrong thing.
+- **`KAN_IDENTITY_FILE`** — cannot shift the set. Resolution asks
+  `workspace_identity` (question 1); the selection is question 2. REQ-1's
+  separation paying a dividend it was not designed for.
+
+**And the honest framing, which the word "privilege" would otherwise obscure:
+the trust root is the local `.kan/` secret, not the log.** Whoever can write
+`.kan/` decides which DID counts as this workspace, and therefore which
+declarations are honoured — wholesale, without appending anything. Role
+declarations are **a local view configuration with provenance**, not a
+distributed authorization system. Everything above constrains what *claims* can
+do; none of it constrains what filesystem access can do, and it should not be
+read as if it did.
+
+*Transitive succession claims — "this identity succeeds that one", followed
+across hops — were proposed and deferred rather than dismissed.* They would fix
+this class properly and generalise past roles: after **any** adopt, `--trust
+me` shows only the adopted identity's claims, which is true today and has
+nothing to do with REQ-5. Three reasons they are not here: they reintroduce
+precisely what depth 0 fenced out (a depth bound, cycles where `A` succeeds `B`
+succeeds `A`, and a retracted intermediate); they **are** ADR-75's vouching,
+which `.design/v0.12-milestone.md`'s Out of Scope names explicitly; and the
+case that needs one is the case that cannot prove it — a succession claim can
+only be signed by the *new* key, since holding the old one means retracting and
+re-declaring instead. An unbacked assertion whose only safe scope is local and
+unverifiable is a footgun pointed at REQ-8's sharing channel. Wants its own
+issue, covering roles, `--trust me`, and "what happened to my old claims".
+
 ### Sharing, and what E2EE does and does not care about
 
 Checked against the sharing designs rather than assumed. None of
@@ -295,7 +400,7 @@ provenance, an author, and revocation-by-retraction. The docstring must be
 rewritten when `ROLES_FILE` becomes the importer's input, not left standing as
 a contradicted comment.
 
-### What REQ-5 makes worse, stated rather than discovered later
+### The error this was going to degrade, and why it improves instead
 
 `src/sign.rs:905` produces `DeclaredRoleKeyMissing` — "you asked to write as
 declared role `prover` and that role's key is gone" — by matching the missing
@@ -303,20 +408,35 @@ path against the registry's third column. REQ-4 removes that column, and the
 DID cannot substitute for it, because computing a DID requires loading the key
 that is missing.
 
-The replacement is convention: a missing path of the form
-`.kan/roles.d/<name>` where `<name>` is a declared role still produces the
-specific error; any other path falls back to the generic `SelectionMissing`.
-That covers what `role add` creates — measured, three of `sheaf-games`'s four
-rows are at the default path, and the fourth is `primary`, which has no role
-key by construction. A role minted with `--key` elsewhere loses the specific
-message. This is the one place REQ-5 degrades an existing error, and the
-degradation is a less specific message, not a wrong one.
+*This section originally proposed preserving the error by convention*: a
+missing `.kan/roles.d/<name>` for a declared name keeps the specific message,
+any other path degrades to the generic `SelectionMissing`. It was measured as
+adequate — three of `sheaf-games`'s four rows sit at the default path, and the
+fourth is `primary`, which has no role key by construction — and recorded as
+the one place REQ-5 made something worse.
+
+**REQ-4 now deletes the variant instead, and that is strictly better.** The
+convention preserved a special case that only works where *kan* chose the path,
+which is the case least likely to have gone missing; the operator who typed
+`--key /somewhere/else` got nothing. Folding the facts into `SelectionMissing`
+— the path, the declared role names, where kan mints role keys — answers the
+question in every case, including the one convention could not reach, and
+removes code rather than adding a fallback.
+
+Worth keeping as a pattern, not just an outcome: the fix that *reduced* surface
+beat the one that preserved it, which is the same finding REQ-3's review loop
+ended on — the round whose fixes reduced the number of assertions was the round
+that terminated it.
 
 ## Open Questions
 
 None. The two the milestone left open — migration off `.kan/roles`, and the
 SPEC §7.1 downgrade hazard — are resolved above (REQ-5 and *The downgrade
-asymmetry*), decided with Maxine on 2026-08-09.
+asymmetry*). Six further decisions taken with Maxine on 2026-08-09 are recorded
+on `v0.12-milestone` (`bafyreigolvvpx7oqv5jexq4jztr52evigdagfsz7b7govjpozw3xsu6gvq`):
+Q4's release boundary, the migration matrix keeping a keychain writer, REQ-8's
+three states, REQ-4's deleted variant, REQ-9's adopt behaviour, and the authz
+answer above.
 
 ## Out of Scope
 
