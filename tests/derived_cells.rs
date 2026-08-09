@@ -422,6 +422,19 @@ const _: &str = GOLDEN;
 /// (b) When `workspace_identity` resolves **and every source `at_rest`
 ///     outranks is reachable**, `at_rest` names the source it resolved from.
 ///
+/// **What this cannot catch, measured rather than assumed.** Swapping
+/// `identity-id` and `identity` in `at_rest` leaves this test GREEN, and that
+/// is not a weakness to fix -- it is the conditioning working. Every row runs
+/// under `KAN_NO_KEYCHAIN`, where the resolver never consults `identity-id`,
+/// so the swap makes `at_rest` agree MORE with the resolver on this plane. The
+/// distinguishing case needs a reachable keychain. **Precedence between those
+/// two is defended by the goldens, not by this invariant**, and a cold review
+/// established that by mutation after the first version of this test asserted
+/// nothing at all.
+///
+/// It does catch a swap that is visible here -- making a key file outrank the
+/// seed turns it red naming the configuration. Verified.
+///
 /// That reachability condition is not a hedge, and the first draft of this AC
 /// omitted it and was **already false against a checked-in fixture**. Every row
 /// here runs under `KAN_NO_KEYCHAIN`, where `Seed::load` skips `seed-id` and
@@ -459,6 +472,33 @@ fn at_rest_agrees_with_the_resolvers_on_every_configuration() {
             conditioned_away += 1;
             continue;
         }
+
+        // (b) ACTUALLY ASSERTED. The first version incremented a counter here
+        // and did nothing else -- it never called `workspace_identity` at all,
+        // so the docstring claimed two invariants and the body checked one. A
+        // cold review proved it by swapping `at_rest`'s precedence: this test
+        // stayed GREEN and only the goldens went red. The property was covered
+        // by the fixture; the invariant that names it was inert.
+        let resolved = kan::sign::workspace_identity(&kan_dir).unwrap();
+        match rest {
+            kan::sign::AtRest::None_ => assert!(
+                resolved.is_none(),
+                "at_rest says nothing is at rest for {}, but workspace_identity resolved one",
+                cfg.label()
+            ),
+            named => {
+                let did = resolved
+                    .map(|i| i.did().to_string())
+                    .unwrap_or_else(|| "<none>".into());
+                let from_named = secret_did_at(&kan_dir, named);
+                assert_eq!(
+                    Some(did.clone()),
+                    from_named,
+                    "at_rest named {named:?} for {}, but workspace_identity resolved {did},                      which that artifact does not derive. `at_rest` must mirror the                      resolver's precedence -- a disagreement means `protect` moves a secret                      that is not the one signing.",
+                    cfg.label()
+                );
+            }
+        }
         checked += 1;
     }
 
@@ -469,4 +509,39 @@ fn at_rest_agrees_with_the_resolvers_on_every_configuration() {
          doing nothing -- either the enumeration stopped producing pointer-only layouts, \
          or the condition is now unnecessary. Both are worth knowing before this passes."
     );
+}
+
+/// The DID the artifact `at_rest` named actually derives, read straight from
+/// disk — so the comparison is against the FILE, not against another call to
+/// the resolver, which would compare a function with itself.
+fn secret_did_at(kan_dir: &std::path::Path, a: kan::sign::AtRest) -> Option<String> {
+    use kan::sign::{AtRest, Identity, Seed};
+    let f = a.file()?;
+    let bytes = std::fs::read(kan_dir.join(f)).ok()?;
+    match a {
+        AtRest::SeedFile => {
+            let mut b = [0u8; 32];
+            if bytes.len() != 32 {
+                return None;
+            }
+            b.copy_from_slice(&bytes);
+            Some(
+                Seed::from_entropy(b)
+                    .signing_identity()
+                    .ok()?
+                    .did()
+                    .to_string(),
+            )
+        }
+        AtRest::KeyFile => Some(
+            Identity::load_existing(&kan_dir.join(f))
+                .ok()?
+                .did()
+                .to_string(),
+        ),
+        // A pointer names a keychain entry, which is unreachable here: every
+        // row runs under KAN_NO_KEYCHAIN. Those rows are conditioned away
+        // before this is called.
+        _ => None,
+    }
 }

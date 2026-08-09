@@ -2374,6 +2374,24 @@ pub fn protect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
         ));
     }
 
+    // AC-3.6, AND THE REVIEWER SHOWED IT MOVING THE WRONG SECRET. With
+    // KAN_IDENTITY_FILE set, `protect` happily moved the workspace SEED and
+    // printed the seed's DID labelled "(unchanged)" -- which is not the DID
+    // that signs in that environment. That is the "moves a secret that is not
+    // the one signing" class the design names as the most likely way this goes
+    // wrong, arriving through the env var rather than through precedence.
+    //
+    // The refusal existed only in the NoIdentity arm, which is exactly the case
+    // where a selection is NOT in play.
+    if let crate::sign::Selection::KeyFile(path) = crate::sign::Selection::from_env() {
+        return Err(Error::Usage(format!(
+            "refusing: KAN_IDENTITY_FILE selects {} as the identity that signs here, and              `protect` moves the identity this WORKSPACE owns -- they are not the same              thing, and moving one while you are signing as the other is how a secret ends              up somewhere its owner does not expect.
+
+             A key file you pointed kan at is yours to manage; kan does not move a secret              it was merely shown. Unset KAN_IDENTITY_FILE to protect this workspace's own              identity.",
+            path.display()
+        )));
+    }
+
     match plan_protect(&kan_dir) {
         Plan::NoIdentity => Err(Error::Usage(
             "this workspace has no identity of its own to protect.\n\n\
@@ -2472,6 +2490,13 @@ pub fn protect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
 pub fn unprotect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
     use crate::sign::{plan_unprotect, unprotect_to, AtRest, Plan};
     let kan_dir = ws.root.join(".kan");
+
+    if let crate::sign::Selection::KeyFile(path) = crate::sign::Selection::from_env() {
+        return Err(Error::Usage(format!(
+            "refusing: KAN_IDENTITY_FILE selects {} as the identity that signs here, and              `unprotect` writes this WORKSPACE's own secret into .kan/. Unset it to act on              the workspace's identity.",
+            path.display()
+        )));
+    }
 
     match plan_unprotect(&kan_dir) {
         Plan::NoIdentity => Err(Error::Usage(

@@ -98,6 +98,12 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("recovery phrase: {0}")]
     Recovery(String),
+    /// A deliberate refusal. Its own variant because `Recovery`'s
+    /// "recovery phrase: " prefix was being stamped onto messages with nothing
+    /// to do with a phrase -- the KAN_NO_KEYCHAIN refusal reached the user as
+    /// "error: recovery phrase: refusing: ...".
+    #[error("{0}")]
+    Refused(String),
     #[error(
         "this repo already has an identity -- {evidence} -- and {attempt} would give it a \
          second identity.\n\n\
@@ -657,9 +663,8 @@ pub fn unprotect_to(
     // Same rule, opposite reason: unprotect must READ the keychain to move the
     // secret out of it, so with the flag set there is nothing it can do.
     if keychain_disabled() {
-        return Err(Error::Recovery(
-            "refusing: KAN_NO_KEYCHAIN is set, and `unprotect` must READ the keychain to \
-             move the secret out of it.\n\nUnset it and try again."
+        return Err(Error::Refused(
+            "refusing: KAN_NO_KEYCHAIN is set, and `unprotect` must READ the keychain to move the secret out of it.\n\nUnset it and try again."
                 .to_string(),
         ));
     }
@@ -730,8 +735,8 @@ pub fn protect_from(
     // author's login keychain. Every other keychain path in this module checks
     // this; the newest one did not.
     if keychain_disabled() {
-        return Err(Error::Recovery(
-            "refusing: KAN_NO_KEYCHAIN is set, which tells kan to behave as though no OS              keychain exists -- so `protect`, whose only job is to put a secret INTO it,              cannot honour both.\n\nUnset it if you want the keychain."
+        return Err(Error::Refused(
+            "refusing: KAN_NO_KEYCHAIN is set, which tells kan to behave as though no OS keychain exists -- so `protect`, whose only job is to put a secret INTO it, cannot honour both.\n\nUnset it if you want the keychain."
                 .to_string(),
         ));
     }
