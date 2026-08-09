@@ -560,7 +560,8 @@ exit: ok
   "claims": [],
   "trust": {
     "base": "PeerContested",
-    "authors": []
+    "authors": [],
+    "empty_reason": "none declared"
   },
   "excluded_by_trust": 4
 }

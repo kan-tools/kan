@@ -782,8 +782,25 @@ impl Workspace {
     /// role list, which is workspace state — but it is *read* per
     /// invocation and never set by one, so the property holds.
     pub fn trust_from(&self, specs: &[String]) -> Result<TrustBase, Error> {
+        Ok(self.trust_from_detailed(specs)?.0)
+    }
+
+    /// [`Self::trust_from`], plus **why** the base expanded to no authors when
+    /// it did (`.design/role-declarations.md` REQ-8).
+    ///
+    /// The reason is produced here rather than at the render boundary because
+    /// this is the only layer that knows which alias produced the emptiness.
+    /// An empty base has more than one cause -- `roles` with nothing declared,
+    /// and `local` on a log nobody has written to -- and attaching a
+    /// roles-flavoured explanation to the second would be a confident wrong
+    /// answer, which is the class this milestone exists to remove rather than
+    /// relocate.
+    pub fn trust_from_detailed(
+        &self,
+        specs: &[String],
+    ) -> Result<(TrustBase, Option<String>), Error> {
         if specs.is_empty() {
-            return self.local_trust();
+            return Ok((self.local_trust()?, None));
         }
         // A lone `me` is `Solo` -- the same base the default used to be, and
         // the narrow frame REQ-5 keeps nameable. Combined with anything else
@@ -793,20 +810,38 @@ impl Workspace {
         // otherwise `--trust local` and no argument at all would report
         // different frames for identical views.
         if specs.len() == 1 && specs[0] == crate::fold::trust::LOCAL_ALIAS {
-            return self.local_trust();
+            return Ok((self.local_trust()?, None));
         }
         if specs.len() == 1 && specs[0] == crate::fold::trust::SELF_ALIAS {
-            return Ok(TrustBase::solo(AuthorId {
-                did: self.active_did()?,
-                agent: None,
-            }));
+            return Ok((
+                TrustBase::solo(AuthorId {
+                    did: self.active_did()?,
+                    agent: None,
+                }),
+                None,
+            ));
         }
 
+        let mut roles_reason: Option<String> = None;
         let mut weights = std::collections::HashMap::new();
         for spec in specs {
             if spec == crate::fold::trust::ROLES_ALIAS {
-                for (did, weight) in self.role_trust_entries()? {
-                    weights.insert(AuthorId { did, agent: None }, weight);
+                let declared = self.declared_roles()?;
+                // Recorded whenever `roles` contributes nothing, and reported
+                // only if the WHOLE base ends up empty -- so `--trust
+                // roles,did:key:...` still returns the named author's claims
+                // and says nothing misleading about the alias that added none.
+                if declared.roles().is_empty() {
+                    roles_reason = Some(crate::roles::empty_reason(&declared).to_string());
+                }
+                for role in declared.roles() {
+                    weights.insert(
+                        AuthorId {
+                            did: role.did.clone(),
+                            agent: None,
+                        },
+                        1.0,
+                    );
                 }
                 continue;
             }
@@ -862,7 +897,11 @@ impl Workspace {
             };
             weights.insert(AuthorId { did, agent: None }, entry.weight);
         }
-        Ok(TrustBase::peer_contested(weights))
+        let reason = match weights.is_empty() {
+            true => roles_reason,
+            false => None,
+        };
+        Ok((TrustBase::peer_contested(weights), reason))
     }
 }
 

@@ -556,8 +556,10 @@ impl KanServer {
     #[tool(description = "Show a subject's live claims.")]
     async fn show(&self, params: Parameters<SubjectParams>) -> Result<String, ErrorData> {
         let ws = self.reader().await?;
-        let trust = ws.trust_from(&params.0.trust).map_err(trust_error)?;
-        actions::show(&ws, &params.0.subject, &trust).map_err(to_error)
+        let (trust, empty_reason) = ws
+            .trust_from_detailed(&params.0.trust)
+            .map_err(trust_error)?;
+        actions::show(&ws, &params.0.subject, &trust, empty_reason.as_deref()).map_err(to_error)
     }
 
     #[tool(
@@ -566,22 +568,40 @@ impl KanServer {
     )]
     async fn status(&self, params: Parameters<StatusParams>) -> Result<String, ErrorData> {
         let ws = self.reader().await?;
-        let trust = ws.trust_from(&params.0.trust).map_err(trust_error)?;
-        actions::status(&ws, params.0.subject.as_deref(), &trust).map_err(to_error)
+        let (trust, empty_reason) = ws
+            .trust_from_detailed(&params.0.trust)
+            .map_err(trust_error)?;
+        actions::status(
+            &ws,
+            params.0.subject.as_deref(),
+            &trust,
+            empty_reason.as_deref(),
+        )
+        .map_err(to_error)
     }
 
     #[tool(description = "List open (not-yet-resolved) subjects.")]
     async fn issues(&self, params: Parameters<TrustParams>) -> Result<String, ErrorData> {
         let ws = self.reader().await?;
-        let trust = ws.trust_from(&params.0.trust).map_err(trust_error)?;
-        actions::issues(&ws, &trust).map_err(to_error)
+        let (trust, empty_reason) = ws
+            .trust_from_detailed(&params.0.trust)
+            .map_err(trust_error)?;
+        actions::issues(&ws, &trust, empty_reason.as_deref()).map_err(to_error)
     }
 
     #[tool(description = "Assemble the maximal-value claim set that fits under a token budget.")]
     async fn context(&self, params: Parameters<ContextParams>) -> Result<String, ErrorData> {
         let ws = self.reader().await?;
-        let trust = ws.trust_from(&params.0.trust).map_err(trust_error)?;
-        actions::context(&ws, params.0.budget.unwrap_or(DEFAULT_BUDGET), &trust).map_err(to_error)
+        let (trust, empty_reason) = ws
+            .trust_from_detailed(&params.0.trust)
+            .map_err(trust_error)?;
+        actions::context(
+            &ws,
+            params.0.budget.unwrap_or(DEFAULT_BUDGET),
+            &trust,
+            empty_reason.as_deref(),
+        )
+        .map_err(to_error)
     }
 }
 
@@ -667,7 +687,10 @@ impl ServerHandler for KanServer {
         // which is what the resource template advertises. A trust-selected
         // read is a tool call, where the selection has somewhere to live.
         let trust = ws.local_trust().map_err(open_error)?;
-        let text = actions::show(&ws, subject, &trust).map_err(to_error)?;
+        // `local` needs no explanation: it is every author in this log, so an
+        // empty one means an empty log rather than a frame that excluded
+        // something.
+        let text = actions::show(&ws, subject, &trust, None).map_err(to_error)?;
         Ok(ReadResourceResult::new(vec![ResourceContents::text(
             text,
             claims_uri(subject),

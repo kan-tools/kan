@@ -237,8 +237,8 @@ pub enum Command {
         json: bool,
         /// Narrow or widen the trust base. The default is `local` — every
         /// author with a claim in this workspace's log. Also accepts `me`
-        /// (the active identity alone), `roles` (only the identities
-        /// declared in `.kan/roles`), `role:<name>` (one declared role), a
+        /// (the active identity alone), `roles` (only the identities this
+        /// workspace has declared), `role:<name>` (one declared role), a
         /// bare `did:key:...`, or `did:key:...=<weight>`. Repeat for several
         /// authors. Weight defaults to 1.0 and must be in [0,1]; an author
         /// you do not name is invisible, not merely down-weighted.
@@ -1043,6 +1043,10 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                                     ws.identity()?.did()
                                 ),
                             }
+                            print!(
+                                "{}",
+                                crate::roles::legacy_file_notice(&ws.root.join(".kan"), &declared)
+                            );
                         } else {
                             println!("active: {}", ws.identity()?.did());
                             for role in roles {
@@ -1172,7 +1176,8 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
             json,
             trust,
         } => {
-            let trust = ws.trust_from(&trust)?;
+            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
+            let empty_reason = empty_reason.as_deref();
             match (all, subject) {
                 (true, _) if !json => {
                     return Err(actions::Error::Usage(
@@ -1184,7 +1189,7 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
                     )
                     .into())
                 }
-                (true, _) => print!("{}", actions::show_all_json(ws, &trust)?),
+                (true, _) => print!("{}", actions::show_all_json(ws, &trust, empty_reason)?),
                 (false, None) => {
                     return Err(actions::Error::Usage(
                         "give a subject to show (`kan show <subject>`), or `--all --json` for \
@@ -1196,9 +1201,9 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
                 (false, Some(subject)) => print!(
                     "{}",
                     if json {
-                        actions::show_json(ws, &subject, &trust)?
+                        actions::show_json(ws, &subject, &trust, empty_reason)?
                     } else {
-                        actions::show(ws, &subject, &trust)?
+                        actions::show(ws, &subject, &trust, empty_reason)?
                     }
                 ),
             }
@@ -1208,24 +1213,24 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
             json,
             trust,
         } => {
-            let trust = ws.trust_from(&trust)?;
+            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
             print!(
                 "{}",
                 if json {
-                    actions::status_json(ws, subject.as_deref(), &trust)?
+                    actions::status_json(ws, subject.as_deref(), &trust, empty_reason.as_deref())?
                 } else {
-                    actions::status(ws, subject.as_deref(), &trust)?
+                    actions::status(ws, subject.as_deref(), &trust, empty_reason.as_deref())?
                 }
             )
         }
         Command::Issues { json, trust } => {
-            let trust = ws.trust_from(&trust)?;
+            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
             print!(
                 "{}",
                 if json {
-                    actions::issues_json(ws, &trust)?
+                    actions::issues_json(ws, &trust, empty_reason.as_deref())?
                 } else {
-                    actions::issues(ws, &trust)?
+                    actions::issues(ws, &trust, empty_reason.as_deref())?
                 }
             )
         }
@@ -1235,13 +1240,13 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
             trust,
         } => {
             let budget = budget.unwrap_or(DEFAULT_BUDGET);
-            let trust = ws.trust_from(&trust)?;
+            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
             print!(
                 "{}",
                 if json {
-                    actions::context_json(ws, budget, &trust)?
+                    actions::context_json(ws, budget, &trust, empty_reason.as_deref())?
                 } else {
-                    actions::context(ws, budget, &trust)?
+                    actions::context(ws, budget, &trust, empty_reason.as_deref())?
                 }
             );
         }

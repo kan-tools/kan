@@ -113,6 +113,15 @@ migration population.
   telling the operator the file is no longer read by this kan and is safe to
   remove, naming the one reason to keep it: a kan older than v0.12 reads the
   file and cannot interpret declarations.
+
+  **A workspace holding an unimported `.kan/roles` is told so**, on
+  `kan identity role list` and `kan identity authors` — the two surfaces an
+  operator asks on — naming the command that brings it across. Decided with
+  Maxine, and it closes the one cost the one-shot choice carried: without it,
+  upgrading makes `--trust roles` go empty and every author report
+  `UNDECLARED`, with nothing pointing at the file in `.kan/`. kan still never
+  *reads* the file for resolution; the notice checks only that it exists, and
+  disappears on its own once anything is declared.
 - REQ-6: **Latest declaration wins per name**, in log order. An append-only log
   cannot refuse a duplicate the way `add_role` does, so the fold needs a rule,
   and log order is the convention already used for intra-author supersession
@@ -155,11 +164,28 @@ migration population.
   than it looks: `me` **is** the identity, so the question is meaningless
   without one, whereas "the set this workspace vouched for" is a legitimate
   question whose answer is legitimately empty. What actually decided it is
-  **composition** — `--trust roles,did:key:abc…` is valid today, and an
+  **composition** — `--trust roles --trust did:key:abc…` is valid today, and an
   erroring alias means one member of a set failing to expand kills the whole
   read, so an alias that composes stops composing. It also sits badly with
   REQ-1's ethos: a read that *errors* because it could not resolve an identity
   is one step from a read that *needs* one.
+
+  **The reason reaches `--json` as `trust.empty_reason`**, decided with
+  Maxine, because the consumer that most needs to tell these apart is an agent
+  reading JSON and it cannot ask a follow-up question. Additive and omitted
+  when absent, so every view that named an author serializes byte-identically —
+  `docs/SPEC.md` §7.1's rule for claim fields, applied to the read contract.
+  Human output carries the same sentence beside the exclusion note, which is
+  also what the MCP surface renders.
+
+  *One ordering decision falls out, and it is not arbitrary*: **"nothing
+  declared" wins over "no workspace identity"**. With no declarations anywhere,
+  that is the true and more useful answer whoever is asking, and reporting the
+  identity problem would send an operator to recover a key that would reveal
+  nothing. `NoWorkspaceIdentity` therefore means exactly *declarations exist
+  here and none can be honoured* — the lost-key state, which is the one worth
+  naming. Found by writing AC-10's witness, where states (a) and (b) came back
+  identical.
 - REQ-9: **`kan identity adopt` re-declares the live role set under the new
   identity, and prints what it re-declared.** Adopt changes the workspace DID,
   so every declaration authored by the previous identity would stop being

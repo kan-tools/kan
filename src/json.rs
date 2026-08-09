@@ -123,6 +123,22 @@ pub struct TrustJson {
     /// `"Solo"` or `"PeerContested"`.
     pub base: String,
     pub authors: Vec<TrustAuthorJson>,
+    /// Why this base expanded to **no authors**, when it did
+    /// (`.design/role-declarations.md` REQ-8).
+    ///
+    /// An empty `authors` list folds to an empty view, and until v0.12 that
+    /// was the whole answer — "you declared nothing", "this workspace's own
+    /// identity is unreachable so no declaration can be honoured", and
+    /// "declarations exist here but none are yours" all rendered as the same
+    /// silence. They send an operator after entirely different problems, and
+    /// an agent reading `--json` is exactly the consumer that cannot ask a
+    /// follow-up question.
+    ///
+    /// **Additive and omitted when absent**, so every view that had authors
+    /// serializes byte-identically to before — the same rule `docs/SPEC.md`
+    /// §7.1 sets for claim fields, applied to the read contract.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub empty_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -133,16 +149,28 @@ pub struct TrustAuthorJson {
 
 impl TrustJson {
     pub fn new(trust: &crate::fold::TrustBase) -> Self {
+        Self::with_empty_reason(trust, None)
+    }
+
+    /// `reason` is attached **only when the base named no authors**, so a view
+    /// that has a frame never carries an explanation of an emptiness it does
+    /// not have. Enforced here rather than trusted to callers.
+    pub fn with_empty_reason(trust: &crate::fold::TrustBase, reason: Option<&str>) -> Self {
+        let authors: Vec<TrustAuthorJson> = trust
+            .authors()
+            .into_iter()
+            .map(|(author, weight)| TrustAuthorJson {
+                did: author.did,
+                weight,
+            })
+            .collect();
         Self {
             base: trust.name().to_string(),
-            authors: trust
-                .authors()
-                .into_iter()
-                .map(|(author, weight)| TrustAuthorJson {
-                    did: author.did,
-                    weight,
-                })
-                .collect(),
+            empty_reason: match authors.is_empty() {
+                true => reason.map(str::to_string),
+                false => None,
+            },
+            authors,
         }
     }
 }

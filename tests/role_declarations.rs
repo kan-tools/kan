@@ -85,6 +85,183 @@ fn claim_count(dir: &std::path::Path) -> usize {
     view["claims"].as_array().map(|c| c.len()).unwrap_or(0)
 }
 
+/// REQ-8 + AC-10: the three empty `--trust roles` frames read **differently**,
+/// none of them errors, and the alias still composes.
+///
+/// Asserted pairwise-distinct rather than each being non-empty: an assertion
+/// that every state says *something* is one a single hardcoded string would
+/// pass, which is the shape of test this project keeps finding.
+#[test]
+fn three_empty_roles_frames_read_differently() {
+    let reason_for = |dir: &std::path::Path, key: Option<&std::path::Path>| -> String {
+        let run = kan_as(dir, key, &["show", "shared", "--trust", "roles", "--json"]);
+        assert!(
+            run.ok,
+            "`--trust roles` errored instead of returning an empty frame: {}",
+            run.stderr
+        );
+        let view: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
+        assert!(
+            view["trust"]["authors"].as_array().unwrap().is_empty(),
+            "this case was supposed to produce an EMPTY frame: {view}"
+        );
+        view["trust"]["empty_reason"]
+            .as_str()
+            .unwrap_or_else(|| panic!("an empty frame must say which empty it is: {view}"))
+            .to_string()
+    };
+
+    // (a) nothing declared.
+    let nothing = workspace_with_own_identity();
+    let a = reason_for(nothing.path(), None);
+
+    // (b) declarations exist but this workspace's own identity is gone, so
+    // none can be honoured. This is the LOST-KEY case, not a contrived one:
+    // declare a role, then lose the secret the workspace roots in.
+    //
+    // "No declarations AND no identity" is deliberately NOT this state --
+    // `roles::declared` answers `Nothing` there, because with nothing declared
+    // that is the true and more useful answer regardless of who is asking.
+    let no_identity = workspace_with_own_identity();
+    let add = kan_as(
+        no_identity.path(),
+        None,
+        &["identity", "role", "add", "reviewer"],
+    );
+    assert!(add.ok, "role add failed: {}", add.stderr);
+    for artifact in ["seed", "identity", "seed-id", "identity-id"] {
+        let p = no_identity.path().join(".kan").join(artifact);
+        if p.exists() {
+            std::fs::remove_file(&p).unwrap();
+        }
+    }
+    let b = reason_for(no_identity.path(), None);
+
+    // (c) declarations exist, but none were authored by this workspace. Built
+    // by declaring under one identity and then adopting a DIFFERENT one that
+    // also wrote here, so the declarations become foreign without editing
+    // anything.
+    let foreign = workspace_with_own_identity();
+    let add = kan_as(
+        foreign.path(),
+        None,
+        &["identity", "role", "add", "reviewer"],
+    );
+    assert!(add.ok, "role add failed: {}", add.stderr);
+    let stranger = foreign.path().join("stranger-key");
+    kan::sign::Identity::generate().save(&stranger).unwrap();
+    let wrote = kan_as(
+        foreign.path(),
+        Some(&stranger),
+        &["observe", "shared", "the stranger's claim"],
+    );
+    assert!(wrote.ok, "{}", wrote.stderr);
+    let adopt = kan_as(
+        foreign.path(),
+        Some(&stranger),
+        &["identity", "adopt", "--key", stranger.to_str().unwrap()],
+    );
+    assert!(adopt.ok, "adopt failed: {}", adopt.stderr);
+    let c = reason_for(foreign.path(), None);
+
+    assert_ne!(
+        a, b,
+        "(a) nothing declared and (b) no workspace identity read identically"
+    );
+    assert_ne!(
+        a, c,
+        "(a) nothing declared and (c) only-foreign read identically"
+    );
+    assert_ne!(
+        b, c,
+        "(b) no workspace identity and (c) only-foreign read identically"
+    );
+}
+
+/// The migration's discoverability half: a workspace holding a legacy
+/// `.kan/roles` that has not been imported is **told so**, on both surfaces an
+/// operator would ask on.
+///
+/// Without it, upgrading `sheaf-games` -- the one real workspace with this
+/// file -- makes `--trust roles` go empty and `kan identity authors` report
+/// four UNDECLARED authors, with nothing anywhere pointing at the file sitting
+/// in `.kan/`. Decided with Maxine when the one-shot import was chosen; the
+/// cost of every non-automatic option was exactly this, and this closes it
+/// without kan reading the file for resolution.
+#[test]
+fn a_legacy_roles_file_is_noticed_and_named() {
+    let dir = workspace_with_own_identity();
+    std::fs::write(
+        dir.path().join(".kan/roles"),
+        "did:key:zDnaeSezF2t8gTQrOFpVmvSMPFsxqRDzZL6JGjTxjJ2TvNqYe\tprover\t/gone\n",
+    )
+    .unwrap();
+
+    for args in [
+        &["identity", "role", "list"][..],
+        &["identity", "authors"][..],
+    ] {
+        let run = kan_as(dir.path(), None, args);
+        assert!(run.ok, "{args:?} failed: {}", run.stderr);
+        assert!(
+            run.stdout.contains("kan identity role import"),
+            "{args:?} did not name the command that brings the file across: {}",
+            run.stdout
+        );
+    }
+
+    // And it must go away on its own once something IS declared, rather than
+    // needing kan to remember that the migration happened.
+    let add = kan_as(dir.path(), None, &["identity", "role", "add", "reviewer"]);
+    assert!(add.ok, "role add failed: {}", add.stderr);
+    let listed = kan_as(dir.path(), None, &["identity", "role", "list"]);
+    assert!(
+        !listed.stdout.contains("kan identity role import"),
+        "the notice outlived the state it describes: {}",
+        listed.stdout
+    );
+}
+
+/// REQ-8: `roles` expanding to nothing must not take the rest of the frame
+/// with it. This is the argument that reversed the spec from erroring to an
+/// empty frame -- an erroring alias makes one member of a set kill the whole
+/// read.
+#[test]
+fn an_empty_roles_alias_still_composes() {
+    let dir = workspace_with_own_identity();
+    let did = kan_as(dir.path(), None, &["identity", "did"]);
+    assert!(did.ok, "{}", did.stderr);
+
+    let run = kan_as(
+        dir.path(),
+        None,
+        &[
+            "show",
+            "shared",
+            "--trust",
+            "roles",
+            "--trust",
+            &did.stdout,
+            "--json",
+        ],
+    );
+    assert!(
+        run.ok,
+        "`--trust roles --trust <did>` failed because `roles` expanded to nothing: {}",
+        run.stderr
+    );
+    let view: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
+    assert_eq!(
+        view["claims"].as_array().unwrap().len(),
+        1,
+        "the named author's claim should still be returned: {view}"
+    );
+    assert!(
+        view["trust"]["empty_reason"].is_null(),
+        "a frame that named an author is not empty and must carry no empty_reason: {view}"
+    );
+}
+
 /// REQ-4 + AC-11: `kan identity role list` reports **name and DID, and no key
 /// path**, in both renderings.
 #[test]

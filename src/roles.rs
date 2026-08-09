@@ -62,6 +62,34 @@ impl Declared {
     }
 }
 
+/// A notice for a workspace holding a **legacy `.kan/roles`** that has not
+/// been imported — or the empty string when there is nothing to say.
+///
+/// **The discoverability half of the migration decision.** `kan identity role
+/// import` is one-shot and explicit, and the cost of any non-automatic option
+/// was named when it was chosen: an upgraded workspace gets an empty answer
+/// with nothing pointing at the explanation sitting right there on disk. This
+/// closes that without kan ever *reading* the file for resolution — it checks
+/// only that it exists, and says what to run.
+///
+/// Shown when the file exists and nothing has been declared. A workspace that
+/// has imported has declarations, so the notice disappears on its own rather
+/// than needing kan to track that the migration happened.
+pub fn legacy_file_notice(kan_dir: &std::path::Path, declared: &Declared) -> String {
+    if !matches!(declared, Declared::Nothing) {
+        return String::new();
+    }
+    if !kan_dir.join(crate::sign::ROLES_FILE).exists() {
+        return String::new();
+    }
+    format!(
+        "\nnote: this workspace has a `.kan/{}` file from a kan older than v0.12, and \
+         nothing in it has been imported. Roles live in the log now; run `kan identity \
+         role import` to bring those declarations across.\n",
+        crate::sign::ROLES_FILE
+    )
+}
+
 /// Why a role set is empty, in one clause, for surfaces that have room for a
 /// phrase rather than a paragraph (`--trust role:<name>`'s "declared: …").
 ///
@@ -115,6 +143,13 @@ pub fn declared(claims: &[(Cid, StoredClaim)], workspace_did: Option<&str>) -> D
         })
         .collect();
 
+    // ORDER MATTERS, and this is the decision rather than an accident: "no
+    // declarations at all" wins over "no workspace identity". With nothing
+    // declared, `Nothing` is the true and more useful answer no matter who is
+    // asking, and reporting `NoWorkspaceIdentity` would send an operator to
+    // recover a key that would reveal nothing. So `NoWorkspaceIdentity` means
+    // exactly "declarations exist here and none can be honoured" -- the
+    // lost-key state, which is the one worth naming.
     if declarations.is_empty() {
         return Declared::Nothing;
     }

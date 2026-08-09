@@ -1550,7 +1550,12 @@ fn show_claim_by_cid(ws: &Workspace, view: &FoldedView, wanted: &Cid) -> Result<
 
 /// A single subject's live claims, rendered — `fold` + `render` for one
 /// subject (`docs/SPEC.md` §9's "decategorify only at render").
-pub fn show(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<String, Error> {
+pub fn show(
+    ws: &Workspace,
+    subject: &str,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -1570,7 +1575,11 @@ pub fn show(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<String, 
     match view.subject(&subject_ref) {
         None => {
             out.push_str(&format!("{subject}: no claims{}\n", subject_hint(&view)));
-            out.push_str(&excluded_note(excluded.for_subject(&subject_ref), trust));
+            out.push_str(&excluded_note(
+                excluded.for_subject(&subject_ref),
+                trust,
+                empty_reason,
+            ));
             // An edge asserted *at* a subject is part of its story even when
             // the subject has nothing of its own. `inbound_edges` used to sit
             // inside the `Some(..)` arm, so `kan relate a blocks b` then `kan
@@ -1614,7 +1623,11 @@ pub fn show(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<String, 
                 "{subject} ({} live claim(s)):\n",
                 subject_view.claims.len()
             ));
-            out.push_str(&excluded_note(excluded.for_class(subject_view), trust));
+            out.push_str(&excluded_note(
+                excluded.for_class(subject_view),
+                trust,
+                empty_reason,
+            ));
             let superseded = superseded_status_cids(&subject_view.claims);
             for (cid, claim) in &subject_view.claims {
                 out.push_str(&format!(
@@ -1749,7 +1762,12 @@ fn related_subjects_by_file(
 /// One subject's (or every subject's) `Settled | Confirmed | Contested`
 /// state, or "most recent live claim" for subjects with no `Status` claims
 /// yet (`fold::state`, M4b).
-pub fn status(ws: &Workspace, subject: Option<&str>, trust: &TrustBase) -> Result<String, Error> {
+pub fn status(
+    ws: &Workspace,
+    subject: Option<&str>,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -1775,13 +1793,21 @@ pub fn status(ws: &Workspace, subject: Option<&str>, trust: &TrustBase) -> Resul
                             out.push_str(&format!("    {line}\n"));
                         }
                     }
-                    out.push_str(&excluded_note(excluded.for_subject(&subject_ref), trust));
+                    out.push_str(&excluded_note(
+                        excluded.for_subject(&subject_ref),
+                        trust,
+                        empty_reason,
+                    ));
                 }
                 Some(subject_view) => {
                     let state = classify_subject(ws, subject_view);
                     let durability = durability_of(ws, subject_view);
                     write_state(&mut out, subject, subject_view, state, durability);
-                    out.push_str(&excluded_note(excluded.for_class(subject_view), trust));
+                    out.push_str(&excluded_note(
+                        excluded.for_class(subject_view),
+                        trust,
+                        empty_reason,
+                    ));
                 }
             }
         }
@@ -1800,7 +1826,7 @@ pub fn status(ws: &Workspace, subject: Option<&str>, trust: &TrustBase) -> Resul
             // entirely, which no per-row note could carry. "no subjects yet"
             // above is the sharpest case — it is a complete-looking answer
             // that a wider trust base would contradict.
-            out.push_str(&excluded_note(excluded.total(), trust));
+            out.push_str(&excluded_note(excluded.total(), trust, empty_reason));
         }
     }
     Ok(out)
@@ -2060,7 +2086,11 @@ fn is_open_issue(ws: &Workspace, subject_view: &SubjectView) -> bool {
     !done
 }
 
-pub fn issues(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
+pub fn issues(
+    ws: &Workspace,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -2085,7 +2115,7 @@ pub fn issues(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
     if shown == 0 {
         out.push_str("no open issues\n");
     }
-    out.push_str(&excluded_note(excluded.total(), trust));
+    out.push_str(&excluded_note(excluded.total(), trust, empty_reason));
     Ok(out)
 }
 
@@ -2106,15 +2136,26 @@ pub fn issues(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
 /// It names how to widen the view rather than only reporting the number,
 /// because a count alone leaves the reader knowing they have a partial view
 /// and not what to do about it.
-fn excluded_note(count: usize, trust: &TrustBase) -> String {
+///
+/// **`empty_reason` says which kind of empty**, when the base named no authors
+/// at all (`.design/role-declarations.md` REQ-8). "You have declared nothing",
+/// "this workspace's own identity is unreachable, so no declaration can be
+/// honoured", and "declarations exist but none are yours" send a reader after
+/// three different problems, and the count alone reads identically for all
+/// three.
+fn excluded_note(count: usize, trust: &TrustBase, empty_reason: Option<&str>) -> String {
     if count == 0 {
         return String::new();
     }
     let base = trust.name();
-    format!(
+    let mut note = format!(
         "  note: {count} live claim(s) here are excluded by this view's trust base \
          ({base}) -- pass --trust <did>[=<weight>] (or --trust me) to widen it\n"
-    )
+    );
+    if let Some(reason) = empty_reason {
+        note.push_str(&format!("  note: the frame is empty because {reason}\n"));
+    }
+    note
 }
 
 // ------------------------------------------------------- structured output
@@ -2124,7 +2165,12 @@ fn excluded_note(count: usize, trust: &TrustBase) -> String {
 // what a view *contains* — only on how it is presented.
 
 /// `kan show <subject> --json`.
-pub fn show_json(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<String, Error> {
+pub fn show_json(
+    ws: &Workspace,
+    subject: &str,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -2168,7 +2214,7 @@ pub fn show_json(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<Str
         claims,
         flagged_oversized: flagged,
         inbound: inbound_edges_json(&view, &subject_ref),
-        trust: crate::json::TrustJson::new(trust),
+        trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded_here,
     };
     to_json(&out)
@@ -2180,7 +2226,11 @@ pub fn show_json(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<Str
 /// One fold serves the whole response, which is the entire point: the cost
 /// being collapsed is `Workspace::open`, paid once here and once per subject
 /// before.
-pub fn show_all_json(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
+pub fn show_all_json(
+    ws: &Workspace,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -2216,7 +2266,7 @@ pub fn show_all_json(ws: &Workspace, trust: &TrustBase) -> Result<String, Error>
                     .collect(),
                 flagged_oversized: class.flagged_oversized,
                 inbound,
-                trust: crate::json::TrustJson::new(trust),
+                trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
                 excluded_by_trust: excluded.for_class(class),
             }
         })
@@ -2224,7 +2274,7 @@ pub fn show_all_json(ws: &Workspace, trust: &TrustBase) -> Result<String, Error>
 
     to_json(&crate::json::ShowAllJson {
         v: crate::json::SCHEMA_VERSION,
-        trust: crate::json::TrustJson::new(trust),
+        trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded.total(),
         subjects,
     })
@@ -2235,6 +2285,7 @@ pub fn status_json(
     ws: &Workspace,
     subject: Option<&str>,
     trust: &TrustBase,
+    empty_reason: Option<&str>,
 ) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
@@ -2255,13 +2306,17 @@ pub fn status_json(
     to_json(&crate::json::StatusJson {
         v: crate::json::SCHEMA_VERSION,
         subjects,
-        trust: crate::json::TrustJson::new(trust),
+        trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded.total(),
     })
 }
 
 /// `kan issues --json`.
-pub fn issues_json(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
+pub fn issues_json(
+    ws: &Workspace,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -2274,13 +2329,18 @@ pub fn issues_json(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
     to_json(&crate::json::IssuesJson {
         v: crate::json::SCHEMA_VERSION,
         subjects,
-        trust: crate::json::TrustJson::new(trust),
+        trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded.total(),
     })
 }
 
 /// `kan context --budget N --json`.
-pub fn context_json(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<String, Error> {
+pub fn context_json(
+    ws: &Workspace,
+    budget: usize,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -2309,7 +2369,7 @@ pub fn context_json(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<
         budget,
         omitted_claims: assembled.omitted_claims,
         omitted_subjects: assembled.omitted_subjects.clone(),
-        trust: crate::json::TrustJson::new(trust),
+        trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded.total(),
     })
 }
@@ -2340,7 +2400,12 @@ fn to_json<T: serde::Serialize>(value: &T) -> Result<String, Error> {
 
 /// Budgeted context assembly (`crate::context`, REQ-14/AC-7): the
 /// maximal-value live claim set that fits under `budget` tokens.
-pub fn context(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<String, Error> {
+pub fn context(
+    ws: &Workspace,
+    budget: usize,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -2386,7 +2451,7 @@ pub fn context(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<Strin
     // Deliberately *not* folded into the omitted-claims line above. Raising
     // `--budget` recovers those; nothing recovers these but a wider trust
     // base, so conflating the two would point the reader at the wrong lever.
-    out.push_str(&excluded_note(excluded.total(), trust));
+    out.push_str(&excluded_note(excluded.total(), trust, empty_reason));
     Ok(out)
 }
 
@@ -2446,6 +2511,13 @@ pub fn authors(ws: &Workspace, json: bool) -> Result<String, Error> {
         return Ok("no claims in this log yet, so no authors\n".to_string());
     }
     let mut out = String::new();
+    // The same notice `role list` shows: an author reported UNDECLARED because
+    // the migration has not run is a different problem from one that was never
+    // declared, and this surface is where an operator goes to ask.
+    out.push_str(&crate::roles::legacy_file_notice(
+        &ws.root.join(".kan"),
+        &ws.declared_roles()?,
+    ));
     for (did, agent, declared) in &rows {
         out.push_str(&format!(
             "{did}  {}{}\n",
