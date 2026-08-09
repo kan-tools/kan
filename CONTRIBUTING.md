@@ -75,10 +75,18 @@ just run …    # cargo run -p kan -- …
 
 The toolchain is pinned to `stable` via `rust-toolchain.toml`. CI runs the
 citation checker, then build, test, `clippy -D warnings` and `cargo fmt --check`
-on Linux, plus a macOS keychain canary. All of it has to be green.
+on Linux, an MSRV job, and a macOS keychain canary. All of it has to be green.
 
-There is no declared MSRV. The dependency tree currently floors at Rust 1.90,
-but no CI job verifies that, so the project does not promise it.
+**Minimum supported Rust version is 1.95**, declared as `rust-version` in
+`Cargo.toml`. The `msrv` CI job reads that value out of the manifest and builds
+with exactly it, so the declaration cannot quietly become false — and there is
+only one place to change it. The floor is currently set by a dependency
+(`libsqlite3-sys` uses `cfg_select!`, unstable before 1.95), not by kan's own
+code.
+
+If a change raises the floor, bump `rust-version` in the same PR and say so.
+Raising it is allowed; discovering it was already wrong is the thing the job
+exists to prevent.
 
 ## Two house rules that are easy to miss
 
