@@ -1,0 +1,51 @@
+name: Design question
+description: An open architectural question, or a proposal that needs a decision before code
+labels: ["design"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For questions that need deciding rather than implementing. If you are
+        proposing a feature, this is the right place to start — behaviour
+        changes go through a design pass before code (see
+        [CONTRIBUTING.md](https://github.com/kan-tools/kan/blob/main/CONTRIBUTING.md)).
+
+  - type: textarea
+    id: question
+    attributes:
+      label: The question
+      description: >
+        State it as a question with more than one defensible answer. If there is
+        only one answer, it is probably a bug report or a feature request.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters now
+      description: What is blocked, or what would be built wrong if this is guessed at.
+    validations:
+      required: true
+
+  - type: textarea
+    id: options
+    attributes:
+      label: Candidate answers
+      description: >
+        The options as you see them, with what each costs. Explicitly saying
+        "none of these is obviously right" is a useful thing to record.
+    validations:
+      required: false
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: kan or day?
+      description: >
+        Does this need a new or existing `ClaimBody`/`ClaimKind`/`Anchor`/
+        `RelationKind` variant, or is it a pure read/fold over the claim graph?
+        If neither, it may belong in [day](https://github.com/kan-tools/day).
+        ADR-18 has the rule.
+    validations:
+      required: false

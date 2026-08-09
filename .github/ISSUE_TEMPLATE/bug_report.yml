@@ -1,0 +1,74 @@
+name: Bug report
+description: Something kan did that it should not have, or did not do that it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A wrong answer at exit 0 is treated as severe here, not cosmetic — if
+        kan reported success and the result was wrong, say so plainly.
+
+        **Do not report a security vulnerability here.** Use
+        [private reporting](https://github.com/kan-tools/kan/security/advisories/new)
+        instead.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >
+        Commands someone else can run. A repro starting from `git init` in an
+        empty directory is ideal, since most of kan's behaviour depends on
+        workspace state.
+      render: console
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `kan --version`.
+      placeholder: "kan 0.11.0-beta.1"
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: "macOS 15.5 / Ubuntu 24.04 / Windows 11"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface
+      options:
+        - CLI
+        - MCP
+        - Both
+        - Not sure
+    validations:
+      required: false
+
+  - type: textarea
+    id: state
+    attributes:
+      label: Workspace state, if relevant
+      description: >
+        Anything about identity or storage that might matter — output of
+        `ls -a .kan`, whether `KAN_IDENTITY_FILE` or `KAN_NO_KEYCHAIN` is set,
+        whether the repo has a `.claims/` directory, roughly how many claims.
+        Never paste a key or a recovery phrase.
+    validations:
+      required: false
