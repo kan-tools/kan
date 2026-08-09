@@ -2,35 +2,35 @@
 # keychain: DISABLED for every row (KAN_NO_KEYCHAIN); the reachable-keychain
 # plane is unreachable from this suite (#96) and lives in prose instead.
 
-env=unset            identity=-        id=-  seed=-    seed-id=-       log=empty   ->  read=none                 write=signed:seed
-env=unset            identity=-        id=-  seed=-    seed-id=-       log=claims  ->  read=none                 write=refused:guard
-env=unset            identity=identity id=-  seed=-    seed-id=-       log=empty   ->  read=resolved:identity    write=signed:identity
-env=unset            identity=identity id=-  seed=-    seed-id=-       log=claims  ->  read=resolved:identity    write=signed:identity
-env=unset            identity=-        id=id seed=-    seed-id=-       log=empty   ->  read=none                 write=refused:guard
-env=unset            identity=-        id=id seed=-    seed-id=-       log=claims  ->  read=none                 write=refused:guard
-env=unset            identity=identity id=id seed=-    seed-id=-       log=empty   ->  read=resolved:identity    write=signed:identity
-env=unset            identity=identity id=id seed=-    seed-id=-       log=claims  ->  read=resolved:identity    write=signed:identity
-env=unset            identity=-        id=-  seed=seed seed-id=-       log=empty   ->  read=resolved:seed        write=signed:seed
-env=unset            identity=-        id=-  seed=seed seed-id=-       log=claims  ->  read=resolved:seed        write=signed:seed
-env=unset            identity=identity id=-  seed=seed seed-id=-       log=empty   ->  read=resolved:seed        write=signed:seed
-env=unset            identity=identity id=-  seed=seed seed-id=-       log=claims  ->  read=resolved:seed        write=signed:seed
-env=unset            identity=-        id=id seed=seed seed-id=-       log=empty   ->  read=resolved:seed        write=signed:seed
-env=unset            identity=-        id=id seed=seed seed-id=-       log=claims  ->  read=resolved:seed        write=signed:seed
-env=unset            identity=identity id=id seed=seed seed-id=-       log=empty   ->  read=resolved:seed        write=signed:seed
-env=unset            identity=identity id=id seed=seed seed-id=-       log=claims  ->  read=resolved:seed        write=signed:seed
-env=unset            identity=-        id=-  seed=-    seed-id=seed-id log=empty   ->  read=none                 write=refused:guard
-env=unset            identity=-        id=-  seed=-    seed-id=seed-id log=claims  ->  read=none                 write=refused:guard
-env=unset            identity=identity id=-  seed=-    seed-id=seed-id log=empty   ->  read=resolved:identity    write=signed:identity
-env=unset            identity=identity id=-  seed=-    seed-id=seed-id log=claims  ->  read=resolved:identity    write=signed:identity
-env=unset            identity=-        id=id seed=-    seed-id=seed-id log=empty   ->  read=none                 write=refused:guard
-env=unset            identity=-        id=id seed=-    seed-id=seed-id log=claims  ->  read=none                 write=refused:guard
-env=unset            identity=identity id=id seed=-    seed-id=seed-id log=empty   ->  read=resolved:identity    write=signed:identity
-env=unset            identity=identity id=id seed=-    seed-id=seed-id log=claims  ->  read=resolved:identity    write=signed:identity
-env=unset            identity=-        id=-  seed=seed seed-id=seed-id log=empty   ->  read=resolved:seed        write=signed:seed
-env=unset            identity=-        id=-  seed=seed seed-id=seed-id log=claims  ->  read=resolved:seed        write=signed:seed
-env=unset            identity=identity id=-  seed=seed seed-id=seed-id log=empty   ->  read=resolved:seed        write=signed:seed
-env=unset            identity=identity id=-  seed=seed seed-id=seed-id log=claims  ->  read=resolved:seed        write=signed:seed
-env=unset            identity=-        id=id seed=seed seed-id=seed-id log=empty   ->  read=resolved:seed        write=signed:seed
-env=unset            identity=-        id=id seed=seed seed-id=seed-id log=claims  ->  read=resolved:seed        write=signed:seed
-env=unset            identity=identity id=id seed=seed seed-id=seed-id log=empty   ->  read=resolved:seed        write=signed:seed
-env=unset            identity=identity id=id seed=seed seed-id=seed-id log=claims  ->  read=resolved:seed        write=signed:seed
+env=unset            identity=-        id=-  seed=-    seed-id=-       log=empty   ->  read=none                 write=signed:seed            at_rest=None_
+env=unset            identity=-        id=-  seed=-    seed-id=-       log=claims  ->  read=none                 write=refused:guard          at_rest=None_
+env=unset            identity=identity id=-  seed=-    seed-id=-       log=empty   ->  read=resolved:identity    write=signed:identity        at_rest=KeyFile
+env=unset            identity=identity id=-  seed=-    seed-id=-       log=claims  ->  read=resolved:identity    write=signed:identity        at_rest=KeyFile
+env=unset            identity=-        id=id seed=-    seed-id=-       log=empty   ->  read=none                 write=refused:guard          at_rest=KeyKeychain
+env=unset            identity=-        id=id seed=-    seed-id=-       log=claims  ->  read=none                 write=refused:guard          at_rest=KeyKeychain
+env=unset            identity=identity id=id seed=-    seed-id=-       log=empty   ->  read=resolved:identity    write=signed:identity        at_rest=KeyKeychain
+env=unset            identity=identity id=id seed=-    seed-id=-       log=claims  ->  read=resolved:identity    write=signed:identity        at_rest=KeyKeychain
+env=unset            identity=-        id=-  seed=seed seed-id=-       log=empty   ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=-        id=-  seed=seed seed-id=-       log=claims  ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=identity id=-  seed=seed seed-id=-       log=empty   ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=identity id=-  seed=seed seed-id=-       log=claims  ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=-        id=id seed=seed seed-id=-       log=empty   ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=-        id=id seed=seed seed-id=-       log=claims  ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=identity id=id seed=seed seed-id=-       log=empty   ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=identity id=id seed=seed seed-id=-       log=claims  ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=-        id=-  seed=-    seed-id=seed-id log=empty   ->  read=none                 write=refused:guard          at_rest=SeedKeychain
+env=unset            identity=-        id=-  seed=-    seed-id=seed-id log=claims  ->  read=none                 write=refused:guard          at_rest=SeedKeychain
+env=unset            identity=identity id=-  seed=-    seed-id=seed-id log=empty   ->  read=resolved:identity    write=signed:identity        at_rest=SeedKeychain
+env=unset            identity=identity id=-  seed=-    seed-id=seed-id log=claims  ->  read=resolved:identity    write=signed:identity        at_rest=SeedKeychain
+env=unset            identity=-        id=id seed=-    seed-id=seed-id log=empty   ->  read=none                 write=refused:guard          at_rest=SeedKeychain
+env=unset            identity=-        id=id seed=-    seed-id=seed-id log=claims  ->  read=none                 write=refused:guard          at_rest=SeedKeychain
+env=unset            identity=identity id=id seed=-    seed-id=seed-id log=empty   ->  read=resolved:identity    write=signed:identity        at_rest=SeedKeychain
+env=unset            identity=identity id=id seed=-    seed-id=seed-id log=claims  ->  read=resolved:identity    write=signed:identity        at_rest=SeedKeychain
+env=unset            identity=-        id=-  seed=seed seed-id=seed-id log=empty   ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=-        id=-  seed=seed seed-id=seed-id log=claims  ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=identity id=-  seed=seed seed-id=seed-id log=empty   ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=identity id=-  seed=seed seed-id=seed-id log=claims  ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=-        id=id seed=seed seed-id=seed-id log=empty   ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=-        id=id seed=seed seed-id=seed-id log=claims  ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=identity id=id seed=seed seed-id=seed-id log=empty   ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile
+env=unset            identity=identity id=id seed=seed seed-id=seed-id log=claims  ->  read=resolved:seed        write=signed:seed            at_rest=SeedFile

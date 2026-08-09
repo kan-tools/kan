@@ -150,7 +150,18 @@ posture would have no on-ramp at all.
   could not discriminate — so steps 3 and 4 must be verified by a test that
   fails when the comparison is inverted, not merely by their own existence.
 
-- **REQ-3.3 — `kan identity unprotect`.** The inverse:
+- **REQ-3.3 — `kan identity unprotect`.** *Measured limit, added after the
+  migration matrix ran it (run 31287243890): this is the exit for a
+  grandfathered workspace **only where a human can answer a keychain prompt**.
+  Headless it reports `fix-route-blocked` for every v0.7.0+ writer, because
+  unprotect must READ the keychain to move the secret out of it and reading is
+  what #96 prevents. That is the design working — unprotect is interactive by
+  design — but this document previously called it "the exit for grandfathered
+  ones" with no qualifier, and for CI, `day`, MCP and agents there is no exit.
+  And for v0.2.0–v0.6.0 there is none at all: those writers left no pointer
+  file, so unprotect has nothing to look up (`fix-route-failed`).*
+
+  The inverse:
   `.kan/seed-id` → `.kan/seed`, `.kan/identity-id` → `.kan/identity`. This is
   the grandfathered workspace's deliberate way out, and it is an interactive
   command by design — a keychain prompt here is one a human is present to
@@ -301,8 +312,12 @@ posture would have no on-ramp at all.
   answer — that collapse is the whole of the degradation to option 1.
 
 - **AC-3.10 — `protect` retires a stale reference audibly, and accounts for
-  what it left.** Where a pointer already existed, its removal is named in the
-  output along with the orphaned account, so the operator can find the entry in
+  what it left.** *Corrected: this said the pointer's "removal" is named in the
+  output. Since the pointer-deletion defect was fixed, `protect` OVERWRITES the
+  pointer and never removes it — writing it is the retirement. An AC that
+  described the behaviour the fix removed had merged and gone unnoticed for two
+  review rounds.* Where a pointer already existed, the account it previously
+  named is reported as orphaned, so the operator can find the entry in
   Keychain Access. And where other at-rest secrets remain, they are listed — a
   `protect` that leaves `.kan/identity` in place while reporting success is
   claiming #6's property without delivering it.

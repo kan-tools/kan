@@ -2,35 +2,35 @@
 # keychain: DISABLED for every row (KAN_NO_KEYCHAIN); the reachable-keychain
 # plane is unreachable from this suite (#96) and lives in prose instead.
 
-env=missing          identity=-        id=-  seed=-    seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=-  seed=-    seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=-  seed=-    seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=-  seed=-    seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=id seed=-    seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=id seed=-    seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=id seed=-    seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=id seed=-    seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=-  seed=seed seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=-  seed=seed seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=-  seed=seed seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=-  seed=seed seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=id seed=seed seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=id seed=seed seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=id seed=seed seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=id seed=seed seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=-  seed=-    seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=-  seed=-    seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=-  seed=-    seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=-  seed=-    seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=id seed=-    seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=id seed=-    seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=id seed=-    seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=id seed=-    seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=-  seed=seed seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=-  seed=seed seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=-  seed=seed seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=-  seed=seed seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=id seed=seed seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=-        id=id seed=seed seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=id seed=seed seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing
-env=missing          identity=identity id=id seed=seed seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing
+env=missing          identity=-        id=-  seed=-    seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=None_
+env=missing          identity=-        id=-  seed=-    seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=None_
+env=missing          identity=identity id=-  seed=-    seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=KeyFile
+env=missing          identity=identity id=-  seed=-    seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=KeyFile
+env=missing          identity=-        id=id seed=-    seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=KeyKeychain
+env=missing          identity=-        id=id seed=-    seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=KeyKeychain
+env=missing          identity=identity id=id seed=-    seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=KeyKeychain
+env=missing          identity=identity id=id seed=-    seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=KeyKeychain
+env=missing          identity=-        id=-  seed=seed seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=-        id=-  seed=seed seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=identity id=-  seed=seed seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=identity id=-  seed=seed seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=-        id=id seed=seed seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=-        id=id seed=seed seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=identity id=id seed=seed seed-id=-       log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=identity id=id seed=seed seed-id=-       log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=-        id=-  seed=-    seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=SeedKeychain
+env=missing          identity=-        id=-  seed=-    seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=SeedKeychain
+env=missing          identity=identity id=-  seed=-    seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=SeedKeychain
+env=missing          identity=identity id=-  seed=-    seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=SeedKeychain
+env=missing          identity=-        id=id seed=-    seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=SeedKeychain
+env=missing          identity=-        id=id seed=-    seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=SeedKeychain
+env=missing          identity=identity id=id seed=-    seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=SeedKeychain
+env=missing          identity=identity id=id seed=-    seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=SeedKeychain
+env=missing          identity=-        id=-  seed=seed seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=-        id=-  seed=seed seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=identity id=-  seed=seed seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=identity id=-  seed=seed seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=-        id=id seed=seed seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=-        id=id seed=seed seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=identity id=id seed=seed seed-id=seed-id log=empty   ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile
+env=missing          identity=identity id=id seed=seed seed-id=seed-id log=claims  ->  read=selection-missing    write=refused:selection-missing at_rest=SeedFile

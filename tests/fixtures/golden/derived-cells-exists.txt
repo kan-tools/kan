@@ -2,35 +2,35 @@
 # keychain: DISABLED for every row (KAN_NO_KEYCHAIN); the reachable-keychain
 # plane is unreachable from this suite (#96) and lives in prose instead.
 
-env=exists           identity=-        id=-  seed=-    seed-id=-       log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=-  seed=-    seed-id=-       log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=-  seed=-    seed-id=-       log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=-  seed=-    seed-id=-       log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=id seed=-    seed-id=-       log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=id seed=-    seed-id=-       log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=id seed=-    seed-id=-       log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=id seed=-    seed-id=-       log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=-  seed=seed seed-id=-       log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=-  seed=seed seed-id=-       log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=-  seed=seed seed-id=-       log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=-  seed=seed seed-id=-       log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=id seed=seed seed-id=-       log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=id seed=seed seed-id=-       log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=id seed=seed seed-id=-       log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=id seed=seed seed-id=-       log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=-  seed=-    seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=-  seed=-    seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=-  seed=-    seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=-  seed=-    seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=id seed=-    seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=id seed=-    seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=id seed=-    seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=id seed=-    seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=-  seed=seed seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=-  seed=seed seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=-  seed=seed seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=-  seed=seed seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=id seed=seed seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=-        id=id seed=seed seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=id seed=seed seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override
-env=exists           identity=identity id=id seed=seed seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override
+env=exists           identity=-        id=-  seed=-    seed-id=-       log=empty   ->  read=resolved:override    write=signed:override        at_rest=None_
+env=exists           identity=-        id=-  seed=-    seed-id=-       log=claims  ->  read=resolved:override    write=signed:override        at_rest=None_
+env=exists           identity=identity id=-  seed=-    seed-id=-       log=empty   ->  read=resolved:override    write=signed:override        at_rest=KeyFile
+env=exists           identity=identity id=-  seed=-    seed-id=-       log=claims  ->  read=resolved:override    write=signed:override        at_rest=KeyFile
+env=exists           identity=-        id=id seed=-    seed-id=-       log=empty   ->  read=resolved:override    write=signed:override        at_rest=KeyKeychain
+env=exists           identity=-        id=id seed=-    seed-id=-       log=claims  ->  read=resolved:override    write=signed:override        at_rest=KeyKeychain
+env=exists           identity=identity id=id seed=-    seed-id=-       log=empty   ->  read=resolved:override    write=signed:override        at_rest=KeyKeychain
+env=exists           identity=identity id=id seed=-    seed-id=-       log=claims  ->  read=resolved:override    write=signed:override        at_rest=KeyKeychain
+env=exists           identity=-        id=-  seed=seed seed-id=-       log=empty   ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=-        id=-  seed=seed seed-id=-       log=claims  ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=identity id=-  seed=seed seed-id=-       log=empty   ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=identity id=-  seed=seed seed-id=-       log=claims  ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=-        id=id seed=seed seed-id=-       log=empty   ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=-        id=id seed=seed seed-id=-       log=claims  ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=identity id=id seed=seed seed-id=-       log=empty   ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=identity id=id seed=seed seed-id=-       log=claims  ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=-        id=-  seed=-    seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override        at_rest=SeedKeychain
+env=exists           identity=-        id=-  seed=-    seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override        at_rest=SeedKeychain
+env=exists           identity=identity id=-  seed=-    seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override        at_rest=SeedKeychain
+env=exists           identity=identity id=-  seed=-    seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override        at_rest=SeedKeychain
+env=exists           identity=-        id=id seed=-    seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override        at_rest=SeedKeychain
+env=exists           identity=-        id=id seed=-    seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override        at_rest=SeedKeychain
+env=exists           identity=identity id=id seed=-    seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override        at_rest=SeedKeychain
+env=exists           identity=identity id=id seed=-    seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override        at_rest=SeedKeychain
+env=exists           identity=-        id=-  seed=seed seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=-        id=-  seed=seed seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=identity id=-  seed=seed seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=identity id=-  seed=seed seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=-        id=id seed=seed seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=-        id=id seed=seed seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=identity id=id seed=seed seed-id=seed-id log=empty   ->  read=resolved:override    write=signed:override        at_rest=SeedFile
+env=exists           identity=identity id=id seed=seed seed-id=seed-id log=claims  ->  read=resolved:override    write=signed:override        at_rest=SeedFile

@@ -5,6 +5,13 @@ second rule — *before the second fix in one area, write the table.* Five
 review rounds patched this space; none enumerated it.
 
 **This describes kan as it is at `a14b585`, not as REQ-1 will make it.** It is
+
+> **Its `file:line` citations are as of `a14b585` and are not maintained.**
+> Several name functions REQ-3.5 has since deleted. The citation checker only
+> tests positional references for plausibility, so it cannot see this — a cold
+> review found six in this state after one of them had been "fixed" to
+> symbolic form, which implied the others were current. They are left as the
+> snapshot they are; read them against `a14b585`, not against `main`.
 the before-picture. Every cell REQ-1/REQ-2/REQ-3 changes should be visible as
 a diff against this document and against `tests/identity_cells.rs`.
 
@@ -14,7 +21,7 @@ Question 1 — *which identity does this workspace have* — has two
 implementations today, which is the defect `.design/identity-resolution.md`
 names. Here they are side by side.
 
-### Read: `sign::existing_identity` (`src/sign.rs:839`)
+### Read: `sign::existing_identity` (retired — see `src/sign.rs::workspace_identity`)
 
 ```
 R1  KAN_IDENTITY_FILE set?
@@ -230,7 +237,7 @@ KAN_IDENTITY_FILE=…/key  kan show nothing --trust me --json
 same read WITHOUT --trust me:  .kan/ absent, key 644
 ```
 
-`src/sign.rs:833-838` says the key-file branch "uses `load_existing` … so it
+`src/sign.rs::signing_identity` says the key-file branch "uses `load_existing` … so it
 cannot reach the keychain, write `identity-id`, or migrate" — true of the
 branch it sits above (R3), false of the env branch three lines earlier (R1a).
 `tests/write_guards.rs::a_read_creates_no_workspace` misses it because it

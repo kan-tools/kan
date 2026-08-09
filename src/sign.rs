@@ -98,6 +98,12 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("recovery phrase: {0}")]
     Recovery(String),
+    /// A deliberate refusal. Its own variant because `Recovery`'s
+    /// "recovery phrase: " prefix was being stamped onto messages with nothing
+    /// to do with a phrase -- the KAN_NO_KEYCHAIN refusal reached the user as
+    /// "error: recovery phrase: refusing: ...".
+    #[error("{0}")]
+    Refused(String),
     #[error(
         "this repo already has an identity -- {evidence} -- and {attempt} would give it a \
          second identity.\n\n\
@@ -402,6 +408,395 @@ pub fn workspace_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
     Ok(None)
 }
 
+/// Where this workspace's secret sits **at rest**, decided from files alone.
+///
+/// **This must mirror [`workspace_identity`]'s precedence exactly**, and that
+/// is the single most likely way REQ-3 goes wrong. Get it wrong and `protect`
+/// moves a secret that is not the one signing — which is #170's disagreement
+/// class (two answers to one question) wearing a new hat, in a command whose
+/// whole job is to move a secret without changing the DID.
+///
+/// Note that **`.kan/identity-id` outranks `.kan/identity`**, which is not the
+/// order anyone writes from memory. `src/sign.rs` already holds three
+/// orderings over these four files — this one, [`identity_evidence`]'s (which
+/// only selects a message, so its order is not a precedence claim) and
+/// [`Seed::load`]'s. This is deliberately not a fourth.
+///
+/// Pure: file existence only, no keychain call, nothing created. That is what
+/// lets `plan_protect` and `plan_unprotect` be enumerated by
+/// `tests/derived_cells.rs` over the same configurations the resolvers are,
+/// rather than hand-listed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AtRest {
+    /// `.kan/seed` — a passphraseless root seed. The default from v0.12.
+    SeedFile,
+    /// `.kan/seed-id` — a root seed in the OS keychain.
+    SeedKeychain,
+    /// `.kan/identity-id` — a grandfathered signing key in the OS keychain.
+    KeyKeychain,
+    /// `.kan/identity` — a grandfathered plaintext signing key.
+    KeyFile,
+    /// No at-rest secret of this workspace's own.
+    None_,
+}
+
+impl AtRest {
+    /// Whether the secret is already in the OS keychain.
+    pub fn is_protected(self) -> bool {
+        matches!(self, AtRest::SeedKeychain | AtRest::KeyKeychain)
+    }
+
+    /// The file that holds or names it, relative to `.kan/`.
+    pub fn file(self) -> Option<&'static str> {
+        match self {
+            AtRest::SeedFile => Some(SEED_FILE),
+            AtRest::SeedKeychain => Some(SEED_ID_FILE),
+            AtRest::KeyKeychain => Some(IDENTITY_ID_FILE),
+            AtRest::KeyFile => Some("identity"),
+            AtRest::None_ => None,
+        }
+    }
+}
+
+/// See [`AtRest`]. Mirrors [`workspace_identity`]'s order: seed, seed-id,
+/// identity-id, identity.
+pub fn at_rest(kan_dir: &Path) -> AtRest {
+    if kan_dir.join(SEED_FILE).exists() {
+        return AtRest::SeedFile;
+    }
+    if kan_dir.join(SEED_ID_FILE).exists() {
+        return AtRest::SeedKeychain;
+    }
+    if kan_dir.join(IDENTITY_ID_FILE).exists() {
+        return AtRest::KeyKeychain;
+    }
+    if kan_dir.join("identity").exists() {
+        return AtRest::KeyFile;
+    }
+    AtRest::None_
+}
+
+/// Every at-rest artifact present, in precedence order — not just the winner.
+///
+/// `protect` must report what it did **not** move: protecting the signing
+/// secret while `.kan/identity` still sits beside it leaves a plaintext key on
+/// disk under a command whose entire promise is that none remains. Precedence
+/// says the others are not signing; that is not the same as their not being
+/// there.
+pub fn at_rest_all(kan_dir: &Path) -> Vec<AtRest> {
+    [
+        AtRest::SeedFile,
+        AtRest::SeedKeychain,
+        AtRest::KeyKeychain,
+        AtRest::KeyFile,
+    ]
+    .into_iter()
+    .filter(|a| a.file().is_some_and(|f| kan_dir.join(f).exists()))
+    .collect()
+}
+
+/// What `protect` or `unprotect` would do here — decided from files alone.
+///
+/// Pure, so it joins the derived cell table alongside the resolvers instead of
+/// being a hand-kept list of cases.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Plan {
+    /// Move the secret into the keychain. `stale_pointer` is a pointer file
+    /// that already exists for this secret kind and will be retired.
+    Protect {
+        from: AtRest,
+        stale_pointer: Option<&'static str>,
+    },
+    /// Move the secret out of the keychain into a `0600` file. `occupied` is a
+    /// destination file that already exists — the case AC-3.9 turns on.
+    Unprotect {
+        from: AtRest,
+        occupied: Option<&'static str>,
+    },
+    /// Already in the state asked for; nothing is written.
+    AlreadyThere(AtRest),
+    /// This workspace has no identity of its own to move.
+    NoIdentity,
+}
+
+/// [`Plan`] for `kan identity protect`.
+pub fn plan_protect(kan_dir: &Path) -> Plan {
+    match at_rest(kan_dir) {
+        AtRest::None_ => Plan::NoIdentity,
+        a if a.is_protected() => Plan::AlreadyThere(a),
+        from => Plan::Protect {
+            from,
+            // A pointer for this secret kind that already exists. Retired
+            // audibly rather than silently overwritten: orphaning a keychain
+            // entry is this codebase's accepted behaviour (`retire_seed` does
+            // it deliberately and the entry stays reachable in Keychain
+            // Access) — doing it without saying so is the part that was wrong.
+            stale_pointer: match from {
+                AtRest::SeedFile if kan_dir.join(SEED_ID_FILE).exists() => Some(SEED_ID_FILE),
+                // UNREACHABLE: `at_rest` returns `KeyKeychain` before `KeyFile`, so
+                // `from` is never `KeyFile` while identity-id exists. A cold
+                // review enumerated all 16 layouts and confirmed it never
+                // fires. Kept with this note rather than deleted, so the next
+                // reader does not wonder whether the case was forgotten.
+                AtRest::KeyFile if kan_dir.join(IDENTITY_ID_FILE).exists() => {
+                    Some(IDENTITY_ID_FILE)
+                }
+                _ => None,
+            },
+        },
+    }
+}
+
+/// [`Plan`] for `kan identity unprotect`.
+pub fn plan_unprotect(kan_dir: &Path) -> Plan {
+    match at_rest(kan_dir) {
+        AtRest::None_ => Plan::NoIdentity,
+        a if !a.is_protected() => Plan::AlreadyThere(a),
+        from => Plan::Unprotect {
+            from,
+            // The destination already holding something is the ONLY case that
+            // can destroy a secret in this design, and it is reachable from a
+            // state kan itself creates: ADR-53 keeps a plaintext copy exactly
+            // when it DIFFERS from the keychain. See `unprotect_to`.
+            occupied: match from {
+                // Unreachable for the mirror reason: `at_rest` returns
+                // `SeedFile` before `SeedKeychain`.
+                AtRest::SeedKeychain if kan_dir.join(SEED_FILE).exists() => Some(SEED_FILE),
+                AtRest::KeyKeychain if kan_dir.join("identity").exists() => Some("identity"),
+                _ => None,
+            },
+        },
+    }
+}
+
+/// Which keychain service holds a given secret kind.
+fn service_for(a: AtRest) -> &'static str {
+    match a {
+        AtRest::SeedFile | AtRest::SeedKeychain => SEED_KEYCHAIN_SERVICE,
+        _ => KEYCHAIN_SERVICE,
+    }
+}
+
+/// The DID a secret of this kind derives, without installing it anywhere.
+fn did_of(kind: AtRest, bytes: &[u8]) -> Result<Did, Error> {
+    match kind {
+        AtRest::SeedFile | AtRest::SeedKeychain => {
+            let mut b = [0u8; 32];
+            if bytes.len() != 32 {
+                return Err(Error::Recovery(format!(
+                    "expected a 32-byte seed, got {} bytes",
+                    bytes.len()
+                )));
+            }
+            b.copy_from_slice(bytes);
+            Ok(Seed::from_entropy(b).signing_identity()?.did())
+        }
+        _ => Ok(Identity {
+            keypair: P256Keypair::import(bytes)?,
+        }
+        .did()),
+    }
+}
+
+/// **AC-3.9's whole substance, extracted from the executor so it can be
+/// tested.**
+///
+/// `unprotect` reads from the keychain, which is the plane no test can reach
+/// (#96) — so a guard living inside that read is a guard no test can exercise,
+/// and #112's history is precisely a guard that was never exercised because it
+/// was a tautology (`bytes == import(bytes).export()`, which never read the
+/// file). Taking the decision out and passing the bytes in is the same move
+/// that made `at_rest` derivable: the part that can be wrong becomes the part
+/// that is checked.
+///
+/// Refuses on a DIFFERENT secret, and refuses on an unreadable one. "I cannot
+/// tell whether this file holds a different identity" and "this file holds the
+/// same identity" are different answers; only the second permits a write.
+pub fn refuse_to_overwrite_a_different_secret(
+    dest: &Path,
+    incoming: &[u8],
+    kind: AtRest,
+    incoming_did: &Did,
+    account: &str,
+) -> Result<(), Error> {
+    if !dest.exists() {
+        return Ok(());
+    }
+    let existing = std::fs::read(dest)?;
+    if existing == incoming {
+        return Ok(());
+    }
+    // Deliberately NOT "keep the newer" or "keep both". The operator is the
+    // only one who knows which identity they mean, and choosing here destroys
+    // the other one silently.
+    let other = did_of(kind, &existing)
+        .map(|d| d.to_string())
+        .unwrap_or_else(|_| "an unreadable secret".to_string());
+    Err(Error::Recovery(format!(
+        "refusing to unprotect: {} already exists and holds a DIFFERENT secret.\n\n\
+         the keychain holds {incoming_did}\n\
+         that file holds  {other}\n\n\
+         Writing the keychain's copy over that file would destroy the only copy of the \
+         second identity, and any claims signed by it would drop out of every read. kan \
+         will not choose for you.\n\n\
+         Move that file aside if you want the keychain's identity, or delete the keychain \
+         entry ({account}) if you want the file's.",
+        dest.display()
+    )))
+}
+
+/// Execute `Plan::Unprotect`: move the secret from the keychain into a `0600`
+/// file, and **never write over a different one**.
+///
+/// **AC-3.9, and it is the only path in this design that can destroy a secret.**
+/// `.kan/identity` holding key A beside `.kan/identity-id` naming key B is not
+/// hypothetical — kan produces it deliberately, because ADR-53 deletes a
+/// plaintext copy only when it MATCHES the keychain and keeps it when it
+/// DIFFERS (which is what #112's negative control existed to protect).
+/// `identity-id` outranks `identity`, so B signs and A sits there as the only
+/// copy of another identity. Writing B over A and reporting success is the
+/// #90/#107 shape that CLAUDE.md's invariant forbids.
+///
+/// So: same bytes, proceed. Different, refuse naming both DIDs. **Cannot tell,
+/// refuse** — that is part of the rule rather than a fallback, because "I
+/// cannot tell whether this file holds a different identity" and "this file
+/// holds the same identity" are different answers and only one permits a write.
+pub fn unprotect_to(
+    kan_dir: &Path,
+    from: AtRest,
+    dest_name: &str,
+    store: &dyn SecretStore,
+) -> Result<Did, Error> {
+    // Same rule, opposite reason: unprotect must READ the keychain to move the
+    // secret out of it, so with the flag set there is nothing it can do.
+    if keychain_disabled() {
+        return Err(Error::Refused(
+            "refusing: KAN_NO_KEYCHAIN is set, and `unprotect` must READ the keychain to move the secret out of it.\n\nUnset it and try again."
+                .to_string(),
+        ));
+    }
+    let account_file = from.file().expect("a protected state names a pointer file");
+    let account = std::fs::read_to_string(kan_dir.join(account_file))?
+        .trim()
+        .to_string();
+    let _warn =
+        SlowKeychainWarning::start("reading this repo's secret to move it out of the keychain");
+    let bytes = store.get(service_for(from), &account)?.ok_or_else(|| {
+        Error::Recovery(format!(
+            "the keychain holds nothing under {account}, which .kan/{account_file} names. \
+             Nothing has been changed."
+        ))
+    })?;
+    let did = did_of(from, &bytes)?;
+
+    let dest = kan_dir.join(dest_name);
+    refuse_to_overwrite_a_different_secret(&dest, &bytes, from, &did, &account)?;
+
+    let restored = match from {
+        AtRest::SeedKeychain => {
+            let mut b = [0u8; 32];
+            b.copy_from_slice(&bytes);
+            Seed::from_entropy(b).save(&dest)?;
+            did_of(from, &bytes)?
+        }
+        _ => {
+            let identity = Identity {
+                keypair: P256Keypair::import(&bytes)?,
+            };
+            identity.save(&dest)?;
+            identity.did()
+        }
+    };
+    // RE-READ FROM DISK, not recomputed from the bytes in hand. The first
+    // version derived `restored` from the same `bytes` the check compares
+    // against, so it could not fire -- #112's exact shape, in a step the design
+    // specifies as protection against a bad write. What must be verified is
+    // that the FILE holds the secret, which means reading the file.
+    let written = std::fs::read(&dest)?;
+    if written != bytes || did_of(from, &written)? != did {
+        return Err(Error::Recovery(
+            "the secret on disk does not match the one taken from the keychain -- refusing \
+             to retire the pointer, so nothing is lost."
+                .to_string(),
+        ));
+    }
+
+    // The pointer goes AFTER the write, never before: a failed write would
+    // otherwise leave the workspace with no identity at all.
+    std::fs::remove_file(kan_dir.join(account_file))?;
+    Ok(restored)
+}
+
+/// Execute `Plan::Protect`: move the secret into the keychain, verifying it
+/// round-trips before anything on disk is disturbed.
+pub fn protect_from(
+    kan_dir: &Path,
+    from: AtRest,
+    store: &dyn SecretStore,
+) -> Result<(Did, String, Option<String>), Error> {
+    // REQ-3.6 / AC-3.6. `KAN_NO_KEYCHAIN` means "behave as though no keychain
+    // exists", and a command that writes to it anyway is not honouring that --
+    // it is ignoring it. Found by running `protect --yes` with the flag set in
+    // a temp workspace and watching it succeed, which wrote a real entry to the
+    // author's login keychain. Every other keychain path in this module checks
+    // this; the newest one did not.
+    if keychain_disabled() {
+        return Err(Error::Refused(
+            "refusing: KAN_NO_KEYCHAIN is set, which tells kan to behave as though no OS keychain exists -- so `protect`, whose only job is to put a secret INTO it, cannot honour both.\n\nUnset it if you want the keychain."
+                .to_string(),
+        ));
+    }
+    let src = kan_dir.join(from.file().expect("an unprotected state names a file"));
+    let bytes = std::fs::read(&src)?;
+    let did = did_of(from, &bytes)?;
+
+    let account = fresh_account();
+    let _warn = SlowKeychainWarning::start("storing this repo's secret in the keychain");
+    store.set(service_for(from), &account, &bytes)?;
+
+    // Read back and compare BEFORE the plaintext is touched. A store that
+    // silently truncated would otherwise destroy the only copy.
+    let stored = store.get(service_for(from), &account)?.ok_or_else(|| {
+        Error::Recovery(
+            "the keychain returned nothing for the entry just written -- refusing to go \
+             further. Nothing on disk has been changed."
+                .to_string(),
+        )
+    })?;
+    if stored != bytes || did_of(from, &stored)? != did {
+        return Err(Error::Recovery(format!(
+            "the keychain did not return what was written to it (account {account}) -- \
+             refusing to go further. Nothing on disk has been changed."
+        )));
+    }
+
+    let pointer = match from {
+        AtRest::SeedFile => SEED_ID_FILE,
+        _ => IDENTITY_ID_FILE,
+    };
+
+    // THE OLD ACCOUNT IS READ HERE, BEFORE THE OVERWRITE, AND RETURNED --
+    // because the caller cannot read it afterwards and must not try.
+    //
+    // The first version had the caller "retire" the stale pointer after this
+    // function returned: read `.kan/seed-id`, then delete it. But this write
+    // has already replaced that file's contents with the NEW account, so the
+    // caller read the new account, reported it as the old one, and DELETED THE
+    // POINTER IT HAD JUST WRITTEN -- leaving the secret in the keychain with
+    // nothing naming it, and a workspace that could no longer resolve its own
+    // identity. In the command whose one job is to move a secret safely.
+    //
+    // Writing the pointer IS the retirement; there is nothing left to delete.
+    // Returning the displaced account is what lets the caller say which entry
+    // was orphaned, which is the part that must not be silent.
+    let orphaned = std::fs::read_to_string(kan_dir.join(pointer))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && *s != account);
+    std::fs::write(kan_dir.join(pointer), &account)?;
+    Ok((did, account, orphaned))
+}
+
 /// The keychain-held signing key for this workspace, if it has one.
 ///
 /// **Reads `.kan/identity-id`; never writes it.** The retired
@@ -424,7 +819,10 @@ fn keychain_identity(kan_dir: &Path) -> Result<Option<Identity>, Error> {
         Ok(id) if !id.trim().is_empty() => id.trim().to_string(),
         _ => return Ok(None),
     };
-    let Ok(entry) = keyring::Entry::new(KEYCHAIN_SERVICE, &account) else {
+    // An unopenable entry stays `None` rather than an error -- #180: that was
+    // the one minting path which never consulted the guard, and it is now just
+    // another way for question 1 to answer "no identity here".
+    let Ok(Some(entry)) = keychain_entry(KEYCHAIN_SERVICE, &account) else {
         return Ok(None);
     };
     let _warn = SlowKeychainWarning::start("reading this repo's signing key");
@@ -521,7 +919,7 @@ pub fn signing_identity(kan_dir: &Path, selection: &Selection) -> Result<Option<
     }
 }
 
-fn identity_evidence(kan_dir: &Path) -> Option<&'static str> {
+pub fn identity_evidence(kan_dir: &Path) -> Option<&'static str> {
     if kan_dir.join("identity").exists() {
         return Some("a signing key at .kan/identity");
     }
@@ -882,6 +1280,84 @@ impl Drop for SlowKeychainWarning {
     }
 }
 
+/// The secret store `protect`/`unprotect` move a secret between.
+///
+/// **The seam a cold review said was drawn one layer too shallow, and it was
+/// right.** v0.12 extracted `at_rest`, the planners and the overwrite guard so
+/// the parts that can be wrong became the parts that are checked — and every
+/// extracted part was correct. The one defect that could destroy a secret
+/// (`protect` deleting the pointer it had just written) was in the executor,
+/// which nothing could reach because it called `keyring` directly. The
+/// reviewer proved the fix costs nothing by stubbing three calls in a throwaway
+/// clone and driving the whole command.
+///
+/// So the executors take a store. Production passes [`OsKeychain`]; tests pass
+/// an in-memory one and exercise the real code path end to end.
+pub trait SecretStore {
+    fn get(&self, service: &str, account: &str) -> Result<Option<Vec<u8>>, Error>;
+    fn set(&self, service: &str, account: &str, bytes: &[u8]) -> Result<(), Error>;
+}
+
+/// The real one. Honours `KAN_NO_KEYCHAIN` via [`keychain_entry`], which is
+/// still the single door.
+pub struct OsKeychain;
+
+impl SecretStore for OsKeychain {
+    fn get(&self, service: &str, account: &str) -> Result<Option<Vec<u8>>, Error> {
+        let Some(entry) = keychain_entry(service, account)? else {
+            return Ok(None);
+        };
+        match entry.get_secret() {
+            Ok(b) => Ok(Some(b)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(Error::KeychainUnreachable {
+                detail: e.to_string(),
+            }),
+        }
+    }
+
+    fn set(&self, service: &str, account: &str, bytes: &[u8]) -> Result<(), Error> {
+        let entry = keychain_entry(service, account)?
+            .ok_or_else(|| Error::Recovery("the keychain is disabled".to_string()))?;
+        entry
+            .set_secret(bytes)
+            .map_err(|e| Error::KeychainUnreachable {
+                detail: e.to_string(),
+            })
+    }
+}
+
+/// **The only place in kan that opens a keychain entry.**
+///
+/// `KAN_NO_KEYCHAIN` is an OPT-OUT, and opt-outs fail open: every call site had
+/// to independently remember `keychain_disabled()`, and the default for
+/// forgetting is "touch the developer's real login keychain". There were four
+/// such sites, and the two newest -- `protect_from` and `unprotect_to`, written
+/// against the design doc rather than against this module's conventions --
+/// both forgot. Running `kan identity protect --yes` with the flag set wrote a
+/// real entry to the author's keychain.
+///
+/// That is four implementations of one decision, which is the same shape as
+/// question 1 having two implementations -- the defect this entire milestone
+/// exists to fix, reproduced inside the guard that protects against it.
+///
+/// So the decision lives here and nowhere else. A fifth path cannot forget,
+/// because there is nothing left to remember, and
+/// `tests/keychain_one_door.rs` asserts a fifth path cannot be added quietly.
+///
+/// `Ok(None)` means "kan is behaving as though no keychain exists" -- callers
+/// decide whether that is an absence or an error.
+fn keychain_entry(service: &str, account: &str) -> Result<Option<keyring::Entry>, Error> {
+    if keychain_disabled() {
+        return Ok(None);
+    }
+    keyring::Entry::new(service, account)
+        .map(Some)
+        .map_err(|e| Error::KeychainUnreachable {
+            detail: e.to_string(),
+        })
+}
+
 fn keychain_disabled() -> bool {
     std::env::var_os(NO_KEYCHAIN_ENV).is_some()
 }
@@ -933,7 +1409,7 @@ impl Seed {
         Ok(Some(Self(seed)))
     }
 
-    fn save(&self, path: &Path) -> Result<(), Error> {
+    pub fn save(&self, path: &Path) -> Result<(), Error> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -962,11 +1438,9 @@ impl Seed {
             return Ok(None);
         };
         let account = account.trim().to_string();
-        let entry = keyring::Entry::new(SEED_KEYCHAIN_SERVICE, &account).map_err(|e| {
-            Error::KeychainUnreachable {
-                detail: e.to_string(),
-            }
-        })?;
+        let Some(entry) = keychain_entry(SEED_KEYCHAIN_SERVICE, &account)? else {
+            return Ok(None);
+        };
         let _warn = SlowKeychainWarning::start("reading this repo's root seed");
         match entry.get_secret() {
             Ok(bytes) if bytes.len() == 32 => {
@@ -985,44 +1459,41 @@ impl Seed {
         }
     }
 
-    /// Create this workspace's seed, preferring the OS keychain.
+    /// Create this workspace's seed: a passphraseless `0600` file, always.
     ///
-    /// Stored exactly the way the signing key is stored today (ADR-25): in
-    /// the keychain when one is available, in a `0600` file when it is not,
-    /// with the same warning. ADR-55's "at-rest protection is OS file
-    /// permissions **plus the existing keychain path where present**" is read
-    /// as sanctioning this rather than as requiring a plaintext root.
+    /// **REQ-3.1 reversed what this comment used to argue**, and the comment
+    /// outlived the change by several commits. It read "preferring the OS
+    /// keychain... in the keychain when one is available, in a `0600` file when
+    /// it is not", and warned that "taking the file-always reading would have
+    /// reopened issue #6". The function now does exactly the file-always thing
+    /// that comment called a strictly worse posture.
     ///
-    /// Taking the file-always reading would have reopened issue #6 for every
-    /// new workspace — the root secret in plaintext where the key it replaces
-    /// was encrypted — which is a strictly worse at-rest posture than the
-    /// version it upgrades from. Callers who genuinely need no-prompt (CI,
-    /// agents, `day`) already set `KAN_IDENTITY_FILE`, which bypasses all of
-    /// this and is unchanged.
+    /// The argument is not dismissed, it is outweighed and paid for by a
+    /// command: on macOS the at-rest protection ADR-63 bought is delivered by
+    /// the trusted-application ACL, which is the same mechanism as #96 -- it
+    /// cannot be kept without keeping the hang. `kan identity protect` restores
+    /// #6's property deliberately. Full accounting in
+    /// `.design/identity-at-rest.md`.
     pub fn create(kan_dir: &Path) -> Result<Self, Error> {
         std::fs::create_dir_all(kan_dir)?;
         let seed = Self::generate();
-        let account = fresh_account();
+        seed.save(&kan_dir.join(SEED_FILE))?;
 
-        let stored = !keychain_disabled() && {
-            let _warn = SlowKeychainWarning::start("storing this repo's root seed");
-            keyring::Entry::new(SEED_KEYCHAIN_SERVICE, &account)
-                .ok()
-                .and_then(|entry| entry.set_secret(&seed.0).ok())
-                .is_some()
-        };
-
-        if stored {
-            std::fs::write(kan_dir.join(SEED_ID_FILE), &account)?;
-        } else {
-            eprintln!(
-                "kan: OS keychain unavailable -- this repo's root seed is stored as a \
-                 plaintext file at {}, readable by anything running as you. Take its \
-                 recovery phrase (`kan identity phrase`) and keep it somewhere safe.",
-                kan_dir.join(SEED_FILE).display()
-            );
-            seed.save(&kan_dir.join(SEED_FILE))?;
-        }
+        // Not a warning any more, and it must not read as one. Before REQ-3
+        // this line meant "the keychain was unavailable, so you got the worse
+        // outcome"; now the file IS the outcome, and the sentence has to say
+        // where the secret is, what the off-disk backup is, and how to move it
+        // -- without implying anything went wrong.
+        eprintln!(
+            "kan: this repo's identity is rooted in {}, a 0600 file readable by \
+             anything running as you.\n\
+             \n\
+             `kan identity phrase` prints its 24-word recovery phrase -- that is the \
+             backup, and it is the only copy not on this disk.\n\
+             `kan identity protect` moves the secret into the OS keychain if you want \
+             it there.",
+            kan_dir.join(SEED_FILE).display()
+        );
         Ok(seed)
     }
 

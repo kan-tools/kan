@@ -29,3 +29,32 @@ jobs:
       - run: cargo test --workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo fmt --all -- --check
+
+  # AC-3.1 OF `.design/identity-at-rest.md` NAMED A RUNNER THAT DID NOT EXIST.
+  # It requires the canary -- the one test that runs kan's DEFAULT path, with
+  # no KAN_NO_KEYCHAIN -- to run "on macOS CI, not only Linux", and this
+  # workflow was a single ubuntu-latest job. A cold review caught the gap: an
+  # acceptance criterion whose infrastructure is in no requirement is one that
+  # gets quietly satisfied on Linux and called done.
+  #
+  # macOS IS THE ONLY PLATFORM WHERE THE CANARY MEANS ANYTHING. Linux CI has no
+  # Secret Service, so a keychain-reaching code path degrades to a file there
+  # and the test passes whether or not REQ-3 works. On macOS the keychain is
+  # real, so `.kan/seed-id` appearing, or the command blocking, is a genuine
+  # failure -- which is the whole point of a canary.
+  #
+  # Scoped to the identity tests rather than the full suite: macOS minutes bill
+  # at 10x, and the rest of the suite is platform-independent and already
+  # covered above.
+  canary:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # No KAN_NO_KEYCHAIN anywhere in this job, deliberately. If REQ-3
+      # regresses and a fresh workspace reaches for the keychain again, this is
+      # where it surfaces -- as a hang (#96) or a seed-id, both of which the
+      # canary asserts against.
+      - run: cargo test --test keychain_identity --test at_rest_guards --test keychain_one_door
+        timeout-minutes: 15
