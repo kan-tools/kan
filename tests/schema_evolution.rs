@@ -245,8 +245,10 @@ fn body_kinds_all_round_trip() {
     }
     assert_eq!(
         seen.len(),
-        12,
-        "every known ClaimKind should be covered by this test"
+        13,
+        "every known ClaimKind should be covered by this test -- note this counts \
+         `known_bodies` against a literal, so it cannot notice a variant nobody added \
+         there. `_every_kind_is_accounted_for` below is what makes that a build error."
     );
 }
 
@@ -277,7 +279,94 @@ fn known_bodies() -> Vec<ClaimBody> {
         ClaimBody::Publication {
             layer: kan::claim::Layer::GitTree,
         },
+        ClaimBody::RoleDeclaration {
+            did: "did:key:zDnaeSezF2t8gTQrOFpVmvSMPFsxqRDzZL6JGjTxjJ2TvNqYe".into(),
+            name: "prover".into(),
+        },
     ]
+}
+
+/// `.design/role-declarations.md` AC-1, downgrade half — the **precondition**,
+/// stated as exactly that.
+///
+/// A kan older than v0.12 must preserve a `RoleDeclaration` as
+/// `ClaimBody::Unknown` rather than dropping or rejecting it. That cannot be
+/// tested here, because this build knows the kind and will always decode it as
+/// known; running a real older binary against a real v0.12 log is the
+/// migration matrix's job, and AC-12 is marked **intent** in the design for
+/// that reason.
+///
+/// What *is* checkable is the structural precondition the preservation path
+/// depends on: `src/claim.rs`'s `Deserialize` impl captures an unrecognized
+/// body only when it is a **single-key map** keyed by the variant name, and
+/// re-encodes it from those bytes. If `RoleDeclaration` encoded any other
+/// shape — say by carrying two top-level keys — an older reader would fail the
+/// single-key check and reject the claim outright rather than preserving it,
+/// and nothing else in the suite would notice.
+///
+/// So this asserts the shape, and deliberately does not claim to have tested
+/// the downgrade.
+#[test]
+fn a_role_declaration_has_the_shape_an_older_reader_can_preserve() {
+    let id = Identity::generate();
+    let body = ClaimBody::RoleDeclaration {
+        did: "did:key:zDnaeSezF2t8gTQrOFpVmvSMPFsxqRDzZL6JGjTxjJ2TvNqYe".into(),
+        name: "prover".into(),
+    };
+    let bytes = atproto_dasl::to_vec(&content(body, &id)).unwrap();
+
+    let decoded: atproto_dasl::Ipld = atproto_dasl::from_reader(&bytes[..]).unwrap();
+    let atproto_dasl::Ipld::Map(fields) = &decoded else {
+        panic!("a claim's content must encode as a map: {decoded:?}");
+    };
+    let Some(atproto_dasl::Ipld::Map(body_entries)) = fields.get("body") else {
+        panic!("a claim's body must encode as a map: {decoded:?}");
+    };
+
+    assert_eq!(
+        body_entries.len(),
+        1,
+        "a body must be a single-key map or an older reader rejects it instead of \
+         preserving it: {body_entries:?}"
+    );
+    assert!(
+        body_entries.contains_key("RoleDeclaration"),
+        "the single key must be the variant name, which is what an older reader records \
+         as the unreadable kind: {body_entries:?}"
+    );
+}
+
+/// A compile fence, not a test: `known_bodies` above is a hand-maintained
+/// list, and `body_kinds_all_round_trip` asserts its length against a literal.
+/// Both only move when someone edits them, so a new `ClaimKind` was invisible
+/// to a test whose own comment claims "every known ClaimKind should be covered
+/// by this test" — it counted the list against a number describing the list.
+///
+/// This match is **exhaustive over `ClaimKind`**, so adding a variant stops
+/// compiling here until someone states whether it has a known body. That makes
+/// the compiler do the enumeration, the same way `src/context.rs`'s two matches
+/// already force a new variant to be given a rendering and a budget rank.
+/// Added when `RoleDeclaration` was, because it was the variant that revealed
+/// the gap.
+fn _every_kind_is_accounted_for(kind: ClaimKind) -> bool {
+    match kind {
+        ClaimKind::Subject
+        | ClaimKind::Observation
+        | ClaimKind::Plan
+        | ClaimKind::Decision
+        | ClaimKind::Blocker
+        | ClaimKind::Resolution
+        | ClaimKind::Result
+        | ClaimKind::Status
+        | ClaimKind::Relation
+        | ClaimKind::Retraction
+        | ClaimKind::Rejects
+        | ClaimKind::Publication
+        | ClaimKind::RoleDeclaration => true,
+        // Has no known body by definition, so it is deliberately absent from
+        // `known_bodies` rather than missing from it.
+        ClaimKind::Unknown => false,
+    }
 }
 
 /// #95 / `docs/SPEC.md` §7.1 (as amended in ADR-49): the mandated test that

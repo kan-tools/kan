@@ -191,6 +191,7 @@ pub enum ClaimKind {
     Retraction,
     Rejects,
     Publication,
+    RoleDeclaration,
     /// A kind this build does not recognize (ADR-44).
     Unknown,
 }
@@ -259,6 +260,28 @@ pub enum ClaimBody {
     /// system where everything else is a signed claim.
     Publication {
         layer: Layer,
+    },
+    /// Declares that this workspace vouches for `did` under the local name
+    /// `name` — a signing identity it expects to see (`.design/role-declarations.md`).
+    ///
+    /// **The only body carrying a DID as data.** Everywhere else in a claim a
+    /// DID is `ClaimContent::author`, which is the *signer*; here it is the
+    /// subject of the assertion, which is exactly why `.kan/roles` could not
+    /// become a claim without a new variant.
+    ///
+    /// **Honoured only when the author is the workspace's own identity**, and
+    /// that check lives in the resolver rather than here: a declaration by
+    /// anyone else is a perfectly valid claim that grants nothing. Fold-inert
+    /// like [`ClaimBody::Publication`] — it carries no status or relational
+    /// meaning, and `src/fold/` never matches on it.
+    ///
+    /// **No key path.** A path is machine-specific, unverifiable from the
+    /// claim, and would be published along with the declaration. Where kan
+    /// mints a role key is a local convention (`.kan/roles.d/<name>`), not a
+    /// fact about the role.
+    RoleDeclaration {
+        did: Did,
+        name: String,
     },
     /// A claim kind this build does not recognize (`docs/SPEC.md` §7.1,
     /// ADR-44).
@@ -337,6 +360,10 @@ enum KnownBody {
     Publication {
         layer: Layer,
     },
+    RoleDeclaration {
+        did: Did,
+        name: String,
+    },
 }
 
 impl From<KnownBody> for ClaimBody {
@@ -360,6 +387,7 @@ impl From<KnownBody> for ClaimBody {
             KnownBody::Retraction { supersedes } => ClaimBody::Retraction { supersedes },
             KnownBody::Rejects { claim } => ClaimBody::Rejects { claim },
             KnownBody::Publication { layer } => ClaimBody::Publication { layer },
+            KnownBody::RoleDeclaration { did, name } => ClaimBody::RoleDeclaration { did, name },
         }
     }
 }
@@ -387,6 +415,7 @@ impl ClaimBody {
             ClaimBody::Retraction { supersedes } => KnownBody::Retraction { supersedes },
             ClaimBody::Rejects { claim } => KnownBody::Rejects { claim },
             ClaimBody::Publication { layer } => KnownBody::Publication { layer },
+            ClaimBody::RoleDeclaration { did, name } => KnownBody::RoleDeclaration { did, name },
             ClaimBody::Unknown { .. } => return None,
         })
     }
@@ -468,6 +497,7 @@ impl ClaimBody {
             ClaimBody::Retraction { .. } => ClaimKind::Retraction,
             ClaimBody::Rejects { .. } => ClaimKind::Rejects,
             ClaimBody::Publication { .. } => ClaimKind::Publication,
+            ClaimBody::RoleDeclaration { .. } => ClaimKind::RoleDeclaration,
             ClaimBody::Unknown { .. } => ClaimKind::Unknown,
         }
     }
