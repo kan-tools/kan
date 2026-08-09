@@ -14,7 +14,7 @@ Question 1 — *which identity does this workspace have* — has two
 implementations today, which is the defect `.design/identity-resolution.md`
 names. Here they are side by side.
 
-### Read: `sign::existing_identity` (`src/sign.rs:839`)
+### Read: `sign::existing_identity` (retired — see `src/sign.rs::workspace_identity`)
 
 ```
 R1  KAN_IDENTITY_FILE set?
