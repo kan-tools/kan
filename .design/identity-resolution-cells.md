@@ -54,7 +54,7 @@ W3  fresh = !.kan/identity && !.kan/identity-id
               get_secret errored:                          (src/sign.rs:413)
                   key file present -> warn, fall back to plaintext file
                   no key file      -> Err(KeychainUnreachable)
-      fresh     -> guard, then Seed::create (keychain-preferred, src/sign.rs:1290)
+      fresh     -> guard, then Seed::create (keychain-preferred, src/sign.rs::create)
 ```
 
 The `get_secret` error branch is distinct from `NoEntry` and is the one #96

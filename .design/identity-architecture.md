@@ -77,7 +77,7 @@ tagged with the actors they address.
   reproduce is one `Solo` trust hides entirely (#90). (T3)
 - REQ-3: one secret reproduces the DID — one escrowed secret must reproduce the
   exact signing `did:key`. Holds today (`sign::from_recovery_phrase` → `did`,
-  `src/sign.rs:485`); every candidate resolution below must preserve it, or
+  `src/sign.rs::from_recovery_phrase`); every candidate resolution below must preserve it, or
   restore (durability IREQ-2) breaks. (T1, T3)
 - REQ-4: no interactive prompt on any read/sign/restore path — every fold read,
   every claim signing, and restore must complete with no GUI/keychain prompt.
