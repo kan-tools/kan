@@ -7,9 +7,26 @@
 //! a real entry to the author's keychain.
 //!
 //! Auditing call sites is the curated fix and it has already failed once. This
-//! is the derived one: instead of checking that every door is guarded, assert
-//! there is only one door. A fifth path cannot be added quietly, and the check
-//! costs nothing.
+//! is the cheaper one: instead of checking that every door is guarded, assert
+//! there is only one door.
+//!
+//! **What it does NOT buy, because the first version of this note overclaimed
+//! it.** It said "a fifth path cannot be added quietly". It is a substring
+//! match on `keyring::Entry::new`, and a cold review defeated it in one line:
+//!
+//! ```ignore
+//! use keyring::Entry;
+//! let e = Entry::new(service, account);   // a second door, and this test passes
+//! ```
+//!
+//! Catching that properly needs the token stream — a `syn` pass, or clippy's
+//! `disallowed_methods`, which resolves paths rather than matching text. Either
+//! is the right fix and neither is this file. What this buys today is the
+//! *common* mistake: a new call written the way all four existing ones were,
+//! which is how the two that forgot `keychain_disabled()` were written.
+//!
+//! Kept, narrowed, and the gap named — because a check whose docstring claims
+//! more than it delivers is the failure this whole milestone keeps finding.
 //!
 //! Written after routing the four sites by hand MISSED ONE -- `cargo fmt` had
 //! reflowed the line being matched, and only counting caught it. The test
