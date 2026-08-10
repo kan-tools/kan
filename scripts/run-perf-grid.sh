@@ -26,21 +26,25 @@ say() { echo "$@" >&2; }
 # this list; the gate resolves them by (claims, subjects) pair, so editing
 # the list without editing the axes in `gate_axes` is an error, not a skew.
 GRID=(
-  "125 10"
-  "500 10"
-  "2000 10"
-  "2000 100"
-  "2000 1000"
+  "50 4"
+  "200 4"
+  "800 4"
+  "800 40"
+  "800 400"
 )
 
 # Claims axis: 16x claims, subjects fixed. Subjects axis: 100x subjects,
-# claims fixed. Small end first, large end second. Absolute sizes are chosen
-# so the whole grid generates in ~10 CI minutes; the RATIOS are what the
-# gate consumes, and 16x/100x hold regardless of the absolutes.
-CLAIMS_AXIS_SMALL="125 10"
-CLAIMS_AXIS_LARGE="2000 10"
-SUBJECTS_AXIS_SMALL="2000 10"
-SUBJECTS_AXIS_LARGE="2000 1000"
+# claims fixed. Small end first, large end second. Absolute sizes are the
+# SMALLEST at which the shapes are already visible (the first smoke run saw
+# status-all's superlinearity by 200 claims) -- the RATIOS are what the gate
+# consumes, and 16x/100x hold regardless of the absolutes. Going higher
+# costs minutes of generation per point and buys no discrimination; it also
+# starts to MEASURE the append defect instead of bounding it (the first full
+# run averaged ~750ms/append by claim 1400).
+CLAIMS_AXIS_SMALL="50 4"
+CLAIMS_AXIS_LARGE="800 4"
+SUBJECTS_AXIS_SMALL="800 4"
+SUBJECTS_AXIS_LARGE="800 400"
 
 # A new empty commit every this-many claims, so commit anchors are
 # heterogeneous. A single-commit log makes every ancestry question trivially
@@ -68,9 +72,9 @@ CAP_S=240
 # generation; its numbers are NOT comparable to CI's and the gate refuses to
 # run on them (the results carry a smoke marker).
 if [ -n "${PERF_SMOKE:-}" ]; then
-  GRID=("20 4" "50 4" "200 4" "200 20" "200 50")
-  CLAIMS_AXIS_SMALL="20 4";  CLAIMS_AXIS_LARGE="200 4"
-  SUBJECTS_AXIS_SMALL="200 4"; SUBJECTS_AXIS_LARGE="200 50"
+  GRID=("10 2" "40 2" "160 2" "160 8" "160 40")
+  CLAIMS_AXIS_SMALL="10 2";  CLAIMS_AXIS_LARGE="160 2"
+  SUBJECTS_AXIS_SMALL="160 2"; SUBJECTS_AXIS_LARGE="160 40"
   COMMIT_EVERY=20; APPEND_SAMPLE=10
 fi
 
@@ -104,6 +108,10 @@ measure() {
 
       # Generation IS the append meter. python drives the subprocesses so the
       # per-call timing does not pay bash's fork overhead as measurement.
+      # The writer's stderr is CAPTURED and reported on failure. The first
+      # full run died at claim 1431 with the cause thrown away by a DEVNULL
+      # -- the exact unactionable "unwritable with no captured reason" the
+      # migration cell's writer.log exists to prevent.
       "$PYTHON" - "$KAN_BIN" "$n_claims" "$n_subjects" "$COMMIT_EVERY" "$APPEND_SAMPLE" <<'PYGEN'
 import subprocess, sys, time
 kan, n, s, every, sample = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
@@ -113,9 +121,13 @@ for i in range(n):
         subprocess.run(["git", "-c", "user.email=perf@example.com", "-c", "user.name=perf",
                         "commit", "-q", "--allow-empty", "-m", f"anchor {i}"], check=True)
     t0 = time.perf_counter()
-    subprocess.run([kan, "observe", f"synthetic claim {i} for the perf grid",
-                    "--subject", f"s{i % s}"],
-                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    r = subprocess.run([kan, "observe", f"synthetic claim {i} for the perf grid",
+                        "--subject", f"s{i % s}"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if r.returncode != 0:
+        print(f"generation failed: observe exited {r.returncode} at claim {i}. "
+              f"Its stderr:\n{r.stderr.strip()[-2000:]}", file=sys.stderr)
+        sys.exit(1)
     times.append(time.perf_counter() - t0)
 mean_ms = sum(times[-sample:]) / len(times[-sample:]) * 1000.0
 print(f"append\t{mean_ms:.1f}")

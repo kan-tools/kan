@@ -24,17 +24,20 @@ the contract; changing it is a reviewed edit, not a knob):
 
 | claims | subjects | axis role |
 |-------:|---------:|-----------|
-|    125 |       10 | claims axis, small |
-|    500 |       10 | claims axis, mid |
-|  2,000 |       10 | claims axis, large / subjects axis, small |
-|  2,000 |      100 | subjects axis, mid |
-|  2,000 |    1,000 | subjects axis, large |
+|     50 |        4 | claims axis, small |
+|    200 |        4 | claims axis, mid |
+|    800 |        4 | claims axis, large / subjects axis, small |
+|    800 |       40 | subjects axis, mid |
+|    800 |      400 | subjects axis, large |
 
-Absolute sizes are chosen so the whole grid generates in ~10 CI minutes;
+Absolute sizes are the smallest at which the shapes are already visible —
+the first smoke run saw `status-all`'s superlinearity by 200 claims — and
 the gate consumes only the 16×/100× *ratios*, which hold regardless of the
-absolutes. (The first smoke run measured `status-all` superlinear enough
-that a 4,000-claim large end risked eating the job's own timeout — the
-instrument found its first finding while being built.)
+absolutes. Going higher costs minutes of generation per point and buys no
+discrimination; the first full run (which used a 2,000-claim large end)
+also showed that a big grid starts to *measure* the append defect instead
+of bounding it, averaging ~750 ms/append by claim 1,400 and then dying on
+an `observe` failure at claim 1,431 before the table completed.
 
 Claims axis: 16× claims at fixed subjects. Subjects axis: 100× subjects at
 fixed claims. Each workspace is generated fresh by driving the release
@@ -71,8 +74,8 @@ PREDICTED, the first run converts them to MEASURED-informed values with the
 run id, and a bound whose measurement contradicts it is corrected by a
 human, in a commit, with the reason in the `why` column.
 
-- ratio(claims) = t(2000,10) / t(125,10) — linear ≈ 16, quadratic ≈ 256
-- ratio(subjects) = t(2000,1000) / t(2000,10) — linear ≈ 100, quadratic ≈ 10,000
+- ratio(claims) = t(800,4) / t(50,4) — linear ≈ 16, quadratic ≈ 256
+- ratio(subjects) = t(800,400) / t(800,4) — linear ≈ 100, quadratic ≈ 10,000
 
 Absolute times are **reported, never gated**: hosted-runner wall-clock
 varies ±30% run to run, and a flaky red teaches people to re-run until

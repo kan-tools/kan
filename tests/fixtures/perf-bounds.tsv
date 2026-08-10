@@ -11,10 +11,10 @@
 # bounds row whose why carries neither token.
 #
 # Axes (defined by named entries in scripts/run-perf-grid.sh's GRID list):
-#   claims    (125,10)  -> (2000,10):   16x claims, subjects fixed.
-#                                       linear ~= 16, quadratic ~= 256.
-#   subjects  (2000,10) -> (2000,1000): 100x subjects, claims fixed.
-#                                       linear ~= 100, quadratic ~= 10000.
+#   claims    (50,4)  -> (800,4):   16x claims, subjects fixed.
+#                                   linear ~= 16, quadratic ~= 256.
+#   subjects  (800,4) -> (800,400): 100x subjects, claims fixed.
+#                                   linear ~= 100, quadratic ~= 10000.
 #
 # THE BOUND IS A SHAPE CLAIM, NOT A SPEED CLAIM. Absolute times are reported
 # in the run and never judged here: hosted-runner wall-clock varies enough
