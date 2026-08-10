@@ -1,0 +1,39 @@
+# Growth-ratio bounds for the perf grid: how much slower a key op may get
+# across each axis of the grid before CI goes red.
+#
+# Columns, tab-separated:  <op>  <axis>  <max-ratio>  <why>
+#
+# THE `why` COLUMN STARTS WITH ITS OWN CONFIDENCE, MEASURED or PREDICTED,
+# exactly as in migration-expectations.tsv and for the same reason: a
+# prediction that is never converted is indistinguishable from a measurement.
+# Bounds ship PREDICTED; the first run converts them, with its run id, to
+# values informed by what was actually measured. The gate itself refuses a
+# bounds row whose why carries neither token.
+#
+# Axes (defined by named entries in scripts/run-perf-grid.sh's GRID list):
+#   claims    (125,10)  -> (2000,10):   16x claims, subjects fixed.
+#                                       linear ~= 16, quadratic ~= 256.
+#   subjects  (2000,10) -> (2000,1000): 100x subjects, claims fixed.
+#                                       linear ~= 100, quadratic ~= 10000.
+#
+# THE BOUND IS A SHAPE CLAIM, NOT A SPEED CLAIM. Absolute times are reported
+# in the run and never judged here: hosted-runner wall-clock varies enough
+# that gating on it teaches people to re-run until green. The decade between
+# linear and quadratic is wider than any runner's noise; that gap is what a
+# ratio can gate and a millisecond count cannot. Ops whose large-end time is
+# under 100ms are recorded but not judged (`below-floor` in the gate output).
+#
+# A bound a measurement contradicts is corrected by a human, in a commit,
+# with the reason here -- the gate's error is the prompt, never the editor.
+append	claims	8	PREDICTED at introduction. Appending to a log should not care how long the log already is (amortized O(1)-to-O(log n)); 8 is half of linear-16, so append drifting toward linear-in-claims trips this before it reaches it.
+append	subjects	8	PREDICTED at introduction. Claim count is fixed on this axis; the subject population should be irrelevant to a single append. Same drift argument as the claims-axis row.
+show-subject	claims	32	PREDICTED at introduction. s0's own claims grow 16x along this axis, so linear is ~16; 32 allows 2x constant drift. The #181 shape (pairwise git subprocesses, ~256) is what this row exists to catch.
+show-subject	subjects	4	PREDICTED at introduction. s0's claims SHRINK 100x along this axis (round-robin generation), so the honest expectation is flat-to-faster; 4 flags a read that scales with subjects it did not ask about.
+show-all	claims	32	PREDICTED at introduction. The bulk read is the documented fast path (72ms while show-subject took 141s, kan#181) and should stay linear in claims: 16 linear, 2x slack.
+show-all	subjects	6	PREDICTED at introduction. Same claim count, more subjects: output volume is unchanged, per-subject bookkeeping is not free but must stay well under linear-in-subjects.
+status-all	claims	32	PREDICTED at introduction. One fold over the log: linear in claims, 2x slack.
+status-all	subjects	200	PREDICTED at introduction. Output is one line per subject, so linear-in-subjects (~100) is the honest floor for this op on this axis; 200 is 2x slack over it, and quadratic (~10000) stays two decades away.
+issues	claims	32	PREDICTED at introduction. Same fold as status-all; linear in claims, 2x slack.
+issues	subjects	200	PREDICTED at introduction. Every synthetic subject is unresolved, so the listing is linear-in-subjects by construction; 200 is 2x slack over linear.
+context	claims	32	PREDICTED at introduction. Budgeted assembly still has to consider every claim to rank it: linear in claims, 2x slack. The budget bounds the OUTPUT, not the scan.
+context	subjects	6	PREDICTED at introduction. Fixed claim count and a fixed budget: the subject population should not change what fits under 4000 tokens.
