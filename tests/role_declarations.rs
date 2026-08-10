@@ -178,6 +178,12 @@ fn three_empty_roles_frames_read_differently() {
     );
 }
 
+fn did_of(dir: &std::path::Path, key: Option<&std::path::Path>) -> String {
+    let run = kan_as(dir, key, &["identity", "did"]);
+    assert!(run.ok, "identity did failed: {}", run.stderr);
+    run.stdout
+}
+
 /// The declared role DIDs, as a set — membership, never a count.
 fn declared_dids(dir: &std::path::Path) -> BTreeSet<String> {
     let run = kan_as(dir, None, &["identity", "role", "list", "--json"]);
@@ -383,9 +389,31 @@ fn import_is_idempotent_and_preserves_the_set() {
         .iter()
         .map(|r| r["did"].as_str().unwrap().to_string())
         .collect();
+    assert!(
+        expected.is_subset(&got),
+        "import lost rows the file declared: {view}"
+    );
+
+    // A SUPERSET, not equality, and the extra member is the point.
+    //
+    // Import also ensures this workspace's OWN identity is declared, because a
+    // registry that does not name it drops every claim it ever wrote out of
+    // `--trust roles` -- the defect a third cold review graded blocking. The
+    // fixture's four rows are fabricated DIDs, so none of them is this test
+    // workspace's identity and the auto-declaration is visible here.
+    //
+    // On the real file it is a NO-OP: `sheaf-games`'s `primary` row names its
+    // own workspace DID, so importing it declares that identity via the row.
+    // The fixture is the harsher case, which is the right one to pin.
+    let workspace_did = did_of(dir.path(), None);
+    assert!(
+        got.contains(&workspace_did),
+        "import left this workspace's own identity undeclared: {view}"
+    );
     assert_eq!(
-        got, expected,
-        "import produced a different author set than the file declared: {view}"
+        got.len(),
+        expected.len() + 1,
+        "import declared something beyond the file's rows and this workspace: {view}"
     );
 
     // AC-6, second half: running it twice adds nothing.
@@ -400,7 +428,7 @@ fn import_is_idempotent_and_preserves_the_set() {
     let view2: serde_json::Value = serde_json::from_str(&after_twice.stdout).unwrap();
     assert_eq!(
         view2["roles"].as_array().unwrap().len(),
-        4,
+        5,
         "the second import duplicated declarations: {view2}"
     );
 

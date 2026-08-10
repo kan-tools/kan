@@ -256,7 +256,10 @@ mechanical witness the criterion says so and is marked **intent**.
       rejecting it. *Witness*: `tests/schema_evolution.rs` —
       `body_kinds_all_round_trip` (already fails if `KnownBody` drifts from
       `ClaimBody`), plus a new case constructing a `RoleDeclaration` with an
-      unknown field, per ADR-48's rule that the test must use a *known* kind.
+      unknown field, per ADR-48's rule that the test must use a *known* kind —
+      `tests/schema_evolution.rs`, test
+      `a_role_declaration_with_an_unknown_field_is_preserved_verbatim`. *Named
+      here for three rounds before it existed; written when a fourth said so.*
 - [ ] AC-2: For REQ-1, every claim CID written before this variant existed is
       unchanged. *Witness*: `tests/golden_reads.rs`'s AC-1 invariant golden,
       which must pass untouched.
@@ -275,9 +278,13 @@ mechanical witness the criterion says so and is marked **intent**.
       ordinary claim and does not appear in `--trust roles`. *Witness*:
       `tests/role_declaration_lifecycle.rs`, test `a_foreign_declaration_grants_nothing`. This
       is the REQ-8 pre-condition and must exist before the sharing channel opens.
-- [ ] AC-6: For REQ-5, importing `sheaf-games`'s four rows produces four
-      declarations, `--trust roles` returns the same author set the file
-      produced, and running import twice adds nothing. *Witness*:
+- [ ] AC-6: For REQ-5, importing `sheaf-games`'s four rows declares all four,
+      **also ensures this workspace's own identity is declared**, and running
+      import twice adds nothing. The author set is a superset of the file's
+      rows, never a subset: a registry that omits the importing workspace drops
+      every claim it ever wrote out of `--trust roles`, which a third cold
+      review graded blocking. On the real file the extra step is a no-op, since
+      its `primary` row already names that workspace. *Witness*:
       `tests/role_declarations.rs` (new), test `import_is_idempotent_and_preserves_the_set`,
       seeded from a fixture copy of that file — **not** from the live workspace.
 - [ ] AC-7: For REQ-5, import leaves `.kan/roles` byte-identical. *Witness*:
@@ -313,10 +320,16 @@ mechanical witness the criterion says so and is marked **intent**.
       each re-declared role on stdout, **or** carries nothing and says plainly
       that it did not. What it must never do is report a carry it did not
       perform — the two outcomes are asserted as mutually exclusive, because a
-      bare "did it mention carrying?" check matches the refusal text too. *Witness*:
-      `tests/role_declarations.rs` (new), test `adopt_carries_the_role_registry_across`,
-      comparing the set before and after rather than counting it, so a set that
-      changed membership while keeping its size cannot pass.
+      bare "did it mention carrying?" check matches the refusal text too.
+      *Witnesses*, and it takes two because the branches live apart:
+      `tests/role_declarations.rs`, test `adopt_carries_the_role_registry_across`
+      for the carry — comparing the set before and after rather than counting
+      it, so a set that changed membership while keeping its size cannot pass —
+      and `tests/role_review_fixes.rs`, test
+      `adopt_does_not_carry_roles_under_a_stray_selection` for the refusal,
+      which is where the mutual exclusion is asserted. *This criterion named
+      only the first for one round, describing an assertion the named test does
+      not make.*
 - [ ] AC-11: For REQ-4, `kan identity role list` reports name and DID and **no
       key path**, human and `--json`. *Witness*:
       `tests/role_declarations.rs` (new), test `role_list_reports_two_columns_and_no_key_path`.

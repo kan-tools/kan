@@ -404,11 +404,35 @@ pub fn mint_role_key(name: &str, key_path: &Path) -> Result<Role, Error> {
 /// at, which for a keychain-rooted workspace is a file that does not exist.
 /// Measured in exactly that state: `sheaf-games` records its primary at
 /// `.kan/identity`, which has never been there.
+/// **Returns a name that is genuinely free**, which it did not until a third
+/// cold review.
+///
+/// It used to ask only whether the literal `"primary"` was taken and, if so,
+/// return `primary-<suffix>` **without checking that too**. So a workspace
+/// where both were already declared got a name that collided, REQ-6's
+/// latest-wins rebound it, and the previous holder's claims silently left
+/// `--trust roles` — round 1's defect reached from a third direction.
+///
+/// The round-2 fix that extended the caller's `taken` list bought nothing
+/// against that, because the branch it selects never consulted the list for
+/// the fallback. The comment claiming "`primary-<suffix>` cannot collide with
+/// one either" was false when written, and no test covered it: reverting that
+/// hunk left all 385 tests green.
 pub fn primary_role_name(did: &Did, taken: &[String]) -> String {
-    match taken.iter().any(|name| name == "primary") {
-        true => format!("primary-{}", &did[did.len().saturating_sub(8)..]),
-        false => "primary".to_string(),
+    let suffix = &did[did.len().saturating_sub(8)..];
+    let free = |candidate: &String| !taken.iter().any(|name| name == candidate);
+
+    let preferred = ["primary".to_string(), format!("primary-{suffix}")];
+    if let Some(name) = preferred.into_iter().find(|c| free(c)) {
+        return name;
     }
+    // Both taken. Deterministic and unbounded rather than "give up and
+    // collide": a name that silently replaces a live declaration is the one
+    // outcome this function exists to avoid.
+    (2..)
+        .map(|n| format!("primary-{suffix}-{n}"))
+        .find(|c| free(c))
+        .expect("an unbounded sequence always contains a free name")
 }
 
 /// Every declared role, in declaration order. A missing file is no roles,

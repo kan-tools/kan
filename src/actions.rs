@@ -768,11 +768,15 @@ pub fn durability_of(ws: &Workspace, class: &SubjectView) -> Durability {
 ///
 /// *This helper carried a long docstring documenting `kan identity adopt` and
 /// `kan identity role add`, left behind when those functions were inserted
-/// mid-docstring. Removed after a cold review — which then found the
-/// replacement's own "6 call sites" wrong too (9, as 5 `map_err` plus 4
-/// direct), and the round before it had said five. Three counts, three wrong,
-/// for a number nothing needs: a hand-maintained count in prose is a citation
-/// that rots, so this one is gone rather than corrected a third time.*
+/// mid-docstring. Removed after a cold review.*
+///
+/// *Four successive review rounds then corrected the number of call sites it
+/// claimed — five, six, nine — each correction wrong, and the last one written
+/// in the same commit that said the number was "gone rather than corrected a
+/// third time" while leaving it in the tree. It is gone now. The lesson is
+/// worth more than the number: **a hand-maintained count in prose is a
+/// citation that rots**, and this project has a script that checks citations
+/// and nothing that checks counts.*
 fn sign_error(e: crate::sign::Error) -> Error {
     Error::Workspace(crate::workspace::Error::Sign(e))
 }
@@ -974,7 +978,72 @@ pub async fn import_roles(ws: &mut Workspace) -> Result<ImportSummary, Error> {
         summary.imported.push((row.name, row.did));
     }
 
+    // The workspace's own identity, if the file did not already name it.
+    //
+    // A legacy `.kan/roles` written by kan always carried a `primary` row,
+    // because `register_active` wrote one when the first role was declared --
+    // but a hand-edited or partial file need not, and then import left the
+    // workspace declaring roles while its OWN identity was undeclared, so
+    // `--trust roles` dropped every claim it had ever written. `role list`
+    // printed `active: <W>` directly above a list without W.
+    //
+    // Found by a third cold review, which noted that `f7f37cb` had closed this
+    // for a subsequent `role add` and left it open on the plain migration path
+    // -- the one this milestone exists to serve. Same rule, same helper, so
+    // the two paths cannot answer it differently again.
+    let declared_now = ws.declared_roles()?;
+    ensure_workspace_declared(ws, workspace_did, &declared_now, &[]).await?;
+
     Ok(summary)
+}
+
+/// Declare the workspace's own identity as a role, unless it already is.
+///
+/// **One implementation, called by both `declare_role` and `import_roles`**,
+/// because three review rounds have now found a defect in this single rule and
+/// each fix touched only the caller that round happened to look at. Two
+/// implementations of one fact drift; two *gates* on one fact drift faster.
+///
+/// The rule is `main`'s `register_active`, restated: record the workspace's
+/// pre-existing identity **if it is not already recorded**, by DID. Without
+/// it, `--trust roles` omits every claim written before any role existed --
+/// which is the whole reason the auto-declaration exists.
+///
+/// `also_taken` is any name the caller is about to claim in the same
+/// operation, so `primary_role_name` can route around it.
+async fn ensure_workspace_declared(
+    ws: &mut Workspace,
+    workspace_did: Option<crate::claim::Did>,
+    declared: &crate::roles::Declared,
+    also_taken: &[String],
+) -> Result<(), Error> {
+    let Some(workspace) = workspace_did else {
+        return Ok(());
+    };
+    if declared.roles().iter().any(|role| role.did == workspace) {
+        return Ok(());
+    }
+
+    // Every name already spoken for -- what the caller is claiming now, plus
+    // everything live. `primary_role_name` checks each candidate against this
+    // rather than only the first, which is what a third review round had to
+    // fix in it.
+    let mut taken: Vec<String> = also_taken.to_vec();
+    taken.extend(declared.roles().iter().map(|role| role.name.clone()));
+    let primary = crate::sign::primary_role_name(&workspace, &taken);
+
+    append(
+        ws,
+        SubjectRef::Local(Rkey::from(format!("role/{primary}"))),
+        ClaimBody::RoleDeclaration {
+            did: workspace,
+            name: primary,
+        },
+        vec![],
+        None,
+    )
+    .await?;
+    Ok(())
 }
 
 /// `kan identity role add <name>` — mint a role key and **declare it as a
@@ -1046,69 +1115,9 @@ pub async fn declare_role(
         }));
     }
 
-    // The primary first, so that a reader of `role/primary` sees it declared
-    // before the role whose declaration prompted it.
-    //
-    // GATED ON THE WORKSPACE'S DID NOT BEING DECLARED, not on the registry
-    // being empty, and the difference is a defect a second cold review found.
-    // `main`'s `register_active` checked by DID -- "record the workspace's
-    // pre-existing identity as a role, IF IT IS NOT ALREADY RECORDED" -- and
-    // narrowing that to "if the registry is empty" opened a gap on the
-    // migration path this milestone exists to serve: after `role import`
-    // populates the registry from a legacy file that has no `primary` row, the
-    // set is non-empty, so the next `role add` skipped the auto-declaration
-    // entirely and the workspace's own identity was never declared. Measured:
-    // `role list` printed `active: <W>` directly above a list not containing
-    // W, and W's own claim was excluded from `--trust roles`.
-    //
-    // That is the exact loss `primary_role_name`'s docstring says the
-    // auto-declaration exists to prevent -- reached, this time, by the
-    // auto-declaration not firing rather than by firing twice.
-    let workspace_is_declared = workspace_did
-        .as_ref()
-        .is_some_and(|w| declared.roles().iter().any(|role| &role.did == w));
-    if !workspace_is_declared {
-        if let Some(workspace) = workspace_did {
-            // THE NAME BEING DECLARED IS ALREADY TAKEN, from the primary's
-            // point of view, and passing it here is the fix for a defect a
-            // cold review found: this argument was a hardcoded empty `Vec`,
-            // so `primary_role_name`'s collision branch was dead code and
-            // `kan identity role add primary` declared `primary` TWICE --
-            // once for the workspace identity, once for the new role key.
-            // Latest-wins then rebound the name to the role key and dropped
-            // the workspace's own identity, and every claim it had written,
-            // straight out of `--trust roles`. That is the exact outcome the
-            // auto-declaration exists to prevent (see `primary_role_name`),
-            // produced by the auto-declaration itself.
-            //
-            // The clash check above cannot catch it: it runs against
-            // `declared.roles()`, which is empty by the very condition that
-            // triggers this branch -- a guard with a hole the shape of what
-            // it guards.
-            //
-            // Non-destructive by construction now: the workspace identity
-            // takes `primary-<suffix>` and BOTH stay declared, rather than
-            // one silently replacing the other.
-            // Every name already spoken for: the one being declared now, plus
-            // anything already in the registry (which `import` may have just
-            // filled). `primary_role_name` picks `primary-<suffix>` past all
-            // of them, so no declaration ever silently replaces another.
-            let mut taken: Vec<String> = vec![name.to_string()];
-            taken.extend(declared.roles().iter().map(|role| role.name.clone()));
-            let primary = crate::sign::primary_role_name(&workspace, &taken);
-            append(
-                ws,
-                SubjectRef::Local(Rkey::from(format!("role/{primary}"))),
-                ClaimBody::RoleDeclaration {
-                    did: workspace,
-                    name: primary,
-                },
-                vec![],
-                None,
-            )
-            .await?;
-        }
-    }
+    // The workspace's own identity first, so a reader sees it declared before
+    // the role whose declaration prompted it.
+    ensure_workspace_declared(ws, workspace_did, &declared, &[name.to_string()]).await?;
 
     append(
         ws,

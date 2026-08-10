@@ -93,8 +93,9 @@ fn did_of(dir: &std::path::Path, key: Option<&std::path::Path>) -> String {
     run.stdout
 }
 
-/// **Round 2, BLOCKING-1.** `kan identity role add` after `kan identity role
-/// import` must still declare the workspace's own identity.
+/// **Round 2 BLOCKING-1 and round 3 BLOCKING-2.** Both `kan identity role
+/// import` and a subsequent `kan identity role add` must leave the workspace's
+/// own identity declared.
 ///
 /// The defect: the auto-declaration was gated on the registry being **empty**,
 /// where `main`'s `register_active` checked whether the workspace's **DID** was
@@ -121,10 +122,15 @@ fn role_add_after_import_still_declares_the_workspace_identity() {
     .unwrap();
     let import = kan_as(dir.path(), None, &["identity", "role", "import"]);
     assert!(import.ok, "import failed: {}", import.stderr);
+
+    // Round 3, BLOCKING-2: import ALONE must declare it too. Round 2's version
+    // of this test asserted the opposite as a "precondition" -- enshrining the
+    // defect as expected behaviour, which is how a regression test can make a
+    // gap permanent instead of catching it.
     assert!(
-        !declared_dids(dir.path()).contains(&workspace_did),
-        "precondition: import alone should not declare the workspace identity, or this \
-         test proves nothing"
+        declared_dids(dir.path()).contains(&workspace_did),
+        "`role import` left the workspace's own identity undeclared, so `--trust roles` \
+         drops every claim it ever wrote"
     );
 
     let add = kan_as(dir.path(), None, &["identity", "role", "add", "auditor"]);
@@ -298,4 +304,54 @@ fn adopt_does_not_carry_roles_under_a_stray_selection() {
             adopt.stdout
         );
     }
+}
+
+/// **Round 3, BLOCKING-1.** The auto-declared primary name must be one that is
+/// actually free.
+///
+/// `primary_role_name` asked only whether the literal `"primary"` was taken and,
+/// if so, returned `primary-<suffix>` **without checking that too**. With both
+/// already declared it handed back a colliding name, REQ-6's latest-wins
+/// rebound it, and the previous holder's claims silently left `--trust roles`.
+///
+/// Round 2's fix -- extending the caller's `taken` list -- bought nothing
+/// against this, because the branch it selects never consulted the list. That
+/// hunk was also untested: reverting it left all 385 tests green.
+#[test]
+fn the_auto_declared_primary_never_takes_a_live_name() {
+    let dir = workspace_with_own_identity();
+    let workspace_did = did_of(dir.path(), None);
+    let suffix = &workspace_did[workspace_did.len() - 8..];
+
+    // A legacy registry that already holds BOTH candidate names, for other
+    // identities. Reachable by hand-editing, and by any workspace that has
+    // been through more than one identity.
+    let other_a = kan::sign::Identity::generate().did();
+    let other_b = kan::sign::Identity::generate().did();
+    std::fs::write(
+        dir.path().join(".kan/roles"),
+        format!("{other_a}\tprimary\t/gone\n{other_b}\tprimary-{suffix}\t/gone\n"),
+    )
+    .unwrap();
+
+    let import = kan_as(dir.path(), None, &["identity", "role", "import"]);
+    assert!(import.ok, "import failed: {}", import.stderr);
+
+    let declared = declared_dids(dir.path());
+    for (label, did) in [("primary", &other_a), ("primary-<suffix>", &other_b)] {
+        assert!(
+            declared.contains(did),
+            "the auto-declared primary took `{label}`, which another identity already \
+             held, and latest-wins dropped it: {declared:?}"
+        );
+    }
+    assert!(
+        declared.contains(&workspace_did),
+        "the workspace identity was not declared at all: {declared:?}"
+    );
+    assert_eq!(
+        declared.len(),
+        3,
+        "all three identities should be declared, under three distinct names: {declared:?}"
+    );
 }

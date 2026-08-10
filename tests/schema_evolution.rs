@@ -447,3 +447,83 @@ fn a_known_kind_with_an_unknown_field_round_trips_through_gittree() {
     );
     assert!(matches!(parsed.content.body, ClaimBody::Unknown { .. }));
 }
+
+/// `.design/role-declarations.md` AC-1, second half — ADR-48's mandated case
+/// for the **new** kind: a `RoleDeclaration` carrying a field from a newer kan
+/// is preserved as `Unknown` with its bytes intact, rather than decoded,
+/// silently shorn of the field, and then reported as altered since it was
+/// signed.
+///
+/// AC-1 named this test and it did not exist; three review rounds passed
+/// before a fourth said so. The sibling above proves the mechanism for
+/// `Observation`, and the mechanism is kind-agnostic — but ADR-48's rule is
+/// that the test must construct a *known* kind, and after this branch
+/// `RoleDeclaration` is one. It is also the only kind whose body carries a
+/// DID, so a build that dropped an unknown field here would be re-encoding
+/// identity data.
+#[test]
+fn a_role_declaration_with_an_unknown_field_is_preserved_verbatim() {
+    #[derive(serde::Serialize)]
+    enum FutureBody {
+        RoleDeclaration {
+            did: String,
+            name: String,
+            // A field a newer kan added -- an expiry, say.
+            expires_at: u64,
+        },
+    }
+    #[derive(serde::Serialize)]
+    struct FutureContent {
+        author: AuthorId,
+        workspace: Anchor,
+        subject: SubjectRef,
+        body: FutureBody,
+        cites: Vec<atproto_dasl::Cid>,
+        artifacts: Vec<kan::claim::ArtifactRef>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        recorded_at: Option<u64>,
+    }
+
+    let id = Identity::generate();
+    let future = FutureContent {
+        author: AuthorId {
+            did: id.did(),
+            agent: None,
+        },
+        workspace: Anchor::Workspace("genesis".to_string()),
+        subject: SubjectRef::Local(kan::claim::Rkey::from("role/prover")),
+        body: FutureBody::RoleDeclaration {
+            did: "did:key:zDnaeSezF2t8gTQrOFpVmvSMPFsxqRDzZL6JGjTxjJ2TvNqYe".to_string(),
+            name: "prover".to_string(),
+            expires_at: 1_900_000_000,
+        },
+        cites: vec![],
+        artifacts: vec![],
+        recorded_at: Some(1_700_000_000_000_000),
+    };
+
+    let stated = content_cid(&future).unwrap();
+    let bytes = atproto_dasl::to_vec(&future).unwrap();
+
+    let content: ClaimContent = atproto_dasl::from_reader(&bytes[..])
+        .expect("a known kind with an unknown field must decode, not fail");
+    assert!(
+        matches!(content.body, ClaimBody::Unknown { .. }),
+        "a RoleDeclaration carrying an unknown field must be preserved as Unknown, not \
+         decoded with the field dropped: {:?}",
+        content.body
+    );
+
+    // The whole point: it re-encodes to the same bytes, so the CID the newer
+    // kan signed still checks out here.
+    assert_eq!(
+        atproto_dasl::to_vec(&content).unwrap(),
+        bytes,
+        "the preserved claim did not re-encode to the bytes it was decoded from"
+    );
+    assert_eq!(
+        content_cid(&content).unwrap(),
+        stated,
+        "the CID moved, which would report a legitimate claim as altered since signing"
+    );
+}
