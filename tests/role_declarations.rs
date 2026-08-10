@@ -10,6 +10,7 @@
 //! it is what found the hole in that guard — but the populated listing needs a
 //! workspace the fixture is not.
 
+use std::collections::BTreeSet;
 use std::process::Command;
 
 struct Run {
@@ -137,10 +138,14 @@ fn three_empty_roles_frames_read_differently() {
     }
     let b = reason_for(no_identity.path(), None);
 
-    // (c) declarations exist, but none were authored by this workspace. Built
-    // by declaring under one identity and then adopting a DIFFERENT one that
-    // also wrote here, so the declarations become foreign without editing
-    // anything.
+    // (c) declarations exist, but none were authored by this workspace.
+    //
+    // Built by REPLACING the workspace's rooting artifact by hand -- delete
+    // the seed, drop a different key at `.kan/identity` -- because that is how
+    // this state actually arises: someone restores the wrong key file. It is
+    // deliberately NOT built with `kan identity adopt`, which since REQ-9
+    // REPAIRS this state by carrying the registry across, so an adopt-built
+    // (c) would silently become case (a) and this test would assert nothing.
     let foreign = workspace_with_own_identity();
     let add = kan_as(
         foreign.path(),
@@ -148,20 +153,15 @@ fn three_empty_roles_frames_read_differently() {
         &["identity", "role", "add", "reviewer"],
     );
     assert!(add.ok, "role add failed: {}", add.stderr);
-    let stranger = foreign.path().join("stranger-key");
-    kan::sign::Identity::generate().save(&stranger).unwrap();
-    let wrote = kan_as(
-        foreign.path(),
-        Some(&stranger),
-        &["observe", "shared", "the stranger's claim"],
-    );
-    assert!(wrote.ok, "{}", wrote.stderr);
-    let adopt = kan_as(
-        foreign.path(),
-        Some(&stranger),
-        &["identity", "adopt", "--key", stranger.to_str().unwrap()],
-    );
-    assert!(adopt.ok, "adopt failed: {}", adopt.stderr);
+    for artifact in ["seed", "seed-id", "identity-id"] {
+        let p = foreign.path().join(".kan").join(artifact);
+        if p.exists() {
+            std::fs::remove_file(&p).unwrap();
+        }
+    }
+    kan::sign::Identity::generate()
+        .save(&foreign.path().join(".kan/identity"))
+        .unwrap();
     let c = reason_for(foreign.path(), None);
 
     assert_ne!(
@@ -175,6 +175,298 @@ fn three_empty_roles_frames_read_differently() {
     assert_ne!(
         b, c,
         "(b) no workspace identity and (c) only-foreign read identically"
+    );
+}
+
+/// The declared role DIDs, as a set — membership, never a count.
+fn declared_dids(dir: &std::path::Path) -> BTreeSet<String> {
+    let run = kan_as(dir, None, &["identity", "role", "list", "--json"]);
+    assert!(run.ok, "role list failed: {}", run.stderr);
+    let view: serde_json::Value = serde_json::from_str(&run.stdout).unwrap();
+    view["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["did"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// REQ-9 + AC-10c: `kan identity adopt` leaves `--trust roles` naming the
+/// **same author set** it named before.
+#[test]
+fn adopt_carries_the_role_registry_across() {
+    let dir = workspace_with_own_identity();
+    let add = kan_as(dir.path(), None, &["identity", "role", "add", "reviewer"]);
+    assert!(add.ok, "role add failed: {}", add.stderr);
+    let before = declared_dids(dir.path());
+    assert_eq!(before.len(), 2, "primary + reviewer should be declared");
+
+    // A second identity that has also written here -- adopt refuses a key that
+    // authored nothing, so this is the only shape adopt accepts.
+    let successor = dir.path().join("successor-key");
+    kan::sign::Identity::generate().save(&successor).unwrap();
+    let wrote = kan_as(
+        dir.path(),
+        Some(&successor),
+        &["observe", "shared", "the successor's claim"],
+    );
+    assert!(wrote.ok, "{}", wrote.stderr);
+
+    let adopt = kan_as(
+        dir.path(),
+        Some(&successor),
+        &["identity", "adopt", "--key", successor.to_str().unwrap()],
+    );
+    assert!(adopt.ok, "adopt failed: {}", adopt.stderr);
+    assert!(
+        adopt.stdout.contains("carried 2 role declaration"),
+        "adopt should name what it carried across: {}",
+        adopt.stdout
+    );
+
+    assert_eq!(
+        declared_dids(dir.path()),
+        before,
+        "adopt changed which identities are declared; the set must survive it"
+    );
+}
+
+/// REQ-9's actual point, and the reason it resolves from declaration authors:
+/// the registry survives adopting **after the workspace identity is gone**.
+///
+/// This is the lost-key case. Had adopt asked `declared_roles()` for the set,
+/// resolution would have returned `NoWorkspaceIdentity` — the identity is
+/// precisely what is missing — the set would have been empty, and adopt would
+/// have carried nothing while reporting success.
+#[test]
+fn adopt_carries_roles_even_when_the_workspace_identity_is_lost() {
+    let dir = workspace_with_own_identity();
+    let add = kan_as(dir.path(), None, &["identity", "role", "add", "reviewer"]);
+    assert!(add.ok, "role add failed: {}", add.stderr);
+    let before = declared_dids(dir.path());
+    assert_eq!(before.len(), 2);
+
+    let successor = dir.path().join("successor-key");
+    kan::sign::Identity::generate().save(&successor).unwrap();
+    let wrote = kan_as(
+        dir.path(),
+        Some(&successor),
+        &["observe", "shared", "the successor's claim"],
+    );
+    assert!(wrote.ok, "{}", wrote.stderr);
+
+    // Lose the secret the workspace roots in.
+    for artifact in ["seed", "identity", "seed-id", "identity-id"] {
+        let p = dir.path().join(".kan").join(artifact);
+        if p.exists() {
+            std::fs::remove_file(&p).unwrap();
+        }
+    }
+    assert!(
+        declared_dids(dir.path()).is_empty(),
+        "precondition: with the identity gone, no declaration can be honoured"
+    );
+
+    let adopt = kan_as(
+        dir.path(),
+        Some(&successor),
+        &["identity", "adopt", "--key", successor.to_str().unwrap()],
+    );
+    assert!(adopt.ok, "adopt failed: {}", adopt.stderr);
+
+    assert_eq!(
+        declared_dids(dir.path()),
+        before,
+        "the registry did not survive a recovery adopt -- which is the one case REQ-9 \
+         exists for: {}",
+        adopt.stdout
+    );
+}
+
+/// Two declaring authors means adopt **carries nothing and says so**, rather
+/// than guessing which registry belonged to the workspace.
+#[test]
+fn adopt_refuses_to_guess_between_two_registries() {
+    let dir = workspace_with_own_identity();
+    let add = kan_as(dir.path(), None, &["identity", "role", "add", "reviewer"]);
+    assert!(add.ok, "{}", add.stderr);
+
+    // A second identity that writes, adopts (becoming the workspace), and
+    // declares its own role -- so the log now holds two declaring authors.
+    let second = dir.path().join("second-key");
+    kan::sign::Identity::generate().save(&second).unwrap();
+    let wrote = kan_as(dir.path(), Some(&second), &["observe", "shared", "second"]);
+    assert!(wrote.ok, "{}", wrote.stderr);
+    let adopt = kan_as(
+        dir.path(),
+        Some(&second),
+        &["identity", "adopt", "--key", second.to_str().unwrap()],
+    );
+    assert!(adopt.ok, "{}", adopt.stderr);
+    let add2 = kan_as(dir.path(), None, &["identity", "role", "add", "auditor"]);
+    assert!(add2.ok, "{}", add2.stderr);
+
+    // A third identity adopts. Two authors have declared, so there is no
+    // single registry to carry.
+    let third = dir.path().join("third-key");
+    kan::sign::Identity::generate().save(&third).unwrap();
+    let wrote = kan_as(dir.path(), Some(&third), &["observe", "shared", "third"]);
+    assert!(wrote.ok, "{}", wrote.stderr);
+    let adopt3 = kan_as(
+        dir.path(),
+        Some(&third),
+        &["identity", "adopt", "--key", third.to_str().unwrap()],
+    );
+    assert!(adopt3.ok, "{}", adopt3.stderr);
+    assert!(
+        adopt3.stdout.contains("will not guess"),
+        "adopt should refuse to pick between two registries and say so: {}",
+        adopt3.stdout
+    );
+    assert!(
+        declared_dids(dir.path()).is_empty(),
+        "adopt installed a registry it had no basis to choose: {}",
+        adopt3.stdout
+    );
+}
+
+/// The four rows of the only real `.kan/roles` in existence
+/// (`maxinelevesque/sheaf-games`), copied verbatim in shape.
+///
+/// **A fixture, never the live workspace.** A test that read that repo would
+/// pass or fail on whether someone had touched it, and could damage it. What
+/// matters is reproduced here: four rows, tab-separated, absolute paths, and a
+/// `primary` row whose key path points at a `.kan/identity` that does not
+/// exist — that workspace is keychain-rooted, and `register_active` wrote the
+/// path unconditionally.
+const SHEAF_GAMES_ROLES: &str = "\
+did:key:zDnaenWDM6qp5Ra829d9wPUzBKBA3V6fm2cg4KVP3WFKqsYTv\tprimary\t/w/.kan/identity
+did:key:zDnaeZQRXpcTkQojRMTux2jYL8UDJvJAtLdyP7V3i36KcjjZF\tprover\t/w/.kan/roles.d/prover
+did:key:zDnaeY4cHjp9KP1aLoegE5rMHix5qmcRTpK7BiRyszjyfJJjN\tdirector\t/w/.kan/roles.d/director
+did:key:zDnaecF176LvsiLUhri2yC3zXgi4KxRo3MA89LKM4EyjBbWCe\treferee\t/w/.kan/roles.d/referee
+";
+
+/// AC-6 + AC-7: importing the real four-row file declares all four, is
+/// idempotent, and leaves `.kan/roles` **byte-identical**.
+#[test]
+fn import_is_idempotent_and_preserves_the_set() {
+    let dir = workspace_with_own_identity();
+    let roles_file = dir.path().join(".kan/roles");
+    std::fs::write(&roles_file, SHEAF_GAMES_ROLES).unwrap();
+    let before = std::fs::read(&roles_file).unwrap();
+
+    let expected: BTreeSet<String> = SHEAF_GAMES_ROLES
+        .lines()
+        .map(|l| l.split('\t').next().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        expected.len(),
+        4,
+        "the fixture should carry four distinct DIDs"
+    );
+
+    let first = kan_as(dir.path(), None, &["identity", "role", "import"]);
+    assert!(first.ok, "import failed: {}", first.stderr);
+    assert!(
+        first.stdout.contains("safe to remove") && first.stdout.contains("older than v0.12"),
+        "import must say the file is unread and name the one reason to keep it: {}",
+        first.stdout
+    );
+
+    // AC-6: `--trust roles` names exactly the file's four DIDs.
+    let listed = kan_as(dir.path(), None, &["identity", "role", "list", "--json"]);
+    assert!(listed.ok, "{}", listed.stderr);
+    let view: serde_json::Value = serde_json::from_str(&listed.stdout).unwrap();
+    let got: BTreeSet<String> = view["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["did"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        got, expected,
+        "import produced a different author set than the file declared: {view}"
+    );
+
+    // AC-6, second half: running it twice adds nothing.
+    let second = kan_as(dir.path(), None, &["identity", "role", "import"]);
+    assert!(second.ok, "second import failed: {}", second.stderr);
+    assert!(
+        second.stdout.contains("nothing new to import"),
+        "a second import should be a no-op: {}",
+        second.stdout
+    );
+    let after_twice = kan_as(dir.path(), None, &["identity", "role", "list", "--json"]);
+    let view2: serde_json::Value = serde_json::from_str(&after_twice.stdout).unwrap();
+    assert_eq!(
+        view2["roles"].as_array().unwrap().len(),
+        4,
+        "the second import duplicated declarations: {view2}"
+    );
+
+    // AC-7: the file is untouched, byte for byte.
+    assert_eq!(
+        std::fs::read(&roles_file).unwrap(),
+        before,
+        "import modified `.kan/roles`, which it must never do"
+    );
+}
+
+/// Import **reports** a row whose name is already declared for a different
+/// DID, and does not rebind it.
+///
+/// Latest-wins is the fold's rule for duplicates (REQ-6), and applying it
+/// during a migration would silently repoint a live role at whatever an old
+/// file happened to say — the one moment a quiet change is least welcome.
+#[test]
+fn import_refuses_to_rebind_a_live_name() {
+    let dir = workspace_with_own_identity();
+    let add = kan_as(dir.path(), None, &["identity", "role", "add", "prover"]);
+    assert!(add.ok, "role add failed: {}", add.stderr);
+
+    let live = kan_as(dir.path(), None, &["identity", "role", "list", "--json"]);
+    let view: serde_json::Value = serde_json::from_str(&live.stdout).unwrap();
+    let live_did = view["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "prover")
+        .unwrap()["did"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    std::fs::write(
+        dir.path().join(".kan/roles"),
+        "did:key:zDnaeSezF2t8gTQrOFpVmvSMPFsxqRDzZL6JGjTxjJ2TvNqYe\tprover\t/gone\n",
+    )
+    .unwrap();
+
+    let import = kan_as(dir.path(), None, &["identity", "role", "import"]);
+    assert!(
+        import.ok,
+        "import should not fail on a conflict: {}",
+        import.stderr
+    );
+    assert!(
+        import.stderr.contains("NOT imported"),
+        "the conflict must be reported: {}",
+        import.stderr
+    );
+
+    let after = kan_as(dir.path(), None, &["identity", "role", "list", "--json"]);
+    let view: serde_json::Value = serde_json::from_str(&after.stdout).unwrap();
+    let still = view["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "prover")
+        .unwrap()["did"]
+        .as_str()
+        .unwrap();
+    assert_eq!(
+        still, live_did,
+        "import rebound a live role name to the file's DID: {view}"
     );
 }
 

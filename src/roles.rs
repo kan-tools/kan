@@ -62,6 +62,41 @@ impl Declared {
     }
 }
 
+/// Every DID that has authored a `RoleDeclaration` here, with each one's live
+/// declared set — resolved **without needing to know who this workspace is**.
+///
+/// **This is what makes REQ-9's adopt work in the case it exists for.** Asking
+/// [`declared`] would ask `workspace_identity`, which is precisely what is
+/// missing when a key has been lost — resolution would return
+/// [`Declared::NoWorkspaceIdentity`], the set would be empty, and adopt would
+/// carry nothing across while reporting success. Every claim carries its own
+/// author, so "who declared roles here" is answerable with no identity at all.
+///
+/// Returns one entry per declaring author, so a caller can refuse to guess
+/// when there is more than one rather than picking the wrong registry.
+pub fn declaring_authors(claims: &[(Cid, StoredClaim)]) -> Vec<(Did, Vec<DeclaredRole>)> {
+    let mut authors: Vec<Did> = Vec::new();
+    for (_, stored) in claims {
+        if !matches!(stored.claim.content.body, ClaimBody::RoleDeclaration { .. }) {
+            continue;
+        }
+        let did = &stored.claim.content.author.did;
+        if !authors.iter().any(|a| a == did) {
+            authors.push(did.clone());
+        }
+    }
+    authors
+        .into_iter()
+        .filter_map(|did| match declared(claims, Some(&did)) {
+            Declared::Roles(roles) => Some((did, roles)),
+            // An author every one of whose declarations is retracted has no
+            // live registry to carry, which is not the same as never having
+            // declared -- and either way there is nothing to move.
+            _ => None,
+        })
+        .collect()
+}
+
 /// A notice for a workspace holding a **legacy `.kan/roles`** that has not
 /// been imported — or the empty string when there is nothing to say.
 ///

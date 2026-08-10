@@ -795,6 +795,175 @@ fn sign_error(e: crate::sign::Error) -> Error {
     Error::Workspace(crate::workspace::Error::Sign(e))
 }
 
+/// `kan identity adopt`, plus REQ-9: carry the role registry across.
+///
+/// Adopt changes which DID this workspace resolves to, and a declaration is
+/// honoured only when its author *is* that DID — so without this, adopting
+/// silently empties `--trust roles`, and the declarations cannot even be
+/// retracted afterwards, retraction being self-only.
+///
+/// **The set is captured before the switch, and resolved from the declaration
+/// authors rather than from the workspace identity.** That ordering is the
+/// whole design: asking `declared_roles()` would ask `workspace_identity`,
+/// which is exactly what is missing in the case adopt exists for. Reading the
+/// authors off the claims themselves needs no identity at all, so this works
+/// when a key has been lost — which is when it matters.
+///
+/// More than one declaring author means **report and carry nothing**. Picking
+/// one would be guessing which registry was the workspace's, and a wrong guess
+/// here installs a role set the operator never declared.
+pub async fn adopt_identity_carrying_roles(
+    ws: &Workspace,
+    key_path: &Path,
+) -> Result<String, Error> {
+    let declaring = crate::roles::declaring_authors(&ws.index.all_stored_claims()?);
+    let mut out = adopt_identity(ws, key_path)?;
+
+    let adopted = crate::sign::Identity::load_existing(key_path)
+        .map_err(sign_error)?
+        .did();
+
+    let carry: Vec<crate::roles::DeclaredRole> = match declaring.len() {
+        0 => return Ok(out),
+        1 => {
+            let (author, roles) = &declaring[0];
+            // Already this identity's registry: nothing to move, and
+            // re-declaring would append duplicates for no reason.
+            if author == &adopted {
+                return Ok(out);
+            }
+            roles.clone()
+        }
+        _ => {
+            out.push_str(&format!(
+                "\nNOTE: {} different identities have declared roles in this log, so none \
+                 were carried across -- kan will not guess which registry was this \
+                 workspace's. Re-declare the ones you want with `kan identity role add`.\n",
+                declaring.len()
+            ));
+            return Ok(out);
+        }
+    };
+
+    // A second, WRITABLE open: the workspace now resolves to the adopted key,
+    // so these declarations are authored by it and are therefore honoured.
+    let mut writable = Workspace::open(&ws.root).await?;
+    for role in &carry {
+        append(
+            &mut writable,
+            SubjectRef::Local(Rkey::from(format!("role/{}", role.name))),
+            ClaimBody::RoleDeclaration {
+                did: role.did.clone(),
+                name: role.name.clone(),
+            },
+            vec![],
+            None,
+        )
+        .await?;
+    }
+
+    out.push_str(&format!(
+        "\ncarried {} role declaration(s) across to {adopted}:\n",
+        carry.len()
+    ));
+    for role in &carry {
+        out.push_str(&format!("  {}\t{}\n", role.name, role.did));
+    }
+    out.push_str(
+        "The previous identity's declarations remain in the log, unretracted -- nothing was \
+         removed, they simply no longer name this workspace.\n",
+    );
+    Ok(out)
+}
+
+/// What `kan identity role import` did, so the CLI reports facts rather than
+/// re-deriving them.
+pub struct ImportSummary {
+    pub imported: Vec<(String, String)>,
+    pub already_declared: Vec<String>,
+    /// Rows whose name is already declared for a **different** DID. Reported
+    /// and **not** imported: latest-wins would silently rebind a live name,
+    /// and a migration is the worst possible moment to do that quietly.
+    pub conflicts: Vec<(String, String, String)>,
+}
+
+/// `kan identity role import` — REQ-5's one-shot migration off `.kan/roles`.
+///
+/// Reads the file, appends one `RoleDeclaration` per row, and **never rewrites
+/// or deletes it**. Idempotent by (name, DID): a row already declared is
+/// skipped rather than duplicated, so running it twice is a no-op and running
+/// it after a partial failure finishes the job.
+///
+/// The file is left alone for a reason the CLI then states: a kan older than
+/// v0.12 reads it and cannot interpret a declaration, so removing it is a
+/// decision only the operator can make. kan says it is now unread and safe to
+/// remove, names that one caveat, and stops there.
+pub async fn import_roles(ws: &mut Workspace) -> Result<ImportSummary, Error> {
+    let kan_dir = ws.root.join(".kan");
+    let rows = crate::sign::list_roles(&kan_dir).map_err(sign_error)?;
+
+    // REQ-7 applies here exactly as it does to `role add`: importing under an
+    // identity the workspace does not resolve to would write declarations that
+    // grant nothing, and a migration that silently produces an inert registry
+    // is worse than one that refuses.
+    let workspace_did = crate::sign::workspace_identity(&kan_dir)
+        .map_err(sign_error)?
+        .map(|identity| identity.did());
+    let signer = ws.identity()?.did();
+    match &workspace_did {
+        None => {
+            return Err(sign_error(
+                crate::sign::Error::NoWorkspaceIdentityToDeclare { signer },
+            ))
+        }
+        Some(workspace) if workspace != &signer => {
+            return Err(sign_error(crate::sign::Error::NotTheWorkspaceIdentity {
+                signer,
+                workspace: workspace.clone(),
+            }))
+        }
+        Some(_) => {}
+    }
+
+    let declared = ws.declared_roles()?;
+    let mut summary = ImportSummary {
+        imported: Vec::new(),
+        already_declared: Vec::new(),
+        conflicts: Vec::new(),
+    };
+
+    for row in rows {
+        match declared.roles().iter().find(|r| r.name == row.name) {
+            Some(live) if live.did == row.did => {
+                summary.already_declared.push(row.name);
+                continue;
+            }
+            Some(live) => {
+                summary
+                    .conflicts
+                    .push((row.name, row.did, live.did.clone()));
+                continue;
+            }
+            None => {}
+        }
+
+        append(
+            ws,
+            SubjectRef::Local(Rkey::from(format!("role/{}", row.name))),
+            ClaimBody::RoleDeclaration {
+                did: row.did.clone(),
+                name: row.name.clone(),
+            },
+            vec![],
+            None,
+        )
+        .await?;
+        summary.imported.push((row.name, row.did));
+    }
+
+    Ok(summary)
+}
+
 pub async fn declare_role(
     ws: &mut Workspace,
     name: &str,
@@ -2378,7 +2547,19 @@ pub fn context_json(
 pub fn roles_json(ws: &Workspace, roles: &[crate::roles::DeclaredRole]) -> Result<String, Error> {
     to_json(&crate::json::RolesJson {
         v: crate::json::SCHEMA_VERSION,
-        active: ws.identity()?.did(),
+        // Empty rather than an error when no identity resolves. Listing the
+        // roles a workspace declared is a READ, and the state where you most
+        // want to run it is the one where the identity is gone -- refusing
+        // there makes the lost-key workspace uninspectable, which is the
+        // "a read that errors is one step from a read that needs an identity"
+        // shape REQ-8 rejected for `--trust roles`. Found by REQ-9's own
+        // lost-key test failing on the precondition rather than the property.
+        // `active_did` answers "who would sign here" via the selection and
+        // creates nothing, where `identity()` needs a workspace opened for
+        // writing. Empty when none resolves, so a lost-key workspace can still
+        // list what it declared -- the state an operator is most likely to be
+        // inspecting. Found by REQ-9's lost-key test failing on its precondition.
+        active: ws.active_did().unwrap_or_default(),
         roles: roles
             .iter()
             .map(|r| crate::json::RoleJson {
