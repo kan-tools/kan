@@ -143,7 +143,20 @@ enum Env {
     Exists,
     /// Naming a path that does not exist.
     Missing,
-    /// Naming a path that does not exist, which `.kan/roles` declares.
+    /// Naming a path that does not exist, which a **legacy `.kan/roles`
+    /// file** declares.
+    ///
+    /// **Since v0.12 this cell proves the legacy file is INERT.** It used to
+    /// have its own outcome — `.kan/roles` mapped the path to a role name, so
+    /// the refusal could say "the declared role `prover` has no key at ...".
+    /// REQ-4 deletes that error and the key-path column it depended on, so the
+    /// answer here is now the same `SelectionMissing` any missing path gets.
+    ///
+    /// The dimension is kept rather than dropped precisely because the outcome
+    /// converged: it is now the assertion that a `.kan/roles` left on disk
+    /// after the migration changes nothing about how kan resolves an identity.
+    /// That is a property `kan identity role import` depends on — it neither
+    /// rewrites nor deletes the file — and nothing else in the suite pins it.
     MissingDeclared,
 }
 
@@ -171,7 +184,6 @@ enum Expect {
     /// REQ-2: the selection names a path that does not exist. On BOTH paths --
     /// `--trust me` no longer answers with somebody else's identity either.
     SelectionMissing,
-    RoleKeyMissing,
 }
 
 struct Cell {
@@ -220,7 +232,9 @@ fn cells() -> Vec<Cell> {
         // that demonstrably HAS had an identity mints a second one here.
         Cell { row: 18, env: Missing, layout: SEED_ID, log_has_claims: false, read: SelectionMissing, write: SelectionMissing },
         Cell { row: 19, env: Missing, layout: ID,      log_has_claims: false, read: SelectionMissing, write: SelectionMissing },
-        Cell { row: 20, env: MissingDeclared, layout: NOTHING, log_has_claims: false, read: RoleKeyMissing, write: RoleKeyMissing },
+        // v0.12/REQ-4: was `RoleKeyMissing`. A legacy `.kan/roles` no longer
+        // participates in resolution, so this now asserts it is ignored.
+        Cell { row: 20, env: MissingDeclared, layout: NOTHING, log_has_claims: false, read: SelectionMissing, write: SelectionMissing },
     ]
 }
 
@@ -409,21 +423,16 @@ fn run_read(row: u32) {
                  cell is asserting the wrong thing.\nstderr: {stderr}"
             );
         }
-        Expect::SelectionMissing | Expect::RoleKeyMissing => {
+        Expect::SelectionMissing => {
             let (stdout, stderr, ok) = kan(
                 built.path(),
                 built.env_path.as_deref(),
                 &["show", "cell", "--trust", "me", "--json"],
             );
             assert!(!ok, "row {row}: the read succeeded: {stdout}");
-            let want = if cell.read == Expect::SelectionMissing {
-                "does not exist"
-            } else {
-                "has no key at"
-            };
             assert!(
-                stderr.contains(want),
-                "row {row}: the read failed for the wrong reason (wanted {want:?})\nstderr: {stderr}"
+                stderr.contains("does not exist"),
+                "row {row}: the read failed for the wrong reason\nstderr: {stderr}"
             );
         }
         named => {
@@ -469,13 +478,6 @@ fn run_write(row: u32) {
             assert!(
                 built.env_path.as_ref().is_none_or(|p| !p.exists()),
                 "row {row}: a refused selection created the key file anyway"
-            );
-        }
-        Expect::RoleKeyMissing => {
-            assert!(!ok, "row {row}: the write succeeded: {stdout}");
-            assert!(
-                stderr.contains("has no key at"),
-                "row {row}: expected the declared-role refusal.\nstderr: {stderr}"
             );
         }
         // The three minting outcomes all assert the same two things: the

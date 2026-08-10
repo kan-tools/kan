@@ -269,7 +269,40 @@ impl Workspace {
         // `create_workspace_identity` is the only thing that writes one, and
         // is reached only when this workspace genuinely has none.
         let selection = crate::sign::Selection::from_env();
-        let identity = match crate::sign::signing_identity(&kan_dir, &selection)? {
+        let resolved = match crate::sign::signing_identity(&kan_dir, &selection) {
+            Ok(resolved) => resolved,
+            // REQ-4: name the roles this workspace declares. `sign` cannot --
+            // the declared set is a projection over claims and that layer is
+            // below the log -- so the clause is filled here, the first place
+            // that can see both the selection and the log. This replaces
+            // `DeclaredRoleKeyMissing`, which answered the same question by
+            // matching the missing path against a registry column that no
+            // longer exists, and only for keys kan itself had minted.
+            Err(crate::sign::Error::SelectionMissing { path, .. }) => {
+                let names: Vec<String> = self
+                    .declared_roles()
+                    .map(|declared| {
+                        declared
+                            .roles()
+                            .iter()
+                            .map(|role| role.name.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                return Err(Error::Sign(crate::sign::Error::SelectionMissing {
+                    path,
+                    declared: match names.is_empty() {
+                        true => String::new(),
+                        false => format!(
+                            "\n\nThis workspace declares these roles: {}.",
+                            names.join(", ")
+                        ),
+                    },
+                }));
+            }
+            Err(e) => return Err(e.into()),
+        };
+        let identity = match resolved {
             Some(identity) => identity,
             None => crate::sign::create_workspace_identity(&kan_dir)?,
         };
@@ -658,23 +691,60 @@ impl Workspace {
     /// frames is two reads rather than a sequence of mutations
     /// (`.design/kan-read-contract.md` REQ-2).
     /// `--trust roles` expands to every identity this workspace declared
-    /// (`kan identity role add`) **plus the active one**, all at full
-    /// weight.
+    /// (`kan identity role add`), all at full weight — and to **nothing
+    /// else**. The active identity is *not* injected on top.
     ///
-    /// The active identity is included because leaving it out would make
-    /// the obvious command — "show me everything this workspace's own
-    /// identities wrote" — quietly drop the caller's own claims, which is a
-    /// smaller version of the bug this milestone exists to fix. A caller
-    /// wanting a role hierarchy rather than a flat union names the DIDs and
-    /// weights explicitly.
+    /// *This paragraph said the opposite until v0.12, and was wrong from the
+    /// moment v0.11 narrowed the alias.* It described the active identity as
+    /// included, and argued the case at length, while the body below has only
+    /// ever mapped the declared set. `tests/trust_vocabulary.rs:203` pins the
+    /// narrowing in words. The reason `roles` no longer over-reports is that
+    /// `Local` became the default: "everything this workspace wrote" is
+    /// already answered, so `roles` is free to mean exactly what it says,
+    /// which is what makes `local` minus `roles` a meaningful difference.
     pub fn role_trust_entries(&self) -> Result<Vec<(String, f64)>, Error> {
-        Ok(crate::sign::list_roles(&self.root.join(".kan"))?
-            .into_iter()
-            .map(|role| (role.did, 1.0))
+        Ok(self
+            .declared_roles()?
+            .roles()
+            .iter()
+            .map(|role| (role.did.clone(), 1.0))
             .collect())
     }
 
-    /// Authors with a claim in this log that no `.kan/roles` entry declares —
+    /// The roles this workspace has declared, resolved from the log
+    /// (`.design/role-declarations.md` REQ-3).
+    ///
+    /// Supplies the two inputs `roles::declared` needs and does nothing else,
+    /// so the rule itself stays pure and testable without a workspace.
+    ///
+    /// **Resolves the workspace identity, never a selection.** It asks
+    /// `sign::workspace_identity` — question 1, "which identity does this
+    /// workspace *have*" — rather than `signing_identity`, so a caller running
+    /// with `KAN_IDENTITY_FILE` pointed at a role cannot shift which
+    /// declarations are honoured. Reads no key it does not already need and
+    /// creates nothing: `workspace_identity` is pure by REQ-1.
+    ///
+    /// An unreachable identity is [`crate::roles::Declared::NoWorkspaceIdentity`]
+    /// rather than an error, because "who did this workspace vouch for" is a
+    /// legitimate question with a legitimate empty answer, and an erroring
+    /// alias would make `--trust roles --trust did:key:…` fail as a whole when one
+    /// member could not expand.
+    pub fn declared_roles(&self) -> Result<crate::roles::Declared, Error> {
+        let workspace_did = match crate::sign::workspace_identity(&self.root.join(".kan")) {
+            Ok(Some(identity)) => Some(identity.did()),
+            // Unreachable is indistinguishable from absent *for this
+            // question*: either way no declaration can be honoured, and
+            // saying so beats propagating a keychain error into every read
+            // that happens to name `roles` (#96).
+            Ok(None) | Err(_) => None,
+        };
+        Ok(crate::roles::declared(
+            &self.index.all_stored_claims()?,
+            workspace_did.as_deref(),
+        ))
+    }
+
+    /// Authors with a claim in this log that no live declaration names —
     /// `local` minus `roles` (`.design/identity-surface.md` REQ-9).
     ///
     /// The signal that an unexpected identity has written here, as **data**
@@ -684,11 +754,12 @@ impl Workspace {
     /// `Local` made log membership derivable and `roles` narrowed to mean
     /// what it says.
     pub fn undeclared_log_authors(&self) -> Result<Vec<AuthorId>, Error> {
-        let declared: std::collections::HashSet<String> =
-            crate::sign::list_roles(&self.root.join(".kan"))?
-                .into_iter()
-                .map(|role| role.did)
-                .collect();
+        let declared: std::collections::HashSet<String> = self
+            .declared_roles()?
+            .roles()
+            .iter()
+            .map(|role| role.did.clone())
+            .collect();
         let mut out: Vec<AuthorId> = self
             .index
             .log_authors()?
@@ -711,8 +782,25 @@ impl Workspace {
     /// role list, which is workspace state — but it is *read* per
     /// invocation and never set by one, so the property holds.
     pub fn trust_from(&self, specs: &[String]) -> Result<TrustBase, Error> {
+        Ok(self.trust_from_detailed(specs)?.0)
+    }
+
+    /// [`Self::trust_from`], plus **why** the base expanded to no authors when
+    /// it did (`.design/role-declarations.md` REQ-8).
+    ///
+    /// The reason is produced here rather than at the render boundary because
+    /// this is the only layer that knows which alias produced the emptiness.
+    /// An empty base has more than one cause -- `roles` with nothing declared,
+    /// and `local` on a log nobody has written to -- and attaching a
+    /// roles-flavoured explanation to the second would be a confident wrong
+    /// answer, which is the class this milestone exists to remove rather than
+    /// relocate.
+    pub fn trust_from_detailed(
+        &self,
+        specs: &[String],
+    ) -> Result<(TrustBase, Option<String>), Error> {
         if specs.is_empty() {
-            return self.local_trust();
+            return Ok((self.local_trust()?, None));
         }
         // A lone `me` is `Solo` -- the same base the default used to be, and
         // the narrow frame REQ-5 keeps nameable. Combined with anything else
@@ -722,20 +810,38 @@ impl Workspace {
         // otherwise `--trust local` and no argument at all would report
         // different frames for identical views.
         if specs.len() == 1 && specs[0] == crate::fold::trust::LOCAL_ALIAS {
-            return self.local_trust();
+            return Ok((self.local_trust()?, None));
         }
         if specs.len() == 1 && specs[0] == crate::fold::trust::SELF_ALIAS {
-            return Ok(TrustBase::solo(AuthorId {
-                did: self.active_did()?,
-                agent: None,
-            }));
+            return Ok((
+                TrustBase::solo(AuthorId {
+                    did: self.active_did()?,
+                    agent: None,
+                }),
+                None,
+            ));
         }
 
+        let mut roles_reason: Option<String> = None;
         let mut weights = std::collections::HashMap::new();
         for spec in specs {
             if spec == crate::fold::trust::ROLES_ALIAS {
-                for (did, weight) in self.role_trust_entries()? {
-                    weights.insert(AuthorId { did, agent: None }, weight);
+                let declared = self.declared_roles()?;
+                // Recorded whenever `roles` contributes nothing, and reported
+                // only if the WHOLE base ends up empty -- so `--trust
+                // roles --trust did:key:...` still returns the named author's
+                // and says nothing misleading about the alias that added none.
+                if declared.roles().is_empty() {
+                    roles_reason = Some(crate::roles::empty_reason(&declared).to_string());
+                }
+                for role in declared.roles() {
+                    weights.insert(
+                        AuthorId {
+                            did: role.did.clone(),
+                            agent: None,
+                        },
+                        1.0,
+                    );
                 }
                 continue;
             }
@@ -750,15 +856,22 @@ impl Workspace {
             }
             let entry = crate::fold::trust::parse_entry(spec)?;
             if let Some(name) = entry.did.strip_prefix(crate::fold::trust::ROLE_PREFIX) {
-                let roles = crate::sign::list_roles(&self.root.join(".kan"))?;
+                let declared = self.declared_roles()?;
+                let roles = declared.roles();
                 let found = roles.iter().find(|role| role.name == name);
                 let did = match found {
                     Some(role) => role.did.clone(),
                     None => {
                         return Err(crate::fold::trust::SpecError::NoSuchRole {
                             spec: spec.to_string(),
+                            // Naming *why* the set is empty rather than only
+                            // that it is: "none declared" is a different
+                            // problem from "this workspace's identity is
+                            // unreachable, so none can be honoured", and a
+                            // caller who cannot tell them apart debugs the
+                            // wrong one.
                             declared: match roles.is_empty() {
-                                true => "none declared".to_string(),
+                                true => crate::roles::empty_reason(&declared).to_string(),
                                 false => roles
                                     .iter()
                                     .map(|r| r.name.clone())
@@ -766,7 +879,7 @@ impl Workspace {
                                     .join(", "),
                             },
                         }
-                        .into())
+                        .into());
                     }
                 };
                 weights.insert(AuthorId { did, agent: None }, entry.weight);
@@ -784,7 +897,11 @@ impl Workspace {
             };
             weights.insert(AuthorId { did, agent: None }, entry.weight);
         }
-        Ok(TrustBase::peer_contested(weights))
+        let reason = match weights.is_empty() {
+            true => roles_reason,
+            false => None,
+        };
+        Ok((TrustBase::peer_contested(weights), reason))
     }
 }
 

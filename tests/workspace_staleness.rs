@@ -114,7 +114,7 @@ async fn open_skips_rebuild_when_the_log_root_is_unchanged() {
     // `Workspace::open` should skip the rebuild and leave the tampered
     // index content in place.
     let ws = Workspace::open(dir.path()).await.unwrap();
-    let show_out = actions::show(&ws, "bug-42", &ws.local_trust().unwrap()).unwrap();
+    let show_out = actions::show(&ws, "bug-42", &ws.local_trust().unwrap(), None).unwrap();
     assert!(
         show_out.contains("TAMPERED"),
         "expected the skip to leave tampered index content in place, got: {show_out}"
@@ -140,7 +140,7 @@ async fn open_skips_rebuild_when_the_log_root_is_unchanged() {
     drop(ws);
 
     let ws = Workspace::open(dir.path()).await.unwrap();
-    let show_out = actions::show(&ws, "bug-42", &ws.local_trust().unwrap()).unwrap();
+    let show_out = actions::show(&ws, "bug-42", &ws.local_trust().unwrap(), None).unwrap();
     assert!(
         show_out.contains("original text") && !show_out.contains("TAMPERED"),
         "expected the full rebuild (triggered by the intervening write) to \

@@ -762,6 +762,425 @@ pub fn durability_of(ws: &Workspace, class: &SubjectView) -> Durability {
     }
 }
 
+/// `sign::Error` reaches `actions::Error` through `workspace::Error`, and there
+/// is no blanket two-hop `From`. Named once rather than spelled out at every
+/// call site.
+///
+/// *This helper carried a long docstring documenting `kan identity adopt` and
+/// `kan identity role add`, left behind when those functions were inserted
+/// mid-docstring. Removed after a cold review.*
+///
+/// *Four successive review rounds then corrected the number of call sites it
+/// claimed — five, six, nine — each correction wrong, and the last one written
+/// in the same commit that said the number was "gone rather than corrected a
+/// third time" while leaving it in the tree. It is gone now. The lesson is
+/// worth more than the number: **a hand-maintained count in prose is a
+/// citation that rots**, and this project has a script that checks citations
+/// and nothing that checks counts.*
+fn sign_error(e: crate::sign::Error) -> Error {
+    Error::Workspace(crate::workspace::Error::Sign(e))
+}
+
+/// `kan identity adopt`, plus REQ-9: carry the role registry across.
+///
+/// Adopt changes which DID this workspace resolves to, and a declaration is
+/// honoured only when its author *is* that DID — so without this, adopting
+/// silently empties `--trust roles`, and the declarations cannot even be
+/// retracted afterwards, retraction being self-only.
+///
+/// **The set is captured before the switch, and resolved from the declaration
+/// authors rather than from the workspace identity.** That ordering is the
+/// whole design: asking `declared_roles()` would ask `workspace_identity`,
+/// which is exactly what is missing in the case adopt exists for. Reading the
+/// authors off the claims themselves needs no identity at all, so this works
+/// when a key has been lost — which is when it matters.
+///
+/// More than one declaring author means **report and carry nothing**. Picking
+/// one would be guessing which registry was the workspace's, and a wrong guess
+/// here installs a role set the operator never declared.
+pub async fn adopt_identity_carrying_roles(
+    ws: &Workspace,
+    key_path: &Path,
+) -> Result<String, Error> {
+    let declaring = crate::roles::declaring_authors(&ws.index.all_stored_claims()?);
+    let mut out = adopt_identity(ws, key_path)?;
+
+    let adopted = crate::sign::Identity::load_existing(key_path)
+        .map_err(sign_error)?
+        .did();
+
+    let carry: Vec<crate::roles::DeclaredRole> = match declaring.len() {
+        0 => return Ok(out),
+        1 => {
+            let (author, roles) = &declaring[0];
+            // Already this identity's registry: nothing to move, and
+            // re-declaring would append duplicates for no reason.
+            if author == &adopted {
+                return Ok(out);
+            }
+            roles.clone()
+        }
+        _ => {
+            out.push_str(&format!(
+                "\nNOTE: {} different identities have declared roles in this log, so none \
+                 were carried across -- kan will not guess which registry was this \
+                 workspace's. Re-declare the ones you want with `kan identity role add`.\n",
+                declaring.len()
+            ));
+            return Ok(out);
+        }
+    };
+
+    // A second, WRITABLE open. It does NOT necessarily sign as the adopted
+    // key: `commit_identity` resolves a SELECTION from the environment, so
+    // with `KAN_IDENTITY_FILE` pointed anywhere else these declarations would
+    // be authored by that identity instead -- valid, signed, and inert, since
+    // only the workspace identity's declarations are honoured (REQ-7).
+    //
+    // This comment previously ASSERTED that the open resolves to the adopted
+    // key. It does not, and a cold review measured the consequence: adopt
+    // reported "carried 3 role declaration(s) across to <adopted>" while
+    // authoring all three as the stray selection, and `--trust roles` went
+    // from three authors to zero. A complete-looking write that grants
+    // nothing, inside the requirement written to eliminate them -- and a
+    // success message naming an identity that authored none of it.
+    //
+    // So it is checked rather than asserted, and the carry is skipped rather
+    // than written wrong. `KAN_IDENTITY_FILE` is set in exactly the
+    // CI/`day`/agent configuration the design names, so this is the common
+    // path, not an exotic one.
+    let mut writable = Workspace::open(&ws.root).await?;
+    let signer = writable.active_did()?;
+    if signer != adopted {
+        out.push_str(&format!(
+            "\nNOTE: the role registry was NOT carried across, and this workspace now \
+             declares nothing.\n\n\
+             KAN_IDENTITY_FILE selects {signer}, so the declarations would have been \
+             authored by that identity -- and only the identity a workspace RESOLVES to \
+             ({adopted}) can declare a role, so they would have granted nothing.\n\n\
+             Re-run `kan identity adopt --key <path>` with KAN_IDENTITY_FILE unset to \
+             carry them across. Nothing has been lost: the previous declarations are \
+             still in the log.\n"
+        ));
+        return Ok(out);
+    }
+
+    for role in &carry {
+        append(
+            &mut writable,
+            SubjectRef::Local(Rkey::from(format!("role/{}", role.name))),
+            ClaimBody::RoleDeclaration {
+                did: role.did.clone(),
+                name: role.name.clone(),
+            },
+            vec![],
+            None,
+        )
+        .await?;
+    }
+
+    // THE ADOPTED IDENTITY ITSELF, which this function is the third writer of
+    // role declarations to forget.
+    //
+    // Carrying the previous identity's registry leaves the workspace declaring
+    // roles while its OWN new identity is undeclared -- unless the adopted key
+    // happens to be one of the roles carried. Then `role list` prints
+    // `active: <A>` above a list without A, `--trust roles` drops every claim
+    // A ever wrote and every one it writes from here on, and adopt reports
+    // success. Reachable with no hand-editing: an agent key writes here via
+    // KAN_IDENTITY_FILE, the workspace key later becomes unreachable, and the
+    // operator adopts the agent key -- which is #90's flow, the one adopt
+    // exists for.
+    //
+    // Found by a FOURTH review round, scoped deliberately at this rule because
+    // the previous three each fixed only the caller they happened to look at.
+    // The helper was extracted for `declare_role` and `import_roles`; this
+    // caller existed the whole time and was not one of them. Extracting a
+    // shared rule does not, by itself, find who else should be calling it.
+    let declared_after = writable.declared_roles()?;
+    if let Some(auto) =
+        ensure_workspace_declared(&mut writable, Some(adopted.clone()), &declared_after, &[])
+            .await?
+    {
+        out.push_str(&format!(
+            "\nalso declared the adopted identity as `{}`: {}\n",
+            auto.name, auto.did
+        ));
+    }
+
+    out.push_str(&format!(
+        "\ncarried {} role declaration(s) across to {adopted}:\n",
+        carry.len()
+    ));
+    for role in &carry {
+        out.push_str(&format!("  {}\t{}\n", role.name, role.did));
+    }
+    out.push_str(
+        "The previous identity's declarations remain in the log, unretracted -- nothing was \
+         removed, they simply no longer name this workspace.\n",
+    );
+    Ok(out)
+}
+
+/// What `kan identity role import` did, so the CLI reports facts rather than
+/// re-deriving them.
+pub struct ImportSummary {
+    pub imported: Vec<(String, String)>,
+    pub already_declared: Vec<String>,
+    /// Rows whose name is already declared for a **different** DID. Reported
+    /// and **not** imported: latest-wins would silently rebind a live name,
+    /// and a migration is the worst possible moment to do that quietly.
+    pub conflicts: Vec<(String, String, String)>,
+    /// The workspace's own identity, if importing declared it — a claim the
+    /// operator did not ask for and must still be told about.
+    pub auto_declared: Option<crate::roles::DeclaredRole>,
+}
+
+/// `kan identity role import` — REQ-5's one-shot migration off `.kan/roles`.
+///
+/// Reads the file, appends one `RoleDeclaration` per row, and **never rewrites
+/// or deletes it**. Idempotent by (name, DID): a row already declared is
+/// skipped rather than duplicated, so running it twice is a no-op and running
+/// it after a partial failure finishes the job.
+///
+/// The file is left alone for a reason the CLI then states: a kan older than
+/// v0.12 reads it and cannot interpret a declaration, so removing it is a
+/// decision only the operator can make. kan says it is now unread and safe to
+/// remove, names that one caveat, and stops there.
+pub async fn import_roles(ws: &mut Workspace) -> Result<ImportSummary, Error> {
+    let kan_dir = ws.root.join(".kan");
+    let rows = crate::sign::list_roles(&kan_dir).map_err(sign_error)?;
+
+    // REQ-7 applies here exactly as it does to `role add`: importing under an
+    // identity the workspace does not resolve to would write declarations that
+    // grant nothing, and a migration that silently produces an inert registry
+    // is worse than one that refuses.
+    let workspace_did = crate::sign::workspace_identity(&kan_dir)
+        .map_err(sign_error)?
+        .map(|identity| identity.did());
+    let signer = ws.identity()?.did();
+    match &workspace_did {
+        None => {
+            return Err(sign_error(
+                crate::sign::Error::NoWorkspaceIdentityToDeclare { signer },
+            ))
+        }
+        Some(workspace) if workspace != &signer => {
+            return Err(sign_error(crate::sign::Error::NotTheWorkspaceIdentity {
+                signer,
+                workspace: workspace.clone(),
+            }))
+        }
+        Some(_) => {}
+    }
+
+    let declared = ws.declared_roles()?;
+    let mut summary = ImportSummary {
+        imported: Vec::new(),
+        already_declared: Vec::new(),
+        conflicts: Vec::new(),
+        auto_declared: None,
+    };
+
+    for row in rows {
+        match declared.roles().iter().find(|r| r.name == row.name) {
+            Some(live) if live.did == row.did => {
+                summary.already_declared.push(row.name);
+                continue;
+            }
+            Some(live) => {
+                summary
+                    .conflicts
+                    .push((row.name, row.did, live.did.clone()));
+                continue;
+            }
+            None => {}
+        }
+
+        append(
+            ws,
+            SubjectRef::Local(Rkey::from(format!("role/{}", row.name))),
+            ClaimBody::RoleDeclaration {
+                did: row.did.clone(),
+                name: row.name.clone(),
+            },
+            vec![],
+            None,
+        )
+        .await?;
+        summary.imported.push((row.name, row.did));
+    }
+
+    // The workspace's own identity, if the file did not already name it.
+    //
+    // A legacy `.kan/roles` written by kan always carried a `primary` row,
+    // because `register_active` wrote one when the first role was declared --
+    // but a hand-edited or partial file need not, and then import left the
+    // workspace declaring roles while its OWN identity was undeclared, so
+    // `--trust roles` dropped every claim it had ever written. `role list`
+    // printed `active: <W>` directly above a list without W.
+    //
+    // Found by a third cold review, which noted that `f7f37cb` had closed this
+    // for a subsequent `role add` and left it open on the plain migration path
+    // -- the one this milestone exists to serve. Same rule, same helper, so
+    // the two paths cannot answer it differently again.
+    let declared_now = ws.declared_roles()?;
+    summary.auto_declared =
+        ensure_workspace_declared(ws, workspace_did, &declared_now, &[]).await?;
+
+    Ok(summary)
+}
+
+/// Declare the workspace's own identity as a role, unless it already is.
+///
+/// **One implementation, called by both `declare_role` and `import_roles`**,
+/// because three review rounds have now found a defect in this single rule and
+/// each fix touched only the caller that round happened to look at. Two
+/// implementations of one fact drift; two *gates* on one fact drift faster.
+///
+/// The rule is `main`'s `register_active`, restated: record the workspace's
+/// pre-existing identity **if it is not already recorded**, by DID. Without
+/// it, `--trust roles` omits every claim written before any role existed --
+/// which is the whole reason the auto-declaration exists.
+///
+/// `also_taken` is any name the caller is about to claim in the same
+/// operation, so `primary_role_name` can route around it.
+async fn ensure_workspace_declared(
+    ws: &mut Workspace,
+    workspace_did: Option<crate::claim::Did>,
+    declared: &crate::roles::Declared,
+    also_taken: &[String],
+) -> Result<Option<crate::roles::DeclaredRole>, Error> {
+    let Some(workspace) = workspace_did else {
+        return Ok(None);
+    };
+    if declared.roles().iter().any(|role| role.did == workspace) {
+        return Ok(None);
+    }
+
+    // Every name already spoken for -- what the caller is claiming now, plus
+    // everything live. `primary_role_name` checks each candidate against this
+    // rather than only the first, which is what a third review round had to
+    // fix in it.
+    let mut taken: Vec<String> = also_taken.to_vec();
+    taken.extend(declared.roles().iter().map(|role| role.name.clone()));
+    let primary = crate::sign::primary_role_name(&workspace, &taken);
+
+    append(
+        ws,
+        SubjectRef::Local(Rkey::from(format!("role/{primary}"))),
+        ClaimBody::RoleDeclaration {
+            did: workspace.clone(),
+            name: primary.clone(),
+        },
+        vec![],
+        None,
+    )
+    .await?;
+
+    // Returned rather than swallowed so the caller can SAY it happened.
+    //
+    // This append is a claim the operator did not ask for, and it was
+    // invisible: `kan identity role add auditor` printed only `auditor`. That
+    // silence is what made two of the five blocking findings in this feature
+    // silent -- in both, the auto-declaration wrote or failed to write the
+    // wrong thing and nothing on screen would have shown it. REQ-9 earns its
+    // own write side effect by being "visible, deliberate, reversible"; this
+    // one was two of the three.
+    Ok(Some(crate::roles::DeclaredRole {
+        name: primary,
+        did: workspace,
+    }))
+}
+
+/// `kan identity role add <name>` — mint a role key and **declare it as a
+/// claim** (`.design/role-declarations.md` REQ-3/REQ-6/REQ-7).
+///
+/// **Refuse, then mint, then append**, and the order is deliberate: a refusal
+/// leaves no key file and no claim, so a rejected declaration costs nothing to
+/// retry. (An earlier docstring described this as "mint the key, refuse, then
+/// append" — false when written, and deleted as a duplicate before anyone
+/// noticed it was also wrong.)
+///
+/// **The subject is `role/<name>`**, so each declaration has a readable history
+/// of its own: `kan show role/prover` is when it was declared, retracted and
+/// re-declared, which is how a retraction is aimed without hunting a CID out of
+/// a shared registry.
+///
+/// The workspace's own identity is auto-declared alongside the first role it
+/// does not already appear in — see the gate below, and
+/// `sign::primary_role_name` for why it exists at all.
+pub async fn declare_role(
+    ws: &mut Workspace,
+    name: &str,
+    key_path: &Path,
+) -> Result<(crate::sign::Role, Option<crate::roles::DeclaredRole>), Error> {
+    // REQ-7: a declaration by anyone but the workspace identity grants
+    // nothing, so writing one is worse than refusing -- it is a
+    // complete-looking write with no effect, which is the defect class this
+    // milestone exists to close.
+    let workspace_did = crate::sign::workspace_identity(&ws.root.join(".kan"))
+        .map_err(sign_error)?
+        .map(|identity| identity.did());
+    let signer = ws.identity()?.did();
+    // BOTH arms refuse, and the `None` one is not a formality. Written first
+    // as `if let Some(workspace) = ...`, which skipped the check entirely when
+    // a workspace had no identity of its own -- so `role add` succeeded,
+    // printed "declared role `reviewer`", and `--trust roles` could never
+    // honour it, because resolution had no identity to match the author
+    // against. A guard with a silent hole in exactly the shape it guards
+    // against. Found by the change-ledger golden, which had never run
+    // `role list` against a workspace with a role in it.
+    match &workspace_did {
+        None => {
+            return Err(sign_error(
+                crate::sign::Error::NoWorkspaceIdentityToDeclare { signer },
+            ))
+        }
+        Some(workspace) if workspace != &signer => {
+            return Err(sign_error(crate::sign::Error::NotTheWorkspaceIdentity {
+                signer,
+                workspace: workspace.clone(),
+            }))
+        }
+        Some(_) => {}
+    }
+
+    let declared = ws.declared_roles()?;
+    if let Some(clash) = declared.roles().iter().find(|role| role.name == name) {
+        return Err(sign_error(crate::sign::Error::RoleNameTaken {
+            name: name.to_string(),
+            existing: clash.did.clone(),
+        }));
+    }
+
+    let role = crate::sign::mint_role_key(name, key_path).map_err(sign_error)?;
+    if let Some(clash) = declared.roles().iter().find(|r| r.did == role.did) {
+        return Err(sign_error(crate::sign::Error::RoleAlreadyRegistered {
+            did: role.did.clone(),
+            name: clash.name.clone(),
+        }));
+    }
+
+    // The workspace's own identity first, so a reader sees it declared before
+    // the role whose declaration prompted it.
+    let auto = ensure_workspace_declared(ws, workspace_did, &declared, &[name.to_string()]).await?;
+
+    append(
+        ws,
+        SubjectRef::Local(Rkey::from(format!("role/{name}"))),
+        ClaimBody::RoleDeclaration {
+            did: role.did.clone(),
+            name: name.to_string(),
+        },
+        vec![],
+        None,
+    )
+    .await?;
+
+    Ok((role, auto))
+}
+
 /// `kan identity adopt --key <path>` — point this workspace at a signing key
 /// it already has claims from (v0.9 REQ-8, issue #90).
 ///
@@ -1430,7 +1849,12 @@ fn show_claim_by_cid(ws: &Workspace, view: &FoldedView, wanted: &Cid) -> Result<
 
 /// A single subject's live claims, rendered — `fold` + `render` for one
 /// subject (`docs/SPEC.md` §9's "decategorify only at render").
-pub fn show(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<String, Error> {
+pub fn show(
+    ws: &Workspace,
+    subject: &str,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -1450,7 +1874,11 @@ pub fn show(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<String, 
     match view.subject(&subject_ref) {
         None => {
             out.push_str(&format!("{subject}: no claims{}\n", subject_hint(&view)));
-            out.push_str(&excluded_note(excluded.for_subject(&subject_ref), trust));
+            out.push_str(&excluded_note(
+                excluded.for_subject(&subject_ref),
+                trust,
+                empty_reason,
+            ));
             // An edge asserted *at* a subject is part of its story even when
             // the subject has nothing of its own. `inbound_edges` used to sit
             // inside the `Some(..)` arm, so `kan relate a blocks b` then `kan
@@ -1494,7 +1922,11 @@ pub fn show(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<String, 
                 "{subject} ({} live claim(s)):\n",
                 subject_view.claims.len()
             ));
-            out.push_str(&excluded_note(excluded.for_class(subject_view), trust));
+            out.push_str(&excluded_note(
+                excluded.for_class(subject_view),
+                trust,
+                empty_reason,
+            ));
             let superseded = superseded_status_cids(&subject_view.claims);
             for (cid, claim) in &subject_view.claims {
                 out.push_str(&format!(
@@ -1629,7 +2061,12 @@ fn related_subjects_by_file(
 /// One subject's (or every subject's) `Settled | Confirmed | Contested`
 /// state, or "most recent live claim" for subjects with no `Status` claims
 /// yet (`fold::state`, M4b).
-pub fn status(ws: &Workspace, subject: Option<&str>, trust: &TrustBase) -> Result<String, Error> {
+pub fn status(
+    ws: &Workspace,
+    subject: Option<&str>,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -1655,13 +2092,21 @@ pub fn status(ws: &Workspace, subject: Option<&str>, trust: &TrustBase) -> Resul
                             out.push_str(&format!("    {line}\n"));
                         }
                     }
-                    out.push_str(&excluded_note(excluded.for_subject(&subject_ref), trust));
+                    out.push_str(&excluded_note(
+                        excluded.for_subject(&subject_ref),
+                        trust,
+                        empty_reason,
+                    ));
                 }
                 Some(subject_view) => {
                     let state = classify_subject(ws, subject_view);
                     let durability = durability_of(ws, subject_view);
                     write_state(&mut out, subject, subject_view, state, durability);
-                    out.push_str(&excluded_note(excluded.for_class(subject_view), trust));
+                    out.push_str(&excluded_note(
+                        excluded.for_class(subject_view),
+                        trust,
+                        empty_reason,
+                    ));
                 }
             }
         }
@@ -1680,7 +2125,7 @@ pub fn status(ws: &Workspace, subject: Option<&str>, trust: &TrustBase) -> Resul
             // entirely, which no per-row note could carry. "no subjects yet"
             // above is the sharpest case — it is a complete-looking answer
             // that a wider trust base would contradict.
-            out.push_str(&excluded_note(excluded.total(), trust));
+            out.push_str(&excluded_note(excluded.total(), trust, empty_reason));
         }
     }
     Ok(out)
@@ -1940,7 +2385,11 @@ fn is_open_issue(ws: &Workspace, subject_view: &SubjectView) -> bool {
     !done
 }
 
-pub fn issues(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
+pub fn issues(
+    ws: &Workspace,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -1965,7 +2414,7 @@ pub fn issues(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
     if shown == 0 {
         out.push_str("no open issues\n");
     }
-    out.push_str(&excluded_note(excluded.total(), trust));
+    out.push_str(&excluded_note(excluded.total(), trust, empty_reason));
     Ok(out)
 }
 
@@ -1986,15 +2435,26 @@ pub fn issues(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
 /// It names how to widen the view rather than only reporting the number,
 /// because a count alone leaves the reader knowing they have a partial view
 /// and not what to do about it.
-fn excluded_note(count: usize, trust: &TrustBase) -> String {
+///
+/// **`empty_reason` says which kind of empty**, when the base named no authors
+/// at all (`.design/role-declarations.md` REQ-8). "You have declared nothing",
+/// "this workspace's own identity is unreachable, so no declaration can be
+/// honoured", and "declarations exist but none are yours" send a reader after
+/// three different problems, and the count alone reads identically for all
+/// three.
+fn excluded_note(count: usize, trust: &TrustBase, empty_reason: Option<&str>) -> String {
     if count == 0 {
         return String::new();
     }
     let base = trust.name();
-    format!(
+    let mut note = format!(
         "  note: {count} live claim(s) here are excluded by this view's trust base \
          ({base}) -- pass --trust <did>[=<weight>] (or --trust me) to widen it\n"
-    )
+    );
+    if let Some(reason) = empty_reason {
+        note.push_str(&format!("  note: the frame is empty because {reason}\n"));
+    }
+    note
 }
 
 // ------------------------------------------------------- structured output
@@ -2004,7 +2464,12 @@ fn excluded_note(count: usize, trust: &TrustBase) -> String {
 // what a view *contains* — only on how it is presented.
 
 /// `kan show <subject> --json`.
-pub fn show_json(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<String, Error> {
+pub fn show_json(
+    ws: &Workspace,
+    subject: &str,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -2048,7 +2513,7 @@ pub fn show_json(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<Str
         claims,
         flagged_oversized: flagged,
         inbound: inbound_edges_json(&view, &subject_ref),
-        trust: crate::json::TrustJson::new(trust),
+        trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded_here,
     };
     to_json(&out)
@@ -2060,7 +2525,11 @@ pub fn show_json(ws: &Workspace, subject: &str, trust: &TrustBase) -> Result<Str
 /// One fold serves the whole response, which is the entire point: the cost
 /// being collapsed is `Workspace::open`, paid once here and once per subject
 /// before.
-pub fn show_all_json(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
+pub fn show_all_json(
+    ws: &Workspace,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -2096,7 +2565,7 @@ pub fn show_all_json(ws: &Workspace, trust: &TrustBase) -> Result<String, Error>
                     .collect(),
                 flagged_oversized: class.flagged_oversized,
                 inbound,
-                trust: crate::json::TrustJson::new(trust),
+                trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
                 excluded_by_trust: excluded.for_class(class),
             }
         })
@@ -2104,7 +2573,7 @@ pub fn show_all_json(ws: &Workspace, trust: &TrustBase) -> Result<String, Error>
 
     to_json(&crate::json::ShowAllJson {
         v: crate::json::SCHEMA_VERSION,
-        trust: crate::json::TrustJson::new(trust),
+        trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded.total(),
         subjects,
     })
@@ -2115,6 +2584,7 @@ pub fn status_json(
     ws: &Workspace,
     subject: Option<&str>,
     trust: &TrustBase,
+    empty_reason: Option<&str>,
 ) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
@@ -2135,13 +2605,17 @@ pub fn status_json(
     to_json(&crate::json::StatusJson {
         v: crate::json::SCHEMA_VERSION,
         subjects,
-        trust: crate::json::TrustJson::new(trust),
+        trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded.total(),
     })
 }
 
 /// `kan issues --json`.
-pub fn issues_json(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
+pub fn issues_json(
+    ws: &Workspace,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -2154,13 +2628,18 @@ pub fn issues_json(ws: &Workspace, trust: &TrustBase) -> Result<String, Error> {
     to_json(&crate::json::IssuesJson {
         v: crate::json::SCHEMA_VERSION,
         subjects,
-        trust: crate::json::TrustJson::new(trust),
+        trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded.total(),
     })
 }
 
 /// `kan context --budget N --json`.
-pub fn context_json(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<String, Error> {
+pub fn context_json(
+    ws: &Workspace,
+    budget: usize,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -2189,22 +2668,33 @@ pub fn context_json(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<
         budget,
         omitted_claims: assembled.omitted_claims,
         omitted_subjects: assembled.omitted_subjects.clone(),
-        trust: crate::json::TrustJson::new(trust),
+        trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded.total(),
     })
 }
 
 /// `kan identity role list --json`.
-pub fn roles_json(ws: &Workspace, roles: &[crate::sign::Role]) -> Result<String, Error> {
+pub fn roles_json(ws: &Workspace, roles: &[crate::roles::DeclaredRole]) -> Result<String, Error> {
     to_json(&crate::json::RolesJson {
         v: crate::json::SCHEMA_VERSION,
-        active: ws.identity()?.did(),
+        // Empty rather than an error when no identity resolves. Listing the
+        // roles a workspace declared is a READ, and the state where you most
+        // want to run it is the one where the identity is gone -- refusing
+        // there makes the lost-key workspace uninspectable, which is the
+        // "a read that errors is one step from a read that needs an identity"
+        // shape REQ-8 rejected for `--trust roles`. Found by REQ-9's own
+        // lost-key test failing on the precondition rather than the property.
+        // `active_did` answers "who would sign here" via the selection and
+        // creates nothing, where `identity()` needs a workspace opened for
+        // writing. Empty when none resolves, so a lost-key workspace can still
+        // list what it declared -- the state an operator is most likely to be
+        // inspecting. Found by REQ-9's lost-key test failing on its precondition.
+        active: ws.active_did().unwrap_or_default(),
         roles: roles
             .iter()
             .map(|r| crate::json::RoleJson {
                 name: r.name.clone(),
                 did: r.did.clone(),
-                key_path: r.key_path.display().to_string(),
             })
             .collect(),
     })
@@ -2221,7 +2711,12 @@ fn to_json<T: serde::Serialize>(value: &T) -> Result<String, Error> {
 
 /// Budgeted context assembly (`crate::context`, REQ-14/AC-7): the
 /// maximal-value live claim set that fits under `budget` tokens.
-pub fn context(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<String, Error> {
+pub fn context(
+    ws: &Workspace,
+    budget: usize,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
@@ -2267,7 +2762,7 @@ pub fn context(ws: &Workspace, budget: usize, trust: &TrustBase) -> Result<Strin
     // Deliberately *not* folded into the omitted-claims line above. Raising
     // `--budget` recovers those; nothing recovers these but a wider trust
     // base, so conflating the two would point the reader at the wrong lever.
-    out.push_str(&excluded_note(excluded.total(), trust));
+    out.push_str(&excluded_note(excluded.total(), trust, empty_reason));
     Ok(out)
 }
 
@@ -2327,6 +2822,13 @@ pub fn authors(ws: &Workspace, json: bool) -> Result<String, Error> {
         return Ok("no claims in this log yet, so no authors\n".to_string());
     }
     let mut out = String::new();
+    // The same notice `role list` shows: an author reported UNDECLARED because
+    // the migration has not run is a different problem from one that was never
+    // declared, and this surface is where an operator goes to ask.
+    out.push_str(&crate::roles::legacy_file_notice(
+        &ws.root.join(".kan"),
+        &ws.declared_roles()?,
+    ));
     for (did, agent, declared) in &rows {
         out.push_str(&format!(
             "{did}  {}{}\n",

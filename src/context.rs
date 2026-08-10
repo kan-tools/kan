@@ -76,6 +76,7 @@ pub fn render_claim(claim: &Claim) -> String {
         ClaimBody::Retraction { supersedes } => format!("supersedes {supersedes}"),
         ClaimBody::Rejects { claim } => format!("rejects {claim}"),
         ClaimBody::Publication { layer } => format!("published to {layer:?}"),
+        ClaimBody::RoleDeclaration { did, name } => format!("declares role `{name}`: {did}"),
         // Uninterpretable, but present and verifiable — say so rather than
         // rendering nothing, so a reader can tell the difference between a
         // subject with three claims and one with three it can read plus one
@@ -101,6 +102,12 @@ fn kind_value(kind: ClaimKind) -> i64 {
         // what is true about it, so it is worth carrying but not at the
         // expense of narrative.
         ClaimKind::Publication => 2,
+        // Structural for the same reason, and ranked with them: a declaration
+        // says who this workspace vouches for, which is worth carrying into a
+        // budgeted window — an agent reading `role/prover` should learn the
+        // role exists — but it asserts nothing about any subject's state, so
+        // it must not displace a Decision or a Status.
+        ClaimKind::RoleDeclaration => 2,
         ClaimKind::Retraction | ClaimKind::Rejects => 1,
         // Carries no meaning this build can act on, so it must not displace
         // a claim that does — but it is still worth surfacing if room

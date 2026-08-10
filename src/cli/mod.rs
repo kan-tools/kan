@@ -237,8 +237,8 @@ pub enum Command {
         json: bool,
         /// Narrow or widen the trust base. The default is `local` — every
         /// author with a claim in this workspace's log. Also accepts `me`
-        /// (the active identity alone), `roles` (only the identities
-        /// declared in `.kan/roles`), `role:<name>` (one declared role), a
+        /// (the active identity alone), `roles` (only the identities this
+        /// workspace has declared), `role:<name>` (one declared role), a
         /// bare `did:key:...`, or `did:key:...=<weight>`. Repeat for several
         /// authors. Weight defaults to 1.0 and must be in [0,1]; an author
         /// you do not name is invisible, not merely down-weighted.
@@ -468,6 +468,13 @@ pub enum RoleAction {
         #[arg(long)]
         json: bool,
     },
+    /// Bring a pre-v0.12 `.kan/roles` file across into the log, once.
+    ///
+    /// Roles are claims since v0.12, so the file is no longer read. This
+    /// declares each of its rows properly. It is idempotent, and it never
+    /// rewrites or deletes the file — whether to keep it is your call, and
+    /// the reason to is that a kan older than v0.12 can still read it.
+    Import,
 }
 
 #[derive(Subcommand, Debug)]
@@ -694,6 +701,23 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
     // prerequisites by being called from the wrong place.
     if is_read_only(&cli.command) {
         let ws = Workspace::open_read_only(&cwd).await?;
+        // `adopt` is the one command routed here that WRITES afterwards
+        // (REQ-9): switching the workspace's identity orphans every role
+        // declaration authored by the old one, so the set is carried across.
+        // It is still opened read-only, because adopt must run on a workspace
+        // whose identity cannot be resolved -- that is the state it exists to
+        // repair -- and appending needs a second, writable open once the new
+        // key is in place.
+        if let Command::Identity {
+            action: IdentityAction::Adopt { key },
+        } = &cli.command
+        {
+            print!(
+                "{}",
+                actions::adopt_identity_carrying_roles(&ws, &std::path::PathBuf::from(key)).await?
+            );
+            return Ok(());
+        }
         return run_read(cli.command, &ws);
     }
 
@@ -996,19 +1020,26 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                             Some(k) => std::path::PathBuf::from(k),
                             None => kan_dir.join("roles.d").join(&name),
                         };
-                        // Record the identity that was already signing here
-                        // before this role existed, while it is loaded and its
-                        // DID is in hand. Once KAN_IDENTITY_FILE points at a
-                        // role, kan never consults the keychain, so this is the
-                        // only cheap moment to learn it — and without it,
-                        // `--trust roles` omits everything written before the
-                        // first role was declared.
-                        crate::sign::register_active(
-                            &kan_dir,
-                            &ws.identity()?.did(),
-                            &kan_dir.join("identity"),
-                        )?;
-                        let role = crate::sign::add_role(&kan_dir, &name, &key_path)?;
+                        // Minting the key, refusing a non-workspace signer,
+                        // auto-declaring the primary and appending the
+                        // declaration all live in one action now, because
+                        // they are one atomic intent and splitting them across
+                        // the CLI is how the file version came to check a
+                        // clash in a different place from where it wrote.
+                        let (role, auto) = actions::declare_role(&mut ws, &name, &key_path).await?;
+                        // The auto-declaration FIRST, and said out loud: it is a
+                        // claim the operator did not ask for, and its silence is
+                        // what made two blocking defects in this feature silent.
+                        if let Some(auto) = auto {
+                            println!(
+                                "also declared this workspace's own identity as `{}`: {}",
+                                auto.name, auto.did
+                            );
+                            println!(
+                                "  (without it, `--trust roles` would omit every claim \
+                                 written before this role existed)"
+                            );
+                        }
                         println!("declared role `{}`: {}", role.name, role.did);
                         println!("key: {}", role.key_path.display());
                         println!(
@@ -1019,26 +1050,57 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                         role.key_path.display()
                     );
                     }
-                    RoleAction::List { json } => {
-                        let roles = crate::sign::list_roles(&ws.root.join(".kan"))?;
-                        if json {
-                            print!("{}", actions::roles_json(&ws, &roles)?);
-                        } else if roles.is_empty() {
+                    RoleAction::Import => {
+                        let roles_file = ws.root.join(".kan").join(crate::sign::ROLES_FILE);
+                        if !roles_file.exists() {
                             println!(
-                                "no declared roles. This workspace signs as one identity: {}",
-                                ws.identity()?.did()
+                                "nothing to import: this workspace has no `.kan/{}` file. \
+                                 Roles are declared with `kan identity role add <name>`.",
+                                crate::sign::ROLES_FILE
                             );
-                        } else {
-                            println!("active: {}", ws.identity()?.did());
-                            for role in roles {
-                                println!(
-                                    "{}\t{}\t{}",
-                                    role.name,
-                                    role.did,
-                                    role.key_path.display()
-                                );
-                            }
+                            return Ok(());
                         }
+                        let summary = actions::import_roles(&mut ws).await?;
+
+                        for (name, did) in &summary.imported {
+                            println!("declared role `{name}`: {did}");
+                        }
+                        if let Some(auto) = &summary.auto_declared {
+                            println!(
+                                "also declared this workspace's own identity as `{}`: {} \
+                                 (the file did not name it)",
+                                auto.name, auto.did
+                            );
+                        }
+                        for name in &summary.already_declared {
+                            println!("already declared, skipped: `{name}`");
+                        }
+                        for (name, file_did, live_did) in &summary.conflicts {
+                            // Reported rather than resolved: rebinding a live
+                            // name during a migration is precisely the silent
+                            // change nobody would go looking for.
+                            eprintln!(
+                                "NOT imported: `{name}` names {file_did} in the file, but \
+                                 this workspace already declares that name for {live_did}. \
+                                 Retract the live declaration first if the file is right."
+                            );
+                        }
+                        if summary.imported.is_empty() && summary.conflicts.is_empty() {
+                            println!("nothing new to import.");
+                        }
+
+                        // The one thing kan will not decide, stated with the
+                        // one fact needed to decide it.
+                        println!(
+                            "\n`.kan/{}` is no longer read by this kan, and is safe to \
+                             remove. Keep it only if you may run a kan older than v0.12: \
+                             that version reads the file and cannot interpret a role \
+                             declaration. kan has not modified it.",
+                            crate::sign::ROLES_FILE
+                        );
+                    }
+                    RoleAction::List { .. } => {
+                        unreachable!("`role list` is a read, dispatched by `is_read_only`")
                     }
                 },
             }
@@ -1097,6 +1159,69 @@ fn print_paired_result(result: &actions::PairedAppendResult, verbose: bool) {
     }
 }
 
+/// `kan identity role list`, on the **read** path.
+///
+/// Reads the declared set out of the log and resolves the active identity
+/// without creating one: `active_did` answers question 2 ("who would sign
+/// here") via the selection, where `identity()` needs a workspace opened for
+/// writing. A workspace whose own identity is gone still lists what it
+/// declared, which is the state an operator is most likely to be inspecting.
+fn print_role_list(ws: &Workspace, json: bool) -> Result<(), Error> {
+    let declared = ws.declared_roles()?;
+    let roles = declared.roles().to_vec();
+    if json {
+        print!("{}", actions::roles_json(ws, &roles)?);
+    } else if roles.is_empty() {
+        // REQ-8's three states. Matched here rather than
+        // rendered through `roles::empty_reason`, which is
+        // a short clause for `--trust role:<name>`'s error
+        // and drops what this surface should keep: the
+        // common case names the identity this workspace
+        // signs as, which is the next thing an operator
+        // asks.
+        match &declared {
+            crate::roles::Declared::NoWorkspaceIdentity => println!(
+                "no role can be honoured here: this workspace's own \
+                                     identity is unreachable, and only the identity a \
+                                     workspace resolves to may declare roles."
+            ),
+            crate::roles::Declared::OnlyForeign { count } => println!(
+                "no declared roles. {count} declaration(s) in this log \
+                                     were authored by other identities, which grants them \
+                                     nothing."
+            ),
+            _ => match ws.active_did() {
+                Ok(did) => println!(
+                    "no declared roles. This workspace signs as one \
+                                         identity: {did}"
+                ),
+                Err(_) => println!("no declared roles."),
+            },
+        }
+        print!(
+            "{}",
+            crate::roles::legacy_file_notice(&ws.root.join(".kan"), &declared)
+        );
+    } else {
+        match ws.active_did() {
+            Ok(did) => println!("active: {did}"),
+            // Same reason as `roles_json`: this is a read,
+            // and the lost-key workspace is exactly where
+            // it needs to work.
+            Err(_) => println!("active: (none -- this workspace resolves no identity)"),
+        }
+        for role in roles {
+            // Two columns, not three: REQ-4 drops the key
+            // path, which was machine-specific, unchecked,
+            // and for a keychain-rooted primary named a
+            // file that never existed.
+            println!("{}\t{}", role.name, role.did);
+        }
+    }
+
+    Ok(())
+}
+
 /// The verbs that only ever read. Kept as one list rather than spread across
 /// the dispatch, so "is this a read" has a single answer.
 fn is_read_only(command: &Command) -> bool {
@@ -1120,8 +1245,16 @@ fn is_read_only(command: &Command) -> bool {
             // authors were never declared, which is the #90/#136 diagnostic.
             // Requiring a resolvable identity to run it would make it refuse
             // in exactly the workspace it exists to explain.
+            // `identity role list` joins them for the same reason, and
+            // REQ-9's lost-key test is what found it: since v0.12 the declared
+            // set comes from the LOG, so listing it needs no signing identity
+            // -- and the workspace where you most want to run it is the one
+            // whose identity is gone. Dispatched as a write, it tripped
+            // `WouldMintSecondIdentity` and refused to show the very registry
+            // the operator was trying to recover.
             | Command::Identity {
-                action: IdentityAction::Adopt { .. }
+                action: IdentityAction::Role { action: RoleAction::List { .. } }
+                    | IdentityAction::Adopt { .. }
                     | IdentityAction::Authors { .. }
                     // `protect`/`unprotect` MOVE a secret; they never create
                     // one. Routing them through `commit_identity` would mean
@@ -1143,6 +1276,9 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
                 "{}",
                 actions::adopt_identity(ws, &std::path::PathBuf::from(key))?
             ),
+            IdentityAction::Role {
+                action: RoleAction::List { json },
+            } => print_role_list(ws, json)?,
             IdentityAction::Authors { json } => print!("{}", actions::authors(ws, json)?),
             IdentityAction::Protect { yes } => {
                 print!("{}", actions::protect_identity(ws, yes)?)
@@ -1158,7 +1294,8 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
             json,
             trust,
         } => {
-            let trust = ws.trust_from(&trust)?;
+            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
+            let empty_reason = empty_reason.as_deref();
             match (all, subject) {
                 (true, _) if !json => {
                     return Err(actions::Error::Usage(
@@ -1170,7 +1307,7 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
                     )
                     .into())
                 }
-                (true, _) => print!("{}", actions::show_all_json(ws, &trust)?),
+                (true, _) => print!("{}", actions::show_all_json(ws, &trust, empty_reason)?),
                 (false, None) => {
                     return Err(actions::Error::Usage(
                         "give a subject to show (`kan show <subject>`), or `--all --json` for \
@@ -1182,9 +1319,9 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
                 (false, Some(subject)) => print!(
                     "{}",
                     if json {
-                        actions::show_json(ws, &subject, &trust)?
+                        actions::show_json(ws, &subject, &trust, empty_reason)?
                     } else {
-                        actions::show(ws, &subject, &trust)?
+                        actions::show(ws, &subject, &trust, empty_reason)?
                     }
                 ),
             }
@@ -1194,24 +1331,24 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
             json,
             trust,
         } => {
-            let trust = ws.trust_from(&trust)?;
+            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
             print!(
                 "{}",
                 if json {
-                    actions::status_json(ws, subject.as_deref(), &trust)?
+                    actions::status_json(ws, subject.as_deref(), &trust, empty_reason.as_deref())?
                 } else {
-                    actions::status(ws, subject.as_deref(), &trust)?
+                    actions::status(ws, subject.as_deref(), &trust, empty_reason.as_deref())?
                 }
             )
         }
         Command::Issues { json, trust } => {
-            let trust = ws.trust_from(&trust)?;
+            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
             print!(
                 "{}",
                 if json {
-                    actions::issues_json(ws, &trust)?
+                    actions::issues_json(ws, &trust, empty_reason.as_deref())?
                 } else {
-                    actions::issues(ws, &trust)?
+                    actions::issues(ws, &trust, empty_reason.as_deref())?
                 }
             )
         }
@@ -1221,13 +1358,13 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
             trust,
         } => {
             let budget = budget.unwrap_or(DEFAULT_BUDGET);
-            let trust = ws.trust_from(&trust)?;
+            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
             print!(
                 "{}",
                 if json {
-                    actions::context_json(ws, budget, &trust)?
+                    actions::context_json(ws, budget, &trust, empty_reason.as_deref())?
                 } else {
-                    actions::context(ws, budget, &trust)?
+                    actions::context(ws, budget, &trust, empty_reason.as_deref())?
                 }
             );
         }

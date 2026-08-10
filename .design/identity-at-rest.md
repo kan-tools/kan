@@ -191,7 +191,7 @@ posture would have no on-ramp at all.
   which #183 confirmed by execution no longer happens.
 
 - **REQ-3.6 — `KAN_NO_KEYCHAIN` re-documented, and demoted.** Its doc comment
-  (`src/sign.rs:783`) describes it as "the missing middle" — the only way to
+  (`src/sign.rs::NO_KEYCHAIN_ENV`) describes it as "the missing middle" — the only way to
   avoid a keychain prompt without naming a key file. After REQ-3 that is the
   default, and its remaining job is narrower: suppress keychain lookups for a
   *grandfathered* workspace's pointer files, and let the suite run. It is also
@@ -450,7 +450,7 @@ mean minting an identity in order to protect it — a creation as a side effect
 of a command that is not about creating one, which is AC-8's class. Both
 commands resolve via `workspace_identity` directly and refuse on `None`.
 `Adopt` and `Authors` already take a bypass through `is_read_only`
-(`src/cli/mod.rs:1075`); these need the same shape for a different reason, and
+(`src/cli/mod.rs::is_read_only`); these need the same shape for a different reason, and
 the reason should be in the comment, since the existing bypass's rationale
 ("read-only") does not apply.
 
