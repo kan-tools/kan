@@ -1026,7 +1026,20 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                         // they are one atomic intent and splitting them across
                         // the CLI is how the file version came to check a
                         // clash in a different place from where it wrote.
-                        let role = actions::declare_role(&mut ws, &name, &key_path).await?;
+                        let (role, auto) = actions::declare_role(&mut ws, &name, &key_path).await?;
+                        // The auto-declaration FIRST, and said out loud: it is a
+                        // claim the operator did not ask for, and its silence is
+                        // what made two blocking defects in this feature silent.
+                        if let Some(auto) = auto {
+                            println!(
+                                "also declared this workspace's own identity as `{}`: {}",
+                                auto.name, auto.did
+                            );
+                            println!(
+                                "  (without it, `--trust roles` would omit every claim \
+                                 written before this role existed)"
+                            );
+                        }
                         println!("declared role `{}`: {}", role.name, role.did);
                         println!("key: {}", role.key_path.display());
                         println!(
@@ -1051,6 +1064,13 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
 
                         for (name, did) in &summary.imported {
                             println!("declared role `{name}`: {did}");
+                        }
+                        if let Some(auto) = &summary.auto_declared {
+                            println!(
+                                "also declared this workspace's own identity as `{}`: {} \
+                                 (the file did not name it)",
+                                auto.name, auto.did
+                            );
                         }
                         for name in &summary.already_declared {
                             println!("already declared, skipped: `{name}`");

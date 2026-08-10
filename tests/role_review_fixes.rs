@@ -355,3 +355,72 @@ fn the_auto_declared_primary_never_takes_a_live_name() {
         "all three identities should be declared, under three distinct names: {declared:?}"
     );
 }
+
+/// **Round 3, N8.** The auto-declaration must be **said out loud**, on both
+/// paths that perform it.
+///
+/// `kan identity role add auditor` appends a `RoleDeclaration` for the
+/// workspace's own identity that the operator never asked for, and printed
+/// only `auditor`. REQ-9 earns its own write side effect by being "visible,
+/// deliberate, reversible" — this one was two of the three.
+///
+/// It is not a cosmetic gap. **Both of this feature's deliverable defects were
+/// silent because of it**: one had the auto-declaration write a colliding name
+/// and drop a live role, the other had it never fire, and in both cases
+/// nothing on screen would have shown either. A write the operator cannot see
+/// is a write nobody reviews.
+#[test]
+fn the_auto_declaration_is_reported_on_both_paths() {
+    // Path 1: `role add` on a workspace with nothing declared.
+    let dir = workspace_with_own_identity();
+    let workspace_did = did_of(dir.path(), None);
+    let add = kan_as(dir.path(), None, &["identity", "role", "add", "auditor"]);
+    assert!(add.ok, "role add failed: {}", add.stderr);
+    assert!(
+        add.stdout
+            .contains("also declared this workspace's own identity"),
+        "`role add` appended a declaration the operator did not ask for and did not \
+         mention it: {}",
+        add.stdout
+    );
+    assert!(
+        add.stdout.contains(&workspace_did),
+        "the report must name the identity it declared, not merely that it did: {}",
+        add.stdout
+    );
+
+    // Path 2: `import` from a legacy file that does not name this workspace.
+    let dir2 = workspace_with_own_identity();
+    let workspace_did2 = did_of(dir2.path(), None);
+    std::fs::write(
+        dir2.path().join(".kan/roles"),
+        "did:key:zDnaeSezF2t8gTQrOFpVmvSMPFsxqRDzZL6JGjTxjJ2TvNqYe\treviewer\t/gone\n",
+    )
+    .unwrap();
+    let import = kan_as(dir2.path(), None, &["identity", "role", "import"]);
+    assert!(import.ok, "import failed: {}", import.stderr);
+    assert!(
+        import
+            .stdout
+            .contains("also declared this workspace's own identity"),
+        "`import` declared this workspace and did not say so: {}",
+        import.stdout
+    );
+    assert!(
+        import.stdout.contains(&workspace_did2),
+        "the report must name the identity it declared: {}",
+        import.stdout
+    );
+
+    // And it must NOT claim an auto-declaration that did not happen: a second
+    // `role add`, with the workspace already declared, appends nothing extra.
+    let again = kan_as(dir.path(), None, &["identity", "role", "add", "reviewer"]);
+    assert!(again.ok, "{}", again.stderr);
+    assert!(
+        !again
+            .stdout
+            .contains("also declared this workspace's own identity"),
+        "reported an auto-declaration on a workspace that was already declared: {}",
+        again.stdout
+    );
+}

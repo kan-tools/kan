@@ -902,6 +902,9 @@ pub struct ImportSummary {
     /// and **not** imported: latest-wins would silently rebind a live name,
     /// and a migration is the worst possible moment to do that quietly.
     pub conflicts: Vec<(String, String, String)>,
+    /// The workspace's own identity, if importing declared it — a claim the
+    /// operator did not ask for and must still be told about.
+    pub auto_declared: Option<crate::roles::DeclaredRole>,
 }
 
 /// `kan identity role import` — REQ-5's one-shot migration off `.kan/roles`.
@@ -947,6 +950,7 @@ pub async fn import_roles(ws: &mut Workspace) -> Result<ImportSummary, Error> {
         imported: Vec::new(),
         already_declared: Vec::new(),
         conflicts: Vec::new(),
+        auto_declared: None,
     };
 
     for row in rows {
@@ -992,7 +996,8 @@ pub async fn import_roles(ws: &mut Workspace) -> Result<ImportSummary, Error> {
     // -- the one this milestone exists to serve. Same rule, same helper, so
     // the two paths cannot answer it differently again.
     let declared_now = ws.declared_roles()?;
-    ensure_workspace_declared(ws, workspace_did, &declared_now, &[]).await?;
+    summary.auto_declared =
+        ensure_workspace_declared(ws, workspace_did, &declared_now, &[]).await?;
 
     Ok(summary)
 }
@@ -1016,12 +1021,12 @@ async fn ensure_workspace_declared(
     workspace_did: Option<crate::claim::Did>,
     declared: &crate::roles::Declared,
     also_taken: &[String],
-) -> Result<(), Error> {
+) -> Result<Option<crate::roles::DeclaredRole>, Error> {
     let Some(workspace) = workspace_did else {
-        return Ok(());
+        return Ok(None);
     };
     if declared.roles().iter().any(|role| role.did == workspace) {
-        return Ok(());
+        return Ok(None);
     }
 
     // Every name already spoken for -- what the caller is claiming now, plus
@@ -1036,14 +1041,27 @@ async fn ensure_workspace_declared(
         ws,
         SubjectRef::Local(Rkey::from(format!("role/{primary}"))),
         ClaimBody::RoleDeclaration {
-            did: workspace,
-            name: primary,
+            did: workspace.clone(),
+            name: primary.clone(),
         },
         vec![],
         None,
     )
     .await?;
-    Ok(())
+
+    // Returned rather than swallowed so the caller can SAY it happened.
+    //
+    // This append is a claim the operator did not ask for, and it was
+    // invisible: `kan identity role add auditor` printed only `auditor`. That
+    // silence is what made two of the five blocking findings in this feature
+    // silent -- in both, the auto-declaration wrote or failed to write the
+    // wrong thing and nothing on screen would have shown it. REQ-9 earns its
+    // own write side effect by being "visible, deliberate, reversible"; this
+    // one was two of the three.
+    Ok(Some(crate::roles::DeclaredRole {
+        name: primary,
+        did: workspace,
+    }))
 }
 
 /// `kan identity role add <name>` — mint a role key and **declare it as a
@@ -1067,7 +1085,7 @@ pub async fn declare_role(
     ws: &mut Workspace,
     name: &str,
     key_path: &Path,
-) -> Result<crate::sign::Role, Error> {
+) -> Result<(crate::sign::Role, Option<crate::roles::DeclaredRole>), Error> {
     // REQ-7: a declaration by anyone but the workspace identity grants
     // nothing, so writing one is worse than refusing -- it is a
     // complete-looking write with no effect, which is the defect class this
@@ -1117,7 +1135,7 @@ pub async fn declare_role(
 
     // The workspace's own identity first, so a reader sees it declared before
     // the role whose declaration prompted it.
-    ensure_workspace_declared(ws, workspace_did, &declared, &[name.to_string()]).await?;
+    let auto = ensure_workspace_declared(ws, workspace_did, &declared, &[name.to_string()]).await?;
 
     append(
         ws,
@@ -1131,7 +1149,7 @@ pub async fn declare_role(
     )
     .await?;
 
-    Ok(role)
+    Ok((role, auto))
 }
 
 /// `kan identity adopt --key <path>` — point this workspace at a signing key
