@@ -251,14 +251,26 @@ migration population.
 Every criterion names its witness, per `atom/design`. Where there is no
 mechanical witness the criterion says so and is marked **intent**.
 
+**A witness for shipped code is written as a resolvable citation — the
+`<file>::<symbol>` form — not as prose**, so `scripts/check-citations.sh` resolves it like any other. The prose
+form — "`tests/foo.rs` (new), test `bar`" — exists only for a test that has not
+been written yet, and it must be converted the moment it is.
+
+*That escape hatch was invented here, and it is where three unwitnessed
+criteria hid.* AC-1, AC-8 and AC-10b each named a test that did not exist;
+three cold review rounds passed before a fourth said so. The gate could have
+caught all three for free, since it already resolves a `fn` in a test file —
+they were simply written in the one form it does not check. Borrowed from
+`day`'s teloi, which declare **witness types** the bridge check can compute
+over rather than describe them in prose.
+
 - [ ] AC-1: For REQ-1, a `RoleDeclaration` claim round-trips byte-identically
       and an older reader preserves it as `Unknown` rather than dropping or
       rejecting it. *Witness*: `tests/schema_evolution.rs` —
       `body_kinds_all_round_trip` (already fails if `KnownBody` drifts from
       `ClaimBody`), plus a new case constructing a `RoleDeclaration` with an
       unknown field, per ADR-48's rule that the test must use a *known* kind —
-      `tests/schema_evolution.rs`, test
-      `a_role_declaration_with_an_unknown_field_is_preserved_verbatim`. *Named
+      `tests/schema_evolution.rs::a_role_declaration_with_an_unknown_field_is_preserved_verbatim`. *Named
       here for three rounds before it existed; written when a fourth said so.*
 - [ ] AC-2: For REQ-1, every claim CID written before this variant existed is
       unchanged. *Witness*: `tests/golden_reads.rs`'s AC-1 invariant golden,
@@ -266,17 +278,17 @@ mechanical witness the criterion says so and is marked **intent**.
 - [ ] AC-3: For REQ-3 + REQ-2 — **this is AC-10 of the milestone** — a role
       declaration carries an author, and retracting it removes the role from
       `--trust roles` **with no file edited**. *Witness*: a new
-      `tests/role_declaration_lifecycle.rs`, test `retracting_a_declaration_removes_the_role`,
+      `tests/role_declaration_lifecycle.rs::retracting_a_declaration_removes_the_role`,
       asserting the `.kan/` directory listing is byte-identical before and
       after the retraction.
 - [ ] AC-4: For REQ-3, a role whose declaring claim is retracted cannot sign as
       a declared role: `--trust role:<name>` errors with `NoSuchRole` and
       `kan identity authors` reports that DID as UNDECLARED. *Witness*:
-      `tests/role_declaration_lifecycle.rs`, test `a_retracted_role_is_undeclared`.
+      `tests/role_declaration_lifecycle.rs::a_retracted_role_is_undeclared`.
 - [ ] AC-5: For REQ-3, a `RoleDeclaration` authored by **anyone other than** the
       workspace identity grants nothing — it appears in `kan show` as an
       ordinary claim and does not appear in `--trust roles`. *Witness*:
-      `tests/role_declaration_lifecycle.rs`, test `a_foreign_declaration_grants_nothing`. This
+      `tests/role_declaration_lifecycle.rs::a_foreign_declaration_grants_nothing`. This
       is the REQ-8 pre-condition and must exist before the sharing channel opens.
 - [ ] AC-6: For REQ-5, importing `sheaf-games`'s four rows declares all four,
       **also ensures this workspace's own identity is declared**, and running
@@ -285,33 +297,33 @@ mechanical witness the criterion says so and is marked **intent**.
       every claim it ever wrote out of `--trust roles`, which a third cold
       review graded blocking. On the real file the extra step is a no-op, since
       its `primary` row already names that workspace. *Witness*:
-      `tests/role_declarations.rs` (new), test `import_is_idempotent_and_preserves_the_set`,
+      `tests/role_declarations.rs::import_is_idempotent_and_preserves_the_set`,
       seeded from a fixture copy of that file — **not** from the live workspace.
 - [ ] AC-7: For REQ-5, import leaves `.kan/roles` byte-identical. *Witness*:
       same test, hashing the file before and after.
 - [ ] AC-8: For REQ-6, a name declared twice for different DIDs resolves to the
       later declaration, deterministically, across an index rebuild. *Witness*:
-      `tests/role_resolution_rules.rs`, test `latest_declaration_wins_per_name`,
+      `tests/role_resolution_rules.rs::latest_declaration_wins_per_name`,
       which states the rule against the pure resolver and asserts that REVERSING
       the log order reverses the answer — so it tests the ordering rule rather
-      than something incidental to the DIDs. `tests/role_declaration_lifecycle.rs`,
-      test `the_declared_set_survives_an_index_rebuild`, covers the rebuild half.
+      than something incidental to the DIDs. `tests/role_declaration_lifecycle.rs::the_declared_set_survives_an_index_rebuild`
+      covers the rebuild half.
 - [ ] AC-9: For REQ-7, `KAN_IDENTITY_FILE` pointing at a declared role makes
       `kan identity role add` refuse, and **no claim is appended**. *Witness*:
-      `tests/role_declarations.rs` (new), test `a_role_cannot_declare_a_role`, asserting the
+      `tests/role_declarations.rs::a_role_cannot_declare_a_role`, asserting the
       log length is unchanged — depth 0's negative control.
 - [ ] AC-10: For REQ-8, all three empty states are reachable and each reports a
       *different* disclosure, and none of them errors. The composition case is
       the point: `--trust roles --trust did:key:…` returns the named author's claims
       even when `roles` expands to nothing. *Witness*:
-      `tests/role_declarations.rs` (new), test `three_empty_roles_frames_read_differently`,
+      `tests/role_declarations.rs::three_empty_roles_frames_read_differently`,
       asserting the three messages differ pairwise rather than merely that each
       is non-empty — an assertion that every state says *something* is one a
       single hardcoded string would pass.
 - [ ] AC-10b: For REQ-3's rejection rule, a `Rejects` claim naming a live role
       declaration — authored by a trusted author, so the fold would honour it
       anywhere else — leaves `--trust roles` unchanged. *Witness*:
-      `tests/role_resolution_rules.rs`, test `a_rejection_cannot_revoke_a_role`. The
+      `tests/role_resolution_rules.rs::a_rejection_cannot_revoke_a_role`. The
       negative control for the hole a later symmetry-minded reader would open. It
       also asserts that a self-RETRACTION does remove the role, without which the
       rejection assertion would pass against a resolver honouring nothing at all.
@@ -322,17 +334,17 @@ mechanical witness the criterion says so and is marked **intent**.
       perform — the two outcomes are asserted as mutually exclusive, because a
       bare "did it mention carrying?" check matches the refusal text too.
       *Witnesses*, and it takes two because the branches live apart:
-      `tests/role_declarations.rs`, test `adopt_carries_the_role_registry_across`
+      `tests/role_declarations.rs::adopt_carries_the_role_registry_across`
       for the carry — comparing the set before and after rather than counting
       it, so a set that changed membership while keeping its size cannot pass —
-      and `tests/role_review_fixes.rs`, test
-      `adopt_does_not_carry_roles_under_a_stray_selection` for the refusal,
+      and `tests/role_review_fixes.rs::adopt_does_not_carry_roles_under_a_stray_selection`
+      for the refusal,
       which is where the mutual exclusion is asserted. *This criterion named
       only the first for one round, describing an assertion the named test does
       not make.*
 - [ ] AC-11: For REQ-4, `kan identity role list` reports name and DID and **no
       key path**, human and `--json`. *Witness*:
-      `tests/role_declarations.rs` (new), test `role_list_reports_two_columns_and_no_key_path`.
+      `tests/role_declarations.rs::role_list_reports_two_columns_and_no_key_path`.
 
       *This criterion originally named the change-ledger golden as its witness,
       and the golden structurally cannot be one.* Its fixture workspace is
