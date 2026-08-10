@@ -149,9 +149,14 @@ migration population.
   amendment describes — under `.kan/roles` they could declare, because a file
   read needs no identity. Decided with Maxine to accept: roles require a
   workspace identity, and the refusal names `kan identity adopt --key <path>`
-  as the way to get one. Exactly one existing test asserted the old behaviour
-  (`tests/guard_every_minting_path.rs`), so the blast radius is measured rather
-  than estimated. The lost-key hazard this raises is answered in REQ-9.
+  as the way to get one. **Four call sites across three existing test files** asserted the old
+  behaviour — `tests/guard_every_minting_path.rs`, `tests/review_fixes.rs` and
+  `tests/trust_vocabulary.rs` (twice) — each now adopting its key first. *This
+  paragraph said "exactly one existing test … so the blast radius is measured
+  rather than estimated". It was estimated from a truncated `grep`, and the
+  correction is the more useful fact: the identity-file-only workspace is the
+  shape most of this suite is written in, which is the same population REQ-2's
+  amendment calls the configuration `KAN_IDENTITY_FILE` exists for.* The lost-key hazard this raises is answered in REQ-9.
 - REQ-8: **`--trust roles` reports three states rather than one empty frame.**
   It stays an empty frame — never an error — and the disclosure says *which*
   empty: (a) nothing declared; (b) no workspace identity is resolvable, so no
@@ -227,6 +232,16 @@ migration population.
   exactly as well as the claims themselves, which is what the whole
   make-it-a-claim argument was buying.
 
+  **It refuses to carry rather than carrying wrong.** The writable open used to
+  append resolves a *selection* from `KAN_IDENTITY_FILE`, not the key just
+  adopted, so with that variable pointing elsewhere the declarations would be
+  authored by a third identity and grant nothing. Adopt compares the resolved
+  signer against the adopted DID and, on a mismatch, carries nothing, says so,
+  and names the remedy (re-run with the variable unset). Nothing is lost either
+  way: the previous declarations stay in the log. *Added answering a cold
+  review, which measured the alternative — `--trust roles` going from three
+  authors to zero while stdout reported a successful carry.*
+
   *Narrower than it first appears*: `src/actions.rs::adopt_identity` **refuses a key
   that authored none of the log's claims**, so the adopted identity is always
   an existing co-author rather than a stranger.
@@ -293,9 +308,12 @@ mechanical witness the criterion says so and is marked **intent**.
       negative control for the hole a later symmetry-minded reader would open. It
       also asserts that a self-RETRACTION does remove the role, without which the
       rejection assertion would pass against a resolver honouring nothing at all.
-- [ ] AC-10c: For REQ-9, `kan identity adopt` leaves `--trust roles` returning
-      the **same author set** it returned before the adopt, and names each
-      re-declared role on stdout. *Witness*:
+- [ ] AC-10c: For REQ-9, `kan identity adopt` either leaves `--trust roles`
+      returning the **same author set** it returned before the adopt and names
+      each re-declared role on stdout, **or** carries nothing and says plainly
+      that it did not. What it must never do is report a carry it did not
+      perform — the two outcomes are asserted as mutually exclusive, because a
+      bare "did it mention carrying?" check matches the refusal text too. *Witness*:
       `tests/role_declarations.rs` (new), test `adopt_carries_the_role_registry_across`,
       comparing the set before and after rather than counting it, so a set that
       changed membership while keeping its size cannot pass.

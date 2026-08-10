@@ -763,13 +763,16 @@ pub fn durability_of(ws: &Workspace, class: &SubjectView) -> Durability {
 }
 
 /// `sign::Error` reaches `actions::Error` through `workspace::Error`, and there
-/// is no blanket two-hop `From`. Named once rather than spelled out at each of
-/// the 6 call sites.
+/// is no blanket two-hop `From`. Named once rather than spelled out at every
+/// call site.
 ///
-/// *A 27-line docstring documenting `kan identity adopt` and `kan identity role
-/// add` was attached to this two-line helper — left behind when those functions
-/// were inserted mid-docstring, and a verbatim duplicate of the real ones. Found
-/// by a cold review; the count above was also wrong (it said five).*
+/// *This helper carried a long docstring documenting `kan identity adopt` and
+/// `kan identity role add`, left behind when those functions were inserted
+/// mid-docstring. Removed after a cold review — which then found the
+/// replacement's own "6 call sites" wrong too (9, as 5 `map_err` plus 4
+/// direct), and the round before it had said five. Three counts, three wrong,
+/// for a number nothing needs: a hand-maintained count in prose is a citation
+/// that rots, so this one is gone rather than corrected a third time.*
 fn sign_error(e: crate::sign::Error) -> Error {
     Error::Workspace(crate::workspace::Error::Sign(e))
 }
@@ -974,6 +977,23 @@ pub async fn import_roles(ws: &mut Workspace) -> Result<ImportSummary, Error> {
     Ok(summary)
 }
 
+/// `kan identity role add <name>` — mint a role key and **declare it as a
+/// claim** (`.design/role-declarations.md` REQ-3/REQ-6/REQ-7).
+///
+/// **Refuse, then mint, then append**, and the order is deliberate: a refusal
+/// leaves no key file and no claim, so a rejected declaration costs nothing to
+/// retry. (An earlier docstring described this as "mint the key, refuse, then
+/// append" — false when written, and deleted as a duplicate before anyone
+/// noticed it was also wrong.)
+///
+/// **The subject is `role/<name>`**, so each declaration has a readable history
+/// of its own: `kan show role/prover` is when it was declared, retracted and
+/// re-declared, which is how a retraction is aimed without hunting a CID out of
+/// a shared registry.
+///
+/// The workspace's own identity is auto-declared alongside the first role it
+/// does not already appear in — see the gate below, and
+/// `sign::primary_role_name` for why it exists at all.
 pub async fn declare_role(
     ws: &mut Workspace,
     name: &str,
@@ -1028,7 +1048,26 @@ pub async fn declare_role(
 
     // The primary first, so that a reader of `role/primary` sees it declared
     // before the role whose declaration prompted it.
-    if declared.roles().is_empty() {
+    //
+    // GATED ON THE WORKSPACE'S DID NOT BEING DECLARED, not on the registry
+    // being empty, and the difference is a defect a second cold review found.
+    // `main`'s `register_active` checked by DID -- "record the workspace's
+    // pre-existing identity as a role, IF IT IS NOT ALREADY RECORDED" -- and
+    // narrowing that to "if the registry is empty" opened a gap on the
+    // migration path this milestone exists to serve: after `role import`
+    // populates the registry from a legacy file that has no `primary` row, the
+    // set is non-empty, so the next `role add` skipped the auto-declaration
+    // entirely and the workspace's own identity was never declared. Measured:
+    // `role list` printed `active: <W>` directly above a list not containing
+    // W, and W's own claim was excluded from `--trust roles`.
+    //
+    // That is the exact loss `primary_role_name`'s docstring says the
+    // auto-declaration exists to prevent -- reached, this time, by the
+    // auto-declaration not firing rather than by firing twice.
+    let workspace_is_declared = workspace_did
+        .as_ref()
+        .is_some_and(|w| declared.roles().iter().any(|role| &role.did == w));
+    if !workspace_is_declared {
         if let Some(workspace) = workspace_did {
             // THE NAME BEING DECLARED IS ALREADY TAKEN, from the primary's
             // point of view, and passing it here is the fix for a defect a
@@ -1050,7 +1089,12 @@ pub async fn declare_role(
             // Non-destructive by construction now: the workspace identity
             // takes `primary-<suffix>` and BOTH stay declared, rather than
             // one silently replacing the other.
-            let taken: Vec<String> = vec![name.to_string()];
+            // Every name already spoken for: the one being declared now, plus
+            // anything already in the registry (which `import` may have just
+            // filled). `primary_role_name` picks `primary-<suffix>` past all
+            // of them, so no declaration ever silently replaces another.
+            let mut taken: Vec<String> = vec![name.to_string()];
+            taken.extend(declared.roles().iter().map(|role| role.name.clone()));
             let primary = crate::sign::primary_role_name(&workspace, &taken);
             append(
                 ws,

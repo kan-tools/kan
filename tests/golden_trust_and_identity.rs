@@ -295,7 +295,15 @@ fn capture_document(fixture: &Fixture) -> String {
         &mut doc,
     );
 
-    // A **populated** role listing, and it is last on purpose.
+    // A role-declaration ATTEMPT, and it is last on purpose.
+    //
+    // This was added intending to freeze a *populated* listing, and it cannot:
+    // this fixture's workspace is driven entirely by `KAN_IDENTITY_FILE` and
+    // has no identity of its own, so under REQ-7 it can never hold a declared
+    // role. What it froze instead is the REFUSAL -- which is the more valuable
+    // row, since adding it is what exposed the hole in that guard. The comment
+    // said "populated" for two commits while the fixture recorded `exit:
+    // FAILED`; a second cold review caught the mismatch.
     //
     // Until v0.12 this document only ever ran `identity role list` against a
     // workspace with nothing declared, so the change ledger froze the empty

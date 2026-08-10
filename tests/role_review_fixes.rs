@@ -93,6 +93,74 @@ fn did_of(dir: &std::path::Path, key: Option<&std::path::Path>) -> String {
     run.stdout
 }
 
+/// **Round 2, BLOCKING-1.** `kan identity role add` after `kan identity role
+/// import` must still declare the workspace's own identity.
+///
+/// The defect: the auto-declaration was gated on the registry being **empty**,
+/// where `main`'s `register_active` checked whether the workspace's **DID** was
+/// already recorded. `import` fills the registry from a legacy file that need
+/// not contain a `primary` row — the file this milestone exists to migrate —
+/// so the next `role add` saw a non-empty set, skipped the auto-declaration,
+/// and left the workspace's own identity undeclared. `role list` then printed
+/// `active: <W>` directly above a list not containing `W`, and `W`'s own claims
+/// were excluded from `--trust roles`.
+///
+/// The same loss `primary_role_name`'s docstring says the auto-declaration
+/// exists to prevent — reached by it *not firing* rather than by firing twice.
+#[test]
+fn role_add_after_import_still_declares_the_workspace_identity() {
+    let dir = workspace_with_own_identity();
+    let workspace_did = did_of(dir.path(), None);
+
+    // A legacy registry with no `primary` row — exactly what a pre-v0.12
+    // workspace that never ran `role add` looks like.
+    std::fs::write(
+        dir.path().join(".kan/roles"),
+        "did:key:zDnaeSezF2t8gTQrOFpVmvSMPFsxqRDzZL6JGjTxjJ2TvNqYe\treviewer\t/gone\n",
+    )
+    .unwrap();
+    let import = kan_as(dir.path(), None, &["identity", "role", "import"]);
+    assert!(import.ok, "import failed: {}", import.stderr);
+    assert!(
+        !declared_dids(dir.path()).contains(&workspace_did),
+        "precondition: import alone should not declare the workspace identity, or this \
+         test proves nothing"
+    );
+
+    let add = kan_as(dir.path(), None, &["identity", "role", "add", "auditor"]);
+    assert!(add.ok, "role add failed: {}", add.stderr);
+
+    let declared = declared_dids(dir.path());
+    assert!(
+        declared.contains(&workspace_did),
+        "after import, `role add` left the workspace's own identity undeclared: {declared:?}"
+    );
+
+    // The property that matters: its claims are visible under `--trust roles`.
+    // Asserted on the AUTHORS of returned claims rather than by grepping the
+    // listing -- `role list` prints `active: <did>` as its first line, so a
+    // naive substring search for the DID matches that line and reports success
+    // while the registry is wrong. (That false positive is how this defect
+    // nearly escaped a second time.)
+    let view = kan_as(
+        dir.path(),
+        None,
+        &["show", "shared", "--trust", "roles", "--json"],
+    );
+    assert!(view.ok, "{}", view.stderr);
+    let view: serde_json::Value = serde_json::from_str(&view.stdout).unwrap();
+    let authors: BTreeSet<String> = view["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["author"].as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        authors.contains(&workspace_did),
+        "`--trust roles` lost the workspace identity's own claims after import: {view}"
+    );
+}
+
 /// **BLOCKING-2.** `kan identity role add primary` must not shadow the
 /// workspace's own identity out of `--trust roles`.
 ///

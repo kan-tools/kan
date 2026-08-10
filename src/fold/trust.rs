@@ -100,10 +100,16 @@ pub const LOCAL_ALIAS: &str = "local";
 
 /// Prefix naming **one** declared role: `role:director`.
 ///
-/// Roles are declared with a human name and `.kan/roles` is the only binding
-/// from that name to a `did:key:...`. Without this, framing a read around one
-/// role means pasting a 56-character DID that the workspace already knows the
-/// name of.
+/// Roles are declared with a human name, and the workspace's own
+/// `RoleDeclaration` claims are the only binding from that name to a
+/// `did:key:...`. Without this, framing a read around one role means pasting a
+/// 56-character DID that the workspace already knows the name of.
+///
+/// *Said `.kan/roles` until v0.12, which is the drift class REQ-3's own
+/// architecture note exists to catch: prose describing a mechanism that has
+/// been replaced. A first cold review swept it out of `undeclared_log_authors`
+/// and a second found it still here, on the constant this milestone
+/// re-implemented.*
 pub const ROLE_PREFIX: &str = "role:";
 
 /// One parsed `--trust` argument: who, and how much.
@@ -177,9 +183,9 @@ pub fn parse_entry(spec: &str) -> Result<TrustEntry, SpecError> {
         }
     }
     if did.starts_with(ROLE_PREFIX) {
-        // Also `Workspace`'s to resolve -- it is the only layer that reads
-        // `.kan/roles` -- but a weight on it is meaningful, since it names
-        // exactly one author.
+        // Also `Workspace`'s to resolve -- it is the only layer that can see
+        // the log the declarations live in -- but a weight on it is
+        // meaningful, since it names exactly one author.
         return Ok(TrustEntry {
             did: did.to_string(),
             weight,
