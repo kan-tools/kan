@@ -40,8 +40,9 @@
 #                     not in play. Distinguished from keychain-blocked so an
 #                     unexplained hang is not given a known cause's name.
 #   keychain-unused   the cell asked for the keychain and did not get it: the
-#                     writer predates keychain support, or the runner's
-#                     keychain was unreachable. The workspace is plaintext, so
+#                     writer predates keychain support, the runner's keychain
+#                     was unreachable, or the cell's own `identity protect`
+#                     opt-in failed. The workspace is plaintext, so
 #                     this cell did NOT exercise the keychain plane. Recorded
 #                     rather than scored `ok`, so the table shows exactly which
 #                     versions that plane actually covers.
@@ -336,8 +337,9 @@ fi
 # a POINTER and no plaintext; a degraded one leaves the plaintext.
 if [ "$MODE" = keychain ] || [ "$MODE" = keychain-recovery ]; then
   if [ -f .kan/seed ] || [ -f .kan/identity ]; then
-    say "keychain mode degraded to a plaintext secret -- this writer either predates"
-    say "keychain support or the runner's keychain was unreachable. NOT a keychain test."
+    say "keychain mode degraded to a plaintext secret -- this writer predates keychain"
+    say "support, the runner's keychain was unreachable, or the protect opt-in above"
+    say "failed (writer.log has its stderr). NOT a keychain test."
     echo "keychain-unused"
     exit 0
   fi
