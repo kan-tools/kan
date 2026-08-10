@@ -248,17 +248,17 @@ mechanical witness the criterion says so and is marked **intent**.
 - [ ] AC-3: For REQ-3 + REQ-2 — **this is AC-10 of the milestone** — a role
       declaration carries an author, and retracting it removes the role from
       `--trust roles` **with no file edited**. *Witness*: a new
-      `tests/role_declarations.rs` (new), test `retracting_a_declaration_removes_the_role`,
+      `tests/role_declaration_lifecycle.rs`, test `retracting_a_declaration_removes_the_role`,
       asserting the `.kan/` directory listing is byte-identical before and
       after the retraction.
 - [ ] AC-4: For REQ-3, a role whose declaring claim is retracted cannot sign as
       a declared role: `--trust role:<name>` errors with `NoSuchRole` and
       `kan identity authors` reports that DID as UNDECLARED. *Witness*:
-      `tests/role_declarations.rs` (new), test `a_retracted_role_is_undeclared`.
+      `tests/role_declaration_lifecycle.rs`, test `a_retracted_role_is_undeclared`.
 - [ ] AC-5: For REQ-3, a `RoleDeclaration` authored by **anyone other than** the
       workspace identity grants nothing — it appears in `kan show` as an
       ordinary claim and does not appear in `--trust roles`. *Witness*:
-      `tests/role_declarations.rs` (new), test `a_foreign_declaration_grants_nothing`. This
+      `tests/role_declaration_lifecycle.rs`, test `a_foreign_declaration_grants_nothing`. This
       is the REQ-8 pre-condition and must exist before the sharing channel opens.
 - [ ] AC-6: For REQ-5, importing `sheaf-games`'s four rows produces four
       declarations, `--trust roles` returns the same author set the file
@@ -269,16 +269,18 @@ mechanical witness the criterion says so and is marked **intent**.
       same test, hashing the file before and after.
 - [ ] AC-8: For REQ-6, a name declared twice for different DIDs resolves to the
       later declaration, deterministically, across an index rebuild. *Witness*:
-      `tests/role_declarations.rs` (new), test `latest_declaration_wins_per_name`, asserted
-      after `Index::rebuild` so the answer cannot depend on insertion order in a
-      live connection.
+      `tests/role_resolution_rules.rs`, test `latest_declaration_wins_per_name`,
+      which states the rule against the pure resolver and asserts that REVERSING
+      the log order reverses the answer — so it tests the ordering rule rather
+      than something incidental to the DIDs. `tests/role_declaration_lifecycle.rs`,
+      test `the_declared_set_survives_an_index_rebuild`, covers the rebuild half.
 - [ ] AC-9: For REQ-7, `KAN_IDENTITY_FILE` pointing at a declared role makes
       `kan identity role add` refuse, and **no claim is appended**. *Witness*:
       `tests/role_declarations.rs` (new), test `a_role_cannot_declare_a_role`, asserting the
       log length is unchanged — depth 0's negative control.
 - [ ] AC-10: For REQ-8, all three empty states are reachable and each reports a
       *different* disclosure, and none of them errors. The composition case is
-      the point: `--trust roles,did:key:…` returns the named author's claims
+      the point: `--trust roles --trust did:key:…` returns the named author's claims
       even when `roles` expands to nothing. *Witness*:
       `tests/role_declarations.rs` (new), test `three_empty_roles_frames_read_differently`,
       asserting the three messages differ pairwise rather than merely that each
@@ -287,8 +289,10 @@ mechanical witness the criterion says so and is marked **intent**.
 - [ ] AC-10b: For REQ-3's rejection rule, a `Rejects` claim naming a live role
       declaration — authored by a trusted author, so the fold would honour it
       anywhere else — leaves `--trust roles` unchanged. *Witness*:
-      `tests/role_declarations.rs` (new), test `a_rejection_cannot_revoke_a_role`. The
-      negative control for the hole a later symmetry-minded reader would open.
+      `tests/role_resolution_rules.rs`, test `a_rejection_cannot_revoke_a_role`. The
+      negative control for the hole a later symmetry-minded reader would open. It
+      also asserts that a self-RETRACTION does remove the role, without which the
+      rejection assertion would pass against a resolver honouring nothing at all.
 - [ ] AC-10c: For REQ-9, `kan identity adopt` leaves `--trust roles` returning
       the **same author set** it returned before the adopt, and names each
       re-declared role on stdout. *Witness*:

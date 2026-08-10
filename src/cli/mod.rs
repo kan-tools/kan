@@ -1139,8 +1139,6 @@ fn print_paired_result(result: &actions::PairedAppendResult, verbose: bool) {
     }
 }
 
-/// The verbs that only ever read. Kept as one list rather than spread across
-/// the dispatch, so "is this a read" has a single answer.
 /// `kan identity role list`, on the **read** path.
 ///
 /// Reads the declared set out of the log and resolves the active identity
@@ -1204,6 +1202,8 @@ fn print_role_list(ws: &Workspace, json: bool) -> Result<(), Error> {
     Ok(())
 }
 
+/// The verbs that only ever read. Kept as one list rather than spread across
+/// the dispatch, so "is this a read" has a single answer.
 fn is_read_only(command: &Command) -> bool {
     matches!(
         command,

@@ -762,35 +762,14 @@ pub fn durability_of(ws: &Workspace, class: &SubjectView) -> Durability {
     }
 }
 
-/// `kan identity adopt --key <path>` — point this workspace at a signing key
-/// it already has claims from (v0.9 REQ-8, issue #90).
+/// `sign::Error` reaches `actions::Error` through `workspace::Error`, and there
+/// is no blanket two-hop `From`. Named once rather than spelled out at each of
+/// the 6 call sites.
 ///
-/// **The supported way back from a lost identity.** #90's shape is a
-/// workspace whose keychain entry became unreachable — a moved checkout, a
-/// rebuilt binary, an upgrade — after which kan either refuses to open or
-/// (before the guard existed) minted a new DID and hid the whole log. The
-/// documented workaround was editing `.kan/identity-id` from a stack trace,
-/// which is not a recovery path so much as an invitation to make it worse.
-///
-/// `kan identity role add <name>` — mint a role key and **declare it as a
-/// claim** (`.design/role-declarations.md` REQ-3/REQ-6/REQ-7).
-///
-/// Three acts in one command, and the order matters: mint the key, refuse if
-/// this is not the workspace's own identity, then append. Minting first means
-/// a refusal leaves a key file behind but no claim, which is recoverable —
-/// the reverse would leave a declaration naming a key that does not exist.
-///
-/// **The subject is `role/<name>`**, so the declaration has a readable history
-/// of its own: `kan show role/prover` is when it was declared, retracted, and
-/// re-declared, which is how a retraction is aimed without hunting a CID out
-/// of a shared registry.
-///
-/// The primary is auto-declared alongside the first role, for the reason
-/// `sign::primary_role_name` records: without it, `--trust roles` omits every
-/// claim written before the roles existed.
-/// `sign::Error` reaches `actions::Error` through `workspace::Error`, and
-/// there is no blanket two-hop `From`. Named once rather than spelled out at
-/// each of the five call sites below.
+/// *A 27-line docstring documenting `kan identity adopt` and `kan identity role
+/// add` was attached to this two-line helper — left behind when those functions
+/// were inserted mid-docstring, and a verbatim duplicate of the real ones. Found
+/// by a cold review; the count above was also wrong (it said five).*
 fn sign_error(e: crate::sign::Error) -> Error {
     Error::Workspace(crate::workspace::Error::Sign(e))
 }
@@ -845,9 +824,40 @@ pub async fn adopt_identity_carrying_roles(
         }
     };
 
-    // A second, WRITABLE open: the workspace now resolves to the adopted key,
-    // so these declarations are authored by it and are therefore honoured.
+    // A second, WRITABLE open. It does NOT necessarily sign as the adopted
+    // key: `commit_identity` resolves a SELECTION from the environment, so
+    // with `KAN_IDENTITY_FILE` pointed anywhere else these declarations would
+    // be authored by that identity instead -- valid, signed, and inert, since
+    // only the workspace identity's declarations are honoured (REQ-7).
+    //
+    // This comment previously ASSERTED that the open resolves to the adopted
+    // key. It does not, and a cold review measured the consequence: adopt
+    // reported "carried 3 role declaration(s) across to <adopted>" while
+    // authoring all three as the stray selection, and `--trust roles` went
+    // from three authors to zero. A complete-looking write that grants
+    // nothing, inside the requirement written to eliminate them -- and a
+    // success message naming an identity that authored none of it.
+    //
+    // So it is checked rather than asserted, and the carry is skipped rather
+    // than written wrong. `KAN_IDENTITY_FILE` is set in exactly the
+    // CI/`day`/agent configuration the design names, so this is the common
+    // path, not an exotic one.
     let mut writable = Workspace::open(&ws.root).await?;
+    let signer = writable.active_did()?;
+    if signer != adopted {
+        out.push_str(&format!(
+            "\nNOTE: the role registry was NOT carried across, and this workspace now \
+             declares nothing.\n\n\
+             KAN_IDENTITY_FILE selects {signer}, so the declarations would have been \
+             authored by that identity -- and only the identity a workspace RESOLVES to \
+             ({adopted}) can declare a role, so they would have granted nothing.\n\n\
+             Re-run `kan identity adopt --key <path>` with KAN_IDENTITY_FILE unset to \
+             carry them across. Nothing has been lost: the previous declarations are \
+             still in the log.\n"
+        ));
+        return Ok(out);
+    }
+
     for role in &carry {
         append(
             &mut writable,
@@ -1020,7 +1030,27 @@ pub async fn declare_role(
     // before the role whose declaration prompted it.
     if declared.roles().is_empty() {
         if let Some(workspace) = workspace_did {
-            let taken: Vec<String> = Vec::new();
+            // THE NAME BEING DECLARED IS ALREADY TAKEN, from the primary's
+            // point of view, and passing it here is the fix for a defect a
+            // cold review found: this argument was a hardcoded empty `Vec`,
+            // so `primary_role_name`'s collision branch was dead code and
+            // `kan identity role add primary` declared `primary` TWICE --
+            // once for the workspace identity, once for the new role key.
+            // Latest-wins then rebound the name to the role key and dropped
+            // the workspace's own identity, and every claim it had written,
+            // straight out of `--trust roles`. That is the exact outcome the
+            // auto-declaration exists to prevent (see `primary_role_name`),
+            // produced by the auto-declaration itself.
+            //
+            // The clash check above cannot catch it: it runs against
+            // `declared.roles()`, which is empty by the very condition that
+            // triggers this branch -- a guard with a hole the shape of what
+            // it guards.
+            //
+            // Non-destructive by construction now: the workspace identity
+            // takes `primary-<suffix>` and BOTH stay declared, rather than
+            // one silently replacing the other.
+            let taken: Vec<String> = vec![name.to_string()];
             let primary = crate::sign::primary_role_name(&workspace, &taken);
             append(
                 ws,

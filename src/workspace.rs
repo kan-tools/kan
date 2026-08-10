@@ -727,7 +727,7 @@ impl Workspace {
     /// An unreachable identity is [`crate::roles::Declared::NoWorkspaceIdentity`]
     /// rather than an error, because "who did this workspace vouch for" is a
     /// legitimate question with a legitimate empty answer, and an erroring
-    /// alias would make `--trust roles,did:key:…` fail as a whole when one
+    /// alias would make `--trust roles --trust did:key:…` fail as a whole when one
     /// member could not expand.
     pub fn declared_roles(&self) -> Result<crate::roles::Declared, Error> {
         let workspace_did = match crate::sign::workspace_identity(&self.root.join(".kan")) {
@@ -744,7 +744,7 @@ impl Workspace {
         ))
     }
 
-    /// Authors with a claim in this log that no `.kan/roles` entry declares —
+    /// Authors with a claim in this log that no live declaration names —
     /// `local` minus `roles` (`.design/identity-surface.md` REQ-9).
     ///
     /// The signal that an unexpected identity has written here, as **data**
@@ -829,7 +829,7 @@ impl Workspace {
                 let declared = self.declared_roles()?;
                 // Recorded whenever `roles` contributes nothing, and reported
                 // only if the WHOLE base ends up empty -- so `--trust
-                // roles,did:key:...` still returns the named author's claims
+                // roles --trust did:key:...` still returns the named author's
                 // and says nothing misleading about the alias that added none.
                 if declared.roles().is_empty() {
                     roles_reason = Some(crate::roles::empty_reason(&declared).to_string());
