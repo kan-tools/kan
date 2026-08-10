@@ -44,6 +44,19 @@
 # reader side is measured for the first time by this change, and the rows
 # below were re-measured under it.
 #
+# WHAT A v0.12+ KEYCHAIN ROW MEASURES IS DIFFERENT IN KIND from a
+# v0.7-v0.11 one, and the difference is REQ-3's doing. Through v0.11 the
+# writer filed in the keychain BY DEFAULT, so those rows measure "the default
+# put it there". From v0.12 the default is a plaintext 0600 secret and the
+# keychain is an opt-in, so the cell runs `kan identity protect` on the
+# writer's workspace when the writer has that subcommand -- a v0.12+ row
+# measures "protect put it there". Without that step the axis stays
+# `keychain-unused` for every future version: green, and exercising nothing.
+# This is the SECOND axis a v0.12 requirement quietly retired -- REQ-2 did
+# the same to identity-file by making a named-but-absent path an error
+# instead of a mint. Both are written down here rather than left to be
+# rediscovered a third time.
+#
 # It does NOT cover the ACL dimension, and #96 DID NOT REPRODUCE on the hosted
 # runner. On a developer's Mac a keychain entry is authorised to the exact
 # binary that created it, so a rebuilt or upgraded kan waits on an
@@ -233,5 +246,5 @@ v0.10.0-beta.1	keychain-recovery	fix-route-blocked	MEASURED in run 31287243890 (
 v0.11.0-beta.1	keychain-recovery	fix-route-blocked	MEASURED in run 31287243890 (macos-latest, with `kan identity unprotect` present). THE REMEDY IS BLOCKED BY THE CONDITION IT REMEDIES, and this is the design working rather than a defect. `unprotect` must READ the keychain to move the secret out of it, and reading is what #96 prevents -- so on a headless runner it blocks, exactly as `.design/identity-at-rest.md` says it will: unprotect is an interactive command by design, and a keychain prompt there is one a human is present to answer. What this row establishes is the qualifier the design doc omitted: for CI, `day`, MCP and agents there is NO remedy at all. A human at a Mac terminal answers the prompt and it works; nothing headless does.
 v0.12.0-beta.1	identity-file	ok	PREDICTED at cut time -- v0.12 changes neither the selection semantics REQ-2 settled nor the on-disk layout a reader consults for a named key file. Confirm or correct at the next release, when v0.12.0 first runs as a historical writer rather than as the build under test.
 v0.12.0-beta.1	seed	ok	PREDICTED at cut time. v0.12's REQ-3 made .kan/seed what a fresh workspace produces, so this is now the DEFAULT path rather than one of several -- which is precisely why it should keep reading clean. Confirm or correct at the next release.
-v0.12.0-beta.1	keychain	keychain-unused	PREDICTED at cut time, and the value is a CONSEQUENCE OF REQ-3 rather than a defect. A v0.12 writer roots in a 0600 .kan/seed, so it leaves a plaintext secret and the cell's own guard correctly reports that the keychain plane was not exercised. Every earlier writer filed in the keychain by default and scores keychain-blocked. THIS ROW IS EXPECTED TO MOVE in the release that teaches the cell to run `kan identity protect` -- the keychain is an opt-in now, so the cell has to ask for it, and that change and this row must land together.
-v0.12.0-beta.1	keychain-recovery	keychain-unused	PREDICTED at cut time, for the same reason as the keychain row above: there is no keychain-held secret to recover, because the writer never put one there. Moves with that row and in the same commit.
+v0.12.0-beta.1	keychain	keychain-blocked	PREDICTED in the commit that taught the cell to run `kan identity protect` (the beta.1 rows shipped `keychain-unused`, true under the previous cell; the cell script comes from the reader's checkout, so the change applies retroactively to this tag as a writer and both moved here in the same commit, as the beta.1 row itself said they must). By analogy with every v0.7.0..v0.11.0 measurement: once protect files the secret in the keychain, the reader is a DIFFERENT binary, the entry's trusted-application ACL does not match, and macOS raises an authorization prompt no runner can answer (#96). The one new thing this row will measure is whether a v0.12 writer reaches the keychain plane THROUGH protect at all -- which no run has yet observed. Convert to MEASURED with the run id when the matrix next executes this cell.
+v0.12.0-beta.1	keychain-recovery	fix-route-blocked	PREDICTED in the same commit as the keychain row above, by analogy with v0.7.0..v0.11.0: with a protect-filed secret in the keychain, `unprotect` must READ the keychain to move the secret out, and reading is what #96 prevents -- so on a headless runner the remedy blocks inside the condition it remedies. Convert to MEASURED with the run id when the matrix next executes this cell.

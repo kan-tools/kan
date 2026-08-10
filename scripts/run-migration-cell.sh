@@ -295,6 +295,32 @@ if [ "$wrote" -eq 0 ]; then
 fi
 say "old binary wrote $wrote claim(s)"
 
+# THE KEYCHAIN IS AN OPT-IN AS OF v0.12 (REQ-3), so the cell has to ASK for
+# it -- the same thing REQ-3 asks of an operator. A v0.12+ writer roots in a
+# plaintext 0600 secret and never reaches the keychain on its own, which is
+# what turned this axis green-while-measuring-nothing for every future
+# version (`keychain-unused`, a legitimate committed outcome).
+#
+# Gated on the SUBCOMMAND'S EXISTENCE rather than a version string, so the
+# harness never has to know which tag introduced what -- the mistake that
+# once made a probe use today's binary to simulate an old one with opposite
+# behaviour. Writers without `identity protect` are left alone and reach the
+# plane natively (or don't, and the guard below says so).
+#
+# A protect failure is NOT fatal: the cell is scored on what is on disk by
+# the guard below, not on protect's exit code.
+if [ "$MODE" = keychain ] || [ "$MODE" = keychain-recovery ]; then
+  if { [ -f .kan/seed ] || [ -f .kan/identity ]; } \
+     && "$OLD_BIN" identity protect --help >/dev/null 2>&1; then
+    if "$OLD_BIN" identity protect --yes >/dev/null 2>>"$work/writer.log"; then
+      say "writer has 'identity protect' -- ran it, opting this workspace into the keychain"
+    else
+      say "'identity protect' failed (see writer.log) -- continuing; the guard below"
+      say "scores what is actually on disk"
+    fi
+  fi
+fi
+
 # DID THE KEYCHAIN MODE ACTUALLY USE THE KEYCHAIN?
 #
 # Asked positively, because the first run of this mode returned `ok` for all
