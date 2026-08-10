@@ -424,3 +424,115 @@ fn the_auto_declaration_is_reported_on_both_paths() {
         again.stdout
     );
 }
+
+/// **Round 4, BLOCKING-1.** `kan identity adopt` must leave the **adopted**
+/// identity declared, not only the registry it carried across.
+///
+/// Adopt is the third writer of role declarations, and the one caller that
+/// never asked the shared rule. Carrying the previous identity's registry
+/// leaves the workspace declaring roles while its own new identity is
+/// undeclared — unless the adopted key happens to be one of the carried roles.
+/// Then `role list` prints `active: <A>` above a list without `A`, and
+/// `--trust roles` drops every claim `A` ever wrote and every one it writes
+/// from then on, while adopt reports success.
+///
+/// Reachable with no hand-editing: an agent key writes here via
+/// `KAN_IDENTITY_FILE`, the workspace key later becomes unreachable, and the
+/// operator adopts the agent key — which is #90's flow, the one adopt exists
+/// for.
+///
+/// The lesson above the defect: extracting a shared rule for two callers does
+/// not find the third. Three rounds fixed one caller each; a fourth, scoped at
+/// the rule rather than at a diff, found the caller nobody had looked at.
+#[test]
+fn adopt_leaves_the_adopted_identity_declared() {
+    let dir = workspace_with_own_identity();
+    let add = kan_as(dir.path(), None, &["identity", "role", "add", "reviewer"]);
+    assert!(add.ok, "{}", add.stderr);
+
+    // An agent key that writes here and is then NOT among the declared roles.
+    let agent = dir.path().join("agent-key");
+    let declared_agent = kan_as(
+        dir.path(),
+        None,
+        &[
+            "identity",
+            "role",
+            "add",
+            "agent",
+            "--key",
+            agent.to_str().unwrap(),
+        ],
+    );
+    assert!(declared_agent.ok, "{}", declared_agent.stderr);
+    assert!(
+        kan_as(
+            dir.path(),
+            Some(&agent),
+            &["observe", "shared", "the agent's claim"]
+        )
+        .ok
+    );
+    let adopted_did = did_of(dir.path(), Some(&agent));
+
+    // Retract the agent's own declaration, so the key being adopted is not in
+    // the set that gets carried.
+    let shown = kan_as(dir.path(), None, &["show", "role/agent", "--json"]);
+    assert!(shown.ok, "{}", shown.stderr);
+    let view: serde_json::Value = serde_json::from_str(&shown.stdout).unwrap();
+    let cid = view["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["kind"] == "RoleDeclaration")
+        .expect("the agent role should have a declaration")["cid"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(kan_as(dir.path(), None, &["retract", &cid]).ok);
+    assert!(
+        !declared_dids(dir.path()).contains(&adopted_did),
+        "precondition: the key about to be adopted must be undeclared, or this test \
+         proves nothing"
+    );
+
+    let adopt = kan_as(
+        dir.path(),
+        None,
+        &["identity", "adopt", "--key", agent.to_str().unwrap()],
+    );
+    assert!(adopt.ok, "adopt failed: {}", adopt.stderr);
+
+    let declared = declared_dids(dir.path());
+    assert!(
+        declared.contains(&adopted_did),
+        "adopt left the identity it adopted undeclared: {declared:?}\n{}",
+        adopt.stdout
+    );
+
+    // And the claims it had already written are visible under `--trust roles`.
+    let view = kan_as(
+        dir.path(),
+        None,
+        &["show", "shared", "--trust", "roles", "--json"],
+    );
+    assert!(view.ok, "{}", view.stderr);
+    let view: serde_json::Value = serde_json::from_str(&view.stdout).unwrap();
+    let authors: BTreeSet<String> = view["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["author"].as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        authors.contains(&adopted_did),
+        "`--trust roles` lost the adopted identity's own claims: {view}"
+    );
+
+    // Said out loud, like the other two paths.
+    assert!(
+        adopt.stdout.contains("also declared the adopted identity"),
+        "adopt declared the adopted identity without saying so: {}",
+        adopt.stdout
+    );
+}

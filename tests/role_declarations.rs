@@ -230,10 +230,21 @@ fn adopt_carries_the_role_registry_across() {
         adopt.stdout
     );
 
-    assert_eq!(
-        declared_dids(dir.path()),
-        before,
-        "adopt changed which identities are declared; the set must survive it"
+    // A SUPERSET, not equality, and the extra member is the correction.
+    //
+    // "The set is unchanged" was the wrong property: it is satisfied by adopt
+    // carrying the old registry and never declaring the identity it just
+    // adopted, which is exactly the defect a fourth review round found. The
+    // criterion passed BECAUSE of the bug. What must hold is that nothing
+    // carried is lost AND the adopted identity is declared.
+    let after = declared_dids(dir.path());
+    assert!(
+        before.is_subset(&after),
+        "adopt dropped an identity that was declared before it: {after:?}"
+    );
+    assert!(
+        after.contains(&did_of(dir.path(), None)),
+        "adopt left the identity it adopted undeclared: {after:?}"
     );
 }
 
@@ -280,12 +291,16 @@ fn adopt_carries_roles_even_when_the_workspace_identity_is_lost() {
     );
     assert!(adopt.ok, "adopt failed: {}", adopt.stderr);
 
-    assert_eq!(
-        declared_dids(dir.path()),
-        before,
+    let after = declared_dids(dir.path());
+    assert!(
+        before.is_subset(&after),
         "the registry did not survive a recovery adopt -- which is the one case REQ-9 \
-         exists for: {}",
+         exists for: {after:?}\n{}",
         adopt.stdout
+    );
+    assert!(
+        after.contains(&did_of(dir.path(), None)),
+        "the recovered workspace's own identity is undeclared: {after:?}"
     );
 }
 

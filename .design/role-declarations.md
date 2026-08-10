@@ -328,9 +328,16 @@ over rather than describe them in prose.
       also asserts that a self-RETRACTION does remove the role, without which the
       rejection assertion would pass against a resolver honouring nothing at all.
 - [ ] AC-10c: For REQ-9, `kan identity adopt` either leaves `--trust roles`
-      returning the **same author set** it returned before the adopt and names
-      each re-declared role on stdout, **or** carries nothing and says plainly
-      that it did not. What it must never do is report a carry it did not
+      returning **every author it returned before, plus the adopted identity**,
+      naming each declaration on stdout, **or** carries nothing and says plainly
+      that it did not.
+
+      *This said "the same author set" for three rounds, and that property was
+      **satisfied by a defect**: adopt carried the previous registry and never
+      declared the identity it had just adopted, leaving `role list` printing
+      `active: <A>` above a list without `A` — and the criterion passed, because
+      the set was indeed unchanged. A criterion that a bug satisfies is worse
+      than one that is merely unwitnessed.* What it must never do is report a carry it did not
       perform — the two outcomes are asserted as mutually exclusive, because a
       bare "did it mention carrying?" check matches the refusal text too.
       *Witnesses*, and it takes two because the branches live apart:

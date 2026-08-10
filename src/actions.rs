@@ -879,6 +879,35 @@ pub async fn adopt_identity_carrying_roles(
         .await?;
     }
 
+    // THE ADOPTED IDENTITY ITSELF, which this function is the third writer of
+    // role declarations to forget.
+    //
+    // Carrying the previous identity's registry leaves the workspace declaring
+    // roles while its OWN new identity is undeclared -- unless the adopted key
+    // happens to be one of the roles carried. Then `role list` prints
+    // `active: <A>` above a list without A, `--trust roles` drops every claim
+    // A ever wrote and every one it writes from here on, and adopt reports
+    // success. Reachable with no hand-editing: an agent key writes here via
+    // KAN_IDENTITY_FILE, the workspace key later becomes unreachable, and the
+    // operator adopts the agent key -- which is #90's flow, the one adopt
+    // exists for.
+    //
+    // Found by a FOURTH review round, scoped deliberately at this rule because
+    // the previous three each fixed only the caller they happened to look at.
+    // The helper was extracted for `declare_role` and `import_roles`; this
+    // caller existed the whole time and was not one of them. Extracting a
+    // shared rule does not, by itself, find who else should be calling it.
+    let declared_after = writable.declared_roles()?;
+    if let Some(auto) =
+        ensure_workspace_declared(&mut writable, Some(adopted.clone()), &declared_after, &[])
+            .await?
+    {
+        out.push_str(&format!(
+            "\nalso declared the adopted identity as `{}`: {}\n",
+            auto.name, auto.did
+        ));
+    }
+
     out.push_str(&format!(
         "\ncarried {} role declaration(s) across to {adopted}:\n",
         carry.len()
