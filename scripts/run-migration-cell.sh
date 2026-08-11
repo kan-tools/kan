@@ -46,6 +46,18 @@
 #                     this cell did NOT exercise the keychain plane. Recorded
 #                     rather than scored `ok`, so the table shows exactly which
 #                     versions that plane actually covers.
+#   write-refused     the workspace reads correctly but this build cannot WRITE
+#                     to it. Separate from the read outcomes because reading an
+#                     old log and appending to it are different guarantees, and
+#                     only the second exercises the MST rebuild that carries a
+#                     flat pre-kan#204 tree forward.
+#   write-hung        the upgrade write did not return. As `read-hung`, but on
+#                     the write path, so a hang is not filed under a read.
+#   write-lost-claims the write succeeded and cost a claim: something readable
+#                     before it is not readable after. This is the shape
+#                     kan#204's read-invisibility path produced -- a rebuild
+#                     that drops one claim and adds the new one leaves the
+#                     COUNT plausible, so this compares CID sets, not integers.
 #   keychain-blocked  the read never returned: a keychain entry created by the
 #                     writer is ACL'd to that binary, so the reader waits on an
 #                     authorization prompt nobody answers (#96). A hang is not
@@ -581,6 +593,66 @@ if [ -n "$written_cids" ]; then
   fi
 else
   say "integrity: writer printed no parseable CIDs -- count check only"
+fi
+
+# THE UPGRADE WRITE. Until now every cell's only reader action was a read, so
+# the matrix proved this build can READ a workspace an older kan wrote and
+# never that it can WRITE to one. That gap mattered the moment kan took over
+# its own MST (kan#204, ADR-90): an old kan wrote a FLAT tree, and the first
+# write under this build rebuilds it canonically. That rebuild is the closest
+# thing to a migration kan has, it happens automatically, and nothing here
+# exercised it.
+#
+# Gated on the cell having otherwise passed. A cell that is already blocked,
+# hung or lossy has said what it needs to; making it also attempt a write
+# would give one failure two names. So no row that is healthy today can flip
+# for an environmental reason -- only for a real one.
+say "upgrade write: appending one claim to the migrated workspace"
+write_err="$work/write.err"
+"$NEW_BIN" observe "written by this build after reading an older kan's workspace" \
+  --subject migration-subject >/dev/null 2>"$write_err" &
+writer_pid=$!
+( sleep "$READ_TIMEOUT"; kill -9 "$writer_pid" 2>/dev/null ) >/dev/null 2>&1 &
+write_watchdog=$!
+if wait "$writer_pid" 2>/dev/null; then writer_rc=0; else writer_rc=$?; fi
+kill "$write_watchdog" 2>/dev/null
+wait "$write_watchdog" 2>/dev/null
+
+if [ "$writer_rc" -eq 137 ]; then
+  say "the upgrade write did not return within ${READ_TIMEOUT}s"
+  echo "write-hung"
+  exit 0
+fi
+if [ "$writer_rc" -ne 0 ]; then
+  say "the upgrade write failed: $(head -c 400 "$write_err" 2>/dev/null)"
+  echo "write-refused"
+  exit 0
+fi
+
+# The write must not have cost anything. Re-read and require that every CID
+# the old binary wrote is STILL there -- the count alone would be satisfied by
+# a rebuild that dropped one claim and added the new one, which is precisely
+# the shape kan#204's read-invisibility path produced.
+after="$("$NEW_BIN" show migration-subject --json 2>/dev/null)"
+after_cids="$(printf '%s' "$after" \
+  | python3 -c 'import json,sys; print("\n".join(sorted(c["cid"] for c in json.load(sys.stdin)["claims"])))' \
+  2>/dev/null)"
+after_n="$(printf '%s' "$after_cids" | grep -c . || true)"
+
+if [ "$after_n" -lt $((wrote + 1)) ]; then
+  say "after the upgrade write this build sees $after_n claims, expected $((wrote + 1))"
+  echo "write-lost-claims"
+  exit 0
+fi
+if [ -n "${read_cids:-}" ]; then
+  missing="$(comm -23 <(printf '%s\n' "$read_cids" | LC_ALL=C sort) \
+                      <(printf '%s\n' "$after_cids" | LC_ALL=C sort) | grep -c . || true)"
+  if [ "$missing" -gt 0 ]; then
+    say "the upgrade write dropped $missing claim(s) that were readable before it"
+    echo "write-lost-claims"
+    exit 0
+  fi
+  say "upgrade write: all $wrote pre-existing claims survived, plus the new one"
 fi
 
 echo "ok"

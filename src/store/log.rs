@@ -43,7 +43,9 @@ use atproto_dasl::{
     storage::{BlockStorage, MemoryStorage},
     Cid, CidCore as RawCid,
 };
-use atproto_repo::{compute_cid, Commit, Mst, RecordPath, RepoConfig};
+use atproto_repo::{compute_cid, Commit, RecordPath};
+
+use crate::mst::{Mst, MstConfig};
 use serde::{Deserialize, Serialize};
 use tokio::{fs, io::AsyncWriteExt};
 
@@ -61,7 +63,7 @@ pub enum Error {
     #[error("repository error: {0}")]
     Repo(#[from] atproto_repo::errors::RepoError),
     #[error("MST error: {0}")]
-    Mst(#[from] atproto_repo::errors::MstError),
+    Mst(#[from] crate::mst::Error),
     #[error("storage error: {0}")]
     Storage(#[from] atproto_dasl::errors::StorageError),
     #[error("CAR error: {0}")]
@@ -296,7 +298,7 @@ async fn is_walkable(storage: &MemoryStorage, root: &Cid) -> bool {
     let Ok(copy) = copy_storage(storage).await else {
         return false;
     };
-    let mst = Mst::from_root(RawCid::from(commit.data), copy, RepoConfig::default());
+    let mst = Mst::from_root(RawCid::from(commit.data), copy, MstConfig::default());
     mst.entries().await.is_ok()
 }
 
@@ -347,7 +349,7 @@ impl Log {
         Self {
             car_path: dir.join("repo.car"),
             head_path: dir.join("HEAD"),
-            mst: Mst::new(MemoryStorage::new(), RepoConfig::default()),
+            mst: Mst::new(MemoryStorage::new(), MstConfig::default()),
             commit_cid: None,
             persisted: HashSet::new(),
             lock_path: dir.join("LOCK"),
@@ -476,7 +478,7 @@ impl Log {
 
             let commit_bytes = storage.get(&root).await?.ok_or(Error::MissingRoot)?;
             let commit = Commit::from_bytes(&commit_bytes)?;
-            let mst = Mst::from_root(RawCid::from(commit.data), storage, RepoConfig::default());
+            let mst = Mst::from_root(RawCid::from(commit.data), storage, MstConfig::default());
 
             // Seed from the reopened log's last commit rev, not a fresh
             // zero baseline -- kan's real usage is a fresh process per
@@ -501,7 +503,7 @@ impl Log {
                 head_stale,
             })
         } else {
-            let mst = Mst::new(MemoryStorage::new(), RepoConfig::default());
+            let mst = Mst::new(MemoryStorage::new(), MstConfig::default());
             Ok(Self {
                 car_path,
                 head_path,
@@ -740,7 +742,7 @@ impl Log {
                     let commit_bytes = storage.get(&root).await?.ok_or(Error::MissingRoot)?;
                     let commit = Commit::from_bytes(&commit_bytes)?;
                     self.mst =
-                        Mst::from_root(RawCid::from(commit.data), storage, RepoConfig::default());
+                        Mst::from_root(RawCid::from(commit.data), storage, MstConfig::default());
                     self.commit_cid = Some(root);
                     self.tid = TidGenerator::seeded(&commit.rev);
                     self.last_recorded_at = self.last_recorded_at.max(self.tid.last_micros());
@@ -769,7 +771,7 @@ impl Log {
         let root = on_disk.expect("checked above");
         let commit_bytes = storage.get(&root).await?.ok_or(Error::MissingRoot)?;
         let commit = Commit::from_bytes(&commit_bytes)?;
-        self.mst = Mst::from_root(RawCid::from(commit.data), storage, RepoConfig::default());
+        self.mst = Mst::from_root(RawCid::from(commit.data), storage, MstConfig::default());
         self.commit_cid = Some(root);
         // Keep TID monotonicity across the takeover, exactly as reopening
         // would have.
@@ -1043,6 +1045,7 @@ impl Log {
     /// specific, legible "this one record doesn't verify" case.
     pub async fn iter_all(&mut self) -> Result<Vec<(Cid, StoredClaim)>, Error> {
         let entries = self.mst.entries().await?;
+        self.warn_once_if_claims_are_unreachable(&entries).await?;
         let mut out = Vec::with_capacity(entries.len());
         for (key, _record_cid) in entries {
             let path = RecordPath::from_mst_key(&key)?;
@@ -1063,6 +1066,41 @@ impl Log {
             }
         }
         Ok(out)
+    }
+
+    /// Say so, once, if this log holds claims a read cannot reach.
+    ///
+    /// A write repairs the condition (`Mst::insert` sorts the walk before
+    /// rebuilding), but a log that is only ever *read* never triggers that, so
+    /// the claim would stay invisible indefinitely. Reads are not blocked and
+    /// the exit code is unaffected: this is affordance, not enforcement, and
+    /// the reader still gets everything the fold can see.
+    ///
+    /// Once per process, because a single command may fold several times and
+    /// repeating the same line per fold turns a real signal into noise.
+    async fn warn_once_if_claims_are_unreachable(
+        &self,
+        walk: &[(String, Cid)],
+    ) -> Result<(), Error> {
+        static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+        let lost = self.mst.unreachable_among(walk).await?;
+        if lost.is_empty() {
+            return Ok(());
+        }
+        if WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            return Ok(());
+        }
+
+        let n = lost.len();
+        let plural = if n == 1 { "claim is" } else { "claims are" };
+        eprintln!(
+            "warning: {n} {plural} present in this log but not reachable by ordered lookup, so \
+             this and every other read excludes them (kan#204). Nothing is lost -- they are in \
+             the CAR. A log gets into this state when a kan built before the MST fix writes to \
+             it. Any write repairs it, after which this warning stops."
+        );
+        Ok(())
     }
 }
 
