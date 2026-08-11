@@ -49,8 +49,13 @@ by sorting the walk before rebuilding.
   first conformant write. *INTENT:* verified by hand on a synthetic legacy log
   (235,776 bytes retained unchanged, 9,049 appended); no automated witness yet,
   and it belongs in the migration matrix rather than a unit test.
-- AC-5: (REQ-2) Every migration-matrix row ends with a canonical root.
-  *INTENT:* not yet implemented; see open item 3.
+- AC-5: (REQ-2, REQ-1) A workspace an older kan wrote, then written to by this
+  build, keeps every claim it had — compared as CID sets, because a rebuild that
+  drops one claim while adding the new one leaves the count plausible.
+  *Witness:* `scripts/run-migration-cell.sh`, the upgrade-write step, run for
+  every cell of the 64-row matrix that otherwise passes. Note this asserts data
+  preservation rather than canonical shape: shape is pinned by AC-3, and
+  preservation is the guarantee the matrix exists to give.
 
 ## Architecture
 
@@ -184,11 +189,13 @@ caused it.
    already shipped. The honest mitigation is release-note guidance plus the
    repair. Worth deciding whether beta.4 should warn when it detects an older
    `kan` earlier on `PATH`.
-3. **The migration matrix.** All 64 rows exercise historical versions that wrote
-   flat trees, so every row now migrates on first write. Rows should gain an
-   assertion that the post-write root is canonical, and the matrix should grow a
-   row for the mixed-binary case above — it is the only path that has ever made
-   a claim unreadable in this codebase.
+3. **What the matrix's upgrade write may reveal.** The step is gated on a cell
+   otherwise passing, so no healthy row can flip for an environmental reason.
+   But it has never run on the keychain axes in CI: a cell there proves the read
+   and `identity did` both work, which is not the same as proving this build can
+   *sign* in that workspace. If keychain rows come back `write-refused`, that is
+   a real finding — read-but-not-write on an upgraded keychain workspace — and
+   should be recorded as an outcome, not papered over by dropping the check.
 4. **Compaction.** Pruning blocks unreachable from HEAD would reclaim the old
    flat nodes. It is not needed for the cliff and it deletes retained attested
    data, so it is a separate decision under
