@@ -1,6 +1,6 @@
 [package]
 name = "kan"
-version = "0.12.0-beta.1"
+version = "0.12.0-beta.2"
 edition = "2021"
 # Verified, not inferred: CI's `msrv` job reads this value and builds with
 # exactly it, so the declaration cannot drift from the truth. The floor is set
