@@ -1,0 +1,91 @@
+name: Perf grid
+
+# Key-op latency across a claims x subjects grid, and the scaling gate over
+# it. Design: .design/perf-instrument.md; serves telos/performance-at-scale.
+#
+# WHAT RED MEANS HERE: an operation's growth RATIO across the grid exceeded
+# its committed bound in tests/fixtures/perf-bounds.tsv -- the shape moved,
+# the way kan#181's O(n^2) read would have moved it. Absolute times are
+# reported in the summary and never gated; a slow-but-still-linear run is
+# a fact for the table, not a failure.
+#
+# One platform, deliberately: a ratio is comparable on any runner, and the
+# migration matrix already owns the platform axis for correctness. The grid
+# itself is expanded inside scripts/run-perf-grid.sh -- coverage is a
+# reviewed edit to that list, not a workflow input.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  pull_request:
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/run-perf-grid.sh"
+      - "tests/fixtures/perf-bounds.tsv"
+      - ".github/workflows/perf.yml"
+  workflow_dispatch:
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    # Generation (~2.7k signed appends) plus reads; the smoke run measured
+    # status-all superlinear, so the budget carries headroom for a slow op
+    # at the grid's large end. Metered READ ops are individually capped at
+    # 240s inside the script (recorded AT the cap, as a floor), so one
+    # pathological read degrades to a gate-tripping measurement rather than
+    # killing the job with no table. The append meter has no per-call cap
+    # -- a hung observe dies here at the job limit with no table, the same
+    # trade the migration matrix records for its writer calls -- and several
+    # simultaneous cap-hits can also exceed this budget; the cap's
+    # degradation guarantee is per-read-op, not per-job.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the binary being measured
+        run: cargo build --release --locked
+
+      - name: Measure the grid
+        run: |
+          scripts/run-perf-grid.sh measure target/release/kan > perf-results.tsv
+          echo "## Perf grid (raw, ms)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          column -t -s$'\t' perf-results.tsv >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      # The raw table is the telos witness (perf-grid-report): retained in
+      # full, whatever the gate says about it.
+      - name: Upload perf-grid-report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-grid-report
+          path: perf-results.tsv
+          if-no-files-found: error
+
+      # NO PIPE AROUND THE GATE. The first version piped it into `tee`, and
+      # GitHub's default step shell is `bash -e` WITHOUT pipefail -- so run
+      # 31443570777 printed two EXCEEDED verdicts, exited 1 from the gate,
+      # and went green off tee's exit 0. A gate whose failure is swallowed
+      # by its own reporting is the plausible-green this whole instrument
+      # exists to hunt; the exit code is captured before anything else
+      # touches it.
+      - name: Scaling gate
+        run: |
+          rc=0
+          scripts/run-perf-grid.sh gate perf-results.tsv tests/fixtures/perf-bounds.tsv > gate.txt || rc=$?
+          cat gate.txt
+          {
+            echo "## Scaling gate"
+            echo '```'
+            cat gate.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
