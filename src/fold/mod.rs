@@ -107,7 +107,11 @@ pub fn fold(claims: Vec<(Cid, StoredClaim)>, trust: &TrustBase) -> FoldedView {
     // tiebreak makes the fold a function of the claim *set*, not its
     // enumeration order (review/full-pass-v0.12 F9); it matches the index's
     // `ORDER BY rev, content_cid`, so both read paths agree.
-    ordered.sort_by(|a, b| a.1.rev.cmp(&b.1.rev).then_with(|| a.0.to_string().cmp(&b.0.to_string())));
+    ordered.sort_by(|a, b| {
+        a.1.rev
+            .cmp(&b.1.rev)
+            .then_with(|| a.0.to_string().cmp(&b.0.to_string()))
+    });
 
     let mut view_classes = Vec::with_capacity(classes.len());
     for class in classes {

@@ -531,7 +531,14 @@ fn show_and_status_mark_superseded_under_the_same_edges() {
     };
 
     // Author A blocks, anchored to the current commit.
-    assert!(kan(dir.path(), Some(&a), &["block", "finding", "waiting on infra"]).ok);
+    assert!(
+        kan(
+            dir.path(),
+            Some(&a),
+            &["block", "finding", "waiting on infra"]
+        )
+        .ok
+    );
     // A new commit, so B's claim anchors to a descendant of A's.
     git(&[
         "-c",
@@ -545,7 +552,14 @@ fn show_and_status_mark_superseded_under_the_same_edges() {
         "second",
     ]);
     // Author B resolves, anchored to the descendant commit.
-    assert!(kan(dir.path(), Some(&b), &["resolve", "finding", "infra landed"]).ok);
+    assert!(
+        kan(
+            dir.path(),
+            Some(&b),
+            &["resolve", "finding", "infra landed"]
+        )
+        .ok
+    );
 
     let did_a = kan(dir.path(), Some(&a), &["identity", "did"]).stdout;
     let did_b = kan(dir.path(), Some(&b), &["identity", "did"]).stdout;
@@ -558,7 +572,12 @@ fn show_and_status_mark_superseded_under_the_same_edges() {
 
     let show = kan(dir.path(), None, &show_args);
     let status = kan(dir.path(), None, &status_args);
-    assert!(show.ok && status.ok, "reads failed: {} / {}", show.stderr, status.stderr);
+    assert!(
+        show.ok && status.ok,
+        "reads failed: {} / {}",
+        show.stderr,
+        status.stderr
+    );
 
     // `status` settles the subject via the computed GitAncestry edge:
     // Resolved wins, and it is NOT Contested.

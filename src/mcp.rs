@@ -508,7 +508,13 @@ impl KanServer {
         let mut ws = self.writing_workspace(&[p.subject.as_deref()]).await?;
         let warnings = subject_warnings(&ws, p.subject.as_deref())?;
         actions::observe(
-            &mut ws, p.text, p.subject, p.cites, p.file, p.status.map(Into::into), p.title,
+            &mut ws,
+            p.text,
+            p.subject,
+            p.cites,
+            p.file,
+            p.status.map(Into::into),
+            p.title,
             p.kind.map(Into::into),
         )
         .await
@@ -522,7 +528,13 @@ impl KanServer {
         let mut ws = self.writing_workspace(&[p.subject.as_deref()]).await?;
         let warnings = subject_warnings(&ws, p.subject.as_deref())?;
         actions::plan(
-            &mut ws, p.text, p.subject, p.cites, p.file, p.status.map(Into::into), p.title,
+            &mut ws,
+            p.text,
+            p.subject,
+            p.cites,
+            p.file,
+            p.status.map(Into::into),
+            p.title,
             p.kind.map(Into::into),
         )
         .await
@@ -536,7 +548,13 @@ impl KanServer {
         let mut ws = self.writing_workspace(&[p.subject.as_deref()]).await?;
         let warnings = subject_warnings(&ws, p.subject.as_deref())?;
         actions::decide(
-            &mut ws, p.text, p.subject, p.cites, p.file, p.status.map(Into::into), p.title,
+            &mut ws,
+            p.text,
+            p.subject,
+            p.cites,
+            p.file,
+            p.status.map(Into::into),
+            p.title,
             p.kind.map(Into::into),
         )
         .await
@@ -551,10 +569,17 @@ impl KanServer {
         let p = params.0;
         let mut ws = self.writing_workspace(&[Some(p.subject.as_str())]).await?;
         let warnings = subject_warnings(&ws, Some(&p.subject))?;
-        actions::block(&mut ws, &p.subject, &p.text, p.file, p.title, p.kind.map(Into::into))
-            .await
-            .map(|r| append_warnings(r.confirmation(), warnings))
-            .map_err(to_error)
+        actions::block(
+            &mut ws,
+            &p.subject,
+            &p.text,
+            p.file,
+            p.title,
+            p.kind.map(Into::into),
+        )
+        .await
+        .map(|r| append_warnings(r.confirmation(), warnings))
+        .map_err(to_error)
     }
 
     #[tool(
@@ -565,7 +590,13 @@ impl KanServer {
         let mut ws = self.writing_workspace(&[Some(p.subject.as_str())]).await?;
         let warnings = subject_warnings(&ws, Some(&p.subject))?;
         actions::resolve(
-            &mut ws, &p.subject, &p.text, p.cites, p.file, p.title, p.kind.map(Into::into),
+            &mut ws,
+            &p.subject,
+            &p.text,
+            p.cites,
+            p.file,
+            p.title,
+            p.kind.map(Into::into),
         )
         .await
         .map(|r| append_warnings(r.confirmation(), warnings))
@@ -580,7 +611,13 @@ impl KanServer {
         let mut ws = self.writing_workspace(&[Some(p.subject.as_str())]).await?;
         let warnings = subject_warnings(&ws, Some(&p.subject))?;
         actions::result(
-            &mut ws, &p.subject, &p.text, p.cites, p.file, p.status.map(Into::into), p.title,
+            &mut ws,
+            &p.subject,
+            &p.text,
+            p.cites,
+            p.file,
+            p.status.map(Into::into),
+            p.title,
             p.kind.map(Into::into),
         )
         .await

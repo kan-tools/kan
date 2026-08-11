@@ -406,7 +406,8 @@ impl Log {
             // a second look.
             if usable.is_none() && stated.is_some() {
                 let bytes = fs::read(&car_path).await?;
-                let (fresh_storage, fresh_truncated) = read_blocks_tolerantly(&bytes, &car_path).await?;
+                let (fresh_storage, fresh_truncated) =
+                    read_blocks_tolerantly(&bytes, &car_path).await?;
                 let fresh_head = read_head(&head_path).await;
                 if let Some(cid) = &fresh_head {
                     if is_walkable(&fresh_storage, cid).await {
@@ -544,11 +545,7 @@ impl Log {
         // means the one file holding the unrecovered blocks would be
         // destroyed by the very step meant to help.
         let damaged = {
-            let mut name = self
-                .car_path
-                .file_name()
-                .unwrap_or_default()
-                .to_os_string();
+            let mut name = self.car_path.file_name().unwrap_or_default().to_os_string();
             name.push(format!(".damaged-{}", now_micros()));
             self.car_path.with_file_name(name)
         };
@@ -732,8 +729,7 @@ impl Log {
                 if is_walkable(&storage, &root).await {
                     self.needs_repair |= truncated;
                     self.persisted = storage.cids().map(Cid::from).collect();
-                    let commit_bytes =
-                        storage.get(&root).await?.ok_or(Error::MissingRoot)?;
+                    let commit_bytes = storage.get(&root).await?.ok_or(Error::MissingRoot)?;
                     let commit = Commit::from_bytes(&commit_bytes)?;
                     self.mst =
                         Mst::from_root(RawCid::from(commit.data), storage, RepoConfig::default());

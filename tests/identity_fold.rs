@@ -603,14 +603,26 @@ async fn retracting_a_retraction_of_a_retraction_reinstates_the_first() {
         .unwrap();
     let r1 = log
         .append(
-            content(&who, "bug", ClaimBody::Retraction { supersedes: x.clone() }),
+            content(
+                &who,
+                "bug",
+                ClaimBody::Retraction {
+                    supersedes: x.clone(),
+                },
+            ),
             &owner,
         )
         .await
         .unwrap();
     let r2 = log
         .append(
-            content(&who, "bug", ClaimBody::Retraction { supersedes: r1.clone() }),
+            content(
+                &who,
+                "bug",
+                ClaimBody::Retraction {
+                    supersedes: r1.clone(),
+                },
+            ),
             &owner,
         )
         .await
@@ -618,7 +630,13 @@ async fn retracting_a_retraction_of_a_retraction_reinstates_the_first() {
     // R3 retracts R2, so R2 is inert, so R1 is effective again, so X is
     // excluded.
     log.append(
-        content(&who, "bug", ClaimBody::Retraction { supersedes: r2.clone() }),
+        content(
+            &who,
+            "bug",
+            ClaimBody::Retraction {
+                supersedes: r2.clone(),
+            },
+        ),
         &owner,
     )
     .await
@@ -642,7 +660,10 @@ async fn retracting_a_retraction_of_a_retraction_reinstates_the_first() {
         "R2 is retracted by the effective R3 and must not be live"
     );
     // Sanity: two effective retractions (R1, R3) remain visible narrative.
-    assert!(live.contains(&r1), "R1 is effective again and should be visible");
+    assert!(
+        live.contains(&r1),
+        "R1 is effective again and should be visible"
+    );
 }
 
 /// F9, the simpler chain the old code did get right — kept so the fixpoint
@@ -666,13 +687,25 @@ async fn retracting_a_retraction_reinstates_the_original() {
         .unwrap();
     let r1 = log
         .append(
-            content(&who, "bug", ClaimBody::Retraction { supersedes: x.clone() }),
+            content(
+                &who,
+                "bug",
+                ClaimBody::Retraction {
+                    supersedes: x.clone(),
+                },
+            ),
             &owner,
         )
         .await
         .unwrap();
     log.append(
-        content(&who, "bug", ClaimBody::Retraction { supersedes: r1.clone() }),
+        content(
+            &who,
+            "bug",
+            ClaimBody::Retraction {
+                supersedes: r1.clone(),
+            },
+        ),
         &owner,
     )
     .await

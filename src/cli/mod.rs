@@ -867,8 +867,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             kind,
             verbose,
         } => {
-            let Resolved { subject, text, .. } =
-                subject_and_text(first, second, subject, None)?;
+            let Resolved { subject, text, .. } = subject_and_text(first, second, subject, None)?;
             print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::resolve(
                 &mut ws,
@@ -893,8 +892,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             kind,
             verbose,
         } => {
-            let Resolved { subject, text, .. } =
-                subject_and_text(first, second, subject, None)?;
+            let Resolved { subject, text, .. } = subject_and_text(first, second, subject, None)?;
             print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::result(
                 &mut ws,
@@ -918,8 +916,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             kind,
             verbose,
         } => {
-            let Resolved { subject, text, .. } =
-                subject_and_text(first, second, subject, None)?;
+            let Resolved { subject, text, .. } = subject_and_text(first, second, subject, None)?;
             print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result =
                 actions::block(&mut ws, &subject, &text, file, title, kind.map(Into::into)).await?;

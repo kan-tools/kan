@@ -322,8 +322,7 @@ async fn a_zero_byte_car_names_its_state_and_is_not_modified() {
 fn the_recovery_messages_do_not_overclaim() {
     let dir = common::git_repo();
     for i in 0..5 {
-        let (_out, _err, ok) =
-            common::kan(dir.path(), &["observe", "work", &format!("claim {i}")]);
+        let (_out, _err, ok) = common::kan(dir.path(), &["observe", "work", &format!("claim {i}")]);
         assert!(ok, "seeding claim {i} failed");
     }
 

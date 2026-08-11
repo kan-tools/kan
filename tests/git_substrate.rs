@@ -118,11 +118,11 @@ fn a_dash_prefixed_sha_is_refused_at_the_boundary() {
 
     // A crafted option-shaped SHA participates in no edge and does not error.
     for hostile in ["--output=/tmp/pwned", "-oops", "--all"] {
-        assert_eq!(
-            substrate
-                .is_ancestor(&hostile.to_string(), &sha1)
-                .expect("a malformed sha must be a clean no-edge, not an error"),
-            false,
+        let edge = substrate
+            .is_ancestor(&hostile.to_string(), &sha1)
+            .expect("a malformed sha must be a clean no-edge, not an error");
+        assert!(
+            !edge,
             "a dash-prefixed sha must not be treated as a real revision"
         );
     }

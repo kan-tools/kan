@@ -384,6 +384,9 @@ async fn concurrent_recovering_writers_all_survive() {
          stale HEAD rewrite: {missing:?}",
         missing.len()
     );
-    assert!(texts.contains("seed"), "the pre-window claim must survive too");
+    assert!(
+        texts.contains("seed"),
+        "the pre-window claim must survive too"
+    );
     assert_eq!(stored.len(), N + 1);
 }

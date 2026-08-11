@@ -841,7 +841,13 @@ fn a_weighted_trust_selector_warns_weights_are_inert() {
     .to_string();
 
     let weighted = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
-        .args(["show", "finding", "--trust", &format!("{did}=0.5"), "--json"])
+        .args([
+            "show",
+            "finding",
+            "--trust",
+            &format!("{did}=0.5"),
+            "--json",
+        ])
         .current_dir(dir.path())
         .env("KAN_NO_KEYCHAIN", "1")
         .output()
@@ -859,8 +865,7 @@ fn a_weighted_trust_selector_warns_weights_are_inert() {
         .env("KAN_NO_KEYCHAIN", "1")
         .output()
         .unwrap();
-    let wv: serde_json::Value =
-        serde_json::from_slice(&weighted.stdout).unwrap();
+    let wv: serde_json::Value = serde_json::from_slice(&weighted.stdout).unwrap();
     let pv: serde_json::Value = serde_json::from_slice(&plain.stdout).unwrap();
     assert_eq!(
         wv["claims"], pv["claims"],

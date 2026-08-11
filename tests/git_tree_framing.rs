@@ -289,7 +289,9 @@ fn a_huge_text_len_is_malformed_not_fatal() {
     let identity = Identity::generate();
     let record = git_tree::to_record(&signed(&identity, "an honest body")).unwrap();
     let (pre, post) = {
-        let start = record.find("\"text_len\":").expect("v2 records declare text_len");
+        let start = record
+            .find("\"text_len\":")
+            .expect("v2 records declare text_len");
         let rest = &record[start..];
         let end = start + rest.find([',', '}']).unwrap();
         (&record[..start], &record[end..])
@@ -310,7 +312,9 @@ fn a_text_len_inside_a_utf8_char_is_malformed_not_fatal() {
     let identity = Identity::generate();
     let record = git_tree::to_record(&signed(&identity, "aéb")).unwrap();
     let crafted = {
-        let start = record.find("\"text_len\":").expect("v2 records declare text_len");
+        let start = record
+            .find("\"text_len\":")
+            .expect("v2 records declare text_len");
         let rest = &record[start..];
         let end = start + rest.find([',', '}']).unwrap();
         format!("{}\"text_len\":1{}", &record[..start], &record[end..])
