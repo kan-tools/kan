@@ -33,10 +33,14 @@ jobs:
     runs-on: ubuntu-latest
     # Generation (~2.7k signed appends) plus reads; the smoke run measured
     # status-all superlinear, so the budget carries headroom for a slow op
-    # at the grid's large end. Metered ops are individually capped at 240s
-    # inside the script (recorded AT the cap, as a floor), so one
-    # pathological op degrades to a gate-tripping measurement rather than
-    # killing the job with no table.
+    # at the grid's large end. Metered READ ops are individually capped at
+    # 240s inside the script (recorded AT the cap, as a floor), so one
+    # pathological read degrades to a gate-tripping measurement rather than
+    # killing the job with no table. The append meter has no per-call cap
+    # -- a hung observe dies here at the job limit with no table, the same
+    # trade the migration matrix records for its writer calls -- and several
+    # simultaneous cap-hits can also exceed this budget; the cap's
+    # degradation guarantee is per-read-op, not per-job.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4

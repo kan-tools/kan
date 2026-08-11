@@ -13,7 +13,7 @@
 # else goes to stderr. `gate` computes the growth ratio per (op, axis) from a
 # results file and errors when a committed bound is exceeded. Absolute times
 # are never judged -- the gate is about SHAPE (kan#181 was 141s of O(n^2)
-# subprocesses next to a 72ms bulk read; the decade between linear and
+# subprocesses next to a 72ms `--json` read of the same subject; the decade between linear and
 # quadratic is wider than any runner's noise, which is what makes the ratio
 # gateable where wall-clock is not).
 set -euo pipefail
@@ -48,12 +48,22 @@ SUBJECTS_AXIS_LARGE="800 400"
 
 # A new empty commit every this-many claims, so commit anchors are
 # heterogeneous. A single-commit log makes every ancestry question trivially
-# cheap, which hides exactly the plane #181 lived on.
-COMMIT_EVERY=100
+# cheap, which hides exactly the plane #181 lived on. Small enough that the
+# SMALLEST grid point gets several anchors: at 100 the (50,4) point got
+# zero, so the claims axis compared a trivial-ancestry log against a real
+# one and conflated 16x claims with 8x commits (cold review of PR #201,
+# finding 9). At 10, commit count grows in proportion to claims across the
+# axis, so a commit-pair-quadratic cost reads as the claims-quadratic ratio
+# it is.
+COMMIT_EVERY=10
 
-# Appends timed in passing: the mean of the final this-many appends at each
-# grid size. Final, not first -- the write path at size N, not at size 0.
-APPEND_SAMPLE=50
+# Appends timed in passing: the mean of the final n/8 appends (floor 10) at
+# each grid size. Final, not first -- the write path at size N, not at size
+# 0 -- and PROPORTIONAL, not fixed: a fixed 50 at the (50,4) point averaged
+# the entire 0->49 ramp, which calibrates a linear-in-size append to ~32 on
+# a 16x axis instead of ~16 (cold review of PR #201, finding 10). With n/8,
+# both ends sample near their own size and linear lands near 16 again.
+APPEND_SAMPLE_FLOOR=10
 
 # Read ops: min of this many runs. Min is the noise-robust latency statistic
 # on a shared runner; a mean smears one scheduler hiccup across the result.
@@ -75,7 +85,7 @@ if [ -n "${PERF_SMOKE:-}" ]; then
   GRID=("10 2" "40 2" "160 2" "160 8" "160 40")
   CLAIMS_AXIS_SMALL="10 2";  CLAIMS_AXIS_LARGE="160 2"
   SUBJECTS_AXIS_SMALL="160 2"; SUBJECTS_AXIS_LARGE="160 40"
-  COMMIT_EVERY=20; APPEND_SAMPLE=10
+  COMMIT_EVERY=5; APPEND_SAMPLE_FLOOR=5
 fi
 
 cmd="${1:?usage: run-perf-grid.sh measure <kan-binary> | gate <results.tsv> <bounds.tsv>}"
@@ -95,6 +105,10 @@ measure() {
   echo -e "op\tclaims\tsubjects\tms"
   [ -n "${PERF_SMOKE:-}" ] && echo -e "#smoke\t0\t0\t0"
 
+  # The trap cleans the CURRENT point's workspace on any failure path; the
+  # in-loop rm handles the completed ones. Without it, every failed run
+  # leaked a mktemp dir (harmless in CI, litter locally).
+  trap '[ -n "${work:-}" ] && rm -rf "$work"' EXIT
   for point in "${GRID[@]}"; do
     read -r n_claims n_subjects <<<"$point"
     work="$(mktemp -d)"
@@ -112,9 +126,10 @@ measure() {
       # full run died at claim 1431 with the cause thrown away by a DEVNULL
       # -- the exact unactionable "unwritable with no captured reason" the
       # migration cell's writer.log exists to prevent.
-      "$PYTHON" - "$KAN_BIN" "$n_claims" "$n_subjects" "$COMMIT_EVERY" "$APPEND_SAMPLE" <<'PYGEN'
+      "$PYTHON" - "$KAN_BIN" "$n_claims" "$n_subjects" "$COMMIT_EVERY" "$APPEND_SAMPLE_FLOOR" <<'PYGEN'
 import subprocess, sys, time
-kan, n, s, every, sample = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
+kan, n, s, every, floor = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), int(sys.argv[5])
+sample = max(floor, n // 8)
 times = []
 for i in range(n):
     if i and i % every == 0:
@@ -146,21 +161,41 @@ OPS = [
     ("issues",       [kan, "issues"]),
     ("context",      [kan, "context", "--budget", "4000"]),
 ]
+# AN OP THAT FAILS IS A FAILED MEASURE, NOT A MISSING ROW. The first
+# version printed the op's name to stderr, emitted no row, and exited 0 --
+# and the gate, deriving its op list from the results, then passed green
+# with that op's committed bounds unenforced. Silent absence is how this
+# instrument gets fooled (cold review of PR #201, blocking finding; same
+# class as the tee-swallowed gate exit).
+failed = []
 for name, argv in OPS:
     best = None
     for i in range(reps):
         t0 = time.perf_counter()
         try:
             r = subprocess.run(argv, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, timeout=cap_s)
+                               stderr=subprocess.PIPE, timeout=cap_s)
         except subprocess.TimeoutExpired:
-            print(f"{name}: hit the {cap_s:.0f}s cap -- recording the cap as a "
-                  f"FLOOR; the true time is larger", file=sys.stderr)
-            best = cap_s
+            # A cap hit is a FLOOR -- but it must not overwrite a real
+            # measurement from an earlier rep. Min is the statistic; a
+            # completed 100ms run outranks a later hang (finding 5).
+            if best is None:
+                print(f"{name}: hit the {cap_s:.0f}s cap with no completed rep "
+                      f"-- recording the cap as a FLOOR; the true time is larger",
+                      file=sys.stderr)
+                best = cap_s
+            else:
+                print(f"{name}: rep {i+1} hit the {cap_s:.0f}s cap; keeping the "
+                      f"completed min of {best*1000.0:.1f}ms", file=sys.stderr)
             break
         dt = time.perf_counter() - t0
         if r.returncode != 0:
-            print(f"{name}\tFAILED", file=sys.stderr); best = None; break
+            print(f"{name}: exited {r.returncode} on rep {i+1}. Its stderr:\n"
+                  f"{r.stderr.decode(errors='replace').strip()[-2000:]}",
+                  file=sys.stderr)
+            best = None
+            failed.append(name)
+            break
         best = dt if best is None or dt < best else best
         if dt * 1000.0 > slow_ms:
             print(f"{name}: {dt*1000.0:.0f}ms on the first run -- single "
@@ -169,6 +204,11 @@ for name, argv in OPS:
             break
     if best is not None:
         print(f"{name}\t{best * 1000.0:.1f}")
+if failed:
+    print(f"measure FAILED: {', '.join(failed)} did not produce a measurement; "
+          f"a table with holes must not reach the gate looking complete",
+          file=sys.stderr)
+    sys.exit(1)
 PYREAD
     ) | while IFS=$'\t' read -r op ms; do
       # Subshell stdout carries only the two meters' `op<TAB>ms` lines; stamp
@@ -214,24 +254,38 @@ if not t:
     sys.exit("gate: no measurements in " + results_path)
 
 bound = {}
-for line in open(bounds_path):
+for lineno, line in enumerate(open(bounds_path), 1):
     if not line.strip() or line.startswith("#"):
         continue
-    op, axis, maxratio, why = line.rstrip("\n").split("\t", 3)
+    parts = line.rstrip("\n").split("\t", 3)
+    if len(parts) != 4:
+        sys.exit(f"gate: bounds line {lineno} has {len(parts)} tab-separated "
+                 f"fields, not 4 -- refusing a table it cannot read.")
+    op, axis, maxratio, why = parts
     if not (why.startswith("MEASURED") or why.startswith("PREDICTED")):
         sys.exit(f"gate: bound ({op}, {axis}) has a why that opens with "
                  f"neither MEASURED nor PREDICTED -- the confidence token "
                  f"is the contract, not decoration.")
+    if (op, axis) in bound:
+        sys.exit(f"gate: duplicate bound for ({op}, {axis}) -- last-wins "
+                 f"would silently drop one of two committed decisions.")
     bound[(op, axis)] = (float(maxratio), why)
 
-ops = sorted({op for (op, _, _) in t})
-failures, rows = [], []
+# THE BOUNDS FILE DRIVES THE LOOP, the results only answer it. Deriving the
+# op list from the results let a crashed op vanish: no rows, no lookup, no
+# enforcement, green (cold review of PR #201, blocking finding). Every
+# committed bound must find its measurements or the gate fails; an op in
+# the results with no bound still fails from the per-axis check below.
+ops = sorted({op for (op, _) in bound} | {op for (op, _, _) in t})
+failures, rows, unjudged = [], [], 0
 for op in ops:
     for axis, (small, large) in axes.items():
         ts, tl = t.get((op, *small)), t.get((op, *large))
         if ts is None or tl is None:
-            failures.append(f"({op}, {axis}): grid points missing from results "
-                            f"-- the axis list and the GRID list have drifted.")
+            failures.append(f"({op}, {axis}): no measurement at the axis "
+                            f"endpoints. Either the GRID/axis lists drifted, "
+                            f"or the op failed to produce a row -- the measure "
+                            f"log says which.")
             continue
         ratio = tl / ts if ts > 0 else float("inf")
         b = bound.get((op, axis))
@@ -242,13 +296,17 @@ for op in ops:
             continue
         maxratio, why = b
         if tl < FLOOR_MS:
-            verdict = "below-floor"
+            # Not judged -- but not silently blessed either (finding 3): a
+            # sub-floor ratio over its bound is recorded as exactly that.
+            verdict = "below-floor" if ratio <= maxratio else "below-floor!"
+            if ratio > maxratio:
+                unjudged += 1
         elif ratio <= maxratio:
             verdict = "ok"
         else:
             verdict = "EXCEEDED"
             failures.append(f"({op}, {axis}): ratio {ratio:.1f} exceeds bound "
-                            f"{maxratio:.0f}. {why.split('.')[0]}.")
+                            f"{maxratio:.0f}. Committed reason: {why}")
         rows.append((op, axis, f"{ts:.1f}", f"{tl:.1f}", f"{ratio:.1f}",
                      f"{maxratio:.0f}", verdict))
 
@@ -262,7 +320,12 @@ if failures:
     for f in failures:
         print("FAIL " + f)
     sys.exit(1)
-print("\nscaling gate: all bounded ratios within bounds")
+if unjudged:
+    print(f"\nscaling gate: no gated ratio exceeded its bound; {unjudged} "
+          f"below-floor row(s) exceed theirs at sub-{FLOOR_MS:.0f}ms times "
+          f"(marked '!', recorded, not judged)")
+else:
+    print("\nscaling gate: no gated ratio exceeded its bound")
 PYGATE
 }
 

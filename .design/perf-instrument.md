@@ -11,8 +11,8 @@ projection as data.
 
 Performance defects here have been *scaling* defects, not constant-factor
 ones. kan#181: `kan show <subject>` spent 141 s spawning 8,540 git
-subprocesses — O(n²) in commit-anchored claim pairs — on a log where
-`show --all --json` took 72 ms. Nothing in CI could have seen it: the suite's
+subprocesses — O(n²) in commit-anchored claim pairs — on a log where the
+`--json` read of the same subject took 72 ms. Nothing in CI could have seen it: the suite's
 logs are tiny, and a green suite says nothing about shape. The instrument
 this doc designs makes the *shape* a measured, gated fact and the raw
 timings a retained record.
