@@ -644,11 +644,38 @@ impl Log {
     /// since this `Log` was opened. A no-op in the overwhelmingly common
     /// single-writer case — one `read_to_string` of a CID-sized file.
     async fn reload_if_stale(&mut self) -> Result<(), Error> {
-        // A recovered root is *deliberately* out of step with what is on
-        // disk until this append rewrites it — reloading toward the on-disk
-        // value here would walk straight back into the damage recovery just
-        // stepped around.
+        // A recovered root is out of step with what is on disk by
+        // construction — but the recovery ran *before* this process held the
+        // lock, so "the damage is real" and "another writer moved HEAD while
+        // we were recovering" are indistinguishable until now. An early
+        // return here rolled back every writer that landed between open and
+        // append: six concurrent first-appends to a fresh workspace all
+        // exited 0 and two subjects survived, the losers' blocks reachable
+        // from no root (review/full-pass-v0.12 F1). Prefer the on-disk root
+        // whenever it is walkable in a fresh read; the recovered root is
+        // only for a log that is still broken while the lock is held.
         if self.head_stale {
+            let on_disk = match fs::read_to_string(&self.head_path).await {
+                Ok(head) => head.trim().parse::<Cid>().ok(),
+                Err(_) => None,
+            };
+            if let Some(root) = on_disk {
+                let bytes = fs::read(&self.car_path).await?;
+                let (storage, truncated) = read_blocks_tolerantly(&bytes).await?;
+                if is_walkable(&storage, &root).await {
+                    self.needs_repair |= truncated;
+                    self.persisted = storage.cids().map(Cid::from).collect();
+                    let commit_bytes =
+                        storage.get(&root).await?.ok_or(Error::MissingRoot)?;
+                    let commit = Commit::from_bytes(&commit_bytes)?;
+                    self.mst =
+                        Mst::from_root(RawCid::from(commit.data), storage, RepoConfig::default());
+                    self.commit_cid = Some(root);
+                    self.tid = TidGenerator::seeded(&commit.rev);
+                    self.last_recorded_at = self.last_recorded_at.max(self.tid.last_micros());
+                    self.head_stale = false;
+                }
+            }
             return Ok(());
         }
         let on_disk = match fs::read_to_string(&self.head_path).await {
