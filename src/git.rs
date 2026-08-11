@@ -37,10 +37,23 @@ pub enum Error {
          again. Nothing was written."
     )]
     NoCommits,
+    #[error(
+        "this directory is not inside a git repository, and kan anchors every claim to a \
+         repo's history (docs/SPEC.md §5). Run kan from inside a git repo, or create one \
+         here with `git init && git commit --allow-empty -m init`. Nothing was written."
+    )]
+    NotAGitRepo,
 }
 
 pub struct GitSubstrate {
     repo_root: PathBuf,
+}
+
+/// A commit SHA is hex (SHA-1 or SHA-256), never empty. Anything else is not
+/// a hash git could resolve, and — reaching git as a positional argument —
+/// must not be allowed to start with `-` and be read as an option.
+fn is_hex_sha(sha: &Sha) -> bool {
+    !sha.is_empty() && sha.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 impl GitSubstrate {
@@ -50,7 +63,12 @@ impl GitSubstrate {
         let substrate = Self {
             repo_root: repo_root.to_path_buf(),
         };
-        substrate.run(&["rev-parse", "--git-dir"])?;
+        // git's own "fatal: not a git repository" is raw plumbing an operator
+        // can't act on; give the actionable form instead (the no-commits and
+        // shallow cases already have theirs).
+        if let Err(Error::Failed(_, _, _)) = substrate.run(&["rev-parse", "--git-dir"]) {
+            return Err(Error::NotAGitRepo);
+        }
         Ok(substrate)
     }
 
@@ -113,6 +131,15 @@ impl GitSubstrate {
     /// from git's own contract is visible here, not just at the call site.
     pub fn is_ancestor(&self, ancestor: &Sha, descendant: &Sha) -> Result<bool, Error> {
         if ancestor == descendant {
+            return Ok(false);
+        }
+        // A `Sha` reaches here from a claim's `Anchor::Commit`/`ArtifactRef`,
+        // which is untrusted text (review/full-pass-v0.12, git-arg finding).
+        // A validated hex string can never be read by git as a `-`-prefixed
+        // option, which closes the argument-injection surface at the source;
+        // anything else is not a commit this repo could contain, so it
+        // participates in no ancestry edge.
+        if !is_hex_sha(ancestor) || !is_hex_sha(descendant) {
             return Ok(false);
         }
         let args = [

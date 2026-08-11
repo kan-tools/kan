@@ -160,8 +160,8 @@ pub enum Command {
         verbose: bool,
     },
     /// Assert a domain-semantic edge between `a` and `b` (Relation::{Blocks,
-    /// About, ManifestsAt, DependsOn, Accepts}). Not for identity — use
-    /// `kan same` for `SameAs`.
+    /// About, ManifestsAt, DependsOn, Accepts, InTensionWith, Supersedes,
+    /// Refutes}). Not for identity — use `kan same` for `SameAs`.
     Relate {
         a: String,
         kind: RelationKindArg,
@@ -677,7 +677,9 @@ fn elide(text: &str) -> String {
 #[derive(Debug, clap::Args)]
 pub struct NarrativeArgs {
     /// Either the subject (when a second positional follows) or the claim
-    /// text. See `subject_and_text`.
+    /// text. `kan <verb> <subject> <text>` and `kan <verb> <text> --subject
+    /// <s>` both work; a bare `kan <verb> <text>` records the note on
+    /// `general`.
     pub first: String,
     /// The claim text, when the subject was given positionally.
     pub second: Option<String>,

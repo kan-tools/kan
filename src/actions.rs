@@ -37,7 +37,14 @@ pub enum Error {
     Index(#[from] crate::store::index::Error),
     #[error(transparent)]
     Git(#[from] crate::git::Error),
-    #[error("invalid CID {0:?}: {1}")]
+    // The inner dasl `DecodeError` Displays an `error-atproto-dasl-decode-N`
+    // token that is noise to an operator (review/full-pass-v0.12). Kept in
+    // the type for matching, dropped from the message in favour of the one
+    // fact that helps: what a CID actually looks like.
+    #[error(
+        "invalid CID {0:?}: a claim CID is base32, lower-case, and starts with 'b' \
+         (e.g. bafyrei...)"
+    )]
     InvalidCid(String, atproto_dasl::DecodeError),
     #[error("no such claim: {0}")]
     UnknownClaim(Cid),
