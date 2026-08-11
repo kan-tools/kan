@@ -648,15 +648,18 @@ fn subject_and_text(
 /// positional; `--subject x "text"` and `x "text"` are untouched.
 fn guard_positional_is_not_a_subject(ws: &Workspace, r: &Resolved) -> Result<(), Error> {
     if r.defaulted && actions::subject_exists(ws, &r.text)? {
+        // The description elides a long name; the suggested commands use the
+        // full name, since a truncated `...` command would not run (cold
+        // review NOTE).
         return Err(actions::Error::Usage(format!(
             "\"{}\" is already a subject, so `kan <verb> {}` would record its name as a \
              note on `general` -- which is almost always a forgotten text argument. \
              Write about it with `kan <verb> {} \"<text>\"`, or force the note with \
              `kan <verb> \"{}\" --subject general`.",
             elide(&r.text),
-            elide(&r.text),
-            elide(&r.text),
-            elide(&r.text),
+            r.text,
+            r.text,
+            r.text,
         ))
         .into());
     }

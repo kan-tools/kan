@@ -360,3 +360,53 @@ fn the_recovery_messages_do_not_overclaim() {
         });
     assert!(kept, "the pre-repair copy must exist on disk");
 }
+
+/// Cold review of the F1/F2 branch: a second recovering opener must NOT
+/// re-repair a file the first one already fixed. The `head_stale` adoption
+/// branch replaces in-memory state from a fresh under-lock read, so its
+/// repair flag must reflect THAT read — an `|=` that kept the pre-lock
+/// open's damage flag made the second opener run `rewrite_car` on the
+/// already-healthy file, leaving a bogus `repo.car.damaged-*` copy plus a
+/// false "blocks exist only in that copy" warning.
+#[tokio::test]
+async fn a_second_recovering_opener_does_not_re_repair() {
+    let (_dir, identity, log_dir) = seeded(5).await;
+    let car = log_dir.join("repo.car");
+
+    // Damage mid-file, then drop HEAD so openers take the recovery path.
+    let mut bytes = std::fs::read(&car).unwrap();
+    let mid = bytes.len() * 35 / 100;
+    bytes[mid] ^= 0xFF;
+    std::fs::write(&car, &bytes).unwrap();
+    std::fs::remove_file(log_dir.join("HEAD")).unwrap();
+
+    // BOTH openers open while HEAD is missing, so both are `head_stale` and
+    // both saw the damage at open time. This is what puts B on the adoption
+    // branch: A writes HEAD first, then B adopts A's now-healthy root.
+    let mut a = Log::open_or_create(&log_dir, &identity).await.unwrap();
+    let mut b = Log::open_or_create(&log_dir, &identity).await.unwrap();
+
+    // A recovers and repairs on its append (keeps copy #1 — correct).
+    a.append(content(&identity, "after-a"), &identity)
+        .await
+        .unwrap();
+    // B adopts A's healthy on-disk root under the lock; it must NOT re-repair.
+    b.append(content(&identity, "after-b"), &identity)
+        .await
+        .unwrap();
+
+    let copies = std::fs::read_dir(&log_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("repo.car.damaged-")
+        })
+        .count();
+    assert_eq!(
+        copies, 1,
+        "exactly one pre-repair copy should exist (A's); B adopted a healthy \
+         file and must not have re-repaired it, found {copies}"
+    );
+}

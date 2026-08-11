@@ -727,7 +727,15 @@ impl Log {
                 let bytes = fs::read(&self.car_path).await?;
                 let (storage, truncated) = read_blocks_tolerantly(&bytes, &self.car_path).await?;
                 if is_walkable(&storage, &root).await {
-                    self.needs_repair |= truncated;
+                    // `=`, not `|=`: this branch replaces the entire in-memory
+                    // state from a fresh under-lock read, so the repair flag
+                    // must reflect THAT read, not the damage the pre-lock open
+                    // saw. Keeping the open-time flag set made a second
+                    // recovering opener run `rewrite_car` on a file the first
+                    // one already repaired — a spurious `repo.car.damaged-*`
+                    // copy plus a "blocks exist only in that copy" warning
+                    // that was false for it (cold review of the F1/F2 branch).
+                    self.needs_repair = truncated;
                     self.persisted = storage.cids().map(Cid::from).collect();
                     let commit_bytes = storage.get(&root).await?.ok_or(Error::MissingRoot)?;
                     let commit = Commit::from_bytes(&commit_bytes)?;

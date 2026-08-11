@@ -1826,6 +1826,30 @@ fn format_micros(micros: u64) -> String {
     format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{sec:02}Z")
 }
 
+/// Computed edges for classifying a subject's status, over the `Status`
+/// claims ALONE rather than every claim in the class.
+///
+/// `state::classify`'s `dominated_cids` only ever consults an `Ancestry`
+/// edge between two live `Status` claims — a narrative claim's commit anchor
+/// participates in no edge it reads. Computing `compute_default` over all
+/// class claims therefore spawned `O(k²)` `git merge-base` subprocesses in
+/// `k` = distinct commit anchors for nothing: a `show` of a subject spanning
+/// 50 commits took ~12 s where the answer needs only the handful of edges
+/// among its status claims. Narrowing the input here is semantics-preserving
+/// (the dropped edges were never read) and is what keeps the F9 edge-set fix
+/// from turning the agent-facing read path into a fork storm.
+fn status_classification_edges(
+    ws: &Workspace,
+    claims: &[(Cid, crate::claim::Claim)],
+) -> Vec<crate::relations::ComputedEdge> {
+    let status_only: Vec<(Cid, crate::claim::Claim)> = claims
+        .iter()
+        .filter(|(_, c)| c.content.body.kind() == crate::claim::ClaimKind::Status)
+        .cloned()
+        .collect();
+    relations::compute_default(&status_only, &ws.git)
+}
+
 /// Status claims on this subject that a later status has replaced.
 ///
 /// `fold::state::classify` already reduces to the live antichain; anything
@@ -1834,14 +1858,13 @@ fn superseded_status_cids(
     ws: &Workspace,
     claims: &[(Cid, crate::claim::Claim)],
 ) -> std::collections::HashSet<Cid> {
-    // Classify under the SAME computed edges `status`/`issues` use
-    // (`classify_subject` → `relations::compute_default`), not the empty set
-    // this passed before. A status settled only by a computable edge (e.g.
-    // `GitAncestry`) was superseded under `kan status` yet shown as live
-    // under `kan show`/`context` — the two read surfaces disagreeing about
-    // the same subject (review/full-pass-v0.12 F9). SPEC §9 step 2b makes
-    // the poset attested ⊔ computable; both halves belong here.
-    let edges = relations::compute_default(claims, &ws.git);
+    // Classify under the SAME computed edges `status`/`issues` use, not the
+    // empty set this passed before. A status settled only by a computable
+    // edge (e.g. `GitAncestry`) was superseded under `kan status` yet shown
+    // as live under `kan show`/`context` — the two read surfaces disagreeing
+    // about the same subject (review/full-pass-v0.12 F9). SPEC §9 step 2b
+    // makes the poset attested ⊔ computable; both halves belong here.
+    let edges = status_classification_edges(ws, claims);
     let live = match crate::fold::state::classify(claims, &edges) {
         crate::fold::state::StateView::Unclassified => return Default::default(),
         other => other.live_cids(),
@@ -2198,7 +2221,11 @@ fn subject_hint(view: &FoldedView) -> String {
 /// caller-and-purpose (`issues` used to call this twice: once to check
 /// "is this done," once more to render it).
 fn classify_subject(ws: &Workspace, subject_view: &SubjectView) -> StateView {
-    let edges = relations::compute_default(&subject_view.claims, &ws.git);
+    // Edges over the status claims only — see `status_classification_edges`.
+    // `kan status`/`issues` classify every subject, so the same `O(k²)`
+    // subprocess fan-out this avoids for `show` was a pre-existing cost here
+    // too (it is the shape `kan#165` is about).
+    let edges = status_classification_edges(ws, &subject_view.claims);
     fold::state::classify(&subject_view.claims, &edges)
 }
 
