@@ -1,0 +1,49 @@
+name: nudge-catalog
+
+# A release tag landing here asks kan-tools/plugins to re-derive its pins NOW,
+# instead of at its 09:00 UTC poll. This is an accelerator, not the mechanism:
+# the catalog's bump-pins.yml keeps its daily schedule as the safety net, so a
+# lapsed token here degrades to "slower", never to "dropped" -- the same
+# failure shape bump-pins itself was built to avoid.
+#
+# WHY A DISPATCH NEEDS A SECRET WHERE THE POLL NEEDED NONE. The built-in
+# GITHUB_TOKEN stops at this repository's boundary; starting another repo's
+# workflow requires a credential that crosses it. CATALOG_TOKEN is a
+# fine-grained PAT whose repository access is kan-tools/plugins ONLY -- it can
+# start that repo's workflows and open its bump PR, and can touch nothing in
+# this repository or any other. The bump logic itself stays in the catalog:
+# this job carries no knowledge of refs, shas, or manifests, so the two repos
+# cannot disagree about how a pin is derived.
+#
+# `workflow_dispatch` rather than `repository_dispatch`, deliberately: the
+# catalog's bump-pins.yml already listens for it, so the accelerator adds a
+# trigger to an existing, human-runnable job instead of a second entry point
+# that could drift from the first.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# This job holds a cross-repo credential and needs nothing from this repo, so
+# its own token gets no scopes at all.
+permissions: {}
+
+jobs:
+  nudge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask the catalog to re-pin
+        env:
+          GH_TOKEN: ${{ secrets.CATALOG_TOKEN }}
+        # A missing secret fails loudly rather than skipping: a skip would read
+        # as "nudged" on the Actions page, and the whole point of this job is
+        # that silence and success stay distinguishable. The daily poll still
+        # catches the release either way.
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::CATALOG_TOKEN is not set; the catalog will still re-pin at its daily poll."
+            exit 1
+          fi
+          gh workflow run bump-pins.yml -R kan-tools/plugins
+          echo "Asked kan-tools/plugins to run bump-pins for $GITHUB_REF_NAME."
