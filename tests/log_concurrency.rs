@@ -242,3 +242,151 @@ async fn head_is_replaced_atomically_and_leaves_no_debris() {
         );
     }
 }
+
+/// `review/full-pass-v0.12` F1 (`.design/v0.12.0-beta.3-review-fixes.md`
+/// REQ-1): a writer that opened during recovery — CAR present, `HEAD` not
+/// yet — must not roll back a writer that landed between its open and its
+/// append.
+///
+/// Deterministic version of the review's repro: deleting `HEAD` holds the
+/// first-append window open, which is exactly the state a process observes
+/// when it opens between another's block persist and `HEAD` write.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_recovering_writer_adopts_a_head_written_after_its_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
+    let log_dir = dir.path().join("log");
+
+    {
+        let mut log = Log::open_or_create(&log_dir, &identity).await.unwrap();
+        log.append(content(&identity, "claim-1"), &identity)
+            .await
+            .unwrap();
+    }
+    std::fs::remove_file(log_dir.join("HEAD")).unwrap();
+
+    // A opens inside the window and holds its recovered view across B's
+    // whole append — the interleaving `reload_if_stale`'s early return
+    // turned into a rollback.
+    let mut a = Log::open_or_create(&log_dir, &identity).await.unwrap();
+    {
+        let mut b = Log::open_or_create(&log_dir, &identity).await.unwrap();
+        b.append(content(&identity, "claim-2"), &identity)
+            .await
+            .unwrap();
+    }
+    a.append(content(&identity, "claim-3"), &identity)
+        .await
+        .unwrap();
+
+    let mut reread = Log::open_or_create(&log_dir, &identity).await.unwrap();
+    let stored = reread.iter_all().await.unwrap();
+    let texts: std::collections::BTreeSet<String> = stored
+        .iter()
+        .filter_map(|(_, s)| match &s.claim.content.body {
+            ClaimBody::Observation { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    for want in ["claim-1", "claim-2", "claim-3"] {
+        assert!(
+            texts.contains(want),
+            "{want} is unreachable from the final root; a recovering writer \
+             overwrote HEAD with its stale recovered lineage (got {texts:?})"
+        );
+    }
+    assert_eq!(stored.len(), 3);
+}
+
+const RECOVERING_CHILD_ENV: &str = "KAN_RECOVERING_CHILD";
+const RECOVERING_DIR_ENV: &str = "KAN_RECOVERING_DIR";
+
+/// The same window, contended by 6 recovering processes at once: every
+/// append must survive, not just the last writer's.
+#[tokio::test(flavor = "multi_thread")]
+async fn concurrent_recovering_writers_all_survive() {
+    if let Ok(idx) = std::env::var(RECOVERING_CHILD_ENV) {
+        let dir = std::path::PathBuf::from(std::env::var(RECOVERING_DIR_ENV).unwrap());
+        let identity = Identity::load_existing(&dir.join("identity")).unwrap();
+        // Open *before* the barrier, while HEAD is missing — every child
+        // takes the recovery path, which is the configuration under test.
+        let mut log = Log::open_or_create(&dir.join("log"), &identity)
+            .await
+            .unwrap();
+        while !dir.join("GO").exists() {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        log.append(content(&identity, &format!("claim-{idx}")), &identity)
+            .await
+            .unwrap();
+        return;
+    }
+
+    const N: usize = 6;
+    let dir = tempfile::tempdir().unwrap();
+    let identity = Identity::generate();
+    identity.save(&dir.path().join("identity")).unwrap();
+
+    {
+        let mut log = Log::open_or_create(&dir.path().join("log"), &identity)
+            .await
+            .unwrap();
+        log.append(content(&identity, "seed"), &identity)
+            .await
+            .unwrap();
+    }
+    std::fs::remove_file(dir.path().join("log").join("HEAD")).unwrap();
+
+    let exe = std::env::current_exe().unwrap();
+    let children: Vec<_> = (0..N)
+        .map(|i| {
+            std::process::Command::new(&exe)
+                .args([
+                    "concurrent_recovering_writers_all_survive",
+                    "--exact",
+                    "--nocapture",
+                ])
+                .env(RECOVERING_CHILD_ENV, i.to_string())
+                .env(RECOVERING_DIR_ENV, dir.path())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap()
+        })
+        .collect();
+
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    std::fs::write(dir.path().join("GO"), "").unwrap();
+
+    for mut child in children {
+        assert!(child.wait().unwrap().success(), "a child append failed");
+    }
+
+    let mut log = Log::open_or_create(&dir.path().join("log"), &identity)
+        .await
+        .unwrap();
+    let stored = log.iter_all().await.unwrap();
+    let texts: std::collections::BTreeSet<String> = stored
+        .iter()
+        .filter_map(|(_, s)| match &s.claim.content.body {
+            ClaimBody::Observation { text } => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    let missing: Vec<String> = (0..N)
+        .map(|i| format!("claim-{i}"))
+        .filter(|t| !texts.contains(t))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "{} of {N} recovering writers were rolled back by a later one's \
+         stale HEAD rewrite: {missing:?}",
+        missing.len()
+    );
+    assert!(
+        texts.contains("seed"),
+        "the pre-window claim must survive too"
+    );
+    assert_eq!(stored.len(), N + 1);
+}

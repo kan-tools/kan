@@ -808,3 +808,108 @@ fn kan_dir_resolves_upward_from_a_subdirectory() {
     assert!(ok);
     assert!(show_out.contains("found from a subdirectory"));
 }
+
+/// `review/full-pass-v0.12` F6 (REQ-5): a `--trust` selector carrying a
+/// weight below 1.0 warns that weights are not folded, and the view is the
+/// same one naming the author plainly produces. The surface accepted
+/// `did=0.5` and returned an identical view with nothing said.
+#[test]
+fn a_weighted_trust_selector_warns_weights_are_inert() {
+    let dir = git_repo();
+    // A claim from a second identity so there is something to trust.
+    let key = dir.path().join("other-key");
+    kan::sign::Identity::generate().save(&key).unwrap();
+    let other = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(["observe", "finding", "from the other author"])
+        .current_dir(dir.path())
+        .env("KAN_NO_KEYCHAIN", "1")
+        .env("KAN_IDENTITY_FILE", &key)
+        .output()
+        .unwrap();
+    assert!(other.status.success());
+    let did = String::from_utf8_lossy(
+        &std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+            .args(["identity", "did"])
+            .current_dir(dir.path())
+            .env("KAN_NO_KEYCHAIN", "1")
+            .env("KAN_IDENTITY_FILE", &key)
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .trim()
+    .to_string();
+
+    let weighted = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args([
+            "show",
+            "finding",
+            "--trust",
+            &format!("{did}=0.5"),
+            "--json",
+        ])
+        .current_dir(dir.path())
+        .env("KAN_NO_KEYCHAIN", "1")
+        .output()
+        .unwrap();
+    let werr = String::from_utf8_lossy(&weighted.stderr);
+    assert!(
+        werr.contains("not yet folded"),
+        "a weighted selector must warn the weight is inert, got stderr: {werr}"
+    );
+
+    // And the weighted view equals the plain-membership view.
+    let plain = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(["show", "finding", "--trust", &did, "--json"])
+        .current_dir(dir.path())
+        .env("KAN_NO_KEYCHAIN", "1")
+        .output()
+        .unwrap();
+    let wv: serde_json::Value = serde_json::from_slice(&weighted.stdout).unwrap();
+    let pv: serde_json::Value = serde_json::from_slice(&plain.stdout).unwrap();
+    assert_eq!(
+        wv["claims"], pv["claims"],
+        "did=0.5 must fold to the same claims as naming the author plainly"
+    );
+}
+
+/// `review/full-pass-v0.12` F8 (REQ-6): `kan publish <typo>` on a subject
+/// with no claims used to mint a Publication claim for the nonexistent
+/// subject and report success, polluting the log and the tracked tree.
+#[test]
+fn publishing_a_subject_with_no_claims_is_refused() {
+    let dir = git_repo();
+    // A real subject, so the store is non-empty and publish is otherwise wired.
+    assert!(kan(dir.path(), &["observe", "real-subject", "a claim"]).2);
+
+    let (_out, err, ok) = kan(dir.path(), &["publish", "reel-subject"]);
+    assert!(!ok, "publishing a nonexistent subject must be refused");
+    assert!(
+        err.contains("no subject named") && err.contains("nothing was written"),
+        "the error must name the problem and confirm nothing was written: {err}"
+    );
+
+    // Nothing was minted: the typo subject must not appear in status, and no
+    // file for it in .claims/.
+    let (status_out, _, _) = kan(dir.path(), &["status"]);
+    assert!(
+        !status_out.contains("reel-subject"),
+        "the typo subject was minted into the log: {status_out}"
+    );
+    let claims_dir = dir.path().join(".claims");
+    if claims_dir.exists() {
+        for entry in std::fs::read_dir(&claims_dir).unwrap() {
+            let name = entry.unwrap().file_name().to_string_lossy().to_string();
+            assert!(
+                !name.contains("reel"),
+                "a file for the typo subject was written: {name}"
+            );
+        }
+    }
+
+    // The real subject still publishes.
+    assert!(
+        kan(dir.path(), &["publish", "real-subject"]).2,
+        "a subject with claims must still publish"
+    );
+}

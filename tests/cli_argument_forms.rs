@@ -197,3 +197,58 @@ fn the_recovery_phrase_is_refused_as_an_argument() {
         "must say why, or it reads as pedantry: {err}"
     );
 }
+
+/// `review/full-pass-v0.12` F8 (REQ-6): a bare positional that names an
+/// existing subject is refused, because taking it as text-on-`general` is
+/// almost always a forgotten text argument. The escape hatch is explicit
+/// `--subject general`.
+#[test]
+fn a_single_positional_naming_a_subject_is_refused() {
+    if kan().is_none() {
+        return;
+    }
+    let repo = Repo::new();
+    // Make "login-bug" a real subject.
+    assert!(repo
+        .run(&["observe", "login-bug", "crashes on start"])
+        .status
+        .success());
+
+    // Now the forgotten-text form: `kan observe login-bug`.
+    let out = repo.run(&["observe", "login-bug"]);
+    assert!(
+        !out.status.success(),
+        "a bare positional naming an existing subject must be refused"
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("already a subject"),
+        "the error must explain the ambiguity, got: {err}"
+    );
+
+    // The claim must not have landed on general. (`show general` may name
+    // login-bug in its "existing subjects" hint, so check for an actual
+    // Observation body carrying the text, not a bare substring.)
+    let general = repo.run(&["show", "general"]);
+    let general_out = String::from_utf8_lossy(&general.stdout);
+    assert!(
+        general_out.contains("no claims") || !general_out.contains("Observation"),
+        "the subject name was silently written as a note on general: {general_out}"
+    );
+
+    // Escape hatch: forcing the note onto general with --subject works.
+    assert!(
+        repo.run(&["observe", "login-bug", "--subject", "general"])
+            .status
+            .success(),
+        "the explicit --subject form must still be allowed"
+    );
+
+    // And a bare positional that is NOT a subject is still a normal note.
+    assert!(
+        repo.run(&["observe", "just a passing thought"])
+            .status
+            .success(),
+        "an ordinary note that names no subject must still work"
+    );
+}

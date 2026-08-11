@@ -421,3 +421,69 @@ fn a_read_accepts_the_projection_a_write_just_built() {
          them pays a full rebuild"
     );
 }
+
+/// `review/full-pass-v0.12` F3 (REQ-3): a crafted record in the tracked
+/// `.claims/` directory — arriving via any merged PR — ran arithmetic and
+/// byte-index slicing on untrusted bytes inside `Workspace::open`, before
+/// any signature check, and a panic there aborted every kan command in
+/// every clone. The module's contract is warn-and-skip; hold it against the
+/// three shapes that aborted: an overflowing `text_len`, a frame endpoint
+/// inside a multibyte character, and non-ASCII hex.
+#[test]
+fn a_crafted_record_in_claims_does_not_brick_the_workspace() {
+    let (clone, author_did) = publisher_then_clone("finding", "the honest claim");
+    let claims_dir = clone.path().join(".claims");
+
+    let crafted = [
+        (
+            "huge-text-len.md",
+            "---\n{\"v\":2,\"cid\":\"bafyreib\",\"sig\":\"aa\",\"author\":\"did:key:z\",\
+             \"subject\":\"x\",\"kind\":\"Observation\",\"cites\":[],\
+             \"text_len\":18446744073709551615}\n---\n\nbody\n",
+        ),
+        (
+            "mid-char-frame.md",
+            "---\n{\"v\":2,\"cid\":\"bafyreib\",\"sig\":\"aa\",\"author\":\"did:key:z\",\
+             \"subject\":\"x\",\"kind\":\"Observation\",\"cites\":[],\"text_len\":1}\n---\n\naéb\n",
+        ),
+        (
+            "non-ascii-hex.md",
+            "---\n{\"v\":2,\"cid\":\"bafyreib\",\"sig\":\"aéb\",\"author\":\"did:key:z\",\
+             \"subject\":\"x\",\"kind\":\"Observation\",\"cites\":[],\"text_len\":4}\n---\n\nbody\n",
+        ),
+    ];
+    for (name, content) in crafted {
+        std::fs::write(claims_dir.join(name), content).unwrap();
+    }
+
+    // Every command used to abort with exit 101 before any signature check.
+    let status = kan_as(clone.path(), None, &["status"]);
+    assert!(
+        status.ok,
+        "a crafted .claims/ record bricked `kan status`: {}",
+        status.stderr
+    );
+    let read = kan_as(
+        clone.path(),
+        None,
+        &["show", "finding", "--trust", &author_did, "--json"],
+    );
+    assert!(
+        read.ok,
+        "a crafted .claims/ record bricked `kan show`: {}",
+        read.stderr
+    );
+    let value: serde_json::Value = serde_json::from_str(&read.stdout).unwrap();
+    let claims = value["claims"].as_array().unwrap();
+    assert!(
+        claims
+            .iter()
+            .any(|c| c["text"].as_str() == Some("the honest claim")),
+        "the honest, verified claim must still fold while the crafted \
+         records are skipped: {value}"
+    );
+    assert!(
+        claims.iter().all(|c| c["subject"] == "finding"),
+        "nothing from the crafted records may enter the view: {value}"
+    );
+}

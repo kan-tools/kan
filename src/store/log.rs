@@ -76,6 +76,18 @@ pub enum Error {
     BadSignature,
     #[error("log exists but its CAR file has no root")]
     MissingRoot,
+    /// The CAR's header cannot be read at all — a zero-byte file (the
+    /// residue of a crash between file creation and the first header
+    /// write) or leading corruption. Distinct from a damaged *tail*, which
+    /// the tolerant reader recovers from: with no header there is nothing
+    /// safe to recover toward, so kan refuses to touch the file.
+    #[error(
+        "the log header at {path} is unreadable (empty or corrupt at the start of the \
+         file). kan will not modify it. Move the file aside and restore from the \
+         published .claims/ tree (`kan restore`) or a backup; any claims after the \
+         damaged header are still in the file"
+    )]
+    UnreadableCar { path: String },
     #[error("log exists but HEAD is missing or unreadable")]
     MissingHead,
     #[error("record key is not a valid CID: {0}")]
@@ -198,9 +210,25 @@ impl Drop for WriteGuard {
 /// (`.design/v0.7-milestone.md` REQ-4).
 ///
 /// Returns the blocks that were recovered and whether anything was dropped.
-async fn read_blocks_tolerantly(bytes: &[u8]) -> Result<(MemoryStorage, bool), Error> {
+///
+/// A parse failure mid-stream stops the walk: everything before the damage
+/// is kept, and everything after it — if anything — is unreachable until a
+/// repair. The caller's messages must not promise the tail was empty; a
+/// flipped byte mid-file lands here exactly like a torn final block
+/// (review/full-pass-v0.12 F2).
+async fn read_blocks_tolerantly(
+    bytes: &[u8],
+    path: &std::path::Path,
+) -> Result<(MemoryStorage, bool), Error> {
     let mut storage = MemoryStorage::new();
-    let mut reader = CarReader::new(std::io::Cursor::new(bytes)).await?;
+    let mut reader = match CarReader::new(std::io::Cursor::new(bytes)).await {
+        Ok(reader) => reader,
+        Err(_) => {
+            return Err(Error::UnreadableCar {
+                path: path.display().to_string(),
+            })
+        }
+    };
     loop {
         match reader.next_block().await {
             Ok(Some(block)) => {
@@ -343,7 +371,7 @@ impl Log {
 
         if car_path.exists() {
             let bytes = fs::read(&car_path).await?;
-            let (mut storage, mut truncated) = read_blocks_tolerantly(&bytes).await?;
+            let (mut storage, mut truncated) = read_blocks_tolerantly(&bytes, &car_path).await?;
 
             let read_head = |p: &std::path::Path| {
                 let p = p.to_path_buf();
@@ -378,7 +406,8 @@ impl Log {
             // a second look.
             if usable.is_none() && stated.is_some() {
                 let bytes = fs::read(&car_path).await?;
-                let (fresh_storage, fresh_truncated) = read_blocks_tolerantly(&bytes).await?;
+                let (fresh_storage, fresh_truncated) =
+                    read_blocks_tolerantly(&bytes, &car_path).await?;
                 let fresh_head = read_head(&head_path).await;
                 if let Some(cid) = &fresh_head {
                     if is_walkable(&fresh_storage, cid).await {
@@ -392,9 +421,10 @@ impl Log {
 
             if truncated {
                 eprintln!(
-                    "warning: {} ends in a damaged block (an interrupted append, or truncation \
-                     by something outside kan) -- every intact block before it was recovered, \
-                     and the file will be repaired on the next write",
+                    "warning: {} contains a damaged block (an interrupted append, or corruption \
+                     by something outside kan) -- every intact block before it was recovered. \
+                     Blocks after the damage, if any, are unreadable until the next write \
+                     repairs the file; the repair keeps the pre-repair file beside the log.",
                     car_path.display()
                 );
             }
@@ -417,17 +447,27 @@ impl Log {
                 Some(root) => root,
                 None => {
                     let recovered = recover_root(&storage).await.ok_or(Error::MissingHead)?;
+                    // "No claim was lost" is only true when the CAR read
+                    // clean: a tolerant read that dropped blocks may have
+                    // dropped claims recorded after the damage, and saying
+                    // otherwise taught an operator to discard exactly the
+                    // file that still held them (review/full-pass-v0.12 F2).
                     eprintln!(
                         "warning: HEAD was {} -- reading from the newest intact commit ({}) in \
-                         {}. No claim was lost; the pointer to them was. HEAD will be rewritten \
-                         on the next write.",
+                         {}. {}HEAD will be rewritten on the next write.",
                         if stated.is_some() {
                             "pointing at a block this log does not contain"
                         } else {
                             "missing or unreadable"
                         },
                         recovered,
-                        car_path.display()
+                        car_path.display(),
+                        if truncated {
+                            "Claims recorded after the damaged block, if any, are not reachable \
+                             from this commit. "
+                        } else {
+                            "No claim was lost; the pointer to them was. "
+                        }
                     );
                     head_stale = true;
                     recovered
@@ -494,6 +534,30 @@ impl Log {
         let Some(root) = self.commit_cid.clone() else {
             return Ok(());
         };
+
+        // Keep the pre-repair file. The tolerant read stops at the first
+        // damaged block, so if the damage was mid-file rather than a torn
+        // tail, every intact block *after* it exists only in this copy —
+        // rewriting from the recovered set alone made that loss permanent
+        // while the recovery message said nothing was lost
+        // (review/full-pass-v0.12 F2). A repair that cannot preserve the
+        // original does not run: the copy failing (full disk, permissions)
+        // means the one file holding the unrecovered blocks would be
+        // destroyed by the very step meant to help.
+        let damaged = {
+            let mut name = self.car_path.file_name().unwrap_or_default().to_os_string();
+            name.push(format!(".damaged-{}", now_micros()));
+            self.car_path.with_file_name(name)
+        };
+        fs::copy(&self.car_path, &damaged).await?;
+        eprintln!(
+            "warning: repairing {} -- the pre-repair file is kept at {}. If the damage \
+             was mid-file rather than at the tail, blocks after it exist only in that \
+             copy.",
+            self.car_path.display(),
+            damaged.display()
+        );
+
         let tmp = self.car_path.with_extension("repair");
         let mut out = fs::File::create(&tmp).await?;
         out.write_all(&CarHeader::with_root(root).to_bytes()?)
@@ -644,11 +708,45 @@ impl Log {
     /// since this `Log` was opened. A no-op in the overwhelmingly common
     /// single-writer case — one `read_to_string` of a CID-sized file.
     async fn reload_if_stale(&mut self) -> Result<(), Error> {
-        // A recovered root is *deliberately* out of step with what is on
-        // disk until this append rewrites it — reloading toward the on-disk
-        // value here would walk straight back into the damage recovery just
-        // stepped around.
+        // A recovered root is out of step with what is on disk by
+        // construction — but the recovery ran *before* this process held the
+        // lock, so "the damage is real" and "another writer moved HEAD while
+        // we were recovering" are indistinguishable until now. An early
+        // return here rolled back every writer that landed between open and
+        // append: six concurrent first-appends to a fresh workspace all
+        // exited 0 and two subjects survived, the losers' blocks reachable
+        // from no root (review/full-pass-v0.12 F1). Prefer the on-disk root
+        // whenever it is walkable in a fresh read; the recovered root is
+        // only for a log that is still broken while the lock is held.
         if self.head_stale {
+            let on_disk = match fs::read_to_string(&self.head_path).await {
+                Ok(head) => head.trim().parse::<Cid>().ok(),
+                Err(_) => None,
+            };
+            if let Some(root) = on_disk {
+                let bytes = fs::read(&self.car_path).await?;
+                let (storage, truncated) = read_blocks_tolerantly(&bytes, &self.car_path).await?;
+                if is_walkable(&storage, &root).await {
+                    // `=`, not `|=`: this branch replaces the entire in-memory
+                    // state from a fresh under-lock read, so the repair flag
+                    // must reflect THAT read, not the damage the pre-lock open
+                    // saw. Keeping the open-time flag set made a second
+                    // recovering opener run `rewrite_car` on a file the first
+                    // one already repaired — a spurious `repo.car.damaged-*`
+                    // copy plus a "blocks exist only in that copy" warning
+                    // that was false for it (cold review of the F1/F2 branch).
+                    self.needs_repair = truncated;
+                    self.persisted = storage.cids().map(Cid::from).collect();
+                    let commit_bytes = storage.get(&root).await?.ok_or(Error::MissingRoot)?;
+                    let commit = Commit::from_bytes(&commit_bytes)?;
+                    self.mst =
+                        Mst::from_root(RawCid::from(commit.data), storage, RepoConfig::default());
+                    self.commit_cid = Some(root);
+                    self.tid = TidGenerator::seeded(&commit.rev);
+                    self.last_recorded_at = self.last_recorded_at.max(self.tid.last_micros());
+                    self.head_stale = false;
+                }
+            }
             return Ok(());
         }
         let on_disk = match fs::read_to_string(&self.head_path).await {
@@ -664,7 +762,7 @@ impl Log {
         // fail the whole append on a damaged tail that the open path had
         // already recovered from.
         let bytes = fs::read(&self.car_path).await?;
-        let (storage, truncated) = read_blocks_tolerantly(&bytes).await?;
+        let (storage, truncated) = read_blocks_tolerantly(&bytes, &self.car_path).await?;
         self.needs_repair |= truncated;
         self.persisted = storage.cids().map(Cid::from).collect();
 

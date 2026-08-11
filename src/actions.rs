@@ -37,7 +37,14 @@ pub enum Error {
     Index(#[from] crate::store::index::Error),
     #[error(transparent)]
     Git(#[from] crate::git::Error),
-    #[error("invalid CID {0:?}: {1}")]
+    // The inner dasl `DecodeError` Displays an `error-atproto-dasl-decode-N`
+    // token that is noise to an operator (review/full-pass-v0.12). Kept in
+    // the type for matching, dropped from the message in favour of the one
+    // fact that helps: what a CID actually looks like.
+    #[error(
+        "invalid CID {0:?}: a claim CID is base32, lower-case, and starts with 'b' \
+         (e.g. bafyrei...)"
+    )]
     InvalidCid(String, atproto_dasl::DecodeError),
     #[error("no such claim: {0}")]
     UnknownClaim(Cid),
@@ -618,6 +625,19 @@ pub async fn block(
 /// user's — kan is git's sibling, not its driver.
 pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error> {
     use crate::claim::Layer;
+
+    // Refuse a subject with nothing to publish. The Publication claim below
+    // would otherwise mint the subject into being, so `kan publish <typo>`
+    // reported success and permanently polluted the log and the tracked
+    // tree with a Publication for a subject that never existed
+    // (review/full-pass-v0.12 F8). Checked before the append that would
+    // create it.
+    if !subject_exists(ws, subject)? {
+        return Err(Error::Usage(format!(
+            "no subject named \"{subject}\" has any claims to publish. Check the name with \
+             `kan status`; nothing was written."
+        )));
+    }
 
     let subject_ref = SubjectRef::Local(Rkey::from(subject));
     append(
@@ -1743,6 +1763,19 @@ pub fn warn_similar_subjects(ws: &Workspace, candidates: &[&str]) -> Result<Vec<
     Ok(warnings)
 }
 
+/// Whether `name` is already a live `Local` subject in this workspace. Used
+/// by the CLI to refuse a bare positional that names one (F8); an exact
+/// match, not the fuzzy match `warn_similar_subjects` reports.
+pub fn subject_exists(ws: &Workspace, name: &str) -> Result<bool, Error> {
+    let claims = ws.index.all_stored_claims()?;
+    let view = fold::fold(claims, &ws.local_trust()?);
+    Ok(view
+        .classes
+        .iter()
+        .flat_map(|c| &c.subjects)
+        .any(|s| matches!(s, SubjectRef::Local(rkey) if rkey.as_str() == name)))
+}
+
 /// REQ-17: what a claim actually carries, beyond its kind and text.
 ///
 /// `cites` and `artifacts` appeared **zero times** in every read path, and no
@@ -1793,12 +1826,46 @@ fn format_micros(micros: u64) -> String {
     format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{sec:02}Z")
 }
 
+/// Computed edges for classifying a subject's status, over the `Status`
+/// claims ALONE rather than every claim in the class.
+///
+/// `state::classify`'s `dominated_cids` only ever consults an `Ancestry`
+/// edge between two live `Status` claims — a narrative claim's commit anchor
+/// participates in no edge it reads. Computing `compute_default` over all
+/// class claims therefore spawned `O(k²)` `git merge-base` subprocesses in
+/// `k` = distinct commit anchors for nothing: a `show` of a subject spanning
+/// 50 commits took ~12 s where the answer needs only the handful of edges
+/// among its status claims. Narrowing the input here is semantics-preserving
+/// (the dropped edges were never read) and is what keeps the F9 edge-set fix
+/// from turning the agent-facing read path into a fork storm.
+fn status_classification_edges(
+    ws: &Workspace,
+    claims: &[(Cid, crate::claim::Claim)],
+) -> Vec<crate::relations::ComputedEdge> {
+    let status_only: Vec<(Cid, crate::claim::Claim)> = claims
+        .iter()
+        .filter(|(_, c)| c.content.body.kind() == crate::claim::ClaimKind::Status)
+        .cloned()
+        .collect();
+    relations::compute_default(&status_only, &ws.git)
+}
+
 /// Status claims on this subject that a later status has replaced.
 ///
 /// `fold::state::classify` already reduces to the live antichain; anything
 /// that is a `Status` and not in it has been superseded.
-fn superseded_status_cids(claims: &[(Cid, crate::claim::Claim)]) -> std::collections::HashSet<Cid> {
-    let live = match crate::fold::state::classify(claims, &[]) {
+fn superseded_status_cids(
+    ws: &Workspace,
+    claims: &[(Cid, crate::claim::Claim)],
+) -> std::collections::HashSet<Cid> {
+    // Classify under the SAME computed edges `status`/`issues` use, not the
+    // empty set this passed before. A status settled only by a computable
+    // edge (e.g. `GitAncestry`) was superseded under `kan status` yet shown
+    // as live under `kan show`/`context` — the two read surfaces disagreeing
+    // about the same subject (review/full-pass-v0.12 F9). SPEC §9 step 2b
+    // makes the poset attested ⊔ computable; both halves belong here.
+    let edges = status_classification_edges(ws, claims);
+    let live = match crate::fold::state::classify(claims, &edges) {
         crate::fold::state::StateView::Unclassified => return Default::default(),
         other => other.live_cids(),
     };
@@ -1927,7 +1994,7 @@ pub fn show(
                 trust,
                 empty_reason,
             ));
-            let superseded = superseded_status_cids(&subject_view.claims);
+            let superseded = superseded_status_cids(ws, &subject_view.claims);
             for (cid, claim) in &subject_view.claims {
                 out.push_str(&format!(
                     "  {cid}  {}\n",
@@ -2154,7 +2221,11 @@ fn subject_hint(view: &FoldedView) -> String {
 /// caller-and-purpose (`issues` used to call this twice: once to check
 /// "is this done," once more to render it).
 fn classify_subject(ws: &Workspace, subject_view: &SubjectView) -> StateView {
-    let edges = relations::compute_default(&subject_view.claims, &ws.git);
+    // Edges over the status claims only — see `status_classification_edges`.
+    // `kan status`/`issues` classify every subject, so the same `O(k²)`
+    // subprocess fan-out this avoids for `show` was a pre-existing cost here
+    // too (it is the shape `kan#165` is about).
+    let edges = status_classification_edges(ws, &subject_view.claims);
     fold::state::classify(&subject_view.claims, &edges)
 }
 
@@ -2487,7 +2558,7 @@ pub fn show_json(
     let (subjects, claims, flagged) = match view.subject(&subject_ref) {
         None => (vec![subject.to_string()], Vec::new(), false),
         Some(class) => {
-            let superseded = superseded_status_cids(&class.claims);
+            let superseded = superseded_status_cids(ws, &class.claims);
             (
                 class
                     .subjects
@@ -2538,7 +2609,7 @@ pub fn show_all_json(
         .classes
         .iter()
         .map(|class| {
-            let superseded = superseded_status_cids(&class.claims);
+            let superseded = superseded_status_cids(ws, &class.claims);
             let names: Vec<String> = class
                 .subjects
                 .iter()
@@ -2648,7 +2719,7 @@ pub fn context_json(
     let superseded: std::collections::HashSet<Cid> = view
         .classes
         .iter()
-        .flat_map(|c| superseded_status_cids(&c.claims))
+        .flat_map(|c| superseded_status_cids(ws, &c.claims))
         .collect();
 
     let mut tokens = 0usize;
@@ -2728,7 +2799,7 @@ pub fn context(
     let superseded: std::collections::HashSet<Cid> = view
         .classes
         .iter()
-        .flat_map(|c| superseded_status_cids(&c.claims))
+        .flat_map(|c| superseded_status_cids(ws, &c.claims))
         .collect();
 
     let mut out = String::new();

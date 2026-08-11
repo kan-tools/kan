@@ -621,3 +621,202 @@ async fn an_mcp_write_refused_for_its_subject_name_mints_nothing() {
         "a refused MCP write created a workspace"
     );
 }
+
+/// One MCP session that initializes and returns a closure driving
+/// `tools/call`. Cuts the boilerplate for the F5 vocabulary tests.
+async fn mcp_session(
+    dir: &std::path::Path,
+) -> (
+    tokio::process::Child,
+    tokio::process::ChildStdin,
+    BufReader<tokio::process::ChildStdout>,
+) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
+        .arg("mcp")
+        .current_dir(dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("failed to spawn kan mcp");
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let send = |v: Value| serde_json::to_string(&v).unwrap() + "\n";
+    stdin
+        .write_all(
+            send(json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                    "clientInfo": {"name": "f5-test", "version": "0.0.1"}}
+            }))
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let mut line = String::new();
+    stdout.read_line(&mut line).await.unwrap();
+    stdin
+        .write_all(
+            send(json!({"jsonrpc": "2.0", "method": "notifications/initialized"})).as_bytes(),
+        )
+        .await
+        .unwrap();
+    (child, stdin, stdout)
+}
+
+async fn call_tool(
+    stdin: &mut tokio::process::ChildStdin,
+    stdout: &mut BufReader<tokio::process::ChildStdout>,
+    id: i64,
+    name: &str,
+    arguments: Value,
+) -> Value {
+    let msg = json!({"jsonrpc": "2.0", "id": id, "method": "tools/call",
+        "params": {"name": name, "arguments": arguments}});
+    stdin
+        .write_all((serde_json::to_string(&msg).unwrap() + "\n").as_bytes())
+        .await
+        .unwrap();
+    let mut line = String::new();
+    loop {
+        line.clear();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            stdout.read_line(&mut line),
+        )
+        .await
+        .expect("timed out")
+        .unwrap();
+        let v: Value = serde_json::from_str(&line).unwrap();
+        if v["id"] == id {
+            return v;
+        }
+    }
+}
+
+/// `review/full-pass-v0.12` F5 (REQ-4): the MCP enum params accept the
+/// kebab-case values every tool description teaches. Before this, an
+/// agent's first `relate`/`status`-param call failed with "unknown variant
+/// 'in-tension-with', expected 'InTensionWith'".
+#[tokio::test]
+async fn kebab_case_enum_params_are_accepted() {
+    let dir = git_repo();
+    let (mut child, mut stdin, mut stdout) = mcp_session(dir.path()).await;
+
+    let relate = call_tool(
+        &mut stdin,
+        &mut stdout,
+        2,
+        "relate",
+        json!({"a": "x", "kind": "in-tension-with", "b": "y"}),
+    )
+    .await;
+    assert_eq!(
+        relate["result"]["isError"], false,
+        "kebab-case relate kind was rejected: {relate}"
+    );
+
+    let observe = call_tool(
+        &mut stdin,
+        &mut stdout,
+        3,
+        "observe",
+        json!({"text": "t", "subject": "s", "status": "in-progress"}),
+    )
+    .await;
+    assert_eq!(
+        observe["result"]["isError"], false,
+        "kebab-case status was rejected: {observe}"
+    );
+
+    let mark = call_tool(
+        &mut stdin,
+        &mut stdout,
+        4,
+        "mark",
+        json!({"subject": "s", "value": "in-progress"}),
+    )
+    .await;
+    assert_eq!(
+        mark["result"]["isError"], false,
+        "kebab-case mark value was rejected: {mark}"
+    );
+
+    drop(stdin);
+    let _ = child.kill().await;
+}
+
+/// F5: the PascalCase forms the old schema advertised still deserialize, so
+/// a saved call or an agent written against it does not break.
+#[tokio::test]
+async fn pascal_case_enum_params_stay_accepted() {
+    let dir = git_repo();
+    let (mut child, mut stdin, mut stdout) = mcp_session(dir.path()).await;
+
+    let relate = call_tool(
+        &mut stdin,
+        &mut stdout,
+        2,
+        "relate",
+        json!({"a": "x", "kind": "InTensionWith", "b": "y"}),
+    )
+    .await;
+    assert_eq!(
+        relate["result"]["isError"], false,
+        "PascalCase alias was rejected: {relate}"
+    );
+
+    drop(stdin);
+    let _ = child.kill().await;
+}
+
+/// F5: a caller-shaped mistake surfaces as JSON-RPC `invalid_params`
+/// (-32602), not `internal_error` (-32603) — an agent reads the latter as a
+/// server fault and abandons a fixable call.
+#[tokio::test]
+async fn caller_mistakes_surface_as_invalid_params() {
+    let dir = git_repo();
+    let (mut child, mut stdin, mut stdout) = mcp_session(dir.path()).await;
+
+    // Rejecting your own claim is a usage mistake, not a server fault.
+    let observe = call_tool(
+        &mut stdin,
+        &mut stdout,
+        2,
+        "observe",
+        json!({"text": "mine", "subject": "s"}),
+    )
+    .await;
+    let cid = observe["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .split_whitespace()
+        .map(|w| w.trim_matches(['(', ')']))
+        .find(|w| w.starts_with("bafy"))
+        .expect("confirmation carries a CID")
+        .to_string();
+
+    let reject = call_tool(&mut stdin, &mut stdout, 3, "reject", json!({"cid": cid})).await;
+    assert_eq!(
+        reject["error"]["code"], -32602,
+        "rejecting your own claim should be invalid_params, got: {reject}"
+    );
+
+    // A malformed CID is likewise the caller's mistake.
+    let bad = call_tool(
+        &mut stdin,
+        &mut stdout,
+        4,
+        "retract",
+        json!({"cid": "not-a-cid"}),
+    )
+    .await;
+    assert_eq!(
+        bad["error"]["code"], -32602,
+        "a malformed CID should be invalid_params, got: {bad}"
+    );
+
+    drop(stdin);
+    let _ = child.kill().await;
+}

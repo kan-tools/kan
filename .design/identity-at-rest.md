@@ -128,7 +128,7 @@ posture would have no on-ramp at all.
   **A stale reference is retired, not silently replaced.** Where a pointer
   already exists for the secret being protected, `protect` mints a fresh
   account and removes the old pointer with an explanation, exactly as
-  `retire_seed` does (`src/actions.rs:887` — the reference goes, *"the keychain
+  `retire_seed` does (`src/actions.rs:3076` — the reference goes, *"the keychain
   entry itself is left alone"*). Orphaning an entry is already this codebase's
   accepted behaviour and the entry stays reachable through Keychain Access;
   doing it **silently** is the only part that was ever wrong.
@@ -417,7 +417,7 @@ is the duplication this project keeps paying for. Cheap to overrule.
 5. remove the pointer file — **after** the write, never before, or a failed
    write leaves the workspace with no identity at all;
 6. leave the keychain entry alone, following `retire_seed`'s precedent
-   (`src/actions.rs:887`: *"the keychain entry itself is left alone"*), and
+   (`src/actions.rs:3076`: *"the keychain entry itself is left alone"*), and
    print the account name **before** deleting the pointer file that holds it,
    so the operator can find it in Keychain Access.
 

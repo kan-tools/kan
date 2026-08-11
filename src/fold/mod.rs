@@ -100,7 +100,18 @@ pub fn fold(claims: Vec<(Cid, StoredClaim)>, trust: &TrustBase) -> FoldedView {
     let classes = identity::merge_classes(&claims, trust);
 
     let mut ordered = claims;
-    ordered.sort_by(|a, b| a.1.rev.cmp(&b.1.rev));
+    // `(rev, cid)`, not `rev` alone. `rev` is a per-log TID, so two claims
+    // from different logs — once `.claims/` ingestion mixes authors' clocks
+    // — can collide, and a stable sort then leaves the winner dependent on
+    // input order (the MST/CID order `iter_all` happens to return). The CID
+    // tiebreak makes the fold a function of the claim *set*, not its
+    // enumeration order (review/full-pass-v0.12 F9); it matches the index's
+    // `ORDER BY rev, content_cid`, so both read paths agree.
+    ordered.sort_by(|a, b| {
+        a.1.rev
+            .cmp(&b.1.rev)
+            .then_with(|| a.0.to_string().cmp(&b.0.to_string()))
+    });
 
     let mut view_classes = Vec::with_capacity(classes.len());
     for class in classes {

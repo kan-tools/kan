@@ -87,3 +87,66 @@ fn genesis_fails_cleanly_on_a_repo_with_no_commits() {
     // anything yet.
     assert!(substrate.genesis().is_err());
 }
+
+/// `review/full-pass-v0.12` (git argument surface): a `Sha` reaching
+/// `is_ancestor` is untrusted claim text. A `-`-prefixed value must be
+/// refused at the boundary — treated as no ancestry edge — never handed to
+/// git where it could be read as an option.
+#[test]
+fn a_dash_prefixed_sha_is_refused_at_the_boundary() {
+    let dir = tempfile::tempdir().unwrap();
+    git_ok(dir.path(), &["init", "-q"]);
+    git_ok(
+        dir.path(),
+        &[
+            "-c",
+            "user.email=t@example.com",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "first",
+        ],
+    );
+    let sha1 = String::from_utf8(git(dir.path(), &["rev-parse", "HEAD"]).stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let substrate = GitSubstrate::open(dir.path()).unwrap();
+
+    // A crafted option-shaped SHA participates in no edge and does not error.
+    for hostile in ["--output=/tmp/pwned", "-oops", "--all"] {
+        let edge = substrate
+            .is_ancestor(&hostile.to_string(), &sha1)
+            .expect("a malformed sha must be a clean no-edge, not an error");
+        assert!(
+            !edge,
+            "a dash-prefixed sha must not be treated as a real revision"
+        );
+    }
+    // A non-hex but harmless value is likewise no edge.
+    assert!(!substrate
+        .is_ancestor(&"not-a-sha".to_string(), &sha1)
+        .unwrap());
+}
+
+/// REQ-10: opening outside a git repo gives an actionable message, not
+/// git's raw `fatal: not a git repository` plumbing.
+#[test]
+fn opening_outside_a_repo_names_the_fix() {
+    let dir = tempfile::tempdir().unwrap();
+    let err = match GitSubstrate::open(dir.path()) {
+        Err(e) => e.to_string(),
+        Ok(_) => panic!("a non-repo directory must not open as a git substrate"),
+    };
+    assert!(
+        err.contains("not inside a git repository") && err.contains("git init"),
+        "the error must name the fix, got: {err}"
+    );
+    assert!(
+        !err.contains("fatal:") && !err.contains("rev-parse"),
+        "raw git plumbing must not be the operator-facing message: {err}"
+    );
+}

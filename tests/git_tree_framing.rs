@@ -278,3 +278,73 @@ fn publishing_two_colliding_subjects_keeps_both() {
         "publishing the second subject must not destroy the first's record"
     );
 }
+
+/// `review/full-pass-v0.12` F3 (REQ-3): `text_len` is untrusted bytes from
+/// a tracked file, read on every command before any signature check. No
+/// value of it may abort the process — a length that cannot frame the
+/// record demotes it to separator framing, the same path a record that
+/// never declared one takes.
+#[test]
+fn a_huge_text_len_is_malformed_not_fatal() {
+    let identity = Identity::generate();
+    let record = git_tree::to_record(&signed(&identity, "an honest body")).unwrap();
+    let (pre, post) = {
+        let start = record
+            .find("\"text_len\":")
+            .expect("v2 records declare text_len");
+        let rest = &record[start..];
+        let end = start + rest.find([',', '}']).unwrap();
+        (&record[..start], &record[end..])
+    };
+    let crafted = format!("{pre}\"text_len\":18446744073709551615{post}");
+
+    // Must not panic, in debug (overflow) or release (wrapped slice).
+    let records = git_tree::split_records(&crafted);
+    for r in &records {
+        let _ = git_tree::from_record("evil.md", r);
+    }
+}
+
+/// F3, second site: a `text_len` whose frame endpoint lands inside a
+/// multibyte UTF-8 character panicked the slice in release builds too.
+#[test]
+fn a_text_len_inside_a_utf8_char_is_malformed_not_fatal() {
+    let identity = Identity::generate();
+    let record = git_tree::to_record(&signed(&identity, "aéb")).unwrap();
+    let crafted = {
+        let start = record
+            .find("\"text_len\":")
+            .expect("v2 records declare text_len");
+        let rest = &record[start..];
+        let end = start + rest.find([',', '}']).unwrap();
+        format!("{}\"text_len\":1{}", &record[..start], &record[end..])
+    };
+
+    let records = git_tree::split_records(&crafted);
+    for r in &records {
+        let _ = git_tree::from_record("evil.md", r);
+    }
+}
+
+/// F3, third site: hex fields are untrusted text; the decoder sliced on
+/// byte indices after a byte-parity check, so `"aéb"` (even byte length,
+/// non-ASCII) put a slice boundary inside a character. Hex is ASCII by
+/// definition — anything else is a malformed field, not an abort.
+#[test]
+fn non_ascii_hex_is_rejected_not_fatal() {
+    let identity = Identity::generate();
+    let record = git_tree::to_record(&signed(&identity, "an honest body")).unwrap();
+    // Replace the signature hex with an even-byte-length non-ASCII string,
+    // tolerating whatever whitespace the header serializer uses.
+    let crafted = {
+        let key = record.find("\"sig\"").expect("records carry a sig field");
+        let open = key + 5 + record[key + 5..].find('"').expect("sig has a value");
+        let start = open + 1;
+        let end = start + record[start..].find('"').unwrap();
+        format!("{}aéb{}", &record[..start], &record[end..])
+    };
+
+    for r in git_tree::split_records(&crafted) {
+        let _ = git_tree::from_record("evil.md", r);
+    }
+}

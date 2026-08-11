@@ -1,8 +1,21 @@
 //! Enrichment bases (`docs/SPEC.md` §4.3). v1's scope fence caps this at two
-//! reference enrichments — `Solo` (Bool: any trusted path -> flat merge) and
-//! `PeerContested` ([0,1]/quantale: trust-weighted) — never the full
+//! reference *enrichments* — `Solo` (Bool: any trusted path -> flat merge)
+//! and `PeerContested` ([0,1]/quantale: trust-weighted) — never the full
 //! witness-homotopy-type enrichment the spec names as a third option; that's
-//! out of v1 scope (`docs/SPEC.md` §11 caps trust policies at 2).
+//! out of v1 scope (`docs/SPEC.md` §11).
+//!
+//! There are **three** `TrustBase` variants, not two, and that is not a
+//! breach of the cap: `Local` (the default since v0.11, ADR-83) is not a new
+//! enrichment but `PeerContested` populated from "every author in this log".
+//! Two enrichments; three ways to build a base over them. The fence counts
+//! enrichments (`docs/SPEC.md` §11's own note says so).
+//!
+//! NOTE: `PeerContested` weights below 1.0 are accepted and validated but
+//! not yet folded — `trusts` is membership (`weight > 0.0`), and the
+//! magnitude is unused. Weighted composition (§4.3's tropical merge) is a
+//! future enrichment; `Workspace::trust_from_detailed` warns when a caller
+//! supplies a weight, so the surface does not imply a capability the fold
+//! lacks (review/full-pass-v0.12 F6).
 //!
 //! `PeerContested` was fully implemented and tested (`tests/state_fold.rs`,
 //! `tests/identity_fold.rs`) but unreachable from the CLI/MCP surface until

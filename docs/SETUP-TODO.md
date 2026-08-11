@@ -44,7 +44,7 @@
   - [x] identity-before-state, same enrichment; decategorify only at `render` (M4a/M4b)
 - [x] Anchors (git: Workspace/Commit/Blob/FileAt/LineRangeAt) + admissibility invariant (M4b, ADR-14)
 - [x] Computable relation providers: `GitAncestry` + `GitSameFile` (default-on) (M4b) — wired up and default-on; per-provider trust down-weighting/disabling (`docs/SPEC.md` §6.2) isn't built yet, see `src/relations.rs`'s doc comment
-- [x] CLI (git-like verbs: `kan observe|plan|decide|resolve|same|show|issues|status|session|context`) (M3/M4b/M5)
+- [x] CLI (git-like verbs: `kan observe|plan|decide|block|resolve|result|same|relate|mark|retract|reject|show|status|issues|context|publish`) (M3/M4b/M5). Note: `session` was removed (ADR-18) — process/session concepts live in the companion tool `day`, not kan.
 - [x] MCP server: claim-append + **budgeted context assembly** (the actual product) (M5, ADR-15)
 
 **Do NOT build yet:** sync/atproto/lexicons, TUI, web dashboard, VS Code ext, >2 policies, enforcement hooks, incremental fold.

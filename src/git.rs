@@ -37,10 +37,39 @@ pub enum Error {
          again. Nothing was written."
     )]
     NoCommits,
+    #[error(
+        "this directory is not inside a git repository, and kan anchors every claim to a \
+         repo's history (docs/SPEC.md §5). Run kan from inside a git repo, or create one \
+         here with `git init && git commit --allow-empty -m init`. Nothing was written."
+    )]
+    NotAGitRepo,
 }
 
 pub struct GitSubstrate {
     repo_root: PathBuf,
+}
+
+/// A commit SHA is hex (SHA-1 or SHA-256), never empty. Anything else is not
+/// a hash git could resolve, and — reaching git as a positional argument —
+/// must not be allowed to start with `-` and be read as an option.
+fn is_hex_sha(sha: &Sha) -> bool {
+    !sha.is_empty() && sha.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Map the error from probing `rev-parse --git-dir` at `open` time. ONLY the
+/// specific "not a git repository" failure becomes the actionable
+/// [`Error::NotAGitRepo`]; every other error — git not on `PATH`
+/// ([`Error::Spawn`]), a dubious-ownership or corrupt-repo [`Error::Failed`]
+/// with a different message, non-UTF-8 output — is returned unchanged. The
+/// first cut matched `Failed(..)` alone, which both swallowed `Spawn` into a
+/// false success and mislabelled every exit-128 as "not a git repository".
+fn map_git_dir_error(err: Error) -> Error {
+    match err {
+        Error::Failed(_, _, ref stderr) if stderr.contains("not a git repository") => {
+            Error::NotAGitRepo
+        }
+        other => other,
+    }
 }
 
 impl GitSubstrate {
@@ -50,8 +79,19 @@ impl GitSubstrate {
         let substrate = Self {
             repo_root: repo_root.to_path_buf(),
         };
-        substrate.run(&["rev-parse", "--git-dir"])?;
-        Ok(substrate)
+        // git's own "fatal: not a git repository" is raw plumbing an operator
+        // can't act on; give the actionable form instead (the no-commits and
+        // shallow cases already have theirs). ONLY that specific failure is
+        // rewritten: a `Failed` for any other reason (a dubious-ownership
+        // refusal, a corrupt repo) keeps git's own message, and a `Spawn`
+        // (git not on PATH) or `NonUtf8` propagates rather than being
+        // swallowed into a false `Ok` — the first cut of this check matched
+        // `Failed(..)` alone and turned an unspawnable git into a workspace
+        // that opened and then silently mis-ordered every ancestry edge.
+        match substrate.run(&["rev-parse", "--git-dir"]) {
+            Ok(_) => Ok(substrate),
+            Err(e) => Err(map_git_dir_error(e)),
+        }
     }
 
     /// `docs/SPEC.md` §5 — a content-addressed fact about the shared
@@ -115,6 +155,15 @@ impl GitSubstrate {
         if ancestor == descendant {
             return Ok(false);
         }
+        // A `Sha` reaches here from a claim's `Anchor::Commit`/`ArtifactRef`,
+        // which is untrusted text (review/full-pass-v0.12, git-arg finding).
+        // A validated hex string can never be read by git as a `-`-prefixed
+        // option, which closes the argument-injection surface at the source;
+        // anything else is not a commit this repo could contain, so it
+        // participates in no ancestry edge.
+        if !is_hex_sha(ancestor) || !is_hex_sha(descendant) {
+            return Ok(false);
+        }
         let args = [
             "merge-base",
             "--is-ancestor",
@@ -151,5 +200,52 @@ impl GitSubstrate {
             ));
         }
         String::from_utf8(output.stdout).map_err(|_| Error::NonUtf8(args.join(" ")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The cold review of the F1/F2 branch: the open-time error map must
+    /// convert ONLY "not a git repository" to `NotAGitRepo`, and pass every
+    /// other error through — the first cut matched `Failed(..)` alone,
+    /// swallowing `Spawn` into a false `Ok` and mislabelling other exit-128s.
+    #[test]
+    fn map_git_dir_error_only_rewrites_not_a_repo() {
+        // The one case that becomes the actionable message.
+        assert!(matches!(
+            map_git_dir_error(Error::Failed(
+                "rev-parse --git-dir".into(),
+                128,
+                "fatal: not a git repository (or any of the parent directories): .git".into(),
+            )),
+            Error::NotAGitRepo
+        ));
+
+        // git not on PATH: must propagate, not vanish into a false success.
+        let spawn = Error::Spawn(
+            "rev-parse --git-dir".into(),
+            std::io::Error::from(std::io::ErrorKind::NotFound),
+        );
+        assert!(matches!(map_git_dir_error(spawn), Error::Spawn(_, _)));
+
+        // A different exit-128 (e.g. dubious ownership) keeps git's own
+        // message rather than being mislabelled "not a git repository".
+        let dubious = Error::Failed(
+            "rev-parse --git-dir".into(),
+            128,
+            "fatal: detected dubious ownership in repository at '/repo'".into(),
+        );
+        assert!(matches!(
+            map_git_dir_error(dubious),
+            Error::Failed(_, 128, _)
+        ));
+
+        // Non-UTF-8 output propagates too.
+        assert!(matches!(
+            map_git_dir_error(Error::NonUtf8("rev-parse --git-dir".into())),
+            Error::NonUtf8(_)
+        ));
     }
 }
