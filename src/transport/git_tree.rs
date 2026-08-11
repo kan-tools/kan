@@ -459,9 +459,26 @@ pub fn split_records(text: &str) -> Vec<&str> {
         let header: Option<RecordHeader> = serde_json::from_str(record[3..fence_rel].trim()).ok();
         let after_fence = fence_rel + "\n---".len();
 
-        let end = match header.as_ref().and_then(|h| h.text_len) {
+        // `text_len` is untrusted bytes from a tracked file, and this
+        // arithmetic and the slice below run on every command, before any
+        // signature is checked. A declared length near usize::MAX overflowed
+        // the sum, and one landing inside a multibyte UTF-8 character
+        // panicked the slice — either way a single committed record aborted
+        // every kan command in every clone (review/full-pass-v0.12 F3). A
+        // length that cannot frame this record is treated exactly like a
+        // record that never declared one: separator framing, the pre-v2
+        // fallback, which never trusts record content for its endpoint.
+        let framed_end = header.as_ref().and_then(|h| h.text_len).and_then(|len| {
             // "\n" (closing the fence line) + "\n" + body + "\n"
-            Some(len) => (after_fence + 2 + len + 1).min(record.len()),
+            let end = after_fence
+                .checked_add(2)?
+                .checked_add(len)?
+                .checked_add(1)?
+                .min(record.len());
+            record.is_char_boundary(end).then_some(end)
+        });
+        let end = match framed_end {
+            Some(end) => end,
             None => match record[after_fence..].find(RECORD_SEPARATOR) {
                 Some(i) => after_fence + i,
                 None => record.len(),
@@ -492,7 +509,12 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 fn hex_decode(text: &str) -> Option<Vec<u8>> {
-    if !text.len().is_multiple_of(2) {
+    // The parity check counts bytes, but the slice below indexes byte
+    // positions of what is untrusted text from a tracked file — non-ASCII
+    // input put a slice boundary inside a multibyte character and aborted
+    // the process before any verification ran (review/full-pass-v0.12 F3).
+    // Hex is ASCII by definition; anything else is a malformed field.
+    if !text.is_ascii() || !text.len().is_multiple_of(2) {
         return None;
     }
     (0..text.len())
