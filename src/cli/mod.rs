@@ -588,12 +588,24 @@ impl From<SubjectKindArg> for crate::claim::SubjectKind {
 /// `default_subject` is `Some("general")` for the narrative verbs, which have
 /// always had that fallback, and `None` for the verbs that require a subject
 /// — those error rather than guess.
+/// The resolved subject and text, plus whether the single bare positional
+/// was taken as *text on the default subject* — the one shape where a
+/// forgotten text argument silently writes the subject name as a note on
+/// `general` (review/full-pass-v0.12 F8). The handler uses `defaulted` to
+/// refuse that when the text exactly names an existing subject; this
+/// function cannot, having no view of the log.
+struct Resolved {
+    subject: String,
+    text: String,
+    defaulted: bool,
+}
+
 fn subject_and_text(
     first: String,
     second: Option<String>,
     flag: Option<String>,
     default_subject: Option<&str>,
-) -> Result<(String, String), Error> {
+) -> Result<Resolved, Error> {
     match (second, flag) {
         // Both forms at once: refuse rather than silently pick one.
         (Some(_), Some(_)) => Err(actions::Error::Usage(
@@ -602,10 +614,22 @@ fn subject_and_text(
                 .to_string(),
         )
         .into()),
-        (Some(text), None) => Ok((first, text)),
-        (None, Some(subject)) => Ok((subject, first)),
+        (Some(text), None) => Ok(Resolved {
+            subject: first,
+            text,
+            defaulted: false,
+        }),
+        (None, Some(subject)) => Ok(Resolved {
+            subject,
+            text: first,
+            defaulted: false,
+        }),
         (None, None) => match default_subject {
-            Some(default) => Ok((default.to_string(), first)),
+            Some(default) => Ok(Resolved {
+                subject: default.to_string(),
+                text: first,
+                defaulted: true,
+            }),
             None => Err(actions::Error::Usage(format!(
                 "this verb needs a subject: `kan <verb> <subject> \"{}\"`, or \
                  `kan <verb> \"{}\" --subject <subject>`",
@@ -615,6 +639,28 @@ fn subject_and_text(
             .into()),
         },
     }
+}
+
+/// Refuse a bare `kan observe <existing-subject>` where the single
+/// positional is text on `general` but names an existing subject — almost
+/// always a forgotten text argument, and otherwise expressible without
+/// ambiguity via `--subject` (F8). Only fires for the defaulted single
+/// positional; `--subject x "text"` and `x "text"` are untouched.
+fn guard_positional_is_not_a_subject(ws: &Workspace, r: &Resolved) -> Result<(), Error> {
+    if r.defaulted && actions::subject_exists(ws, &r.text)? {
+        return Err(actions::Error::Usage(format!(
+            "\"{}\" is already a subject, so `kan <verb> {}` would record its name as a \
+             note on `general` -- which is almost always a forgotten text argument. \
+             Write about it with `kan <verb> {} \"<text>\"`, or force the note with \
+             `kan <verb> \"{}\" --subject general`.",
+            elide(&r.text),
+            elide(&r.text),
+            elide(&r.text),
+            elide(&r.text),
+        ))
+        .into());
+    }
+    Ok(())
 }
 
 /// First few words of a claim, for an error message that has to quote it back
@@ -728,8 +774,10 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
     match cli.command {
         Command::Observe(args) => {
             let verbose = args.verbose;
-            let (subject, text) =
+            let resolved =
                 subject_and_text(args.first, args.second, args.subject, Some("general"))?;
+            guard_positional_is_not_a_subject(&ws, &resolved)?;
+            let (subject, text) = (resolved.subject, resolved.text);
             print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::observe(
                 &mut ws,
@@ -746,8 +794,10 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Plan(args) => {
             let verbose = args.verbose;
-            let (subject, text) =
+            let resolved =
                 subject_and_text(args.first, args.second, args.subject, Some("general"))?;
+            guard_positional_is_not_a_subject(&ws, &resolved)?;
+            let (subject, text) = (resolved.subject, resolved.text);
             print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::plan(
                 &mut ws,
@@ -764,8 +814,10 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Decide(args) => {
             let verbose = args.verbose;
-            let (subject, text) =
+            let resolved =
                 subject_and_text(args.first, args.second, args.subject, Some("general"))?;
+            guard_positional_is_not_a_subject(&ws, &resolved)?;
+            let (subject, text) = (resolved.subject, resolved.text);
             print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::decide(
                 &mut ws,
@@ -813,7 +865,8 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             kind,
             verbose,
         } => {
-            let (subject, text) = subject_and_text(first, second, subject, None)?;
+            let Resolved { subject, text, .. } =
+                subject_and_text(first, second, subject, None)?;
             print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::resolve(
                 &mut ws,
@@ -838,7 +891,8 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             kind,
             verbose,
         } => {
-            let (subject, text) = subject_and_text(first, second, subject, None)?;
+            let Resolved { subject, text, .. } =
+                subject_and_text(first, second, subject, None)?;
             print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result = actions::result(
                 &mut ws,
@@ -862,7 +916,8 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             kind,
             verbose,
         } => {
-            let (subject, text) = subject_and_text(first, second, subject, None)?;
+            let Resolved { subject, text, .. } =
+                subject_and_text(first, second, subject, None)?;
             print_naming_warnings(subject_warnings(&ws, Some(&subject))?);
             let result =
                 actions::block(&mut ws, &subject, &text, file, title, kind.map(Into::into)).await?;

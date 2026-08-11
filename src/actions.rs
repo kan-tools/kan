@@ -619,6 +619,19 @@ pub async fn block(
 pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error> {
     use crate::claim::Layer;
 
+    // Refuse a subject with nothing to publish. The Publication claim below
+    // would otherwise mint the subject into being, so `kan publish <typo>`
+    // reported success and permanently polluted the log and the tracked
+    // tree with a Publication for a subject that never existed
+    // (review/full-pass-v0.12 F8). Checked before the append that would
+    // create it.
+    if !subject_exists(ws, subject)? {
+        return Err(Error::Usage(format!(
+            "no subject named \"{subject}\" has any claims to publish. Check the name with \
+             `kan status`; nothing was written."
+        )));
+    }
+
     let subject_ref = SubjectRef::Local(Rkey::from(subject));
     append(
         ws,
@@ -1741,6 +1754,19 @@ pub fn warn_similar_subjects(ws: &Workspace, candidates: &[&str]) -> Result<Vec<
         }
     }
     Ok(warnings)
+}
+
+/// Whether `name` is already a live `Local` subject in this workspace. Used
+/// by the CLI to refuse a bare positional that names one (F8); an exact
+/// match, not the fuzzy match `warn_similar_subjects` reports.
+pub fn subject_exists(ws: &Workspace, name: &str) -> Result<bool, Error> {
+    let claims = ws.index.all_stored_claims()?;
+    let view = fold::fold(claims, &ws.local_trust()?);
+    Ok(view
+        .classes
+        .iter()
+        .flat_map(|c| &c.subjects)
+        .any(|s| matches!(s, SubjectRef::Local(rkey) if rkey.as_str() == name)))
 }
 
 /// REQ-17: what a claim actually carries, beyond its kind and text.
