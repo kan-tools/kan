@@ -66,11 +66,22 @@ jobs:
           path: perf-results.tsv
           if-no-files-found: error
 
+      # NO PIPE AROUND THE GATE. The first version piped it into `tee`, and
+      # GitHub's default step shell is `bash -e` WITHOUT pipefail -- so run
+      # 31443570777 printed two EXCEEDED verdicts, exited 1 from the gate,
+      # and went green off tee's exit 0. A gate whose failure is swallowed
+      # by its own reporting is the plausible-green this whole instrument
+      # exists to hunt; the exit code is captured before anything else
+      # touches it.
       - name: Scaling gate
         run: |
+          rc=0
+          scripts/run-perf-grid.sh gate perf-results.tsv tests/fixtures/perf-bounds.tsv > gate.txt || rc=$?
+          cat gate.txt
           {
             echo "## Scaling gate"
             echo '```'
-            scripts/run-perf-grid.sh gate perf-results.tsv tests/fixtures/perf-bounds.tsv
+            cat gate.txt
             echo '```'
-          } | tee -a "$GITHUB_STEP_SUMMARY"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
