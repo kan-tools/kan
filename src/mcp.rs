@@ -68,8 +68,29 @@ pub fn install_instructions() -> String {
     out
 }
 
+/// Map an action error to the right MCP category. A caller-shaped mistake —
+/// a bad CID, rejecting your own claim, `--title` without `--kind` — is
+/// `invalid_params`, the same reasoning `trust_error` already uses: an agent
+/// reads `internal_error` as a server fault it cannot fix and gives up,
+/// rather than as its own fixable input (review/full-pass-v0.12 F5). Only
+/// genuine substrate failures (store, index, git, publish, workspace) stay
+/// `internal_error`.
 fn to_error(e: actions::Error) -> ErrorData {
-    ErrorData::internal_error(e.to_string(), None)
+    match e {
+        actions::Error::Usage(_)
+        | actions::Error::InvalidCid(_, _)
+        | actions::Error::UnknownClaim(_)
+        | actions::Error::NotYourClaim(_)
+        | actions::Error::CantRejectOwnClaim(_)
+        | actions::Error::TitleKindRequireEachOther => {
+            ErrorData::invalid_params(e.to_string(), None)
+        }
+        actions::Error::Publish(_)
+        | actions::Error::Workspace(_)
+        | actions::Error::Log(_)
+        | actions::Error::Index(_)
+        | actions::Error::Git(_) => ErrorData::internal_error(e.to_string(), None),
+    }
 }
 
 fn open_error(e: crate::workspace::Error) -> ErrorData {
@@ -126,7 +147,7 @@ struct NarrativeParams {
     /// Pairs a Status claim citing this one — the same pairing `resolve`/
     /// `block` hardcode, generalized to any status value.
     #[serde(default)]
-    status: Option<crate::claim::StatusValue>,
+    status: Option<StatusParam>,
     /// Declares the subject (ClaimBody::Subject) alongside this claim —
     /// requires `kind` too.
     #[serde(default)]
@@ -134,7 +155,7 @@ struct NarrativeParams {
     /// Declares the subject's kind alongside this claim — requires `title`
     /// too.
     #[serde(default)]
-    kind: Option<crate::claim::SubjectKind>,
+    kind: Option<SubjectKindParam>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -159,16 +180,87 @@ struct SameParams {
 // `cli::RelationKindArg`, enforced at the deserialization boundary rather
 // than by a runtime check in `actions::relate`. A `//` comment on purpose:
 // `schemars` would publish a doc comment here into every agent's context.
+// kebab-case on the wire, because that is what every tool description and
+// the CLI teach; the PascalCase forms this schema used to publish are kept
+// as aliases so an agent (or a saved call) written against the old schema
+// still deserializes (review/full-pass-v0.12 F5). The signed-content enums
+// in `claim.rs` are deliberately NOT touched — their PascalCase is baked
+// into CIDs — so the rename lives here, in the MCP mirror, exactly as the
+// `SameAs`-minus pattern already did for the variant set.
 #[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
 enum RelateKindParam {
+    #[serde(alias = "Blocks")]
     Blocks,
+    #[serde(alias = "About")]
     About,
+    #[serde(alias = "ManifestsAt")]
     ManifestsAt,
+    #[serde(alias = "DependsOn")]
     DependsOn,
+    #[serde(alias = "Accepts")]
     Accepts,
+    #[serde(alias = "InTensionWith")]
     InTensionWith,
+    #[serde(alias = "Supersedes")]
     Supersedes,
+    #[serde(alias = "Refutes")]
     Refutes,
+}
+
+/// MCP mirror of [`crate::claim::StatusValue`], kebab-case with PascalCase
+/// aliases. The claim type keeps its own serde untouched (signed content);
+/// this exists only so the wire vocabulary matches the descriptions.
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+enum StatusParam {
+    #[serde(alias = "Open")]
+    Open,
+    #[serde(alias = "InProgress")]
+    InProgress,
+    #[serde(alias = "Blocked")]
+    Blocked,
+    #[serde(alias = "Resolved")]
+    Resolved,
+    #[serde(alias = "Closed")]
+    Closed,
+}
+
+impl From<StatusParam> for crate::claim::StatusValue {
+    fn from(value: StatusParam) -> Self {
+        match value {
+            StatusParam::Open => Self::Open,
+            StatusParam::InProgress => Self::InProgress,
+            StatusParam::Blocked => Self::Blocked,
+            StatusParam::Resolved => Self::Resolved,
+            StatusParam::Closed => Self::Closed,
+        }
+    }
+}
+
+/// MCP mirror of [`crate::claim::SubjectKind`], kebab-case with PascalCase
+/// aliases. (Every variant here is a single word, so kebab-case and the
+/// lowercased original coincide; the aliases keep the capitalized forms the
+/// old schema advertised.)
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+enum SubjectKindParam {
+    #[serde(alias = "Issue")]
+    Issue,
+    #[serde(alias = "Idea")]
+    Idea,
+    #[serde(alias = "Question")]
+    Question,
+}
+
+impl From<SubjectKindParam> for crate::claim::SubjectKind {
+    fn from(value: SubjectKindParam) -> Self {
+        match value {
+            SubjectKindParam::Issue => Self::Issue,
+            SubjectKindParam::Idea => Self::Idea,
+            SubjectKindParam::Question => Self::Question,
+        }
+    }
 }
 
 impl From<RelateKindParam> for crate::claim::RelationKind {
@@ -225,7 +317,7 @@ struct ResolveParams {
     /// Declares the subject's kind alongside this claim — requires `title`
     /// too.
     #[serde(default)]
-    kind: Option<crate::claim::SubjectKind>,
+    kind: Option<SubjectKindParam>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -245,7 +337,7 @@ struct ResultParams {
     /// Pairs a Status claim citing this one — the same pairing resolve/
     /// block hardcode, generalized.
     #[serde(default)]
-    status: Option<crate::claim::StatusValue>,
+    status: Option<StatusParam>,
     /// Declares the subject (ClaimBody::Subject) alongside this claim —
     /// requires `kind` too.
     #[serde(default)]
@@ -253,7 +345,7 @@ struct ResultParams {
     /// Declares the subject's kind alongside this claim — requires `title`
     /// too.
     #[serde(default)]
-    kind: Option<crate::claim::SubjectKind>,
+    kind: Option<SubjectKindParam>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -274,7 +366,7 @@ struct BlockParams {
     /// Declares the subject's kind alongside this claim — requires `title`
     /// too.
     #[serde(default)]
-    kind: Option<crate::claim::SubjectKind>,
+    kind: Option<SubjectKindParam>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -304,7 +396,7 @@ struct MarkParams {
     /// The subject to mark.
     subject: String,
     /// The status value to write.
-    value: crate::claim::StatusValue,
+    value: StatusParam,
     #[serde(default)]
     #[schemars(
         description = "A more specific artifact than the automatic HEAD-commit anchor: \"path\" or \"path:start-end\"."
@@ -316,9 +408,14 @@ struct MarkParams {
 struct SubjectParams {
     /// The subject rkey to show.
     subject: String,
-    /// Fold under PeerContested over these authors instead of the Solo
-    /// default: "did:key:...", "did:key:...=<weight>", or "me" for this
-    /// workspace's own identity. An author you do not name is invisible.
+    /// Whose claims to fold in, beyond your own. Each entry is a
+    /// "did:key:...", "me" (this workspace's identity), "local" (every
+    /// author already in this log), "roles" (every declared role), or
+    /// "role:<name>". Omit to see only your own claims. An author you do
+    /// not name is invisible, not down-weighted. A "did:key:...=<weight>"
+    /// form is accepted but the weight is not yet folded -- only presence
+    /// or absence changes the view (issue on weighted trust; see kan show
+    /// --help).
     #[serde(default)]
     trust: Vec<String>,
 }
@@ -411,7 +508,8 @@ impl KanServer {
         let mut ws = self.writing_workspace(&[p.subject.as_deref()]).await?;
         let warnings = subject_warnings(&ws, p.subject.as_deref())?;
         actions::observe(
-            &mut ws, p.text, p.subject, p.cites, p.file, p.status, p.title, p.kind,
+            &mut ws, p.text, p.subject, p.cites, p.file, p.status.map(Into::into), p.title,
+            p.kind.map(Into::into),
         )
         .await
         .map(|r| append_warnings(r.confirmation(), warnings))
@@ -424,7 +522,8 @@ impl KanServer {
         let mut ws = self.writing_workspace(&[p.subject.as_deref()]).await?;
         let warnings = subject_warnings(&ws, p.subject.as_deref())?;
         actions::plan(
-            &mut ws, p.text, p.subject, p.cites, p.file, p.status, p.title, p.kind,
+            &mut ws, p.text, p.subject, p.cites, p.file, p.status.map(Into::into), p.title,
+            p.kind.map(Into::into),
         )
         .await
         .map(|r| append_warnings(r.confirmation(), warnings))
@@ -437,7 +536,8 @@ impl KanServer {
         let mut ws = self.writing_workspace(&[p.subject.as_deref()]).await?;
         let warnings = subject_warnings(&ws, p.subject.as_deref())?;
         actions::decide(
-            &mut ws, p.text, p.subject, p.cites, p.file, p.status, p.title, p.kind,
+            &mut ws, p.text, p.subject, p.cites, p.file, p.status.map(Into::into), p.title,
+            p.kind.map(Into::into),
         )
         .await
         .map(|r| append_warnings(r.confirmation(), warnings))
@@ -451,7 +551,7 @@ impl KanServer {
         let p = params.0;
         let mut ws = self.writing_workspace(&[Some(p.subject.as_str())]).await?;
         let warnings = subject_warnings(&ws, Some(&p.subject))?;
-        actions::block(&mut ws, &p.subject, &p.text, p.file, p.title, p.kind)
+        actions::block(&mut ws, &p.subject, &p.text, p.file, p.title, p.kind.map(Into::into))
             .await
             .map(|r| append_warnings(r.confirmation(), warnings))
             .map_err(to_error)
@@ -465,7 +565,7 @@ impl KanServer {
         let mut ws = self.writing_workspace(&[Some(p.subject.as_str())]).await?;
         let warnings = subject_warnings(&ws, Some(&p.subject))?;
         actions::resolve(
-            &mut ws, &p.subject, &p.text, p.cites, p.file, p.title, p.kind,
+            &mut ws, &p.subject, &p.text, p.cites, p.file, p.title, p.kind.map(Into::into),
         )
         .await
         .map(|r| append_warnings(r.confirmation(), warnings))
@@ -480,7 +580,8 @@ impl KanServer {
         let mut ws = self.writing_workspace(&[Some(p.subject.as_str())]).await?;
         let warnings = subject_warnings(&ws, Some(&p.subject))?;
         actions::result(
-            &mut ws, &p.subject, &p.text, p.cites, p.file, p.status, p.title, p.kind,
+            &mut ws, &p.subject, &p.text, p.cites, p.file, p.status.map(Into::into), p.title,
+            p.kind.map(Into::into),
         )
         .await
         .map(|r| append_warnings(r.confirmation(), warnings))
@@ -547,7 +648,7 @@ impl KanServer {
         let p = params.0;
         let mut ws = self.writing_workspace(&[Some(p.subject.as_str())]).await?;
         let warnings = subject_warnings(&ws, Some(&p.subject))?;
-        actions::mark(&mut ws, &p.subject, p.value, p.file)
+        actions::mark(&mut ws, &p.subject, p.value.into(), p.file)
             .await
             .map(|r| append_warnings(r.confirmation(), warnings))
             .map_err(to_error)
