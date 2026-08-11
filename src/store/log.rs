@@ -1045,6 +1045,7 @@ impl Log {
     /// specific, legible "this one record doesn't verify" case.
     pub async fn iter_all(&mut self) -> Result<Vec<(Cid, StoredClaim)>, Error> {
         let entries = self.mst.entries().await?;
+        self.warn_once_if_claims_are_unreachable(&entries).await?;
         let mut out = Vec::with_capacity(entries.len());
         for (key, _record_cid) in entries {
             let path = RecordPath::from_mst_key(&key)?;
@@ -1065,6 +1066,41 @@ impl Log {
             }
         }
         Ok(out)
+    }
+
+    /// Say so, once, if this log holds claims a read cannot reach.
+    ///
+    /// A write repairs the condition (`Mst::insert` sorts the walk before
+    /// rebuilding), but a log that is only ever *read* never triggers that, so
+    /// the claim would stay invisible indefinitely. Reads are not blocked and
+    /// the exit code is unaffected: this is affordance, not enforcement, and
+    /// the reader still gets everything the fold can see.
+    ///
+    /// Once per process, because a single command may fold several times and
+    /// repeating the same line per fold turns a real signal into noise.
+    async fn warn_once_if_claims_are_unreachable(
+        &self,
+        walk: &[(String, Cid)],
+    ) -> Result<(), Error> {
+        static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+        let lost = self.mst.unreachable_among(walk).await?;
+        if lost.is_empty() {
+            return Ok(());
+        }
+        if WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            return Ok(());
+        }
+
+        let n = lost.len();
+        let plural = if n == 1 { "claim is" } else { "claims are" };
+        eprintln!(
+            "warning: {n} {plural} present in this log but not reachable by ordered lookup, so \
+             this and every other read excludes them (kan#204). Nothing is lost -- they are in \
+             the CAR. A log gets into this state when a kan built before the MST fix writes to \
+             it. Any write repairs it, after which this warning stops."
+        );
+        Ok(())
     }
 }
 

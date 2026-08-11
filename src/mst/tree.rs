@@ -491,6 +491,57 @@ impl<S: BlockStorage> Mst<S> {
         Ok(Some(new_cid))
     }
 
+    /// Keys that are present in the tree but that ordered descent cannot find.
+    ///
+    /// This is the read-side detector for kan#204's read-invisibility path: a
+    /// key spliced in by a non-conformant writer is still *visited* by a full
+    /// walk, but sits at a tree position inconsistent with key order, so `get`
+    /// — and therefore the fold — cannot reach it. Such a claim is in the log
+    /// and invisible, which is precisely the failure this crate exists to
+    /// prevent.
+    ///
+    /// Cheap in the common case: a conformant tree's walk is strictly
+    /// ascending, and that check is one comparison per adjacent pair over a
+    /// walk the caller has usually just done. The O(n) `get` sweep runs only
+    /// once disorder has already been seen.
+    ///
+    /// A write repairs this — `insert` sorts before rebuilding — so callers
+    /// should report it and carry on rather than refusing to read.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error` if traversal fails.
+    pub async fn unreachable_by_ordered_descent(&self) -> Result<Vec<String>, Error> {
+        let walk = self.entries().await?;
+        self.unreachable_among(&walk).await
+    }
+
+    /// As [`Self::unreachable_by_ordered_descent`], over a walk the caller
+    /// already has.
+    ///
+    /// Callers on the read path have just walked the tree; re-walking to check
+    /// an invariant that (see
+    /// `tests/mst_conformance.rs::no_reachable_state_leaves_a_claim_invisible`)
+    /// no released binary can violate would double the cost of every read to
+    /// pay for a check that never fires.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error` if a lookup fails.
+    pub async fn unreachable_among(&self, walk: &[(String, Cid)]) -> Result<Vec<String>, Error> {
+        if walk.windows(2).all(|w| w[0].0 < w[1].0) {
+            return Ok(Vec::new());
+        }
+
+        let mut lost = Vec::new();
+        for (key, _) in walk {
+            if self.get(key).await?.is_none() {
+                lost.push(key.clone());
+            }
+        }
+        Ok(lost)
+    }
+
     /// Iterate over all key-value pairs in sorted order.
     ///
     /// Returns pairs as `(key, cid)`.

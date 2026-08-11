@@ -251,3 +251,107 @@ async fn a_write_repairs_a_tree_a_non_conformant_writer_touched() {
         "the newly written key must be findable too"
     );
 }
+
+/// No state a *released* kan can produce leaves a claim unreachable.
+///
+/// This is the property the read-side detector exists to assert, and asserting
+/// it turned out to matter more than the detector itself.
+///
+/// The invisible-claim failure (kan#204) needed a rebuild from a DISORDERED
+/// walk. Only one build ever did that — the intermediate one written while
+/// fixing this, between adding the canonical rebuild and adding the sort in
+/// front of it. Every released kan either splices flat (pre-fix, never
+/// rebuilds) or sorts before rebuilding (post-fix), so neither produces it.
+///
+/// What a released pair of binaries *can* produce is the state below: an old
+/// flat-MST binary splicing into a canonical tree, which disorders the walk.
+/// This asserts that state still leaves every claim reachable — benign, and
+/// repaired by the next write.
+#[tokio::test]
+async fn no_reachable_state_leaves_a_claim_invisible() {
+    use kan::mst::{MstNode, TreeEntry};
+
+    let f = fixture();
+    let sample: Vec<_> = f.pairs.iter().step_by(2).collect();
+    let candidates: Vec<_> = f.pairs.iter().skip(1).step_by(2).collect();
+
+    let mut mst = Mst::new_in_memory();
+    for (key, value) in &sample {
+        mst.insert(key, value_cid(value)).await.unwrap();
+    }
+    assert!(
+        mst.unreachable_by_ordered_descent()
+            .await
+            .unwrap()
+            .is_empty(),
+        "a conformant tree has nothing unreachable"
+    );
+
+    // Splice as a flat-MST binary does: into the root, by sort order, ignoring
+    // layer and leaving neighbouring sub-tree pointers alone.
+    let root_cid = *mst.root().unwrap();
+    let root_bytes = mst.storage().get(&root_cid).await.unwrap().unwrap();
+    let mut disordered_root = None;
+    for cand in &candidates {
+        let mut root = MstNode::from_bytes(&root_bytes).unwrap();
+        let mut prev = String::new();
+        let mut at = root.entries.len();
+        for (i, e) in root.entries.iter().enumerate() {
+            let k = e.reconstruct_key(&prev).unwrap();
+            if k.as_str() > cand.0.as_str() {
+                at = i;
+                break;
+            }
+            prev = k;
+        }
+        root.entries.insert(
+            at,
+            TreeEntry::with_prefix(&prev, &cand.0, value_cid(&cand.1)),
+        );
+        let bytes = root.to_bytes().unwrap();
+        let cid = root.cid().unwrap();
+        mst.storage_mut().put(&cid, bytes).await.unwrap();
+
+        let live = Mst::from_root(cid, std::mem::take(mst.storage_mut()), Default::default());
+        let walk: Vec<String> = live
+            .entries()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|(k, _)| k)
+            .collect();
+        let disordered = walk.windows(2).any(|w| w[0] >= w[1]);
+        *mst.storage_mut() = live.into_storage();
+        if disordered {
+            disordered_root = Some(cid);
+            break;
+        }
+    }
+    let cid = disordered_root.expect("no candidate splice disordered the walk");
+    let mut mst = Mst::from_root(cid, mst.into_storage(), Default::default());
+
+    assert!(
+        mst.unreachable_by_ordered_descent()
+            .await
+            .unwrap()
+            .is_empty(),
+        "an old binary's splice disorders the walk but must leave every claim \
+         reachable — if this ever fails, a released binary CAN hide a claim and \
+         the read-time warning in Log::iter_all stops being theoretical"
+    );
+
+    // And the next write repairs the disorder itself.
+    let (k, v) = candidates.last().expect("a candidate exists");
+    mst.insert(k, value_cid(v)).await.unwrap();
+    let walk: Vec<String> = mst
+        .entries()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(k, _)| k)
+        .collect();
+    assert!(
+        walk.windows(2).all(|w| w[0] < w[1]),
+        "a write must restore ascending order"
+    );
+}
