@@ -25,15 +25,15 @@
 #
 # A bound a measurement contradicts is corrected by a human, in a commit,
 # with the reason here -- the gate's error is the prompt, never the editor.
-append	claims	8	PREDICTED at introduction. Appending to a log should not care how long the log already is (amortized O(1)-to-O(log n)); 8 is half of linear-16, so append drifting toward linear-in-claims trips this before it reaches it.
-append	subjects	8	PREDICTED at introduction. Claim count is fixed on this axis; the subject population should be irrelevant to a single append. Same drift argument as the claims-axis row.
-show-subject	claims	32	PREDICTED at introduction. s0's own claims grow 16x along this axis, so linear is ~16; 32 allows 2x constant drift. The #181 shape (pairwise git subprocesses, ~256) is what this row exists to catch.
-show-subject	subjects	4	PREDICTED at introduction. s0's claims SHRINK 100x along this axis (round-robin generation), so the honest expectation is flat-to-faster; 4 flags a read that scales with subjects it did not ask about.
-show-all	claims	32	PREDICTED at introduction. The bulk read is the documented fast path (72ms while show-subject took 141s, kan#181) and should stay linear in claims: 16 linear, 2x slack.
-show-all	subjects	6	PREDICTED at introduction. Same claim count, more subjects: output volume is unchanged, per-subject bookkeeping is not free but must stay well under linear-in-subjects.
-status-all	claims	32	PREDICTED at introduction. One fold over the log: linear in claims, 2x slack.
-status-all	subjects	200	PREDICTED at introduction. Output is one line per subject, so linear-in-subjects (~100) is the honest floor for this op on this axis; 200 is 2x slack over it, and quadratic (~10000) stays two decades away.
-issues	claims	32	PREDICTED at introduction. Same fold as status-all; linear in claims, 2x slack.
-issues	subjects	200	PREDICTED at introduction. Every synthetic subject is unresolved, so the listing is linear-in-subjects by construction; 200 is 2x slack over linear.
-context	claims	32	PREDICTED at introduction. Budgeted assembly still has to consider every claim to rank it: linear in claims, 2x slack. The budget bounds the OUTPUT, not the scan.
-context	subjects	6	PREDICTED at introduction. Fixed claim count and a fixed budget: the subject population should not change what fits under 4000 tokens.
+append	claims	40	MEASURED 32.3 in run 31443570777 (25.8ms -> 833.6ms per append across 16x claims), and the shape is a DEFECT: per-append cost grows linearly with log size because the un-compacted CAR retains O(n) bytes per write -- kan#204, which also ends in a hard write failure at ~1400 claims. The bound sits just above the measured defective shape so any worsening trips while the defect is open; when #204 lands this bound comes DOWN to record the fix, and a bound left at 40 after the fix is the unconverted-prediction failure in reverse.
+append	subjects	8	MEASURED 1.0 in run 31443570777: the subject population is irrelevant to a single append, as predicted. Bound kept at 8 as drift headroom.
+show-subject	claims	32	MEASURED 15.2 in run 31443570777 -- linear, as predicted (s0's own claims grow 16x on this axis). Bound kept at 2x-slack-over-linear; the #181 shape (~256) is what it exists to catch.
+show-subject	subjects	4	MEASURED 1.0 in run 31443570777 (flat; s0's claims shrink 100x on this axis and the read does not scale with subjects it did not ask about). Bound kept at 4.
+show-all	claims	32	MEASURED 15.2 in run 31443570777 -- linear, as predicted. The bulk read stays the documented fast path.
+show-all	subjects	6	MEASURED 1.0 in run 31443570777: same claim count, more subjects, no cost. Bound kept at 6.
+status-all	claims	50	MEASURED 41.9 in run 31443570777 (7.5ms -> 314.5ms across 16x claims), and the shape is a DEFECT: classify_subject computes GitAncestry per subject -- git merge-base per distinct commit pair -- consumed only when live Status claims disagree, which on this log is never. kan#202, which also scopes the survey of every relation-computing call site. Bound sits just above the measured defective shape so worsening trips while #202 is open; it comes DOWN when the fix lands.
+status-all	subjects	10	MEASURED 2.4 in run 31443570777, far under the predicted linear-in-subjects 200: per-subject output is cheap and the ancestry cost redistributes rather than multiplies when claims are fixed. Tightened from 200 to 10 -- the prediction was wrong in the loose direction, and a bound nothing can reach is not a bound.
+issues	claims	32	MEASURED 15.2 in run 31443570777 -- linear. CAVEAT the grid states rather than hides: no synthetic subject qualifies as an open issue (no Status claim, no issue declaration), so this measures issues' fold and filter, NOT its per-issue classify path -- which is the same #202 path status-all pays. A grid point with declared issues is future work if that plane needs its own row.
+issues	subjects	8	MEASURED 1.0 in run 31443570777, same caveat as the claims row: the listing was empty by construction. Tightened from 200 to 8 to bound what is actually measured.
+context	claims	8	MEASURED 2.6 in run 31443570777, well under the predicted linear 32: the budget bounds the assembly's cost in practice, not only its output. Tightened to 8; if ranking ever becomes a full-log scan this trips.
+context	subjects	6	MEASURED 1.0 in run 31443570777: fixed budget, fixed claims, subject population irrelevant. Bound kept at 6.
