@@ -43,7 +43,9 @@ use atproto_dasl::{
     storage::{BlockStorage, MemoryStorage},
     Cid, CidCore as RawCid,
 };
-use atproto_repo::{compute_cid, Commit, Mst, RecordPath, RepoConfig};
+use atproto_repo::{compute_cid, Commit, RecordPath};
+
+use crate::mst::{Mst, MstConfig};
 use serde::{Deserialize, Serialize};
 use tokio::{fs, io::AsyncWriteExt};
 
@@ -61,7 +63,7 @@ pub enum Error {
     #[error("repository error: {0}")]
     Repo(#[from] atproto_repo::errors::RepoError),
     #[error("MST error: {0}")]
-    Mst(#[from] atproto_repo::errors::MstError),
+    Mst(#[from] crate::mst::Error),
     #[error("storage error: {0}")]
     Storage(#[from] atproto_dasl::errors::StorageError),
     #[error("CAR error: {0}")]
@@ -296,7 +298,7 @@ async fn is_walkable(storage: &MemoryStorage, root: &Cid) -> bool {
     let Ok(copy) = copy_storage(storage).await else {
         return false;
     };
-    let mst = Mst::from_root(RawCid::from(commit.data), copy, RepoConfig::default());
+    let mst = Mst::from_root(RawCid::from(commit.data), copy, MstConfig::default());
     mst.entries().await.is_ok()
 }
 
@@ -347,7 +349,7 @@ impl Log {
         Self {
             car_path: dir.join("repo.car"),
             head_path: dir.join("HEAD"),
-            mst: Mst::new(MemoryStorage::new(), RepoConfig::default()),
+            mst: Mst::new(MemoryStorage::new(), MstConfig::default()),
             commit_cid: None,
             persisted: HashSet::new(),
             lock_path: dir.join("LOCK"),
@@ -476,7 +478,7 @@ impl Log {
 
             let commit_bytes = storage.get(&root).await?.ok_or(Error::MissingRoot)?;
             let commit = Commit::from_bytes(&commit_bytes)?;
-            let mst = Mst::from_root(RawCid::from(commit.data), storage, RepoConfig::default());
+            let mst = Mst::from_root(RawCid::from(commit.data), storage, MstConfig::default());
 
             // Seed from the reopened log's last commit rev, not a fresh
             // zero baseline -- kan's real usage is a fresh process per
@@ -501,7 +503,7 @@ impl Log {
                 head_stale,
             })
         } else {
-            let mst = Mst::new(MemoryStorage::new(), RepoConfig::default());
+            let mst = Mst::new(MemoryStorage::new(), MstConfig::default());
             Ok(Self {
                 car_path,
                 head_path,
@@ -740,7 +742,7 @@ impl Log {
                     let commit_bytes = storage.get(&root).await?.ok_or(Error::MissingRoot)?;
                     let commit = Commit::from_bytes(&commit_bytes)?;
                     self.mst =
-                        Mst::from_root(RawCid::from(commit.data), storage, RepoConfig::default());
+                        Mst::from_root(RawCid::from(commit.data), storage, MstConfig::default());
                     self.commit_cid = Some(root);
                     self.tid = TidGenerator::seeded(&commit.rev);
                     self.last_recorded_at = self.last_recorded_at.max(self.tid.last_micros());
@@ -769,7 +771,7 @@ impl Log {
         let root = on_disk.expect("checked above");
         let commit_bytes = storage.get(&root).await?.ok_or(Error::MissingRoot)?;
         let commit = Commit::from_bytes(&commit_bytes)?;
-        self.mst = Mst::from_root(RawCid::from(commit.data), storage, RepoConfig::default());
+        self.mst = Mst::from_root(RawCid::from(commit.data), storage, MstConfig::default());
         self.commit_cid = Some(root);
         // Keep TID monotonicity across the takeover, exactly as reopening
         // would have.

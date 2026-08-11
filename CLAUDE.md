@@ -39,9 +39,19 @@ work rather than treating "out for v1" as still open-ended.
   artifact. **Not** `atrium-repo` — ADR-1 originally picked it, but ADR-11
   found a confirmed data-loss bug in its MST (filed upstream:
   atrium-rs/atrium#343) and ADR-12 records the switch. Before trusting any
-  storage-layer crate here again: stress-test it the way ADR-11/12 did
-  (sequential inserts, check full reachability after every single one, not
-  just at the end) before building on it, not after.
+  storage-layer crate here again, run **both** checks before building on it,
+  not after:
+  1. **Reachability** (ADR-11/12) — sequential inserts, check full
+     reachability after every single one, not just at the end.
+  2. **Conformance** (ADR-90) — compare the artifact against an *independent
+     implementation*, not against our own reading of the spec. Reachability
+     alone is not enough: `atproto-repo` 0.14.5's MST never split, losing
+     nothing while writing a repo no conformant implementation agrees with
+     (kan#204) — a quadratic write cliff and a wrong root CID that the
+     reachability rule passes cleanly. `tests/mst_conformance.rs` is the
+     working example; `src/mst/` is what it cost — kan now owns the MST
+     outright, because a `[patch.crates-io]` fix reaches CI but never reaches
+     `cargo install kan`.
 - Correctness before performance. The reference fold recomputes; caching and
   incremental folds are follow-ups, optimized only against passing fixtures.
 - The fold is a pure, deterministic function of (claim set, enrichment). Guard this.

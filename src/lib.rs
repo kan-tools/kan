@@ -11,6 +11,7 @@ pub mod fold;
 pub mod git;
 pub mod json;
 pub mod mcp;
+pub mod mst;
 pub mod relations;
 pub mod roles;
 pub mod sign;
