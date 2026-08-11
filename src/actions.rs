@@ -1823,8 +1823,19 @@ fn format_micros(micros: u64) -> String {
 ///
 /// `fold::state::classify` already reduces to the live antichain; anything
 /// that is a `Status` and not in it has been superseded.
-fn superseded_status_cids(claims: &[(Cid, crate::claim::Claim)]) -> std::collections::HashSet<Cid> {
-    let live = match crate::fold::state::classify(claims, &[]) {
+fn superseded_status_cids(
+    ws: &Workspace,
+    claims: &[(Cid, crate::claim::Claim)],
+) -> std::collections::HashSet<Cid> {
+    // Classify under the SAME computed edges `status`/`issues` use
+    // (`classify_subject` → `relations::compute_default`), not the empty set
+    // this passed before. A status settled only by a computable edge (e.g.
+    // `GitAncestry`) was superseded under `kan status` yet shown as live
+    // under `kan show`/`context` — the two read surfaces disagreeing about
+    // the same subject (review/full-pass-v0.12 F9). SPEC §9 step 2b makes
+    // the poset attested ⊔ computable; both halves belong here.
+    let edges = relations::compute_default(claims, &ws.git);
+    let live = match crate::fold::state::classify(claims, &edges) {
         crate::fold::state::StateView::Unclassified => return Default::default(),
         other => other.live_cids(),
     };
@@ -1953,7 +1964,7 @@ pub fn show(
                 trust,
                 empty_reason,
             ));
-            let superseded = superseded_status_cids(&subject_view.claims);
+            let superseded = superseded_status_cids(ws, &subject_view.claims);
             for (cid, claim) in &subject_view.claims {
                 out.push_str(&format!(
                     "  {cid}  {}\n",
@@ -2513,7 +2524,7 @@ pub fn show_json(
     let (subjects, claims, flagged) = match view.subject(&subject_ref) {
         None => (vec![subject.to_string()], Vec::new(), false),
         Some(class) => {
-            let superseded = superseded_status_cids(&class.claims);
+            let superseded = superseded_status_cids(ws, &class.claims);
             (
                 class
                     .subjects
@@ -2564,7 +2575,7 @@ pub fn show_all_json(
         .classes
         .iter()
         .map(|class| {
-            let superseded = superseded_status_cids(&class.claims);
+            let superseded = superseded_status_cids(ws, &class.claims);
             let names: Vec<String> = class
                 .subjects
                 .iter()
@@ -2674,7 +2685,7 @@ pub fn context_json(
     let superseded: std::collections::HashSet<Cid> = view
         .classes
         .iter()
-        .flat_map(|c| superseded_status_cids(&c.claims))
+        .flat_map(|c| superseded_status_cids(ws, &c.claims))
         .collect();
 
     let mut tokens = 0usize;
@@ -2754,7 +2765,7 @@ pub fn context(
     let superseded: std::collections::HashSet<Cid> = view
         .classes
         .iter()
-        .flat_map(|c| superseded_status_cids(&c.claims))
+        .flat_map(|c| superseded_status_cids(ws, &c.claims))
         .collect();
 
     let mut out = String::new();

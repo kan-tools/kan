@@ -70,27 +70,55 @@ impl MergeClass {
 /// separate mechanism from this one.) This function deliberately takes no
 /// `TrustBase` at all: that absence is the fix, not an oversight.
 pub fn excluded_by_retraction(claims: &[(Cid, StoredClaim)]) -> HashSet<Cid> {
-    let mut ordered: Vec<&(Cid, StoredClaim)> = claims.iter().collect();
-    ordered.sort_by(|a, b| a.1.rev.cmp(&b.1.rev));
+    // A retraction R (same author as its target) is *effective* iff R is not
+    // itself the target of an effective retraction — a well-founded
+    // recursion, since a retraction of R is cited after R and so has a
+    // higher `rev`. The old forward pass with an undo map got a single
+    // retraction-of-a-retraction right but silently failed to reinstate the
+    // middle one of a longer chain: X, R1⊃X, R2⊃R1, R3⊃R2 left X live, even
+    // though R3 neutralises R2 and so R1 retracts X again
+    // (review/full-pass-v0.12 F9).
+    //
+    // Computed in one reverse-`rev` pass: highest `rev` first, so every
+    // retraction that could target R has already been seen when R is
+    // reached. R is inert exactly when it is already marked as targeted by
+    // an effective retraction.
+    let authors: HashMap<Cid, AuthorId> = claims
+        .iter()
+        .map(|(cid, stored)| (cid.clone(), stored.claim.content.author.clone()))
+        .collect();
 
-    let mut authors: HashMap<Cid, AuthorId> = HashMap::new();
+    let mut ordered: Vec<&(Cid, StoredClaim)> = claims.iter().collect();
+    // `(rev, cid)` descending, so the pass is a function of the claim set,
+    // not its enumeration order.
+    ordered.sort_by(|a, b| {
+        b.1.rev
+            .cmp(&a.1.rev)
+            .then_with(|| b.0.to_string().cmp(&a.0.to_string()))
+    });
+
     let mut excluded: HashSet<Cid> = HashSet::new();
-    let mut active_retraction_target: HashMap<Cid, Cid> = HashMap::new();
+    let mut targeted_by_effective: HashSet<Cid> = HashSet::new();
 
     for (cid, stored) in ordered {
-        let author = stored.claim.content.author.clone();
-        if let ClaimBody::Retraction { supersedes } = &stored.claim.content.body {
-            if authors.get(supersedes) == Some(&author) {
-                excluded.insert(supersedes.clone());
-                active_retraction_target.insert(cid.clone(), supersedes.clone());
-                if let Some(undone) = active_retraction_target.remove(supersedes) {
-                    excluded.remove(&undone);
-                }
-            }
-            // else: a cross-author "retraction" attempt -- not honored,
-            // structurally inert, never added to `excluded`.
+        let ClaimBody::Retraction { supersedes } = &stored.claim.content.body else {
+            continue;
+        };
+        // Self-retraction only: an other-author retraction is structurally
+        // inert (SPEC §8), never counted and never excluding anything.
+        if authors.get(supersedes) != Some(&stored.claim.content.author) {
+            continue;
         }
-        authors.insert(cid.clone(), author);
+        // This retraction is neutralised by a later, effective one.
+        if targeted_by_effective.contains(cid) {
+            continue;
+        }
+        targeted_by_effective.insert(supersedes.clone());
+        // Both the target and this (now-superseded-target-carrying)
+        // retraction's target are removed from the live view; a retraction
+        // that is itself retracted is hidden by that outer retraction on the
+        // same rule, reached as its own `supersedes` here.
+        excluded.insert(supersedes.clone());
     }
     excluded
 }

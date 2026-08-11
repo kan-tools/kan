@@ -254,11 +254,16 @@ impl Index {
         })
     }
 
-    /// All claims currently projected, in chronological (`rev`) order — the
-    /// practical input to `crate::fold::fold`.
+    /// All claims currently projected, in chronological (`rev`, then
+    /// `content_cid`) order — the practical input to `crate::fold::fold`.
+    ///
+    /// The `content_cid` tiebreak matches `fold`'s own `(rev, cid)` sort, so
+    /// two claims sharing a `rev` (possible once `.claims/` ingestion mixes
+    /// authors' clocks) order identically here and in the fold rather than by
+    /// whatever order SQLite returned (review/full-pass-v0.12 F9).
     pub fn all_stored_claims(&self) -> Result<Vec<(Cid, StoredClaim)>, Error> {
         let mut stmt = self.conn.prepare(&format!(
-            "SELECT content_cid, raw FROM {CLAIMS_TABLE} ORDER BY rev ASC"
+            "SELECT content_cid, raw FROM {CLAIMS_TABLE} ORDER BY rev ASC, content_cid ASC"
         ))?;
         let rows = stmt.query_map([], |row| {
             let cid_str: String = row.get(0)?;

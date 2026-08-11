@@ -101,3 +101,64 @@ async fn fold_is_deterministic_for_a_fixed_claim_set_and_enrichment() {
         }
     }
 }
+
+/// `review/full-pass-v0.12` F9: the fold is a function of the claim *set*,
+/// not its enumeration order. Two `Status` claims by one author on one
+/// subject sharing a `rev` (which cross-log `.claims/` ingestion makes
+/// reachable) must fold to the same live status regardless of input order.
+/// Before the `(rev, cid)` tiebreak, the stable sort preserved input order,
+/// so classify's last-insert-wins picked whichever the caller listed last.
+#[test]
+fn fold_is_independent_of_claim_input_order() {
+    use kan::store::log::StoredClaim;
+
+    let who = AuthorId {
+        did: "did:key:zTestSameRev".to_string(),
+        agent: None,
+    };
+    let mk = |value: kan::claim::StatusValue| {
+        let content = ClaimContent {
+            author: who.clone(),
+            workspace: Anchor::Workspace("test-workspace".to_string()),
+            subject: SubjectRef::Local(Rkey::from("bug-42")),
+            body: ClaimBody::Status { value },
+            cites: vec![],
+            artifacts: vec![],
+            recorded_at: None,
+        };
+        let cid = kan::cid::content_cid(&content).unwrap();
+        // Identical rev on purpose: the collision the tiebreak must resolve.
+        (
+            cid,
+            StoredClaim {
+                claim: kan::claim::Claim {
+                    content,
+                    sig: vec![],
+                },
+                rev: "3333333333333".to_string(),
+            },
+        )
+    };
+    let open = mk(kan::claim::StatusValue::Open);
+    let resolved = mk(kan::claim::StatusValue::Resolved);
+    let trust = TrustBase::solo(who.clone());
+
+    let forward = fold::fold(vec![open.clone(), resolved.clone()], &trust);
+    let reversed = fold::fold(vec![resolved, open], &trust);
+
+    let live_status = |v: &fold::FoldedView| {
+        v.classes
+            .iter()
+            .flat_map(|c| &c.claims)
+            .find_map(|(_, claim)| match &claim.content.body {
+                ClaimBody::Status { value } => Some(*value),
+                _ => None,
+            })
+    };
+    assert_eq!(
+        live_status(&forward),
+        live_status(&reversed),
+        "two same-rev status claims folded to different live statuses \
+         depending on input order -- the fold is not a function of the set"
+    );
+}

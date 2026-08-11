@@ -505,3 +505,77 @@ fn a_named_role_composes_with_weights() {
     assert_eq!(weight_of(&ws.did(&ws.role)), 0.25);
     assert_eq!(weight_of(&ws.did(&ws.primary)), 1.0);
 }
+
+/// `review/full-pass-v0.12` F9: `kan show` and `kan status` must mark a
+/// status superseded under the SAME edge set. A status dominated only by a
+/// GitAncestry edge — two authors disagreeing, ordered by commit ancestry
+/// with no attested `cites` — was settled-away under `status` (computed
+/// edges) yet shown live under `show` (empty edge set). The two read
+/// surfaces contradicting each other about one subject.
+#[test]
+fn show_and_status_mark_superseded_under_the_same_edges() {
+    let dir = git_repo();
+    let a = dir.path().join("key-a");
+    let b = dir.path().join("key-b");
+    kan::sign::Identity::generate().save(&a).unwrap();
+    kan::sign::Identity::generate().save(&b).unwrap();
+
+    let git = |args: &[&str]| {
+        let ok = Command::new("git")
+            .args(args)
+            .current_dir(dir.path())
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?} failed");
+    };
+
+    // Author A blocks, anchored to the current commit.
+    assert!(kan(dir.path(), Some(&a), &["block", "finding", "waiting on infra"]).ok);
+    // A new commit, so B's claim anchors to a descendant of A's.
+    git(&[
+        "-c",
+        "user.email=t@example.com",
+        "-c",
+        "user.name=t",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "second",
+    ]);
+    // Author B resolves, anchored to the descendant commit.
+    assert!(kan(dir.path(), Some(&b), &["resolve", "finding", "infra landed"]).ok);
+
+    let did_a = kan(dir.path(), Some(&a), &["identity", "did"]).stdout;
+    let did_b = kan(dir.path(), Some(&b), &["identity", "did"]).stdout;
+    let trust = ["--trust", &did_a, "--trust", &did_b];
+
+    let mut show_args = vec!["show", "finding"];
+    show_args.extend_from_slice(&trust);
+    let mut status_args = vec!["status", "finding"];
+    status_args.extend_from_slice(&trust);
+
+    let show = kan(dir.path(), None, &show_args);
+    let status = kan(dir.path(), None, &status_args);
+    assert!(show.ok && status.ok, "reads failed: {} / {}", show.stderr, status.stderr);
+
+    // `status` settles the subject via the computed GitAncestry edge:
+    // Resolved wins, and it is NOT Contested.
+    assert!(
+        status.stdout.contains("Settled(Resolved)"),
+        "status should settle the subject to Resolved via the git edge:\n{}",
+        status.stdout
+    );
+    // `show` must reflect the same ordering: the git-dominated Blocked
+    // status is marked superseded, not shown as a live peer of Resolved.
+    // Before the fix, `show` classified with an empty edge set, so the two
+    // authors' disagreement was Contested and neither was marked superseded
+    // -- the divergence F9 names.
+    assert!(
+        show.stdout.contains("superseded"),
+        "the git-dominated Blocked status must be marked superseded in show, \
+         matching status's settlement:\n{}",
+        show.stdout
+    );
+}

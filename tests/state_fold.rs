@@ -353,3 +353,32 @@ fn genesis_is_deterministic() {
     let second = GitSubstrate::open(dir.path()).unwrap().genesis().unwrap();
     assert_eq!(first, second);
 }
+
+/// `review/full-pass-v0.12` F9 (probe P5 gap): strict intra-author
+/// supersession — the later of one author's two statuses is the live one —
+/// was untested in the file named for the state fold. This is that missing
+/// discriminator: it goes red if `classify` ever picked first-wins over
+/// last-wins. `class_claims` arrives chronological (the fold's contract),
+/// so the second entry is the later status.
+#[test]
+fn a_later_status_by_the_same_author_supersedes_within_the_file() {
+    let who = author("did:key:oneauthor", None);
+    let earlier = status_claim(&who, "issue-1", StatusValue::Open, vec![], vec![]);
+    let later = status_claim(&who, "issue-1", StatusValue::Resolved, vec![], vec![]);
+
+    // Chronological order: Open then Resolved.
+    match fold::state::classify(&[earlier.clone(), later.clone()], &[]) {
+        StateView::Settled { value, claim } => {
+            assert_eq!(
+                value,
+                StatusValue::Resolved,
+                "the later status must win, not the first"
+            );
+            assert_eq!(
+                claim.0, later.0,
+                "the live claim must be the later one, not the earlier"
+            );
+        }
+        other => panic!("one author's latest status should be Settled, got {other:?}"),
+    }
+}

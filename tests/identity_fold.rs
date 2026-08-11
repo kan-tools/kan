@@ -578,3 +578,114 @@ async fn oversized_component_is_flagged() {
     assert_eq!(view.classes.len(), 1);
     assert!(view.classes[0].flagged_oversized);
 }
+
+/// `review/full-pass-v0.12` F9: retracting a retraction-of-a-retraction
+/// reinstates the first retraction, so the original claim is excluded
+/// again. The old forward pass with an undo map left the original *live*
+/// across a chain this long (X, R1⊃X, R2⊃R1, R3⊃R2), because it never
+/// replayed a reinstated retraction. A retraction is effective iff it is
+/// not itself the target of an effective retraction.
+#[tokio::test]
+async fn retracting_a_retraction_of_a_retraction_reinstates_the_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let owner = Identity::generate();
+    let who = AuthorId {
+        did: owner.did(),
+        agent: None,
+    };
+    let mut log = Log::open_or_create(&dir.path().join("log"), &owner)
+        .await
+        .unwrap();
+
+    let x = log
+        .append(content(&who, "bug", observation("the finding")), &owner)
+        .await
+        .unwrap();
+    let r1 = log
+        .append(
+            content(&who, "bug", ClaimBody::Retraction { supersedes: x.clone() }),
+            &owner,
+        )
+        .await
+        .unwrap();
+    let r2 = log
+        .append(
+            content(&who, "bug", ClaimBody::Retraction { supersedes: r1.clone() }),
+            &owner,
+        )
+        .await
+        .unwrap();
+    // R3 retracts R2, so R2 is inert, so R1 is effective again, so X is
+    // excluded.
+    log.append(
+        content(&who, "bug", ClaimBody::Retraction { supersedes: r2.clone() }),
+        &owner,
+    )
+    .await
+    .unwrap();
+
+    let claims = log.iter_all().await.unwrap();
+    let trust = TrustBase::solo(who);
+    let view = fold::fold(claims, &trust);
+    let live: Vec<_> = view
+        .subject(&SubjectRef::Local("bug".to_string()))
+        .map(|s| s.claims.iter().map(|(cid, _)| cid.clone()).collect())
+        .unwrap_or_default();
+
+    assert!(
+        !live.contains(&x),
+        "R3 neutralises R2, reinstating R1, so the original finding must be \
+         excluded again -- it was left live: {live:?}"
+    );
+    assert!(
+        !live.contains(&r2),
+        "R2 is retracted by the effective R3 and must not be live"
+    );
+    // Sanity: two effective retractions (R1, R3) remain visible narrative.
+    assert!(live.contains(&r1), "R1 is effective again and should be visible");
+}
+
+/// F9, the simpler chain the old code did get right — kept so the fixpoint
+/// rewrite cannot regress it: retracting a retraction reinstates the
+/// original claim.
+#[tokio::test]
+async fn retracting_a_retraction_reinstates_the_original() {
+    let dir = tempfile::tempdir().unwrap();
+    let owner = Identity::generate();
+    let who = AuthorId {
+        did: owner.did(),
+        agent: None,
+    };
+    let mut log = Log::open_or_create(&dir.path().join("log"), &owner)
+        .await
+        .unwrap();
+
+    let x = log
+        .append(content(&who, "bug", observation("the finding")), &owner)
+        .await
+        .unwrap();
+    let r1 = log
+        .append(
+            content(&who, "bug", ClaimBody::Retraction { supersedes: x.clone() }),
+            &owner,
+        )
+        .await
+        .unwrap();
+    log.append(
+        content(&who, "bug", ClaimBody::Retraction { supersedes: r1.clone() }),
+        &owner,
+    )
+    .await
+    .unwrap();
+
+    let claims = log.iter_all().await.unwrap();
+    let view = fold::fold(claims, &TrustBase::solo(who));
+    let live: Vec<_> = view
+        .subject(&SubjectRef::Local("bug".to_string()))
+        .map(|s| s.claims.iter().map(|(cid, _)| cid.clone()).collect())
+        .unwrap_or_default();
+    assert!(
+        live.contains(&x),
+        "retracting the retraction must reinstate the original: {live:?}"
+    );
+}
