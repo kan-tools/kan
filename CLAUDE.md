@@ -84,11 +84,11 @@ holds teloi, process atoms, and drift assessment entirely as conventions
 over kan's existing verbs (`telos/<slug>` and `atom/<slug>` subjects), needs
 no kan data-model change, keeps no store of its own, and shells out to the
 `kan` binary rather than linking it. ADR-42 records what its existence
-settles — including the two things it puts back on kan: `RelationKind` has
-no "in tension with" edge (a new variant, so kan's to own), and day will
-soon write through kan's CLI, making kan's write-verb ergonomics a
-dependency of a program rather than only of agents. Send a process/workflow
-feature request there, not here.
+settles — including the two things it put back on kan: an "in tension with"
+edge (`RelationKind::InTensionWith`, since shipped — ADR-46), and day
+writing through kan's CLI, making kan's write-verb ergonomics a dependency
+of a program rather than only of agents. Send a process/workflow feature
+request there, not here.
 
 ## Process lives in `day`, not here
 **This file describes kan the artifact. It does not describe how work

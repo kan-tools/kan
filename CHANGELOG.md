@@ -20,6 +20,45 @@ Work toward v0.12 — the at-rest flip: the signing key defaults to a file, with
 the OS keychain becoming opt-in via `kan identity protect`
 ([#183](https://github.com/kan-tools/kan/issues/183)).
 
+### v0.12.0-beta.3 — review fixes
+
+A full six-dimension cold review (`review/full-pass-v0.12`,
+`.design/v0.12.0-beta.3-review-fixes.md`) found one data-loss blocker and a
+set of contract, safety, and honesty defects. All fixes ship with a test
+that fails without them.
+
+- **Data loss (blocker):** a writer that opened while the log was recovering
+  a missing `HEAD` — which includes every concurrent first-append to a fresh
+  workspace — rewrote `HEAD` to its stale recovered lineage under the lock,
+  stranding claims other writers had committed in between. It now re-reads
+  and prefers the on-disk root when walkable.
+- **Recovery honesty:** repairing a damaged CAR keeps the pre-repair file
+  aside, and the recovery messages no longer claim "no claim was lost" when a
+  mid-file corruption may have dropped later blocks. A zero-byte CAR gets a
+  named refusal instead of a raw decoder error.
+- **Transport robustness:** a malformed record in the tracked `.claims/`
+  directory now warns and is skipped instead of panicking every command in
+  every clone (integer-overflow and UTF-8-boundary faults, pre-verification).
+- **MCP vocabulary:** enum parameters accept the kebab-case values every tool
+  description teaches (PascalCase kept as aliases), and caller mistakes
+  surface as `invalid_params` rather than `internal_error`.
+- **Trust honesty:** a `--trust` weight below 1.0 warns that weights are not
+  yet folded; the surface no longer implies weighted composition it does not
+  perform.
+- **Silent writes:** `kan observe <existing-subject>` with the text forgotten
+  is refused instead of recording the subject name on `general`, and
+  `kan publish <typo>` on a subject with no claims is refused instead of
+  minting one.
+- **Fold ordering:** the fold orders by `(rev, cid)` so it is a function of
+  the claim set, not its enumeration order; retracting a
+  retraction-of-a-retraction correctly reinstates the first; and `kan show`
+  classifies supersession under the same computed edges `kan status` uses.
+- **Hardening & docs:** claim-derived git SHAs are validated as hex before
+  reaching `git`; several errors drop internal tokens for actionable text;
+  and `docs/SPEC.md` §2/§4.2/§5.1.1/§7/§11, the README (new quickstart, the
+  v0.12 identity model), `CLAUDE.md`, and `docs/SETUP-TODO.md` were corrected
+  against the shipped code.
+
 ### Fixed
 
 - Every identity-minting path now routes through one function, so a path that

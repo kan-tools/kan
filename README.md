@@ -9,6 +9,30 @@ without a central authority deciding what's true.
 
 Nothing is overwritten. Nothing is flattened. Nothing is lost.
 
+## Quickstart
+
+```sh
+cargo install kan                 # or: cargo install --path . from a clone
+
+cd your-project                   # kan runs inside a git repo and anchors
+git init && git commit --allow-empty -m init   # ...to its history, so it needs at least one commit
+
+kan observe login-bug "panics on empty input"  # record a finding
+kan decide login-bug "guard the empty case before parsing"
+kan block  login-bug "waiting on the parser refactor"
+kan resolve login-bug "fixed in a1b2c3d"        # resolve closes it out
+
+kan status                        # one line per subject: its settled state
+kan show login-bug                # that subject's full claim history
+kan issues                        # everything not yet resolved
+kan context --budget 800          # the highest-value claims within a token budget
+```
+
+The first write mints this repo's signing identity (see
+[Identity](#identity)); nothing is written to a repo until you record a
+claim, and reading a repo that has none leaves it untouched. To let an agent
+use kan over MCP instead of the CLI, run `kan mcp install`.
+
 ## Why
 
 AI coding agents forget everything between sessions, and coordinating several of
@@ -65,42 +89,48 @@ atproto layer — has a concrete staged plan targeting `v1.0.0`; see
 `.design/sync-layer-architecture-and-staging.md` and `docs/DECISIONS.md`
 ADR-35.
 
-## Identity and the keychain
+## Identity
 
-kan signs every claim with a per-repo `did:key`. By default the key lives in
-the OS keychain, encrypted at rest, and `kan identity phrase` gives you a
-24-word recovery phrase — take it before you need it, at a real terminal.
+kan signs every claim with a per-repo `did:key`. **As of v0.12 the signing
+key is rooted by default in a `0600` file at `.kan/seed`** — not the OS
+keychain — and `.kan/` is gitignored, so the secret stays on your machine
+and out of the repo. The first write tells you exactly where the key lives
+and how to back it up:
 
-**If you rebuild kan often, set this and forget the keychain exists:**
-
-```sh
-export KAN_IDENTITY_FILE="$PWD/.kan/identity"
+```
+kan: this repo's identity is rooted in .kan/seed, a 0600 file readable by anything running as you.
+`kan identity phrase` prints its 24-word recovery phrase -- that is the backup, and it is the only copy not on this disk.
+`kan identity protect` moves the secret into the OS keychain if you want it there.
 ```
 
-On macOS a keychain entry is authorised to *the binary that created it*, so
-every `cargo install` produces a binary the keychain does not recognise and
-you get an auth prompt — forever, on every rebuild. `KAN_IDENTITY_FILE` names
-a key file directly and never consults the keychain, so nothing can block. The
-file is written `0600`.
+Take the recovery phrase before you need it, at a real terminal — it is the
+only copy not on the disk.
 
-The trade-off is real and worth stating: that key is then plaintext on disk
-rather than encrypted at rest. For a repo you are *developing*, whose `.kan/`
-is gitignored, on an encrypted disk, that is usually the right call. For a
-repo you are *using*, prefer the keychain. Tracked as
-[#96](https://github.com/kan-tools/kan/issues/96) and
-[#105](https://github.com/kan-tools/kan/issues/105) — the long-term answer is
-a single root of trust with enclave-held keys, not a nicer prompt.
+**Why the file is the default, and the keychain is opt-in.** On macOS a
+keychain entry is authorised to *the binary that created it*, so every
+`cargo install` produces a binary the keychain does not recognise, and a
+keychain-by-default kan would prompt — or hang — on every rebuild
+([#96](https://github.com/kan-tools/kan/issues/96)). A `0600` seed file has
+no such failure mode. The trade-off is that the seed is plaintext on disk
+rather than encrypted at rest; for a repo you are *developing*, on an
+encrypted disk, with `.kan/` gitignored, that is usually the right call.
 
-`KAN_NO_KEYCHAIN=1` is the other half of this: it makes kan behave as though
-no keychain exists, keeping secrets in `0600` files under `.kan/` without you
-having to name a specific key file. Use it if you simply don't want your keys
-in the keychain.
+If you do want the secret encrypted at rest, move it into the keychain — and
+back out again — at any time:
 
-If a keychain read does block, kan now says so on stderr after a second or
-two, naming both escape hatches — rather than looking like a slow command
-(#90).
+```sh
+kan identity protect      # move the seed into the OS keychain
+kan identity unprotect    # move it back to a 0600 file
+```
 
-CI and any non-interactive caller should always set `KAN_IDENTITY_FILE`.
+**Escape hatches, for CI and specific key files:**
+
+- `KAN_IDENTITY_FILE=/path/to/key` names a signing key file directly. A
+  read that names a *missing* path is an error, never a silent mint — CI
+  should point this at a provisioned key.
+- `KAN_NO_KEYCHAIN=1` makes kan behave as though no keychain exists. It is
+  an opt-*out*; set it only where you never want a keychain call, and only
+  for a workspace whose seed already lives in a file.
 
 ## Several roles in one repo
 
@@ -131,8 +161,13 @@ Narrow it when you want a specific frame:
 kan show finding --trust me               # the active identity alone
 kan show finding --trust roles            # only the identities declared in .kan/roles
 kan show finding --trust role:prover      # one declared role, by name
-kan show finding --trust did:key:zA --trust did:key:zB=0.5   # explicit, weighted
+kan show finding --trust did:key:zA --trust did:key:zB   # two explicit authors
 ```
+
+A `did:key:...=<weight>` form is accepted, but note that **weights are not
+yet folded**: an author is either in the view or not, so `did=0.5` currently
+gives the same result as naming the author plainly (kan warns when you pass
+one). Weighted composition is a planned enrichment, not a shipped one.
 
 Any read that leaves claims out says so, on both the human output and `--json`
 (`excluded_by_trust`), so a partial view cannot pass for a complete one. And

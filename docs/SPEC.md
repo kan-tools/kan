@@ -55,9 +55,20 @@ type AuthorId = (Did, Option<AgentKey>);
 
 - **`Did`** = the *publishing container* (the human account whose PDS/log carries the claim). The "driver," in crosslink terms.
 - **`AgentKey`** = the signing key of the agent that authored the claim; `None` for a human acting directly.
-- Agents sign their own claims; the human's log publishes them. Per-agent attribution + non-repudiation without per-agent DID provisioning.
 
-**Ordering/supersession keys on the full `AuthorId`.** Two agents under one human are *different authors* and may legitimately **contest** each other (correct — they might disagree). A human-direct claim `(did, None)` and an agent claim `(did, Some(k))` are different authors.
+**Ordering/supersession keys on the full `AuthorId`.** A human-direct claim `(did, None)` and an agent claim `(did, Some(k))` are different authors.
+
+> **Implementation note (v0.12.0-beta.3): `AgentKey` is legacy; the shipped
+> multi-actor mechanism is roles.** The `agent` field remains in the struct
+> (a claim written before v0.7 may carry one, and `AuthorId` still keys
+> ordering on it), but no modern write sets it — `KAN_AGENT` was removed in
+> v0.7. The way one workspace hosts several distinct authors today is
+> **roles**: a `ClaimBody::RoleDeclaration { did, name }` declares a separate
+> DID as a named role, and folds trust those DIDs as ordinary peers
+> (`ADR-58`, `.design/role-declarations.md`; `src/roles.rs`). The default
+> trust base is `Local` — every DID that has written into this log (`ADR-83`).
+> This paragraph describes intent; the mechanism is in `src/roles.rs` and
+> `src/fold/trust.rs`, which are the artifacts to verify against.
 
 ---
 
@@ -91,7 +102,7 @@ The v1 quotient is banned. Identity between subjects is carried by a **directed,
 sameAs : subjectA ⟶ subjectB      (authored, witnessed, contestable, retractable)
 ```
 
-- **`SameAs` is the ONLY identity-conferring edge.** `cites`, `About`, `Blocks`, `DependsOn`, `Accepts`, `Rejects` never merge subjects. (This is the guard against the transitive "mega-merge" collapse: non-identity relations live in different hom-sets and simply do not compose into identity.)
+- **`SameAs` is the ONLY identity-conferring edge.** `cites`, `About`, `Blocks`, `DependsOn`, `Accepts`, `InTensionWith`, `Supersedes`, `Refutes` never merge subjects. (This is the guard against the transitive "mega-merge" collapse: non-identity relations live in different hom-sets and simply do not compose into identity.) `Rejects` is not in this list because it is not a `RelationKind` at all (§7): it is a claim-level, trust-local suppression, not a subject-to-subject edge.
 - A **single** `SameAs` = a *situated* identity claim (one perspective). A fold may honor it if it trusts the author (directed, trust-gated merge).
 - A **mutual** `SameAs` (A→B and B→A) = a **weak equivalence**: invertible up to coherence, NOT on-the-nose equality. The two subjects remain distinct objects with a distinguished iso.
 
@@ -164,11 +175,15 @@ enum Anchor {
 - **Rationale (safety, not just semantics):** strict identity has **no witness layer to absorb error** — a wrong strict identification is welded into the global topology and cannot be retracted. Therefore strict identity is permitted **only where error is impossible by construction** (computed from bytes). Everything requiring a *judgment* stays Local + weak + retractable.
 - **`SameAs` between two anchors is a TYPE ERROR, not a claim.** Anchor identity is settled by construction.
 
-### 4.5.1 Domain relations are stored as asserted, read as projected
+### 5.1.1 Domain relations are stored as asserted, read as projected
+
+*(Numbered 4.5.1 through v0.12.0-beta.2, which placed it inside §5 between
+§5.1 and §5.2; renumbered to §5.1.1 in v0.12.0-beta.3, review REQ-9.)*
 
 `SameAs` is enriched (§4.3). The other domain kinds — `Blocks`, `About`,
-`ManifestsAt`, `DependsOn`, `Accepts`, `InTensionWith` — are **not**, yet, and
-that asymmetry is a known gap rather than a decision (#72).
+`ManifestsAt`, `DependsOn`, `Accepts`, `InTensionWith`, `Supersedes`,
+`Refutes` — are **not**, yet, and that asymmetry is a known gap rather than a
+decision (#72).
 
 What holds for all of them now: a relation claim is stored exactly as
 asserted — directed, attributed, carrying its `cites` — and any symmetric,
@@ -228,22 +243,48 @@ v1 providers:
 
 ## 7. Kinds & bodies
 
+> **Implementation note (v0.12.0-beta.3).** This section drifted behind
+> `src/claim.rs` and was corrected against it; the enum below now mirrors
+> `ClaimKind` and `RelationKind` as shipped. Where this spec and the code
+> disagree in future, the code is the artifact under review — re-derive this
+> block from `src/claim.rs`, do not re-assert it.
+
 ```rust
 enum ClaimKind {
-    Subject,      // declares a subject exists (title, subject-kind)
-    Observation,  // a finding
-    Plan,         // intended approach
-    Decision,     // a choice made
-    Blocker,      // impediment
-    Resolution,   // claims a subject resolved
-    Result,       // outcome / artifact
-    Status,       // explicit state assertion
-    Relation,     // typed edge: SameAs | Blocks | About | ManifestsAt | DependsOn | Accepts | Rejects
-    Retraction,   // supersedes a prior claim of the SAME author (§8)
+    Subject,          // declares a subject exists (title, subject-kind)
+    Observation,      // a finding
+    Plan,             // intended approach
+    Decision,         // a choice made
+    Blocker,          // impediment
+    Resolution,       // claims a subject resolved
+    Result,           // outcome / artifact
+    Status,           // explicit state assertion
+    Relation,         // typed edge, see RelationKind below
+    Retraction,       // supersedes a prior claim of the SAME author (§8)
+    Rejects,          // trust-local suppression of ANOTHER author's claim (§8; ADR-29)
+    Publication,      // marks a subject shared into a transport layer (ADR-43)
+    RoleDeclaration,  // declares a DID as a named role of this workspace (ADR-58)
+    Unknown,          // a kind a newer writer used that this build cannot read (ADR-44)
+}
+
+enum RelationKind {
+    SameAs,        // the ONLY identity-conferring edge (§4.2)
+    Blocks,
+    About,
+    ManifestsAt,
+    DependsOn,
+    Accepts,
+    InTensionWith, // two subjects pull against each other (ADR-46)
+    Supersedes,    // this subject replaces target, which is retained (ADR-80)
+    Refutes,       // a citable result kills target, which stays visible (ADR-80)
 }
 ```
 
-**`Relation` subtypes** are the semantic edges. Only `SameAs` confers identity (§4.2).
+**`Relation` subtypes** are the semantic edges. Only `SameAs` confers
+identity (§4.2). Note that `Rejects` is **not** a `RelationKind`: it is not a
+domain edge between two subjects but `Retraction`'s cross-author-aware
+sibling, citing a specific claim CID, so it lives in `ClaimBody::Rejects`
+(ADR-29).
 
 **Body typing — RECOMMENDED default, flagged OPEN in §9:**
 - **Closed typed union** for *structural* kinds the fold must read: `Subject`, `Status`, `Relation`, `Retraction`.
@@ -389,8 +430,17 @@ Three independent lexicons — separability is the ecosystem contribution:
 **DO NOT BUILD (yet):**
 - Sync of any kind (HostedRelay, AtProto), lexicons, firehose.
 - TUI, web dashboard, VS Code extension.
-- >2 trust policies. Language rule-files. Config presets. Enforcement hooks (prefer affordance over control — legibility, not blocking).
+- More trust *enrichments* than the two reference bases (`Solo` and `PeerContested`). Language rule-files. Config presets. Enforcement hooks (prefer affordance over control — legibility, not blocking).
 - Incremental/streaming fold (reference recompute first).
+
+> **Implementation note (v0.12.0-beta.3).** This bullet used to read ">2
+> trust policies". `TrustBase` now has three variants — `Solo`,
+> `PeerContested`, and `Local` (the default since v0.11, `ADR-83`) — but that
+> is not a third *enrichment*: `Local` is `PeerContested` over "every author
+> in this log", i.e. a way of populating the same [0,1]/quantale base, not a
+> new base of the kind §4.3 caps. The fence is unchanged in spirit (two
+> reference enrichments); the wording was corrected so the count matches the
+> code. `src/fold/trust.rs` is the artifact of record.
 
 **Paradigm note:** replace v1's **enforcement** (hooks that BLOCK actions without an issue) with **affordance** (let agents act; make the record complete and legible; surface drift in the graph as data). Control-for-stability is the freeze.
 
