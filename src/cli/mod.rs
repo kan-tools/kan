@@ -240,8 +240,11 @@ pub enum Command {
         /// (the active identity alone), `roles` (only the identities this
         /// workspace has declared), `role:<name>` (one declared role), a
         /// bare `did:key:...`, or `did:key:...=<weight>`. Repeat for several
-        /// authors. Weight defaults to 1.0 and must be in [0,1]; an author
-        /// you do not name is invisible, not merely down-weighted.
+        /// authors. An author you do not name is invisible. NOTE: a weight
+        /// below 1.0 is accepted and validated but not yet folded — an
+        /// author is either included or not, so `did=0.5` gives the same
+        /// view as naming them plainly; weighted folding is a future
+        /// enrichment.
         #[arg(long = "trust", value_name = "AUTHOR[=WEIGHT]")]
         trust: Vec<String>,
     },

@@ -808,3 +808,62 @@ fn kan_dir_resolves_upward_from_a_subdirectory() {
     assert!(ok);
     assert!(show_out.contains("found from a subdirectory"));
 }
+
+/// `review/full-pass-v0.12` F6 (REQ-5): a `--trust` selector carrying a
+/// weight below 1.0 warns that weights are not folded, and the view is the
+/// same one naming the author plainly produces. The surface accepted
+/// `did=0.5` and returned an identical view with nothing said.
+#[test]
+fn a_weighted_trust_selector_warns_weights_are_inert() {
+    let dir = git_repo();
+    // A claim from a second identity so there is something to trust.
+    let key = dir.path().join("other-key");
+    kan::sign::Identity::generate().save(&key).unwrap();
+    let other = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(["observe", "finding", "from the other author"])
+        .current_dir(dir.path())
+        .env("KAN_NO_KEYCHAIN", "1")
+        .env("KAN_IDENTITY_FILE", &key)
+        .output()
+        .unwrap();
+    assert!(other.status.success());
+    let did = String::from_utf8_lossy(
+        &std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+            .args(["identity", "did"])
+            .current_dir(dir.path())
+            .env("KAN_NO_KEYCHAIN", "1")
+            .env("KAN_IDENTITY_FILE", &key)
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .trim()
+    .to_string();
+
+    let weighted = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(["show", "finding", "--trust", &format!("{did}=0.5"), "--json"])
+        .current_dir(dir.path())
+        .env("KAN_NO_KEYCHAIN", "1")
+        .output()
+        .unwrap();
+    let werr = String::from_utf8_lossy(&weighted.stderr);
+    assert!(
+        werr.contains("not yet folded"),
+        "a weighted selector must warn the weight is inert, got stderr: {werr}"
+    );
+
+    // And the weighted view equals the plain-membership view.
+    let plain = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(["show", "finding", "--trust", &did, "--json"])
+        .current_dir(dir.path())
+        .env("KAN_NO_KEYCHAIN", "1")
+        .output()
+        .unwrap();
+    let wv: serde_json::Value =
+        serde_json::from_slice(&weighted.stdout).unwrap();
+    let pv: serde_json::Value = serde_json::from_slice(&plain.stdout).unwrap();
+    assert_eq!(
+        wv["claims"], pv["claims"],
+        "did=0.5 must fold to the same claims as naming the author plainly"
+    );
+}

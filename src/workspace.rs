@@ -824,6 +824,14 @@ impl Workspace {
 
         let mut roles_reason: Option<String> = None;
         let mut weights = std::collections::HashMap::new();
+        // A weight below 1.0 parses, validates and is stored, but no fold
+        // path reads its magnitude -- `TrustBase::trusts` is `weight > 0.0`,
+        // membership only (review/full-pass-v0.12 F6). The surface accepted
+        // `did=0.5` and returned a view identical to `did=1.0` with nothing
+        // said. Warn rather than reject: removing the syntax would break
+        // README-taught invocations, and whether to fold magnitudes at all
+        // is a design question, not this fix's to settle.
+        let mut saw_partial_weight = false;
         for spec in specs {
             if spec == crate::fold::trust::ROLES_ALIAS {
                 let declared = self.declared_roles()?;
@@ -882,6 +890,7 @@ impl Workspace {
                         .into());
                     }
                 };
+                saw_partial_weight |= entry.weight < 1.0;
                 weights.insert(AuthorId { did, agent: None }, entry.weight);
                 continue;
             }
@@ -895,7 +904,15 @@ impl Workspace {
             } else {
                 entry.did
             };
+            saw_partial_weight |= entry.weight < 1.0;
             weights.insert(AuthorId { did, agent: None }, entry.weight);
+        }
+        if saw_partial_weight {
+            eprintln!(
+                "warning: trust weights below 1.0 are not yet folded -- an author is either \
+                 included or not, so this view is the same as naming them at full weight. \
+                 (weighted folding is a future enrichment)"
+            );
         }
         let reason = match weights.is_empty() {
             true => roles_reason,
