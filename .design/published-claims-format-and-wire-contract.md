@@ -22,7 +22,7 @@ trait.
   where `<subject>` is the subject's own name with its `/` separators preserved
   as real directories, and `<author>` is the publishing author's DID with the
   `did:key:` prefix removed. One file per publishing author.
-- REQ-2: `write_subject` (`src/transport/git_tree.rs:645`) writes only the
+- REQ-2: `write_subject` (`src/transport/git_tree.rs:956`) writes only the
   publishing author's own file, and never reads, rewrites, or deletes a file
   belonging to another author.
 - REQ-3: The subject-to-path mapping preserves `/`, so `telos/legible-process`
@@ -31,14 +31,14 @@ trait.
   restore injectivity after that collapse, and the collapse is gone.
 - REQ-4: Where the mapping is still not injective — case-insensitive
   filesystems fold `Bug42` and `bug42` together below kan entirely — the
-  existing content-keyed guard (`retirable`, `src/transport/git_tree.rs:661`)
+  existing content-keyed guard (`retirable`, `src/transport/git_tree.rs:978`)
   refuses the write rather than clobbering. A lossy path is never *trusted* as a
   unique key for a destructive write; it is verified against the file's actual
   records first.
 - REQ-5: The record header serializes `subject`, `kind` and `cites` through
-  declared `serde` shapes on `RecordHeader` (`src/transport/git_tree.rs:232`),
-  not through `format!("{:?}")` at lines 181-182.
-- REQ-6: git-tree-transport REQ-9's authentication (`src/transport/git_tree.rs:391-423`) compares
+  declared `serde` shapes on `RecordHeader` (`src/transport/git_tree.rs:302`),
+  not through `format!("{:?}")` at lines 239 and 535.
+- REQ-6: git-tree-transport REQ-9's authentication (`src/transport/git_tree.rs:488-553`) compares
   *decoded values* against the claim's own fields, not formatted strings, so
   header verification cannot fail because a formatting implementation changed.
 - REQ-7: No `std` `Debug` output appears in any byte a reader compares, parses,
@@ -46,17 +46,17 @@ trait.
   mapping, which today derives a **path component** from
   `format!("{anchor:?}")`; an anchor subject gets a declared path form.
 - REQ-8: The header format version rises to 3. A reader accepts v1, v2 and v3
-  records, and `FORMAT_VERSION` (`src/transport/git_tree.rs:297`) governs what a
+  records, and `FORMAT_VERSION` (`src/transport/git_tree.rs:377`) governs what a
   writer emits, preserving the existing "a reader meeting a higher version says
-  so by version number" behaviour at lines 334-338.
+  so by version number" behaviour at lines 425-431.
 - REQ-9: Reading discovers records under both layouts — the flat
   `.claims/<slug>.<digest>.md` files v0.6.0..v0.12.x published, and REQ-1's
   nested per-author directories. `read_all`'s `read_dir`
-  (`src/transport/git_tree.rs:837`) walks the tree rather than one flat level,
+  (`src/transport/git_tree.rs:1148`) walks the tree rather than one flat level,
   and treats a directory entry as a directory rather than a malformed record.
 - REQ-10: `seq`/`of` remain scoped to one author's record set for one subject —
   which is what they already mean — and REQ-1 makes that scoping structural, so
-  `missing_records` (`src/transport/git_tree.rs:606`) cannot be tripped by a
+  `missing_records` (`src/transport/git_tree.rs:917`) cannot be tripped by a
   second author publishing.
 - REQ-11: Publishing is git-mergeable: two authors publishing the same subject
   concurrently produce changes to disjoint paths, so `git merge` resolves
@@ -68,6 +68,13 @@ trait.
   frontmatter fence cannot re-enter on it. The v1/v2 separator `---8<---`
   (`src/transport/git_tree.rs:130`) remains understood when reading those
   versions.
+- REQ-14: A record's PATH is authenticated against the record, as the flat
+  filename already is (`FilenameMismatch`). Under REQ-1 the path carries the
+  author as well as the subject, so both are checked: a file at
+  `.claims/<subject>/<author>.md` must contain only that subject's records by
+  that author. Found while building the reader — the existing check
+  authenticates the subject alone, and leaving it there would let a file
+  claiming one author's name hold another's records.
 
 ## Acceptance Criteria
 
@@ -113,6 +120,9 @@ trait.
 - [ ] AC-15: A test asserts the v3 separator contains no `---` substring, and
   that a record whose narrative body contains the literal text `---` still
   splits correctly. (REQ-13)
+- [ ] AC-16: A test places a valid record by author A at the path for author B
+  and asserts the read reports a path mismatch rather than accepting it.
+  (REQ-14)
 
 ## Architecture
 
@@ -163,7 +173,7 @@ kan#211's disclosure gap stays open independently of this design.
 authority: hex-encoded DAG-CBOR of the `ClaimContent` with the narrative text
 blanked. The change is confined to the three legibility fields above it. Their
 doc comments currently read "Derived, ignored on read", which has been **stale
-since git-tree-transport REQ-9** made them authenticated at lines 391-423; correcting that comment
+since git-tree-transport REQ-9** made them authenticated at lines 488-553; correcting that comment
 is part of this work, in the same spirit as kan#177.
 
 The `Debug`-to-serde move is not a `Display` swap. `SubjectRef` and the claim
