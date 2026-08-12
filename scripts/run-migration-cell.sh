@@ -37,7 +37,7 @@
 #                     Previously invisible: the cell's only reader action was a
 #                     read, and a read resolves no identity (ADR-83).
 #   read-hung         the read did not return, on an axis where the keychain is
-#                     not in play. Distinguished from keychain-blocked so an
+#                     not in play. Distinguished from keychain-modal so an
 #                     unexplained hang is not given a known cause's name.
 #   keychain-unused   the cell asked for the keychain and did not get it: the
 #                     writer predates keychain support, the runner's keychain
@@ -58,10 +58,25 @@
 #                     kan#204's read-invisibility path produced -- a rebuild
 #                     that drops one claim and adds the new one leaves the
 #                     COUNT plausible, so this compares CID sets, not integers.
-#   keychain-blocked  the read never returned: a keychain entry created by the
+#   keychain-modal    the read never returned: a keychain entry created by the
 #                     writer is ACL'd to that binary, so the reader waits on an
 #                     authorization prompt nobody answers (#96). A hang is not
 #                     a pass and is not a crash, so it gets its own word.
+#
+#                     MODAL, not "blocked", and the word is doing work. Nothing
+#                     is preventing the read: the OS is waiting on a human
+#                     decision that a headless runner cannot make. "Blocked"
+#                     reads as a wall and sends people looking for what broke;
+#                     "modal" names the actual state and implies the actual
+#                     remedy -- answer the prompt, or take a route that asks no
+#                     question (KAN_IDENTITY_FILE, KAN_NO_KEYCHAIN=1). This is
+#                     macOS's trusted-application ACL working as designed, not
+#                     a defect in kan; #30's per-agent identity work is the fix.
+#
+#                     `fix-route-blocked` below deliberately keeps "blocked",
+#                     because its blockage is a different thing: not the wait,
+#                     but the circularity of a remedy that depends on the
+#                     condition it exists to remove.
 set -uo pipefail
 
 # How long the reader may take before a hang is called a hang. Generous: a
@@ -194,7 +209,7 @@ case "$MODE" in
     # cell. Writer and reader are different binaries, so the entry's
     # trusted-application ACL does not match on the second one and macOS
     # raises an authorization prompt no CI runner can answer. That is #96, and
-    # recording it as `keychain-blocked` turns it from an anecdote into a
+    # recording it as `keychain-modal` turns it from an anecdote into a
     # migration outcome with a row in the table.
     unset KAN_IDENTITY_FILE
     unset KAN_NO_KEYCHAIN
@@ -433,9 +448,9 @@ wait "$watchdog_pid" 2>/dev/null
 if [ "$reader_rc" -eq 137 ]; then
   say "the read did not return within ${READ_TIMEOUT}s -- blocked, not failed"
   # Only the keychain axis can be blocked BY the keychain. Calling a Linux
-  # seed-mode hang, an OOM kill or a slow runner "keychain-blocked" would name
+  # seed-mode hang, an OOM kill or a slow runner "keychain-modal" would name
   # a known cause for an unexplained failure.
-  if [ "$MODE" = keychain ]; then echo "keychain-blocked"; else echo "read-hung"; fi
+  if [ "$MODE" = keychain ]; then echo "keychain-modal"; else echo "read-hung"; fi
   exit 0
 fi
 
@@ -524,7 +539,7 @@ if [ "$did_rc" -eq 137 ]; then
   # read blocked and threw away the tool's own account of WHY, on the one axis
   # added to observe keychain behaviour.
   if [ -s "$work/did.err" ]; then tail -20 "$work/did.err" >&2; else say "  (nothing on stderr)"; fi
-  if [ "$MODE" = keychain ]; then echo "keychain-blocked"; else echo "read-hung"; fi
+  if [ "$MODE" = keychain ]; then echo "keychain-modal"; else echo "read-hung"; fi
   exit 0
 fi
 
