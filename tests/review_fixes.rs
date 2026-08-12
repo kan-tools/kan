@@ -55,7 +55,7 @@ fn a_file_named_for_the_wrong_subject_is_reported() {
         .join(git_tree::file_name(&SubjectRef::Local(Rkey::from(
             "totally-different",
         ))));
-    std::fs::rename(&path.path, &impostor).unwrap();
+    std::fs::rename(path.path(), &impostor).unwrap();
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let results = rt.block_on(async {
@@ -140,10 +140,11 @@ fn a_v0_6_published_file_still_verifies_and_is_retired_on_republish() {
         .join(".claims")
         .join(git_tree::legacy_file_name(&subject));
     assert_ne!(
-        written.path, legacy,
+        written.path(),
+        legacy,
         "the current name must differ from v0.6's, or this test proves nothing"
     );
-    std::fs::rename(&written.path, &legacy).unwrap();
+    std::fs::rename(written.path(), &legacy).unwrap();
 
     // It must read clean under the old name: kan wrote it, it is signed, and
     // only the naming convention changed.
@@ -173,7 +174,7 @@ fn a_v0_6_published_file_still_verifies_and_is_retired_on_republish() {
         "republishing must report retiring the old file, not do it silently"
     );
     assert!(!legacy.exists(), "the orphan must be gone");
-    assert!(again.path.exists());
+    assert!(again.path().exists());
 
     let remaining: Vec<_> = std::fs::read_dir(dir.path().join(".claims"))
         .unwrap()
@@ -212,7 +213,7 @@ fn publishing_does_not_retire_a_colliding_subjects_file() {
         .path()
         .join(".claims")
         .join(git_tree::legacy_file_name(&neighbour));
-    std::fs::rename(&w.path, &legacy).unwrap();
+    std::fs::rename(w.path(), &legacy).unwrap();
 
     // Publish `telos/x` — a different subject that maps to the SAME legacy name.
     let colliding = SubjectRef::Local(Rkey::from("telos/x"));

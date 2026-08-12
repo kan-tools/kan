@@ -686,7 +686,7 @@ pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error>
     Ok(format!(
         "published {subject} ({count} claim(s)) to {}\n{retired}\nkan wrote the file; \
          staging and committing are yours.\n{}",
-        path.path.display(),
+        path.path().display(),
         crate::transport::git_tree::gitignore_guidance()
     ))
 }
@@ -1620,7 +1620,7 @@ pub async fn publish_all(ws: &mut Workspace) -> Result<String, Error> {
             .map_err(|e| Error::Publish(Box::new(e)))?;
         written.push(format!(
             "  {} ({} claim(s)){}",
-            path.path.display(),
+            path.path().display(),
             claims.len(),
             match &path.retired {
                 Some(old) => format!("  [retired {}]", old.display()),

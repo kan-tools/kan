@@ -153,14 +153,43 @@ fn a_v2_record_still_reads_and_still_uses_debug_and_hex() {
 }
 
 #[test]
-fn the_writer_still_emits_v2_while_the_reader_understands_v3() {
-    // Reader-before-writer, asserted rather than promised: publishing v3 into
-    // a tree that any released kan cannot read is the failure this ordering
-    // exists to prevent.
+fn the_writer_never_emits_a_version_the_reader_cannot_read() {
+    // The durable form of the reader-before-writer rule.
+    //
+    // This asserted `the writer still emits v2` while v0.12.0-beta.5 shipped
+    // the v3 reader alone. That invariant is now DISCHARGED -- beta.5 is
+    // released, so a clone one version old already reads v3 and the writer
+    // flipped. Deleting the test would lose the rule; pinning "v2" would pin a
+    // moment. What survives every flip is that the writer must never lead the
+    // reader, because a tree in a shape no released kan can read is unreadable
+    // by every clone that has not upgraded, and `.claims/` exists for other
+    // people.
     let identity = Identity::generate();
     let claim = signed(&identity, "a finding");
-    let record = git_tree::to_record_at(&claim, None, None).unwrap();
-    assert_eq!(header_of(&record)["v"], 2, "the writer must still emit v2");
+    let emitted = header_of(&git_tree::to_record(&claim).unwrap())["v"]
+        .as_u64()
+        .expect("a record carries a numeric version");
+
+    // Whatever the writer emits, this build must be able to read it back.
+    let round_tripped = git_tree::from_record("t", &git_tree::to_record(&claim).unwrap());
+    assert!(
+        round_tripped.is_ok(),
+        "this build must read what it writes: {round_tripped:?}"
+    );
+
+    // And a version one beyond must still be refused by number, which is what
+    // makes the gap between writer and reader legible rather than implicit.
+    let future =
+        git_tree::to_record_at_version(&claim, None, None, u32::try_from(emitted).unwrap())
+            .unwrap()
+            .replace(
+                &format!("\"v\": {emitted}"),
+                &format!("\"v\": {}", emitted + 1),
+            );
+    assert!(
+        git_tree::from_record("t", &future).is_err(),
+        "a version beyond this build must not be accepted silently"
+    );
 }
 
 #[test]
