@@ -46,6 +46,35 @@
 set -euo pipefail
 
 current="${1:-}"
+# `representatives` prunes to one writer per distinct layout era. Anything else
+# (the default) returns every released tag.
+scope="${2:-all}"
+
+# THE ERA REPRESENTATIVES, curated on purpose where the rest of this file
+# derives.
+#
+# Deriving them from the expectations table was the obvious move and is wrong:
+# that table holds what we EXPECT, so grouping by it would let a regression
+# hide in whichever member of a group we dropped. These are named instead,
+# which means a human decides what an era is and the list is auditable.
+#
+# The eras, from tests/fixtures/migration-expectations.tsv:
+#   v0.1.1              predates OS-keychain support entirely (keychain-unused)
+#   v0.2.0 .. v0.6.0    the path-derived keychain account with NO pointer file,
+#                       the scheme v0.7's REQ-5 replaced (identity-unresolvable,
+#                       fix-route-failed). Two are kept, the era's first and
+#                       last, so the span is covered rather than a point in it.
+#   v0.7.0 ..           the modern pointer scheme. Thirteen tags assert an
+#                       identical signature here, so two are enough: the era's
+#                       first, and the last minor before the current one.
+#
+# WHY PRs ONLY. A tag push and a manual dispatch still run every writer, which
+# is what keeps each release's rows honest: a row is PREDICTED until the cell
+# executes, and if the newest tags never ran as writers their predictions would
+# never convert — "a prediction that is never converted is indistinguishable
+# from a measurement", which is the defect the conversion gate exists to stop.
+# Releases are rare; ordinary PRs are not, and they are where the minutes go.
+REPRESENTATIVES="v0.1.1-beta.1 v0.2.0-beta.1 v0.6.0-beta.1 v0.7.0-beta.1 v0.11.0-beta.1"
 
 # The triple that decides whether two revisions build the same thing. Cargo.toml
 # is in here for the same reason the reader cache key has it: feature selection
@@ -63,8 +92,27 @@ triple() {
 
 head_triple=$(triple HEAD)
 
+if [ "$scope" = representatives ]; then
+  # A named representative that does not exist is an ERROR, not a quietly
+  # smaller matrix. The same rule the workflow applies to a tag with no
+  # committed row: silently covering less than you claim is the failure this
+  # harness keeps finding.
+  for tag in $REPRESENTATIVES; do
+    if ! git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+      echo "representative tag ${tag} does not exist -- refusing to run a smaller matrix than declared" >&2
+      exit 1
+    fi
+  done
+fi
+
 writers=()
 for tag in $(git tag --list 'v*.*.*' --sort=creatordate); do
+  if [ "$scope" = representatives ]; then
+    case " $REPRESENTATIVES " in
+      *" $tag "*) ;;
+      *) continue ;;
+    esac
+  fi
   if [ -n "$current" ] && [ "$tag" = "$current" ]; then
     # Kept even though the content check below subsumes it on a tag push: it
     # states the intent directly, and it still holds if a release is ever cut

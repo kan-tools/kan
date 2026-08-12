@@ -83,7 +83,14 @@ jobs:
           # Exclusions go to stderr, which lands in the job log, and are
           # echoed as notices so the matrix never silently covers less than
           # it appears to.
-          json=$(scripts/select-migration-writers.sh "${GITHUB_REF_NAME}" \
+          # A PR runs one writer per layout era; a tag push or a dispatch runs
+          # every writer. The pruning is where the minutes are — ordinary PRs
+          # are frequent and releases are not — and keeping tags unpruned is
+          # what lets each release's PREDICTED rows convert exactly once.
+          scope=all
+          [ "${{ github.event_name }}" = pull_request ] && scope=representatives
+          echo "::notice title=writer scope::${scope}"
+          json=$(scripts/select-migration-writers.sh "${GITHUB_REF_NAME}" "$scope" \
                  2>/tmp/excluded.log)
           echo "json=$json" >> "$GITHUB_OUTPUT"
           echo "matrix: $json"
