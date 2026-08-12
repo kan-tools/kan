@@ -71,16 +71,25 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - id: tags
-        name: Enumerate released tags
+        name: Enumerate the historical writers
         run: |
-          # Every released tag except one being released right now: a version
-          # is not a historical writer for its own release.
-          current="${GITHUB_REF_NAME}"
-          json=$(git tag --list 'v*.*.*' --sort=creatordate \
-                 | grep -v "^${current}$" \
-                 | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          # Every released tag that actually builds something OTHER than this
+          # build. The rule and the reason it is content-shaped rather than
+          # name-shaped live in the script; the short version is that a tag
+          # whose (src, Cargo.lock, Cargo.toml) equals HEAD's puts one binary
+          # in both roles, so its cell measures no upgrade and scores a
+          # plausible `ok` (kan#205).
+          #
+          # Exclusions go to stderr, which lands in the job log, and are
+          # echoed as notices so the matrix never silently covers less than
+          # it appears to.
+          json=$(scripts/select-migration-writers.sh "${GITHUB_REF_NAME}" \
+                 2>/tmp/excluded.log)
           echo "json=$json" >> "$GITHUB_OUTPUT"
           echo "matrix: $json"
+          while IFS= read -r line; do
+            [ -n "$line" ] && echo "::notice title=writer excluded::${line}"
+          done < /tmp/excluded.log
 
       - id: hash
         name: Hash the reader and the harness
@@ -110,8 +119,9 @@ jobs:
           # table self-refilling: strengthen the harness, the hash moves once,
           # every cell re-measures under the new definition, and the next tag
           # is cheap again.
-          harness=$(printf '%s-%s' \
+          harness=$(printf '%s-%s-%s' \
                       "$(git rev-parse HEAD:scripts/run-migration-cell.sh)" \
+                      "$(git rev-parse HEAD:scripts/select-migration-writers.sh)" \
                       "$(git rev-parse HEAD:.github/workflows/migration-matrix.yml)" \
                     | sha256sum | cut -d' ' -f1)
 
