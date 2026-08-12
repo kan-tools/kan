@@ -3,6 +3,9 @@
 debug
 target
 
+# macOS Finder metadata
+.DS_Store
+
 # kan's own local log/index/identity (ADR-3) — never checked into the repo
 # it's tracking. `.claims/` is deliberately NOT here: it is a sharing layer,
 # not a store, and is tracked on purpose (ADR-43).
