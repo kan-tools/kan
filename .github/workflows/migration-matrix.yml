@@ -329,15 +329,122 @@ jobs:
           esac
           if [ "${{ steps.cached.outputs.cache-hit }}" != 'true' ] \
              && [ "$predicted" = yes ]; then
-            echo "::error::${{ matrix.tag }} (${{ matrix.cell.mode }}) is recorded as PREDICTED, but this run MEASURED it as '$outcome'. Replace the prediction with the measurement (and this run's id) in tests/fixtures/migration-expectations.tsv. A prediction that is never converted is indistinguishable from a measurement, which is how three rows stayed 'PREDICTED' across two releases that had already confirmed them."
-            exit 1
+            # THE MEASUREMENT IS NOT A FAILURE. This used to `exit 1` here,
+            # which made the FIRST CORRECT MEASUREMENT the failing case and
+            # gave every release a scheduled red at the next release's PR --
+            # the shape ADR-78 already condemned once, reintroduced as a
+            # recurring one. The outcome matched its prediction exactly (the
+            # mismatch branch above has already exited otherwise), so nothing
+            # is wrong and all that remains is bookkeeping.
+            #
+            # The cell REQUESTS the conversion instead. Cells run in parallel
+            # on separate runners, so none of them may write the table: they
+            # would race each other and lose rows. The `report` job applies
+            # every request once, at the end, from one place.
+            mkdir -p conversions
+            printf '%s\t%s\t%s\n' "${{ matrix.tag }}" "${{ matrix.cell.mode }}" "${{ github.run_id }}" \
+              > "conversions/${{ matrix.tag }}-${{ matrix.cell.mode }}.tsv"
+            echo "::notice title=prediction confirmed::${{ matrix.tag }} (${{ matrix.cell.mode }}) measured '$outcome', as predicted -- queued for conversion."
           fi
+
+      - name: Queue this cell's conversion, if it asked for one
+        if: hashFiles('conversions/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: conversion-${{ matrix.tag }}-${{ matrix.cell.mode }}
+          path: conversions/
+          retention-days: 1
 
   report:
     needs: [plan, matrix]
     if: always()
     runs-on: ubuntu-latest
+    # Only to push confirmed measurements back into the expectations table. The
+    # single writer is the whole design: matrix cells run in parallel and would
+    # race each other for this file.
+    permissions:
+      contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          # The PR's own branch, not the merge commit, so a push lands
+          # somewhere that exists. Empty on a tag push, where the fallback
+          # below applies instead.
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: conversion-*
+          path: conversions
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Convert confirmed predictions
+        run: |
+          shopt -s nullglob
+          requests=(conversions/*.tsv)
+          if [ ${#requests[@]} -eq 0 ]; then
+            echo "no confirmed predictions to convert"
+            exit 0
+          fi
+
+          while IFS=$'\t' read -r tag mode run_id; do
+            [ -n "$tag" ] || continue
+            scripts/convert-prediction.sh "$tag" "$mode" "$run_id"
+          done < <(cat "${requests[@]}")
+
+          if git diff --quiet -- tests/fixtures/migration-expectations.tsv; then
+            echo "every requested row was already a measurement"
+            exit 0
+          fi
+
+          {
+            echo "### Predictions confirmed and converted"
+            echo ""
+            git diff --unified=0 -- tests/fixtures/migration-expectations.tsv \
+              | grep -E '^\+v' | sed 's/^+/- /' | cut -c1-160
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # A tag push has no branch to write to, and a fork PR's token is
+          # read-only. Neither is a failure: the run stays green and the patch
+          # is attached, because the alternative is the red-that-means-nothing
+          # this whole change exists to remove.
+          if [ -z "${{ github.head_ref }}" ]; then
+            echo "::notice title=conversion pending::not a PR, so nothing was pushed -- the patch is in this job's summary and artifact."
+            git diff -- tests/fixtures/migration-expectations.tsv > conversion.patch
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/fixtures/migration-expectations.tsv
+          # Written to a file rather than inline: an unindented heredoc or a
+          # multi-line -m argument ends the YAML block scalar at column 0 and
+          # silently truncates this job.
+          {
+            echo "A prediction that has run becomes a measurement (run ${{ github.run_id }})"
+            echo
+            echo "Applied by the migration matrix itself. Every row it touched matched its"
+            echo "committed expectation exactly; what changed is the leading token and the run"
+            echo "id, so the reasoning each row carries survives verbatim."
+            echo
+            echo "A measurement is not a failure -- this used to fail the run that took it,"
+            echo "which made the first correct measurement the failing case and gave every"
+            echo "release a scheduled red at the next release's PR (ADR-78)."
+          } > /tmp/conversion-commit-msg
+          git commit -q -F /tmp/conversion-commit-msg
+          if ! git push origin "HEAD:${{ github.head_ref }}"; then
+            echo "::notice title=conversion not pushed::push was refused (a fork PR's token is read-only). The patch is in this job's summary."
+            git diff HEAD~1 -- tests/fixtures/migration-expectations.tsv > conversion.patch
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('conversion.patch') != ''
+        with:
+          name: conversion-patch
+          path: conversion.patch
+
       - name: Summarise
         run: |
           {
