@@ -16,7 +16,57 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com).
 
 ## [Unreleased]
 
-Nothing here changes the binary: both entries are the verification harness.
+Nothing yet.
+
+## [v0.12.0-beta.5] — 2026-08-12
+
+**The published format's reader, ahead of its writer.**
+
+kan reads the v3 record format and the nested `.claims/<subject>/<author>.md`
+layout. **It still writes flat v2 files**, so no published tree changes when you
+upgrade — and that gap is the point. The writer cannot flip until a *released*
+kan already reads what it will write, or the first tree in the new shape is
+unreadable by every clone that has not upgraded
+(`.design/published-claims-format-and-wire-contract.md`).
+
+### Added
+
+- **v3 records**, understood on read. `subject` and `kind` carry declared
+  `serde` shapes and are authenticated by comparing decoded *values*; v1 and v2
+  wrote `format!("{:?}")` into those fields and compared the strings exactly,
+  which made `std`'s formatting a wire contract nobody declared — an enum
+  rename or a change in string escaping would have invalidated every file ever
+  published, surfacing as `HeaderMismatch`, which reads as tampering rather
+  than as a format change (`review/f4-debug-wire-contract`).
+- v3 encodes `content` as base64 rather than hex, roughly halving a ~1.5 KB
+  payload per record, and uses a separator with no `---` run in it so a scan
+  for the frontmatter fence cannot re-enter on it
+  ([#195](https://github.com/kan-tools/kan/issues/195)).
+- **The nested layout**, understood on read: subject paths keep their `/` as
+  real directories, so `telos/legible-process` stays itself instead of
+  collapsing to `telos_legible-process` and needing a digest to tell the two
+  apart. The path is authenticated against the records inside it — both the
+  subject *and* the author.
+
+### Fixed
+
+- The migration matrix selects its historical writers by **content**, not by
+  ref name: a tag is a writer iff it builds something other than this build
+  (ADR-91). This is what
+  [#205](https://github.com/kan-tools/kan/issues/205) turned out to be — a cell
+  whose writer and reader compiled from the same source put one binary in both
+  roles and scored `ok`, which read as nondeterminism across five runs. The
+  release gate never carried a coin flip.
+- `keychain-blocked` is renamed `keychain-modal`, and every keychain row is
+  pinned to the blocked side. Nothing prevents the read; the OS waits on a
+  human decision a headless runner cannot make, and a permanently red gate is
+  one nobody reads (ADR-78).
+
+### Note
+
+Nothing in this release changes what kan writes to disk. The writer flip — v3
+records and nested paths — changes the on-disk format and is therefore the next
+*minor*, under the same patch-versus-minor test ADR-53 and ADR-72 apply.
 
 - The migration matrix selects its historical writers by **content**, not by
   ref name — a tag is a writer iff it builds something other than this build
@@ -500,7 +550,8 @@ assembly.
   [#8](https://github.com/kan-tools/kan/issues/8)).
 - Cross-author `Retraction` was never gated by same-author or by trust.
 
-[Unreleased]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.4...HEAD
+[Unreleased]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.5...HEAD
+[v0.12.0-beta.5]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.4...v0.12.0-beta.5
 [v0.12.0-beta.4]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.3...v0.12.0-beta.4
 [v0.12.0-beta.3]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.2...v0.12.0-beta.3
 [v0.12.0-beta.2]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.1...v0.12.0-beta.2

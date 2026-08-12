@@ -1763,7 +1763,7 @@ dependencies = [
 
 [[package]]
 name = "kan"
-version = "0.12.0-beta.4"
+version = "0.12.0-beta.5"
 dependencies = [
  "atproto-dasl",
  "atproto-repo",
