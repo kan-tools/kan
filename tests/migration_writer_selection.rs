@@ -54,6 +54,32 @@ fn commit_and_tag(dir: &Path, message: &str, tag: Option<&str>) {
     }
 }
 
+/// Commit with an explicit timestamp, then tag.
+///
+/// Lightweight tags sort by their commit's date, so a fixture whose commits all
+/// land in the same second has no defined "newest tag" and `tail -1` picks
+/// arbitrarily. Real releases are minutes apart; a test must not depend on that.
+fn commit_and_tag_at(dir: &Path, message: &str, tag: Option<&str>, ts: u32) {
+    let when = format!("2026-01-01T00:{:02}:00", ts);
+    git(dir, &["add", "-A"]);
+    let status = Command::new("git")
+        .args(["-c", "tag.gpgsign=false", "-c", "commit.gpgsign=false"])
+        .args(["commit", "-q", "-m", message])
+        .current_dir(dir)
+        .env("GIT_AUTHOR_NAME", "kan-test")
+        .env("GIT_AUTHOR_EMAIL", "kan-test@example.com")
+        .env("GIT_COMMITTER_NAME", "kan-test")
+        .env("GIT_COMMITTER_EMAIL", "kan-test@example.com")
+        .env("GIT_AUTHOR_DATE", &when)
+        .env("GIT_COMMITTER_DATE", &when)
+        .status()
+        .expect("failed to run git");
+    assert!(status.success(), "dated commit failed");
+    if let Some(t) = tag {
+        git(dir, &["tag", t]);
+    }
+}
+
 fn select(dir: &Path, current: &str) -> Output {
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/select-migration-writers.sh");
     Command::new("bash")
@@ -255,7 +281,7 @@ fn repo_with_era_tags() -> tempfile::TempDir {
             "Cargo.toml",
             &format!("[package]\nname = \"kan\"\nversion = \"0.0.{i}\"\n"),
         );
-        commit_and_tag(p, tag, Some(tag));
+        commit_and_tag_at(p, tag, Some(tag), u32::try_from(i).unwrap() + 1);
     }
     // HEAD is past every tag, and differs from all of them.
     write(
@@ -263,7 +289,7 @@ fn repo_with_era_tags() -> tempfile::TempDir {
         "Cargo.toml",
         "[package]\nname = \"kan\"\nversion = \"0.99.0\"\n",
     );
-    commit_and_tag(p, "unreleased work", None);
+    commit_and_tag_at(p, "unreleased work", None, 50);
     dir
 }
 
@@ -331,5 +357,28 @@ fn a_missing_representative_refuses_rather_than_shrinking_the_matrix() {
         stderr_of(&out).contains("refusing to run a smaller matrix"),
         "and say why: {}",
         stderr_of(&out)
+    );
+}
+
+/// The newest release is always a writer, even on a pruned run.
+///
+/// The fixed era list is v0.11 and older by construction, so a pruned run
+/// covered no writer from the CURRENT series at all — and N-1 → N is the
+/// upgrade path every real user takes, as well as the writer closest to
+/// whatever the PR changed. It also restores the conversion: a row is
+/// PREDICTED until its cell executes, so a fixed-only list left each release's
+/// rows waiting for a tag push, which is a post-merge red run.
+#[test]
+fn the_newest_release_is_a_writer_even_when_pruned() {
+    let dir = repo_with_era_tags();
+    let listed = stdout_of(&select_scoped(dir.path(), "main", "representatives"));
+    assert!(
+        listed.contains("v0.11.0-beta.1"),
+        "the newest tag in this fixture must be present: {listed}"
+    );
+    // And the redundant middle is still pruned.
+    assert!(
+        !listed.contains("v0.9.0-beta.1"),
+        "pruning still applies to the era's other members: {listed}"
     );
 }
