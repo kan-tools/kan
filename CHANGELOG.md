@@ -16,11 +16,57 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com).
 
 ## [Unreleased]
 
-Work toward v0.12 — the at-rest flip: the signing key defaults to a file, with
-the OS keychain becoming opt-in via `kan identity protect`
-([#183](https://github.com/kan-tools/kan/issues/183)).
+Nothing here changes the binary: both entries are the verification harness.
 
-### v0.12.0-beta.3 — review fixes
+- The migration matrix selects its historical writers by **content**, not by
+  ref name — a tag is a writer iff it builds something other than this build
+  (ADR-91). This is what kan#205 turned out to be: a cell whose writer and
+  reader compiled from the same source put one binary in both roles and
+  scored `ok`, which looked like nondeterminism for two days.
+- `keychain-blocked` is renamed `keychain-modal`, and every keychain row is
+  pinned to the blocked side. Nothing prevents the read; the OS waits on a
+  human decision a headless runner cannot make, and a permanently red gate
+  is one nobody reads (ADR-78).
+
+## [v0.12.0-beta.4] — 2026-08-11
+
+**kan owns its MST.**
+
+### Changed
+
+- The merkle search tree moves in-tree to `src/mst/`.
+  `atproto-repo` 0.14.5's `insert_recursive` computed each key's layer,
+  discarded it into `_target_height`, and never recursed — so every key
+  landed in one flat root node rewritten in full on every insert. That is
+  ~52n² CAR growth, a hard write-failure cliff at ~1,431 claims against
+  `atproto-dasl`'s 100 MiB cap, and a root CID no conformant implementation
+  agrees with ([#204](https://github.com/kan-tools/kan/issues/204), ADR-90).
+  Measured at 800 claims: **274 ms/append against 430 ms, CAR 3.1 MB against
+  32.4 MB**, growth linear rather than quadratic.
+- The house rule for storage crates widens from one check to two:
+  reachability (ADR-11/12) asks *did we lose data*, conformance asks *is what
+  we wrote the thing we claim it is*. `atproto-repo` 0.14.5 passed the first
+  cleanly. `tests/mst_conformance.rs` pins our root CID against
+  `@atproto/repo` 0.10.10's **output**, not against our reading of the spec —
+  which earned its keep immediately, because our first spec-derived reference
+  used the wrong layer convention and was confidently wrong.
+
+### Added
+
+- A read says so when a claim is present but unreachable, rather than
+  returning a quietly short answer.
+- The migration matrix **writes** as well as reads, so an upgrade write is
+  exercised rather than assumed.
+
+### Note
+
+- Vendoring plus `[patch.crates-io]` was tried and rejected: a `[patch]`
+  section is honoured only in the root manifest of the crate being *built*,
+  so it fixes local and CI builds while leaving `cargo install kan` broken.
+  `Cargo.toml` and `Cargo.lock` are unchanged; `atproto-repo` remains for
+  `Commit`, `RecordPath` and `compute_cid`.
+
+## [v0.12.0-beta.3] — 2026-08-10 — review fixes
 
 A full six-dimension cold review (`review/full-pass-v0.12`,
 `.design/v0.12.0-beta.3-review-fixes.md`) found one data-loss blocker and a
@@ -58,6 +104,43 @@ that fails without them.
   and `docs/SPEC.md` §2/§4.2/§5.1.1/§7/§11, the README (new quickstart, the
   v0.12 identity model), `CLAUDE.md`, and `docs/SETUP-TODO.md` were corrected
   against the shipped code.
+
+## [v0.12.0-beta.2] — 2026-08-10
+
+**The keychain axis measures again, and refuted its own model.**
+
+- The migration matrix's keychain cell now **opts in**, as REQ-3 asks an
+  operator to. A v0.12+ writer roots in a plaintext seed and never reaches
+  the keychain on its own, which had quietly turned that axis green while
+  measuring nothing — the cell asked for a plane it never touched and scored
+  `ok` for it.
+- beta.1's four keychain rows convert PREDICTED → MEASURED, **and the
+  prediction was wrong**. The control that proves it is in the same run.
+
+## [v0.12.0-beta.1] — 2026-08-09
+
+**The at-rest flip, and role declarations.**
+
+### Changed
+
+- **The signing key defaults to a plaintext `0600` seed file**, and the OS
+  keychain becomes opt-in via `kan identity protect` / `unprotect`
+  ([#183](https://github.com/kan-tools/kan/issues/183), ADR-87 — kan follows
+  the ssh model: a key on disk with file permissions, not a vault a headless
+  process cannot open).
+- Identity resolution is specified as three functions, one question each
+  (ADR-88), replacing the accreted patching of the previous milestones.
+- The role registry moves out of `.kan/roles` and into the log;
+  `ClaimBody::RoleDeclaration` is the schema change that carries it
+  ([#200](https://github.com/kan-tools/kan/issues/200)).
+
+### Added
+
+- A declared MSRV, with a CI job that keeps the declaration true.
+- OSS infrastructure: issue templates and a field-report label.
+- A keychain axis on the migration matrix — on Linux both existing modes
+  degrade to a plaintext key, so the OS-keychain plane where #90, #96, #107
+  and #170 all lived had never been executed by any cell.
 
 ### Fixed
 
@@ -417,7 +500,11 @@ assembly.
   [#8](https://github.com/kan-tools/kan/issues/8)).
 - Cross-author `Retraction` was never gated by same-author or by trust.
 
-[Unreleased]: https://github.com/kan-tools/kan/compare/v0.11.0-beta.1...HEAD
+[Unreleased]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.4...HEAD
+[v0.12.0-beta.4]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.3...v0.12.0-beta.4
+[v0.12.0-beta.3]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.2...v0.12.0-beta.3
+[v0.12.0-beta.2]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.1...v0.12.0-beta.2
+[v0.12.0-beta.1]: https://github.com/kan-tools/kan/compare/v0.11.0-beta.1...v0.12.0-beta.1
 [v0.11.0-beta.1]: https://github.com/kan-tools/kan/compare/v0.10.0-beta.1...v0.11.0-beta.1
 [v0.10.0-beta.1]: https://github.com/kan-tools/kan/compare/v0.9.2-beta.1...v0.10.0-beta.1
 [v0.9.2-beta.1]: https://github.com/kan-tools/kan/compare/v0.9.1-beta.1...v0.9.2-beta.1
