@@ -129,6 +129,35 @@ fn io(path: &Path) -> impl Fn(std::io::Error) -> Error + '_ {
 /// Marker separating one claim record from the next within a subject's file.
 const RECORD_SEPARATOR: &str = "---8<---";
 
+/// v3's separator. Same scissors, no `---` run.
+///
+/// The v1/v2 separator contains `---`, so a scan for the frontmatter fence
+/// re-enters on it and tries to parse `8<` as a header — the reader has to
+/// step over it explicitly to stay correct, and kan#195 noted a separator that
+/// could not collide was free at design time. It is nearly free now, and v3 is
+/// the version that takes it.
+const RECORD_SEPARATOR_V3: &str = "***8<***";
+
+/// Both separators, longest first so a prefix match cannot shadow a longer
+/// one. A file's records are all one version, but splitting happens *before*
+/// any header is parsed, so the split cannot ask what version it is reading.
+const RECORD_SEPARATORS: [&str; 2] = [RECORD_SEPARATOR, RECORD_SEPARATOR_V3];
+
+/// Where the next record starts after `text`, if a separator follows.
+fn strip_separator(text: &str) -> &str {
+    for sep in RECORD_SEPARATORS {
+        if let Some(rest) = text.strip_prefix(sep) {
+            return rest;
+        }
+    }
+    text
+}
+
+/// The earliest separator in `text`, of either kind.
+fn find_separator(text: &str) -> Option<usize> {
+    RECORD_SEPARATORS.iter().filter_map(|s| text.find(s)).min()
+}
+
 /// Serializes a claim as one frontmatter block plus its narrative body.
 ///
 /// The frontmatter carries everything the CID is computed over *except* the
@@ -163,6 +192,22 @@ pub fn to_record_at(
     rev: Option<&str>,
     position: Option<(usize, usize)>,
 ) -> Result<String, Error> {
+    to_record_at_version(claim, rev, position, FORMAT_VERSION)
+}
+
+/// [`to_record_at`], emitting a chosen record-format version.
+///
+/// The writer emits `FORMAT_VERSION` and nothing else; this exists so the v3
+/// reader can be shipped and exercised *before* anything publishes v3.
+/// Reader-before-writer is not fastidiousness here: a tree published in a
+/// format no released kan can read is unreadable by every clone that has not
+/// upgraded, and `.claims/` is the layer whose whole purpose is other people.
+pub fn to_record_at_version(
+    claim: &Claim,
+    rev: Option<&str>,
+    position: Option<(usize, usize)>,
+    version: u32,
+) -> Result<String, Error> {
     let cid = content_cid(&claim.content)?;
     let mut content = claim.content.clone();
     let text = content.body.text().map(str::to_string);
@@ -170,24 +215,49 @@ pub fn to_record_at(
         content.body = content.body.with_text(String::new());
     }
 
+    let encoded = atproto_dasl::to_vec(&content).map_err(|e| Error::Malformed {
+        path: String::new(),
+        detail: e.to_string(),
+    })?;
+    let kind = content.body.kind();
     let header = serde_json::to_string_pretty(&RecordHeader {
-        v: FORMAT_VERSION,
+        v: version,
         seq: position.map(|(i, _)| i),
         of: position.map(|(_, n)| n),
         text_len: text.as_ref().map(|t: &String| t.len()),
         cid: cid.to_string(),
         sig: hex_encode(&claim.sig),
         author: content.author.did.clone(),
-        subject: format!("{:?}", content.subject),
-        kind: format!("{:?}", content.body.kind()),
+        subject: if version >= FORMAT_VERSION_WIRE_FIELDS {
+            serde_json::to_value(WireSubject::of(&content.subject)).map_err(|e| {
+                Error::Malformed {
+                    path: String::new(),
+                    detail: e.to_string(),
+                }
+            })?
+        } else {
+            serde_json::Value::String(format!("{:?}", content.subject))
+        },
+        kind: if version >= FORMAT_VERSION_WIRE_FIELDS {
+            wire_kind(kind)
+                .ok_or_else(|| Error::Malformed {
+                    path: String::new(),
+                    // Reached only by publishing a claim this build could not
+                    // identify, which `.claims/` has no way to describe
+                    // honestly -- see `wire_kind`.
+                    detail: "cannot publish a claim of an unrecognised kind".to_string(),
+                })?
+                .to_string()
+        } else {
+            format!("{kind:?}")
+        },
         cites: claim.content.cites.iter().map(|c| c.to_string()).collect(),
         rev: rev.map(str::to_string),
-        content: hex_encode(
-            &atproto_dasl::to_vec(&content).map_err(|e| Error::Malformed {
-                path: String::new(),
-                detail: e.to_string(),
-            })?,
-        ),
+        content: if version >= FORMAT_VERSION_WIRE_FIELDS {
+            base64_encode(&encoded)
+        } else {
+            hex_encode(&encoded)
+        },
     })
     .map_err(|e| Error::Malformed {
         path: String::new(),
@@ -239,13 +309,21 @@ struct RecordHeader {
     v: u32,
     cid: String,
     sig: String,
-    /// Derived, ignored on read.
+    /// Authenticated on read, not merely derived — see the block above
+    /// `mismatch` in `from_record_with_rev`.
+    ///
+    /// These four said "Derived, ignored on read" until
+    /// `.design/git-tree-transport.md` REQ-9 made them checked, and the
+    /// comment outlived the change by two releases. A field that says it is
+    /// ignored while being a hard error on mismatch is the shape of kan#177.
     author: String,
-    /// Derived, ignored on read.
-    subject: String,
-    /// Derived, ignored on read.
+    /// Authenticated. A JSON string in v1/v2 (`Debug`), a [`WireSubject`] in
+    /// v3; the header's own `v` decides which, never the shape on disk.
+    subject: serde_json::Value,
+    /// Authenticated. The `Debug` name in v1/v2, [`wire_kind`]'s name in v3.
     kind: String,
-    /// Derived, ignored on read.
+    /// Authenticated. CID strings in every version — already stable, and
+    /// already what `Cid::to_string` produces.
     cites: Vec<String>,
     /// The claim's TID: envelope metadata, not an input to the CID, and
     /// the only time information a published claim carries.
@@ -294,7 +372,18 @@ struct RecordHeader {
 }
 
 /// The record format this build writes.
+/// What the writer emits. **Still 2 while the v3 reader ships ahead of it**;
+/// the writer flips in the layout slice, once a released kan can read v3.
 const FORMAT_VERSION: u32 = 2;
+
+/// What the reader understands. `FORMAT_VERSION` may lag this and never leads
+/// it — the gap between the two *is* reader-before-writer, expressed as a
+/// number rather than as a promise.
+const MAX_READABLE_VERSION: u32 = 3;
+
+/// The version from which `subject`, `kind` and `content` carry declared wire
+/// shapes instead of `Debug` output and hex.
+const FORMAT_VERSION_WIRE_FIELDS: u32 = 3;
 
 fn default_format_version() -> u32 {
     1
@@ -331,11 +420,11 @@ pub fn from_record_with_rev(
     let header: RecordHeader =
         serde_json::from_str(rest[..end].trim()).map_err(|e| malformed(&e.to_string()))?;
 
-    if header.v > FORMAT_VERSION {
+    if header.v > MAX_READABLE_VERSION {
         return Err(malformed(&format!(
             "record format version {} is newer than this build understands (max {}). \
              Upgrade kan to read it; the record is not damaged.",
-            header.v, FORMAT_VERSION
+            header.v, MAX_READABLE_VERSION
         )));
     }
 
@@ -372,7 +461,15 @@ pub fn from_record_with_rev(
         None => after_fence.trim(),
     };
 
-    let bytes = hex_decode(&header.content).ok_or_else(|| malformed("content is not valid hex"))?;
+    // Selected by the header's own `v`, never by sniffing the payload. A
+    // decoder that tried both would turn a corrupted v3 record into a
+    // different *valid* v2 one, and the CID check downstream would then report
+    // a legitimate claim as altered since it was signed.
+    let bytes = if header.v >= FORMAT_VERSION_WIRE_FIELDS {
+        base64_decode(&header.content).ok_or_else(|| malformed("content is not valid base64"))?
+    } else {
+        hex_decode(&header.content).ok_or_else(|| malformed("content is not valid hex"))?
+    };
     let mut content: ClaimContent =
         atproto_dasl::from_reader(&bytes[..]).map_err(|e| malformed(&e.to_string()))?;
     if content.body.text().is_some() {
@@ -409,13 +506,44 @@ pub fn from_record_with_rev(
     if header.author != content.author.did {
         return Err(mismatch("author", &header.author, &content.author.did));
     }
-    let subject = format!("{:?}", content.subject);
-    if header.subject != subject {
-        return Err(mismatch("subject", &header.subject, &subject));
-    }
-    let kind = format!("{:?}", content.body.kind());
-    if header.kind != kind {
-        return Err(mismatch("kind", &header.kind, &kind));
+    // The comparison is by VALUE in v3 and by formatted string in v1/v2. That
+    // is the whole of `review/f4-debug-wire-contract`: authenticating these
+    // fields is right, and authenticating them against `format!("{:?}")` made
+    // `std`'s formatting a contract, so a rename or an escaping change would
+    // have invalidated every file ever published.
+    let kind = content.body.kind();
+    if header.v >= FORMAT_VERSION_WIRE_FIELDS {
+        let actual_subject = WireSubject::of(&content.subject);
+        let stated: WireSubject = serde_json::from_value(header.subject.clone())
+            .map_err(|e| malformed(&format!("subject is not a v3 wire subject: {e}")))?;
+        if stated != actual_subject {
+            return Err(mismatch(
+                "subject",
+                &header.subject.to_string(),
+                &serde_json::to_string(&actual_subject).unwrap_or_default(),
+            ));
+        }
+        // An unrecognised kind cannot be published (`wire_kind`), so it cannot
+        // authenticate either: `None` here means the record claims a kind this
+        // build has no name for, and saying so beats comparing two blanks.
+        let actual = wire_kind(kind)
+            .ok_or_else(|| malformed("record kind is not one this build can authenticate"))?;
+        if header.kind != actual {
+            return Err(mismatch("kind", &header.kind, actual));
+        }
+    } else {
+        let subject = format!("{:?}", content.subject);
+        let stated = header
+            .subject
+            .as_str()
+            .ok_or_else(|| malformed("subject is not a string, as v1 and v2 require"))?;
+        if stated != subject {
+            return Err(mismatch("subject", stated, &subject));
+        }
+        let kind = format!("{kind:?}");
+        if header.kind != kind {
+            return Err(mismatch("kind", &header.kind, &kind));
+        }
     }
     let cites: Vec<String> = content.cites.iter().map(|c| c.to_string()).collect();
     if header.cites != cites {
@@ -479,7 +607,7 @@ pub fn split_records(text: &str) -> Vec<&str> {
         });
         let end = match framed_end {
             Some(end) => end,
-            None => match record[after_fence..].find(RECORD_SEPARATOR) {
+            None => match find_separator(&record[after_fence..]) {
                 Some(i) => after_fence + i,
                 None => record.len(),
             },
@@ -499,9 +627,361 @@ pub fn split_records(text: &str) -> Vec<&str> {
         // blindly re-enters on the separator and tries to parse `8<` as a
         // header.
         let tail = record[end..].trim_start();
-        rest = tail.strip_prefix(RECORD_SEPARATOR).unwrap_or(tail);
+        rest = strip_separator(tail);
     }
     out
+}
+
+/// Where a subject's records live under `.claims/` in the nested layout:
+/// the subject's own name, with its `/` separators kept as real directories.
+///
+/// `telos/legible-process` becomes `telos/legible-process`, not
+/// `telos_legible-process.6b2c1a90`. The flat name sanitizes every character
+/// outside `[alnum].-` to `_` and then appends a digest to restore the
+/// injectivity that sanitizing destroyed — and the collision it was restoring
+/// is exactly the one `/` produced, against `telos/<slug>`, which is day's
+/// naming convention (ADR-42). Keep the separator and the collision cannot
+/// occur, so the digest has no job left.
+///
+/// Returns `None` for a subject that cannot be a safe relative path. **This
+/// is a containment check, not tidiness**: a subject named `../../etc/x` maps
+/// to a path outside `.claims/`, and a component of `.` or `..` or an
+/// absolute-looking root would let a subject name decide where a write lands.
+/// The writer does not use this yet — the reader ships first — but the guard
+/// belongs here rather than at the call site that eventually needs it.
+pub fn subject_path(subject: &crate::claim::SubjectRef) -> Option<PathBuf> {
+    use crate::claim::SubjectRef;
+    let raw = match subject {
+        SubjectRef::Local(rkey) => rkey.clone(),
+        // Anchors get a declared prefix rather than `format!("{anchor:?}")`,
+        // which is the same `Debug`-as-contract defect one layer over: a path
+        // derived from Debug output silently orphans every published file
+        // when a variant is renamed.
+        SubjectRef::Anchor(anchor) => match WireSubject::of(&SubjectRef::Anchor(anchor.clone())) {
+            WireSubject::Workspace(id) => format!("anchor/workspace/{id}"),
+            WireSubject::Commit(sha) => format!("anchor/commit/{sha}"),
+            WireSubject::Blob(cid) => format!("anchor/blob/{cid}"),
+            WireSubject::FileAt { path, sha } => format!("anchor/file-at/{sha}/{path}"),
+            WireSubject::LineRangeAt {
+                path,
+                sha,
+                start,
+                end,
+            } => format!("anchor/line-range-at/{sha}/{start}-{end}/{path}"),
+            WireSubject::Local(_) => return None,
+        },
+    };
+
+    if raw.is_empty() || raw.starts_with('/') || raw.contains('\\') || raw.contains('\0') {
+        return None;
+    }
+    let mut out = PathBuf::new();
+    for component in raw.split('/') {
+        // An empty component is `a//b`, which the filesystem would silently
+        // collapse to `a/b` — two distinct subjects, one path.
+        if component.is_empty() || component == "." || component == ".." {
+            return None;
+        }
+        out.push(component);
+    }
+    Some(out)
+}
+
+/// Every `.md` under `.claims/`, at any depth.
+///
+/// Flat files sit directly under the directory; nested ones sit under
+/// directories that spell out the subject. A read must find both, because an
+/// author cannot rewrite a peer's file — so the flat layout is a contract to
+/// keep reading, not a deprecation window.
+fn collect_claim_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for path in entries.flatten().map(|e| e.path()) {
+        if path.is_dir() {
+            collect_claim_files(&path, out);
+        } else if path.extension().is_some_and(|e| e == "md") {
+            out.push(path);
+        }
+    }
+}
+
+/// One nested file: `.claims/<subject>/<author>.md`.
+///
+/// REQ-14. The flat reader already authenticates a record's FILENAME against
+/// its contents, because a name that describes nothing is a name that can
+/// lie. The nested path carries one thing more — the author — so both are
+/// checked here. Without the author half, a file bearing one author's name
+/// could hold another's records, and the directory listing that is supposed
+/// to say who published what would be decorative.
+fn read_nested_file(file: &Path, relative: &Path) -> Vec<ReadRecord> {
+    let shown = file.display().to_string();
+    let mut out = Vec::new();
+
+    let text = match std::fs::read_to_string(file) {
+        Ok(text) => text,
+        Err(source) => {
+            return vec![Err(Error::Io {
+                path: shown,
+                source,
+            })];
+        }
+    };
+
+    let stated_author = file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    let stated_subject = relative.parent().and_then(subject_from_path);
+
+    let records = split_records(&text);
+    if let Some(missing) = missing_records(&shown, &records) {
+        out.push(Err(missing));
+    }
+
+    for record in records {
+        let parsed = from_record_with_rev(&shown, record);
+        if let Ok((_, claim, _)) = &parsed {
+            // The path states a subject and an author; the record is signed
+            // over its own. Comparing the two is the whole of REQ-14.
+            let expected_path = subject_path(&claim.content.subject);
+            let path_matches = match (&stated_subject, &expected_path) {
+                (Some(stated), Some(expected)) => {
+                    Path::new(stated) == expected.as_path()
+                        || subject_from_path(expected).as_deref() == Some(stated.as_str())
+                }
+                _ => false,
+            };
+            if !path_matches {
+                out.push(Err(Error::FilenameMismatch {
+                    path: shown.clone(),
+                    expected: expected_path
+                        .and_then(|p| subject_from_path(&p))
+                        .unwrap_or_else(|| "<unrepresentable subject>".to_string()),
+                    found: stated_subject.clone().unwrap_or_default(),
+                }));
+                continue;
+            }
+
+            let did = claim.content.author.did.strip_prefix("did:key:").unwrap_or(
+                // A DID that is not `did:key:` cannot name a leaf under this
+                // scheme; say so rather than matching on the whole string and
+                // appearing to have checked something.
+                &claim.content.author.did,
+            );
+            if stated_author != did {
+                out.push(Err(Error::FilenameMismatch {
+                    path: shown.clone(),
+                    expected: did.to_string(),
+                    found: stated_author.to_string(),
+                }));
+                continue;
+            }
+        }
+        out.push(parsed);
+    }
+    out
+}
+
+/// The subject a nested path is claiming to hold, recovered from the path.
+///
+/// The inverse of [`subject_path`] for `Local` subjects, which is what the
+/// reader needs in order to authenticate a file against the records inside
+/// it. Anchor paths are not inverted: they are prefixed `anchor/` and are
+/// checked by comparing against [`subject_path`] of the record's own subject
+/// instead, which needs no inverse.
+fn subject_from_path(relative: &Path) -> Option<String> {
+    let mut parts = Vec::new();
+    for component in relative.components() {
+        let std::path::Component::Normal(part) = component else {
+            return None;
+        };
+        parts.push(part.to_str()?.to_string());
+    }
+    (!parts.is_empty()).then(|| parts.join("/"))
+}
+
+/// The v3 wire shape of a subject.
+///
+/// v1 and v2 wrote `format!("{:?}", subject)` here — `Local("work")` — and
+/// then *strictly compared* it on read, which made `std`'s `Debug` output a
+/// wire contract nobody declared: an enum rename, a variant reorder, or a
+/// change in how `std` escapes a string invalidates every previously published
+/// file (`review/f4-debug-wire-contract`). This is that contract stated on
+/// purpose, so the thing that may not drift is a declared shape rather than a
+/// formatting implementation.
+///
+/// `SubjectRef`'s own derived `serde` impl is deliberately not reused.
+/// `Anchor::Blob` holds a `Cid`, which through `serde_json` becomes
+/// `{"": [0, 1, 113, …]}` and does not deserialize back (ADR-44 measurement
+/// 1). Every field below is a string or a number by construction.
+#[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq, Debug)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+enum WireSubject {
+    Local(String),
+    Workspace(String),
+    Commit(String),
+    Blob(String),
+    FileAt {
+        path: String,
+        sha: String,
+    },
+    LineRangeAt {
+        path: String,
+        sha: String,
+        start: u32,
+        end: u32,
+    },
+}
+
+impl WireSubject {
+    fn of(subject: &crate::claim::SubjectRef) -> Self {
+        use crate::claim::{Anchor, SubjectRef};
+        // `to_string_lossy` is safe here in the sense that matters: this value
+        // is compared against the same projection of the same claim, never
+        // used to reconstruct the path. A non-UTF-8 path yields a stable
+        // rendering on both sides.
+        match subject {
+            SubjectRef::Local(rkey) => Self::Local(rkey.clone()),
+            SubjectRef::Anchor(Anchor::Workspace(cid)) => Self::Workspace(cid.clone()),
+            SubjectRef::Anchor(Anchor::Commit(sha)) => Self::Commit(sha.clone()),
+            SubjectRef::Anchor(Anchor::Blob(cid)) => Self::Blob(cid.to_string()),
+            SubjectRef::Anchor(Anchor::FileAt(path, sha)) => Self::FileAt {
+                path: path.to_string_lossy().into_owned(),
+                sha: sha.clone(),
+            },
+            SubjectRef::Anchor(Anchor::LineRangeAt(path, sha, span)) => Self::LineRangeAt {
+                path: path.to_string_lossy().into_owned(),
+                sha: sha.clone(),
+                start: span.start,
+                end: span.end,
+            },
+        }
+    }
+}
+
+/// The v3 wire name of a claim kind.
+///
+/// Same problem as [`WireSubject`], smaller: v1/v2 wrote the `Debug` name and
+/// compared it exactly. The wire name is lower-case and explicit, so renaming
+/// a Rust variant is a code change rather than a break in every published file.
+///
+/// `ClaimKind::Unknown` is the kind a build gives a claim it does not
+/// recognise (ADR-44). It is deliberately *not* representable here: a record
+/// whose header says `unknown` would be asserting that the publisher could not
+/// identify their own claim, and on read the comparison would pass for any
+/// unrecognised kind at all, which is the opposite of authenticating it.
+fn wire_kind(kind: crate::claim::ClaimKind) -> Option<&'static str> {
+    use crate::claim::ClaimKind as K;
+    Some(match kind {
+        K::Subject => "subject",
+        K::Observation => "observation",
+        K::Plan => "plan",
+        K::Decision => "decision",
+        K::Blocker => "blocker",
+        K::Resolution => "resolution",
+        K::Result => "result",
+        K::Status => "status",
+        K::Relation => "relation",
+        K::Retraction => "retraction",
+        K::Rejects => "rejects",
+        K::Publication => "publication",
+        K::RoleDeclaration => "role_declaration",
+        K::Unknown => return None,
+    })
+}
+
+const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// Standard base64 with padding, hand-rolled for the same reason `hex_encode`
+/// is: this file already owns its encodings, and a dependency added for forty
+/// lines on the verification path is a dependency whose correctness we would
+/// have to check anyway (ADR-90).
+///
+/// v3 records encode `content` this way. Hex doubles a ~1.5 KB payload per
+/// record for nothing (kan#195); base64 rather than the base32 the CIDs beside
+/// it use, so the two are visually distinguishable rather than confusable.
+fn base64_encode(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = u32::from(b[0]) << 16 | u32::from(b[1]) << 8 | u32::from(b[2]);
+        out.push(B64[(n >> 18 & 63) as usize] as char);
+        out.push(B64[(n >> 12 & 63) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            B64[(n >> 6 & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            B64[(n & 63) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+/// Strict: rejects anything outside the alphabet, wrong-length input, and
+/// misplaced padding, rather than skipping unknown bytes.
+///
+/// Lenient decoders are how a corrupted payload becomes a *different* valid
+/// payload instead of an error — and everything downstream of this is a CID
+/// check that would then report a legitimate claim as altered since signing.
+/// Same discipline as `hex_decode`: ASCII-only, no slicing of untrusted text
+/// at non-boundaries (review/full-pass-v0.12 F3).
+fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    let bytes = text.as_bytes();
+    if !text.is_ascii() || !bytes.len().is_multiple_of(4) || bytes.is_empty() {
+        return (bytes.is_empty() && text.is_empty()).then(Vec::new);
+    }
+    let value = |c: u8| -> Option<u32> {
+        B64.iter()
+            .position(|&x| x == c)
+            .map(|i| u32::try_from(i).expect("base64 alphabet index fits in u32"))
+    };
+
+    let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
+    for (i, quad) in bytes.chunks(4).enumerate() {
+        let last = i == bytes.len() / 4 - 1;
+        let pad = if last {
+            usize::from(quad[3] == b'=') + usize::from(quad[2] == b'=')
+        } else {
+            0
+        };
+        // Padding is only ever the final one or two characters of the final
+        // quad. `A=B=` and `AB=C` are rejected rather than interpreted.
+        if !last && quad.contains(&b'=') {
+            return None;
+        }
+        if pad == 2 && quad[2] != b'=' {
+            return None;
+        }
+        let mut n = 0u32;
+        for (j, &c) in quad.iter().enumerate() {
+            let six = if j >= 4 - pad {
+                if c != b'=' {
+                    return None;
+                }
+                0
+            } else {
+                value(c)?
+            };
+            n = n << 6 | six;
+        }
+        out.push((n >> 16 & 0xff) as u8);
+        if pad < 2 {
+            out.push((n >> 8 & 0xff) as u8);
+        }
+        if pad < 1 {
+            out.push((n & 0xff) as u8);
+        }
+    }
+    Some(out)
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -834,22 +1314,27 @@ impl GitTree {
 
     fn read_records(&self) -> Vec<ReadRecord> {
         let dir = self.claims_dir();
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            return Vec::new();
-        };
 
         // Sorted so a fold over the tree is reproducible; ordering carries
         // no meaning, but determinism makes divergence between two clones
         // visible rather than incidental.
-        let mut files: Vec<PathBuf> = entries
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|e| e == "md"))
-            .collect();
+        let mut files = Vec::new();
+        collect_claim_files(&dir, &mut files);
         files.sort();
 
         let mut out = Vec::new();
         for file in files {
+            // A file directly under `.claims/` is the flat layout every
+            // release through v0.12.x wrote. Anything deeper is the nested
+            // layout, whose directories ARE the subject — so the depth is
+            // what selects which authentication applies, rather than a guess
+            // about the filename's shape.
+            let relative = file.strip_prefix(&dir).unwrap_or(&file).to_path_buf();
+            let nested = relative.components().count() > 1;
+            if nested {
+                out.extend(read_nested_file(&file, &relative));
+                continue;
+            }
             let shown = file.display().to_string();
             match std::fs::read_to_string(&file) {
                 Ok(text) => {
