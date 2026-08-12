@@ -253,3 +253,30 @@ fn a_subject_that_cannot_be_a_path_is_refused_rather_than_escaping() {
         "and should say why: {err}"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_symlinked_subject_component_is_refused_rather_than_followed() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let claims = dir.path().join(".claims");
+    std::fs::create_dir_all(&claims).unwrap();
+    symlink(outside.path(), claims.join("telos")).unwrap();
+
+    let id = Identity::generate();
+    let subject = SubjectRef::Local(Rkey::from("telos/x"));
+    let err = git_tree::write_subject(
+        dir.path(),
+        &subject,
+        &[(signed(&id, "telos/x", "must stay contained"), None)],
+    )
+    .expect_err("a committed symlink must not redirect a publish");
+
+    assert!(err.to_string().contains("symlink"), "wrong refusal: {err}");
+    assert!(
+        std::fs::read_dir(outside.path()).unwrap().next().is_none(),
+        "publish wrote outside the tracked .claims tree"
+    );
+}

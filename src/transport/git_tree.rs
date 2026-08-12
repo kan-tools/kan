@@ -139,8 +139,9 @@ const RECORD_SEPARATOR: &str = "---8<---";
 const RECORD_SEPARATOR_V3: &str = "***8<***";
 
 /// Both separators, longest first so a prefix match cannot shadow a longer
-/// one. A file's records are all one version, but splitting happens *before*
-/// any header is parsed, so the split cannot ask what version it is reading.
+/// one. A file may mix versions when an opaque future claim needs v2's
+/// `Unknown` header beside v3 records, and splitting happens *before* any
+/// header is parsed, so the split cannot ask what version it is reading.
 const RECORD_SEPARATORS: [&str; 2] = [RECORD_SEPARATOR, RECORD_SEPARATOR_V3];
 
 /// Where the next record starts after `text`, if a separator follows.
@@ -1142,6 +1143,13 @@ pub fn write_subject(
     })?;
     let subject_dir = dir.join(&rel);
 
+    // A subject path is only contained if the filesystem resolves it the way
+    // its components spell it. `.claims/` is shared through git, so an
+    // existing component may be a committed symlink; following one here
+    // would let `publish` write outside the tracked projection even though
+    // `subject_path` rejected every lexical traversal shape.
+    refuse_symlinked_components(&dir, &rel)?;
+
     // GROUPED BY AUTHOR, because a workspace can sign with several identities.
     // Role keys all append to one log, so `publish` hands us every live claim
     // on the subject regardless of who signed it. The flat layout put them in
@@ -1182,7 +1190,22 @@ pub fn write_subject(
                 out.push_str(RECORD_SEPARATOR_V3);
                 out.push('\n');
             }
-            out.push_str(&to_record_at(claim, *rev, Some((i, group.len())))?);
+            let version = if wire_kind(claim.content.body.kind()).is_some() {
+                FORMAT_VERSION
+            } else {
+                // Unknown bodies are preserved opaque claims from a newer
+                // schema. v3 cannot name their kind honestly, but v2 can and
+                // released readers accept mixed-version files. Falling back
+                // per record keeps one future claim from making the whole
+                // subject unpublishable without dropping or rewriting it.
+                FORMAT_VERSION_WIRE_FIELDS - 1
+            };
+            out.push_str(&to_record_at_version(
+                claim,
+                *rev,
+                Some((i, group.len())),
+                version,
+            )?);
         }
         std::fs::write(&path, out).map_err(io(&path))?;
         paths.push(path);
@@ -1203,7 +1226,13 @@ pub fn write_subject(
     // by an author we just rewrote. Anything else -- a peer's records, a
     // record that will not parse -- and the file is left alone, where the
     // reader still understands it.
-    let flat = dir.join(file_name(subject));
+    let current_flat = dir.join(file_name(subject));
+    let legacy_flat = dir.join(legacy_file_name(subject));
+    let flat = if current_flat.exists() {
+        current_flat
+    } else {
+        legacy_flat
+    };
     let authors: Vec<&str> = by_author.keys().copied().collect();
     let retired = if flat.exists() && retirable_by(&flat, subject, &authors) {
         std::fs::remove_file(&flat).map_err(io(&flat))?;
@@ -1213,6 +1242,34 @@ pub fn write_subject(
     };
 
     Ok(Written { paths, retired })
+}
+
+fn refuse_symlinked_components(dir: &Path, rel: &Path) -> Result<(), Error> {
+    let mut path = dir.to_path_buf();
+    for component in std::iter::once(None).chain(rel.components().map(Some)) {
+        if let Some(component) = component {
+            path.push(component.as_os_str());
+        }
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(Error::Malformed {
+                    path: path.display().to_string(),
+                    detail: format!(
+                        "publishing through a symlink under {CLAIMS_DIR} is refused because it may escape the tracked projection"
+                    ),
+                });
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(source) => {
+                return Err(Error::Io {
+                    path: path.display().to_string(),
+                    source,
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Every record in `path` is about `subject` AND signed by one of `authors`.

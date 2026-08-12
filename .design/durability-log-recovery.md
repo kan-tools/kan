@@ -54,7 +54,7 @@ recovery.
   `unpublished` (lives only in `.kan/`), `published` (in `.claims/`, current),
   or `stale` (in `.claims/`, but the log holds newer live claims not yet
   published) — computed by comparing the fold's live claims per subject
-  against `git_tree::published_subjects` (`src/transport/git_tree.rs:900`).
+  against `git_tree::published_subjects` (`src/transport/git_tree.rs:1606`).
   It surfaces in both `actions::status` (`src/actions.rs:2315`) and
   `actions::status_json` (`src/actions.rs::status_json`). This is the kan-native move:
   make the gap **data**, a column, not a nag or a hook — the same shape as
@@ -186,7 +186,7 @@ whole-log restore loop so one future-versioned record cannot abort the restore.
 
 **The durability column (REQ-5).** `actions::status` (`src/actions.rs:2315`)
 already folds live claims per subject and already has the machinery to compare
-against `.claims/`: `git_tree::published_subjects` (`src/transport/git_tree.rs:900`)
+against `.claims/`: `git_tree::published_subjects` (`src/transport/git_tree.rs:1606`)
 returns the published set. The state is a pure comparison — live-claim CIDs per
 subject vs. the CIDs present in that subject's `.claims/` file — yielding
 `unpublished` / `published` / `stale`. It threads into the existing per-subject

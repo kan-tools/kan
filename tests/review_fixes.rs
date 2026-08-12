@@ -7,6 +7,19 @@ use kan::{
     transport::git_tree,
 };
 
+fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let destination = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &destination);
+        } else {
+            std::fs::copy(entry.path(), destination).unwrap();
+        }
+    }
+}
+
 fn signed(identity: &Identity, subject: &str, text: &str) -> kan::claim::Claim {
     let content = ClaimContent {
         author: AuthorId {
@@ -105,10 +118,10 @@ fn publishing_a_merged_subject_writes_only_that_subjects_claims() {
     }
 
     for (subject, foreign) in [("alpha", "about beta"), ("beta", "about alpha")] {
-        let path = dir
-            .path()
-            .join(".claims")
-            .join(git_tree::file_name(&SubjectRef::Local(Rkey::from(subject))));
+        let path = dir.path().join(".claims").join(subject).join(format!(
+            "{}.md",
+            identity.did().strip_prefix("did:key:").unwrap()
+        ));
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(
             !text.contains(foreign),
@@ -476,11 +489,7 @@ fn a_refused_restore_brings_no_workspace_into_existence() {
     );
     assert!(kan(stranger.path(), Some(&stranger_key), &["publish", "theirs"]).ok);
     let claims = dir.path().join(".claims");
-    std::fs::create_dir_all(&claims).unwrap();
-    for entry in std::fs::read_dir(stranger.path().join(".claims")).unwrap() {
-        let entry = entry.unwrap();
-        std::fs::copy(entry.path(), claims.join(entry.file_name())).unwrap();
-    }
+    copy_tree(&stranger.path().join(".claims"), &claims);
 
     let key = dir.path().join("key-that-does-not-exist");
     let run = kan(dir.path(), Some(&key), &["restore"]);
