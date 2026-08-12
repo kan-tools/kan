@@ -83,7 +83,14 @@ jobs:
           # Exclusions go to stderr, which lands in the job log, and are
           # echoed as notices so the matrix never silently covers less than
           # it appears to.
-          json=$(scripts/select-migration-writers.sh "${GITHUB_REF_NAME}" \
+          # A PR runs one writer per layout era; a tag push or a dispatch runs
+          # every writer. The pruning is where the minutes are — ordinary PRs
+          # are frequent and releases are not — and keeping tags unpruned is
+          # what lets each release's PREDICTED rows convert exactly once.
+          scope=all
+          [ "${{ github.event_name }}" = pull_request ] && scope=representatives
+          echo "::notice title=writer scope::${scope}"
+          json=$(scripts/select-migration-writers.sh "${GITHUB_REF_NAME}" "$scope" \
                  2>/tmp/excluded.log)
           echo "json=$json" >> "$GITHUB_OUTPUT"
           echo "matrix: $json"
@@ -130,15 +137,50 @@ jobs:
           echo "rustc=$(rustc --version | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "reader=$reader harness=$harness"
 
+      - id: release_pr
+        name: Is this a release PR?
+        run: |
+          # DERIVED FROM CONTENT, NOT FROM A BRANCH NAME. A release PR is one
+          # that changes the version in Cargo.toml -- which is the thing that
+          # makes it a release, and cannot be forgotten the way a naming
+          # convention or a label can. Same reasoning as the reader cache key
+          # and as ADR-91's writer selection: where an enumeration keeps
+          # missing entries, derive it.
+          is_release=no
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            git fetch -q origin "${{ github.base_ref }}" || true
+            base=$(git show "origin/${{ github.base_ref }}:Cargo.toml" 2>/dev/null \
+                   | awk -F'"' '/^version/{print $2; exit}')
+            head=$(awk -F'"' '/^version/{print $2; exit}' Cargo.toml)
+            if [ -n "$base" ] && [ -n "$head" ] && [ "$base" != "$head" ]; then
+              is_release=yes
+              echo "::notice title=release PR::version $base -> $head; running the full matrix including the keychain plane."
+            fi
+          fi
+          echo "is_release=$is_release" >> "$GITHUB_OUTPUT"
+
       - id: cells
         name: Decide which (platform, mode) cells this event runs
         run: |
           # The keychain axis needs a real Secret Service, which only the macOS
-          # runner has -- and macOS minutes bill at ten times Linux. So PRs run
-          # the two Linux modes and a tag or a manual dispatch runs all three.
-          # Stated here rather than silently: a PR's green matrix does NOT
-          # cover the keychain plane.
-          if [ "${{ github.event_name }}" = pull_request ]; then
+          # runner has -- and macOS minutes bill at ten times Linux. So an
+          # ORDINARY PR runs the two Linux modes, and a tag, a manual dispatch,
+          # or a RELEASE PR runs all four.
+          #
+          # Release PRs were the hole. This file already records that "the
+          # release gate was always intact (tag pushes are unfiltered); it was
+          # the merge gate that had the hole, which is the worse half: a defect
+          # caught at tag time has already been merged." That applied to the
+          # path filter; it applied just as much to the keychain plane, and
+          # more sharply, because the release commit is precisely the one whose
+          # rows the NEXT release depends on. beta.4's keychain rows sat
+          # PREDICTED through four PRs and were first measured at a tag push --
+          # after merge, where ADR-78 says a red run goes unread.
+          #
+          # The cost is bounded by how rare release PRs are: this repo cut five
+          # in a week at its fastest, against dozens of ordinary PRs.
+          if [ "${{ github.event_name }}" = pull_request ] \
+             && [ "${{ steps.release_pr.outputs.is_release }}" != yes ]; then
             echo 'json=[{"os":"ubuntu-latest","mode":"identity-file"},{"os":"ubuntu-latest","mode":"seed"}]' >> "$GITHUB_OUTPUT"
             echo "::notice title=matrix scope::PR run -- Linux modes only; the keychain plane is not covered here."
           else
@@ -287,15 +329,122 @@ jobs:
           esac
           if [ "${{ steps.cached.outputs.cache-hit }}" != 'true' ] \
              && [ "$predicted" = yes ]; then
-            echo "::error::${{ matrix.tag }} (${{ matrix.cell.mode }}) is recorded as PREDICTED, but this run MEASURED it as '$outcome'. Replace the prediction with the measurement (and this run's id) in tests/fixtures/migration-expectations.tsv. A prediction that is never converted is indistinguishable from a measurement, which is how three rows stayed 'PREDICTED' across two releases that had already confirmed them."
-            exit 1
+            # THE MEASUREMENT IS NOT A FAILURE. This used to `exit 1` here,
+            # which made the FIRST CORRECT MEASUREMENT the failing case and
+            # gave every release a scheduled red at the next release's PR --
+            # the shape ADR-78 already condemned once, reintroduced as a
+            # recurring one. The outcome matched its prediction exactly (the
+            # mismatch branch above has already exited otherwise), so nothing
+            # is wrong and all that remains is bookkeeping.
+            #
+            # The cell REQUESTS the conversion instead. Cells run in parallel
+            # on separate runners, so none of them may write the table: they
+            # would race each other and lose rows. The `report` job applies
+            # every request once, at the end, from one place.
+            mkdir -p conversions
+            printf '%s\t%s\t%s\n' "${{ matrix.tag }}" "${{ matrix.cell.mode }}" "${{ github.run_id }}" \
+              > "conversions/${{ matrix.tag }}-${{ matrix.cell.mode }}.tsv"
+            echo "::notice title=prediction confirmed::${{ matrix.tag }} (${{ matrix.cell.mode }}) measured '$outcome', as predicted -- queued for conversion."
           fi
+
+      - name: Queue this cell's conversion, if it asked for one
+        if: hashFiles('conversions/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: conversion-${{ matrix.tag }}-${{ matrix.cell.mode }}
+          path: conversions/
+          retention-days: 1
 
   report:
     needs: [plan, matrix]
     if: always()
     runs-on: ubuntu-latest
+    # Only to push confirmed measurements back into the expectations table. The
+    # single writer is the whole design: matrix cells run in parallel and would
+    # race each other for this file.
+    permissions:
+      contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          # The PR's own branch, not the merge commit, so a push lands
+          # somewhere that exists. Empty on a tag push, where the fallback
+          # below applies instead.
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: conversion-*
+          path: conversions
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Convert confirmed predictions
+        run: |
+          shopt -s nullglob
+          requests=(conversions/*.tsv)
+          if [ ${#requests[@]} -eq 0 ]; then
+            echo "no confirmed predictions to convert"
+            exit 0
+          fi
+
+          while IFS=$'\t' read -r tag mode run_id; do
+            [ -n "$tag" ] || continue
+            scripts/convert-prediction.sh "$tag" "$mode" "$run_id"
+          done < <(cat "${requests[@]}")
+
+          if git diff --quiet -- tests/fixtures/migration-expectations.tsv; then
+            echo "every requested row was already a measurement"
+            exit 0
+          fi
+
+          {
+            echo "### Predictions confirmed and converted"
+            echo ""
+            git diff --unified=0 -- tests/fixtures/migration-expectations.tsv \
+              | grep -E '^\+v' | sed 's/^+/- /' | cut -c1-160
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # A tag push has no branch to write to, and a fork PR's token is
+          # read-only. Neither is a failure: the run stays green and the patch
+          # is attached, because the alternative is the red-that-means-nothing
+          # this whole change exists to remove.
+          if [ -z "${{ github.head_ref }}" ]; then
+            echo "::notice title=conversion pending::not a PR, so nothing was pushed -- the patch is in this job's summary and artifact."
+            git diff -- tests/fixtures/migration-expectations.tsv > conversion.patch
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/fixtures/migration-expectations.tsv
+          # Written to a file rather than inline: an unindented heredoc or a
+          # multi-line -m argument ends the YAML block scalar at column 0 and
+          # silently truncates this job.
+          {
+            echo "A prediction that has run becomes a measurement (run ${{ github.run_id }})"
+            echo
+            echo "Applied by the migration matrix itself. Every row it touched matched its"
+            echo "committed expectation exactly; what changed is the leading token and the run"
+            echo "id, so the reasoning each row carries survives verbatim."
+            echo
+            echo "A measurement is not a failure -- this used to fail the run that took it,"
+            echo "which made the first correct measurement the failing case and gave every"
+            echo "release a scheduled red at the next release's PR (ADR-78)."
+          } > /tmp/conversion-commit-msg
+          git commit -q -F /tmp/conversion-commit-msg
+          if ! git push origin "HEAD:${{ github.head_ref }}"; then
+            echo "::notice title=conversion not pushed::push was refused (a fork PR's token is read-only). The patch is in this job's summary."
+            git diff HEAD~1 -- tests/fixtures/migration-expectations.tsv > conversion.patch
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('conversion.patch') != ''
+        with:
+          name: conversion-patch
+          path: conversion.patch
+
       - name: Summarise
         run: |
           {

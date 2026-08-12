@@ -40,12 +40,63 @@
 #
 # The decision and the full evidence are ADR-91.
 #
-# Usage: select-migration-writers.sh [<current-ref-name>]
+# Usage: select-migration-writers.sh [<current-ref-name>] [all|representatives]
 # Prints a compact JSON array of tag names on stdout.
 
 set -euo pipefail
 
 current="${1:-}"
+# `representatives` prunes to one writer per distinct layout era. Anything else
+# (the default) returns every released tag.
+scope="${2:-all}"
+
+# THE ERA REPRESENTATIVES, curated on purpose where the rest of this file
+# derives.
+#
+# Deriving them from the expectations table was the obvious move and is wrong:
+# that table holds what we EXPECT, so grouping by it would let a regression
+# hide in whichever member of a group we dropped. These are named instead,
+# which means a human decides what an era is and the list is auditable.
+#
+# The eras, from tests/fixtures/migration-expectations.tsv:
+#   v0.1.1              predates OS-keychain support entirely (keychain-unused)
+#   v0.2.0 .. v0.6.0    the path-derived keychain account with NO pointer file,
+#                       the scheme v0.7's REQ-5 replaced (identity-unresolvable,
+#                       fix-route-failed). Two are kept, the era's first and
+#                       last, so the span is covered rather than a point in it.
+#   v0.7.0 ..           the modern pointer scheme. Thirteen tags assert an
+#                       identical signature here, so two are enough: the era's
+#                       first, and the last minor before the current one.
+#
+# WHY PRs ONLY. A tag push and a manual dispatch still run every writer, so the
+# full corpus is exercised at every release. Releases are rare; ordinary PRs are
+# not, and they are where the minutes go.
+#
+# The fixed five are ERAS ONLY. They deliberately do not answer "is the last
+# release readable" -- the sliding entry below does, and the two are kept apart
+# so that neither question can be lost inside the other.
+REPRESENTATIVES="v0.1.1-beta.1 v0.2.0-beta.1 v0.6.0-beta.1 v0.7.0-beta.1 v0.11.0-beta.1"
+
+# PLUS THE NEWEST RELEASE, ALWAYS, which the fixed list above cannot supply.
+#
+# The five above are era representatives and every one of them is v0.11 or
+# older, so a pruned run covered no writer from the CURRENT series at all. That
+# is the worst cell to drop: N-1 -> N is the upgrade path every real user takes,
+# and it is the one most likely to catch a regression from the change under
+# review, precisely because it is the closest writer to it.
+#
+# It also restores the conversion. A row is PREDICTED until its cell executes,
+# so with a fixed list the newest release's rows waited for a tag push -- a
+# post-merge red run, which is what ADR-78 says nobody reads and what the
+# release-PR platform widening was added to avoid. Sliding this one entry means
+# each release is measured on the first PR after it, before anything merges.
+#
+# Costs one writer. Named separately from the fixed five so that "which eras do
+# we cover" and "do we cover the last release" stay two questions with two
+# answers.
+newest_release() {
+  git tag --list 'v*.*.*' --sort=creatordate | tail -1
+}
 
 # The triple that decides whether two revisions build the same thing. Cargo.toml
 # is in here for the same reason the reader cache key has it: feature selection
@@ -63,8 +114,29 @@ triple() {
 
 head_triple=$(triple HEAD)
 
+if [ "$scope" = representatives ]; then
+  newest="$(newest_release)"
+  [ -n "$newest" ] && REPRESENTATIVES="${REPRESENTATIVES} ${newest}"
+  # A named representative that does not exist is an ERROR, not a quietly
+  # smaller matrix. The same rule the workflow applies to a tag with no
+  # committed row: silently covering less than you claim is the failure this
+  # harness keeps finding.
+  for tag in $REPRESENTATIVES; do
+    if ! git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+      echo "representative tag ${tag} does not exist -- refusing to run a smaller matrix than declared" >&2
+      exit 1
+    fi
+  done
+fi
+
 writers=()
 for tag in $(git tag --list 'v*.*.*' --sort=creatordate); do
+  if [ "$scope" = representatives ]; then
+    case " $REPRESENTATIVES " in
+      *" $tag "*) ;;
+      *) continue ;;
+    esac
+  fi
   if [ -n "$current" ] && [ "$tag" = "$current" ]; then
     # Kept even though the content check below subsumes it on a tag push: it
     # states the intent directly, and it still holds if a release is ever cut

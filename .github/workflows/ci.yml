@@ -101,9 +101,38 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # A RELEASE PR runs the WHOLE suite here instead of the scoped three.
+      #
+      # Derived from Cargo.toml's version changing, not from a branch name, for
+      # the same reason the migration matrix derives it: a convention can be
+      # forgotten and a version bump cannot. The scoping comment above says the
+      # rest of the suite is platform-independent, and that was true when it was
+      # written -- it stopped being true when the published layout became a
+      # matter of PATHS. macOS folds `Bug42` and `bug42` together and Linux does
+      # not, so the one platform difference that can silently change what a
+      # subject resolves to is invisible to every Linux job in this file.
+      - id: release_pr
+        run: |
+          is_release=no
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            git fetch -q origin "${{ github.base_ref }}" || true
+            base=$(git show "origin/${{ github.base_ref }}:Cargo.toml" 2>/dev/null \
+                   | awk -F'"' '/^version/{print $2; exit}')
+            head=$(awk -F'"' '/^version/{print $2; exit}' Cargo.toml)
+            [ -n "$base" ] && [ -n "$head" ] && [ "$base" != "$head" ] && is_release=yes
+          fi
+          echo "is_release=$is_release" >> "$GITHUB_OUTPUT"
+          echo "::notice title=canary scope::release PR=$is_release"
+
       # No KAN_NO_KEYCHAIN anywhere in this job, deliberately. If REQ-3
       # regresses and a fresh workspace reaches for the keychain again, this is
       # where it surfaces -- as a hang (#96) or a seed-id, both of which the
       # canary asserts against.
-      - run: cargo test --test keychain_identity --test at_rest_guards --test keychain_one_door
-        timeout-minutes: 15
+      - name: Identity canary (ordinary PR) or the full suite (release PR)
+        run: |
+          if [ "${{ steps.release_pr.outputs.is_release }}" = yes ]; then
+            cargo test --all
+          else
+            cargo test --test keychain_identity --test at_rest_guards --test keychain_one_door
+          fi
+        timeout-minutes: 45
