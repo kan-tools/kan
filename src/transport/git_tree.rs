@@ -632,6 +632,175 @@ pub fn split_records(text: &str) -> Vec<&str> {
     out
 }
 
+/// Where a subject's records live under `.claims/` in the nested layout:
+/// the subject's own name, with its `/` separators kept as real directories.
+///
+/// `telos/legible-process` becomes `telos/legible-process`, not
+/// `telos_legible-process.6b2c1a90`. The flat name sanitizes every character
+/// outside `[alnum].-` to `_` and then appends a digest to restore the
+/// injectivity that sanitizing destroyed — and the collision it was restoring
+/// is exactly the one `/` produced, against `telos/<slug>`, which is day's
+/// naming convention (ADR-42). Keep the separator and the collision cannot
+/// occur, so the digest has no job left.
+///
+/// Returns `None` for a subject that cannot be a safe relative path. **This
+/// is a containment check, not tidiness**: a subject named `../../etc/x` maps
+/// to a path outside `.claims/`, and a component of `.` or `..` or an
+/// absolute-looking root would let a subject name decide where a write lands.
+/// The writer does not use this yet — the reader ships first — but the guard
+/// belongs here rather than at the call site that eventually needs it.
+pub fn subject_path(subject: &crate::claim::SubjectRef) -> Option<PathBuf> {
+    use crate::claim::SubjectRef;
+    let raw = match subject {
+        SubjectRef::Local(rkey) => rkey.clone(),
+        // Anchors get a declared prefix rather than `format!("{anchor:?}")`,
+        // which is the same `Debug`-as-contract defect one layer over: a path
+        // derived from Debug output silently orphans every published file
+        // when a variant is renamed.
+        SubjectRef::Anchor(anchor) => match WireSubject::of(&SubjectRef::Anchor(anchor.clone())) {
+            WireSubject::Workspace(id) => format!("anchor/workspace/{id}"),
+            WireSubject::Commit(sha) => format!("anchor/commit/{sha}"),
+            WireSubject::Blob(cid) => format!("anchor/blob/{cid}"),
+            WireSubject::FileAt { path, sha } => format!("anchor/file-at/{sha}/{path}"),
+            WireSubject::LineRangeAt {
+                path,
+                sha,
+                start,
+                end,
+            } => format!("anchor/line-range-at/{sha}/{start}-{end}/{path}"),
+            WireSubject::Local(_) => return None,
+        },
+    };
+
+    if raw.is_empty() || raw.starts_with('/') || raw.contains('\\') || raw.contains('\0') {
+        return None;
+    }
+    let mut out = PathBuf::new();
+    for component in raw.split('/') {
+        // An empty component is `a//b`, which the filesystem would silently
+        // collapse to `a/b` — two distinct subjects, one path.
+        if component.is_empty() || component == "." || component == ".." {
+            return None;
+        }
+        out.push(component);
+    }
+    Some(out)
+}
+
+/// Every `.md` under `.claims/`, at any depth.
+///
+/// Flat files sit directly under the directory; nested ones sit under
+/// directories that spell out the subject. A read must find both, because an
+/// author cannot rewrite a peer's file — so the flat layout is a contract to
+/// keep reading, not a deprecation window.
+fn collect_claim_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for path in entries.flatten().map(|e| e.path()) {
+        if path.is_dir() {
+            collect_claim_files(&path, out);
+        } else if path.extension().is_some_and(|e| e == "md") {
+            out.push(path);
+        }
+    }
+}
+
+/// One nested file: `.claims/<subject>/<author>.md`.
+///
+/// REQ-14. The flat reader already authenticates a record's FILENAME against
+/// its contents, because a name that describes nothing is a name that can
+/// lie. The nested path carries one thing more — the author — so both are
+/// checked here. Without the author half, a file bearing one author's name
+/// could hold another's records, and the directory listing that is supposed
+/// to say who published what would be decorative.
+fn read_nested_file(file: &Path, relative: &Path) -> Vec<ReadRecord> {
+    let shown = file.display().to_string();
+    let mut out = Vec::new();
+
+    let text = match std::fs::read_to_string(file) {
+        Ok(text) => text,
+        Err(source) => {
+            return vec![Err(Error::Io {
+                path: shown,
+                source,
+            })];
+        }
+    };
+
+    let stated_author = file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    let stated_subject = relative.parent().and_then(subject_from_path);
+
+    let records = split_records(&text);
+    if let Some(missing) = missing_records(&shown, &records) {
+        out.push(Err(missing));
+    }
+
+    for record in records {
+        let parsed = from_record_with_rev(&shown, record);
+        if let Ok((_, claim, _)) = &parsed {
+            // The path states a subject and an author; the record is signed
+            // over its own. Comparing the two is the whole of REQ-14.
+            let expected_path = subject_path(&claim.content.subject);
+            let path_matches = match (&stated_subject, &expected_path) {
+                (Some(stated), Some(expected)) => {
+                    Path::new(stated) == expected.as_path()
+                        || subject_from_path(expected).as_deref() == Some(stated.as_str())
+                }
+                _ => false,
+            };
+            if !path_matches {
+                out.push(Err(Error::FilenameMismatch {
+                    path: shown.clone(),
+                    expected: expected_path
+                        .and_then(|p| subject_from_path(&p))
+                        .unwrap_or_else(|| "<unrepresentable subject>".to_string()),
+                    found: stated_subject.clone().unwrap_or_default(),
+                }));
+                continue;
+            }
+
+            let did = claim.content.author.did.strip_prefix("did:key:").unwrap_or(
+                // A DID that is not `did:key:` cannot name a leaf under this
+                // scheme; say so rather than matching on the whole string and
+                // appearing to have checked something.
+                &claim.content.author.did,
+            );
+            if stated_author != did {
+                out.push(Err(Error::FilenameMismatch {
+                    path: shown.clone(),
+                    expected: did.to_string(),
+                    found: stated_author.to_string(),
+                }));
+                continue;
+            }
+        }
+        out.push(parsed);
+    }
+    out
+}
+
+/// The subject a nested path is claiming to hold, recovered from the path.
+///
+/// The inverse of [`subject_path`] for `Local` subjects, which is what the
+/// reader needs in order to authenticate a file against the records inside
+/// it. Anchor paths are not inverted: they are prefixed `anchor/` and are
+/// checked by comparing against [`subject_path`] of the record's own subject
+/// instead, which needs no inverse.
+fn subject_from_path(relative: &Path) -> Option<String> {
+    let mut parts = Vec::new();
+    for component in relative.components() {
+        let std::path::Component::Normal(part) = component else {
+            return None;
+        };
+        parts.push(part.to_str()?.to_string());
+    }
+    (!parts.is_empty()).then(|| parts.join("/"))
+}
+
 /// The v3 wire shape of a subject.
 ///
 /// v1 and v2 wrote `format!("{:?}", subject)` here — `Local("work")` — and
@@ -1145,22 +1314,27 @@ impl GitTree {
 
     fn read_records(&self) -> Vec<ReadRecord> {
         let dir = self.claims_dir();
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            return Vec::new();
-        };
 
         // Sorted so a fold over the tree is reproducible; ordering carries
         // no meaning, but determinism makes divergence between two clones
         // visible rather than incidental.
-        let mut files: Vec<PathBuf> = entries
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|e| e == "md"))
-            .collect();
+        let mut files = Vec::new();
+        collect_claim_files(&dir, &mut files);
         files.sort();
 
         let mut out = Vec::new();
         for file in files {
+            // A file directly under `.claims/` is the flat layout every
+            // release through v0.12.x wrote. Anything deeper is the nested
+            // layout, whose directories ARE the subject — so the depth is
+            // what selects which authentication applies, rather than a guess
+            // about the filename's shape.
+            let relative = file.strip_prefix(&dir).unwrap_or(&file).to_path_buf();
+            let nested = relative.components().count() > 1;
+            if nested {
+                out.extend(read_nested_file(&file, &relative));
+                continue;
+            }
             let shown = file.display().to_string();
             match std::fs::read_to_string(&file) {
                 Ok(text) => {
