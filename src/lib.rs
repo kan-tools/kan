@@ -16,5 +16,6 @@ pub mod relations;
 pub mod roles;
 pub mod sign;
 pub mod store;
+pub mod surface;
 pub mod transport;
 pub mod workspace;

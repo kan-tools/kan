@@ -21,6 +21,15 @@ use crate::{
     store::{index::Index, log::Log},
 };
 
+/// Workspace-owned surface facts: its automatic GitTree connection plus
+/// derived overlay files whose inner format belongs to the log module.
+pub const STORED_VALUES: &[crate::surface::StoredValue] = &[
+    crate::surface::StoredValue::new("repo-config:auto-git-tree", "*"),
+    crate::surface::StoredValue::new("overlay:repo.car", "*"),
+    crate::surface::StoredValue::new("overlay:HEAD", "*"),
+    crate::surface::StoredValue::new("overlay:LOCK", "*"),
+];
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("identity error: {0}")]

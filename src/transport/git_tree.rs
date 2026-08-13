@@ -45,6 +45,11 @@ pub type ReadRecord = Result<(Cid, Claim, Option<String>), Error>;
 /// layer.
 pub const CLAIMS_DIR: &str = ".claims";
 
+/// The GitTree record is authenticated field-by-field by this module. The
+/// surface catalog therefore treats its versioned framing as one opaque value.
+pub const STORED_VALUES: &[crate::surface::StoredValue] =
+    &[crate::surface::StoredValue::new("git-tree:.claims", "*")];
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("io error under {path}: {source}")]

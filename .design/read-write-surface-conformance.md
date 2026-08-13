@@ -21,7 +21,9 @@ guard for `telos/raw-data-and-projections`.
   Kan-authored claims may arrive from the local log, `.claims/`, a future
   replica, or a future atproto repository without changing authority class;
   repository configuration and system configuration are authoritative kan
-  inputs with different scopes; Git and other auxiliary inputs are
+  inputs with different scopes. A GitTree substrate connection is supplied
+  automatically when kan is instantiated in a Git repository, while Git's
+  own commits, objects, ancestry, and filesystem facts are
   authoritative-other.
 - REQ-3: A committed `tests/fixtures/read-write-surface.tsv` must declare every
   implemented kan-managed durable artifact. Structured stores must be declared
@@ -115,6 +117,16 @@ claim is authoritative kan data wherever it is validly carried. The local
 `.kan/log`, tracked `.claims/`, a replica, and an atproto repository are
 distinct claim substrates with different availability and ownership; none
 becomes a derived summary merely because another copy exists.
+
+The word “Git” crosses this boundary in two roles that must not be conflated.
+Git commits, objects, ancestry and filesystem facts are
+`authoritative-other`: kan reads facts whose semantics Git owns. Signed kan
+CBOR claims published inside `.claims/` are `authoritative-kan`: Git is only
+the carrier for objects whose semantics, CIDs and signatures kan owns. A
+repository workspace automatically contributes this GitTree substrate
+connection when kan discovers the Git root; that mount decision is
+repository-scoped authoritative kan configuration even before a configurable
+connection manifest exists.
 
 The catalog therefore uses these authority classes:
 
@@ -238,7 +250,10 @@ the tension documented on
 - RQ-2: Authority uses three semantic classes: `authoritative-kan`,
   `authoritative-other`, and `derived`. Storage media and connection types are
   separate axes, so multiple authoritative claim substrates do not become one
-  physical “source of truth.”
+  physical “source of truth.” Git's own facts are authoritative-other; signed
+  kan claims carried in GitTree are authoritative-kan, and the GitTree
+  connection is automatically present for a workspace discovered in a Git
+  repository.
 - RQ-3: Structured storage is cataloged at field or column granularity; opaque
   containers are cataloged at artifact granularity when an independent format
   oracle already exists.

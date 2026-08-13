@@ -151,9 +151,9 @@ a fresh `log/` from records it verified first.
 StoredClaim)`. It differs from `append_locked` (`src/store/log.rs:689`) in
 exactly one way that matters: it does not call `identity.sign` over the
 content. It verifies `sign::verify(&stored.claim.content.author.did,
-&content_cid.to_bytes(), &stored.claim.sig)` (`src/sign.rs:510`) and, on
+&content_cid.to_bytes(), &stored.claim.sig)` (`src/store/log.rs:956`) and, on
 success, writes the block and commits — the commit itself is still signed by
-the local identity (`src/store/log.rs:717`), which is correct: the commit
+the local identity (`src/store/log.rs:992`), which is correct: the commit
 attests to the repo's current state, while each record keeps its own author's
 signature. `append`'s existing `recorded_at` guard (`get_or_insert`,
 `src/store/log.rs:677`) already anticipated this ingest path in its comment;
