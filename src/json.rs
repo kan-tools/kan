@@ -200,6 +200,29 @@ pub struct ShowJson {
     /// emitted, not skipped: "no exclusions" and "this kan is too old to
     /// say" must not look alike to a consumer.
     pub excluded_by_trust: usize,
+    /// Present on the top-level `show` envelope. Omitted only when this
+    /// `ShowJson` is nested inside `show --all`, whose outer envelope owns it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub published_read_error_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub published_read_errors: Option<Vec<PublishedReadErrorJson>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct PublishedReadErrorJson {
+    pub path: String,
+    pub kind: String,
+    pub message: String,
+}
+
+impl From<&crate::workspace::PublishedReadError> for PublishedReadErrorJson {
+    fn from(error: &crate::workspace::PublishedReadError) -> Self {
+        Self {
+            path: error.path.clone(),
+            kind: error.kind.clone(),
+            message: error.message.clone(),
+        }
+    }
 }
 
 /// A relation another subject asserts pointing at this one — structured with
@@ -269,6 +292,8 @@ pub struct StatusJson {
     /// wholly-filtered subject is indistinguishable from one that was never
     /// written.
     pub excluded_by_trust: usize,
+    pub published_read_error_count: usize,
+    pub published_read_errors: Vec<PublishedReadErrorJson>,
 }
 
 #[derive(Debug, Serialize)]
@@ -277,6 +302,8 @@ pub struct IssuesJson {
     pub subjects: Vec<StatusEntryJson>,
     pub trust: TrustJson,
     pub excluded_by_trust: usize,
+    pub published_read_error_count: usize,
+    pub published_read_errors: Vec<PublishedReadErrorJson>,
 }
 
 /// A budgeted context assembly, including what it left out.
@@ -296,9 +323,14 @@ pub struct ContextJson {
     /// this is what the *trust base* never offered. A caller raising
     /// `--budget` recovers the first and never the second.
     pub excluded_by_trust: usize,
+    pub published_read_error_count: usize,
+    pub published_read_errors: Vec<PublishedReadErrorJson>,
 }
 
 /// Every subject's live claims, from one `Workspace::open`.
+///
+/// Each subject has the ordinary `show` shape except for workspace-wide
+/// published-read diagnostics, which appear once on this outer envelope.
 ///
 /// **Why this exists, and why it is a bulk *read* rather than a faster one.**
 /// `day` answers a single witness by reading the whole claim graph, which
@@ -325,6 +357,8 @@ pub struct ShowAllJson {
     /// including on subjects absent from `subjects` because every claim
     /// naming them was excluded.
     pub excluded_by_trust: usize,
+    pub published_read_error_count: usize,
+    pub published_read_errors: Vec<PublishedReadErrorJson>,
     pub subjects: Vec<ShowJson>,
 }
 

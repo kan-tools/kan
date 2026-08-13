@@ -117,6 +117,40 @@ pub enum Error {
     },
 }
 
+impl Error {
+    /// Stable category for the structured read-error surface. This is owned
+    /// by kan rather than derived from the Rust variant's `Debug` spelling.
+    pub fn diagnostic_kind(&self) -> &'static str {
+        match self {
+            Self::Io { .. } => "io",
+            Self::Cid(_) => "cid",
+            Self::Log(_) => "log",
+            Self::Malformed { .. } => "malformed_record",
+            Self::CidMismatch { .. } => "cid_mismatch",
+            Self::BadSignature { .. } => "bad_signature",
+            Self::HeaderMismatch { .. } => "header_mismatch",
+            Self::FilenameMismatch { .. } => "filename_mismatch",
+            Self::FilenameCollision { .. } => "filename_collision",
+            Self::RecordsMissing { .. } => "records_missing",
+        }
+    }
+
+    /// Source path carried by errors that can arise while reading GitTree.
+    pub fn diagnostic_path(&self) -> Option<&str> {
+        match self {
+            Self::Io { path, .. }
+            | Self::Malformed { path, .. }
+            | Self::CidMismatch { path, .. }
+            | Self::BadSignature { path, .. }
+            | Self::HeaderMismatch { path, .. }
+            | Self::FilenameMismatch { path, .. }
+            | Self::FilenameCollision { path, .. }
+            | Self::RecordsMissing { path, .. } => Some(path),
+            Self::Cid(_) | Self::Log(_) => None,
+        }
+    }
+}
+
 fn io(path: &Path) -> impl Fn(std::io::Error) -> Error + '_ {
     move |source| Error::Io {
         path: path.display().to_string(),
@@ -481,7 +515,7 @@ pub fn from_record_with_rev(
         content.body = content.body.with_text(body.to_string());
     }
 
-    let actual = content_cid(&content)?;
+    let actual = content_cid(&content).map_err(|e| malformed(&e.to_string()))?;
     if actual.to_string() != header.cid {
         return Err(Error::CidMismatch {
             path: path.to_string(),
@@ -698,15 +732,45 @@ pub fn subject_path(subject: &crate::claim::SubjectRef) -> Option<PathBuf> {
 /// directories that spell out the subject. A read must find both, because an
 /// author cannot rewrite a peer's file — so the flat layout is a contract to
 /// keep reading, not a deprecation window.
-fn collect_claim_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
+fn collect_claim_files(
+    dir: &Path,
+    files: &mut Vec<PathBuf>,
+    errors: &mut Vec<Error>,
+    absent_is_empty: bool,
+) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(source) if absent_is_empty && source.kind() == std::io::ErrorKind::NotFound => return,
+        Err(source) => {
+            errors.push(Error::Io {
+                path: dir.display().to_string(),
+                source,
+            });
+            return;
+        }
     };
-    for path in entries.flatten().map(|e| e.path()) {
-        if path.is_dir() {
-            collect_claim_files(&path, out);
-        } else if path.extension().is_some_and(|e| e == "md") {
-            out.push(path);
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(source) => {
+                errors.push(Error::Io {
+                    path: dir.display().to_string(),
+                    source,
+                });
+                continue;
+            }
+        };
+        let path = entry.path();
+        match std::fs::metadata(&path) {
+            Ok(metadata) if metadata.is_dir() => {
+                collect_claim_files(&path, files, errors, false);
+            }
+            Ok(_) if path.extension().is_some_and(|e| e == "md") => files.push(path),
+            Ok(_) => {}
+            Err(source) => errors.push(Error::Io {
+                path: path.display().to_string(),
+                source,
+            }),
         }
     }
 }
@@ -1441,7 +1505,8 @@ impl GitTree {
         // no meaning, but determinism makes divergence between two clones
         // visible rather than incidental.
         let mut files = Vec::new();
-        collect_claim_files(&dir, &mut files);
+        let mut traversal_errors = Vec::new();
+        collect_claim_files(&dir, &mut files, &mut traversal_errors, true);
         files.sort();
 
         let mut out = Vec::new();
@@ -1510,7 +1575,21 @@ impl GitTree {
                 })),
             }
         }
-        out
+        // Errors do not participate in the fold. Keep verified claims in
+        // their file order while making every diagnostic deterministic by
+        // its source path, including failures encountered during traversal.
+        let (mut claims, mut read_errors): (Vec<_>, Vec<_>) =
+            out.into_iter().partition(Result::is_ok);
+        read_errors.extend(traversal_errors.into_iter().map(Err));
+        read_errors.sort_by(|left, right| {
+            let Err(left) = left else { unreachable!() };
+            let Err(right) = right else { unreachable!() };
+            left.diagnostic_path()
+                .unwrap_or_default()
+                .cmp(right.diagnostic_path().unwrap_or_default())
+        });
+        claims.extend(read_errors);
+        claims
     }
 }
 

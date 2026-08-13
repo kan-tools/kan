@@ -2586,6 +2586,14 @@ pub fn show_json(
         inbound: inbound_edges_json(&view, &subject_ref),
         trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded_here,
+        published_read_error_count: Some(ws.published.read_errors().len()),
+        published_read_errors: Some(
+            ws.published
+                .read_errors()
+                .iter()
+                .map(crate::json::PublishedReadErrorJson::from)
+                .collect(),
+        ),
     };
     to_json(&out)
 }
@@ -2638,6 +2646,8 @@ pub fn show_all_json(
                 inbound,
                 trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
                 excluded_by_trust: excluded.for_class(class),
+                published_read_error_count: None,
+                published_read_errors: None,
             }
         })
         .collect();
@@ -2646,6 +2656,13 @@ pub fn show_all_json(
         v: crate::json::SCHEMA_VERSION,
         trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded.total(),
+        published_read_error_count: ws.published.read_errors().len(),
+        published_read_errors: ws
+            .published
+            .read_errors()
+            .iter()
+            .map(crate::json::PublishedReadErrorJson::from)
+            .collect(),
         subjects,
     })
 }
@@ -2678,6 +2695,13 @@ pub fn status_json(
         subjects,
         trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded.total(),
+        published_read_error_count: ws.published.read_errors().len(),
+        published_read_errors: ws
+            .published
+            .read_errors()
+            .iter()
+            .map(crate::json::PublishedReadErrorJson::from)
+            .collect(),
     })
 }
 
@@ -2701,6 +2725,13 @@ pub fn issues_json(
         subjects,
         trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded.total(),
+        published_read_error_count: ws.published.read_errors().len(),
+        published_read_errors: ws
+            .published
+            .read_errors()
+            .iter()
+            .map(crate::json::PublishedReadErrorJson::from)
+            .collect(),
     })
 }
 
@@ -2741,6 +2772,13 @@ pub fn context_json(
         omitted_subjects: assembled.omitted_subjects.clone(),
         trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded.total(),
+        published_read_error_count: ws.published.read_errors().len(),
+        published_read_errors: ws
+            .published
+            .read_errors()
+            .iter()
+            .map(crate::json::PublishedReadErrorJson::from)
+            .collect(),
     })
 }
 

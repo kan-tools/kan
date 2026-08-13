@@ -372,6 +372,175 @@ fn a_tampered_published_record_is_refused_without_bricking_the_repo() {
         "the tampered record was dropped silently: {}",
         read.stderr
     );
+    assert_eq!(value["published_read_error_count"], 1);
+    let errors = value["published_read_errors"].as_array().unwrap();
+    assert_eq!(errors.len(), 1);
+    let error = errors[0].as_object().unwrap();
+    assert_eq!(error.len(), 3);
+    assert_eq!(error["kind"], "cid_mismatch");
+    let path = error["path"].as_str().unwrap();
+    assert!(path.starts_with(".claims/"), "not repo-relative: {path}");
+    assert!(!std::path::Path::new(path).is_absolute());
+    assert!(error["message"].as_str().unwrap().contains(path));
+}
+
+/// kan#211: degradation happens while opening the workspace, so every JSON
+/// read surface must disclose it. Choosing `status` instead of `show` cannot
+/// turn the same partial source into an apparently complete response.
+#[test]
+fn every_json_read_surface_discloses_a_bad_published_record() {
+    let (clone, author_did) = publisher_then_clone("finding", "the other actor's claim");
+    let file = first_file(&clone.path().join(".claims"));
+    let text = std::fs::read_to_string(&file).unwrap();
+    std::fs::write(
+        &file,
+        text.replace("the other actor's claim", "a claim nobody made"),
+    )
+    .unwrap();
+
+    let invocations: &[&[&str]] = &[
+        &["show", "finding", "--trust", &author_did, "--json"],
+        &["show", "--all", "--trust", &author_did, "--json"],
+        &["status", "--trust", &author_did, "--json"],
+        &["issues", "--trust", &author_did, "--json"],
+        &[
+            "context",
+            "--budget",
+            "100",
+            "--trust",
+            &author_did,
+            "--json",
+        ],
+    ];
+
+    let mut expected = None;
+    for args in invocations {
+        let read = kan_as(clone.path(), None, args);
+        assert!(read.ok, "{args:?} failed: {}", read.stderr);
+        assert!(read.stderr.contains("warning: skipping a published record"));
+        let value: serde_json::Value = serde_json::from_str(&read.stdout).unwrap();
+        assert_eq!(value["published_read_error_count"], 1, "{args:?}: {value}");
+        let errors = value["published_read_errors"].clone();
+        assert_eq!(errors.as_array().unwrap().len(), 1);
+        if let Some(prior) = &expected {
+            assert_eq!(&errors, prior, "diagnostics changed across read surfaces");
+        } else {
+            expected = Some(errors);
+        }
+
+        if args.starts_with(&["show", "--all"]) {
+            for subject in value["subjects"].as_array().unwrap() {
+                assert!(subject.get("published_read_error_count").is_none());
+                assert!(subject.get("published_read_errors").is_none());
+            }
+        }
+    }
+}
+
+#[test]
+fn published_read_errors_are_clone_stable_and_path_ordered() {
+    let publisher = git_repo();
+    let key = publisher.path().join("author-key");
+    kan::sign::Identity::generate().save(&key).unwrap();
+    for (subject, text) in [("zeta", "zeta text"), ("alpha", "alpha text")] {
+        let write = kan_as(publisher.path(), Some(&key), &["observe", subject, text]);
+        assert!(write.ok, "{}", write.stderr);
+        let publish = kan_as(publisher.path(), Some(&key), &["publish", subject]);
+        assert!(publish.ok, "{}", publish.stderr);
+    }
+
+    let source = publisher.path().join(".claims");
+    for entry in std::fs::read_dir(&source).unwrap() {
+        let entry = entry.unwrap();
+        let subject_dir = entry.path();
+        if !subject_dir.is_dir() {
+            continue;
+        }
+        let file = first_file(&subject_dir);
+        let text = std::fs::read_to_string(&file).unwrap();
+        let tampered = text
+            .replace("alpha text", "altered alpha")
+            .replace("zeta text", "altered zeta");
+        std::fs::write(file, tampered).unwrap();
+    }
+
+    let mut diagnostics = Vec::new();
+    for _ in 0..2 {
+        let clone = git_repo();
+        copy_tree(&source, &clone.path().join(".claims"));
+        let read = kan_as(clone.path(), None, &["show", "--all", "--json"]);
+        assert!(read.ok, "{}", read.stderr);
+        let value: serde_json::Value = serde_json::from_str(&read.stdout).unwrap();
+        assert_eq!(value["published_read_error_count"], 2, "{value}");
+        diagnostics.push(value["published_read_errors"].clone());
+    }
+
+    assert_eq!(diagnostics[0], diagnostics[1]);
+    let paths: Vec<&str> = diagnostics[0]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|error| error["path"].as_str().unwrap())
+        .collect();
+    let mut sorted = paths.clone();
+    sorted.sort_unstable();
+    assert_eq!(paths, sorted, "diagnostics do not follow sorted tree order");
+}
+
+#[cfg(unix)]
+#[test]
+fn an_unreadable_claims_subdirectory_is_disclosed_as_an_incomplete_read() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let repo = git_repo();
+    let hidden = repo.path().join(".claims/hidden");
+    std::fs::create_dir_all(&hidden).unwrap();
+    std::fs::write(hidden.join("bad.md"), "not a claim").unwrap();
+
+    let original = std::fs::metadata(&hidden).unwrap().permissions();
+    std::fs::set_permissions(&hidden, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let read = kan_as(repo.path(), None, &["show", "--all", "--json"]);
+    std::fs::set_permissions(&hidden, original).unwrap();
+
+    assert!(read.ok, "a degraded read remains nonfatal: {}", read.stderr);
+    assert!(
+        read.stderr.contains("warning: skipping a published record"),
+        "{}",
+        read.stderr
+    );
+    let value: serde_json::Value = serde_json::from_str(&read.stdout).unwrap();
+    assert_eq!(value["published_read_error_count"], 1, "{value}");
+    let errors = value["published_read_errors"].as_array().unwrap();
+    assert_eq!(errors.len(), 1, "{value}");
+    assert_eq!(errors[0]["kind"], "io");
+    assert_eq!(errors[0]["path"], ".claims/hidden");
+    assert!(
+        errors[0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("io error under .claims/hidden:"),
+        "{value}"
+    );
+}
+
+#[test]
+fn a_non_directory_claims_root_keeps_the_claims_path_prefix() {
+    let repo = git_repo();
+    std::fs::write(repo.path().join(".claims"), "not a directory").unwrap();
+
+    let read = kan_as(repo.path(), None, &["show", "--all", "--json"]);
+    assert!(read.ok, "a degraded read remains nonfatal: {}", read.stderr);
+    let value: serde_json::Value = serde_json::from_str(&read.stdout).unwrap();
+    assert_eq!(value["published_read_error_count"], 1, "{value}");
+    assert_eq!(value["published_read_errors"][0]["kind"], "io");
+    assert_eq!(value["published_read_errors"][0]["path"], ".claims/");
+    assert!(
+        value["published_read_errors"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains(".claims/"),
+        "{value}"
+    );
 }
 
 /// A read-open and a write-open must agree about index freshness, or every

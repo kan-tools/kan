@@ -152,6 +152,8 @@ fn show_json_fields_are_pinned() {
         inbound: vec![],
         trust: json::TrustJson::new(&kan::fold::TrustBase::solo(author())),
         excluded_by_trust: 0,
+        published_read_error_count: Some(0),
+        published_read_errors: Some(vec![]),
     })
     .unwrap();
     let keys: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
@@ -163,6 +165,8 @@ fn show_json_fields_are_pinned() {
             "claims",
             "trust",
             "excluded_by_trust",
+            "published_read_error_count",
+            "published_read_errors",
         ],
         &keys,
         "ShowJson",
@@ -286,13 +290,45 @@ fn every_payload_envelope_is_pinned() {
         subjects: vec![],
         trust: trust(),
         excluded_by_trust: 0,
+        published_read_error_count: 0,
+        published_read_errors: vec![],
     })
     .unwrap();
     let keys: Vec<String> = status.as_object().unwrap().keys().cloned().collect();
     assert_pinned(
-        &["v", "subjects", "trust", "excluded_by_trust"],
+        &[
+            "v",
+            "subjects",
+            "trust",
+            "excluded_by_trust",
+            "published_read_error_count",
+            "published_read_errors",
+        ],
         &keys,
         "StatusJson",
+    );
+
+    let issues = serde_json::to_value(json::IssuesJson {
+        v: json::SCHEMA_VERSION,
+        subjects: vec![],
+        trust: trust(),
+        excluded_by_trust: 0,
+        published_read_error_count: 0,
+        published_read_errors: vec![],
+    })
+    .unwrap();
+    let keys: Vec<String> = issues.as_object().unwrap().keys().cloned().collect();
+    assert_pinned(
+        &[
+            "v",
+            "subjects",
+            "trust",
+            "excluded_by_trust",
+            "published_read_error_count",
+            "published_read_errors",
+        ],
+        &keys,
+        "IssuesJson",
     );
 
     let context = serde_json::to_value(json::ContextJson {
@@ -304,6 +340,8 @@ fn every_payload_envelope_is_pinned() {
         omitted_subjects: vec![],
         trust: trust(),
         excluded_by_trust: 0,
+        published_read_error_count: 0,
+        published_read_errors: vec![],
     })
     .unwrap();
     let keys: Vec<String> = context.as_object().unwrap().keys().cloned().collect();
@@ -316,6 +354,8 @@ fn every_payload_envelope_is_pinned() {
             "omitted_claims",
             "trust",
             "excluded_by_trust",
+            "published_read_error_count",
+            "published_read_errors",
         ],
         &keys,
         "ContextJson",
@@ -335,14 +375,36 @@ fn every_payload_envelope_is_pinned() {
         v: json::SCHEMA_VERSION,
         trust: trust(),
         excluded_by_trust: 0,
+        published_read_error_count: 0,
+        published_read_errors: vec![],
         subjects: vec![],
     })
     .unwrap();
     let keys: Vec<String> = bulk.as_object().unwrap().keys().cloned().collect();
     assert_pinned(
-        &["v", "trust", "excluded_by_trust", "subjects"],
+        &[
+            "v",
+            "trust",
+            "excluded_by_trust",
+            "published_read_error_count",
+            "published_read_errors",
+            "subjects",
+        ],
         &keys,
         "ShowAllJson",
+    );
+
+    let diagnostic = serde_json::to_value(json::PublishedReadErrorJson {
+        path: ".claims/s/a.md".to_string(),
+        kind: "malformed_record".to_string(),
+        message: "malformed".to_string(),
+    })
+    .unwrap();
+    let keys: Vec<String> = diagnostic.as_object().unwrap().keys().cloned().collect();
+    assert_pinned(
+        &["path", "kind", "message"],
+        &keys,
+        "PublishedReadErrorJson",
     );
 
     let publication = serde_json::to_value(json::ClaimJson::new(
