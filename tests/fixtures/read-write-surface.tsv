@@ -7,6 +7,7 @@ implemented	authoritative-kan	local-log	claim	local-log:repo.car	*	src/store/log
 implemented	authoritative-kan	local-log	claim	local-log:repo.car.damaged-*	*	src/store/log.rs	crate::store::log::Log	validate:claim-log	retained-recovery-evidence	docs/SPEC.md#storage-and-transport
 implemented	derived	local-log	invocation	local-log:repo.repair	*	src/store/log.rs	crate::store::log::Log	derive:car-repair-temp	atomic-replace-or-cleanup	docs/SPEC.md#storage-and-transport
 implemented	derived	local-log	repository	local-log:HEAD	*	src/store/log.rs	crate::store::log::Log	derive:current-root	delete-recovered-on-read-and-rewritten-on-write	docs/SPEC.md#storage-and-transport
+implemented	derived	local-log	invocation	local-log:HEAD.tmp	*	src/store/log.rs	crate::store::log::Log	derive:atomic-head-replacement	atomic-rename-or-crash-residue	docs/SPEC.md#storage-and-transport
 implemented	derived	local-log	invocation	local-log:LOCK	*	src/store/log.rs	crate::store::log::Log	derive:write-coordination	delete-recreated-on-write	docs/SPEC.md#storage-and-transport
 implemented	authoritative-kan	git-tree	claim	git-tree:.claims	*	src/transport/git_tree.rs	crate::transport::git_tree::GitTree	validate:published-claim	deletion-loses-that-replica	docs/SPEC.md#storage-and-transport
 implemented	authoritative-kan	repo-config	repository	repo-config:auto-git-tree	*	src/workspace.rs	crate::workspace::Workspace	select:auto-git-tree-connection	recomputed-from-repository-context	docs/SPEC.md#storage-and-transport

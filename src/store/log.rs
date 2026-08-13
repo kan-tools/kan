@@ -66,6 +66,7 @@ pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
     crate::surface::SurfaceValue::new("local-log:repo.car.damaged-*", "*"),
     crate::surface::SurfaceValue::new("local-log:repo.repair", "*"),
     crate::surface::SurfaceValue::new("local-log:HEAD", "*"),
+    crate::surface::SurfaceValue::new("local-log:HEAD.tmp", "*"),
     crate::surface::SurfaceValue::new("local-log:LOCK", "*"),
 ];
 

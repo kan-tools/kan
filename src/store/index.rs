@@ -281,6 +281,36 @@ impl Index {
         Ok(out)
     }
 
+    /// Whether every persisted projection field matches an independently
+    /// recomputed reference index. This deliberately compares the raw bytes
+    /// and all denormalized query columns: successful CBOR decoding alone
+    /// cannot detect substitution of a different valid claim, and checking
+    /// only claim content cannot detect corrupted origin or subject indexes.
+    pub fn projection_matches(&self, reference: &Self) -> Result<bool, Error> {
+        fn rows(index: &Index) -> Result<Vec<ProjectionRow>, Error> {
+            let mut stmt = index.conn.prepare(&format!(
+                "SELECT content_cid, rev, author_did, author_agent, origin, subject_key, kind, raw
+                 FROM {CLAIMS_TABLE} ORDER BY content_cid"
+            ))?;
+            let mapped = stmt.query_map([], |row| {
+                Ok(ProjectionRow {
+                    content_cid: row.get(0)?,
+                    rev: row.get(1)?,
+                    author_did: row.get(2)?,
+                    author_agent: row.get(3)?,
+                    origin: row.get(4)?,
+                    subject_key: row.get(5)?,
+                    kind: row.get(6)?,
+                    raw: row.get(7)?,
+                })
+            })?;
+            mapped.collect::<Result<_, _>>().map_err(Error::from)
+        }
+
+        Ok(self.built_from_root()? == reference.built_from_root()?
+            && rows(self)? == rows(reference)?)
+    }
+
     /// Every distinct `AuthorId` with a claim in `.kan/log` — the membership
     /// of `TrustBase::Local`, and the reason a default read needs no identity
     /// (`.design/identity-surface.md` REQ-1).
@@ -327,4 +357,16 @@ impl Index {
     pub fn is_empty(&self) -> Result<bool, Error> {
         Ok(self.len()? == 0)
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ProjectionRow {
+    content_cid: String,
+    rev: String,
+    author_did: String,
+    author_agent: Option<Vec<u8>>,
+    origin: String,
+    subject_key: String,
+    kind: String,
+    raw: Vec<u8>,
 }

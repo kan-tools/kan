@@ -485,35 +485,24 @@ impl Workspace {
             overlay.current_root(),
             published.content_hash.as_deref(),
         );
-        // A matching content-addressed freshness key proves the inputs did
-        // not move; it does not authenticate the disposable cache bytes.
-        // Decode the projection before trusting it. Any damage invalidates
-        // the cache and takes the same recomputation path as stale inputs.
-        let projection_decodes = index.all_stored_claims().is_ok();
-        if fingerprint != index.built_from_root()? || !projection_decodes {
-            let log_claims = log.iter_all().await?;
-            let mut foreign = overlay.iter_all().await?;
-            foreign.extend(arrived);
+        // The fingerprint authenticates the inputs, not bytes in the
+        // disposable SQLite file. A decodable cache can still substitute a
+        // different valid claim or corrupt derived origin/subject columns.
+        // Recompute an independent in-memory reference on every open;
+        // SQLite is a query projection, never evidence for itself.
+        let log_claims = log.iter_all().await?;
+        let mut foreign = overlay.iter_all().await?;
+        foreign.extend(arrived);
 
-            // #150's poisoned state, handled by *not projecting* the
-            // duplicates rather than by repairing the overlay.
-            //
-            // The write path discards and rebuilds the overlay, which needs a
-            // signing identity to re-ingest — so a read cannot do that, and
-            // must not acquire one in order to try. It does not have to:
-            // `content_cid` is a PRIMARY KEY, so all a duplicate does is fail
-            // the rebuild, and skipping it leaves a workspace that reads
-            // correctly and completely. Every claim is still projected, once,
-            // from the log.
-            //
-            // That makes a read of a poisoned workspace *work*, where before
-            // this milestone it was the thing that bricked it. The overlay is
-            // still repaired by the next write, loudly, exactly as v0.9.2
-            // made it.
-            let in_log: std::collections::HashSet<&Cid> =
-                log_claims.iter().map(|(c, _)| c).collect();
-            foreign.retain(|(cid, _)| !in_log.contains(cid));
+        // #150's poisoned state, handled by *not projecting* the duplicates
+        // rather than by repairing the overlay. The write path repairs the
+        // overlay; a read needs no signing identity merely to deduplicate it.
+        let in_log: std::collections::HashSet<&Cid> = log_claims.iter().map(|(c, _)| c).collect();
+        foreign.retain(|(cid, _)| !in_log.contains(cid));
 
+        let mut reference = Index::open_in_memory()?;
+        reference.rebuild(&log_claims, &foreign, fingerprint.as_ref())?;
+        if !index.projection_matches(&reference)? {
             index.rebuild(&log_claims, &foreign, fingerprint.as_ref())?;
         }
 

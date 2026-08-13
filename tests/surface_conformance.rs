@@ -15,6 +15,7 @@ const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("claim-log", "tests/claim_substrate.rs"),
     ("current-root", "tests/log_recovery.rs"),
+    ("atomic-head-replacement", "tests/log_concurrency.rs"),
     ("write-coordination", "tests/log_concurrency.rs"),
     ("published-claim", "tests/git_tree_trust.rs"),
     ("auto-git-tree-connection", "tests/reader.rs"),
@@ -39,12 +40,9 @@ const PERSISTENCE_PATH_LITERALS: &[(&str, &str, &str)] = &[
     ("src/actions.rs", "\\n", "not a path"),
     ("src/store/log.rs", "repo.car", "local-log:repo.car"),
     ("src/store/log.rs", "HEAD", "local-log:HEAD"),
+    ("src/store/log.rs", "tmp", "local-log:HEAD.tmp"),
+    ("src/store/log.rs", "repair", "local-log:repo.repair"),
     ("src/store/log.rs", "LOCK", "local-log:LOCK"),
-    (
-        "src/store/index.rs",
-        "",
-        "sqlite schema is runtime-introspected",
-    ),
     ("src/sign.rs", "identity", "identity:identity"),
     ("src/sign.rs", "log", "local-log:repo.car"),
     ("src/sign.rs", "repo.car", "local-log:repo.car"),
@@ -298,16 +296,19 @@ fn persistence_modules_cannot_add_an_unreviewed_path_literal() {
         .collect::<BTreeSet<_>>()
     {
         let source = std::fs::read_to_string(module).unwrap();
-        for suffix in source.split(".join(\"").skip(1) {
-            if let Some((literal, _)) = suffix.split_once("\")") {
-                actual.insert((module.to_string(), literal.to_string()));
+        for constructor in [".join(\"", ".with_extension(\""] {
+            for suffix in source.split(constructor).skip(1) {
+                if let Some((literal, _)) = suffix.split_once("\")") {
+                    actual.insert((module.to_string(), literal.to_string()));
+                }
             }
         }
     }
     let unreviewed: Vec<_> = actual.difference(&expected).collect();
+    let stale: Vec<_> = expected.difference(&actual).collect();
     assert!(
-        unreviewed.is_empty(),
-        "persistence path literal(s) lack a reviewed surface artifact: {unreviewed:#?}"
+        unreviewed.is_empty() && stale.is_empty(),
+        "persistence path inventory mismatch\nunreviewed: {unreviewed:#?}\nstale: {stale:#?}"
     );
     for (module, literal, artifact) in PERSISTENCE_PATH_LITERALS {
         assert!(
@@ -507,6 +508,12 @@ fn production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json() {
         "{}",
         String::from_utf8_lossy(&write.stderr)
     );
+    let write_other = run_kan(repo.path(), &["observe", "other", "also authoritative"]);
+    assert!(
+        write_other.status.success(),
+        "{}",
+        String::from_utf8_lossy(&write_other.stderr)
+    );
     let before = run_kan(repo.path(), &["show", "poison", "--json"]);
     assert!(
         before.status.success(),
@@ -514,9 +521,27 @@ fn production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json() {
         String::from_utf8_lossy(&before.stderr)
     );
 
+    let before_other = run_kan(repo.path(), &["show", "other", "--json"]);
+    assert!(
+        before_other.status.success(),
+        "{}",
+        String::from_utf8_lossy(&before_other.stderr)
+    );
+
     let connection = rusqlite::Connection::open(repo.path().join(".kan/index.sqlite")).unwrap();
+    let raws: Vec<Vec<u8>> = connection
+        .prepare("SELECT raw FROM claims_v2 ORDER BY content_cid")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(raws.len(), 2);
     connection
-        .execute("UPDATE claims_v2 SET raw = X'00'", [])
+        .execute(
+            "UPDATE claims_v2 SET raw = ?1 WHERE raw = ?2",
+            rusqlite::params![raws[1], raws[0]],
+        )
         .unwrap();
     drop(connection);
 
@@ -527,6 +552,11 @@ fn production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json() {
         String::from_utf8_lossy(&after.stderr)
     );
     assert_eq!(before.stdout, after.stdout, "recomputed JSON changed");
+    let after_other = run_kan(repo.path(), &["show", "other", "--json"]);
+    assert_eq!(
+        before_other.stdout, after_other.stdout,
+        "a valid-CBOR substitution changed the other subject's JSON"
+    );
 }
 
 fn copy_tree(from: &std::path::Path, to: &std::path::Path) {

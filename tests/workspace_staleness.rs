@@ -89,7 +89,7 @@ fn tamper_with_stored_text(index_path: &std::path::Path, content_cid: &str, new_
 }
 
 #[tokio::test]
-async fn open_skips_rebuild_when_the_log_root_is_unchanged() {
+async fn open_recomputes_projection_even_when_the_log_root_is_unchanged() {
     let dir = git_repo();
 
     let mut ws = Workspace::open(dir.path()).await.unwrap();
@@ -110,41 +110,13 @@ async fn open_skips_rebuild_when_the_log_root_is_unchanged() {
     let index_path = dir.path().join(".kan/index.sqlite");
     tamper_with_stored_text(&index_path, &result.narrative.cid.to_string(), "TAMPERED");
 
-    // No log write happened in between -- the root is unchanged, so
-    // `Workspace::open` should skip the rebuild and leave the tampered
-    // index content in place.
-    let ws = Workspace::open(dir.path()).await.unwrap();
-    let show_out = actions::show(&ws, "bug-42", &ws.local_trust().unwrap(), None).unwrap();
-    assert!(
-        show_out.contains("TAMPERED"),
-        "expected the skip to leave tampered index content in place, got: {show_out}"
-    );
-    drop(ws);
-
-    // Control: a write changes the log's root, so the *next* open must
-    // detect the mismatch and do the full rebuild, overwriting the
-    // tampered row with the log's true (untampered) content.
-    let mut ws = Workspace::open(dir.path()).await.unwrap();
-    actions::observe(
-        &mut ws,
-        "unrelated second claim".to_string(),
-        Some("issue-7".to_string()),
-        vec![],
-        None,
-        None,
-        None,
-        None,
-    )
-    .await
-    .unwrap();
-    drop(ws);
-
+    // No authoritative write happened in between. The unchanged root proves
+    // input freshness, but cannot authenticate the disposable SQLite bytes.
     let ws = Workspace::open(dir.path()).await.unwrap();
     let show_out = actions::show(&ws, "bug-42", &ws.local_trust().unwrap(), None).unwrap();
     assert!(
         show_out.contains("original text") && !show_out.contains("TAMPERED"),
-        "expected the full rebuild (triggered by the intervening write) to \
-         overwrite the tampered content with the log's true content, got: {show_out}"
+        "expected recomputation to restore the authoritative log content, got: {show_out}"
     );
 }
 
