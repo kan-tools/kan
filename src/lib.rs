@@ -1,6 +1,7 @@
 //! kan: local reasoning, global coherence — memory for AI agents.
 //!
 //! See `docs/SPEC.md` (authoritative) and `docs/HANDOFF.md` (orientation).
+#![deny(clippy::disallowed_methods)]
 
 pub mod actions;
 pub mod cid;
@@ -12,6 +13,7 @@ pub mod git;
 pub mod json;
 pub mod mcp;
 pub mod mst;
+pub mod persistence;
 pub mod relations;
 pub mod roles;
 pub mod sign;

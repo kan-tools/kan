@@ -208,7 +208,10 @@ naming its catalog artifact. The conformance test scans mutation APIs rather
 than path syntax, rejects an unannotated call, and validates each annotation
 against the catalog. Thus a new write through a literal, constant, formatted
 path, or helper must make an explicit catalog choice at the point where it
-crosses the persistence boundary.
+crosses the persistence boundary. Compiler-resolved Clippy policy forbids raw
+filesystem mutation APIs outside `crate::persistence`, so import aliases and
+helper functions cannot bypass that boundary; only the facade may allow the
+lint, and its callers remain subject to the annotation check.
 
 ### Behavioral conformance
 

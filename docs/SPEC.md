@@ -451,9 +451,11 @@ their persistence-owning modules, requires every concrete filesystem mutation
 site to name its catalog artifact, and recomputes disposable projections from
 authoritative inputs. The mutation-site check is path-syntax-independent: a
 literal, constant, formatted path, or helper call cannot introduce a write
-without declaring its surface. An implemented value with no row and a row
-with no implemented owner are both errors. The oracle is semantic
-recomputation from raw inputs, never agreement between two caches.
+without declaring its surface. Compiler-resolved policy confines raw mutation
+APIs to the persistence facade, including when an import is aliased. An
+implemented value with no row and a row with no implemented owner are both
+errors. The oracle is semantic recomputation from raw inputs, never agreement
+between two caches.
 
 Reference recomputation is intentionally correctness-first. If it becomes too
 expensive even for the bounded CI fixtures, that is the event requiring a new

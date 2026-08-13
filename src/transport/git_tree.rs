@@ -1234,7 +1234,7 @@ pub fn write_subject(
     }
 
     // surface-write: git-tree:.claims
-    std::fs::create_dir_all(&subject_dir).map_err(io(&subject_dir))?;
+    crate::persistence::create_dir_all(&subject_dir).map_err(io(&subject_dir))?;
 
     let mut paths = Vec::new();
     for (did, group) in &by_author {
@@ -1278,7 +1278,7 @@ pub fn write_subject(
             )?);
         }
         // surface-write: git-tree:.claims
-        std::fs::write(&path, out).map_err(io(&path))?;
+        crate::persistence::write(&path, out).map_err(io(&path))?;
         paths.push(path);
     }
 
@@ -1307,7 +1307,7 @@ pub fn write_subject(
     let authors: Vec<&str> = by_author.keys().copied().collect();
     let retired = if flat.exists() && retirable_by(&flat, subject, &authors) {
         // surface-write: git-tree:.claims
-        std::fs::remove_file(&flat).map_err(io(&flat))?;
+        crate::persistence::remove_file(&flat).map_err(io(&flat))?;
         Some(flat)
     } else {
         None

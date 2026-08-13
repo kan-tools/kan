@@ -136,6 +136,7 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/sign.rs",
     "src/store/index.rs",
     "src/store/log.rs",
+    "src/persistence.rs",
     "src/transport/git_tree.rs",
     "src/workspace.rs",
 ];
@@ -486,6 +487,8 @@ fn every_filesystem_mutation_names_its_catalog_surface_at_the_call_site() {
         "std::fs::copy",
         "std::fs::remove_file",
         "std::fs::remove_dir_all",
+        "std::fs::remove_dir",
+        "std::fs::hard_link",
         "std::fs::set_permissions",
         "fs::create_dir_all",
         "fs::File::create",
@@ -501,11 +504,17 @@ fn every_filesystem_mutation_names_its_catalog_surface_at_the_call_site() {
     ];
 
     for module in PERSISTENCE_MODULES {
+        if *module == "src/persistence.rs" {
+            continue;
+        }
         let source = std::fs::read_to_string(module).unwrap();
         let lines: Vec<_> = source.lines().collect();
         for (index, line) in lines.iter().enumerate() {
             let code = line.trim_start();
-            if code.starts_with("//") || !mutation_apis.iter().any(|api| code.contains(api)) {
+            if code.starts_with("//")
+                || !(code.contains("crate::persistence::")
+                    || mutation_apis.iter().any(|api| code.contains(api)))
+            {
                 continue;
             }
             let annotation = index
@@ -526,6 +535,39 @@ fn every_filesystem_mutation_names_its_catalog_surface_at_the_call_site() {
             }
         }
     }
+}
+
+#[test]
+fn compiler_resolves_filesystem_aliases_to_the_single_mutation_facade() {
+    let policy = std::fs::read_to_string("clippy.toml").unwrap();
+    for method in [
+        "std::fs::create_dir",
+        "std::fs::create_dir_all",
+        "std::fs::write",
+        "std::fs::rename",
+        "std::fs::copy",
+        "std::fs::remove_file",
+        "std::fs::remove_dir_all",
+        "std::fs::set_permissions",
+        "std::fs::File::create",
+        "std::fs::OpenOptions::open",
+        "tokio::fs::create_dir_all",
+        "tokio::fs::write",
+        "tokio::fs::rename",
+        "tokio::fs::copy",
+        "tokio::fs::remove_file",
+        "tokio::fs::remove_dir_all",
+        "tokio::fs::remove_dir",
+        "tokio::fs::hard_link",
+        "tokio::fs::File::create",
+        "tokio::fs::OpenOptions::open",
+    ] {
+        assert!(policy.contains(method), "compiler policy omits `{method}`");
+    }
+    let library = std::fs::read_to_string("src/lib.rs").unwrap();
+    assert!(library.contains("#![deny(clippy::disallowed_methods)]"));
+    let facade = std::fs::read_to_string("src/persistence.rs").unwrap();
+    assert!(facade.contains("#![allow(clippy::disallowed_methods)]"));
 }
 
 #[test]
@@ -786,6 +828,31 @@ fn production_workspace_recreates_a_malformed_projection_schema() {
         String::from_utf8_lossy(&after.stderr)
     );
     assert_eq!(before.stdout, after.stdout, "schema recovery changed JSON");
+
+    std::fs::write(repo.path().join(".kan/index.sqlite"), b"not a database").unwrap();
+    let after_bytes = run_kan(repo.path(), &["show", "schema-poison", "--json"]);
+    assert!(
+        after_bytes.status.success(),
+        "{}",
+        String::from_utf8_lossy(&after_bytes.stderr)
+    );
+    assert_eq!(before.stdout, after_bytes.stdout);
+
+    let connection = rusqlite::Connection::open(repo.path().join(".kan/index.sqlite")).unwrap();
+    connection
+        .execute_batch(
+            "DROP INDEX claims_v2_by_origin;
+             CREATE TABLE claims_v2_by_origin (wrong TEXT);",
+        )
+        .unwrap();
+    drop(connection);
+    let after_conflict = run_kan(repo.path(), &["show", "schema-poison", "--json"]);
+    assert!(
+        after_conflict.status.success(),
+        "{}",
+        String::from_utf8_lossy(&after_conflict.stderr)
+    );
+    assert_eq!(before.stdout, after_conflict.stdout);
 }
 
 #[test]
@@ -801,6 +868,12 @@ fn caller_selected_role_key_is_an_implemented_authoritative_surface() {
         .unwrap();
     assert_eq!(row.reader, "crate::sign");
     assert_eq!(row.rule, "validate:identity-at-rest");
+    let default_row = rows()
+        .into_iter()
+        .find(|row| row.artifact == "identity:roles.d")
+        .unwrap();
+    assert_eq!(default_row.reader, "crate::sign");
+    assert_eq!(default_row.rule, "validate:identity-at-rest");
 
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());

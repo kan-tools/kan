@@ -3,7 +3,7 @@
 //! file and `rebuild` reconstructs it from `Log::iter_all` — nothing here is
 //! a second source of truth (AC-6).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use atproto_dasl::Cid;
 use rusqlite::OptionalExtension;
@@ -126,6 +126,7 @@ fn decode_message(e: &atproto_dasl::DecodeError) -> String {
 
 pub struct Index {
     conn: rusqlite::Connection,
+    path: Option<PathBuf>,
 }
 
 impl Index {
@@ -137,32 +138,30 @@ impl Index {
     /// file and the directory holding it, which is the vivification #149 is
     /// about, arriving through the back door.
     pub fn open_in_memory() -> Result<Self, Error> {
-        Self::with_connection(rusqlite::Connection::open_in_memory()?)
+        Self::with_connection(rusqlite::Connection::open_in_memory()?, None)
     }
 
     pub fn open(path: &Path) -> Result<Self, Error> {
         if let Some(parent) = path.parent() {
             // surface-write: sqlite:meta
-            std::fs::create_dir_all(parent)?;
+            crate::persistence::create_dir_all(parent)?;
         }
         let connection = rusqlite::Connection::open(path)?;
-        match Self::with_connection(connection) {
+        match Self::with_connection(connection, Some(path.to_path_buf())) {
             Ok(index) => Ok(index),
             Err(_) => {
                 // A structurally corrupt current projection may make even
                 // CREATE INDEX IF NOT EXISTS fail before Workspace can
                 // compare it with the authoritative reference. Reopen the
                 // disposable database and recreate only this binary's schema.
-                let mut index = Self {
-                    conn: rusqlite::Connection::open(path)?,
-                };
-                index.recreate_current_schema()?;
-                Ok(index)
+                // surface-write: sqlite:meta
+                crate::persistence::remove_file(path)?;
+                Self::with_connection(rusqlite::Connection::open(path)?, Some(path.to_path_buf()))
             }
         }
     }
 
-    fn with_connection(conn: rusqlite::Connection) -> Result<Self, Error> {
+    fn with_connection(conn: rusqlite::Connection, path: Option<PathBuf>) -> Result<Self, Error> {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS meta (
                 key   TEXT PRIMARY KEY,
@@ -191,7 +190,7 @@ impl Index {
              CREATE INDEX IF NOT EXISTS {CLAIMS_TABLE}_by_origin
                 ON {CLAIMS_TABLE}(origin);"
         ))?;
-        Ok(Self { conn })
+        Ok(Self { conn, path })
     }
 
     /// Recreate this binary's disposable schema after structural corruption.
@@ -199,6 +198,14 @@ impl Index {
     /// deliberately retained; `meta` is shared but contains only disposable
     /// freshness hints, so recreating it merely makes other binaries rebuild.
     pub fn recreate_current_schema(&mut self) -> Result<(), Error> {
+        if let Some(path) = self.path.clone() {
+            let old = std::mem::replace(&mut self.conn, rusqlite::Connection::open_in_memory()?);
+            drop(old);
+            // surface-write: sqlite:meta
+            crate::persistence::remove_file(&path)?;
+            *self = Self::open(&path)?;
+            return Ok(());
+        }
         self.conn.execute_batch(&format!(
             "DROP TABLE IF EXISTS {CLAIMS_TABLE};
              DROP TABLE IF EXISTS meta;"
