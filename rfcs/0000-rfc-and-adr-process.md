@@ -3,8 +3,8 @@
 - Status: Review
 - Authors: kan maintainers
 - Created: 2026-08-13
-- Discussion: https://github.com/kan-tools/kan/issues/224
-- Review-period-ends: Established by the pull request that adopts this process
+- Discussion: https://github.com/kan-tools/kan/pull/225
+- Review-period-ends: 2026-08-16T19:22:22Z
 - Supersedes: The implicit process described by the former `docs/DECISIONS.md`
 - Superseded-by: None
 
@@ -218,8 +218,9 @@ None.
 
 ## Implementation status
 
-Implemented by the pull request that adds RFC 0000, the templates and indexes,
-the ADR migration, and its validator.
+Proposed in pull request #225, which adds RFC 0000, the templates and indexes,
+the ADR migration, and its validator. The process takes effect when that pull
+request merges.
 
 The next expected RFC is RFC 0001, the kan URI scheme. Its grammar, resolution,
 userinfo, stream aliases, DID authority handling, canonicalization, and
