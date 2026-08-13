@@ -61,10 +61,12 @@ const COLLECTION: &str = "dev.kan.claim";
 /// Opaque filesystem artifacts owned by one log. Their internal CAR/MST
 /// fields have their own conformance suite, so the surface catalog treats the
 /// container as one value rather than duplicating that format specification.
-pub const STORED_VALUES: &[crate::surface::StoredValue] = &[
-    crate::surface::StoredValue::new("local-log:repo.car", "*"),
-    crate::surface::StoredValue::new("local-log:HEAD", "*"),
-    crate::surface::StoredValue::new("local-log:LOCK", "*"),
+pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
+    crate::surface::SurfaceValue::new("local-log:repo.car", "*"),
+    crate::surface::SurfaceValue::new("local-log:repo.car.damaged-*", "*"),
+    crate::surface::SurfaceValue::new("local-log:repo.repair", "*"),
+    crate::surface::SurfaceValue::new("local-log:HEAD", "*"),
+    crate::surface::SurfaceValue::new("local-log:LOCK", "*"),
 ];
 
 #[derive(Debug, thiserror::Error)]

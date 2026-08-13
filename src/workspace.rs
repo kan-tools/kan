@@ -23,11 +23,11 @@ use crate::{
 
 /// Workspace-owned surface facts: its automatic GitTree connection plus
 /// derived overlay files whose inner format belongs to the log module.
-pub const STORED_VALUES: &[crate::surface::StoredValue] = &[
-    crate::surface::StoredValue::new("repo-config:auto-git-tree", "*"),
-    crate::surface::StoredValue::new("overlay:repo.car", "*"),
-    crate::surface::StoredValue::new("overlay:HEAD", "*"),
-    crate::surface::StoredValue::new("overlay:LOCK", "*"),
+pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
+    crate::surface::SurfaceValue::new("repo-config:auto-git-tree", "*"),
+    crate::surface::SurfaceValue::new("overlay:repo.car", "*"),
+    crate::surface::SurfaceValue::new("overlay:HEAD", "*"),
+    crate::surface::SurfaceValue::new("overlay:LOCK", "*"),
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -485,7 +485,12 @@ impl Workspace {
             overlay.current_root(),
             published.content_hash.as_deref(),
         );
-        if fingerprint != index.built_from_root()? {
+        // A matching content-addressed freshness key proves the inputs did
+        // not move; it does not authenticate the disposable cache bytes.
+        // Decode the projection before trusting it. Any damage invalidates
+        // the cache and takes the same recomputation path as stale inputs.
+        let projection_decodes = index.all_stored_claims().is_ok();
+        if fingerprint != index.built_from_root()? || !projection_decodes {
             let log_claims = log.iter_all().await?;
             let mut foreign = overlay.iter_all().await?;
             foreign.extend(arrived);

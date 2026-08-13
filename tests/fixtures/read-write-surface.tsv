@@ -1,6 +1,11 @@
 # kan read/write surface. Tab-separated; parsed and exhaustively checked by tests/surface_conformance.rs.
 # status authority_class source_kind scope artifact value writer reader rule lifecycle design
+# Derived stores are checked by semantic recomputation from authoritative inputs. If that reference
+# computation becomes too expensive for the bounded CI fixture, replacing it requires an explicit
+# independent-oracle decision; skipping the check or trusting the cache is not an allowed fallback.
 implemented	authoritative-kan	local-log	claim	local-log:repo.car	*	src/store/log.rs	crate::store::log::Log	validate:claim-log	deletion-loses-local-authority	docs/SPEC.md#storage-and-transport
+implemented	authoritative-kan	local-log	claim	local-log:repo.car.damaged-*	*	src/store/log.rs	crate::store::log::Log	validate:claim-log	retained-recovery-evidence	docs/SPEC.md#storage-and-transport
+implemented	derived	local-log	invocation	local-log:repo.repair	*	src/store/log.rs	crate::store::log::Log	derive:car-repair-temp	atomic-replace-or-cleanup	docs/SPEC.md#storage-and-transport
 implemented	derived	local-log	repository	local-log:HEAD	*	src/store/log.rs	crate::store::log::Log	derive:current-root	delete-recovered-on-read-and-rewritten-on-write	docs/SPEC.md#storage-and-transport
 implemented	derived	local-log	invocation	local-log:LOCK	*	src/store/log.rs	crate::store::log::Log	derive:write-coordination	delete-recreated-on-write	docs/SPEC.md#storage-and-transport
 implemented	authoritative-kan	git-tree	claim	git-tree:.claims	*	src/transport/git_tree.rs	crate::transport::git_tree::GitTree	validate:published-claim	deletion-loses-that-replica	docs/SPEC.md#storage-and-transport
@@ -10,6 +15,7 @@ implemented	derived	overlay	repository	overlay:HEAD	*	src/workspace.rs	crate::wo
 implemented	derived	overlay	invocation	overlay:LOCK	*	src/workspace.rs	crate::workspace::Workspace	derive:write-coordination	delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	sqlite-index	repository	sqlite:meta	key	src/store/index.rs	crate::store::index::Index	derive:index-freshness	delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	sqlite-index	repository	sqlite:meta	value	src/store/index.rs	crate::store::index::Index	derive:index-freshness	delete-and-rebuild	docs/SPEC.md#storage-and-transport
+implemented	derived	sqlite-index	repository	sqlite:meta-key	built_from_root_v2	src/store/index.rs	crate::store::index::Index	derive:index-freshness	delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	sqlite-index	claim	sqlite:claims_v2	content_cid	src/store/index.rs	crate::store::index::Index	derive:index-from-media	delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	sqlite-index	claim	sqlite:claims_v2	rev	src/store/index.rs	crate::store::index::Index	derive:index-from-media	delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	sqlite-index	claim	sqlite:claims_v2	author_did	src/store/index.rs	crate::store::index::Index	derive:index-from-media	delete-and-rebuild	docs/SPEC.md#storage-and-transport
@@ -23,6 +29,11 @@ implemented	authoritative-kan	identity-store	repository	identity:seed-id	*	src/s
 implemented	authoritative-kan	identity-store	repository	identity:identity	*	src/sign.rs	crate::sign	validate:identity-at-rest	deletion-loses-grandfathered-identity	docs/SPEC.md#identity-and-authorship
 implemented	authoritative-kan	identity-store	repository	identity:identity-id	*	src/sign.rs	crate::sign	select:identity-precedence	deletion-disconnects-keychain-key	docs/SPEC.md#identity-and-authorship
 implemented	authoritative-kan	identity-store	repository	identity:roles.d	*	src/sign.rs	crate::roles	validate:role-key	deletion-removes-local-role-key	docs/SPEC.md#identity-and-authorship
+implemented	authoritative-kan	identity-store	repository	identity:seed.replaced-*	*	src/actions.rs	crate::sign	validate:identity-at-rest	retained-displaced-root	docs/SPEC.md#identity-and-authorship
+implemented	authoritative-kan	identity-store	repository	identity:seed.protected-*	*	src/actions.rs	crate::sign	validate:identity-at-rest	retained-plaintext-backup	docs/SPEC.md#identity-and-authorship
+implemented	authoritative-kan	identity-store	repository	identity:identity.protected-*	*	src/actions.rs	crate::sign	validate:identity-at-rest	retained-plaintext-backup	docs/SPEC.md#identity-and-authorship
+implemented	authoritative-kan	system-config	invocation	system-config:KAN_IDENTITY_FILE	*	external	crate::sign	select:identity-precedence	process-environment	docs/SPEC.md#identity-and-authorship
+implemented	authoritative-kan	system-config	invocation	system-config:KAN_NO_KEYCHAIN	*	external	crate::sign	select:identity-precedence	process-environment	docs/SPEC.md#identity-and-authorship
 implemented	authoritative-kan	repo-config	repository	repo-config:legacy-roles	*	src/sign.rs	crate::roles	validate:legacy-role-config	delete-after-import	docs/SPEC.md#identity-and-authorship
 implemented	authoritative-kan	identity-store	system	keychain:dev.kan.seed	*	src/sign.rs	crate::sign	select:identity-precedence	deletion-loses-keychain-root	docs/SPEC.md#identity-and-authorship
 implemented	authoritative-kan	identity-store	system	keychain:dev.kan.identity	*	src/sign.rs	crate::sign	select:identity-precedence	deletion-loses-grandfathered-key	docs/SPEC.md#identity-and-authorship

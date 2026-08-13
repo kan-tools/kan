@@ -364,7 +364,7 @@ pure and enumerable. The executor is the only thing that calls
 
 *protect* (file → keychain):
 1. read the secret from the file;
-2. write it to a fresh account (`fresh_account()`, `src/sign.rs:649`) under
+2. write it to a fresh account (`fresh_account()`, `src/sign.rs:1112`) under
    the right service — `SEED_KEYCHAIN_SERVICE` for a seed, `KEYCHAIN_SERVICE`
    for a grandfathered key;
 3. **read it back and compare bytes** — a store that silently truncates would

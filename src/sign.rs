@@ -89,15 +89,17 @@ pub const IDENTITY_ID_FILE: &str = "identity-id";
 /// Kan-managed identity and repository-configuration persistence. Keychain
 /// rows name the service selected by a pointer; tests never access the live
 /// keychain merely to enumerate them.
-pub const STORED_VALUES: &[crate::surface::StoredValue] = &[
-    crate::surface::StoredValue::new("identity:seed", "*"),
-    crate::surface::StoredValue::new("identity:seed-id", "*"),
-    crate::surface::StoredValue::new("identity:identity", "*"),
-    crate::surface::StoredValue::new("identity:identity-id", "*"),
-    crate::surface::StoredValue::new("identity:roles.d", "*"),
-    crate::surface::StoredValue::new("repo-config:legacy-roles", "*"),
-    crate::surface::StoredValue::new("keychain:dev.kan.seed", "*"),
-    crate::surface::StoredValue::new("keychain:dev.kan.identity", "*"),
+pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
+    crate::surface::SurfaceValue::new("identity:seed", "*"),
+    crate::surface::SurfaceValue::new("identity:seed-id", "*"),
+    crate::surface::SurfaceValue::new("identity:identity", "*"),
+    crate::surface::SurfaceValue::new("identity:identity-id", "*"),
+    crate::surface::SurfaceValue::new("identity:roles.d", "*"),
+    crate::surface::SurfaceValue::new("system-config:KAN_IDENTITY_FILE", "*"),
+    crate::surface::SurfaceValue::new("system-config:KAN_NO_KEYCHAIN", "*"),
+    crate::surface::SurfaceValue::new("repo-config:legacy-roles", "*"),
+    crate::surface::SurfaceValue::new("keychain:dev.kan.seed", "*"),
+    crate::surface::SurfaceValue::new("keychain:dev.kan.identity", "*"),
 ];
 
 /// `keyring::Entry`'s `service` field — namespaces kan's identity keys away

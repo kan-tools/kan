@@ -13,9 +13,9 @@ use std::{
 /// External authoritative facts read at the Git boundary. They are not kan
 /// storage and are listed here precisely so projections cannot relabel them
 /// as authored claims.
-pub const SURFACE_VALUES: &[crate::surface::StoredValue] = &[
-    crate::surface::StoredValue::new("external-git:commit-graph", "*"),
-    crate::surface::StoredValue::new("external-git:objects", "*"),
+pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
+    crate::surface::SurfaceValue::new("external-git:commit-graph", "*"),
+    crate::surface::SurfaceValue::new("external-git:objects", "*"),
 ];
 
 use sha2::Digest;

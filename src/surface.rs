@@ -5,12 +5,12 @@
 //! detect an uncataloged store instead of letting code classify itself.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct StoredValue {
+pub struct SurfaceValue {
     pub artifact: &'static str,
     pub value: &'static str,
 }
 
-impl StoredValue {
+impl SurfaceValue {
     pub const fn new(artifact: &'static str, value: &'static str) -> Self {
         Self { artifact, value }
     }

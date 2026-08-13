@@ -47,8 +47,8 @@ pub const CLAIMS_DIR: &str = ".claims";
 
 /// The GitTree record is authenticated field-by-field by this module. The
 /// surface catalog therefore treats its versioned framing as one opaque value.
-pub const STORED_VALUES: &[crate::surface::StoredValue] =
-    &[crate::surface::StoredValue::new("git-tree:.claims", "*")];
+pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] =
+    &[crate::surface::SurfaceValue::new("git-tree:.claims", "*")];
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

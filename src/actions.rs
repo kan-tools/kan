@@ -60,6 +60,14 @@ pub enum Error {
 
 const GENERAL_SUBJECT: &str = "general";
 
+/// Recovery/protection writes whose timestamped names are constructed by CLI
+/// actions rather than by the identity module that owns the active roots.
+pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
+    crate::surface::SurfaceValue::new("identity:seed.replaced-*", "*"),
+    crate::surface::SurfaceValue::new("identity:seed.protected-*", "*"),
+    crate::surface::SurfaceValue::new("identity:identity.protected-*", "*"),
+];
+
 /// What a write verb actually did — enough for both surfaces to render
 /// their own confirmation without a second fold pass: the CLI's default is
 /// still a bare CID (`{cid}` — see `cli::run`'s `--verbose` handling, which

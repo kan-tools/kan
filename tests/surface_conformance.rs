@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use kan::surface::StoredValue;
+use kan::surface::SurfaceValue;
 use kan::{
     claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     sign::Identity,
@@ -22,6 +22,7 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("overlay-root", "tests/surface_conformance.rs"),
     ("index-freshness", "tests/workspace_staleness.rs"),
     ("index-from-media", "tests/surface_conformance.rs"),
+    ("car-repair-temp", "tests/log_recovery.rs"),
     ("identity-at-rest", "tests/at_rest_guards.rs"),
     ("identity-precedence", "tests/identity_cells.rs"),
     ("role-key", "tests/role_registry_invariants.rs"),
@@ -31,6 +32,11 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("connection-config", ".design/medium-architecture.md"),
 ];
 const PERSISTENCE_PATH_LITERALS: &[(&str, &str, &str)] = &[
+    ("src/actions.rs", ".kan", "workspace persistence root"),
+    ("src/actions.rs", "identity", "identity:identity"),
+    ("src/actions.rs", ", ", "not a path"),
+    ("src/actions.rs", " = ", "not a path"),
+    ("src/actions.rs", "\\n", "not a path"),
     ("src/store/log.rs", "repo.car", "local-log:repo.car"),
     ("src/store/log.rs", "HEAD", "local-log:HEAD"),
     ("src/store/log.rs", "LOCK", "local-log:LOCK"),
@@ -51,6 +57,14 @@ const PERSISTENCE_PATH_LITERALS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", ", ", "not a path"),
     ("src/transport/git_tree.rs", ",", "not a path"),
     ("src/transport/git_tree.rs", "/", "not a path"),
+];
+const PERSISTENCE_MODULES: &[&str] = &[
+    "src/actions.rs",
+    "src/sign.rs",
+    "src/store/index.rs",
+    "src/store/log.rs",
+    "src/transport/git_tree.rs",
+    "src/workspace.rs",
 ];
 
 #[derive(Debug)]
@@ -102,10 +116,24 @@ fn rows() -> Vec<Row<'static>> {
 fn sqlite_values() -> Vec<(String, String)> {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("index.sqlite");
-    kan::store::index::Index::open(&path).unwrap();
+    let mut index = kan::store::index::Index::open(&path).unwrap();
+    index.rebuild(&[], &[], None).unwrap();
+    drop(index);
     let connection = rusqlite::Connection::open(path).unwrap();
     let mut out = Vec::new();
-    for table in ["meta", "claims_v2"] {
+    let mut table_statement = connection
+        .prepare(
+            "SELECT name FROM sqlite_master \
+             WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        )
+        .unwrap();
+    let tables: Vec<String> = table_statement
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    drop(table_statement);
+    for table in tables {
         let mut statement = connection
             .prepare(&format!("PRAGMA table_info({table})"))
             .unwrap();
@@ -116,22 +144,46 @@ fn sqlite_values() -> Vec<(String, String)> {
             out.push((format!("sqlite:{table}"), column.unwrap()));
         }
     }
+    let mut statement = connection
+        .prepare("SELECT key FROM meta ORDER BY key")
+        .unwrap();
+    for key in statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+    {
+        out.push(("sqlite:meta-key".into(), key.unwrap()));
+    }
     out
 }
 
 fn implemented_values() -> BTreeSet<(String, String)> {
-    let declared = kan::store::log::STORED_VALUES
+    let declared = kan::store::log::SURFACE_VALUES
         .iter()
-        .chain(kan::transport::git_tree::STORED_VALUES)
-        .chain(kan::sign::STORED_VALUES)
-        .chain(kan::workspace::STORED_VALUES)
+        .chain(kan::transport::git_tree::SURFACE_VALUES)
+        .chain(kan::sign::SURFACE_VALUES)
+        .chain(kan::workspace::SURFACE_VALUES)
         .chain(kan::git::SURFACE_VALUES)
-        .map(|StoredValue { artifact, value }| ((*artifact).into(), (*value).into()));
+        .chain(kan::actions::SURFACE_VALUES)
+        .map(|SurfaceValue { artifact, value }| ((*artifact).into(), (*value).into()));
     declared.chain(sqlite_values()).collect()
 }
 
 #[test]
 fn catalog_is_well_formed_and_cites_real_designs() {
+    fn heading_anchor(heading: &str) -> String {
+        heading
+            .to_ascii_lowercase()
+            .chars()
+            .filter_map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == ' ' {
+                    Some(if c == ' ' { '-' } else { c })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     let rows = rows();
     assert!(
         !rows.is_empty(),
@@ -194,10 +246,24 @@ fn catalog_is_well_formed_and_cites_real_designs() {
             row.value
         );
         if row.status == "planned" {
-            let path = row.design.split('#').next().unwrap();
+            let (path, anchor) = row.design.split_once('#').unwrap_or((row.design, ""));
             assert!(
                 std::path::Path::new(path).exists(),
                 "missing design: {row:?}"
+            );
+            assert!(
+                !anchor.is_empty(),
+                "planned row has no design section: {row:?}"
+            );
+            let design = std::fs::read_to_string(path).unwrap();
+            assert!(
+                design
+                    .lines()
+                    .filter(|line| line.starts_with('#'))
+                    .any(|heading| {
+                        heading_anchor(heading.trim_start_matches('#').trim()) == anchor
+                    }),
+                "planned row cites missing section `{anchor}` in `{path}`: {row:?}"
             );
         }
     }
@@ -249,6 +315,50 @@ fn persistence_modules_cannot_add_an_unreviewed_path_literal() {
             "{module} path `{literal}` has no named storage artifact"
         );
     }
+}
+
+#[test]
+fn every_module_that_mutates_the_filesystem_is_registered() {
+    fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                rust_files(&entry.path(), out);
+            } else if entry.path().extension().and_then(|e| e.to_str()) == Some("rs") {
+                out.push(entry.path());
+            }
+        }
+    }
+
+    let registered: BTreeSet<_> = PERSISTENCE_MODULES.iter().copied().collect();
+    let mut unregistered = Vec::new();
+    let mut files = Vec::new();
+    rust_files(std::path::Path::new("src"), &mut files);
+    for file in files {
+        let source = std::fs::read_to_string(&file).unwrap();
+        let writes = [
+            "std::fs::write",
+            "std::fs::rename",
+            "std::fs::copy",
+            "std::fs::remove_file",
+            "std::fs::remove_dir_all",
+            "fs::write",
+            "fs::rename",
+            "fs::copy",
+            "File::create",
+            "OpenOptions",
+        ]
+        .iter()
+        .any(|needle| source.contains(needle));
+        let path = file.to_string_lossy();
+        if writes && !registered.contains(path.as_ref()) {
+            unregistered.push(path.into_owned());
+        }
+    }
+    assert!(
+        unregistered.is_empty(),
+        "filesystem-mutating module(s) lack surface registration: {unregistered:#?}"
+    );
 }
 
 #[test]
@@ -378,6 +488,47 @@ fn init_repo(path: &std::path::Path) {
     assert!(status.success());
 }
 
+fn run_kan(path: &std::path::Path, args: &[&str]) -> std::process::Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(args)
+        .current_dir(path)
+        .env("KAN_NO_KEYCHAIN", "1")
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json() {
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let write = run_kan(repo.path(), &["observe", "poison", "authoritative"]);
+    assert!(
+        write.status.success(),
+        "{}",
+        String::from_utf8_lossy(&write.stderr)
+    );
+    let before = run_kan(repo.path(), &["show", "poison", "--json"]);
+    assert!(
+        before.status.success(),
+        "{}",
+        String::from_utf8_lossy(&before.stderr)
+    );
+
+    let connection = rusqlite::Connection::open(repo.path().join(".kan/index.sqlite")).unwrap();
+    connection
+        .execute("UPDATE claims_v2 SET raw = X'00'", [])
+        .unwrap();
+    drop(connection);
+
+    let after = run_kan(repo.path(), &["show", "poison", "--json"]);
+    assert!(
+        after.status.success(),
+        "{}",
+        String::from_utf8_lossy(&after.stderr)
+    );
+    assert_eq!(before.stdout, after.stdout, "recomputed JSON changed");
+}
+
 fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
     std::fs::create_dir_all(to).unwrap();
     for entry in std::fs::read_dir(from).unwrap() {
@@ -420,9 +571,37 @@ async fn overlay_is_recomputed_from_authoritative_git_tree_claims() {
         .unwrap();
     let before = workspace.index.all_stored_claims().unwrap();
     assert!(before.iter().any(|(found, _)| found == &cid));
+    let trust = kan::fold::TrustBase::peer_contested(std::collections::HashMap::from([(
+        AuthorId {
+            did: peer.did(),
+            agent: None,
+        },
+        1.0,
+    )]));
+    let before_json = kan::actions::show_all_json(&workspace, &trust, None).unwrap();
+    let origins = || {
+        let connection =
+            rusqlite::Connection::open(reader.path().join(".kan/index.sqlite")).unwrap();
+        let mut statement = connection
+            .prepare("SELECT content_cid, origin FROM claims_v2 ORDER BY content_cid")
+            .unwrap();
+        statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>()
+    };
+    let before_origins = origins();
 
     workspace.log_and_identity().await.unwrap();
     workspace.rebuild_overlay().await.unwrap();
     let after = workspace.index.all_stored_claims().unwrap();
     assert_eq!(semantic_claims(&before), semantic_claims(&after));
+    assert_eq!(
+        before_json,
+        kan::actions::show_all_json(&workspace, &trust, None).unwrap()
+    );
+    assert_eq!(before_origins, origins(), "medium provenance changed");
 }
