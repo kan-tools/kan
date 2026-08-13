@@ -42,7 +42,7 @@ reachable by accident.
 
 ## The reversal this makes, and the counter-argument answered
 
-REQ-3 reverses a decision recorded twice — ADR-63 (`docs/DECISIONS.md:3020`,
+REQ-3 reverses a decision recorded twice — ADR-66 (`adrs/0066-seed-rooted-new-identities-grandfathered-old-ones-and-where-the-root-liv.md:60`,
 *"Where the root lives: the OS keychain when available, a `0600` file when
 not"*) and `Seed::create`'s own doc comment (`src/sign.rs:996`):
 

@@ -1,0 +1,92 @@
+number	file	title	historical_record_sha256
+0001	0001-repo-mst-cid-signing-crate-family-atrium-rs-not-atproto-repo.md	Repo/MST/CID/signing crate family: `atrium-rs`, not `atproto-repo`	4fbf745e19dc8b22857cf555eb4de3e62f48f674eca5fd36b9cb8a3ccb6cc2e2
+0002	0002-single-binary-one-crate.md	Single binary, one crate	9a6d2d5568fabb2abcf4c6c999f328c96d7d6374353cb4cac76667c49b96d34d
+0003	0003-store-location-repo-local-kan.md	Store location: repo-local `.kan/`	10ce6927eaf3f0bafeaea521814873256ab0e9e26029a26c5e46191ec82f03e4
+0004	0004-local-only-identity-self-generated-did-key.md	Local-only identity: self-generated `did:key`	244aac934d27db2e5e58001c01f49d5909f1a307f1f68df79bbef98c125db0a8
+0005	0005-body-typing-structural-narrative-split-claimkind-body-merged.md	Body typing: structural/narrative split, `ClaimKind`+`Body` merged	0f242cb0dc31aaf0182bb3aab55d84f019a301d92c2c58ae72dce6084db825e1
+0006	0006-retraction-option-b-as-specified-retract-the-retraction-as-undo.md	Retraction: Option B as specified, retract-the-retraction as undo	480bb303d1083e38730e8b2dffdeff6ade2b4b50cccc443955fb03025ad643e5
+0007	0007-hard-delete-storage-layer-only-in-v1-no-cli-verb.md	Hard-delete: storage-layer only in v1, no CLI verb	ee0338390cd2c587c6b8833e9ed449b54285eb2ab6d842e0afefce61ace04a68
+0008	0008-atrium-repo-atrium-crypto-api-fit-confirmed-by-spike.md	`atrium-repo`/`atrium-crypto` API fit confirmed by spike	f9d28d7d985ce1dc1947d3afa332c29493c8eec93e6dc9211e533154a2fc8e22
+0009	0009-token-budget-estimation-tiktoken-rs-behind-a-tokenestimator-trait.md	Token-budget estimation: `tiktoken-rs` behind a `TokenEstimator` trait	dd2d82cf42e72345013924380fb1f75c69110dc3d18292746d7f7a0b6e6a865d
+0010	0010-mcp-tool-surface-one-tool-per-cli-verb.md	MCP tool surface: one `#[tool]` per CLI verb	6fbe6bb619cbdd30d5f1599d65ec2f1e7e4ad4d94caa7d034b17c2565c0fa62a
+0011	0011-confirmed-atrium-repo-s-mst-silently-loses-data-at-ordinary-scale.md	CONFIRMED: `atrium-repo`'s MST silently loses data at ordinary scale	40f9f068b0b7546440f10eb528977392e7804fbafa2fa1356dc0897944d7e383
+0012	0012-switch-store-log-rs-from-atrium-repo-to-atproto-repo.md	Switch `store/log.rs` from `atrium-repo` to `atproto-repo`	5d871bfa2ceb51d515fcb67974669c4a2df7d1e581dff15d3af9ef0bddbf06f5
+0013	0013-make-log-append-genuinely-incremental-not-a-full-rewrite.md	Make `Log::append` genuinely incremental, not a full rewrite	9d760f447cb64cae7f60e4299e4bf32ff95bae9968a7df57a880f7582032cd00
+0014	0014-m4b-state-fold-git-genesis-anchors-relationprovider-s-via-shelling-out-t.md	M4b: state fold, git-genesis anchors, `RelationProvider`s via shelling out to `git`	a6c6eb5204556b9998ef3e47c985400cfe90471dfb7fdeab7899a8ff5c939a99
+0015	0015-m5-one-action-layer-for-cli-mcp-round-robin-greedy-context-assembly.md	M5: one action layer for CLI + MCP; round-robin greedy context assembly	f885113c98386e9fa32ce0ca968d7abcc633484653ad9882bb8c2573a41047bb
+0016	0016-confirmed-and-fixed-cross-author-retraction-wasn-t-gated-by-same-author.md	CONFIRMED and FIXED: cross-author `Retraction` wasn't gated by same-author (or any trust)	ce93329a826667feded702b9c7a515e90d44e996ded6ba5a424eb2dffbc9046e
+0017	0017-software-review-pass-fixes-bugs-2-6-anti-patterns-testing-gaps-docs.md	Software-review-pass fixes: bugs #2–#6, anti-patterns, testing gaps, docs	88367aedb535ca211b60b2bd6973a470e5723f4991d422aa2538aaadc5a23be0
+0018	0018-the-kan-companion-tool-scope-boundary-kan-session-removed.md	The kan/companion-tool scope boundary; `kan session` removed	10c7df17b1afba76f0e6685775fa6178be64d91d5e2d2ad24a9e8bbb978dbe96
+0019	0019-first-release-v0-1-1-beta-1-tag-push-triggered-crates-io-cd.md	First release: v0.1.1-beta.1, tag-push-triggered crates.io CD	0f7eee85401c7dd3ed29a9037ca72c9404a3b5a943dacc38bb45b26e05dc89f2
+0020	0020-crates-io-github-environment-scopes-the-publish-secret-and-tag-policy.md	`crates-io` GitHub Environment scopes the publish secret and tag policy	a9720051bccd757353c7b905d6aa686a2c24f8acf8fa84c084e5c09695646642
+0021	0021-v0-2-write-surface-layout-pair-writes-a-real-retract-and-a-cli-only-stat.md	v0.2 write-surface layout: pair-writes, a real `retract`, and a CLI-only status-value enum	71c42a68309ca297af796b8520c0f27b9007405134b86902e718de589f22db20
+0022	0022-every-write-verb-auto-attaches-head-file-layers-a-tighter-anchor-on-top.md	Every write verb auto-attaches `HEAD`; `--file` layers a tighter anchor on top	c979c41f773d99d0e48cce146c9b0c2146997e9ff465cc28b3c2970ce1659fbe
+0023	0023-anchor-vs-anchor-sameas-rejected-as-a-witness-enforcement-ahead-of-synta.md	`Anchor`-vs-`Anchor` `SameAs` rejected as a witness, enforcement ahead of syntax	f36b52e057ab65ad2c59b930366de51b470a2a4aacf044eb9a758f3b00e6b8c1
+0024	0024-kan-agent-an-honest-temporary-patch-for-agent-identity-reachability.md	`KAN_AGENT`: an honest, temporary patch for agent-identity reachability	819346ca1e4b1dd78a8a482a66da69d2f81c4ec6808e266ed8a37e945823b93c
+0025	0025-identity-key-moves-to-the-os-keychain-plaintext-file-fallback-preserved.md	Identity key moves to the OS keychain, plaintext-file fallback preserved	5e4f60ce6390a61b0858c7d05f7329f23a091566268384b20820c573892e6c5a
+0026	0026-mcp-resource-kan-claims-subject-one-template-no-enumeration.md	MCP resource: `kan://claims/{subject}`, one template, no enumeration	52665243c098c6edb77c4403409c7a8e0190806f8207ad41a21e3b255c1691ab
+0027	0027-witness-provenance-surfaced-through-the-fold-kan-show-gains-a-gitsamefil.md	Witness provenance surfaced through the fold; `kan show` gains a `GitSameFile` consumer	2063b13a5d75cacacbe8058d974821ffc732de6508299c6c3687ab8cb3c94607
+0028	0028-second-release-v0-2-0-beta-1.md	Second release: v0.2.0-beta.1	d591e08b50263b9635c19323816fd6adca6958720d1f323dea6b303e62c6da45
+0029	0029-v0-3-relation-surface-kan-relate-rejects-reshaped-into-its-own-claim-kin.md	v0.3 relation surface: `kan relate`, `Rejects` reshaped into its own claim kind, `retract`/`reject` split	902f7889524303dc0b8f1d8ad2d7b97b475bc1e2c7ce683deaf030348c115d51
+0030	0030-title-kind-construct-subject-claims-kan-issues-requires-a-real-eligibili.md	`--title`/`--kind` construct `Subject` claims; `kan issues` requires a real eligibility signal, not just "never resolved"	d84e6be536f4dfeb6485f96c0cee31d2c49bc7d8740eecc74953f70a6c33e4ba
+0031	0031-status-generalizes-resolve-block-s-narrative-status-pairing-to-observe-p.md	`--status` generalizes `resolve`/`block`'s narrative+status pairing to `observe`/`plan`/`decide`	9ca0c3352e705386b18d5bbf37ffcb5ecbce90a9c721a5993ee98719e025f9d6
+0032	0032-verb-lexicon-reorganized-by-ax-phase-mcp-tool-surface-catches-up-to-the.md	Verb lexicon reorganized by AX phase; MCP tool surface catches up to the full CLI	dff45813811376be7ea32a71d36335d279eb229f44cc62f390f458a2df180d97
+0033	0033-gitancestry-relations-caches-is-ancestor-per-directed-commit-pair-within.md	`GitAncestry::relations` caches `is_ancestor` per directed commit pair, within one call	af32c67acc518d07e7fb6ce73f0b2a090aa2d1ee8d07a48ade30a63faf9aee16
+0034	0034-third-release-v0-3-0-beta-1.md	Third release: v0.3.0-beta.1	f66e7fd57e11f843120783457f9e17d57881191e7fbfe59fcb02e012e76f4cf6
+0035	0035-sync-layer-staging-plan-and-a-version-roadmap-through-1-0.md	Sync layer staging plan, and a version roadmap through 1.0	ce79f62f745ffcd8f1eb9d383a512a1cce30d5b63889756c5df400a5476d1bfd
+0036	0036-kan-result-closing-issue-41-s-reachability-gap-and-sharpening-observe-re.md	`kan result`: closing issue #41's reachability gap, and sharpening `observe`/`result`/`resolve`'s verbiage	e32baddf86f57362ca965c020b158b36251f36ccd91e987800711563b507139c
+0037	0037-workspace-open-s-staleness-check-skip-the-rebuild-only-when-content-addr.md	`Workspace::open`'s staleness check: skip the rebuild only when content-addressing proves it's safe	6dfc0bdd7404ce677d5589c4f48ae729373469a9be7889f49357417c16290ed3
+0038	0038-subject-naming-similarity-nudge-normalized-exact-match-not-edit-distance.md	Subject-naming similarity nudge: normalized exact match, not edit-distance	9b9e83a44d9d5a018679cff7267466dd19f1efeabbe75fa39ec5d038bf7892d9
+0039	0039-fourth-release-v0-4-0-beta-1.md	Fourth release: v0.4.0-beta.1	97433ffc3c70df565d808a68617667a423cc46a2d79078d5603b690a61291438
+0040	0040-transport-trait-matches-log-append-s-real-shape-not-spec-md-10-s-pseudoc.md	Transport trait matches Log::append's real shape, not SPEC.md §10's pseudocode	6a3fea1e6d6e639d121334e92e5bc9a9212aba5ec8db0a7a2d0ef9c163a2f459
+0041	0041-fifth-release-v0-5-0-beta-1.md	Fifth release: v0.5.0-beta.1	b0de5e7a9951cbcc23c9b2c91bc0b29b192b14fde8666138524c86bc897ebe78
+0042	0042-the-companion-tool-exists-kan-tools-day.md	The companion tool exists: `kan-tools/day`	cbf54207ca7482e5bd21689b1258c02ce64bfd6cea02587284054aa774b77321
+0043	0043-gittree-the-committed-tree-as-a-sharing-layer-not-a-rendering.md	`GitTree`: the committed tree as a sharing layer, not a rendering	fd6f3c10ff2cc6d3d296f70439a30fefb90dcbb66782288efd4514f17b0d2ca1
+0044	0044-schema-evolution-coexistence-not-migration.md	Schema evolution: coexistence, not migration	85a98cb6d5c5d80e08d39f86465e01bee63837c2622cc1607bb6b0e7392f10a1
+0045	0045-sixth-release-v0-6-0-beta-1-gittree-s-publish-half-the-schema-contract.md	Sixth release: v0.6.0-beta.1 (GitTree's publish half + the schema contract)	8af4e894e75090fbe6671d61958059e153e5c6834a10a692d37743bfeec0248d
+0046	0046-intensionwith-asserted-directed-read-as-a-projection.md	`InTensionWith`: asserted directed, read as a projection	db8402cf96c1f8dd3c10ac62a4d2515bca89f570b46dd66252a2c29382cf934a
+0047	0047-withdraw-the-merge-union-guidance-it-destroys-both-sides.md	Withdraw the `merge=union` guidance: it destroys both sides	0c917a65d2da77b69103804caa7175c79b4b60b51a4b2e1cd9ddc97b020bd1c2
+0048	0048-v0-7-0-beta-1-the-correctness-release-and-the-boundary-it-found.md	v0.7.0-beta.1: the correctness release, and the boundary it found	3153d8afd1e7ea85d166c877e446bc297a117fc70bea1a161fcb6461f8f1e150
+0049	0049-the-pre-release-review-what-it-found-and-what-the-record-got-wrong.md	The pre-release review: what it found, and what the record got wrong	9af2aa49f23846744793987d2b1f68a293f26001c440fcc925ae9a130e50ed52
+0050	0050-structured-output-kan-s-prose-stops-being-an-accidental-api.md	Structured output: kan's prose stops being an accidental API	e35ba9a3c468919bed318ba9a355f7d504145566f2390eeeec5a345ce56dbd5d
+0051	0051-seventh-release-v0-7-0-beta-1-the-correctness-release.md	Seventh release: v0.7.0-beta.1, the correctness release	ffc116258665dcdddc92b636d1fec3d9bfb73edd95805f462217a0f2c2e07fc6
+0052	0052-the-re-review-wave-1-held-the-migration-fix-did-not.md	The re-review: Wave 1 held, the migration fix did not	0ec02e91781b594c46e3b355e9195f9ac5cee077b3b7fd6a6e34fc5dad9cdba3
+0053	0053-eighth-release-v0-7-1-beta-1.md	Eighth release: v0.7.1-beta.1	eb1305ee19ba2103dc3049bce50520898aa97c4e7b69a8271a9abe522788523f
+0054	0054-the-sync-remote-and-the-publicness-ladder.md	The sync remote and the publicness ladder	a3f683030489fb4c8bf1e71e35d8bdac94ff0de53e896d6554207e70b2e1a006
+0055	0055-identity-architecture-one-root-derived-keys-the-enclave-demoted.md	Identity architecture: one root, derived keys, the enclave demoted	995901835e00dcdee8b31def984a1477458b8339327f89744d87ee72bdfa1641
+0056	0056-the-repo-goes-public-at-v0-7-1-beta-1.md	The repo goes public, at v0.7.1-beta.1	3cff4cc055f30dc6e21d8d6ad357bc4b60899aa2c0f656b9dc4138dc9609cca6
+0057	0057-the-trust-surface-trust-and-a-view-that-states-its-own-frame.md	The trust surface: `--trust`, and a view that states its own frame	8cf559704a84452570dc1f595607e6703ff212fd6cf26ecfdad504bacc1c34ab
+0058	0058-multi-role-writes-declaration-as-the-opt-in-and-one-shared-log.md	Multi-role writes: declaration as the opt-in, and one shared log	7031e9b2ad9f0251661193d78933cd69e8b42dc05591382381d00a46c4e29fd9
+0059	0059-the-reader-log-ingest-and-a-foreign-author-overlay-beside-the-log.md	The reader: `Log::ingest`, and a foreign-author overlay beside the log	2881a873a4de24edda2a82f26610352b6e79ba3715cc5a880a3a813e75b5f33a
+0060	0060-the-json-contract-pinned-by-test-rather-than-by-intention.md	The `--json` contract, pinned by test rather than by intention	22ec25a49f3280b0ac5154641c3781d2544155e560ca54daef16a89995be9dea
+0061	0061-trust-roles-covers-the-primary-identity-found-by-dogfooding.md	`--trust roles` covers the primary identity, found by dogfooding	c5b0d6b2b851190cdbb5cf76a78f4ef08b606b9e9b7d4797fcd7d1e3a6c74dcb
+0062	0062-ninth-release-v0-8-0-beta-1-the-reader-and-the-trust-surface.md	Ninth release: v0.8.0-beta.1, the reader and the trust surface	bf62266ec872b888ce882f3186641bfa9a93690a3c972c742223987c8369f9b5
+0063	0063-kan-restore-and-refusing-rather-than-restoring-nothing.md	`kan restore`, and refusing rather than restoring nothing	24de1b1090a0979150686208839fadf8d6a96f72b58cfe81598ecef1b70aaf01
+0064	0064-the-durability-column-comparing-against-the-file-not-the-timestamp.md	The durability column: comparing against the file, not the timestamp	0245feeaab2c50eb35ac3d480ba89c9df8b9491f2a0fd5b5bcc29e7e29c77395
+0065	0065-the-derived-encryption-key-rooted-in-the-signing-key-rather-than-a-new-s.md	The derived encryption key, rooted in the signing key rather than a new seed	8d99f0489aaa3918e46ee616bf0cb8f4692c56b2491294df8d84c11c86e5e217
+0066	0066-seed-rooted-new-identities-grandfathered-old-ones-and-where-the-root-liv.md	Seed-rooted new identities, grandfathered old ones, and where the root lives	7a37707d5457982b78c630ccea882a98d0fba1f17adfa499d3e3fe43823e4519
+0067	0067-kan-identity-adopt-verify-before-switching-and-never-destroy-a-root.md	`kan identity adopt`: verify before switching, and never destroy a root	1847d388defa8ef36feea6b38987f7ae09a81941a69f01b1adb389a6d4359a9f
+0068	0068-a-blocking-keychain-read-says-what-it-is-waiting-on.md	A blocking keychain read says what it is waiting on	775ffe610bf2f78842ab6c561210e1d02d55afacd4d131a2441e07748f0b974c
+0069	0069-tenth-release-v0-9-0-beta-1-durability-and-one-root-of-trust.md	Tenth release: v0.9.0-beta.1, durability and one root of trust	1b79b45c31a2ec471c4740233642dcae37faa4952b22c2d6cea02fdbabc9707e
+0070	0070-l1-encryption-whole-car-per-workspace-padded-on-a-fixed-cadence.md	L1 encryption: whole-CAR per workspace, padded, on a fixed cadence	5b8365b4961b5b24a8ac8050ffa61ed07bc6e9c40f80a54db912e4a138ca6372
+0071	0071-kan-show-all-a-bulk-read-because-the-cost-is-process-startup.md	`kan show --all`: a bulk read, because the cost is process startup	b5f08355075d7d9bce866423144ea2b7a0f9967198ee239ee2430182e9d59fa7
+0072	0072-eleventh-release-v0-9-1-beta-1-the-bulk-read.md	Eleventh release: v0.9.1-beta.1, the bulk read	b658a23ef5deeb37d2e78f8bf78c4e7cdbcb823d34a2aedbec64efc39d33701e
+0073	0073-hostedrelay-s-l1-wire-is-object-put-get-not-repo-sync.md	HostedRelay's L1 wire is object PUT/GET, not repo-sync	861565e3ce9b74d20af9091c791f71dc3c5e409a7c17620da611dbb80ecd470f
+0074	0074-media-replace-the-publicness-ladder.md	Media replace the publicness ladder	aabc5faad6b35b0f59a726b0cb9892cbfd3de346fd4a9e2505a4ca0f654b0901
+0075	0075-agents-are-derived-roles-scope-lives-in-the-attestation.md	Agents are derived roles; scope lives in the attestation	bd16f093737863bef1d2236e5ddbd749975024129f0860b09aff9705d190f1eb
+0076	0076-deletion-is-a-medium-event-the-key-authenticates-the-content.md	Deletion is a medium event; the key authenticates the content	9f7b666e6a3e65882fc07ee2d2fd24f828330806a9de311599363ce143a4c96c
+0077	0077-an-escape-hatch-may-not-bypass-a-data-safety-guard.md	An escape hatch may not bypass a data-safety guard	67cf2d471e33e9283ec0da8772efe69de69480210cbfeac2c7f911b414b50316
+0078	0078-twelfth-release-v0-9-2-beta-1-the-corruption-fixes.md	Twelfth release: v0.9.2-beta.1, the corruption fixes	61c12fe6ad1a53a37e6b3ebda4c00a17e99fdbe0ebdb2100c67002a97675cedf
+0079	0079-retire-the-v0-10-reservation-number-by-content.md	Retire the v0.10 reservation; number by content	0d80057deb79579945de85c8c3bbc1fa1e2dd88e8a3ebf1bf5a5eaf9bdf10fcb
+0080	0080-supersedes-and-refutes-retiring-and-killing-without-deleting.md	`Supersedes` and `Refutes`: retiring and killing, without deleting	7345c7a2b468fe62f9621f5ae4f7f99195cfe17e37293c37eabaf1ccbdaa84a8
+0081	0081-show-all-is-all-or-nothing-and-a-subject-cannot-leave-the-log.md	`show --all` is all-or-nothing, and a subject cannot leave the log	b636dae6bcee8763d1190a88516e3a9c256a954f5c542d658a7f78e47c9e316f
+0082	0082-thirteenth-release-v0-10-0-beta-1-relations-and-read-honesty.md	Thirteenth release: v0.10.0-beta.1, relations and read honesty	b08cdc10478cd0c7039be9ba71f89c8081fbeec7aee08a6dabcc14ed9b7f9c01
+0083	0083-trustbase-local-is-the-default-a-read-needs-no-identity.md	`TrustBase::Local` is the default: a read needs no identity	b00d402e5a916d2acb17173504c47846307f162cf63fe4ec4715325c328fdf46
+0084	0084-trust-roles-narrows-adr-61-is-reversed.md	`--trust roles` narrows; ADR-61 is reversed	bcf49344720f102f2a306f364d4a798e93630dafba2c2f03135cdc03a77af262
+0085	0085-the-index-s-schema-version-lives-in-its-table-name.md	The index's schema version lives in its table name	4316334acc18e90fe7400014dd352678626fbd9454deeaf1de64518fd23f7e71
+0086	0086-v0-11-0-beta-1-the-identity-surface.md	v0.11.0-beta.1: the identity surface	863ee389787e8c37846dc6925aaeee1831c524de312fad251508f0e1b54cdb8e
+0087	0087-identity-at-rest-kan-follows-the-ssh-model.md	Identity at rest: kan follows the ssh model	428f67244c0e9066d7dd0d5ec6687acac53ef6065972f775aac1705d16efd1be
+0088	0088-identity-resolution-three-functions-one-question-each.md	Identity resolution: three functions, one question each	6935b52b5310b9556519cd5d3a2cd9b6c61fdea7b05e2b6c390e0038a9d60fc2
+0089	0089-process-description-lives-in-day-not-claude-md.md	Process description lives in `day`, not `CLAUDE.md`	1bcdf420fd37c1df9ba38f82b08969fbd09bd43d3015b1045bd82a2057b4d87c
+0090	0090-a-storage-crate-must-prove-conformance-not-just-reachability.md	A storage crate must prove conformance, not just reachability	d471f6fcd352f39a2fa7b45da0a8f2558ff33537e4776d9f0b30ee39ac45a3a3
+0091	0091-a-historical-writer-is-defined-by-what-it-builds-not-by-its-name.md	A historical writer is defined by what it builds, not by its name	853d3cd190803395ffa63d6d152546279bc537a76a4a2f700359759d26c2127a

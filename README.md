@@ -86,8 +86,8 @@ understand instead of failing outright (ADR-44).
 
 The rest of sync — a private-team `HostedRelay` transport, then the public
 atproto layer — has a concrete staged plan targeting `v1.0.0`; see
-`.design/sync-layer-architecture-and-staging.md` and `docs/DECISIONS.md`
-ADR-35.
+`.design/sync-layer-architecture-and-staging.md` and
+[`ADR-0035`](adrs/0035-sync-layer-staging-plan-and-a-version-roadmap-through-1-0.md).
 
 ## Identity
 
