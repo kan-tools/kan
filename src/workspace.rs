@@ -149,6 +149,16 @@ pub struct PublishedIndex {
     /// a readdir-level key, which is where content-addressed filenames would
     /// earn their keep.
     content_hash: Option<String>,
+    read_errors: Vec<PublishedReadError>,
+}
+
+/// One GitTree input the workspace refused while retaining every verified
+/// claim. This is invocation metadata, never a claim or index row.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PublishedReadError {
+    pub path: String,
+    pub kind: String,
+    pub message: String,
 }
 
 /// Accumulates the `.claims/` freshness key.
@@ -209,6 +219,28 @@ impl PublishedIndex {
 
     pub fn is_empty(&self) -> bool {
         self.by_subject.is_empty()
+    }
+
+    pub fn read_errors(&self) -> &[PublishedReadError] {
+        &self.read_errors
+    }
+}
+
+fn published_read_error(
+    root: &Path,
+    error: &crate::transport::git_tree::Error,
+) -> PublishedReadError {
+    let original = error.diagnostic_path().unwrap_or(".claims/<unknown>");
+    let relative = Path::new(original)
+        .strip_prefix(root)
+        .unwrap_or_else(|_| Path::new(original))
+        .to_string_lossy()
+        .into_owned();
+    let message = error.to_string().replacen(original, &relative, 1);
+    PublishedReadError {
+        path: relative,
+        kind: error.diagnostic_kind().to_string(),
+        message,
     }
 }
 
@@ -1033,7 +1065,10 @@ async fn read_published(
                     },
                 ));
             }
-            Err(e) => eprintln!("warning: skipping a published record: {e}"),
+            Err(e) => {
+                eprintln!("warning: skipping a published record: {e}");
+                published.read_errors.push(published_read_error(root, &e));
+            }
         }
     }
     published.content_hash = digest.finish();
@@ -1136,7 +1171,10 @@ async fn ingest_published(
                     rev: rev.unwrap_or_else(|| cid.to_string()),
                 });
             }
-            Err(e) => eprintln!("warning: skipping a published record: {e}"),
+            Err(e) => {
+                eprintln!("warning: skipping a published record: {e}");
+                published.read_errors.push(published_read_error(root, &e));
+            }
         }
     }
 

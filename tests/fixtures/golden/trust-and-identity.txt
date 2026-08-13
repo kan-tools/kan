@@ -105,7 +105,9 @@ exit: ok
       }
     ]
   },
-  "excluded_by_trust": 0
+  "excluded_by_trust": 0,
+  "published_read_error_count": 0,
+  "published_read_errors": []
 }
 --- stderr ---
 =====================================================
@@ -132,7 +134,9 @@ exit: ok
       }
     ]
   },
-  "excluded_by_trust": 1
+  "excluded_by_trust": 1,
+  "published_read_error_count": 0,
+  "published_read_errors": []
 }
 --- stderr ---
 =====================================================
@@ -178,7 +182,9 @@ exit: ok
       }
     ]
   },
-  "excluded_by_trust": 0
+  "excluded_by_trust": 0,
+  "published_read_error_count": 0,
+  "published_read_errors": []
 }
 --- stderr ---
 =====================================================
@@ -201,6 +207,8 @@ exit: ok
     ]
   },
   "excluded_by_trust": 1,
+  "published_read_error_count": 0,
+  "published_read_errors": [],
   "subjects": [
     {
       "v": 1,
@@ -351,7 +359,9 @@ exit: ok
       }
     ]
   },
-  "excluded_by_trust": 1
+  "excluded_by_trust": 1,
+  "published_read_error_count": 0,
+  "published_read_errors": []
 }
 --- stderr ---
 =====================================================
@@ -446,7 +456,9 @@ exit: ok
       }
     ]
   },
-  "excluded_by_trust": 1
+  "excluded_by_trust": 1,
+  "published_read_error_count": 0,
+  "published_read_errors": []
 }
 --- stderr ---
 =====================================================
@@ -502,7 +514,9 @@ exit: ok
       }
     ]
   },
-  "excluded_by_trust": 1
+  "excluded_by_trust": 1,
+  "published_read_error_count": 0,
+  "published_read_errors": []
 }
 --- stderr ---
 =====================================================
@@ -544,7 +558,9 @@ exit: ok
       }
     ]
   },
-  "excluded_by_trust": 0
+  "excluded_by_trust": 0,
+  "published_read_error_count": 0,
+  "published_read_errors": []
 }
 --- stderr ---
 =====================================================
@@ -563,7 +579,9 @@ exit: ok
     "authors": [],
     "empty_reason": "none declared"
   },
-  "excluded_by_trust": 4
+  "excluded_by_trust": 4,
+  "published_read_error_count": 0,
+  "published_read_errors": []
 }
 --- stderr ---
 =====================================================
@@ -626,7 +644,9 @@ exit: ok
       }
     ]
   },
-  "excluded_by_trust": 1
+  "excluded_by_trust": 1,
+  "published_read_error_count": 0,
+  "published_read_errors": []
 }
 --- stderr ---
 =====================================================
@@ -661,7 +681,9 @@ exit: ok
       }
     ]
   },
-  "excluded_by_trust": 3
+  "excluded_by_trust": 3,
+  "published_read_error_count": 0,
+  "published_read_errors": []
 }
 --- stderr ---
 =====================================================
@@ -703,7 +725,9 @@ exit: ok
       }
     ]
   },
-  "excluded_by_trust": 0
+  "excluded_by_trust": 0,
+  "published_read_error_count": 0,
+  "published_read_errors": []
 }
 --- stderr ---
 =====================================================
@@ -759,7 +783,9 @@ exit: ok
       }
     ]
   },
-  "excluded_by_trust": 1
+  "excluded_by_trust": 1,
+  "published_read_error_count": 0,
+  "published_read_errors": []
 }
 --- stderr ---
 warning: trust weights below 1.0 are not yet folded -- an author is either included or not, so this view is the same as naming them at full weight. (weighted folding is a future enrichment)

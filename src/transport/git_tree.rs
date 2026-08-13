@@ -117,6 +117,40 @@ pub enum Error {
     },
 }
 
+impl Error {
+    /// Stable category for the structured read-error surface. This is owned
+    /// by kan rather than derived from the Rust variant's `Debug` spelling.
+    pub fn diagnostic_kind(&self) -> &'static str {
+        match self {
+            Self::Io { .. } => "io",
+            Self::Cid(_) => "cid",
+            Self::Log(_) => "log",
+            Self::Malformed { .. } => "malformed_record",
+            Self::CidMismatch { .. } => "cid_mismatch",
+            Self::BadSignature { .. } => "bad_signature",
+            Self::HeaderMismatch { .. } => "header_mismatch",
+            Self::FilenameMismatch { .. } => "filename_mismatch",
+            Self::FilenameCollision { .. } => "filename_collision",
+            Self::RecordsMissing { .. } => "records_missing",
+        }
+    }
+
+    /// Source path carried by errors that can arise while reading GitTree.
+    pub fn diagnostic_path(&self) -> Option<&str> {
+        match self {
+            Self::Io { path, .. }
+            | Self::Malformed { path, .. }
+            | Self::CidMismatch { path, .. }
+            | Self::BadSignature { path, .. }
+            | Self::HeaderMismatch { path, .. }
+            | Self::FilenameMismatch { path, .. }
+            | Self::FilenameCollision { path, .. }
+            | Self::RecordsMissing { path, .. } => Some(path),
+            Self::Cid(_) | Self::Log(_) => None,
+        }
+    }
+}
+
 fn io(path: &Path) -> impl Fn(std::io::Error) -> Error + '_ {
     move |source| Error::Io {
         path: path.display().to_string(),
@@ -481,7 +515,7 @@ pub fn from_record_with_rev(
         content.body = content.body.with_text(body.to_string());
     }
 
-    let actual = content_cid(&content)?;
+    let actual = content_cid(&content).map_err(|e| malformed(&e.to_string()))?;
     if actual.to_string() != header.cid {
         return Err(Error::CidMismatch {
             path: path.to_string(),

@@ -155,8 +155,9 @@ fn the_bulk_read_agrees_claim_for_claim_with_a_per_subject_sweep() {
     }
 }
 
-/// Each entry is a full `ShowJson`, so a consumer already parsing `show
-/// --json` parses these unchanged.
+/// Each entry carries the subject-view subset of `ShowJson`, so a consumer
+/// already parsing `show --json` parses it unchanged. Workspace-open metadata
+/// lives once on the bulk envelope rather than being repeated per subject.
 ///
 /// That reuse is the deliberate trade: repeating `trust` per entry costs a few
 /// hundred bytes and saves day writing a second parser, and the ask was to
@@ -166,8 +167,10 @@ fn each_entry_is_shaped_exactly_like_a_single_show() {
     let (dir, key) = varied_log();
     let (single, _) = kan(dir.path(), &key, &["show", "subject-1", "--json"]);
     let single: serde_json::Value = serde_json::from_str(&single).unwrap();
-    let single_keys: std::collections::BTreeSet<&String> =
+    let mut single_keys: std::collections::BTreeSet<&String> =
         single.as_object().unwrap().keys().collect();
+    single_keys.remove(&"published_read_error_count".to_string());
+    single_keys.remove(&"published_read_errors".to_string());
 
     let (all, _) = kan(dir.path(), &key, &["show", "--all", "--json"]);
     let all: serde_json::Value = serde_json::from_str(&all).unwrap();
@@ -184,6 +187,10 @@ fn each_entry_is_shaped_exactly_like_a_single_show() {
     assert_eq!(all["v"], single["v"]);
     assert_eq!(all["trust"], single["trust"]);
     assert!(all["excluded_by_trust"].is_number());
+    assert!(all["published_read_error_count"].is_number());
+    assert!(all["published_read_errors"].is_array());
+    assert!(entry.get("published_read_error_count").is_none());
+    assert!(entry.get("published_read_errors").is_none());
 }
 
 /// The bulk read honours `--trust` like every other read verb, and reports

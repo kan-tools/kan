@@ -105,6 +105,8 @@ fn every_payload_is_versioned() {
             agent: None,
         })),
         excluded_by_trust: 0,
+        published_read_error_count: 0,
+        published_read_errors: vec![],
     };
     let value: serde_json::Value =
         serde_json::from_str(&serde_json::to_string(&out).unwrap()).unwrap();
