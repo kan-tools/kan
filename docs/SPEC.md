@@ -447,10 +447,13 @@ the vocabulary can represent future media but do not count as implemented.
 `tests/surface_conformance.rs` constructs the implementation inventory
 independently and compares it with the committed table in both directions. It
 introspects SQLite at runtime, takes filesystem/keychain artifact facts from
-their persistence-owning modules, and recomputes disposable projections from
-authoritative inputs. An implemented value with no row and a row with no
-implemented owner are both errors. The oracle is semantic recomputation from
-raw inputs, never agreement between two caches.
+their persistence-owning modules, requires every concrete filesystem mutation
+site to name its catalog artifact, and recomputes disposable projections from
+authoritative inputs. The mutation-site check is path-syntax-independent: a
+literal, constant, formatted path, or helper call cannot introduce a write
+without declaring its surface. An implemented value with no row and a row
+with no implemented owner are both errors. The oracle is semantic
+recomputation from raw inputs, never agreement between two caches.
 
 Reference recomputation is intentionally correctness-first. If it becomes too
 expensive even for the bounded CI fixtures, that is the event requiring a new

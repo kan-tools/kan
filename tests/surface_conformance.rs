@@ -32,29 +32,104 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("git-anchor", "tests/git_substrate.rs"),
     ("connection-config", ".design/medium-architecture.md"),
 ];
-const PERSISTENCE_PATH_LITERALS: &[(&str, &str, &str)] = &[
-    ("src/actions.rs", ".kan", "workspace persistence root"),
-    ("src/actions.rs", "identity", "identity:identity"),
-    ("src/actions.rs", ", ", "not a path"),
-    ("src/actions.rs", " = ", "not a path"),
-    ("src/actions.rs", "\\n", "not a path"),
-    ("src/store/log.rs", "repo.car", "local-log:repo.car"),
-    ("src/store/log.rs", "HEAD", "local-log:HEAD"),
-    ("src/store/log.rs", "tmp", "local-log:HEAD.tmp"),
-    ("src/store/log.rs", "repair", "local-log:repo.repair"),
-    ("src/store/log.rs", "LOCK", "local-log:LOCK"),
-    ("src/sign.rs", "identity", "identity:identity"),
-    ("src/sign.rs", "log", "local-log:repo.car"),
-    ("src/sign.rs", "repo.car", "local-log:repo.car"),
-    ("src/workspace.rs", ".git", "repo-config:auto-git-tree"),
-    ("src/workspace.rs", ".kan", "workspace persistence root"),
-    ("src/workspace.rs", "index.sqlite", "sqlite:meta"),
-    ("src/workspace.rs", "log", "local-log:repo.car"),
-    ("src/workspace.rs", "overlay", "overlay:repo.car"),
-    // Formatting joins, not filesystem paths.
-    ("src/workspace.rs", ", ", "not a path"),
-    ("src/transport/git_tree.rs", ",", "not a path"),
-    ("src/transport/git_tree.rs", "/", "not a path"),
+const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
+    ("src/actions.rs", "\".kan\"", "workspace persistence root"),
+    ("src/actions.rs", "\"identity\"", "identity:identity"),
+    (
+        "src/actions.rs",
+        "crate::sign::IDENTITY_ID_FILE",
+        "identity:identity-id",
+    ),
+    ("src/actions.rs", "crate::sign::SEED_FILE", "identity:seed"),
+    (
+        "src/actions.rs",
+        "crate::sign::SEED_ID_FILE",
+        "identity:seed-id",
+    ),
+    (
+        "src/actions.rs",
+        "crate::transport::git_tree::CLAIMS_DIR",
+        "git-tree:.claims",
+    ),
+    (
+        "src/actions.rs",
+        "format!(\"seed.replaced-{stamp}\")",
+        "identity:seed.replaced-*",
+    ),
+    (
+        "src/actions.rs",
+        "format!(\"{}.protected-{stamp}\", from.file().unwrap())",
+        "identity:*.protected-*",
+    ),
+    (
+        "src/actions.rs",
+        "from.file().unwrap()",
+        "identity:selected-file",
+    ),
+    ("src/actions.rs", "\", \"", "not a path"),
+    ("src/actions.rs", "\" = \"", "not a path"),
+    ("src/actions.rs", "\"\\n\"", "not a path"),
+    ("src/sign.rs", "", "thread join, not a path"),
+    ("src/sign.rs", "\"identity\"", "identity:identity"),
+    ("src/sign.rs", "\"log\"", "local-log directory"),
+    ("src/sign.rs", "\"repo.car\"", "local-log:repo.car"),
+    ("src/sign.rs", "IDENTITY_ID_FILE", "identity:identity-id"),
+    ("src/sign.rs", "ROLES_FILE", "repo-config:legacy-roles"),
+    ("src/sign.rs", "SEED_FILE", "identity:seed"),
+    ("src/sign.rs", "SEED_ID_FILE", "identity:seed-id"),
+    ("src/sign.rs", "account_file", "identity:selected-pointer"),
+    ("src/sign.rs", "dest_name", "identity:selected-destination"),
+    ("src/sign.rs", "f", "identity:selected-file"),
+    (
+        "src/sign.rs",
+        "from.file().expect(\"an unprotected state names a file\")",
+        "identity:selected-file",
+    ),
+    ("src/sign.rs", "pointer", "identity:selected-pointer"),
+    ("src/store/log.rs", "\"repo.car\"", "local-log:repo.car"),
+    ("src/store/log.rs", "\"HEAD\"", "local-log:HEAD"),
+    ("src/store/log.rs", "\"tmp\"", "local-log:HEAD.tmp"),
+    ("src/store/log.rs", "\"repair\"", "local-log:repo.repair"),
+    ("src/store/log.rs", "\"LOCK\"", "local-log:LOCK"),
+    ("src/store/log.rs", "name", "local-log:repo.car.damaged-*"),
+    (
+        "src/transport/git_tree.rs",
+        "CLAIMS_DIR",
+        "git-tree:.claims",
+    ),
+    (
+        "src/transport/git_tree.rs",
+        "&rel",
+        "git-tree:subject-directory",
+    ),
+    (
+        "src/transport/git_tree.rs",
+        "format!(\"{leaf}.md\")",
+        "git-tree:claim-file",
+    ),
+    (
+        "src/transport/git_tree.rs",
+        "file_name(subject)",
+        "git-tree:claim-file",
+    ),
+    (
+        "src/transport/git_tree.rs",
+        "legacy_file_name(subject)",
+        "git-tree:legacy-claim-file",
+    ),
+    ("src/transport/git_tree.rs", "\",\"", "not a path"),
+    ("src/transport/git_tree.rs", "\"/\"", "not a path"),
+    ("src/workspace.rs", "\".git\"", "repo-config:auto-git-tree"),
+    ("src/workspace.rs", "\".kan\"", "workspace persistence root"),
+    ("src/workspace.rs", "\"index.sqlite\"", "sqlite:meta"),
+    ("src/workspace.rs", "\"log\"", "local-log:repo.car"),
+    ("src/workspace.rs", "\"overlay\"", "overlay:repo.car"),
+    (
+        "src/workspace.rs",
+        "crate::transport::git_tree::CLAIMS_DIR",
+        "git-tree:.claims",
+    ),
+    ("src/workspace.rs", "\", \"", "not a path"),
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
     "src/actions.rs",
@@ -285,29 +360,57 @@ fn every_implemented_value_has_exactly_one_catalog_row_and_no_row_is_fiction() {
 
 #[test]
 fn persistence_modules_cannot_add_an_unreviewed_path_literal() {
-    let expected: BTreeSet<_> = PERSISTENCE_PATH_LITERALS
+    fn call_arguments(source: &str, constructor: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for suffix in source.split(constructor).skip(1) {
+            let mut depth = 1usize;
+            let mut quoted = false;
+            let mut escaped = false;
+            let mut end = None;
+            for (index, ch) in suffix.char_indices() {
+                if quoted {
+                    if escaped {
+                        escaped = false;
+                    } else if ch == '\\' {
+                        escaped = true;
+                    } else if ch == '"' {
+                        quoted = false;
+                    }
+                } else {
+                    match ch {
+                        '"' => quoted = true,
+                        '(' | '[' | '{' => depth += 1,
+                        ')' | ']' | '}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                end = Some(index);
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            let argument = &suffix[..end.expect("unterminated persistence path constructor")];
+            out.push(argument.split_whitespace().collect::<Vec<_>>().join(" "));
+        }
+        out
+    }
+
+    let expected: BTreeSet<_> = PERSISTENCE_PATH_EXPRESSIONS
         .iter()
         .map(|(module, literal, _)| (module.to_string(), literal.to_string()))
         .collect();
     let mut actual = BTreeSet::new();
-    for module in PERSISTENCE_PATH_LITERALS
+    for module in PERSISTENCE_PATH_EXPRESSIONS
         .iter()
         .map(|(module, _, _)| *module)
         .collect::<BTreeSet<_>>()
     {
         let source = std::fs::read_to_string(module).unwrap();
-        for suffix in source.split(".with_extension(").skip(1) {
-            let argument = suffix.trim_start();
-            assert!(
-                argument.starts_with('"'),
-                "{module} constructs a persistence extension indirectly; use a reviewed literal: {argument:.80}"
-            );
-        }
-        for constructor in [".join(\"", ".with_extension(\""] {
-            for suffix in source.split(constructor).skip(1) {
-                if let Some((literal, _)) = suffix.split_once("\")") {
-                    actual.insert((module.to_string(), literal.to_string()));
-                }
+        for constructor in [".join(", ".with_extension(", ".with_file_name("] {
+            for argument in call_arguments(&source, constructor) {
+                actual.insert((module.to_string(), argument));
             }
         }
     }
@@ -317,7 +420,7 @@ fn persistence_modules_cannot_add_an_unreviewed_path_literal() {
         unreviewed.is_empty() && stale.is_empty(),
         "persistence path inventory mismatch\nunreviewed: {unreviewed:#?}\nstale: {stale:#?}"
     );
-    for (module, literal, artifact) in PERSISTENCE_PATH_LITERALS {
+    for (module, literal, artifact) in PERSISTENCE_PATH_EXPRESSIONS {
         assert!(
             !artifact.is_empty(),
             "{module} path `{literal}` has no named storage artifact"
@@ -367,6 +470,62 @@ fn every_module_that_mutates_the_filesystem_is_registered() {
         unregistered.is_empty(),
         "filesystem-mutating module(s) lack surface registration: {unregistered:#?}"
     );
+}
+
+#[test]
+fn every_filesystem_mutation_names_its_catalog_surface_at_the_call_site() {
+    let catalog_artifacts: BTreeSet<_> = rows()
+        .into_iter()
+        .filter(|row| row.status == "implemented")
+        .map(|row| row.artifact)
+        .collect();
+    let mutation_apis = [
+        "std::fs::create_dir_all",
+        "std::fs::write",
+        "std::fs::rename",
+        "std::fs::copy",
+        "std::fs::remove_file",
+        "std::fs::remove_dir_all",
+        "std::fs::set_permissions",
+        "fs::create_dir_all",
+        "fs::File::create",
+        "fs::OpenOptions::new",
+        "fs::write",
+        "fs::rename",
+        "fs::copy",
+        "fs::remove_file",
+        "fs::remove_dir_all",
+        "fs::set_permissions",
+        "File::create",
+        "OpenOptions::new",
+    ];
+
+    for module in PERSISTENCE_MODULES {
+        let source = std::fs::read_to_string(module).unwrap();
+        let lines: Vec<_> = source.lines().collect();
+        for (index, line) in lines.iter().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") || !mutation_apis.iter().any(|api| code.contains(api)) {
+                continue;
+            }
+            let annotation = index
+                .checked_sub(1)
+                .and_then(|previous| lines[previous].trim().strip_prefix("// surface-write: "))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{module}:{} filesystem mutation lacks an immediately preceding `// surface-write: <catalog artifact>` annotation: {code}",
+                        index + 1
+                    )
+                });
+            for artifact in annotation.split(',') {
+                assert!(
+                    artifact == "container:workspace" || catalog_artifacts.contains(artifact),
+                    "{module}:{} mutation cites unknown surface artifact `{artifact}`",
+                    index + 1
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -599,12 +758,49 @@ fn production_workspace_recovers_when_a_projection_column_has_the_wrong_type() {
 }
 
 #[test]
+fn production_workspace_recreates_a_malformed_projection_schema() {
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let write = run_kan(repo.path(), &["observe", "schema-poison", "authoritative"]);
+    assert!(
+        write.status.success(),
+        "{}",
+        String::from_utf8_lossy(&write.stderr)
+    );
+    let before = run_kan(repo.path(), &["show", "schema-poison", "--json"]);
+    assert!(before.status.success());
+
+    let connection = rusqlite::Connection::open(repo.path().join(".kan/index.sqlite")).unwrap();
+    connection
+        .execute_batch(
+            "DROP TABLE claims_v2;
+             CREATE TABLE claims_v2 (structurally_wrong TEXT);",
+        )
+        .unwrap();
+    drop(connection);
+
+    let after = run_kan(repo.path(), &["show", "schema-poison", "--json"]);
+    assert!(
+        after.status.success(),
+        "{}",
+        String::from_utf8_lossy(&after.stderr)
+    );
+    assert_eq!(before.stdout, after.stdout, "schema recovery changed JSON");
+}
+
+#[test]
 fn caller_selected_role_key_is_an_implemented_authoritative_surface() {
     let values = implemented_values();
     assert!(values.contains(&(
         "identity:role-key-path".to_string(),
         "caller-selected".to_string()
     )));
+    let row = rows()
+        .into_iter()
+        .find(|row| row.artifact == "identity:role-key-path")
+        .unwrap();
+    assert_eq!(row.reader, "crate::sign");
+    assert_eq!(row.rule, "validate:identity-at-rest");
 
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());

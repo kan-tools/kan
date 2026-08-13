@@ -395,6 +395,7 @@ impl Workspace {
                  derived, and the log was never touched."
             );
             let overlay_dir = kan_dir.join("overlay");
+            // surface-write: overlay:repo.car
             std::fs::remove_dir_all(&overlay_dir)?;
             self.overlay = Log::open_or_create(&overlay_dir, &identity).await?;
             self.published =
@@ -506,6 +507,7 @@ impl Workspace {
         // disposable projection must never be able to prevent recovery from
         // the authoritative media by failing while it is being compared.
         if !matches!(index.projection_matches(&reference), Ok(true)) {
+            index.recreate_current_schema()?;
             index.rebuild(&log_claims, &foreign, fingerprint.as_ref())?;
         }
 
@@ -595,6 +597,7 @@ impl Workspace {
         let identity = self.identity.as_ref().ok_or(Error::NoIdentity)?;
         let overlay_dir = self.root.join(".kan").join("overlay");
         if overlay_dir.exists() {
+            // surface-write: overlay:repo.car
             std::fs::remove_dir_all(&overlay_dir)?;
         }
         self.overlay = Log::open_or_create(&overlay_dir, identity).await?;

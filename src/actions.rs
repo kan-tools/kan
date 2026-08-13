@@ -1265,6 +1265,7 @@ pub fn adopt_identity(ws: &Workspace, key_path: &Path) -> Result<String, Error> 
     }
 
     let kan_dir = ws.root.join(".kan");
+    // surface-write: container:workspace
     std::fs::create_dir_all(&kan_dir)
         .map_err(|e| Error::Usage(format!("could not create {}: {e}", kan_dir.display())))?;
 
@@ -1317,6 +1318,7 @@ fn retire_seed(kan_dir: &Path) -> Result<String, Error> {
             .map(|d| d.as_secs())
             .unwrap_or(0);
         let moved = kan_dir.join(format!("seed.replaced-{stamp}"));
+        // surface-write: identity:seed.replaced-*
         std::fs::rename(&seed, &moved)
             .map_err(|e| Error::Usage(format!("could not move the previous seed aside: {e}")))?;
         notes.push_str(&format!(
@@ -1327,6 +1329,7 @@ fn retire_seed(kan_dir: &Path) -> Result<String, Error> {
     }
     let identity_id = kan_dir.join(crate::sign::IDENTITY_ID_FILE);
     if identity_id.exists() {
+        // surface-write: identity:identity-id
         std::fs::remove_file(&identity_id)
             .map_err(|e| Error::Usage(format!("could not clear the keychain reference: {e}")))?;
         notes.push_str(
@@ -1337,6 +1340,7 @@ fn retire_seed(kan_dir: &Path) -> Result<String, Error> {
     }
     let seed_id = kan_dir.join(crate::sign::SEED_ID_FILE);
     if seed_id.exists() {
+        // surface-write: identity:seed-id
         std::fs::remove_file(&seed_id)
             .map_err(|e| Error::Usage(format!("could not clear the seed reference: {e}")))?;
         notes.push_str(
@@ -3056,6 +3060,7 @@ pub fn protect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
                 crate::cli::confirm(&format!("Delete the plaintext copy at {}?", src.display()))?
             };
             if deleted {
+                // surface-write: identity:seed,identity:identity
                 std::fs::remove_file(&src).map_err(|e| {
                     Error::Usage(format!("could not delete the plaintext copy: {e}"))
                 })?;
@@ -3073,6 +3078,7 @@ pub fn protect_identity(ws: &Workspace, yes: bool) -> Result<String, Error> {
                     .map(|d| d.as_secs())
                     .unwrap_or(0);
                 let moved = kan_dir.join(format!("{}.protected-{stamp}", from.file().unwrap()));
+                // surface-write: identity:seed.protected-*,identity:identity.protected-*
                 std::fs::rename(&src, &moved)
                     .map_err(|e| Error::Usage(format!("could not move the copy aside: {e}")))?;
                 out.push_str(&format!(

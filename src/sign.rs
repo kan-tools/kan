@@ -289,8 +289,10 @@ impl Identity {
     /// rewrite that quietly needs a `create_dir_all` at every call site.
     pub fn save(&self, path: &Path) -> Result<(), Error> {
         if let Some(parent) = path.parent() {
+            // surface-write: identity:identity,identity:role-key-path
             std::fs::create_dir_all(parent)?;
         }
+        // surface-write: identity:identity,identity:role-key-path
         std::fs::write(path, self.keypair.export())?;
         restrict_permissions(path)?;
         Ok(())
@@ -380,6 +382,7 @@ pub struct Role {
 /// REQ-6).
 pub fn mint_role_key(name: &str, key_path: &Path) -> Result<Role, Error> {
     if let Some(parent) = key_path.parent() {
+        // surface-write: identity:role-key-path
         std::fs::create_dir_all(parent)?;
     }
 
@@ -794,6 +797,7 @@ pub fn unprotect_to(
 
     // The pointer goes AFTER the write, never before: a failed write would
     // otherwise leave the workspace with no identity at all.
+    // surface-write: identity:seed-id,identity:identity-id
     std::fs::remove_file(kan_dir.join(account_file))?;
     Ok(restored)
 }
@@ -864,6 +868,7 @@ pub fn protect_from(
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty() && *s != account);
+    // surface-write: identity:seed-id,identity:identity-id
     std::fs::write(kan_dir.join(pointer), &account)?;
     Ok((did, account, orphaned))
 }
@@ -1138,6 +1143,7 @@ fn restrict_permissions(path: &Path) -> std::io::Result<()> {
     let mut perms = std::fs::metadata(path)?.permissions();
     if perms.mode() & 0o077 != 0 {
         perms.set_mode(0o600);
+        // surface-write: identity:seed,identity:identity,identity:role-key-path
         std::fs::set_permissions(path, perms)?;
     }
     Ok(())
@@ -1477,8 +1483,10 @@ impl Seed {
 
     pub fn save(&self, path: &Path) -> Result<(), Error> {
         if let Some(parent) = path.parent() {
+            // surface-write: identity:seed
             std::fs::create_dir_all(parent)?;
         }
+        // surface-write: identity:seed
         std::fs::write(path, self.0)?;
         restrict_permissions(path)?;
         Ok(())
@@ -1541,6 +1549,7 @@ impl Seed {
     /// #6's property deliberately. Full accounting in
     /// `.design/identity-at-rest.md`.
     pub fn create(kan_dir: &Path) -> Result<Self, Error> {
+        // surface-write: container:workspace
         std::fs::create_dir_all(kan_dir)?;
         let seed = Self::generate();
         seed.save(&kan_dir.join(SEED_FILE))?;

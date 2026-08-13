@@ -374,6 +374,7 @@ impl Log {
     }
 
     pub async fn open_or_create(dir: &Path, identity: &Identity) -> Result<Self, Error> {
+        // surface-write: local-log:repo.car
         fs::create_dir_all(dir).await?;
         Self::open_inner(dir, Some(identity.did())).await
     }
@@ -563,6 +564,7 @@ impl Log {
             name.push(format!(".damaged-{}", now_micros()));
             self.car_path.with_file_name(name)
         };
+        // surface-write: local-log:repo.car.damaged-*
         fs::copy(&self.car_path, &damaged).await?;
         eprintln!(
             "warning: repairing {} -- the pre-repair file is kept at {}. If the damage \
@@ -573,6 +575,7 @@ impl Log {
         );
 
         let tmp = self.car_path.with_extension("repair");
+        // surface-write: local-log:repo.repair
         let mut out = fs::File::create(&tmp).await?;
         out.write_all(&CarHeader::with_root(root).to_bytes()?)
             .await?;
@@ -591,6 +594,7 @@ impl Log {
         }
         out.sync_all().await?;
         drop(out);
+        // surface-write: local-log:repo.car
         fs::rename(&tmp, &self.car_path).await?;
         self.persisted = written;
         Ok(())
@@ -601,6 +605,7 @@ impl Log {
     /// file's first-ever write), then update `HEAD`.
     async fn persist_new_blocks(&mut self, root: &Cid) -> Result<(), Error> {
         let file_is_new = !self.car_path.exists();
+        // surface-write: local-log:repo.car
         let mut file = fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -658,11 +663,13 @@ impl Log {
     /// entry pointing at them need not be.
     async fn write_head_atomically(&self, root: &Cid) -> Result<(), Error> {
         let tmp_path = self.head_path.with_extension("tmp");
+        // surface-write: local-log:HEAD.tmp
         let mut tmp = fs::File::create(&tmp_path).await?;
         tmp.write_all(root.to_string().as_bytes()).await?;
         tmp.sync_all().await?;
         drop(tmp);
 
+        // surface-write: local-log:HEAD
         fs::rename(&tmp_path, &self.head_path).await?;
 
         if let Some(dir) = self.head_path.parent() {
@@ -704,6 +711,7 @@ impl Log {
         // runtime: it parks the calling thread until the lock is available,
         // which would stall other tasks on a shared worker thread.
         let file = tokio::task::spawn_blocking(move || -> std::io::Result<std::fs::File> {
+            // surface-write: local-log:LOCK
             let file = std::fs::OpenOptions::new()
                 .create(true)
                 .read(true)

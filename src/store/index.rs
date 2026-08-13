@@ -142,9 +142,24 @@ impl Index {
 
     pub fn open(path: &Path) -> Result<Self, Error> {
         if let Some(parent) = path.parent() {
+            // surface-write: sqlite:meta
             std::fs::create_dir_all(parent)?;
         }
-        Self::with_connection(rusqlite::Connection::open(path)?)
+        let connection = rusqlite::Connection::open(path)?;
+        match Self::with_connection(connection) {
+            Ok(index) => Ok(index),
+            Err(_) => {
+                // A structurally corrupt current projection may make even
+                // CREATE INDEX IF NOT EXISTS fail before Workspace can
+                // compare it with the authoritative reference. Reopen the
+                // disposable database and recreate only this binary's schema.
+                let mut index = Self {
+                    conn: rusqlite::Connection::open(path)?,
+                };
+                index.recreate_current_schema()?;
+                Ok(index)
+            }
+        }
     }
 
     fn with_connection(conn: rusqlite::Connection) -> Result<Self, Error> {
@@ -177,6 +192,39 @@ impl Index {
                 ON {CLAIMS_TABLE}(origin);"
         ))?;
         Ok(Self { conn })
+    }
+
+    /// Recreate this binary's disposable schema after structural corruption.
+    /// No authoritative data lives here. Older versioned claim tables are
+    /// deliberately retained; `meta` is shared but contains only disposable
+    /// freshness hints, so recreating it merely makes other binaries rebuild.
+    pub fn recreate_current_schema(&mut self) -> Result<(), Error> {
+        self.conn.execute_batch(&format!(
+            "DROP TABLE IF EXISTS {CLAIMS_TABLE};
+             DROP TABLE IF EXISTS meta;"
+        ))?;
+        self.conn.execute_batch(
+            "CREATE TABLE meta (
+                key   TEXT PRIMARY KEY,
+                value TEXT
+             );",
+        )?;
+        self.conn.execute_batch(&format!(
+            "CREATE TABLE {CLAIMS_TABLE} (
+                content_cid  TEXT PRIMARY KEY,
+                rev          TEXT NOT NULL,
+                author_did   TEXT NOT NULL,
+                author_agent BLOB,
+                origin       TEXT NOT NULL,
+                subject_key  TEXT NOT NULL,
+                kind         TEXT NOT NULL,
+                raw          BLOB NOT NULL
+             );
+             CREATE INDEX {CLAIMS_TABLE}_by_rev ON {CLAIMS_TABLE}(rev);
+             CREATE INDEX {CLAIMS_TABLE}_by_subject ON {CLAIMS_TABLE}(subject_key);
+             CREATE INDEX {CLAIMS_TABLE}_by_origin ON {CLAIMS_TABLE}(origin);"
+        ))?;
+        Ok(())
     }
 
     /// Wipe and repopulate the index from `claims` (the full contents of a

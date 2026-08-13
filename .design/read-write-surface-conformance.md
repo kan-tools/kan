@@ -202,7 +202,13 @@ judgment; the code supplies the facts that something is persisted.
 Literal scanning alone is not the oracle—aliases and constructed paths make it
 unsound, as GitHub issue #194 already records. A lightweight source scan may
 guard that every persistence module participates, but exact coverage comes
-from module-owned inventories plus runtime schema inspection.
+from module-owned inventories plus runtime schema inspection. Every concrete
+filesystem mutation site additionally carries a `surface-write` annotation
+naming its catalog artifact. The conformance test scans mutation APIs rather
+than path syntax, rejects an unannotated call, and validates each annotation
+against the catalog. Thus a new write through a literal, constant, formatted
+path, or helper must make an explicit catalog choice at the point where it
+crosses the persistence boundary.
 
 ### Behavioral conformance
 
