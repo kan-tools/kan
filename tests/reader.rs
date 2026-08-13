@@ -487,6 +487,42 @@ fn published_read_errors_are_clone_stable_and_path_ordered() {
     assert_eq!(paths, sorted, "diagnostics do not follow sorted tree order");
 }
 
+#[cfg(unix)]
+#[test]
+fn an_unreadable_claims_subdirectory_is_disclosed_as_an_incomplete_read() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let repo = git_repo();
+    let hidden = repo.path().join(".claims/hidden");
+    std::fs::create_dir_all(&hidden).unwrap();
+    std::fs::write(hidden.join("bad.md"), "not a claim").unwrap();
+
+    let original = std::fs::metadata(&hidden).unwrap().permissions();
+    std::fs::set_permissions(&hidden, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let read = kan_as(repo.path(), None, &["show", "--all", "--json"]);
+    std::fs::set_permissions(&hidden, original).unwrap();
+
+    assert!(read.ok, "a degraded read remains nonfatal: {}", read.stderr);
+    assert!(
+        read.stderr.contains("warning: skipping a published record"),
+        "{}",
+        read.stderr
+    );
+    let value: serde_json::Value = serde_json::from_str(&read.stdout).unwrap();
+    assert_eq!(value["published_read_error_count"], 1, "{value}");
+    let errors = value["published_read_errors"].as_array().unwrap();
+    assert_eq!(errors.len(), 1, "{value}");
+    assert_eq!(errors[0]["kind"], "io");
+    assert_eq!(errors[0]["path"], ".claims/hidden");
+    assert!(
+        errors[0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("io error under .claims/hidden:"),
+        "{value}"
+    );
+}
+
 /// A read-open and a write-open must agree about index freshness, or every
 /// alternation between them rebuilds the whole projection.
 ///

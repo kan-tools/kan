@@ -329,6 +329,9 @@ pub struct ContextJson {
 
 /// Every subject's live claims, from one `Workspace::open`.
 ///
+/// Each subject has the ordinary `show` shape except for workspace-wide
+/// published-read diagnostics, which appear once on this outer envelope.
+///
 /// **Why this exists, and why it is a bulk *read* rather than a faster one.**
 /// `day` answers a single witness by reading the whole claim graph, which
 /// meant one `kan show` per subject: on day's own 40-subject log, `day status`
