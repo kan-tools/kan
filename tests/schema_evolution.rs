@@ -427,18 +427,23 @@ fn a_known_kind_with_an_unknown_field_round_trips_through_gittree() {
     // This build decodes the future content: the known kind with an unknown
     // field falls through to `Unknown`, preserving the bytes.
     let bytes = atproto_dasl::to_vec(&future).unwrap();
-    let content: ClaimContent = atproto_dasl::from_reader(&bytes[..]).unwrap();
+    let decoded_content: ClaimContent = atproto_dasl::from_reader(&bytes[..]).unwrap();
     assert!(
-        matches!(content.body, ClaimBody::Unknown { .. }),
+        matches!(decoded_content.body, ClaimBody::Unknown { .. }),
         "a known kind + unknown field must be preserved as Unknown"
     );
-    let claim = kan::claim::Claim { content, sig };
+    let claim = kan::claim::Claim {
+        content: decoded_content,
+        sig,
+    };
 
     // Through the transport: serialize to a record, parse it back, and the
     // CID this build recomputes must equal the one the newer kan signed --
     // otherwise the record reads as "altered since it was signed" against an
     // honest claim, the failure §7.1 exists to prevent.
-    let record = git_tree::to_record(&claim).unwrap();
+    // Unknown bodies cannot be described honestly by v3's structured `kind`
+    // field, but old v2 records carrying them remain part of the read contract.
+    let record = git_tree::to_record_at_version(&claim, None, None, 2).unwrap();
     let (parsed_cid, parsed) = git_tree::from_record("bug-42.md", &record)
         .expect("a known kind + unknown field must round-trip, not be rejected");
     assert_eq!(
@@ -446,6 +451,36 @@ fn a_known_kind_with_an_unknown_field_round_trips_through_gittree() {
         "the recomputed CID must match the one the newer kan signed"
     );
     assert!(matches!(parsed.content.body, ClaimBody::Unknown { .. }));
+
+    // The writer must preserve it too. v3 has no honest wire name for a kind
+    // this build does not know, so this one record falls back to v2 inside the
+    // nested per-author file rather than blocking its known sibling.
+    let known_content = content(
+        ClaimBody::Observation {
+            text: "known beside future".to_string(),
+        },
+        &id,
+    );
+    let known_cid = content_cid(&known_content).unwrap();
+    let known = Claim {
+        content: known_content,
+        sig: id.sign(&known_cid.to_bytes()).unwrap(),
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let written = git_tree::write_subject(
+        dir.path(),
+        &SubjectRef::Local("bug-42".to_string()),
+        &[(claim, None), (known, None)],
+    )
+    .expect("an opaque future claim must not make its subject unpublishable");
+    let text = std::fs::read_to_string(written.path()).unwrap();
+    let records = git_tree::split_records(&text);
+    assert_eq!(records.len(), 2, "neither claim may be omitted");
+    assert!(records.iter().any(|record| record.contains("\"v\": 2")));
+    assert!(records.iter().any(|record| record.contains("\"v\": 3")));
+    for record in records {
+        git_tree::from_record("bug-42.md", record).expect("every mixed-version record must read");
+    }
 }
 
 /// `.design/role-declarations.md` AC-1, second half — ADR-48's mandated case

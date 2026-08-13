@@ -9,6 +9,19 @@
 
 use std::process::Command;
 
+fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let destination = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &destination);
+        } else {
+            std::fs::copy(entry.path(), destination).unwrap();
+        }
+    }
+}
+
 struct Run {
     stdout: String,
     stderr: String,
@@ -61,11 +74,7 @@ fn git_repo() -> tempfile::TempDir {
 
 fn copy_claims(from: &std::path::Path, to: &std::path::Path) {
     let dst = to.join(".claims");
-    std::fs::create_dir_all(&dst).unwrap();
-    for entry in std::fs::read_dir(from.join(".claims")).unwrap() {
-        let entry = entry.unwrap();
-        std::fs::copy(entry.path(), dst.join(entry.file_name())).unwrap();
-    }
+    copy_tree(&from.join(".claims"), &dst);
 }
 
 /// AC-1: with `.kan/` deleted, `kan restore` rebuilds the log from

@@ -18,6 +18,43 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com).
 
 Nothing yet.
 
+## [v0.13.0-beta.1] — 2026-08-12
+
+**The published format's writer flip.**
+
+kan now writes the v3 record format and the nested
+`.claims/<subject>/<author>.md` layout that v0.12.0-beta.5 shipped support for
+reading. Publishing two authors' claims for one subject writes disjoint files,
+so one author can no longer overwrite another author's published projection
+([#131](https://github.com/kan-tools/kan/issues/131)). Subject paths preserve
+their `/` components rather than flattening them into a lossy filename plus a
+digest.
+
+### Changed
+
+- Published records use v3's declared `subject` and `kind` wire shapes,
+  base64-encoded content, and unambiguous framing instead of v2's
+  `Debug`-formatted fields, hex content, and frontmatter-like separator.
+- Publishing groups records by author and writes one file per author. A role
+  and the workspace's primary identity can therefore publish the same subject
+  without replacing each other's records.
+- Republishing migrates an author's own flat v0.6–v0.12 projection into the
+  nested layout. A flat file containing any peer-authored or unreadable record
+  is left byte-for-byte intact because this author cannot safely recreate it.
+- Publishing refuses an existing symlink anywhere under `.claims/` rather
+  than following a committed path outside the tracked projection.
+
+### Compatibility
+
+- Reading remains compatible with flat v1/v2 files and nested v3 files. The
+  reader shipped one release before this writer specifically so an upgraded
+  publisher cannot create a tree that the preceding released kan cannot read
+  (`.design/published-claims-format-and-wire-contract.md`).
+- An opaque claim from a newer schema is preserved as a v2 record alongside
+  its v3 siblings. Because v3 cannot honestly name a kind this build does not
+  recognize, this per-record fallback keeps the subject publishable without
+  dropping or rewriting the future claim.
+
 ## [v0.12.0-beta.5] — 2026-08-12
 
 **The published format's reader, ahead of its writer.**
@@ -550,7 +587,8 @@ assembly.
   [#8](https://github.com/kan-tools/kan/issues/8)).
 - Cross-author `Retraction` was never gated by same-author or by trust.
 
-[Unreleased]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.5...HEAD
+[Unreleased]: https://github.com/kan-tools/kan/compare/v0.13.0-beta.1...HEAD
+[v0.13.0-beta.1]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.5...v0.13.0-beta.1
 [v0.12.0-beta.5]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.4...v0.12.0-beta.5
 [v0.12.0-beta.4]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.3...v0.12.0-beta.4
 [v0.12.0-beta.3]: https://github.com/kan-tools/kan/compare/v0.12.0-beta.2...v0.12.0-beta.3

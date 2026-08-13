@@ -814,7 +814,11 @@ overlay/LOCK
 overlay/repo.car
 =====================================================
 $ find .claims -printf '%P\n' | sort
-foreign.65677190.md
-overlap.fe55bd22.md
-shared.a4d26868.md
+foreign/
+foreign/<DID-2>.md
+overlap/
+overlap/<DID-0>.md
+shared/
+shared/<DID-0>.md
+shared/<DID-1>.md
 =====================================================

@@ -130,6 +130,11 @@ pub fn normalize(raw: &str, root: &Path) -> String {
             let tok: String = bytes[i..i + len].iter().collect();
             out.push_str(&placeholder("DID", &tok, &mut dids));
             i += len;
+        } else if let Some(len) = match_did_leaf(&bytes[i..]) {
+            let leaf: String = bytes[i..i + len].iter().collect();
+            let tok = format!("did:key:{leaf}");
+            out.push_str(&placeholder("DID", &tok, &mut dids));
+            i += len;
         } else if let Some(len) = match_cid(&bytes[i..]) {
             let tok: String = bytes[i..i + len].iter().collect();
             out.push_str(&placeholder("CID", &tok, &mut cids));
@@ -202,6 +207,19 @@ fn placeholder(kind: &str, token: &str, seen: &mut Vec<String>) -> String {
 
 fn match_did(s: &[char]) -> Option<usize> {
     let prefix = "did:key:";
+    if !s.starts_with(&prefix.chars().collect::<Vec<_>>()[..]) {
+        return None;
+    }
+    let mut len = prefix.len();
+    while len < s.len() && s[len].is_ascii_alphanumeric() {
+        len += 1;
+    }
+    (len > prefix.len() + 8).then_some(len)
+}
+
+/// A `did:key` without its prefix, as used by v3's per-author filename.
+fn match_did_leaf(s: &[char]) -> Option<usize> {
+    let prefix = "zDna";
     if !s.starts_with(&prefix.chars().collect::<Vec<_>>()[..]) {
         return None;
     }

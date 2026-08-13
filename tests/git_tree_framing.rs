@@ -138,7 +138,7 @@ fn a_separator_in_prose_does_not_tear_a_multi_record_file() {
         &claims,
     )
     .unwrap();
-    let text = std::fs::read_to_string(&path.path).unwrap();
+    let text = std::fs::read_to_string(path.path()).unwrap();
 
     let records = git_tree::split_records(&text);
     assert_eq!(records.len(), 3, "one record per claim, no phantoms");
@@ -163,7 +163,18 @@ fn a_future_format_version_is_named_rather_than_misreported() {
     identity.save(&dir.path().join("identity")).unwrap();
     let record = git_tree::to_record(&signed(&identity, "hello")).unwrap();
 
-    let bumped = record.replacen("\"v\": 2", "\"v\": 99", 1);
+    // Bump-proof: find whatever version the writer currently emits rather than
+    // naming it. Hardcoding "v": 2 made this a no-op the moment the writer
+    // flipped to v3 -- the assert below caught it, but a test that silently
+    // stops testing on the next bump is worth removing the possibility of.
+    let current = record
+        .lines()
+        .find(|l| l.trim_start().starts_with("\"v\":"))
+        .expect("a record carries a version")
+        .trim()
+        .trim_end_matches(',')
+        .to_string();
+    let bumped = record.replacen(&current, "\"v\": 99", 1);
     assert_ne!(bumped, record, "the version field must be present to bump");
 
     let err = git_tree::from_record("f.md", &bumped)
@@ -189,8 +200,11 @@ fn a_version_one_record_without_a_declared_length_still_reads() {
     let claim = signed(&identity, "written by an older kan");
     let expected = kan::cid::content_cid(&claim.content).unwrap();
 
-    // Strip exactly what v1 didn't have.
-    let record = git_tree::to_record(&claim).unwrap();
+    // Strip exactly what v1 didn't have -- from a V2-SHAPED record, because a
+    // genuine v1 record's `content` is hex. Built from today's writer it would
+    // carry base64, and the reader would correctly refuse it as v1 while the
+    // test claimed to be checking coexistence.
+    let record = git_tree::to_record_at_version(&claim, None, None, 2).unwrap();
     let legacy: String = record
         .lines()
         .filter(|l| {
@@ -222,10 +236,13 @@ fn subjects_that_differ_only_in_punctuation_get_different_files() {
     }
 }
 
-/// The same, for case — APFS is case-insensitive by default, so two names
-/// differing only in case are one file no matter what kan maps them to.
-/// The disambiguating suffix is lowercase hex precisely so it survives case
-/// folding.
+/// The same, for case, and **this now guards the legacy flat name only**.
+///
+/// The digest it asserts on went with the flat layout: subject paths nest, so
+/// there is no suffix left to survive case folding. `Bug42` and `bug42` DO
+/// collapse to one directory on APFS under the current layout, and that is
+/// handled by refusal instead -- `retirable` declines to overwrite a file that
+/// is not entirely this subject's. Kept because the legacy name is still read.
 #[test]
 fn subjects_differing_only_in_case_get_different_files() {
     let upper = git_tree::file_name(&SubjectRef::Local(Rkey::from("Bug42")));
@@ -260,14 +277,16 @@ fn publishing_two_colliding_subjects_keeps_both() {
         .unwrap();
     }
 
-    let mut found = Vec::new();
-    for entry in std::fs::read_dir(dir.path().join(".claims")).unwrap() {
-        let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
-        for record in git_tree::split_records(&text) {
-            let (_, claim) = git_tree::from_record("x.md", record).unwrap();
-            found.push(claim.content.body.text().unwrap().to_string());
-        }
-    }
+    // Read through the reader rather than a flat `read_dir`: a subject is a
+    // DIRECTORY now, so walking one level and calling read_to_string on each
+    // entry hits "Is a directory". Using the real reader also makes this an
+    // end-to-end check rather than a re-implementation of one.
+    let mut found: Vec<String> = git_tree::GitTree::new_reader(dir.path())
+        .read_all()
+        .into_iter()
+        .map(|r| r.expect("every published record must read back"))
+        .map(|(_, claim)| claim.content.body.text().unwrap().to_string())
+        .collect();
     found.sort();
     assert_eq!(
         found,

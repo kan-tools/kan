@@ -9,6 +9,30 @@
 
 use std::process::Command;
 
+fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let destination = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &destination);
+        } else {
+            std::fs::copy(entry.path(), destination).unwrap();
+        }
+    }
+}
+
+fn first_file(root: &std::path::Path) -> std::path::PathBuf {
+    if let Some(entry) = std::fs::read_dir(root).unwrap().next() {
+        let entry = entry.unwrap();
+        if entry.file_type().unwrap().is_dir() {
+            return first_file(&entry.path());
+        }
+        return entry.path();
+    }
+    panic!("no published file under {}", root.display());
+}
+
 struct Run {
     stdout: String,
     stderr: String,
@@ -90,11 +114,7 @@ fn publisher_then_clone(subject: &str, text: &str) -> (tempfile::TempDir, String
     let clone = git_repo();
     let src = author_dir.path().join(".claims");
     let dst = clone.path().join(".claims");
-    std::fs::create_dir_all(&dst).unwrap();
-    for entry in std::fs::read_dir(&src).unwrap() {
-        let entry = entry.unwrap();
-        std::fs::copy(entry.path(), dst.join(entry.file_name())).unwrap();
-    }
+    copy_tree(&src, &dst);
     (clone, author_did)
 }
 
@@ -226,15 +246,10 @@ fn an_ingested_record_keeps_its_own_signature_and_cid() {
     let author_did = kan_as(author_dir.path(), Some(&author_key), &["identity", "did"]).stdout;
 
     let clone = git_repo();
-    std::fs::create_dir_all(clone.path().join(".claims")).unwrap();
-    for entry in std::fs::read_dir(author_dir.path().join(".claims")).unwrap() {
-        let entry = entry.unwrap();
-        std::fs::copy(
-            entry.path(),
-            clone.path().join(".claims").join(entry.file_name()),
-        )
-        .unwrap();
-    }
+    copy_tree(
+        &author_dir.path().join(".claims"),
+        &clone.path().join(".claims"),
+    );
 
     let read = kan_as(
         clone.path(),
@@ -324,12 +339,7 @@ fn a_tampered_published_record_is_refused_without_bricking_the_repo() {
     // Edit the prose a human reads — which is the point of keeping it in the
     // body rather than the frontmatter.
     let claims_dir = clone.path().join(".claims");
-    let file = std::fs::read_dir(&claims_dir)
-        .unwrap()
-        .next()
-        .unwrap()
-        .unwrap()
-        .path();
+    let file = first_file(&claims_dir);
     let text = std::fs::read_to_string(&file).unwrap();
     std::fs::write(
         &file,
@@ -348,10 +358,14 @@ fn a_tampered_published_record_is_refused_without_bricking_the_repo() {
         read.stderr
     );
     let value: serde_json::Value = serde_json::from_str(&read.stdout).unwrap();
-    assert_eq!(
-        value["claims"].as_array().unwrap().len(),
-        0,
-        "a tampered record was folded into the view: {value}"
+    let claims = value["claims"].as_array().unwrap();
+    assert!(
+        claims.iter().all(|claim| claim["kind"] != "Observation"),
+        "the tampered observation was folded into the view: {value}"
+    );
+    assert!(
+        claims.iter().any(|claim| claim["kind"] == "Publication"),
+        "an intact sibling record was discarded with the tampered one: {value}"
     );
     assert!(
         read.stderr.contains("warning"),

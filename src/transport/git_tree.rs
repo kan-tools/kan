@@ -139,8 +139,9 @@ const RECORD_SEPARATOR: &str = "---8<---";
 const RECORD_SEPARATOR_V3: &str = "***8<***";
 
 /// Both separators, longest first so a prefix match cannot shadow a longer
-/// one. A file's records are all one version, but splitting happens *before*
-/// any header is parsed, so the split cannot ask what version it is reading.
+/// one. A file may mix versions when an opaque future claim needs v2's
+/// `Unknown` header beside v3 records, and splitting happens *before* any
+/// header is parsed, so the split cannot ask what version it is reading.
 const RECORD_SEPARATORS: [&str; 2] = [RECORD_SEPARATOR, RECORD_SEPARATOR_V3];
 
 /// Where the next record starts after `text`, if a separator follows.
@@ -372,9 +373,13 @@ struct RecordHeader {
 }
 
 /// The record format this build writes.
-/// What the writer emits. **Still 2 while the v3 reader ships ahead of it**;
-/// the writer flips in the layout slice, once a released kan can read v3.
-const FORMAT_VERSION: u32 = 2;
+/// What the writer emits.
+///
+/// Now 3. It lagged `MAX_READABLE_VERSION` deliberately through v0.12.0-beta.5,
+/// which shipped the reader alone -- so a released kan understands v3 before
+/// anything writes it, and a tree in the new shape is readable by a clone that
+/// upgraded one release ago rather than by nothing at all.
+const FORMAT_VERSION: u32 = 3;
 
 /// What the reader understands. `FORMAT_VERSION` may lag this and never leads
 /// it — the gap between the two *is* reader-before-writer, expressed as a
@@ -1128,67 +1133,167 @@ pub fn write_subject(
     claims: &[(Claim, Option<String>)],
 ) -> Result<Written, Error> {
     let dir = root.join(CLAIMS_DIR);
-    std::fs::create_dir_all(&dir).map_err(io(&dir))?;
-    let path = dir.join(file_name(subject));
 
-    // #111: the primary write trusts `file_name(subject)` — a sanitized
-    // prefix plus a 32-bit digest — as a unique key and overwrites
-    // unconditionally, the last instance of ADR-52's class (a lossy derived
-    // value trusted as a unique key for a destructive operation) still on a
-    // write path. Two subjects colliding in the sanitized prefix *and* the
-    // 4-byte digest would silently overwrite each other's file. Before
-    // overwriting an existing file, confirm it is entirely this subject's —
-    // exactly the check `retirable` makes below, keyed on the records'
-    // content, not on the filename. A normal re-publish of this subject's own
-    // file passes (every record is this subject); only a genuine collision, or
-    // a file no longer parseable as this subject's, is refused rather than
-    // clobbered. The claims are safe in the log and git either way, so refusing
-    // loses nothing but the overwrite.
-    if path.exists() && !retirable(&path, subject) {
-        return Err(Error::FilenameCollision {
-            path: path.display().to_string(),
-            subject: format!("{subject:?}"),
-        });
+    // The subject's own name as a path, `/` and all. `None` means the subject
+    // cannot be a safe relative path -- `..`, an empty component, an absolute
+    // root -- and a subject name must never decide where a write lands.
+    let rel = subject_path(subject).ok_or_else(|| Error::Malformed {
+        path: dir.display().to_string(),
+        detail: format!("subject {subject:?} cannot be expressed as a path under {CLAIMS_DIR}"),
+    })?;
+    let subject_dir = dir.join(&rel);
+
+    // A subject path is only contained if the filesystem resolves it the way
+    // its components spell it. `.claims/` is shared through git, so an
+    // existing component may be a committed symlink; following one here
+    // would let `publish` write outside the tracked projection even though
+    // `subject_path` rejected every lexical traversal shape.
+    refuse_symlinked_components(&dir, &rel)?;
+
+    // GROUPED BY AUTHOR, because a workspace can sign with several identities.
+    // Role keys all append to one log, so `publish` hands us every live claim
+    // on the subject regardless of who signed it. The flat layout put them in
+    // one file; here they belong in one file each, and a caller that assumed
+    // otherwise would have one author's records silently overwrite another's
+    // -- the very failure this layout removes for peers (kan#131).
+    let mut by_author: BTreeMap<&str, Vec<(&Claim, Option<&str>)>> = BTreeMap::new();
+    for (claim, rev) in claims {
+        by_author
+            .entry(claim.content.author.did.as_str())
+            .or_default()
+            .push((claim, rev.as_deref()));
     }
 
-    let mut out = String::new();
-    for (i, (claim, rev)) in claims.iter().enumerate() {
-        if !out.is_empty() {
-            out.push_str(RECORD_SEPARATOR);
-            out.push('\n');
+    std::fs::create_dir_all(&subject_dir).map_err(io(&subject_dir))?;
+
+    let mut paths = Vec::new();
+    for (did, group) in &by_author {
+        let leaf = did.strip_prefix("did:key:").unwrap_or(did);
+        let path = subject_dir.join(format!("{leaf}.md"));
+
+        // The kan#111 guard, still keyed on the records' content rather than
+        // on the filename. Under this layout a collision needs a case-folding
+        // filesystem AND two subjects differing only in case, which is the one
+        // hazard preserving `/` does not remove -- so the check stays, and a
+        // genuine collision is refused rather than clobbered. The claims are
+        // safe in the log and in git either way.
+        if path.exists() && !retirable(&path, subject) {
+            return Err(Error::FilenameCollision {
+                path: path.display().to_string(),
+                subject: format!("{subject:?}"),
+            });
         }
-        out.push_str(&to_record_at(
-            claim,
-            rev.as_deref(),
-            Some((i, claims.len())),
-        )?);
-    }
-    std::fs::write(&path, out).map_err(io(&path))?;
 
-    // Retire the v0.6-named file for this subject, now that its claims have
-    // been rewritten under the current name (#107).
+        let mut out = String::new();
+        for (i, (claim, rev)) in group.iter().enumerate() {
+            if !out.is_empty() {
+                out.push_str(RECORD_SEPARATOR_V3);
+                out.push('\n');
+            }
+            let version = if wire_kind(claim.content.body.kind()).is_some() {
+                FORMAT_VERSION
+            } else {
+                // Unknown bodies are preserved opaque claims from a newer
+                // schema. v3 cannot name their kind honestly, but v2 can and
+                // released readers accept mixed-version files. Falling back
+                // per record keeps one future claim from making the whole
+                // subject unpublishable without dropping or rewriting it.
+                FORMAT_VERSION_WIRE_FIELDS - 1
+            };
+            out.push_str(&to_record_at_version(
+                claim,
+                *rev,
+                Some((i, group.len())),
+                version,
+            )?);
+        }
+        std::fs::write(&path, out).map_err(io(&path))?;
+        paths.push(path);
+    }
+
+    // RETIRING THE FLAT FILE IS THE DANGEROUS PART, and it is why this is
+    // conditional rather than automatic.
     //
-    // Leaving it produced two files per subject, one of which never updated
-    // again and diverged silently — and once a reader ships, a wall of
-    // errors about files kan wrote itself.
+    // Under the flat layout a subject had ONE file, and `publish` rewrote it
+    // whole -- so a peer's records could be sitting in it right now. That is
+    // not hypothetical: it is what the multi-actor probe measured, a second
+    // author's publish silently replacing the first author's records. Deleting
+    // that file while migrating would destroy claims this author never wrote
+    // and cannot re-create, which is exactly the act the non-negotiable
+    // invariant forbids.
     //
-    // **The legacy name is lossy** (`legacy_file_name`'s own doc: `telos/x`
-    // and `telos_x` both land there). A `.design/`-era version keyed the
-    // deletion on it directly, and an adversarial review proved that let
-    // publishing `telos/x` delete a *different* subject `telos_x`'s file —
-    // a write path destroying another subject's data, keyed on a value that
-    // is not unique (#107 round two). So the file is only retired after
-    // reading it and confirming **every** record in it is about this exact
-    // subject. A file that belongs to a colliding neighbour, or holds
-    // anything unverifiable, is left untouched.
-    let legacy = dir.join(legacy_file_name(subject));
-    let retired = if legacy != path && retirable(&legacy, subject) {
-        std::fs::remove_file(&legacy).map_err(io(&legacy))?;
-        Some(legacy)
+    // So it is retired only when every record in it is BOTH this subject's and
+    // by an author we just rewrote. Anything else -- a peer's records, a
+    // record that will not parse -- and the file is left alone, where the
+    // reader still understands it.
+    let current_flat = dir.join(file_name(subject));
+    let legacy_flat = dir.join(legacy_file_name(subject));
+    let flat = if current_flat.exists() {
+        current_flat
+    } else {
+        legacy_flat
+    };
+    let authors: Vec<&str> = by_author.keys().copied().collect();
+    let retired = if flat.exists() && retirable_by(&flat, subject, &authors) {
+        std::fs::remove_file(&flat).map_err(io(&flat))?;
+        Some(flat)
     } else {
         None
     };
-    Ok(Written { path, retired })
+
+    Ok(Written { paths, retired })
+}
+
+fn refuse_symlinked_components(dir: &Path, rel: &Path) -> Result<(), Error> {
+    let mut path = dir.to_path_buf();
+    for component in std::iter::once(None).chain(rel.components().map(Some)) {
+        if let Some(component) = component {
+            path.push(component.as_os_str());
+        }
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(Error::Malformed {
+                    path: path.display().to_string(),
+                    detail: format!(
+                        "publishing through a symlink under {CLAIMS_DIR} is refused because it may escape the tracked projection"
+                    ),
+                });
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(source) => {
+                return Err(Error::Io {
+                    path: path.display().to_string(),
+                    source,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Every record in `path` is about `subject` AND signed by one of `authors`.
+///
+/// The subject half is [`retirable`]'s check. The author half is what keeps a
+/// migration from deleting a peer's published claims out of a shared flat file.
+fn retirable_by(path: &Path, subject: &crate::claim::SubjectRef, authors: &[&str]) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let records = split_records(&text);
+    if records.is_empty() {
+        return false;
+    }
+    records.iter().all(|record| {
+        match from_record(&path.display().to_string(), record) {
+            Ok((_, claim)) => {
+                &claim.content.subject == subject
+                    && authors.contains(&claim.content.author.did.as_str())
+            }
+            // Unparseable means unknown, and unknown is never safe to delete.
+            Err(_) => false,
+        }
+    })
 }
 
 /// Whether `filename` is the v0.6 legacy name of a *uniform* file — every
@@ -1240,9 +1345,26 @@ fn retirable(legacy: &Path, subject: &crate::claim::SubjectRef) -> bool {
 /// tracked file silently.
 #[derive(Debug)]
 pub struct Written {
-    pub path: PathBuf,
-    /// The v0.6-named file this replaced, if there was one.
+    /// Every file this write produced, one per publishing author.
+    ///
+    /// A `Vec` rather than a path because a workspace can sign with several
+    /// identities — role keys all append to one log (`.kan/roles.d/`) — and
+    /// under the per-author layout their records go to different files. The
+    /// flat layout hid that by putting them all in one.
+    pub paths: Vec<PathBuf>,
+    /// A previous-layout file this write superseded, if there was one and if
+    /// retiring it was safe.
     pub retired: Option<PathBuf>,
+}
+
+impl Written {
+    /// The first file written, for callers that report a single path.
+    pub fn path(&self) -> &Path {
+        self.paths
+            .first()
+            .map(PathBuf::as_path)
+            .unwrap_or(Path::new(""))
+    }
 }
 
 // -------------------------------------------------------------- transport

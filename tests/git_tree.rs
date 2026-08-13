@@ -284,13 +284,17 @@ async fn publishing_writes_the_tree_and_subscribing_reads_it_back() {
 
     // Filenames carry a digest of the exact subject bytes so the mapping is
     // injective (REQ-13) -- ask for the name rather than hardcoding it.
-    let file = dir
+    // The subject's own name as a directory, one file per publishing author.
+    let subject_dir = dir
         .path()
         .join(".claims")
-        .join(git_tree::file_name(&SubjectRef::Local(Rkey::from(
-            "bug-42",
-        ))));
-    assert!(file.exists(), "publishing should write the subject's file");
+        .join(git_tree::subject_path(&SubjectRef::Local(Rkey::from("bug-42"))).unwrap());
+    let file = std::fs::read_dir(&subject_dir)
+        .unwrap_or_else(|e| panic!("publishing should create {}: {e}", subject_dir.display()))
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|x| x == "md"))
+        .expect("publishing should write this author's file");
     let text = std::fs::read_to_string(&file).unwrap();
     assert!(text.contains("published into the tree"));
 
@@ -399,13 +403,28 @@ fn publish_refuses_to_overwrite_another_subjects_file() {
     let b = observation("subject-b", "b's only claim", &id);
     git_tree::write_subject(root.path(), &b.content.subject, &[(b.clone(), None)]).unwrap();
 
-    // Force B's records to sit at A's path — the digest collision, simulated.
+    // Force B's records to sit at A's path.
+    //
+    // The simulated collision CHANGED with the layout and the test says so
+    // rather than being quietly deleted. It used to stand in for two subjects
+    // colliding in the 4-byte filename digest; preserving `/` as a directory
+    // separator removed that digest and that collision. What survives is
+    // case folding — `Bug42` and `bug42` are one directory on APFS, below kan
+    // entirely — so the guard still has a case to refuse, and this is it.
     let a_subject = SubjectRef::Local(Rkey::from("subject-a"));
     let claims_dir = root.path().join(git_tree::CLAIMS_DIR);
-    let a_path = claims_dir.join(git_tree::file_name(&a_subject));
-    let b_path = claims_dir.join(git_tree::file_name(&b.content.subject));
-    assert_ne!(a_path, b_path);
-    std::fs::copy(&b_path, &a_path).unwrap();
+    let a_dir = claims_dir.join(git_tree::subject_path(&a_subject).unwrap());
+    let b_dir = claims_dir.join(git_tree::subject_path(&b.content.subject).unwrap());
+    assert_ne!(a_dir, b_dir);
+    std::fs::create_dir_all(&a_dir).unwrap();
+    let b_file = std::fs::read_dir(&b_dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|x| x == "md"))
+        .expect("B has a published file");
+    let a_path = a_dir.join(b_file.file_name().unwrap());
+    std::fs::copy(&b_file, &a_path).unwrap();
     let before = std::fs::read(&a_path).unwrap();
 
     // Publishing A must refuse rather than clobber B's claims.

@@ -47,31 +47,38 @@ fn each_forged_field_is_rejected_by_name() {
     let record =
         git_tree::to_record(&signed(&identity, "bug-42", "an ordinary observation")).unwrap();
 
-    let cases = [
-        ("author", "\"author\": \"did:key:zDnaeVICTIM\"", "author"),
+    // FORGED THROUGH JSON, not by line.
+    //
+    // The line-based version worked while every header field was one line.
+    // v3's `subject` is an object, so replacing its first line left a dangling
+    // brace and the record failed to parse as JSON -- the test still "passed"
+    // an error, but never reached the authentication it exists to check.
+    // Mutating the parsed header keeps the forgery well-formed, which is the
+    // whole threat model: a valid-looking lie, not a corrupt file.
+    let cases: [(&str, serde_json::Value, &str); 4] = [
+        ("author", serde_json::json!("did:key:zDnaeVICTIM"), "author"),
         (
             "subject",
-            "\"subject\": \"Local(\\\"other-subject\\\")\"",
+            serde_json::json!({ "local": "other-subject" }),
             "subject",
         ),
-        ("kind", "\"kind\": \"Decision\"", "kind"),
-        ("cites", "\"cites\": [\"bafyreifabricated\"]", "cites"),
+        ("kind", serde_json::json!("decision"), "kind"),
+        ("cites", serde_json::json!(["bafyreifabricated"]), "cites"),
     ];
 
+    let rest = record.trim_start().strip_prefix("---").unwrap();
+    let end = rest.find("\n---").unwrap();
+    let header: serde_json::Value = serde_json::from_str(rest[..end].trim()).unwrap();
+    let body = &rest[end..];
+
     for (field, replacement, expected_in_msg) in cases {
-        // Replace the whole line for this field, whatever it currently says.
-        let forged: String = record
-            .lines()
-            .map(|l| {
-                if l.trim_start().starts_with(&format!("\"{field}\":")) {
-                    let indent: String = l.chars().take_while(|c| c.is_whitespace()).collect();
-                    format!("{indent}{replacement},")
-                } else {
-                    l.to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+        let mut forged_header = header.clone();
+        forged_header[field] = replacement;
+        let forged = format!(
+            "---\n{}\n{}",
+            serde_json::to_string_pretty(&forged_header).unwrap(),
+            body.trim_start_matches('\n')
+        );
 
         let err = git_tree::from_record("f.md", &forged).expect_err(&format!(
             "a forged {field} must be rejected, not verified clean"
@@ -98,13 +105,13 @@ fn deleting_a_record_is_reported() {
         .collect();
     let path = git_tree::write_subject(dir.path(), &subject, &claims).unwrap();
 
-    let text = std::fs::read_to_string(&path.path).unwrap();
+    let text = std::fs::read_to_string(path.path()).unwrap();
     let records = git_tree::split_records(&text);
     assert_eq!(records.len(), 3);
 
     // Remove the middle record, leaving the rest verifying cleanly.
     let kept = format!("{}\n---8<---\n{}", records[0], records[2]);
-    std::fs::write(&path.path, kept).unwrap();
+    std::fs::write(path.path(), kept).unwrap();
 
     let results = read_all_at(dir.path());
     let reported = results.iter().any(|r| match r {
