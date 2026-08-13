@@ -523,6 +523,26 @@ fn an_unreadable_claims_subdirectory_is_disclosed_as_an_incomplete_read() {
     );
 }
 
+#[test]
+fn a_non_directory_claims_root_keeps_the_claims_path_prefix() {
+    let repo = git_repo();
+    std::fs::write(repo.path().join(".claims"), "not a directory").unwrap();
+
+    let read = kan_as(repo.path(), None, &["show", "--all", "--json"]);
+    assert!(read.ok, "a degraded read remains nonfatal: {}", read.stderr);
+    let value: serde_json::Value = serde_json::from_str(&read.stdout).unwrap();
+    assert_eq!(value["published_read_error_count"], 1, "{value}");
+    assert_eq!(value["published_read_errors"][0]["kind"], "io");
+    assert_eq!(value["published_read_errors"][0]["path"], ".claims/");
+    assert!(
+        value["published_read_errors"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains(".claims/"),
+        "{value}"
+    );
+}
+
 /// A read-open and a write-open must agree about index freshness, or every
 /// alternation between them rebuilds the whole projection.
 ///

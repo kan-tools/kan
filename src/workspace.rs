@@ -231,11 +231,14 @@ fn published_read_error(
     error: &crate::transport::git_tree::Error,
 ) -> PublishedReadError {
     let original = error.diagnostic_path().unwrap_or(".claims/<unknown>");
-    let relative = Path::new(original)
+    let mut relative = Path::new(original)
         .strip_prefix(root)
         .unwrap_or_else(|_| Path::new(original))
         .to_string_lossy()
         .into_owned();
+    if relative == crate::transport::git_tree::CLAIMS_DIR {
+        relative.push('/');
+    }
     let message = error.to_string().replacen(original, &relative, 1);
     PublishedReadError {
         path: relative,
