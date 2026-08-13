@@ -1,4 +1,4 @@
-# ADR NNNN: Title
+# ADR N: Title
 
 - Status: Proposed
 - Date: YYYY-MM-DD

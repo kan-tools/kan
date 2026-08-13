@@ -23,7 +23,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
   mkdir -p "$fixture/scripts"
   cp -R adrs rfcs docs "$fixture/"
   cp "$0" "$fixture/scripts/check-rfcs-adrs.sh"
-  perl -pi -e 's/Bus-factor/Bus factor/' "$fixture/adrs/0001-repo-mst-cid-signing-crate-family-atrium-rs-not-atproto-repo.md"
+  perl -pi -e 's/Bus-factor/Bus factor/' "$fixture/adrs/1-repo-mst-cid-signing-crate-family-atrium-rs-not-atproto-repo.md"
   if KAN_RFC_ADR_ROOT="$fixture" "$fixture/scripts/check-rfcs-adrs.sh" >"$fixture/output" 2>&1; then
     fail "self-test mutation was accepted"
   fi
@@ -44,7 +44,7 @@ duplicates=$(tail -n +2 "$manifest" | cut -f2 | sort | uniq -d)
 while IFS=$'\t' read -r number file title expected_hash; do
   [[ "$number" == "number" ]] && continue
   count=$((count + 1))
-  expected_number=$(printf '%04d' "$count")
+  expected_number=$count
   [[ "$number" == "$expected_number" ]] || fail "expected ADR $expected_number, found $number"
   path="adrs/$file"
   [[ -f "$path" ]] || fail "missing $path"
@@ -64,10 +64,11 @@ while IFS=$'\t' read -r number file title expected_hash; do
 done < "$manifest"
 
 [[ "$count" -eq 91 ]] || fail "expected 91 reconstructed ADRs, found $count"
-[[ $(find adrs -maxdepth 1 -type f -name '[0-9][0-9][0-9][0-9]-*.md' | wc -l | tr -d ' ') -eq 91 ]] || fail "ADR file count differs from manifest"
+[[ $(find adrs -maxdepth 1 -type f -name '[0-9]*-*.md' | wc -l | tr -d ' ') -eq 91 ]] || fail "ADR file count differs from manifest"
+! find adrs -maxdepth 1 -type f -name '0[0-9]*-*.md' | grep -q . || fail "ADR filenames must not have leading zeroes"
 ! grep -Eq '^## ADR-[0-9]+' docs/DECISIONS.md || fail "docs/DECISIONS.md still contains live ADR records"
 
-for file in rfcs/0000-rfc-and-adr-process.md rfcs/template.md; do
+for file in rfcs/0-rfc-and-adr-process.md rfcs/template.md; do
   [[ -f "$file" ]] || fail "missing $file"
   for section in Summary Motivation Terminology 'Detailed design' 'Canonicalization and equivalence' 'Resolution or processing algorithm' 'Authority and trust model' 'Security considerations' Compatibility 'Alternatives considered' 'Reference test vectors' 'Unresolved questions' 'Implementation status'; do
     grep -Fqx "## $section" "$file" || fail "$file lacks section: $section"
@@ -79,15 +80,15 @@ for section in Context Decision Rationale Consequences Evidence 'Alternatives co
   grep -Fqx "## $section" adrs/template.md || fail "adrs/template.md lacks section: $section"
 done
 
-status=$(sed -n 's/^- Status: //p' rfcs/0000-rfc-and-adr-process.md)
+status=$(sed -n 's/^- Status: //p' rfcs/0-rfc-and-adr-process.md)
 case "$status" in
   Draft|Review|Accepted|Implemented|Rejected|Withdrawn|Superseded) ;;
-  *) fail "RFC 0000 has unrecognized status: $status" ;;
+  *) fail "RFC 0 has unrecognized status: $status" ;;
 esac
 
-perl -0777 -ne 'exit(/72 continuous\s+hours/ ? 0 : 1)' rfcs/0000-rfc-and-adr-process.md || fail "RFC 0000 lacks the 72-hour review rule"
-perl -0777 -ne 'exit(/allocated when the proposal pull\s+request opens/ ? 0 : 1)' rfcs/0000-rfc-and-adr-process.md || fail "RFC 0000 lacks allocation-at-PR-open"
-grep -Fq 'permanent gaps are valid' rfcs/0000-rfc-and-adr-process.md || fail "RFC 0000 lacks permanent-gap semantics"
-grep -Fq 'RFC 0001, the kan URI scheme' rfcs/0000-rfc-and-adr-process.md || fail "RFC 0000 does not reserve the expected next proposal"
+perl -0777 -ne 'exit(/72 continuous\s+hours/ ? 0 : 1)' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 lacks the 72-hour review rule"
+perl -0777 -ne 'exit(/allocated when the proposal pull\s+request opens/ ? 0 : 1)' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 lacks allocation-at-PR-open"
+grep -Fq 'permanent gaps are valid' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 lacks permanent-gap semantics"
+grep -Fq 'RFC 1, the kan URI scheme' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 does not reserve the expected next proposal"
 
-echo "RFC/ADR check: 91 reconstructed ADRs and RFC 0000 are structurally valid"
+echo "RFC/ADR check: 91 reconstructed ADRs and RFC 0 are structurally valid"

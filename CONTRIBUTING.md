@@ -34,7 +34,7 @@ Anything that changes behaviour goes through a design pass first, landing as
 `.design/<slug>.md` with numbered requirements (REQ-*) and acceptance criteria
 (AC-*). A public protocol, durable format, identifier scheme, governance rule,
 compatibility promise, or cross-cutting architecture change then proceeds as a
-Request for Comments under [RFC 0000](rfcs/0000-rfc-and-adr-process.md). A
+Request for Comments under [RFC 0](rfcs/0-rfc-and-adr-process.md). A
 smaller implementation decision may proceed directly to an Architecture
 Decision Record under [`adrs/`](adrs/README.md). An accepted RFC is already the
 governing decision and does not need a duplicate ADR unless implementation

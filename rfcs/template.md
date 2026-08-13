@@ -1,4 +1,4 @@
-# RFC NNNN: Title
+# RFC N: Title
 
 - Status: Draft
 - Authors: Name or identity
