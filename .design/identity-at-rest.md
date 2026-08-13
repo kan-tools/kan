@@ -335,7 +335,7 @@ call). REQ-3 is a change to what gets *written*, not to how anything is
 resolved, which is why AC-3.2 predicts an unchanged golden.
 
 **The precedence trap, and it is the load-bearing detail.**
-`workspace_identity` (`src/sign.rs:385`) resolves in the order: `Seed::load`
+`workspace_identity` (`src/sign.rs:462`) resolves in the order: `Seed::load`
 (`.kan/seed`, then `.kan/seed-id`) → `keychain_identity` (`.kan/identity-id`)
 → `.kan/identity`. Note that **`.kan/identity-id` outranks `.kan/identity`**,
 which is not the order anyone writes from memory. `at_rest` must reproduce

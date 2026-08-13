@@ -502,7 +502,10 @@ impl Workspace {
 
         let mut reference = Index::open_in_memory()?;
         reference.rebuild(&log_claims, &foreign, fingerprint.as_ref())?;
-        if !index.projection_matches(&reference)? {
+        // Any SQLite read/type/schema error is itself a mismatch. A
+        // disposable projection must never be able to prevent recovery from
+        // the authoritative media by failing while it is being compared.
+        if !matches!(index.projection_matches(&reference), Ok(true)) {
             index.rebuild(&log_claims, &foreign, fingerprint.as_ref())?;
         }
 

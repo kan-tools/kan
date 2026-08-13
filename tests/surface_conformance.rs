@@ -296,6 +296,13 @@ fn persistence_modules_cannot_add_an_unreviewed_path_literal() {
         .collect::<BTreeSet<_>>()
     {
         let source = std::fs::read_to_string(module).unwrap();
+        for suffix in source.split(".with_extension(").skip(1) {
+            let argument = suffix.trim_start();
+            assert!(
+                argument.starts_with('"'),
+                "{module} constructs a persistence extension indirectly; use a reviewed literal: {argument:.80}"
+            );
+        }
         for constructor in [".join(\"", ".with_extension(\""] {
             for suffix in source.split(constructor).skip(1) {
                 if let Some((literal, _)) = suffix.split_once("\")") {
@@ -556,6 +563,72 @@ fn production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json() {
     assert_eq!(
         before_other.stdout, after_other.stdout,
         "a valid-CBOR substitution changed the other subject's JSON"
+    );
+}
+
+#[test]
+fn production_workspace_recovers_when_a_projection_column_has_the_wrong_type() {
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let write = run_kan(repo.path(), &["observe", "typed-poison", "authoritative"]);
+    assert!(
+        write.status.success(),
+        "{}",
+        String::from_utf8_lossy(&write.stderr)
+    );
+    let before = run_kan(repo.path(), &["show", "typed-poison", "--json"]);
+    assert!(
+        before.status.success(),
+        "{}",
+        String::from_utf8_lossy(&before.stderr)
+    );
+
+    let connection = rusqlite::Connection::open(repo.path().join(".kan/index.sqlite")).unwrap();
+    connection
+        .execute("UPDATE claims_v2 SET origin = X'00'", [])
+        .unwrap();
+    drop(connection);
+
+    let after = run_kan(repo.path(), &["show", "typed-poison", "--json"]);
+    assert!(
+        after.status.success(),
+        "{}",
+        String::from_utf8_lossy(&after.stderr)
+    );
+    assert_eq!(before.stdout, after.stdout, "typed corruption changed JSON");
+}
+
+#[test]
+fn caller_selected_role_key_is_an_implemented_authoritative_surface() {
+    let values = implemented_values();
+    assert!(values.contains(&(
+        "identity:role-key-path".to_string(),
+        "caller-selected".to_string()
+    )));
+
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let external_dir = tempfile::tempdir().unwrap();
+    let external = external_dir.path().join("auditor.key");
+    let output = run_kan(
+        repo.path(),
+        &[
+            "identity",
+            "role",
+            "add",
+            "auditor",
+            "--key",
+            external.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        external.exists(),
+        "caller-selected role key was not created"
     );
 }
 

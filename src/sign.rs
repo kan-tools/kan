@@ -95,6 +95,7 @@ pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
     crate::surface::SurfaceValue::new("identity:identity", "*"),
     crate::surface::SurfaceValue::new("identity:identity-id", "*"),
     crate::surface::SurfaceValue::new("identity:roles.d", "*"),
+    crate::surface::SurfaceValue::new("identity:role-key-path", "caller-selected"),
     crate::surface::SurfaceValue::new("system-config:KAN_IDENTITY_FILE", "*"),
     crate::surface::SurfaceValue::new("system-config:KAN_NO_KEYCHAIN", "*"),
     crate::surface::SurfaceValue::new("repo-config:legacy-roles", "*"),
