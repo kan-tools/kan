@@ -211,7 +211,9 @@ path, or helper must make an explicit catalog choice at the point where it
 crosses the persistence boundary. Compiler-resolved Clippy policy forbids raw
 filesystem mutation APIs outside `crate::persistence`, so import aliases and
 helper functions cannot bypass that boundary; only the facade may allow the
-lint, and its callers remain subject to the annotation check.
+lint. Every facade call requires a typed `SurfaceWrite` capability whose
+artifact set is compared with the catalog; call-site annotations remain
+review aids, not the enforcement root.
 
 ### Behavioral conformance
 

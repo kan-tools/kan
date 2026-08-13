@@ -375,7 +375,11 @@ impl Log {
 
     pub async fn open_or_create(dir: &Path, identity: &Identity) -> Result<Self, Error> {
         // surface-write: local-log:repo.car
-        crate::persistence::create_dir_all_async(dir).await?;
+        crate::persistence::create_dir_all_async(
+            crate::persistence::SurfaceWrite::LocalLogCar,
+            dir,
+        )
+        .await?;
         Self::open_inner(dir, Some(identity.did())).await
     }
 
@@ -565,7 +569,12 @@ impl Log {
             self.car_path.with_file_name(name)
         };
         // surface-write: local-log:repo.car.damaged-*
-        crate::persistence::copy_async(&self.car_path, &damaged).await?;
+        crate::persistence::copy_async(
+            crate::persistence::SurfaceWrite::LocalLogDamaged,
+            &self.car_path,
+            &damaged,
+        )
+        .await?;
         eprintln!(
             "warning: repairing {} -- the pre-repair file is kept at {}. If the damage \
              was mid-file rather than at the tail, blocks after it exist only in that \
@@ -576,7 +585,11 @@ impl Log {
 
         let tmp = self.car_path.with_extension("repair");
         // surface-write: local-log:repo.repair
-        let mut out = crate::persistence::create_file_async(&tmp).await?;
+        let mut out = crate::persistence::create_file_async(
+            crate::persistence::SurfaceWrite::LocalLogRepair,
+            &tmp,
+        )
+        .await?;
         out.write_all(&CarHeader::with_root(root).to_bytes()?)
             .await?;
 
@@ -595,7 +608,12 @@ impl Log {
         out.sync_all().await?;
         drop(out);
         // surface-write: local-log:repo.car
-        crate::persistence::rename_async(&tmp, &self.car_path).await?;
+        crate::persistence::rename_async(
+            crate::persistence::SurfaceWrite::LocalLogCar,
+            &tmp,
+            &self.car_path,
+        )
+        .await?;
         self.persisted = written;
         Ok(())
     }
@@ -606,7 +624,11 @@ impl Log {
     async fn persist_new_blocks(&mut self, root: &Cid) -> Result<(), Error> {
         let file_is_new = !self.car_path.exists();
         // surface-write: local-log:repo.car
-        let mut file = crate::persistence::open_append_async(&self.car_path).await?;
+        let mut file = crate::persistence::open_append_async(
+            crate::persistence::SurfaceWrite::LocalLogCar,
+            &self.car_path,
+        )
+        .await?;
 
         if file_is_new {
             let header = CarHeader::with_root(root.clone());
@@ -660,13 +682,22 @@ impl Log {
     async fn write_head_atomically(&self, root: &Cid) -> Result<(), Error> {
         let tmp_path = self.head_path.with_extension("tmp");
         // surface-write: local-log:HEAD.tmp
-        let mut tmp = crate::persistence::create_file_async(&tmp_path).await?;
+        let mut tmp = crate::persistence::create_file_async(
+            crate::persistence::SurfaceWrite::LocalLogHeadTemp,
+            &tmp_path,
+        )
+        .await?;
         tmp.write_all(root.to_string().as_bytes()).await?;
         tmp.sync_all().await?;
         drop(tmp);
 
         // surface-write: local-log:HEAD
-        crate::persistence::rename_async(&tmp_path, &self.head_path).await?;
+        crate::persistence::rename_async(
+            crate::persistence::SurfaceWrite::LocalLogHead,
+            &tmp_path,
+            &self.head_path,
+        )
+        .await?;
 
         if let Some(dir) = self.head_path.parent() {
             // Best-effort: a filesystem that refuses to open a directory for
@@ -708,7 +739,10 @@ impl Log {
         // which would stall other tasks on a shared worker thread.
         let file = tokio::task::spawn_blocking(move || -> std::io::Result<std::fs::File> {
             // surface-write: local-log:LOCK
-            let file = crate::persistence::open_lock_file(&lock_path)?;
+            let file = crate::persistence::open_lock_file(
+                crate::persistence::SurfaceWrite::LocalLogLock,
+                &lock_path,
+            )?;
             fs4::FileExt::lock(&file)?;
             Ok(file)
         })

@@ -290,10 +290,17 @@ impl Identity {
     pub fn save(&self, path: &Path) -> Result<(), Error> {
         if let Some(parent) = path.parent() {
             // surface-write: identity:identity,identity:role-key-path
-            crate::persistence::create_dir_all(parent)?;
+            crate::persistence::create_dir_all(
+                crate::persistence::SurfaceWrite::IdentityKeyMaterial,
+                parent,
+            )?;
         }
         // surface-write: identity:identity,identity:role-key-path
-        crate::persistence::write(path, self.keypair.export())?;
+        crate::persistence::write(
+            crate::persistence::SurfaceWrite::IdentityKeyMaterial,
+            path,
+            self.keypair.export(),
+        )?;
         restrict_permissions(path)?;
         Ok(())
     }
@@ -383,7 +390,10 @@ pub struct Role {
 pub fn mint_role_key(name: &str, key_path: &Path) -> Result<Role, Error> {
     if let Some(parent) = key_path.parent() {
         // surface-write: identity:role-key-path
-        crate::persistence::create_dir_all(parent)?;
+        crate::persistence::create_dir_all(
+            crate::persistence::SurfaceWrite::IdentityKeyMaterial,
+            parent,
+        )?;
     }
 
     // Straight to the plaintext loader, which is what makes this the
@@ -798,7 +808,10 @@ pub fn unprotect_to(
     // The pointer goes AFTER the write, never before: a failed write would
     // otherwise leave the workspace with no identity at all.
     // surface-write: identity:seed-id,identity:identity-id
-    crate::persistence::remove_file(&kan_dir.join(account_file))?;
+    crate::persistence::remove_file(
+        crate::persistence::SurfaceWrite::IdentityPointer,
+        &kan_dir.join(account_file),
+    )?;
     Ok(restored)
 }
 
@@ -869,7 +882,11 @@ pub fn protect_from(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty() && *s != account);
     // surface-write: identity:seed-id,identity:identity-id
-    crate::persistence::write(&kan_dir.join(pointer), &account)?;
+    crate::persistence::write(
+        crate::persistence::SurfaceWrite::IdentityPointer,
+        &kan_dir.join(pointer),
+        &account,
+    )?;
     Ok((did, account, orphaned))
 }
 
@@ -1144,7 +1161,11 @@ fn restrict_permissions(path: &Path) -> std::io::Result<()> {
     if perms.mode() & 0o077 != 0 {
         perms.set_mode(0o600);
         // surface-write: identity:seed,identity:identity,identity:role-key-path
-        crate::persistence::set_permissions(path, perms)?;
+        crate::persistence::set_permissions(
+            crate::persistence::SurfaceWrite::IdentityKeyMaterial,
+            path,
+            perms,
+        )?;
     }
     Ok(())
 }
@@ -1484,10 +1505,13 @@ impl Seed {
     pub fn save(&self, path: &Path) -> Result<(), Error> {
         if let Some(parent) = path.parent() {
             // surface-write: identity:seed
-            crate::persistence::create_dir_all(parent)?;
+            crate::persistence::create_dir_all(
+                crate::persistence::SurfaceWrite::IdentitySeed,
+                parent,
+            )?;
         }
         // surface-write: identity:seed
-        crate::persistence::write(path, self.0)?;
+        crate::persistence::write(crate::persistence::SurfaceWrite::IdentitySeed, path, self.0)?;
         restrict_permissions(path)?;
         Ok(())
     }
@@ -1550,7 +1574,7 @@ impl Seed {
     /// `.design/identity-at-rest.md`.
     pub fn create(kan_dir: &Path) -> Result<Self, Error> {
         // surface-write: container:workspace
-        crate::persistence::create_dir_all(kan_dir)?;
+        crate::persistence::create_dir_all(crate::persistence::SurfaceWrite::Container, kan_dir)?;
         let seed = Self::generate();
         seed.save(&kan_dir.join(SEED_FILE))?;
 

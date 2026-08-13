@@ -144,7 +144,7 @@ impl Index {
     pub fn open(path: &Path) -> Result<Self, Error> {
         if let Some(parent) = path.parent() {
             // surface-write: sqlite:meta
-            crate::persistence::create_dir_all(parent)?;
+            crate::persistence::create_dir_all(crate::persistence::SurfaceWrite::Sqlite, parent)?;
         }
         let connection = rusqlite::Connection::open(path)?;
         match Self::with_connection(connection, Some(path.to_path_buf())) {
@@ -155,7 +155,7 @@ impl Index {
                 // compare it with the authoritative reference. Reopen the
                 // disposable database and recreate only this binary's schema.
                 // surface-write: sqlite:meta
-                crate::persistence::remove_file(path)?;
+                crate::persistence::remove_file(crate::persistence::SurfaceWrite::Sqlite, path)?;
                 Self::with_connection(rusqlite::Connection::open(path)?, Some(path.to_path_buf()))
             }
         }
@@ -202,7 +202,7 @@ impl Index {
             let old = std::mem::replace(&mut self.conn, rusqlite::Connection::open_in_memory()?);
             drop(old);
             // surface-write: sqlite:meta
-            crate::persistence::remove_file(&path)?;
+            crate::persistence::remove_file(crate::persistence::SurfaceWrite::Sqlite, &path)?;
             *self = Self::open(&path)?;
             return Ok(());
         }
@@ -243,6 +243,24 @@ impl Index {
     /// half-updated claims table read back as "fresh" by
     /// `built_from_root`'s caller.
     pub fn rebuild(
+        &mut self,
+        log_claims: &[(Cid, StoredClaim)],
+        foreign_claims: &[(Cid, StoredClaim)],
+        built_from_root: Option<&Cid>,
+    ) -> Result<(), Error> {
+        match self.rebuild_once(log_claims, foreign_claims, built_from_root) {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                // Projection failures are never allowed to turn an already
+                // committed authoritative append into a reported failure.
+                // Discard the derived schema/file and retry from inputs.
+                self.recreate_current_schema()?;
+                self.rebuild_once(log_claims, foreign_claims, built_from_root)
+            }
+        }
+    }
+
+    fn rebuild_once(
         &mut self,
         log_claims: &[(Cid, StoredClaim)],
         foreign_claims: &[(Cid, StoredClaim)],
@@ -362,8 +380,23 @@ impl Index {
             mapped.collect::<Result<_, _>>().map_err(Error::from)
         }
 
+        type SchemaObject = (String, String, String, Option<String>);
+        fn schema(index: &Index) -> Result<Vec<SchemaObject>, Error> {
+            let mut stmt = index.conn.prepare(
+                "SELECT type, name, tbl_name, sql
+                 FROM sqlite_master
+                 WHERE name = 'meta' OR name = ?1 OR tbl_name = ?1
+                 ORDER BY type, name",
+            )?;
+            let mapped = stmt.query_map([CLAIMS_TABLE], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?;
+            mapped.collect::<Result<_, _>>().map_err(Error::from)
+        }
+
         Ok(self.built_from_root()? == reference.built_from_root()?
-            && rows(self)? == rows(reference)?)
+            && rows(self)? == rows(reference)?
+            && schema(self)? == schema(reference)?)
     }
 
     /// Every distinct `AuthorId` with a claim in `.kan/log` — the membership

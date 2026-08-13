@@ -396,7 +396,10 @@ impl Workspace {
             );
             let overlay_dir = kan_dir.join("overlay");
             // surface-write: overlay:repo.car
-            crate::persistence::remove_dir_all(&overlay_dir)?;
+            crate::persistence::remove_dir_all(
+                crate::persistence::SurfaceWrite::Overlay,
+                &overlay_dir,
+            )?;
             self.overlay = Log::open_or_create(&overlay_dir, &identity).await?;
             self.published =
                 ingest_published(&self.root, &identity, &self.log, &mut self.overlay).await?;
@@ -598,7 +601,10 @@ impl Workspace {
         let overlay_dir = self.root.join(".kan").join("overlay");
         if overlay_dir.exists() {
             // surface-write: overlay:repo.car
-            crate::persistence::remove_dir_all(&overlay_dir)?;
+            crate::persistence::remove_dir_all(
+                crate::persistence::SurfaceWrite::Overlay,
+                &overlay_dir,
+            )?;
         }
         self.overlay = Log::open_or_create(&overlay_dir, identity).await?;
         self.published =

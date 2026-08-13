@@ -512,7 +512,8 @@ fn every_filesystem_mutation_names_its_catalog_surface_at_the_call_site() {
         for (index, line) in lines.iter().enumerate() {
             let code = line.trim_start();
             if code.starts_with("//")
-                || !(code.contains("crate::persistence::")
+                || !((code.contains("crate::persistence::")
+                    && !code.contains("crate::persistence::SurfaceWrite::"))
                     || mutation_apis.iter().any(|api| code.contains(api)))
             {
                 continue;
@@ -568,6 +569,18 @@ fn compiler_resolves_filesystem_aliases_to_the_single_mutation_facade() {
     assert!(library.contains("#![deny(clippy::disallowed_methods)]"));
     let facade = std::fs::read_to_string("src/persistence.rs").unwrap();
     assert!(facade.contains("#![allow(clippy::disallowed_methods)]"));
+
+    let catalog_artifacts: BTreeSet<_> = rows()
+        .into_iter()
+        .filter(|row| row.status == "implemented")
+        .map(|row| row.artifact)
+        .collect();
+    for artifact in kan::persistence::SurfaceWrite::ALL_ARTIFACTS {
+        assert!(
+            catalog_artifacts.contains(artifact),
+            "typed persistence capability cites uncataloged artifact `{artifact}`"
+        );
+    }
 }
 
 #[test]
@@ -853,6 +866,45 @@ fn production_workspace_recreates_a_malformed_projection_schema() {
         String::from_utf8_lossy(&after_conflict.stderr)
     );
     assert_eq!(before.stdout, after_conflict.stdout);
+
+    let connection = rusqlite::Connection::open(repo.path().join(".kan/index.sqlite")).unwrap();
+    connection
+        .execute_batch(
+            "CREATE TRIGGER hostile_projection_trigger
+             BEFORE INSERT ON claims_v2
+             BEGIN SELECT RAISE(FAIL, 'projection trigger fired'); END;",
+        )
+        .unwrap();
+    drop(connection);
+    let after_trigger = run_kan(repo.path(), &["show", "schema-poison", "--json"]);
+    assert!(
+        after_trigger.status.success(),
+        "{}",
+        String::from_utf8_lossy(&after_trigger.stderr)
+    );
+    assert_eq!(before.stdout, after_trigger.stdout);
+
+    let connection = rusqlite::Connection::open(repo.path().join(".kan/index.sqlite")).unwrap();
+    connection
+        .execute_batch(
+            "CREATE TRIGGER hostile_append_trigger
+             BEFORE INSERT ON claims_v2
+             BEGIN SELECT RAISE(FAIL, 'projection trigger fired after append'); END;",
+        )
+        .unwrap();
+    drop(connection);
+    let append = run_kan(
+        repo.path(),
+        &["observe", "after-trigger", "must report success"],
+    );
+    assert!(
+        append.status.success(),
+        "authoritative append was reported as failed: {}",
+        String::from_utf8_lossy(&append.stderr)
+    );
+    let appended = run_kan(repo.path(), &["show", "after-trigger", "--json"]);
+    assert!(appended.status.success());
+    assert!(String::from_utf8_lossy(&appended.stdout).contains("must report success"));
 }
 
 #[test]
