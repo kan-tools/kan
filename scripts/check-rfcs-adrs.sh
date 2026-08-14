@@ -68,7 +68,7 @@ done < "$manifest"
 ! find adrs -maxdepth 1 -type f -name '0[0-9]*-*.md' | grep -q . || fail "ADR filenames must not have leading zeroes"
 ! grep -Eq '^## ADR-[0-9]+' docs/DECISIONS.md || fail "docs/DECISIONS.md still contains live ADR records"
 
-for file in rfcs/0-rfc-and-adr-process.md rfcs/template.md; do
+for file in rfcs/0-rfc-and-adr-process.md rfcs/1-identity-system.md rfcs/template.md; do
   [[ -f "$file" ]] || fail "missing $file"
   for section in Summary Motivation Terminology 'Detailed design' 'Canonicalization and equivalence' 'Resolution or processing algorithm' 'Authority and trust model' 'Security considerations' Compatibility 'Alternatives considered' 'Reference test vectors' 'Unresolved questions' 'Implementation status'; do
     grep -Fqx "## $section" "$file" || fail "$file lacks section: $section"
@@ -86,6 +86,17 @@ case "$status" in
   *) fail "RFC 0 has unrecognized status: $status" ;;
 esac
 
+identity_status=$(sed -n 's/^- Status: //p' rfcs/1-identity-system.md)
+case "$identity_status" in
+  Draft|Review|Accepted|Implemented|Rejected|Withdrawn|Superseded) ;;
+  *) fail "RFC 1 has unrecognized status: $identity_status" ;;
+esac
+grep -Fq 'kan.did.genesis.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks identity domain separation"
+grep -Fq 'kan.repository.inception.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks repository domain separation"
+grep -Fq 'cryptographicValidity = valid | invalid | unsupported | unknown' rfcs/1-identity-system.md || fail "RFC 1 does not separate cryptographic validity"
+grep -Fq 'repositoryAdmission   = admitted | unadmitted | unknown | not-applicable' rfcs/1-identity-system.md || fail "RFC 1 does not separate repository admission"
+grep -Fq 'viewTrust              = included | excluded | weighted' rfcs/1-identity-system.md || fail "RFC 1 does not separate view trust"
+
 perl -0777 -ne 'exit(/72 continuous\s+hours/ ? 0 : 1)' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 lacks the 72-hour review rule"
 grep -Fq 'every current maintainer reacts' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 lacks unanimous rocket override semantics"
 grep -Fq 'after the latest substantive commit' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 does not invalidate stale override approvals"
@@ -95,4 +106,4 @@ grep -Fq 'permanent gaps are valid' rfcs/0-rfc-and-adr-process.md || fail "RFC 0
 grep -Fq 'RFC 1, the kan identity architecture' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 does not reserve identity as the expected next proposal"
 grep -Fq 'RFC 2 is' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 does not sequence the URI proposal after identity"
 
-echo "RFC/ADR check: 91 reconstructed ADRs and RFC 0 are structurally valid"
+echo "RFC/ADR check: 91 reconstructed ADRs, RFC 0, and RFC 1 are structurally valid"
