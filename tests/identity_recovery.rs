@@ -10,7 +10,17 @@
 //!
 //! The phrase is what makes that decision safe rather than reckless.
 
+use bip39::Language;
 use kan::sign::{from_recovery_phrase, recovery_phrase, Identity};
+
+const FIXED_PHRASE: &str = "huge similar size foam escape any exhibit forward color bounce horror \
+    convince deny olympic grain garment ill embark strike during father mix brown solid";
+
+fn with_first_word(word: &str) -> String {
+    let mut words: Vec<&str> = FIXED_PHRASE.split_whitespace().collect();
+    words[0] = word;
+    words.join(" ")
+}
 
 #[test]
 fn a_phrase_round_trips_to_the_same_identity() {
@@ -48,27 +58,48 @@ fn the_restored_key_can_still_sign_as_the_original() {
     );
 }
 
-/// A mistyped phrase must be rejected, not silently produce a different key.
-/// For a signing identity, "close but not exact" means a different DID and
-/// every existing claim dropping out of every read.
+/// A known checksum-invalid substitution must be rejected with an actionable
+/// error. The fixed vector matters: a random valid-word substitution in a
+/// 24-word BIP-39 phrase has about a 1-in-256 chance of retaining a valid
+/// checksum, so randomness made the former version of this test flaky.
 #[test]
-fn a_mistyped_phrase_is_rejected_rather_than_silently_giving_another_key() {
-    let identity = Identity::generate();
-    let phrase = recovery_phrase(&identity).unwrap();
-
-    let mut words: Vec<&str> = phrase.split_whitespace().collect();
-    // Swap the first word for a different valid BIP-39 word, so the failure
-    // is the checksum rather than an unknown token.
-    words[0] = if words[0] == "zoo" { "abandon" } else { "zoo" };
-    let tampered = words.join(" ");
-
-    let err = from_recovery_phrase(&tampered)
+fn a_known_checksum_invalid_word_substitution_is_rejected() {
+    let err = from_recovery_phrase(&with_first_word("abandon"))
         .err()
-        .expect("a phrase failing its checksum must be rejected");
+        .expect("this fixed substitution must fail its checksum");
     let msg = err.to_string();
     assert!(
         msg.contains("word order") || msg.contains("checksum"),
         "the error should tell a human what to check: {msg}"
+    );
+}
+
+/// BIP-39 checksums detect most, not all, valid-word substitutions. An
+/// accidentally checksum-valid typo must restore a *different* identity; it
+/// must never be mistaken for the original.
+#[test]
+fn a_checksum_valid_word_substitution_restores_a_different_identity() {
+    let original = from_recovery_phrase(FIXED_PHRASE).unwrap();
+    let changed = from_recovery_phrase(&with_first_word("alley")).unwrap();
+    assert_ne!(changed.did(), original.did());
+}
+
+/// Exhaust the English word list at one position. This pins the finite corpus
+/// rather than drawing random samples and turning BIP-39's checksum probability
+/// into a flaky CI assertion.
+#[test]
+fn one_word_substitution_checksum_behavior_is_exhaustively_characterized() {
+    let accepted: Vec<&str> = Language::English
+        .word_list()
+        .iter()
+        .copied()
+        .filter(|word| *word != "huge")
+        .filter(|word| from_recovery_phrase(&with_first_word(word)).is_ok())
+        .collect();
+
+    assert_eq!(
+        accepted,
+        ["alley", "ankle", "birth", "demand", "exotic", "peanut", "perfect", "pull", "spread",]
     );
 }
 
@@ -88,9 +119,7 @@ fn a_mistyped_phrase_is_rejected_rather_than_silently_giving_another_key() {
 /// that cries wolf.
 #[test]
 fn a_reordered_phrase_is_rejected() {
-    let phrase = "huge similar size foam escape any exhibit forward color bounce horror \
-                  convince deny olympic grain garment ill embark strike during father mix \
-                  brown solid";
+    let phrase = FIXED_PHRASE;
     // The fixture has to be a phrase that restores, or the assertion below
     // would pass for the wrong reason.
     assert!(
