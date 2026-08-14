@@ -1,11 +1,11 @@
 # RFC 0: RFC and ADR process
 
-- Status: Review
+- Status: Accepted
 - Authors: kan maintainers
 - Created: 2026-08-13
 - Discussion: https://github.com/kan-tools/kan/pull/225
 - Review-period-ends: 2026-08-17T06:04:00Z
-- Review-override: None
+- Review-override: Unanimous 🚀 approval at https://github.com/kan-tools/kan/pull/225 (2026-08-14T06:14:16Z; maintainers: @maxinelevesque)
 - Supersedes: The implicit process described by the former `docs/DECISIONS.md`
 - Superseded-by: None
 
@@ -237,9 +237,9 @@ None.
 
 ## Implementation status
 
-Proposed in pull request #225, which adds RFC 0, the templates and indexes,
-the ADR migration, and its validator. The process takes effect when that pull
-request merges.
+Accepted by the unanimous maintainer review override in pull request #225,
+which adds RFC 0, the templates and indexes, the ADR migration, and its
+validator. The process takes effect when that pull request merges.
 
 The next expected RFC is RFC 1, the kan identity architecture. RFC 2 is
 expected to define the kan URI scheme after identity semantics settle. Their
