@@ -8,7 +8,7 @@
 > contract, and the companion tool `day` entirely.
 >
 > **For current orientation read `docs/SPEC.md` (authoritative), then
-> `docs/DECISIONS.md` (why things are the way they are), then `.design/` for
+> `adrs/README.md` (why things are the way they are), then `.design/` for
 > in-flight work.** For current *state* rather than design, `kan show spine`
 > in this repo is the entry point.
 

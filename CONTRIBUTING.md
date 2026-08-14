@@ -32,11 +32,14 @@ start there, which wastes your time.
 
 Anything that changes behaviour goes through a design pass first, landing as
 `.design/<slug>.md` with numbered requirements (REQ-*) and acceptance criteria
-(AC-*), and the decision is recorded as an ADR in `docs/DECISIONS.md`. That
-sequence exists because kan's hard parts are its data model and its identity
-model, and both have repeatedly turned out to be subtler than the patch that
-looked obvious. The archaeology is in `docs/DECISIONS.md` if you want to see
-what that has cost.
+(AC-*). A public protocol, durable format, identifier scheme, governance rule,
+compatibility promise, or cross-cutting architecture change then proceeds as a
+Request for Comments under [RFC 0](rfcs/0-rfc-and-adr-process.md). A
+smaller implementation decision may proceed directly to an Architecture
+Decision Record under [`adrs/`](adrs/README.md). An accepted RFC is already the
+governing decision and does not need a duplicate ADR unless implementation
+materially departs from it. The archaeology is in `adrs/` if you want to see
+what these decisions have cost.
 
 Small, self-evident fixes — a typo, a broken link, a stale comment — do not need
 any of that. Send them directly.

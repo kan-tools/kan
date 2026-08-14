@@ -1,0 +1,28 @@
+name: RFC and ADR validation
+
+on:
+  push:
+    paths:
+      - "rfcs/**"
+      - "adrs/**"
+      - "scripts/check-rfcs-adrs.sh"
+      - ".github/workflows/rfc-validation.yml"
+  pull_request:
+    paths:
+      - "rfcs/**"
+      - "adrs/**"
+      - "scripts/check-rfcs-adrs.sh"
+      - ".github/workflows/rfc-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prove the validator rejects a historical-record mutation
+        run: ./scripts/check-rfcs-adrs.sh --self-test
+      - name: Validate RFCs and ADRs
+        run: ./scripts/check-rfcs-adrs.sh

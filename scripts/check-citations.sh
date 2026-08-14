@@ -45,6 +45,9 @@
 #   scripts/check-citations.sh --self-test  prove it still detects each defect class
 set -uo pipefail
 
+default_scan=0
+[ "$#" -eq 0 ] && default_scan=1
+
 # Definition-anchored. The symbol must be preceded, from the START OF THE LINE,
 # by nothing but optional visibility/qualifiers and then a defining keyword.
 # That is what excludes `// mentions fn x`, `/// see \`fn x\``, and
@@ -228,6 +231,10 @@ if [ "$fail" -eq 0 ]; then
   echo "citations: $checked_sym symbolic resolved to definitions, $checked_pos positional in range and non-blank"
   [ "$skipped_pos" -gt 0 ] && echo "           $skipped_pos positional citation(s) SKIPPED by extension -- not checked, not a pass"
   echo "           (positional citations are checked for plausibility, not for pointing at what the prose claims)"
+  if [ "$default_scan" -eq 1 ]; then
+    ./scripts/check-rfcs-adrs.sh --self-test || exit 1
+    ./scripts/check-rfcs-adrs.sh || exit 1
+  fi
 else
   echo "citations: FAILURES ABOVE ($checked_sym symbolic, $checked_pos positional checked)"
 fi
