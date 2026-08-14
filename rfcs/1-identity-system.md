@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-14
 - Discussion: https://github.com/kan-tools/kan/pull/229
-- Review-period-ends: 2026-08-18T00:00:00Z
+- Review-period-ends: 2026-08-18T01:30:00Z
 - Review-override: None
 - Supersedes: Identity architecture in ADRs 4, 24, 25, 55, 58, 61, 65-68, 75, 77, 83, 84, and 86-88 where this RFC conflicts
 - Superseded-by: None
@@ -253,6 +253,12 @@ Version 1 controller lists use explicit 1-of-N authorization: one valid proof
 from any listed controller is sufficient. Threshold policies require a later
 protocol version because changing this rule changes event validity.
 
+Genesis is an identity-control bootstrap, not an invocable repository state.
+Its methods and controllers may authorize subsequent identity administration
+or recovery, but an actor that directly cites genesis as its `IdentityVersion`
+cannot exercise repository reach. A fresh `did:kan` principal therefore appends
+an administration event before its first repository-scoped action.
+
 Let `G` be the canonical DAG-CBOR bytes of the unsigned `DidKanGenesis` payload.
 Let `H` be the SHA-256 multihash of `G`, including multihash code `0x12` and
 length `0x20`. The identifier is:
@@ -324,13 +330,14 @@ by choosing an older administrative state. Genesis recovery keys remain
 permanently able to create a competing recovery branch, but cannot supersede or
 win over a later recovery epoch.
 
-A recovery event is an identity-control checkpoint, not an invocable repository
-state. Its resulting methods and controllers may authorize subsequent identity
+A recovery event is likewise an identity-control checkpoint, not an invocable
+repository state. Its resulting methods and controllers may authorize subsequent identity
 administration or recovery according to the rules above, but a claim,
 governance event, delegation, revocation, lineage claim, or role claim that
 directly cites the recovery event as its actor's `IdentityVersion` is
-`unadmitted`. Cryptographic validity and the recovery event's identity standing
-remain independently reportable. A method becomes usable for repository reach
+`unadmitted`, subject to the ordered admission-table precedence below.
+Cryptographic validity and the recovery event's identity standing remain
+independently reportable. A method becomes usable for repository reach
 only when it is present in a subsequent administration state; that
 non-recovery authorization span can later be retired by recovery. This rule
 prevents a method carried through or added by a recovery checkpoint from gaining
@@ -846,7 +853,7 @@ Identity standing:
 | uniquely resolved, recognized, unretired `did:kan` event on the active ancestry | `active` |
 | `did:plc` or `did:web` condition | method-specific result defined above |
 
-Repository admission for an otherwise cryptographically valid action:
+Repository admission for an evaluated action:
 
 | First matching condition | Admission |
 |---|---|
@@ -855,12 +862,13 @@ Repository admission for an otherwise cryptographically valid action:
 | cryptographic validity `unsupported` or `unknown` | `unknown` |
 | identity standing `unknown` | `unknown` |
 | identity standing `contested` | `contested` |
-| actor directly cites a recovery event | `unadmitted` |
+| actor directly cites `did:kan` genesis or a recovery event | `unadmitted` |
 | identity standing `superseded` | `unadmitted` |
 | governance resolution `unknown-history` or `unsupported` | `unknown` |
 | governance resolution `contested` | `contested` |
 | required trusted time unavailable | `unknown` |
 | covering path affected by an unknown or contested effective revocation | corresponding `unknown` or `contested` |
+| required delegation or parent evidence unavailable | `unknown` |
 | complete uncontested evidence contains no covering capability path | `unadmitted` |
 | admitted root action or one complete covering capability path | `admitted` |
 
@@ -1049,11 +1057,10 @@ verified from its content address, proof, and applicable authority history.
   `did:kan` branch. Unresolved forks are visible as contested.
 - **Recovery capture:** Recovery authorization is checked at the selected
   recovery parent, not the repaired state. Recovery epochs prevent stale
-  recovery keys from winning a later epoch; they cannot prevent a stale
-  genesis recovery key from creating a permanently contested branch. Genesis
-  recovery custody is therefore root-grade for the identity's lifetime.
-  Competing valid recoveries remain contested rather than selecting an
-  attacker-controlled winner.
+  recovery keys from winning a later epoch; they cannot prevent a controller
+  from any prior epoch from creating a permanently contested branch rooted
+  where it remained current. Competing valid recoveries remain contested rather
+  than selecting an attacker-controlled winner.
 - **Prior-epoch availability:** Every recovery controller set rotated out by a
   later epoch retains the lifetime ability to create a competing recovery from
   a state where it was current and force identity and admission resolution to
@@ -1065,17 +1072,21 @@ verified from its content address, proof, and applicable authority history.
   produce authentic actions by citing the earlier unretired state, and those
   actions remain admitted while their independent repository capability path
   remains admitted.
-  Responding to compromise requires a recovery that retires the span beginning
-  where that method became authorized. That response also makes honest actions
+  Responding to compromise requires a recovery that retires the non-bootstrap,
+  non-checkpoint administration span where that method gained repository reach.
+  That response also makes honest actions
   depending on the retired span `superseded` and `unadmitted`; operators must
   weigh this explicit collateral cost rather than assume rotation revoked the
   stolen key.
-- **Recovery checkpoints:** Methods present at a recovery event may control
-  later identity transitions but cannot directly exercise repository reach.
-  Carrying a method into a subsequent administration state makes that later
-  span usable and recoverably retirable. A compromised checkpoint method may
-  still force a visible identity contest by creating an administrative fork;
-  it cannot remain a silently admitted repository actor.
+- **Bootstrap and recovery checkpoints:** Methods present at genesis or a
+  recovery event may control later identity transitions but cannot directly
+  exercise repository reach. After genesis and after every recovery, one
+  administration event is required before the `did:kan` principal can perform
+  any repository-scoped act, including repository inception or governance.
+  Carrying a method into that administration state makes the later span usable
+  and recoverably retirable. A compromised checkpoint method may still force a
+  visible identity contest by creating an administrative fork; it cannot remain
+  a silently admitted repository actor.
 - **Proof malleability:** Logical event identity excludes proofs, so alternate
   valid signatures over one payload cannot manufacture a state fork.
 - **Delegation amplification:** Every edge is checked for strict attenuation;
@@ -1216,7 +1227,11 @@ The vector set MUST cover:
 15. a method carried through and a method added by a recovery checkpoint:
     direct repository actions citing the checkpoint are valid speech but
     `unadmitted`, the same method carried into a later administration state may
-    be admitted, and a subsequent recovery can retire that administration span.
+    be admitted, and a subsequent recovery can retire that administration span;
+16. a genesis-enrolled method cited after administrative removal and best-effort
+    recovery: direct genesis citation remains valid speech but is `unadmitted`,
+    while carrying the method into an administration state creates the first
+    repository-reach span and permits later recovery retirement.
 
 Each valid vector MUST include diagnostic input, canonical DAG-CBOR hex,
 relevant multihash/CID strings, signature bytes, and the expected resolved
