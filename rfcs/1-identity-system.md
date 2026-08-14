@@ -1,10 +1,10 @@
 # RFC 1: Principal, repository, and delegated identity
 
-- Status: Draft
+- Status: Review
 - Authors: kan maintainers
 - Created: 2026-08-14
-- Discussion: To be assigned when the proposal pull request opens
-- Review-period-ends: Not started
+- Discussion: https://github.com/kan-tools/kan/pull/229
+- Review-period-ends: 2026-08-17T07:03:00Z
 - Review-override: None
 - Supersedes: Identity architecture in ADRs 4, 24, 25, 55, 58, 61, 65-68, 75, 77, 83, 84, and 86-88 where this RFC conflicts
 - Superseded-by: None
