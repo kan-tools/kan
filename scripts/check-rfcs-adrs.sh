@@ -89,6 +89,7 @@ esac
 perl -0777 -ne 'exit(/72 continuous\s+hours/ ? 0 : 1)' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 lacks the 72-hour review rule"
 perl -0777 -ne 'exit(/allocated when the proposal pull\s+request opens/ ? 0 : 1)' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 lacks allocation-at-PR-open"
 grep -Fq 'permanent gaps are valid' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 lacks permanent-gap semantics"
-grep -Fq 'RFC 1, the kan URI scheme' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 does not reserve the expected next proposal"
+grep -Fq 'RFC 1, the kan identity architecture' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 does not reserve identity as the expected next proposal"
+grep -Fq 'RFC 2 is' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 does not sequence the URI proposal after identity"
 
 echo "RFC/ADR check: 91 reconstructed ADRs and RFC 0 are structurally valid"

@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-13
 - Discussion: https://github.com/kan-tools/kan/pull/225
-- Review-period-ends: 2026-08-16T19:31:00Z
+- Review-period-ends: 2026-08-17T03:47:00Z
 - Supersedes: The implicit process described by the former `docs/DECISIONS.md`
 - Superseded-by: None
 
@@ -226,6 +226,6 @@ Proposed in pull request #225, which adds RFC 0, the templates and indexes,
 the ADR migration, and its validator. The process takes effect when that pull
 request merges.
 
-The next expected RFC is RFC 1, the kan URI scheme. Its grammar, resolution,
-userinfo, stream aliases, DID authority handling, canonicalization, and
-substrate semantics are deliberately outside RFC 0.
+The next expected RFC is RFC 1, the kan identity architecture. RFC 2 is
+expected to define the kan URI scheme after identity semantics settle. Their
+substantive rules are deliberately outside RFC 0.
