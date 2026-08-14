@@ -256,8 +256,10 @@ protocol version because changing this rule changes event validity.
 Genesis is an identity-control bootstrap, not an invocable repository state.
 Its methods and controllers may authorize subsequent identity administration
 or recovery, but an actor that directly cites genesis as its `IdentityVersion`
-cannot exercise repository reach. A fresh `did:kan` principal therefore appends
-an administration event before its first repository-scoped action.
+cannot exercise repository reach, and an inception proof citing genesis as its
+`controllerState` does not satisfy repository inception's required root-proof
+authorization. A fresh `did:kan` principal therefore appends an administration
+event before its first repository-scoped action.
 
 Let `G` be the canonical DAG-CBOR bytes of the unsigned `DidKanGenesis` payload.
 Let `H` be the SHA-256 multihash of `G`, including multihash code `0x12` and
@@ -331,8 +333,10 @@ permanently able to create a competing recovery branch, but cannot supersede or
 win over a later recovery epoch.
 
 A recovery event is likewise an identity-control checkpoint, not an invocable
-repository state. Its resulting methods and controllers may authorize subsequent identity
-administration or recovery according to the rules above, but a claim,
+repository state. Its resulting methods and controllers may authorize
+subsequent identity administration or recovery according to the rules above,
+but an inception proof citing the recovery event as its `controllerState` does
+not satisfy repository inception's required root-proof authorization. A claim,
 governance event, delegation, revocation, lineage claim, or role claim that
 directly cites the recovery event as its actor's `IdentityVersion` is
 `unadmitted`, subject to the ordered admission-table precedence below.
@@ -1072,9 +1076,9 @@ verified from its content address, proof, and applicable authority history.
   produce authentic actions by citing the earlier unretired state, and those
   actions remain admitted while their independent repository capability path
   remains admitted.
-  Responding to compromise requires a recovery that retires the non-bootstrap,
-  non-checkpoint administration span where that method gained repository reach.
-  That response also makes honest actions
+  Responding to compromise requires a recovery that retires every
+  non-bootstrap, non-checkpoint administration span where that method gained
+  repository reach. That response also makes honest actions
   depending on the retired span `superseded` and `unadmitted`; operators must
   weigh this explicit collateral cost rather than assume rotation revoked the
   stolen key.
