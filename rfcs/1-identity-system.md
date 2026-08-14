@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-14
 - Discussion: https://github.com/kan-tools/kan/pull/229
-- Review-period-ends: 2026-08-17T18:00:00Z
+- Review-period-ends: 2026-08-17T20:00:00Z
 - Review-override: None
 - Supersedes: Identity architecture in ADRs 4, 24, 25, 55, 58, 61, 65-68, 75, 77, 83, 84, and 86-88 where this RFC conflicts
 - Superseded-by: None
@@ -327,21 +327,55 @@ proofs. Resolution is a pure function of an evidence set. For that set:
 3. mark every non-recovery logical event named in a valid recovery's
    `supersedes`, and its descendants along `previous` edges only until but not
    across a recovery event, as retired;
-4. compute active leaves among non-retired events, treating both `previous` and
-   `recoveryParent` as parent edges for leaf computation;
-5. return `active` only for one active leaf and `contested` for several.
+4. compute active leaves among non-retired recognized events, treating both
+   `previous` and `recoveryParent` as parent edges for leaf computation; a leaf
+   is a non-retired recognized event with no non-retired recognized child under
+   either edge;
+5. apply the ordered result classification below.
 
-Unverifiable events and events not reachable from genesis do not change this
-classification, but the resolver MUST disclose their logical identifiers and
-missing references as orphan evidence. `unknown-history` is returned only when
+Invalid or unauthenticated events and events not reachable from genesis do not
+change the recognized graph, but the resolver MUST disclose their logical
+identifiers and missing references as orphan evidence. `unknown-history` is
+returned only when
 an event with a missing reference is **provisionally authenticatable**: every
-available reference is recognized, its canonical form and signatures verify,
-and those available states establish at least one signer authorized for the
-event's required purpose. A random orphan with no such authorization evidence
-cannot poison resolution. The provisional result does not make the event
+available reference belonging to that event is recognized, its canonical form
+and signatures verify, and those available referenced states establish at least
+one signer authorized for the event's required purpose. A random orphan with no
+such authorization evidence cannot poison resolution. The provisional result
+does not make the event
 intrinsically valid or apply its transition; it only distinguishes credible
 missing history from unauthenticated input while preserving evidence of
 possible withholding.
+
+An administration event whose sole `previous` reference is absent cannot meet
+this definition and is disclosed without downgrading the last recognized head.
+A recovery event with a recognized `recoveryParent` can meet it even when
+`previous` is absent. This asymmetry is deliberate: only available authority
+evidence, not a syntactically plausible assertion, can downgrade resolution.
+
+Resolution uses this exhaustive precedence after genesis has been recognized:
+
+1. if any provisionally authenticatable candidate is blocked by missing
+   history or an authorization controller whose history is `unknown`, return
+   `unknown-history`;
+2. otherwise, if the recognized graph has several active leaves or any
+   candidate's required authorization controller is `contested`, return
+   `contested`;
+3. otherwise, if a canonical candidate with recognized references cannot
+   complete authorization or transition solely because its operation,
+   algorithm-only proof set, DID method, or controller profile is unsupported,
+   return `unsupported`;
+4. otherwise the one active leaf is `active`.
+
+An invalid or unauthenticated candidate is disclosed but does not change the
+result. An unsupported or authorization-unresolvable candidate does not enter
+the recognized graph, does not retire events, and does not disqualify its
+recognized parent from being a leaf. A candidate citing such a candidate is
+also excluded and disclosed. Genesis is handled before this ordering: invalid
+genesis returns `invalid`, unsupported genesis returns `unsupported`, and
+missing genesis returns `unknown-history`. Because recognized genesis remains
+a non-retired leaf until a recognized child replaces it, a recognized graph
+cannot have zero active leaves.
 
 Distinct canonical update payloads with one `previous` are siblings and form a
 fork. Two recovery events with the same `recoveryParent` are likewise competing
@@ -467,15 +501,48 @@ least one valid proof authorized at every parent state; one proof may satisfy
 several parents when its principal remains a root in each. Its declared root
 set becomes the merged result. Events are intrinsically valid; distinct
 children of one parent are a governance fork. Resolution computes active
-leaves from the evidence set. One leaf is active governance; several leaves are
-`contested`; a missing parent is `unknown-history`. No timestamp, CID, proof
-count, or observation order chooses a branch.
+leaves from the evidence set and applies the ordered classification below. No
+timestamp, CID, proof count, or observation order chooses a branch.
 
 As with identity resolution, an unverifiable or unreachable governance orphan
 does not change the resolved classification but MUST be disclosed. Governance
-is `unknown-history` only when an event with a missing parent is provisionally
-authenticatable from its available recognized parent states and proofs under
-the definition above.
+uses the same exhaustive ordering: provisionally authenticatable missing parent
+history yields `unknown-history`; otherwise several recognized active leaves
+yield `contested`; otherwise a canonical candidate with recognized parents that
+is blocked solely by unsupported authorization or transition semantics yields
+`unsupported`; otherwise its single recognized leaf is `active`. Invalid
+candidates are disclosed and ignored. The same recognized
+child and leaf definitions apply. A governance candidate is provisionally
+authenticatable only when its available own parent states establish every
+authorization that can be checked without the missing parent; a random claimed
+parent never suffices.
+
+Governance resolution uses these diagnostic shapes, with every CID array sorted
+and duplicate-free:
+
+```text
+ActiveGovernance {
+  "standing":          "active",
+  "activeEvent":       CID,
+  "governanceRoots":   [text, ...],
+  "orphans":           [CID, ...],
+  "missingReferences": [CID, ...],
+  "diagnostics":       [text, ...]
+}
+
+NonActiveGovernance {
+  "standing":          "contested" | "unknown-history" | "unsupported" | "invalid",
+  "activeLeaves":      [CID, ...],
+  "knownLeaves":       [CID, ...],
+  "orphans":           [CID, ...],
+  "missingReferences": [CID, ...],
+  "reasons":           [text, ...]
+}
+```
+
+Fields that do not apply contain empty arrays. Invalid or unsupported genesis
+selects the corresponding non-active result. Other invalid candidates are
+reported in `reasons` without changing the ordered classification.
 
 Every governance root holds an implicit full repository capability covering
 all subject paths, all v1 repository operations, unbounded time, and delegation.
@@ -545,7 +612,9 @@ capability does not replace the root, grantor, purpose, or proof requirements
 defined for those control events. The `delegable` field alone determines
 whether the holder may create an attenuated child; the
 `capability.delegate` operation classifies that event in admission reports but
-does not independently confer delegation power.
+does not independently confer delegation power. Satisfying the applicable
+exclusive event rule is the control event's repository authorization; no second
+capability path for the classifier operation is required.
 
 Delegation and revocation payloads are:
 
@@ -605,10 +674,15 @@ subset of its parent:
 
 No union of several parent capabilities may create authority that no single
 valid path grants. Each claim names at most one delegation path head; a consumer
-MUST NOT splice edges from different paths. A valid revocation present in the
-evidence set disables the named delegation and every descendant for current
-admission. `effectiveAt` permits a revoker to set a trusted-time boundary; null
-means every evaluation containing the revocation treats it as effective.
+MUST NOT splice edges from different paths. A revocation disables the named
+delegation and every descendant only when the revocation's own repository
+admission is `admitted`. A revocation evaluating `contested` or `unknown` makes
+the target path correspondingly `contested` or `unknown`; an `unadmitted`
+revocation, including one signed from a superseded identity state, is inert but
+remains disclosed. `effectiveAt` permits a revoker to set a trusted-time
+boundary; null means every evaluation containing the revocation treats it as
+effective. If `effectiveAt` is non-null and no trusted evaluation instant is
+available, the revocation and its target path evaluate `unknown`.
 
 Capability time is evaluated against an explicit `evaluationInstant` supplied
 by the admission caller or a named trusted substrate/time witness, never against
@@ -678,16 +752,31 @@ changing intrinsic signature validity. `static` applies to `did:key`.
 `repositoryAdmission: not-applicable` applies only when the object requests no
 repository-scoped operation.
 
-For `did:kan`, standing is a pure function of the complete evidence set:
+Standing is a total, disjoint function evaluated in this precedence:
 
-- `active` means the cited event is unretired and is an ancestor-or-equal of
-  the unique active leaf;
-- `superseded` means the cited event was retired by a valid recovery;
-- `contested` means identity resolution is contested, including when the cited
-  event is ancestral to only some active leaves;
-- `unknown` means identity resolution is `unknown-history` or the cited event
-  cannot be reached and verified from genesis; and
-- `static` applies only to a supported self-certifying `did:key` state.
+1. a supported self-certifying `did:key` state is `static`;
+2. if the method's identity resolution is `unknown-history`, or the cited state
+   cannot be reached and verified, standing is `unknown`;
+3. otherwise, if identity resolution is `contested`, standing is `contested`
+   regardless of whether the cited state appears retired on one or every known
+   branch;
+4. otherwise, under a unique resolved state, a `did:kan` event retired by a
+   valid recovery is `superseded`, and an unretired ancestor-or-equal of the
+   active leaf is `active`.
+
+For `did:plc`, the cited operation is `active` when it is on the canonical PLC
+operation chain selected by the resolver, `superseded` when authoritative PLC
+resolution identifies it as nullified or on a non-canonical branch,
+`contested` when authoritative sources present unresolved canonical branches,
+and `unknown` when the cited operation or required log history is unavailable.
+For `did:web`, the current successfully resolved document is `active`. A prior
+document is also `active` only when the configured resolver profile supplies a
+trusted historical witness that binds its CID to that DID as an authoritative
+version; replacement alone does not retroactively invalidate witnessed
+history. Without that witness a non-current document is `unknown`.
+`did:web` has no method-native retirement or fork proof, so v1 does not assign
+`superseded` or infer `contested` merely from replacement or inconsistent
+unauthenticated fetches.
 
 A control-event proof uses the same standing rules as a claim author. An action
 or proof depending on `superseded` standing is `unadmitted`; one depending on
@@ -772,13 +861,16 @@ ResolvedDidKanState {
   "did":                         text,
   "standing":                    "active",
   "activeEvent":                 CID,
-  "recoveryParent":              CID,
+  "recoveryParent":              CID or null,
   "recoveryEpoch":               unsigned integer,
   "recoveryControllers":         [text, ...],
   "administrationControllers":   [text, ...],
   "verificationMethods":         [VerificationMethod, ...],
   "services":                    [Service, ...],
-  "retiredHeads":                [CID, ...]
+  "retiredHeads":                [CID, ...],
+  "orphans":                     [CID, ...],
+  "missingReferences":           [CID, ...],
+  "diagnostics":                 [text, ...]
 }
 ```
 
@@ -791,22 +883,28 @@ ContestedDidKanState {
   "standing":     "contested",
   "activeLeaves": [CID, ...],
   "retiredHeads": [CID, ...],
-  "orphans":      [CID, ...]
+  "orphans":      [CID, ...],
+  "missingReferences": [CID, ...],
+  "diagnostics":  [text, ...]
 }
 
 UnknownDidKanState {
   "did":               text,
   "standing":          "unknown-history",
   "knownLeaves":       [CID, ...],
+  "activeLeaves":      [CID, ...],
   "missingReferences": [CID, ...],
-  "orphans":           [CID, ...]
+  "orphans":           [CID, ...],
+  "diagnostics":       [text, ...]
 }
 
 UnsupportedDidKanState {
   "did":      text,
   "standing": "unsupported",
   "events":   [CID, ...],
-  "reasons":  [text, ...]
+  "reasons":  [text, ...],
+  "knownLeaves": [CID, ...],
+  "orphans":  [CID, ...]
 }
 
 InvalidDidKanState {
@@ -824,6 +922,11 @@ stable protocol identifiers, not localized prose. Version 1 defines at least
 `unsupported-algorithm`, `unsupported-did-method`, `unsupported-operation`,
 `unknown-field`, `missing-reference`, and `controller-cycle`; later versions
 may add identifiers without reclassifying v1 evidence.
+`recoveryParent` is null when no recovery event exists on the active chain;
+otherwise it is the active chain's latest recovery logical identifier.
+`diagnostics` includes reason identifiers for ignored proofs and candidates,
+including an unsupported proof ignored because another proof authorized the
+same logical event. Empty diagnostic arrays are present, not omitted.
 
 The full resolved state is the normative kan output. A DID Core document is a
 lossy projection: verification methods and services map directly; kan recovery
@@ -870,6 +973,16 @@ verified from its content address, proof, and applicable authority history.
   recovery custody is therefore root-grade for the identity's lifetime.
   Competing valid recoveries remain contested rather than selecting an
   attacker-controlled winner.
+- **Administrative key removal:** Removing a method by ordinary administration
+  is rotation hygiene, not retroactive revocation. A holder may continue to
+  produce authentic actions by citing the earlier unretired state, and those
+  actions remain admitted while their independent repository capability path
+  remains admitted.
+  Responding to compromise requires a recovery that retires the span beginning
+  where that method became authorized. That response also makes honest actions
+  depending on the retired span `superseded` and `unadmitted`; operators must
+  weigh this explicit collateral cost rather than assume rotation revoked the
+  stolen key.
 - **Proof malleability:** Logical event identity excludes proofs, so alternate
   valid signatures over one payload cannot manufacture a state fork.
 - **Delegation amplification:** Every edge is checked for strict attenuation;
@@ -977,24 +1090,31 @@ The vector set MUST cover:
 4. linear administration, sibling fork, proof-set malleability, contested
    resolution, recovery epochs, competing recoveries, stop-at-recovery
    retirement, `recoveryParent` leaf ordering, genesis-supersession rejection,
-   and an authenticated missing parent versus a garbage orphan;
+   a stale-genesis recovery producing retired evidence under contest, an
+   authenticated missing-parent recovery versus a garbage orphan, an
+   unsupported-operation mid-chain, and an unresolvable controller;
 5. verification-purpose acceptance and rejection;
 6. governance update, fork, contested admission, multi-parent reconciliation,
    and removal of a root that attempts a fresh historical-anchor delegation and
    a governance-root revocation;
 7. valid attenuation and attempted repository, subject, operation, and time
    amplification;
-8. root zero-length admission, revocation, trusted-time expiry, unknown-time
+8. root zero-length admission, revocation, a retired-key revocation that remains
+   inert, trusted-time expiry, unknown-time
    boundaries, mixed valid/invalid proof sets, and non-delegability of governance
    event authorization;
-9. all four initially supported DID methods, their `IdentityVersion` forms, and
-   an unsupported method;
+9. all four initially supported DID methods, their `IdentityVersion` and
+   standing forms, current and archived `did:web` documents, canonical and
+   nullified `did:plc` operations, and an unsupported method;
 10. active, superseded, contested, unknown, and static identity standing;
 11. legacy authorship, legacy-to-legacy composite supersession, modern-to-legacy
     principal supersession, forbidden legacy-to-modern supersession, and
     principal-keyed modern supersession without byte rewriting;
 12. read-only resolution with no credential, governance, admission, or trust
-    side effects.
+    side effects;
+13. an administratively removed method that remains admitted at its old state,
+    then becomes `superseded` and `unadmitted` after recovery-span retirement;
+14. `subjectPrefix: ""` covering only the literal empty subject.
 
 Each valid vector MUST include diagnostic input, canonical DAG-CBOR hex,
 relevant multihash/CID strings, signature bytes, and the expected resolved
