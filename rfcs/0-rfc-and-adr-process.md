@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-13
 - Discussion: https://github.com/kan-tools/kan/pull/225
-- Review-period-ends: 2026-08-17T03:47:00Z
+- Review-period-ends: 2026-08-17T06:02:00Z
 - Supersedes: The implicit process described by the former `docs/DECISIONS.md`
 - Superseded-by: None
 
