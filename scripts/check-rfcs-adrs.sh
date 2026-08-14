@@ -87,6 +87,9 @@ case "$status" in
 esac
 
 perl -0777 -ne 'exit(/72 continuous\s+hours/ ? 0 : 1)' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 lacks the 72-hour review rule"
+grep -Fq 'every current maintainer reacts' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 lacks unanimous rocket override semantics"
+grep -Fq 'after the latest substantive commit' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 does not invalidate stale override approvals"
+grep -Fq 'does not waive unresolved blocking questions, required evidence, or CI' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 review override waives more than time"
 perl -0777 -ne 'exit(/allocated when the proposal pull\s+request opens/ ? 0 : 1)' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 lacks allocation-at-PR-open"
 grep -Fq 'permanent gaps are valid' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 lacks permanent-gap semantics"
 grep -Fq 'RFC 1, the kan identity architecture' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 does not reserve identity as the expected next proposal"

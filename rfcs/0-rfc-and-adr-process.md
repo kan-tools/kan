@@ -4,7 +4,8 @@
 - Authors: kan maintainers
 - Created: 2026-08-13
 - Discussion: https://github.com/kan-tools/kan/pull/225
-- Review-period-ends: 2026-08-17T06:02:00Z
+- Review-period-ends: 2026-08-17T06:04:00Z
+- Review-override: None
 - Supersedes: The implicit process described by the former `docs/DECISIONS.md`
 - Superseded-by: None
 
@@ -84,7 +85,8 @@ Accepted/Implemented → Superseded
 - **Draft:** Authored but not yet submitted for the formal review period.
 - **Review:** Submitted in a pull request with an assigned number.
 - **Accepted:** Approved by a maintainer after no fewer than 72 continuous
-  hours of public review.
+  hours of public review, unless every current maintainer invokes the unanimous
+  review override below.
 - **Implemented:** Its normative behavior is shipped and implementation
   evidence is linked.
 - **Rejected:** Considered and declined; the record remains available.
@@ -96,6 +98,15 @@ Acceptance requires all blocking questions to be resolved. A question MAY
 remain under `Deferred questions` only when the RFC explicitly shows that it
 does not affect the proposed contract. Substantive changes restart the 72-hour
 period; editorial corrections do not.
+
+The remaining review period MAY be waived when every current maintainer reacts
+with 🚀 to the proposal pull request's opening post. For this rule, the
+maintainer set is the set of GitHub repository collaborators with Maintain or
+Admin permission when the override is evaluated. Every qualifying reaction
+MUST have been created after the latest substantive commit; a later substantive
+change invalidates all prior override approvals. The RFC metadata MUST record
+the override and discussion URL before merge. This override shortens time only:
+it does not waive unresolved blocking questions, required evidence, or CI.
 
 ### ADR numbering and files
 
@@ -160,7 +171,8 @@ To propose an RFC:
 3. Open the proposal pull request and allocate the next unused number.
 4. Change status to `Review` and record the discussion URL and review end.
 5. Resolve blocking questions and restart review after substantive changes.
-6. After at least 72 hours, a maintainer accepts, rejects, or asks for further
+6. After at least 72 hours, or after every current maintainer records a valid 🚀
+   override approval, a maintainer accepts, rejects, or asks for further
    revision.
 7. Track implementation in the RFC and change status to `Implemented` only
    when shipped evidence exists.
@@ -174,6 +186,9 @@ or decision it documents.
 The merged repository is authoritative for RFC and ADR text and status. Pull
 request discussion is supporting evidence, not a substitute for the merged
 record. A maintainer's merge establishes acceptance; authorship alone does not.
+When the unanimous review override is used, GitHub collaborator permissions and
+🚀 reactions on the proposal pull request are the authority for that approval,
+and the RFC records a durable link to them.
 Historical reconstruction is authoritative only about what the retained
 source said, not about facts absent from that source.
 

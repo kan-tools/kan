@@ -5,6 +5,7 @@
 - Created: YYYY-MM-DD
 - Discussion: Pull request or issue URL
 - Review-period-ends: YYYY-MM-DD
+- Review-override: None, or unanimous 🚀 approval at the discussion URL
 - Supersedes: None
 - Superseded-by: None
 
@@ -65,4 +66,3 @@ List explicitly deferred matters. Write `None` when there are none.
 
 State `Not implemented`, link implementation work, or identify the release in
 which the RFC became implemented.
-
