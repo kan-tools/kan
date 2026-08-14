@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-14
 - Discussion: https://github.com/kan-tools/kan/pull/229
-- Review-period-ends: 2026-08-17T21:30:00Z
+- Review-period-ends: 2026-08-18T00:00:00Z
 - Review-override: None
 - Supersedes: Identity architecture in ADRs 4, 24, 25, 55, 58, 61, 65-68, 75, 77, 83, 84, and 86-88 where this RFC conflicts
 - Superseded-by: None
@@ -310,9 +310,10 @@ authorized by recovery controllers in the resolved state of `recoveryParent`.
 The named `recoveryParent` MUST be an ancestor-or-equal of `previous` when
 following `previous` and `recoveryParent` edges, and the resulting
 `recoveryEpoch` MUST be strictly greater than the recovery epoch in the state
-produced by `previous`. A recovery authorized from an older epoch therefore cannot graft
-onto a state that has already reached the same or a later epoch; it must branch
-from an earlier state and remains visible as a competing recovery.
+produced by `previous`. A recovery authorized from an older epoch therefore
+cannot graft onto a state that has already reached the same or a later epoch;
+it must branch from an earlier state and remains visible as a competing
+recovery.
 Its initial recovery-controller set is taken from `recoveryParent`, not
 `previous`; recovery-controller operations then explicitly produce its complete
 resulting set. All other state begins at `previous`. It may replace recovery
@@ -322,6 +323,18 @@ authority: a controller removed by a later recovery epoch cannot regain power
 by choosing an older administrative state. Genesis recovery keys remain
 permanently able to create a competing recovery branch, but cannot supersede or
 win over a later recovery epoch.
+
+A recovery event is an identity-control checkpoint, not an invocable repository
+state. Its resulting methods and controllers may authorize subsequent identity
+administration or recovery according to the rules above, but a claim,
+governance event, delegation, revocation, lineage claim, or role claim that
+directly cites the recovery event as its actor's `IdentityVersion` is
+`unadmitted`. Cryptographic validity and the recovery event's identity standing
+remain independently reportable. A method becomes usable for repository reach
+only when it is present in a subsequent administration state; that
+non-recovery authorization span can later be retired by recovery. This rule
+prevents a method carried through or added by a recovery checkpoint from gaining
+permanently unrevocable repository reach.
 
 Event validity is intrinsic to its canonical payload, cited parents, and
 proofs. Resolution is a pure function of an evidence set. For that set:
@@ -386,12 +399,11 @@ a non-retired leaf until a recognized child replaces it, a recognized graph
 cannot have zero active leaves.
 
 Distinct canonical update payloads with one `previous` are siblings and form a
-fork. Two recovery events with the same `recoveryParent` that do not stand in an
-ancestor relationship permitted by the epoch rules are competing recovery
-branches, regardless of other graph edges. Neither wins by timestamp, sequence,
-CID order, observation order, or proof count; if both survive, resolution is
-`contested`. A later
-recovery can advance only one recovery branch and cannot silently erase a
+fork. Two distinct valid recovery events with the same `recoveryParent` are
+competing recovery branches; the epoch rules prevent either from being a valid
+descendant of the other. Neither wins by timestamp, sequence, CID order,
+observation order, or proof count; if both survive, resolution is `contested`.
+A later recovery can advance only one recovery branch and cannot silently erase a
 competing recovery branch. Compromise or equivocation of recovery authority can
 therefore produce a permanently contested identity; this is preferable to an
 unauthorized deterministic winner. `supersedes` retires exactly the named
@@ -694,8 +706,9 @@ boundary; null means every evaluation containing the revocation treats it as
 effective. If `effectiveAt` is non-null and no trusted evaluation instant is
 available, the revocation and its target path evaluate `unknown`.
 With a trusted evaluation instant before `effectiveAt`, the revocation is not
-yet effective and the target path is evaluated without it; at or after the
-boundary, the admitted revocation disables the path.
+yet effective and contributes nothing to path evaluation, including no
+`contested` or `unknown` standing of its own; at or after the boundary, the
+admitted revocation disables the path.
 
 Capability time is evaluated against an explicit `evaluationInstant` supplied
 by the admission caller or a named trusted substrate/time witness, never against
@@ -800,6 +813,60 @@ signature's cryptographic validity. A historical event on an unretired linear
 chain remains `active` after ordinary key rotation, so rotation does not
 retroactively remove honest history; recovery retirement does remove its
 repository reach.
+
+### Normative decision tables
+
+These ordered tables summarize the complete v1 decision model. Earlier rows
+take precedence; an implementation MUST produce the listed result rather than
+fall through to a later row. The detailed rules above define how each predicate
+is established, while these tables define how established predicates compose.
+
+Identity or governance resolution (`did:kan` genesis and repository inception
+are each the corresponding bootstrap event):
+
+| Evidence condition | Result |
+|---|---|
+| bootstrap absent | `unknown-history` |
+| bootstrap invalid | `invalid` |
+| bootstrap unsupported | `unsupported` |
+| credible missing history or qualifying unknown controller | `unknown-history` |
+| multiple recognized leaves or qualifying contested controller | `contested` |
+| otherwise-authorizable transition blocked only by unsupported semantics | `unsupported` |
+| one recognized active leaf | `active` |
+
+Identity standing:
+
+| Method and resolution condition | Standing |
+|---|---|
+| supported self-certifying `did:key` | `static` |
+| unsupported or unresolved DID method | `unknown` |
+| identity history or cited state unavailable | `unknown` |
+| identity resolution contested | `contested` |
+| uniquely resolved `did:kan` event retired by recovery | `superseded` |
+| uniquely resolved, recognized, unretired `did:kan` event on the active ancestry | `active` |
+| `did:plc` or `did:web` condition | method-specific result defined above |
+
+Repository admission for an otherwise cryptographically valid action:
+
+| First matching condition | Admission |
+|---|---|
+| no repository-scoped operation requested | `not-applicable` |
+| cryptographic validity `invalid` | `unadmitted` |
+| cryptographic validity `unsupported` or `unknown` | `unknown` |
+| identity standing `unknown` | `unknown` |
+| identity standing `contested` | `contested` |
+| actor directly cites a recovery event | `unadmitted` |
+| identity standing `superseded` | `unadmitted` |
+| governance resolution `unknown-history` or `unsupported` | `unknown` |
+| governance resolution `contested` | `contested` |
+| required trusted time unavailable | `unknown` |
+| covering path affected by an unknown or contested effective revocation | corresponding `unknown` or `contested` |
+| complete uncontested evidence contains no covering capability path | `unadmitted` |
+| admitted root action or one complete covering capability path | `admitted` |
+
+Invalid, unsupported, and unknown signatures retain their cryptographic
+classification while the table supplies the separate admission result. View
+trust remains an independent consumer decision after these results.
 
 ## Canonicalization and equivalence
 
@@ -987,11 +1054,12 @@ verified from its content address, proof, and applicable authority history.
   recovery custody is therefore root-grade for the identity's lifetime.
   Competing valid recoveries remain contested rather than selecting an
   attacker-controlled winner.
-- **Genesis-key availability:** A genesis recovery key rotated out later still
-  retains the lifetime ability to create a competing recovery from genesis and
-  force identity and admission resolution to `contested`. This deliberate
-  availability cost prevents silent attacker victory; genesis recovery
-  credentials require lifetime protection even after rotation.
+- **Prior-epoch availability:** Every recovery controller set rotated out by a
+  later epoch retains the lifetime ability to create a competing recovery from
+  a state where it was current and force identity and admission resolution to
+  `contested`. This deliberate availability cost prevents silent attacker
+  victory; recovery credentials from every epoch require lifetime protection
+  even after rotation.
 - **Administrative key removal:** Removing a method by ordinary administration
   is rotation hygiene, not retroactive revocation. A holder may continue to
   produce authentic actions by citing the earlier unretired state, and those
@@ -1002,6 +1070,12 @@ verified from its content address, proof, and applicable authority history.
   depending on the retired span `superseded` and `unadmitted`; operators must
   weigh this explicit collateral cost rather than assume rotation revoked the
   stolen key.
+- **Recovery checkpoints:** Methods present at a recovery event may control
+  later identity transitions but cannot directly exercise repository reach.
+  Carrying a method into a subsequent administration state makes that later
+  span usable and recoverably retirable. A compromised checkpoint method may
+  still force a visible identity contest by creating an administrative fork;
+  it cannot remain a silently admitted repository actor.
 - **Proof malleability:** Logical event identity excludes proofs, so alternate
   valid signatures over one payload cannot manufacture a state fork.
 - **Delegation amplification:** Every edge is checked for strict attenuation;
@@ -1114,7 +1188,9 @@ The vector set MUST cover:
    unsupported-operation mid-chain, an unresolvable controller, rejection of a
    stale recovery whose
    `recoveryParent` is genesis but whose `previous` is a live head already at
-   that recovery epoch, plus a valid competing branch from the earlier epoch;
+   that recovery epoch, rejection of a pumped higher-epoch recovery whose
+   `recoveryParent` is not an ancestor of `previous`, plus a valid competing
+   branch from the earlier epoch;
 5. verification-purpose acceptance and rejection;
 6. governance update, fork, contested admission, multi-parent reconciliation,
    and removal of a root that attempts a fresh historical-anchor delegation and
@@ -1136,7 +1212,11 @@ The vector set MUST cover:
     side effects;
 13. an administratively removed method that remains admitted at its old state,
     then becomes `superseded` and `unadmitted` after recovery-span retirement;
-14. `subjectPrefix: ""` covering only the literal empty subject.
+14. `subjectPrefix: ""` covering only the literal empty subject;
+15. a method carried through and a method added by a recovery checkpoint:
+    direct repository actions citing the checkpoint are valid speech but
+    `unadmitted`, the same method carried into a later administration state may
+    be admitted, and a subsequent recovery can retire that administration span.
 
 Each valid vector MUST include diagnostic input, canonical DAG-CBOR hex,
 relevant multihash/CID strings, signature bytes, and the expected resolved
