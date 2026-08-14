@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-14
 - Discussion: https://github.com/kan-tools/kan/pull/229
-- Review-period-ends: 2026-08-17T07:33:00Z
+- Review-period-ends: 2026-08-17T18:00:00Z
 - Review-override: None
 - Supersedes: Identity architecture in ADRs 4, 24, 25, 55, 58, 61, 65-68, 75, 77, 83, 84, and 86-88 where this RFC conflicts
 - Superseded-by: None
@@ -127,8 +127,14 @@ SigningInput {
 Proofs are detached from the signing input. The domain string is mandatory
 domain separation; a signature valid for one event family MUST NOT authorize
 another. Proofs MUST be sorted lexicographically by their canonical `method`
-bytes, then canonical `controllerState`, `alg`, and `sig`. Duplicate
-`(method, controllerState, alg)` pairs are invalid.
+bytes, then the canonical DAG-CBOR encoding bytes of `controllerState`, then
+canonical `alg` and `sig` bytes. Duplicate `(method, controllerState, alg)`
+pairs, an unsorted proof array, or any other proof-array canonical-form defect
+makes the proved event invalid as an encoding. After canonical-form validation,
+an individually failing signature is ignored when testing whether the union of
+proofs satisfies an authorization rule. An individually unsupported algorithm
+is likewise ignored and disclosed as `unsupported`; it does not invalidate an
+event when other supported proofs satisfy the rule.
 The **logical event identifier** is the CIDv1 (`dag-cbor`, SHA-256) of the
 canonical `SigningInput`; the **proved-event CID** is the CIDv1 of the complete
 `ControlEvent`. Predecessor, supersession, delegation-parent, and revocation
@@ -139,9 +145,10 @@ fork. A resolver unions their valid proofs by
 
 Initial algorithm identifiers are:
 
-- `Ed25519`: RFC 8032 pure Ed25519 with a canonical 32-byte public key and
-  canonical 64-byte signature; verification MUST reject non-canonical scalar
-  encodings and small-order public keys;
+- `Ed25519`: RFC 8032 pure Ed25519 using the cofactorless verification equation,
+  with a canonical 32-byte public key and canonical 64-byte signature;
+  verification MUST reject non-canonical scalar encodings, small-order public
+  keys, and small-order encoded `R` points;
 - `P256`: a compressed SEC1 public key and fixed-width 64-byte `r || s`
   signature using ECDSA with SHA-256, with low-S normalization required.
 
@@ -163,8 +170,12 @@ multibase fingerprint and is authorized for every kan verification purpose.
 For any DID controller, a control-event proof is authorized only when
 `Proof.method` is controlled by that DID and carries the required purpose in
 the controller's resolved state cited by the event. Controller resolution is
-recursive; a missing or contested controller state yields `unknown`, and a
-cycle with no self-certifying base yields `invalid`.
+recursive. Each proof's authorization chain MUST terminate in a self-certifying
+method. Missing controller history yields `unknown`. A proof over an
+intrinsically valid cited event can remain cryptographically `valid` when the
+controller resolves contested, but its identity standing is disclosed as
+`contested` and repository admission maps to `contested`. A cycle that does not
+terminate in a self-certifying method is `invalid`.
 
 A verification-method reference is an absolute DID URL with a non-empty
 fragment. Relative fragments are forbidden on the wire. A method entry is:
@@ -195,10 +206,13 @@ IdentityVersion {
 ```
 
 `did:key` uses `static` with null. `did:kan` uses `event` with a logical event
-CID. `did:plc` uses its canonical operation/version identifier. `did:web` uses
+CID. `did:plc` uses `versionId` whose value is the canonical textual CID of the
+PLC operation selected by the resolver. `did:web` uses
 `documentCid`, the CIDv1 (`raw`, SHA-256) of the exact resolved DID document
-after RFC 8785 JCS canonical JSON encoding; the document bytes or an archive connection
-must be available to verify it. A DID method's resolver profile MUST define one
+after RFC 8785 JCS canonical JSON encoding; the document bytes or an archive
+connection must be available to verify it. If the cited historical document
+cannot be retrieved, historical authorization is `unknown`. A DID method's
+resolver profile MUST define one
 of these stable forms before kan treats the method as historically resolvable.
 Otherwise current resolution may be displayed, but historical authorization is
 `unsupported` rather than guessed.
@@ -279,7 +293,8 @@ The domain is `kan.did.update.v1` and event type is `update`. `previous` names t
 continued. `sequence` MUST equal the predecessor sequence plus one, with
 genesis treated as sequence zero. `operations` is non-empty and applied in
 listed order; it MUST NOT produce duplicate method or service identifiers.
-`supersedes` is always present, sorted, and duplicate-free.
+`supersedes` is always present, sorted, and duplicate-free. The `did` field
+MUST equal the DID derived from the chain's genesis; a mismatch is invalid.
 
 An administration event has `recoveryParent: null`, preserves its predecessor's
 `recoveryEpoch`, has an empty `supersedes`, and is authorized by a method with
@@ -292,22 +307,41 @@ A recovery event may select any intrinsically valid `previous` in the evidence
 graph as its state base. It names as `recoveryParent` either genesis or one
 recovery event, sets `recoveryEpoch` to that parent's epoch plus one, and is
 authorized by recovery controllers in the resolved state of `recoveryParent`.
-It may replace recovery and administration controllers, methods, purposes, and
-services. This separates the state being repaired from current recovery
+Its initial recovery-controller set is taken from `recoveryParent`, not
+`previous`; recovery-controller operations then explicitly produce its complete
+resulting set. All other state begins at `previous`. It may replace recovery
+and administration controllers, methods, purposes, and services. This separates
+the state being repaired from current recovery
 authority: a controller removed by a later recovery epoch cannot regain power
 by choosing an older administrative state. Genesis recovery keys remain
-auditable but not permanently authoritative.
+permanently able to create a competing recovery branch, but cannot supersede or
+win over a later recovery epoch.
 
 Event validity is intrinsic to its canonical payload, cited parents, and
 proofs. Resolution is a pure function of an evidence set. For that set:
 
-1. verify every reachable event intrinsically;
+1. starting at genesis, verify every reachable event intrinsically; an event is
+   reachable through its `previous` edge, and a recovery event additionally
+   requires its `recoveryParent` to be reachable;
 2. collapse proof variants by logical event identifier;
 3. mark every non-recovery logical event named in a valid recovery's
-   `supersedes`, and every non-recovery descendant of it, as retired;
-4. compute active leaves among non-retired events;
-5. return `active` only for one active leaf, `contested` for several, and
-   `unknown-history` when a cited parent is absent.
+   `supersedes`, and its descendants along `previous` edges only until but not
+   across a recovery event, as retired;
+4. compute active leaves among non-retired events, treating both `previous` and
+   `recoveryParent` as parent edges for leaf computation;
+5. return `active` only for one active leaf and `contested` for several.
+
+Unverifiable events and events not reachable from genesis do not change this
+classification, but the resolver MUST disclose their logical identifiers and
+missing references as orphan evidence. `unknown-history` is returned only when
+an event with a missing reference is **provisionally authenticatable**: every
+available reference is recognized, its canonical form and signatures verify,
+and those available states establish at least one signer authorized for the
+event's required purpose. A random orphan with no such authorization evidence
+cannot poison resolution. The provisional result does not make the event
+intrinsically valid or apply its transition; it only distinguishes credible
+missing history from unauthenticated input while preserving evidence of
+possible withholding.
 
 Distinct canonical update payloads with one `previous` are siblings and form a
 fork. Two recovery events with the same `recoveryParent` are likewise competing
@@ -319,8 +353,8 @@ therefore produce a permanently contested identity; this is preferable to an
 unauthorized deterministic winner. `supersedes` retires exactly the named
 logical heads and their non-recovery descendants, not an observer-relative set.
 All retired branches remain in history.
-`supersedes` MUST NOT name a recovery event; competing recovery branches cannot
-be retired by unilateral authority from either branch.
+`supersedes` MUST NOT name genesis or a recovery event; competing recovery
+branches cannot be retired by unilateral authority from either branch.
 
 An event is a recognized historical event exactly when it is intrinsically
 valid and reachable from genesis through cited logical parents, even if retired.
@@ -388,8 +422,8 @@ The domain is `kan.repository.inception.v1` and event type is `inception`.
 Lists are duplicate-free and
 sorted by canonical encoded value. At least one governance root is required.
 The repository identifier is the base32-lower-no-pad multibase SHA-256
-multihash of the canonical unsigned payload, prefixed `kan-repo:`. It is not a
-DID and cannot author claims.
+multihash of the canonical unsigned payload, including the `b` multibase
+prefix, prefixed `kan-repo:`. It is not a DID and cannot author claims.
 
 Repository inception is carried in a `ControlEvent` and MUST contain at least
 one proof from a listed governance root. Its method MUST be authorized for
@@ -437,12 +471,25 @@ leaves from the evidence set. One leaf is active governance; several leaves are
 `contested`; a missing parent is `unknown-history`. No timestamp, CID, proof
 count, or observation order chooses a branch.
 
+As with identity resolution, an unverifiable or unreachable governance orphan
+does not change the resolved classification but MUST be disclosed. Governance
+is `unknown-history` only when an event with a missing parent is provisionally
+authenticatable from its available recognized parent states and proofs under
+the definition above.
+
 Every governance root holds an implicit full repository capability covering
 all subject paths, all v1 repository operations, unbounded time, and delegation.
 The zero-length path admits a root's own covered action. Governance and required
 delegations MUST be publishable over every claim substrate. Missing required
 history yields admission `unknown`; contested governance yields admission
 `contested`; neither is `unadmitted`.
+
+For current repository admission, root status and every capability path are
+evaluated against the unique active governance leaf in the complete evidence
+set. A historical governance event supplies provenance but cannot select an
+older authority set. If governance is contested or unknown, every root-derived
+capability, governance-root revocation, and covered action is correspondingly
+`contested` or `unknown`.
 
 ### Session agents, lineage, roles, and delegation
 
@@ -478,6 +525,8 @@ Capability {
 
 `subjectPrefix: null` covers every subject. Otherwise it covers the exact
 subject and descendants separated by `/`; `bug` does not cover `bugfix`.
+The empty string covers only the literal empty subject; it is not another
+spelling of `null`.
 Operations are sorted and duplicate-free. Version 1 defines:
 
 ```text
@@ -490,6 +539,13 @@ implicit new operation. Governance events map to `governance.update`.
 Delegation and revocation map to their corresponding operations. Lineage and
 role claims map to `lineage.attest` and `role.name`. Unknown operations are
 preserved but unsupported until a later version defines their admission rule.
+The explicit event-level rules are exclusive in v1: listing
+`governance.update`, `capability.delegate`, or `capability.revoke` in a
+capability does not replace the root, grantor, purpose, or proof requirements
+defined for those control events. The `delegable` field alone determines
+whether the holder may create an attenuated child; the
+`capability.delegate` operation classifies that event in admission reports but
+does not independently confer delegation power.
 
 Delegation and revocation payloads are:
 
@@ -520,16 +576,25 @@ Their domains are `kan.capability.delegation.v1` and
 `kan.capability.revocation.v1`; types are `delegation` and `revocation`.
 Principal identity-version fields follow the method-specific rules above. A
 delegation's logical event identifier is its capability identity.
-`governanceEvent` names the exact governance state under which the path is
-evaluated. `parent: null` is valid only when `grantor` is a governance root at
-that event and means the implicit full root capability. Otherwise `parent`
-names exactly one delegation. Cycles and missing parents yield admission
-`unknown`, never a partial grant.
+`governanceEvent` names the exact historical governance state from which the
+path originated. For current admission it MUST be an ancestor-or-equal of the
+unique active governance leaf. `parent: null` means the implicit full root
+capability and is usable only when `grantor` is also a governance root at that
+active leaf. Removing a root therefore disables all of that root's
+`parent: null` delegation heads and descendants for current admission without
+altering their bytes or historical inspectability. Otherwise `parent` names
+exactly one delegation. Missing parents yield admission `unknown`, never a
+partial grant. A delegation-parent cycle is structurally impossible under
+content addressing; an implementation encountering cyclic non-canonical input
+MUST classify it `invalid`.
 
 A delegation MUST contain a proof from `grantor` authorized for
-`capabilityDelegation` at `grantorIdentityVersion`. A revocation MUST contain such
-a proof from either the original grantor or a governance root at the named
-governance event in the same repository. Every child capability MUST be a
+`capabilityDelegation` at `grantorIdentityVersion`. A revocation MUST contain
+such a proof from either the original grantor or a governance root in the same
+repository. An original grantor may revoke its own delegation regardless of
+later root membership. A revoker acting as a governance root MUST be a root at
+the unique active governance leaf, and its cited `governanceEvent` MUST be an
+ancestor-or-equal of that leaf. Every child capability MUST be a
 subset of its parent:
 
 - repository is identical;
@@ -554,6 +619,10 @@ admission is a recomputation under a stated evidence set and trusted instant,
 not a fact stored on the claim. Revocation and expiry never change signer
 identity or signature validity.
 
+A non-root author's repository-scoped action that names no delegation head is
+`unadmitted` when governance and identity history are complete and
+uncontested.
+
 Day may package roles, process atoms, harnesses, models, and capabilities. kan
 owns the signed principal, lineage, role, delegation, and evaluation primitives.
 
@@ -576,6 +645,10 @@ for new writes; legacy records use the
 compatibility rule below. The claim separately carries repository scope and an
 optional delegation logical event identifier. A role name MUST NOT appear in
 `Author`.
+For new writes, `Author` is part of the canonical claim content whose CID is
+computed, and the verification method signs that CID using kan's claim-signing
+envelope. This envelope is structurally disjoint from every control-event
+domain and from the preserved legacy envelope.
 When the claim requests a repository-scoped operation, the same method MUST
 also carry `capabilityInvocation`; `assertion` authenticates speech while
 `capabilityInvocation` permits exercising delegated reach.
@@ -603,9 +676,27 @@ operationally but MUST NOT redefine these semantic results.
 `identityStateStanding` reports the standing of the cited identity event without
 changing intrinsic signature validity. `static` applies to `did:key`.
 `repositoryAdmission: not-applicable` applies only when the object requests no
-repository-scoped operation. Contested identity standing does not make a valid
-signature invalid; it MUST make repository admission `contested` for an action
-depending on that identity branch.
+repository-scoped operation.
+
+For `did:kan`, standing is a pure function of the complete evidence set:
+
+- `active` means the cited event is unretired and is an ancestor-or-equal of
+  the unique active leaf;
+- `superseded` means the cited event was retired by a valid recovery;
+- `contested` means identity resolution is contested, including when the cited
+  event is ancestral to only some active leaves;
+- `unknown` means identity resolution is `unknown-history` or the cited event
+  cannot be reached and verified from genesis; and
+- `static` applies only to a supported self-certifying `did:key` state.
+
+A control-event proof uses the same standing rules as a claim author. An action
+or proof depending on `superseded` standing is `unadmitted`; one depending on
+`unknown` standing has admission `unknown`; and one depending on `contested`
+standing has admission `contested`. None of these changes an otherwise valid
+signature's cryptographic validity. A historical event on an unretired linear
+chain remains `active` after ordinary key rotation, so rotation does not
+retroactively remove honest history; recovery retirement does remove its
+repository reach.
 
 ## Canonicalization and equivalence
 
@@ -657,8 +748,11 @@ To verify and evaluate a claim:
 4. Resolve repository inception and governance. Missing required evidence
    yields admission `unknown`; multiple active governance leaves yield
    `contested`.
-5. Find a governance-rooted capability path covering the author, operation,
-   repository, subject, and explicit trusted evaluation instant. Check every
+5. Against the unique active governance leaf, find a governance-rooted
+   capability path covering the author, operation, repository, subject, and
+   explicit trusted evaluation instant. Every cited governance event MUST be
+   ancestral to that leaf, and every root-derived head MUST originate from a
+   principal that remains a root at that leaf. Check every
    edge for signature, purpose, attenuation, expiry, and revocation. Missing
    parents, time evidence, or identity history yield `unknown`; no covering
    path in complete uncontested evidence yields `unadmitted`; a valid path
@@ -687,6 +781,49 @@ ResolvedDidKanState {
   "retiredHeads":                [CID, ...]
 }
 ```
+
+Non-active results use these stable diagnostic shapes; all CID arrays are
+sorted and duplicate-free:
+
+```text
+ContestedDidKanState {
+  "did":          text,
+  "standing":     "contested",
+  "activeLeaves": [CID, ...],
+  "retiredHeads": [CID, ...],
+  "orphans":      [CID, ...]
+}
+
+UnknownDidKanState {
+  "did":               text,
+  "standing":          "unknown-history",
+  "knownLeaves":       [CID, ...],
+  "missingReferences": [CID, ...],
+  "orphans":           [CID, ...]
+}
+
+UnsupportedDidKanState {
+  "did":      text,
+  "standing": "unsupported",
+  "events":   [CID, ...],
+  "reasons":  [text, ...]
+}
+
+InvalidDidKanState {
+  "did":      text,
+  "standing": "invalid",
+  "events":   [CID, ...],
+  "reasons":  [text, ...]
+}
+```
+
+`retiredHeads` remain disclosed in active and contested results. Invalid and
+unsupported events are never promoted into active leaves; their reasons are
+stable protocol identifiers, not localized prose. Version 1 defines at least
+`malformed`, `non-canonical`, `invalid-proof`, `unauthorized-proof`,
+`unsupported-algorithm`, `unsupported-did-method`, `unsupported-operation`,
+`unknown-field`, `missing-reference`, and `controller-cycle`; later versions
+may add identifiers without reclassifying v1 evidence.
 
 The full resolved state is the normative kan output. A DID Core document is a
 lossy projection: verification methods and services map directly; kan recovery
@@ -727,10 +864,12 @@ verified from its content address, proof, and applicable authority history.
 - **Fork choice attacks:** Observation order and timestamps never select a
   `did:kan` branch. Unresolved forks are visible as contested.
 - **Recovery capture:** Recovery authorization is checked at the selected
-  recovery parent, not the repaired state. Recovery epochs revoke stale
-  recovery authority while keeping all branches auditable. Competing valid
-  recoveries remain contested rather than selecting an attacker-controlled
-  winner.
+  recovery parent, not the repaired state. Recovery epochs prevent stale
+  recovery keys from winning a later epoch; they cannot prevent a stale
+  genesis recovery key from creating a permanently contested branch. Genesis
+  recovery custody is therefore root-grade for the identity's lifetime.
+  Competing valid recoveries remain contested rather than selecting an
+  attacker-controlled winner.
 - **Proof malleability:** Logical event identity excludes proofs, so alternate
   valid signatures over one payload cannot manufacture a state fork.
 - **Delegation amplification:** Every edge is checked for strict attenuation;
@@ -780,7 +919,11 @@ claims. A mixed workspace may contain legacy and RFC-1 records indefinitely.
 This RFC amends the existing fold rule that keyed same-author supersession on
 the complete legacy `AuthorId`: for RFC-1 claims, same-author authorization keys
 on stable principal DID. The compatibility projection retains the legacy rule
-for legacy bytes, including the historical `agent` component.
+for legacy-to-legacy bytes, including the historical `agent` component. A
+modern RFC-1 claim may supersede a legacy claim exactly when its principal DID
+equals the DID component of the legacy `AuthorId`; the legacy `agent` component
+is disregarded for that direction. A legacy-form claim can never supersede an
+RFC-1 claim.
 
 Prior identity ADRs have these dispositions:
 
@@ -832,17 +975,24 @@ The vector set MUST cover:
 2. `did:kan` genesis bytes, multihash DID, proof, and event CID;
 3. proof-only mutation changing event CID but not DID;
 4. linear administration, sibling fork, proof-set malleability, contested
-   resolution, recovery epochs, and competing recoveries;
+   resolution, recovery epochs, competing recoveries, stop-at-recovery
+   retirement, `recoveryParent` leaf ordering, genesis-supersession rejection,
+   and an authenticated missing parent versus a garbage orphan;
 5. verification-purpose acceptance and rejection;
-6. governance update, fork, contested admission, and multi-parent reconciliation;
+6. governance update, fork, contested admission, multi-parent reconciliation,
+   and removal of a root that attempts a fresh historical-anchor delegation and
+   a governance-root revocation;
 7. valid attenuation and attempted repository, subject, operation, and time
    amplification;
-8. root zero-length admission, revocation, trusted-time expiry, and unknown-time
-   boundaries;
+8. root zero-length admission, revocation, trusted-time expiry, unknown-time
+   boundaries, mixed valid/invalid proof sets, and non-delegability of governance
+   event authorization;
 9. all four initially supported DID methods, their `IdentityVersion` forms, and
    an unsupported method;
 10. active, superseded, contested, unknown, and static identity standing;
-11. legacy authorship and principal-keyed modern supersession without byte rewriting;
+11. legacy authorship, legacy-to-legacy composite supersession, modern-to-legacy
+    principal supersession, forbidden legacy-to-modern supersession, and
+    principal-keyed modern supersession without byte rewriting;
 12. read-only resolution with no credential, governance, admission, or trust
     side effects.
 
