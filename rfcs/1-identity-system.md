@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-14
 - Discussion: https://github.com/kan-tools/kan/pull/229
-- Review-period-ends: 2026-08-17T20:00:00Z
+- Review-period-ends: 2026-08-17T21:30:00Z
 - Review-override: None
 - Supersedes: Identity architecture in ADRs 4, 24, 25, 55, 58, 61, 65-68, 75, 77, 83, 84, and 86-88 where this RFC conflicts
 - Superseded-by: None
@@ -307,6 +307,12 @@ A recovery event may select any intrinsically valid `previous` in the evidence
 graph as its state base. It names as `recoveryParent` either genesis or one
 recovery event, sets `recoveryEpoch` to that parent's epoch plus one, and is
 authorized by recovery controllers in the resolved state of `recoveryParent`.
+The named `recoveryParent` MUST be an ancestor-or-equal of `previous` when
+following `previous` and `recoveryParent` edges, and the resulting
+`recoveryEpoch` MUST be strictly greater than the recovery epoch in the state
+produced by `previous`. A recovery authorized from an older epoch therefore cannot graft
+onto a state that has already reached the same or a later epoch; it must branch
+from an earlier state and remains visible as a competing recovery.
 Its initial recovery-controller set is taken from `recoveryParent`, not
 `previous`; recovery-controller operations then explicitly produce its complete
 resulting set. All other state begins at `previous`. It may replace recovery
@@ -356,8 +362,10 @@ evidence, not a syntactically plausible assertion, can downgrade resolution.
 Resolution uses this exhaustive precedence after genesis has been recognized:
 
 1. if any provisionally authenticatable candidate is blocked by missing
-   history or an authorization controller whose history is `unknown`, return
-   `unknown-history`;
+   history, or a canonical candidate with recognized references and a
+   proof whose signature and required purpose verify at its cited controller
+   state is blocked only because that controller state's historical standing is
+   `unknown`, return `unknown-history`;
 2. otherwise, if the recognized graph has several active leaves or any
    candidate's required authorization controller is `contested`, return
    `contested`;
@@ -378,9 +386,11 @@ a non-retired leaf until a recognized child replaces it, a recognized graph
 cannot have zero active leaves.
 
 Distinct canonical update payloads with one `previous` are siblings and form a
-fork. Two recovery events with the same `recoveryParent` are likewise competing
-recovery branches. Neither wins by timestamp, sequence, CID order, observation
-order, or proof count; if both survive, resolution is `contested`. A later
+fork. Two recovery events with the same `recoveryParent` that do not stand in an
+ancestor relationship permitted by the epoch rules are competing recovery
+branches, regardless of other graph edges. Neither wins by timestamp, sequence,
+CID order, observation order, or proof count; if both survive, resolution is
+`contested`. A later
 recovery can advance only one recovery branch and cannot silently erase a
 competing recovery branch. Compromise or equivocation of recovery authority can
 therefore produce a permanently contested identity; this is preferable to an
@@ -683,6 +693,9 @@ remains disclosed. `effectiveAt` permits a revoker to set a trusted-time
 boundary; null means every evaluation containing the revocation treats it as
 effective. If `effectiveAt` is non-null and no trusted evaluation instant is
 available, the revocation and its target path evaluate `unknown`.
+With a trusted evaluation instant before `effectiveAt`, the revocation is not
+yet effective and the target path is evaluated without it; at or after the
+boundary, the admitted revocation disables the path.
 
 Capability time is evaluated against an explicit `evaluationInstant` supplied
 by the admission caller or a named trusted substrate/time witness, never against
@@ -762,7 +775,8 @@ Standing is a total, disjoint function evaluated in this precedence:
    branch;
 4. otherwise, under a unique resolved state, a `did:kan` event retired by a
    valid recovery is `superseded`, and an unretired ancestor-or-equal of the
-   active leaf is `active`.
+   active leaf is `active`. This ancestor relation follows both `previous` and
+   `recoveryParent` edges, matching leaf computation.
 
 For `did:plc`, the cited operation is `active` when it is on the canonical PLC
 operation chain selected by the resolver, `superseded` when authoritative PLC
@@ -973,6 +987,11 @@ verified from its content address, proof, and applicable authority history.
   recovery custody is therefore root-grade for the identity's lifetime.
   Competing valid recoveries remain contested rather than selecting an
   attacker-controlled winner.
+- **Genesis-key availability:** A genesis recovery key rotated out later still
+  retains the lifetime ability to create a competing recovery from genesis and
+  force identity and admission resolution to `contested`. This deliberate
+  availability cost prevents silent attacker victory; genesis recovery
+  credentials require lifetime protection even after rotation.
 - **Administrative key removal:** Removing a method by ordinary administration
   is rotation hygiene, not retroactive revocation. A holder may continue to
   produce authentic actions by citing the earlier unretired state, and those
@@ -1092,7 +1111,10 @@ The vector set MUST cover:
    retirement, `recoveryParent` leaf ordering, genesis-supersession rejection,
    a stale-genesis recovery producing retired evidence under contest, an
    authenticated missing-parent recovery versus a garbage orphan, an
-   unsupported-operation mid-chain, and an unresolvable controller;
+   unsupported-operation mid-chain, an unresolvable controller, rejection of a
+   stale recovery whose
+   `recoveryParent` is genesis but whose `previous` is a live head already at
+   that recovery epoch, plus a valid competing branch from the earlier epoch;
 5. verification-purpose acceptance and rejection;
 6. governance update, fork, contested admission, multi-parent reconciliation,
    and removal of a root that attempts a fresh historical-anchor delegation and
