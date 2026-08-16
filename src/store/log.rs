@@ -62,6 +62,11 @@ use crate::{
 const LEGACY_COLLECTION: &str = "dev.kan.claim";
 const COLLECTION: &str = "tools.kan.claim";
 
+/// Canonical ordering value for published records written before the git-tree
+/// envelope carried a `rev`. TID zero sorts before every timestamped record;
+/// claims sharing it remain deterministically ordered by their content CID.
+pub(crate) const LEGACY_PUBLISHED_REV: &str = "2222222222222";
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("repository error: {0}")]
