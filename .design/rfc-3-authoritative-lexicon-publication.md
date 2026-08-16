@@ -138,9 +138,12 @@ GitHub workflow holds production publication credentials.
       Lexicons produces one guarded commit containing current schema updates
       and exactly one create-only codec entry with embedded immutable schemas,
       plus its create-only globally keyed lens entries. The real publisher
-      constructs the MST, commit, inversion proof, and CAR and proves the
-      200-operation and 2,000,000-byte complete-block-closure limits before
-      mutation. An
+      reproduces deterministic MST/inversion block shapes and a size-equivalent
+      preflight CAR using fixed-width placeholders for PDS-chosen values. The
+      PDS constructs and signs the actual commit, enforces the 200-operation
+      and 2,000,000-byte `commit.blocks` CAR limits atomically, and the
+      publisher fetches the resulting CAR through the sync API for length
+      verification. An
       injected pre-commit failure leaves all schema and codec rkeys unchanged,
       and public read-back checks the complete set rather than only changed
       records.

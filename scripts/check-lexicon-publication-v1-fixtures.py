@@ -182,9 +182,9 @@ def validate(data: dict) -> None:
     require(authority["dnsValue"] == "did=did:web:kan.tools", "wrong DNS value")
     require(authority["did"] == "did:web:kan.tools", "wrong authority DID")
     require(authority["didUrl"] == "https://kan.tools/.well-known/did.json", "wrong did:web URL")
-    require(https_origin(authority["pdsEndpoint"]), "PDS endpoint is not HTTPS")
+    require(authority["pdsEndpoint"] == "https://pds.kan.tools", "wrong PDS endpoint")
     appview = authority["appView"]
-    require(appview["serviceDid"] != authority["did"], "service DID must be separate")
+    require(appview["serviceDid"] == "did:web:appview.kan.tools", "wrong or invalid service DID")
     require(appview["serviceId"] == authority["did"] + "#kan_appview", "wrong service id")
     require(appview["serviceType"] == "KanAppView", "wrong service type")
     require(https_origin(appview["uri"]), "AppView endpoint is not an HTTPS origin")
@@ -265,7 +265,7 @@ def validate(data: dict) -> None:
     require(binding["fixtureOnly"] is True, "proposal fixture claims production provenance")
     require(binding["sourceRepository"] == "https://example.invalid/kan-rfc3-proposal-fixture", "fixture provenance drift")
     require(binding["sourceCommit"] == "0" * 40 and binding["sourceTag"] == "v0.0.0-fixture", "fixture provenance is not explicitly synthetic")
-    require(https_origin(binding["canonicalSpecification"]), "canonical specification is not HTTPS")
+    require(binding["canonicalSpecification"] == "https://github.com/kan-tools/kan/blob/main/rfcs/3-authoritative-lexicon-publication.md", "canonical specification drift")
     codec_bytes = len(dag_cbor(binding))
     require(codec_bytes <= MAX_RECORD_BYTES, "codec record exceeds one-megabyte limit")
 
@@ -408,6 +408,8 @@ def mutations(data: dict) -> list[tuple[str, dict]]:
     edits = [
         ("empty authority", lambda d: d["authority"].__setitem__("nsids", [])),
         ("insecure appview", lambda d: d["authority"]["appView"].__setitem__("uri", "http://attacker.invalid")),
+        ("attacker PDS", lambda d: d["authority"].__setitem__("pdsEndpoint", "https://attacker.example")),
+        ("invalid service DID", lambda d: d["authority"]["appView"].__setitem__("serviceDid", "not-a-did")),
         ("resolution label", lambda d: d["resolutionCases"][1].__setitem__("outcome", "success")),
         ("duplicate canonical resolution", lambda d: d["resolutionCases"].append(copy.deepcopy(d["resolutionCases"][0]))),
         ("delete negative codec cases", lambda d: d.__setitem__("codecCases", [c for c in d["codecCases"] if c["valid"]])),
@@ -422,6 +424,7 @@ def mutations(data: dict) -> list[tuple[str, dict]]:
         ("delete refusal and rebind vectors", delete_refusal_and_rebind),
         ("lie about lens endpoints", lambda d: [lens.__setitem__("source", "kan-claim-v9") for lens in d["lenses"]]),
         ("nonexistent shaped provenance", lambda d: d["codecBinding"].__setitem__("sourceCommit", "1" * 40)),
+        ("canonical specification substitution", lambda d: [row.__setitem__("canonicalSpecification", "https://attacker.example/spec") for row in [d["codecBinding"], *d["lensRecords"]]]),
         ("oversized codec record", lambda d: d["codecBinding"].__setitem__("padding", {"$bytes": "AAAA" * 400_000})),
         ("multiple codecs in publication", lambda d: d["publicationCases"][0]["desiredWrites"].append("codec:another")),
         ("delete embedded schema", lambda d: d["codecBinding"].pop("payloadLexicon")),

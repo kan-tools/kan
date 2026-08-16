@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-16
 - Discussion: https://github.com/kan-tools/kan/pull/231
-- Review-period-ends: 2026-08-19T22:26:55Z
+- Review-period-ends: 2026-08-19T22:31:55Z
 - Review-override: None
 - Supersedes: RFC 2 requirements 14, 15, and 17 where explicitly stated; amends requirement 18
 - Superseded-by: None
@@ -239,13 +239,19 @@ normative-vector set that does not fit is not publishable under this RFC; it
 MUST NOT be truncated.
 
 A publication MUST create no more than one codec entry, MUST contain no more
-than 200 repository operations, and the complete block closure of its proposed
-repository commit MUST be no larger than 2,000,000 bytes. The publisher MUST
-construct and measure that closure before mutation and fail closed when either
-aggregate limit is exceeded. Per-record validation does not establish commit
-feasibility. Several codecs from one source release are published sequentially
-as separately verified atomic publications; a later failure does not invalidate
-an earlier immutable binding.
+than 200 repository operations, and the serialized `commit.blocks` CAR returned
+by the PDS MUST be no larger than 2,000,000 bytes. Before mutation, the
+publisher MUST reproduce the deterministic MST and inversion block shapes from
+the guarded repository snapshot and proposed writes, substitute fixed-width
+placeholders for the PDS-chosen TID, signature, and content hashes, and reject
+when that size-equivalent preflight CAR exceeds the limit. The publisher does
+not possess the signing key and does not claim to construct the actual signed
+commit. The PDS MUST independently enforce the limits before atomically
+committing, and after `applyWrites` the publisher MUST fetch and verify the
+resulting `commit.blocks` CAR length through the sync API. Per-record validation
+does not establish commit feasibility. Several codecs from one
+source release are published sequentially as separately verified atomic
+publications; a later failure does not invalidate an earlier immutable binding.
 
 Codec and lens records are create-only. A request to create a byte-identical
 existing entry is an idempotent success without a write. Any non-identical
@@ -447,8 +453,10 @@ or source snapshots.
 6. Select exactly one new codec, construct one guarded
    `com.atproto.repo.applyWrites` request containing its changed current schema
    rkeys, create-only codec entry, and any create-only lens entries released
-   with it. Reject a reused lens ID, more than 200 operations, or a proposed
-   commit block closure larger than 2,000,000 bytes before mutation.
+   with it. Reject a reused lens ID, more than 200 operations, or a
+   size-equivalent preflight `commit.blocks` CAR larger than 2,000,000 bytes
+   before mutation; require the PDS to enforce the same limits atomically and
+   fetch the resulting CAR for verification after the write.
 7. Commit once. A failure leaves both the current schema surface and that codec
    absent; there is no staged-unactivated state. Repeat from step 4 for another
    codec from the same release.
@@ -628,9 +636,10 @@ covers:
 concrete schema values as deterministic DAG-CBOR, reproduces their CIDs,
 executes the synthetic lens examples and laws, requires every finite matrix and
 inventory exactly, and runs hostile mutation controls. The controls include the
-invalid states found during cold review: empty authority, insecure endpoint,
-mislabeled or duplicated resolution, deletion of negative codec cases, changed
-schema bytes or CID, split or multi-codec publication, wrong lens output,
+invalid states found during cold review: empty authority, insecure or
+substituted PDS/AppView endpoints and service DIDs, canonical-specification
+substitution, mislabeled or duplicated resolution, deletion of negative codec
+cases, changed schema bytes or CID, split or multi-codec publication, wrong lens output,
 deletion of a coherently rehashed refusal vector, unknown-codec identity, lossy
 default normalization, missing provenance, and deleted secrets. The harness
 does not import kan's Rust implementation.
@@ -642,8 +651,9 @@ byte maxima must reproduce those bytes, and the complete encoded record must
 remain below one megabyte. The fixture publication contains exactly one codec
 and seven operations, including four globally keyed lens records. It does not
 construct an MST, signed commit, inversion proof, or CAR and therefore makes no
-claim to prove the complete commit-block closure; that remains AC-5 evidence
-for the publisher implementation. Its `example.invalid` repository, zero commit, and
+claim to prove the size-equivalent preflight or actual returned commit-block
+CAR; those remain AC-5 evidence for the publisher and PDS implementations. Its
+`example.invalid` repository, zero commit, and
 fixture tag are deliberately non-publishable sentinel provenance. The checker
 requires those exact sentinels so proposal evidence cannot masquerade as a
 released `kan-lexicon` binding. A production entry MUST omit `fixtureOnly` and
