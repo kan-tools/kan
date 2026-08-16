@@ -303,16 +303,18 @@ payloadLexicon          = canonical DAG-CBOR bytes of that record
 sourceRepository       = kan-tools/kan-lexicon
 sourceCommit           = immutable Git commit
 sourceTag              = immutable release tag
-canonicalSpecification = stable reference to codec rules and vectors
-lenses                 = ordered identifiers of official adjacent edges
+canonicalSpecificationRepository = kan-tools/kan
+canonicalSpecificationCommit = immutable Git commit
+canonicalSpecificationPath = governing RFC path
 ```
 
 The record rkey is the codec string. Register writes are append-only: a later
-release can add a codec but cannot rebind one. The Git tag provides source
-history; embedded bytes and their envelope, payload, and vector CIDs make exact
-historical validation available from the live codec record without depending
-on retained repository commits. The signed authority repository proves that
-the create-only binding remains current.
+release can add a codec but cannot rebind one. The Git tag provides schema
+source history; embedded schema bytes and CIDs make exact historical validation
+available from the live codec record without depending on retained repository
+commits. Separate globally keyed `tools.kan.lens` records carry vector bytes,
+CIDs, endpoints, and their source and semantic provenance. The signed authority
+repository proves that each create-only binding remains current.
 
 ### Lenses and normalized views
 

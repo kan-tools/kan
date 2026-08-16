@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-16
 - Discussion: https://github.com/kan-tools/kan/pull/231
-- Review-period-ends: 2026-08-19T22:37:40Z
+- Review-period-ends: 2026-08-19T22:40:05Z
 - Review-override: None
 - Supersedes: RFC 2 requirements 14, 15, and 17 where explicitly stated; amends requirement 18
 - Superseded-by: None

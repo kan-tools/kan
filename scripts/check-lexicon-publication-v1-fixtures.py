@@ -192,7 +192,7 @@ def validate(data: dict) -> None:
     authority = data["authority"]
     require(set(authority) == {"nsids", "dnsName", "dnsValue", "did", "didUrl", "pdsEndpoint", "didDocument", "appView"}, "authority field inventory drift")
     expected_nsids = {
-        "tools.kan.claim", "tools.kan.codec", "tools.kan.defs", "tools.kan.lens",
+        "tools.kan.claim", "tools.kan.codec", "tools.kan.defs", "tools.kan.fixture", "tools.kan.lens",
         "tools.kan.getClaim", "tools.kan.getIdentity", "tools.kan.getSubject",
     }
     require(set(authority["nsids"]) == expected_nsids, "authoritative NSID set drift")

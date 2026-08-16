@@ -1,7 +1,7 @@
 {
   "version": 2,
   "authority": {
-    "nsids": ["tools.kan.claim", "tools.kan.codec", "tools.kan.defs", "tools.kan.lens", "tools.kan.getClaim", "tools.kan.getIdentity", "tools.kan.getSubject"],
+    "nsids": ["tools.kan.claim", "tools.kan.codec", "tools.kan.defs", "tools.kan.fixture", "tools.kan.lens", "tools.kan.getClaim", "tools.kan.getIdentity", "tools.kan.getSubject"],
     "dnsName": "_lexicon.kan.tools", "dnsValue": "did=did:web:kan.tools", "did": "did:web:kan.tools",
     "didUrl": "https://kan.tools/.well-known/did.json", "pdsEndpoint": "https://pds.kan.tools",
     "didDocument": {"id":"did:web:kan.tools","service":[{"id":"did:web:kan.tools#atproto_pds","type":"AtprotoPersonalDataServer","serviceEndpoint":"https://pds.kan.tools"},{"id":"did:web:kan.tools#kan_appview","type":"KanAppView","serviceEndpoint":{"uri":"https://api.kan.tools","serviceDid":"did:web:appview.kan.tools"}}]},
