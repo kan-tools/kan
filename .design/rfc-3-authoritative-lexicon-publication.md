@@ -36,10 +36,10 @@ GitHub workflow holds production publication credentials.
   Railway; independently recoverable copies are held in an operator-controlled
   protected vault outside GitHub and Railway.
 - REQ-5: Publication materializes each schema as a
-  `com.atproto.lexicon.schema` record whose rkey equals its NSID. It first
-  stages all changed schema records in one guarded repository commit, then
-  atomically activates all associated create-only registry entries in a second
-  commit whose bindings name the staging commit. Publication is idempotent,
+  `com.atproto.lexicon.schema` record whose rkey equals its NSID. One guarded
+  repository commit atomically updates current schema rkeys and creates every
+  associated codec entry, which embeds the canonical envelope schema, payload
+  schema, and lens vectors with their content CIDs. Publication is idempotent,
   rejects tag or source drift, and never declares success until complete-set
   read-back through DNS, DID, and the public PDS route matches the tagged
   source.
@@ -51,10 +51,10 @@ GitHub workflow holds production publication credentials.
   applying whichever claim schema resolves as current.
 - REQ-7: The authority repository carries an append-only `tools.kan.codec`
   register with one create-only record per codec, keyed by the codec string.
-  Each entry binds the codec to its claim-envelope NSID and record CID, exact
-  payload Lexicon reference and defining record CID, schema-staging ATProto
-  repository commit CID, immutable `kan-lexicon` Git commit and release tag,
-  canonical codec specification, and official adjacent lens identifiers.
+  Each entry binds the codec to its claim-envelope NSID, canonical embedded
+  envelope schema and CID, exact payload Lexicon reference, canonical embedded
+  defining schema and CID, embedded lens vectors and CIDs, immutable
+  `kan-lexicon` Git commit and release tag, and canonical codec specification.
   Re-creating an identical entry is idempotent; changing an existing binding
   is corruption and fails closed.
 - REQ-8: Every published codec has immutable normative canonical bytes,
@@ -89,8 +89,10 @@ GitHub workflow holds production publication credentials.
   credential rotation, and a tested reconstruction runbook. Railway volume
   backups are not the sole recovery copy because they remain coupled to the
   Railway project and environment.
-- REQ-13: RFC 3 explicitly supersedes the current-only closed projection in
-  RFC 2 where that shape prevents future codec preservation, while retaining
+- REQ-13: RFC 3 explicitly amends RFC 2 REQ-14 and affected REQ-15 view clauses
+  so unknown future codecs are preserved by raw transports but still rejected
+  at semantic decode and projection boundaries. It supersedes the current-only
+  closed projection where that shape prevents raw preservation, while retaining
   `kan-claim-v1`, its exact inverse conversion, content CID, signature, and
   migration guarantees from `src/at_claim.rs` and `src/store/log.rs`. It also
   supersedes RFC 2's requirement that the Lexicon authority DID itself be the
@@ -125,10 +127,11 @@ GitHub workflow holds production publication credentials.
       SHA supplied only by the event, untagged commit, failed validation, or
       source tree differing from the release provenance. (REQ-4, REQ-5)
 - [ ] AC-5: A publication fixture changing multiple mutually referring
-      Lexicons produces one guarded schema-staging commit and one atomic
-      create-only codec-activation commit. An injected activation failure
-      leaves every new codec unresolved, and public read-back checks the
-      complete schema and registry set rather than only changed records.
+      Lexicons produces one guarded commit containing current schema updates
+      and create-only codec entries with embedded immutable schemas. An
+      injected pre-commit failure leaves all schema and codec rkeys unchanged,
+      and public read-back checks the complete set rather than only changed
+      records.
       (REQ-5)
 - [ ] AC-6: Replaying one release against identical authoritative records
       performs no semantic write and succeeds with the same bindings. Reusing
@@ -140,10 +143,10 @@ GitHub workflow holds production publication credentials.
       future codec that an old transport can preserve and report an unsupported
       record without interpreting it as v1 or stripping its unknown payload.
       (REQ-6, REQ-11, REQ-13)
-- [ ] AC-8: Codec-register fixtures resolve a codec to one exact Lexicon record
-      CID and schema-staging repository commit, reproduce that record from the
-      pinned `kan-lexicon` tag and Git commit, and reject mismatched codec,
-      NSID, record CID, repository commit, Git tree, tag, or lens identifiers.
+- [ ] AC-8: Codec-register fixtures resolve a codec to exact embedded envelope
+      and payload schema bytes and CIDs, reproduce them from the pinned
+      `kan-lexicon` tag and Git commit, and reject mismatched codec, NSID,
+      schema bytes, record CID, Git tree, tag, or lens vectors.
       (REQ-7)
 - [ ] AC-9: Two independent implementations validate the codec register and
       every codec's positive and negative canonical-byte vectors. Mutation
@@ -242,14 +245,14 @@ backed up to a separately protected vault such as Proton Pass. Because sealed
 Railway variables cannot be read back, sealing is permitted only after the
 recovery copy and reconstruction test exist.
 
-All changed `com.atproto.lexicon.schema` records are first written in one
-swap-guarded staging commit. The publisher then computes codec bindings against
-that immutable commit and creates all new `tools.kan.codec` entries in one
-atomic activation commit. This ordering is necessary: a codec record cannot
-contain the CID of the same commit that contains it, because that CID depends
-on the record bytes. Staged schemas are inert until their codec entries exist.
-After activation, verification begins from public DNS and checks the complete
-desired set. A write success without public verification is
+All changed `com.atproto.lexicon.schema` records and create-only
+`tools.kan.codec` entries are written in one swap-guarded atomic commit. Each
+codec entry embeds canonical DAG-CBOR bytes for its envelope and payload schema
+records plus the CIDs those bytes reproduce, and embeds canonical lens vectors
+with their CID. Historical verification therefore needs neither a
+self-referential containing-commit field nor an archival PDS API. After the
+commit, verification begins from public DNS and checks the complete desired
+set. A write success without public verification is
 `published-unverified`, not deployed; retry performs read-back before any new
 write.
 
@@ -269,9 +272,10 @@ schema existed when a historical record was written. A register entry binds:
 codec                 = kan-claim-v1
 claimLexicon           = tools.kan.claim
 envelopeLexiconRecordCid = immutable CID of the envelope schema record
+envelopeLexicon         = canonical DAG-CBOR bytes of that record
 payloadSchema          = tools.kan.defs#claimContent
 payloadLexiconRecordCid = immutable CID of the payload-defining schema record
-repositoryCommit       = commit containing both exact schema records
+payloadLexicon          = canonical DAG-CBOR bytes of that record
 sourceRepository       = kan-tools/kan-lexicon
 sourceCommit           = immutable Git commit
 sourceTag              = immutable release tag
@@ -281,9 +285,10 @@ lenses                 = ordered identifiers of official adjacent edges
 
 The record rkey is the codec string. Register writes are append-only: a later
 release can add a codec but cannot rebind one. The Git tag provides source
-history, the envelope and payload record CIDs identify exact schema bytes, and
-the repository commit proves where those bytes were authoritative. None
-substitutes for the others.
+history; embedded bytes and their envelope, payload, and vector CIDs make exact
+historical validation available from the live codec record without depending
+on retained repository commits. The signed authority repository proves that
+the create-only binding remains current.
 
 ### Lenses and normalized views
 
@@ -324,9 +329,9 @@ the last verified immutable release provenance.
   infrastructure identities are separate where their lifecycle warrants it.
 - RQ-2: Railway is the runtime and secret boundary. GitHub validates releases and
   emits events but holds no production publication or deployment credential.
-- RQ-3: Schemas stage first and codec entries activate atomically in the following
+- RQ-3: Current schemas and self-contained codec entries publish in one atomic
   commit, followed by complete public-route read-back; no mutable
-  release-manifest record is a second source of truth.
+  release-manifest record or historical PDS API is a second source of truth.
 - RQ-4: `tools.kan.claim` remains stable and required `codec` supplies explicit
   record-level versioning. An append-only register binds codecs to immutable
   schema CIDs and source commits, and official law-tested lenses connect
