@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-16
 - Discussion: https://github.com/kan-tools/kan/pull/231
-- Review-period-ends: 2026-08-19T21:27:31Z
+- Review-period-ends: 2026-08-19T22:26:55Z
 - Review-override: None
 - Supersedes: RFC 2 requirements 14, 15, and 17 where explicitly stated; amends requirement 18
 - Superseded-by: None
@@ -18,9 +18,8 @@ rewriting signed records. It establishes:
 - DNS-rooted Lexicon authority at `did:web:kan.tools`;
 - a stable `tools.kan.claim` collection whose required `codec` field selects
   an immutable canonical representation;
-- an append-only `tools.kan.codec` register binding every codec to exact
-  Lexicon and source revisions;
-- official, law-tested lenses between supported codec versions;
+- append-only `tools.kan.codec` and `tools.kan.lens` registers binding every
+  codec and directed projection to exact Lexicon, vector, and source revisions;
 - a portable reference AppView that normalizes only through registered total
   lenses while retaining raw provenance; and
 - a private Railway deployment boundary in which GitHub possesses no
@@ -79,16 +78,18 @@ workflow must not become authority to rewrite the canonical schema repository.
   representation, such as `kan-claim-v1`.
 - **Codec entry:** An immutable `tools.kan.codec` record binding one codec to
   its schema and source provenance.
-- **Lens:** A registered directed projection from one codec to another, with
-  normative vectors and declared totality/losslessness.
+- **Lens entry:** An immutable `tools.kan.lens` record binding one globally
+  unique lens identifier to a directed codec projection, normative vectors,
+  and declared totality/losslessness.
 - **Raw record:** The original signed `tools.kan.claim` record retrieved from an
   ATProto repository.
 - **Normalized view:** An AppView response projected from a verified raw record
   to a requested codec.
 - **Publication:** One atomic repository commit containing current schema-rkey
-  updates and exactly one new create-only codec entry with self-contained
-  immutable schemas. A release with multiple new codecs uses multiple
-  independently atomic publications.
+  updates, exactly one new create-only codec entry with self-contained
+  immutable schemas, and any new create-only lens entries released with that
+  codec. A release with multiple new codecs uses multiple independently atomic
+  publications.
 - **Deployment provenance:** The source tag and commit, generated artifact
   digests, ATProto repository commit, record CIDs, and verification result for
   one publication attempt.
@@ -200,12 +201,13 @@ sourceRepository:        URI
 sourceCommit:            40 lowercase hexadecimal Git object ID
 sourceTag:               immutable release-tag string
 canonicalSpecification: URI
-fromLenses:              array of LensDescriptor
 ```
 
-where each `LensDescriptor` contains:
+The separate collection `tools.kan.lens` has one record per directed lens. Its
+rkey is exactly the globally unique lens identifier. Each record contains:
 
 ```text
+$type:        tools.kan.lens
 id:           LensId
 sourceCodec:  Codec
 targetCodec:  Codec
@@ -213,6 +215,10 @@ vectorsCid:   CID link
 vectors:      bytes
 total:        boolean
 lossless:     boolean
+sourceRepository: URI
+sourceCommit: 40 lowercase hexadecimal Git object ID
+sourceTag:    immutable release-tag string
+canonicalSpecification: URI
 ```
 
 `codec` MUST equal the rkey. `claimLexicon` for kan claim codecs MUST equal
@@ -222,15 +228,15 @@ lossless:     boolean
 `payloadSchema` MUST be an exact Lexicon NSID-plus-fragment reference, and
 `payloadLexicon` MUST be canonical DAG-CBOR for the schema record defining that
 reference; `payloadLexiconRecordCid` MUST reproduce from those bytes. For
-`kan-claim-v1`, `payloadSchema` is `tools.kan.defs#claimContent`. Each lens
-descriptor's `vectorsCid` MUST likewise reproduce from its canonical embedded
-`vectors` bytes. `sourceCommit` and `sourceTag` MUST reproduce all embedded
-bytes from `sourceRepository`.
+`kan-claim-v1`, `payloadSchema` is `tools.kan.defs#claimContent`.
+`sourceCommit` and `sourceTag` MUST reproduce all embedded schema bytes from
+`sourceRepository`. Each lens entry's `vectorsCid` MUST reproduce from its
+canonical embedded `vectors` bytes and the same immutable source revision.
 
-Each embedded value MUST declare a Lexicon byte maximum and the complete codec
-record MUST remain within ATProto's one-megabyte record limit. A codec whose
-schemas and normative vectors do not fit is not publishable under this RFC; it
-MUST NOT truncate evidence or publish an oversized codec entry.
+Each embedded value MUST declare a Lexicon byte maximum, and every codec or lens
+record MUST remain within ATProto's one-megabyte record limit. A schema or
+normative-vector set that does not fit is not publishable under this RFC; it
+MUST NOT be truncated.
 
 A publication MUST create no more than one codec entry, MUST contain no more
 than 200 repository operations, and the complete block closure of its proposed
@@ -241,10 +247,11 @@ feasibility. Several codecs from one source release are published sequentially
 as separately verified atomic publications; a later failure does not invalidate
 an earlier immutable binding.
 
-Codec records are create-only. A request to create a byte-identical existing
-entry is an idempotent success without a write. Any non-identical existing
-entry is `codec-binding-conflict` and MUST fail before repository mutation.
-Deletion is forbidden.
+Codec and lens records are create-only. A request to create a byte-identical
+existing entry is an idempotent success without a write. Any non-identical
+existing codec entry is `codec-binding-conflict`; any reused lens ID or
+non-identical lens entry is `lens-binding-conflict`. Both MUST fail before
+repository mutation. Deletion is forbidden.
 
 The embedded bytes and their CIDs make historical validation independent of
 PDS history retention. The signed current repository proves the create-only
@@ -253,14 +260,19 @@ source provenance. None substitutes for the others.
 
 ### Lens contract
 
-Lens identifiers are stable strings scoped by the kan codec registry. A lens
-descriptor is immutable once referenced by a codec entry. Its vectors define a
-function from canonical decoded source values to either:
+Lens identifiers are globally unique stable strings in the authoritative
+`tools.kan.lens` collection. A lens entry is immutable. Its `sourceCodec` and
+`targetCodec` MUST each resolve to a valid codec entry, and its vectors define
+a function from canonical decoded source values to either:
 
 ```text
 success(canonical target value)
 refusal(stable reason)
 ```
+
+Lens identifiers contain 1 through 64 ASCII bytes, match
+`[a-z][a-z0-9]*(?:-[a-z0-9]+)*`, compare byte-for-byte and case-sensitively,
+and MUST also satisfy the ATProto `record-key` grammar unchanged.
 
 A **total** lens has no refusal for any valid source value. A **lossless** lens
 preserves all source information required by its declared inverse. A lens used
@@ -297,7 +309,9 @@ Before projection the AppView MUST:
 3. hash and decode the embedded envelope and payload schemas, then validate the
    raw record against them;
 4. reconstruct and verify the kan content CID and signature; and
-5. select a path consisting only of registered lenses.
+5. resolve one verified repository snapshot of the complete
+   `tools.kan.lens` collection and select a path consisting only of those
+   registered lenses.
 
 `tools.kan.getClaim`, `tools.kan.getSubject`, and `tools.kan.getIdentity`
 default to the AppView's declared preferred codec. A caller MAY request a
@@ -359,8 +373,10 @@ Unicode-normalized, percent-decoded, or treated as semantic-version ranges.
 
 A codec binding is equal only when every normative registry field is equal,
 including both schemas and CIDs, payload reference, source commit and tag,
-canonical specification URI, and ordered lens descriptors. Two bindings with
-the same schema JSON but different provenance are not the same binding.
+and canonical specification URI. A lens binding is equal only when its ID,
+endpoints, classification, vector bytes and CID, and source provenance are all
+equal. Two bindings with the same schema or vectors but different provenance
+are not the same binding.
 
 Lexicon JSON source follows ATProto Lexicon semantics. Each schema's immutable
 identity in the registry is its DAG-CBOR record CID, not whitespace or JSON
@@ -399,12 +415,25 @@ or source snapshots.
    `envelopeLexiconRecordCid` and `payloadLexiconRecordCid`; decode them as
    valid Lexicon schema records and require `payloadSchema` to resolve within
    the embedded payload schema.
-5. Reproduce the schema and normative fixtures from the registered Git commit
-   and tag.
-6. Hash, decode, and validate every embedded lens-vector set against its
-   `vectorsCid`.
-7. Return the immutable binding or a stable failure; never substitute the
+5. Reproduce the schema and canonical codec fixtures from the registered Git
+   commit and tag.
+6. Return the immutable binding or a stable failure; never substitute the
    current schema record.
+
+### Resolve the lens graph
+
+1. List the complete `tools.kan.lens` collection from the same verified
+   authority-repository snapshot used for the request.
+2. Require each rkey to equal its globally unique `id`; duplicate IDs or any
+   non-identical reuse fail the entire graph as `lens-binding-conflict`.
+3. Resolve both endpoint codec entries and require exact byte equality with the
+   lens record's `sourceCodec` and `targetCodec`.
+4. Hash and decode the embedded vectors, require `vectorsCid` to reproduce,
+   and reproduce them from the lens record's immutable Git repository, commit,
+   and tag.
+5. Build the directed graph from exactly that snapshot. Consumers MUST NOT
+   infer edges from codec records, release order, local implementations, or
+   records observed in a different repository commit.
 
 ### Publish a release
 
@@ -417,8 +446,9 @@ or source snapshots.
    conflicting codec rkey.
 6. Select exactly one new codec, construct one guarded
    `com.atproto.repo.applyWrites` request containing its changed current schema
-   rkeys and create-only codec entry, and reject more than 200 operations or a
-   proposed commit block closure larger than 2,000,000 bytes before mutation.
+   rkeys, create-only codec entry, and any create-only lens entries released
+   with it. Reject a reused lens ID, more than 200 operations, or a proposed
+   commit block closure larger than 2,000,000 bytes before mutation.
 7. Commit once. A failure leaves both the current schema surface and that codec
    absent; there is no staged-unactivated state. Repeat from step 4 for another
    codec from the same release.
@@ -431,7 +461,7 @@ or source snapshots.
 
 1. Resolve and verify the exact raw source snapshot and record.
 2. Read `codec`; never infer it from record age or current schema.
-3. Resolve and verify the codec binding.
+3. Resolve and verify the codec binding and one complete lens-graph snapshot.
 4. Verify canonical content CID and signature under that codec.
 5. Select the requested target or the AppView's declared preferred codec.
 6. Find a path of registered total lenses. For equal codecs, use the empty
@@ -479,10 +509,11 @@ repository publication.
   Lossy or partial conversion is never silent.
 - **Provenance laundering:** A normalized view always exposes its raw AT URI,
   record CID, source codec, target codec, and lens path.
-- **Mixed release:** Current schema updates and one self-contained codec entry
-  share one atomic commit. Aggregate operation and block-closure limits are
-  checked before mutation. A multi-codec release is a sequence of independently
-  verified publications, never an oversized all-codec transaction.
+- **Mixed release:** Current schema updates, one self-contained codec entry,
+  and its new globally registered lens entries share one atomic commit.
+  Aggregate operation and block-closure limits are checked before mutation. A
+  multi-codec release is a sequence of independently verified publications,
+  never an oversized all-codec transaction.
 - **DNS or domain loss:** This loses Lexicon and DID authority by design.
   Domain protection, registrar recovery, DNSSEC where operationally supported,
   and independent monitoring are required controls.
@@ -528,10 +559,11 @@ and report `unsupported-source-codec`; they MUST NOT decode them as v1. Newer
 AppViews continue serving v1 through the identity path and MAY normalize it to
 a later codec only through registered total lenses.
 
-The initial authoritative publication MUST include `kan-claim-v1` and MUST
-bind it to the exact schema shipped from `kan-lexicon`. No second real codec is
-required to implement this RFC; a synthetic future codec exercises extension
-and refusal behavior in conformance tests.
+The initial authoritative publication MUST include `kan-claim-v1`, MUST bind
+it to the exact schema shipped from `kan-lexicon`, and MUST create the canonical
+v1 identity-lens entry. No second real codec is required to implement this RFC;
+a synthetic future codec exercises extension and refusal behavior in
+conformance tests.
 
 ## Alternatives considered
 
@@ -580,7 +612,8 @@ covers:
 3. valid and invalid codec strings;
 4. exact codec/rkey equality and immutable binding fields;
 5. idempotent create and conflicting rebind;
-6. atomic schema-and-codec publication and injected pre-commit failure;
+6. atomic schema, codec, and globally keyed lens publication plus injected
+   pre-commit failure;
 7. exact embedded envelope and payload schemas with reproducible DAG-CBOR CIDs;
 8. executable identity, total lossless, partial, lossy, refusal, and round-trip
    lens examples;
@@ -606,9 +639,11 @@ The checked codec record is explicitly `fixtureOnly` and uses the reserved
 synthetic codec `kan-claim-v2-test`. It contains the actual base64-encoded
 DAG-CBOR envelope, payload, and per-lens vector bytes; linked CIDs and declared
 byte maxima must reproduce those bytes, and the complete encoded record must
-remain below one megabyte. The fixture publication contains exactly one codec,
-three operations, and a conservatively overhead-padded block closure below two
-million bytes. Its `example.invalid` repository, zero commit, and
+remain below one megabyte. The fixture publication contains exactly one codec
+and seven operations, including four globally keyed lens records. It does not
+construct an MST, signed commit, inversion proof, or CAR and therefore makes no
+claim to prove the complete commit-block closure; that remains AC-5 evidence
+for the publisher implementation. Its `example.invalid` repository, zero commit, and
 fixture tag are deliberately non-publishable sentinel provenance. The checker
 requires those exact sentinels so proposal evidence cannot masquerade as a
 released `kan-lexicon` binding. A production entry MUST omit `fixtureOnly` and
@@ -641,7 +676,7 @@ None.
   is sufficient to prove envelope extensibility without inventing a migration.
 - General dependency solvers, version ranges, and lockfiles for arbitrary
   third-party Lexicon graphs.
-- A network-wide standard for lens publication. `tools.kan.codec` specifies the
+- A network-wide standard for lens publication. `tools.kan.lens` specifies the
   kan convention without claiming protocol-wide authority.
 - The product and access-control model for hosted private kan scopes.
 - Additional AppView instances and selection policy beyond explicit RFC 2

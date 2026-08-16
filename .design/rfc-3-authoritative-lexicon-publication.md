@@ -39,7 +39,8 @@ GitHub workflow holds production publication credentials.
   `com.atproto.lexicon.schema` record whose rkey equals its NSID. One guarded
   repository commit atomically updates current schema rkeys and creates exactly
   one associated codec entry, which embeds the canonical envelope schema,
-  payload schema, and lens vectors with their content CIDs. The publisher
+  payload schema, plus any create-only `tools.kan.lens` records released with
+  it, each carrying vectors and their content CID. The publisher
   rejects more than 200 operations or a proposed commit block closure larger
   than 2,000,000 bytes before mutation. A release with several new codecs uses
   separately verified atomic publications. Publication is idempotent,
@@ -52,14 +53,18 @@ GitHub workflow holds production publication credentials.
   The record envelope has an explicitly open payload boundary, and a consumer
   dispatches exact payload decoding and validation by codec rather than
   applying whichever claim schema resolves as current.
-- REQ-7: The authority repository carries an append-only `tools.kan.codec`
-  register with one create-only record per codec, keyed by the codec string.
-  Each entry binds the codec to its claim-envelope NSID, canonical embedded
+- REQ-7: The authority repository carries append-only `tools.kan.codec` and
+  `tools.kan.lens` registers. Codec records are keyed by codec string; lens
+  records are keyed by a globally unique lens ID and bind exact source and
+  target codecs. Consumers construct the directed graph from one complete
+  verified authority-repository snapshot, never from codec-local hints.
+  Each codec entry binds the codec to its claim-envelope NSID, canonical embedded
   envelope schema and CID, exact payload Lexicon reference, canonical embedded
-  defining schema and CID, embedded lens vectors and CIDs, immutable
-  `kan-lexicon` Git commit and release tag, and canonical codec specification.
-  Re-creating an identical entry is idempotent; changing an existing binding
-  is corruption and fails closed.
+  defining schema and CID, immutable `kan-lexicon` Git commit and release tag,
+  and canonical codec specification. Each lens entry embeds normative vectors
+  and CID with the same source provenance. Re-creating an identical entry is
+  idempotent; changing an existing binding or reusing a lens ID is corruption
+  and fails closed.
 - REQ-8: Every published codec has immutable normative canonical bytes,
   validation rules, and valid and invalid vectors. `kan` supplies a default
   executable lens for each supported adjacent codec transition, while
@@ -131,9 +136,11 @@ GitHub workflow holds production publication credentials.
       source tree differing from the release provenance. (REQ-4, REQ-5)
 - [ ] AC-5: A publication fixture changing multiple mutually referring
       Lexicons produces one guarded commit containing current schema updates
-      and exactly one create-only codec entry with embedded immutable schemas.
-      It proves the 200-operation and 2,000,000-byte complete-block-closure
-      limits are checked before mutation. An
+      and exactly one create-only codec entry with embedded immutable schemas,
+      plus its create-only globally keyed lens entries. The real publisher
+      constructs the MST, commit, inversion proof, and CAR and proves the
+      200-operation and 2,000,000-byte complete-block-closure limits before
+      mutation. An
       injected pre-commit failure leaves all schema and codec rkeys unchanged,
       and public read-back checks the complete set rather than only changed
       records.
@@ -148,13 +155,15 @@ GitHub workflow holds production publication credentials.
       future codec that an old transport can preserve and report an unsupported
       record without interpreting it as v1 or stripping its unknown payload.
       (REQ-6, REQ-11, REQ-13)
-- [ ] AC-8: Codec-register fixtures resolve a codec to exact embedded envelope
-      and payload schema bytes and CIDs, reproduce them from the pinned
-      `kan-lexicon` tag and Git commit, and reject mismatched codec, NSID,
-      schema bytes, record CID, Git tree, tag, or lens vectors.
+- [ ] AC-8: Codec/lens-register fixtures resolve a codec to exact embedded
+      envelope and payload schema bytes and CIDs and resolve a complete,
+      globally keyed lens graph from one repository snapshot. They reproduce
+      schemas and vectors from the pinned `kan-lexicon` tag and Git commit and
+      reject mismatched codec, endpoint, lens ID, NSID, bytes, record CID, Git
+      tree, or tag.
       (REQ-7)
-- [ ] AC-9: Two independent implementations validate the codec register and
-      every codec's positive and negative canonical-byte vectors. Mutation
+- [ ] AC-9: Two independent implementations validate the codec/lens registers
+      and every codec's positive and negative canonical-byte vectors. Mutation
       tests prove that changing canonical bytes, a bound, a discriminator, or
       a registered schema CID is detected. (REQ-7, REQ-8, REQ-14)
 - [ ] AC-10: Lens fixtures exercise identity, deterministic output, composition,
@@ -250,18 +259,19 @@ backed up to a separately protected vault such as Proton Pass. Because sealed
 Railway variables cannot be read back, sealing is permitted only after the
 recovery copy and reconstruction test exist.
 
-All changed `com.atproto.lexicon.schema` records and create-only
-`tools.kan.codec` entries are written in one swap-guarded atomic commit. Each
-codec entry embeds canonical DAG-CBOR bytes for its envelope and payload schema
-records plus the CIDs those bytes reproduce, and embeds canonical lens vectors
-with their CID. Historical verification therefore needs neither a
-self-referential containing-commit field nor an archival PDS API. After the
+All changed `com.atproto.lexicon.schema` records, exactly one create-only
+`tools.kan.codec` entry, and its create-only `tools.kan.lens` entries are
+written in one swap-guarded atomic commit. Each codec entry embeds canonical
+DAG-CBOR bytes for its envelope and payload schema records plus the CIDs those
+bytes reproduce; each globally keyed lens entry embeds canonical vectors with
+their CID and source provenance. Historical verification therefore needs
+neither a self-referential containing-commit field nor an archival PDS API. After the
 commit, verification begins from public DNS and checks the complete desired
 set. A write success without public verification is
 `published-unverified`, not deployed; retry performs read-back before any new
 write.
 
-### Stable envelope and append-only codec register
+### Stable envelope and append-only codec/lens registers
 
 RFC 2 made `tools.kan.claim` the canonical collection and `codec` a required
 field with `kan-claim-v1` as a known value. RFC 3 promotes that field into the

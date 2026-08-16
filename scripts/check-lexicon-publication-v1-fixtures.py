@@ -18,7 +18,6 @@ MANIFEST = ROOT / "tests/fixtures/lexicon-publication-v1/manifest.json"
 MAX_RECORD_BYTES = 1_000_000
 MAX_COMMIT_BLOCK_BYTES = 2_000_000
 MAX_APPLY_WRITES = 200
-FIXTURE_COMMIT_OVERHEAD_BYTES = 65_536
 
 
 class Invalid(ValueError):
@@ -131,20 +130,22 @@ def apply_lens(lens_id: str, value: dict) -> tuple[str, object]:
     raise Invalid(f"unknown lens implementation: {lens_id}")
 
 
-def validate_publication_limits(desired: list[str], write_sizes: dict[str, int], overhead: int) -> None:
+def validate_publication_shape(desired: list[str], known_writes: set[str]) -> None:
     codec_writes = [key for key in desired if key.startswith("codec:")]
     require(len(codec_writes) <= 1, "publication contains more than one new codec")
     require(len(desired) <= MAX_APPLY_WRITES, "publication exceeds applyWrites operation limit")
-    require(all(key in write_sizes for key in desired), "publication contains an unknown write")
-    closure_bytes = sum(write_sizes[key] for key in desired) + overhead
-    require(closure_bytes <= MAX_COMMIT_BLOCK_BYTES, "publication exceeds commit block limit")
+    require(all(key in known_writes for key in desired), "publication contains an unknown write")
 
 
-def simulate_publication(case: dict, write_sizes: dict[str, int]) -> tuple[int, str]:
+def require_commit_closure_limit(serialized_car_bytes: int) -> None:
+    require(serialized_car_bytes <= MAX_COMMIT_BLOCK_BYTES, "publication exceeds commit block limit")
+
+
+def simulate_publication(case: dict, known_writes: set[str]) -> tuple[int, str]:
     before = {"schema:claim": "old-claim", "schema:fixture": "old-fixture"}
     after = copy.deepcopy(before)
     desired = {key: "new-" + key for key in case["desiredWrites"]}
-    validate_publication_limits(list(desired), write_sizes, FIXTURE_COMMIT_OVERHEAD_BYTES)
+    validate_publication_shape(list(desired), known_writes)
     calls = 0
     if case["injectBeforeCommit"]:
         require(case["applyWritesCalls"] == 0, "failure invoked applyWrites")
@@ -168,10 +169,11 @@ def simulate_publication(case: dict, write_sizes: dict[str, int]) -> tuple[int, 
 
 def validate(data: dict) -> None:
     require(data.get("version") == 2, "version must be 2")
+    require(set(data) == {"version", "authority", "resolutionCases", "codecGrammar", "codecMaxBytes", "codecCases", "schemas", "codecBinding", "lensRecords", "bindingCases", "publicationCases", "lenses", "lensVectors", "normalizationCases", "requiredViewProvenance", "secretBoundaries"}, "manifest field inventory drift")
 
     authority = data["authority"]
     expected_nsids = {
-        "tools.kan.claim", "tools.kan.codec", "tools.kan.defs",
+        "tools.kan.claim", "tools.kan.codec", "tools.kan.defs", "tools.kan.lens",
         "tools.kan.getClaim", "tools.kan.getIdentity", "tools.kan.getSubject",
     }
     require(set(authority["nsids"]) == expected_nsids, "authoritative NSID set drift")
@@ -201,6 +203,7 @@ def validate(data: dict) -> None:
         ("pds-mismatch", "canonical", "canonical", "wrong", "service-mismatch"),
     ]
     resolution_rows = [(c["name"], c["dns"], c["did"], c["pds"], c["outcome"]) for c in data["resolutionCases"]]
+    require(all(set(c) == {"name", "dns", "did", "pds", "outcome"} for c in data["resolutionCases"]), "resolution case field drift")
     require(resolution_rows == expected_resolution_rows, "resolution matrix incomplete, duplicated, or mislabeled")
 
     grammar = re.compile(rf"^(?:{data['codecGrammar']})$")
@@ -212,6 +215,7 @@ def validate(data: dict) -> None:
     ]
     require([(c["input"], c["valid"]) for c in data["codecCases"]] == expected_codec_cases,
             "codec matrix incomplete, duplicated, or mislabeled")
+    require(all(set(c) == {"input", "valid"} for c in data["codecCases"]), "codec case field drift")
     for case in data["codecCases"]:
         try:
             raw = case["input"].encode("ascii")
@@ -238,6 +242,14 @@ def validate(data: dict) -> None:
     require(payload_ref[1] in payload_value["defs"], "payload fragment missing")
 
     binding = data["codecBinding"]
+    expected_binding_keys = {
+        "$type", "rkey", "codec", "claimLexicon", "envelopeLexiconRecordCid",
+        "envelopeLexicon", "envelopeMaxBytes", "payloadSchema",
+        "payloadLexiconRecordCid", "payloadLexicon", "payloadMaxBytes",
+        "sourceRepository", "sourceCommit", "sourceTag", "canonicalSpecification",
+        "fixtureOnly",
+    }
+    require(set(binding) == expected_binding_keys, "codec record field inventory drift")
     require(binding["$type"] == "tools.kan.codec", "wrong codec record type")
     require(binding["codec"] == binding["rkey"] == "kan-claim-v2-test", "codec/rkey mismatch")
     require(binding["claimLexicon"] == "tools.kan.claim", "wrong claim Lexicon")
@@ -257,40 +269,56 @@ def validate(data: dict) -> None:
     codec_bytes = len(dag_cbor(binding))
     require(codec_bytes <= MAX_RECORD_BYTES, "codec record exceeds one-megabyte limit")
 
-    expected_binding = {
-        "create-new": "create", "repeat-identical": "idempotent",
-        "reject-rebind": "codec-binding-conflict", "reject-rkey-mismatch": "codec-binding-conflict",
-    }
-    require({c["name"]: c["outcome"] for c in data["bindingCases"]} == expected_binding, "binding matrix incomplete or mislabeled")
+    expected_binding_rows = [
+        ("create-new", None, "canonical", "create"),
+        ("repeat-identical", "canonical", "canonical", "idempotent"),
+        ("reject-rebind", "canonical", "different-schema-bytes", "codec-binding-conflict"),
+        ("reject-rkey-mismatch", None, "different-rkey", "codec-binding-conflict"),
+    ]
+    binding_rows = [(c["name"], c["existing"], c["desired"], c["outcome"]) for c in data["bindingCases"]]
+    require(all(set(c) == {"name", "existing", "desired", "outcome"} for c in data["bindingCases"]), "binding case field drift")
+    require(binding_rows == expected_binding_rows, "binding matrix incomplete, duplicated, or mislabeled")
 
-    expected_publication = {
-        "two-schema-one-codec": (1, "verified"),
-        "precommit-injected-failure": (0, "unchanged"),
-        "write-ok-readback-fails": (1, "published-unverified"),
-        "retry-public-verification": (0, "verified"),
+    full_writes = ("schema:claim", "schema:fixture", "codec:kan-claim-v2-test", "lens:identity-v1", "lens:v1-to-synthetic-v2", "lens:synthetic-v2-to-v1", "lens:synthetic-v2-summary")
+    expected_publication_rows = [
+        ("two-schema-one-codec", full_writes, 1, False, "match", 1, "verified"),
+        ("precommit-injected-failure", full_writes, 0, True, "unchanged", 0, "unchanged"),
+        ("write-ok-readback-fails", full_writes, 1, False, "mismatch", 1, "published-unverified"),
+        ("retry-public-verification", (), 0, False, "match", 0, "verified"),
+    ]
+    lens_records = data["lensRecords"]
+    known_writes = {"schema:claim", "schema:fixture", "codec:kan-claim-v2-test"} | {
+        "lens:" + lens["id"] for lens in lens_records
     }
-    write_sizes = {
-        "schema:claim": len(dag_cbor(schema_value(schemas["envelope"]))),
-        "schema:fixture": len(dag_cbor(schema_value(schemas["payload"]))),
-        "codec:kan-claim-v2-test": codec_bytes,
-    }
-    publication = {}
+    publication_rows = []
     expected_case_keys = {"name", "desiredWrites", "applyWritesCalls", "injectBeforeCommit", "readback", "commits", "outcome"}
     for case in data["publicationCases"]:
         require(set(case) == expected_case_keys, f"publication case shape drift: {case.get('name')}")
-        calls, outcome = simulate_publication(case, write_sizes)
+        calls, outcome = simulate_publication(case, known_writes)
         require(outcome == case["outcome"], f"publication outcome mismatch: {case['name']}")
-        require(case["name"] not in publication, f"duplicate publication case: {case['name']}")
-        publication[case["name"]] = (calls, outcome)
-    require(publication == expected_publication, "publication matrix incomplete or mislabeled")
+        publication_rows.append((case["name"], tuple(case["desiredWrites"]), calls, case["injectBeforeCommit"], case["readback"], case["commits"], outcome))
+    require(publication_rows == expected_publication_rows, "publication matrix incomplete, duplicated, or mislabeled")
 
     lenses = {lens["id"]: lens for lens in data["lenses"]}
+    require(all(set(lens) == {"id", "source", "target", "total", "lossless"} for lens in data["lenses"]), "lens declaration field drift")
     require(len(lenses) == len(data["lenses"]), "duplicate lens declaration")
     require(set(lenses) == {"identity-v1", "v1-to-synthetic-v2", "synthetic-v2-to-v1", "synthetic-v2-summary"}, "lens set drift")
-    descriptors = {lens["id"]: lens for lens in binding["fromLenses"]}
-    require(set(descriptors) == set(lenses), "binding lens set drift")
+    descriptors = {lens["id"]: lens for lens in lens_records}
+    require(len(descriptors) == len(lens_records), "duplicate lens record id")
+    require(set(descriptors) == set(lenses), "lens record set drift")
+    lens_id_grammar = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
     for lens_id, descriptor in descriptors.items():
         declared = lenses[lens_id]
+        require(len(lens_id.encode("ascii")) <= 64 and lens_id_grammar.fullmatch(lens_id) is not None, f"invalid lens id: {lens_id}")
+        require(descriptor["$type"] == "tools.kan.lens", f"wrong lens record type: {lens_id}")
+        require(descriptor["rkey"] == descriptor["id"], f"lens rkey mismatch: {lens_id}")
+        require(set(descriptor) == {"$type", "rkey", "id", "sourceCodec", "targetCodec", "vectorsCid", "vectors", "vectorsMaxBytes", "total", "lossless", "sourceRepository", "sourceCommit", "sourceTag", "canonicalSpecification"}, f"lens record field inventory drift: {lens_id}")
+        require(descriptor["sourceCodec"] in {"kan-claim-v1", binding["codec"]}, f"unknown lens source codec: {lens_id}")
+        require(descriptor["targetCodec"] in {"kan-claim-v1", binding["codec"]}, f"unknown lens target codec: {lens_id}")
+        require(descriptor["sourceRepository"] == binding["sourceRepository"], f"lens source repository drift: {lens_id}")
+        require(descriptor["sourceCommit"] == binding["sourceCommit"] and descriptor["sourceTag"] == binding["sourceTag"], f"lens source revision drift: {lens_id}")
+        require(descriptor["canonicalSpecification"] == binding["canonicalSpecification"], f"lens specification drift: {lens_id}")
+        require(len(dag_cbor(descriptor)) <= MAX_RECORD_BYTES, f"lens record exceeds one-megabyte limit: {lens_id}")
         require(descriptor["sourceCodec"] == declared["source"], f"lens source drift: {lens_id}")
         require(descriptor["targetCodec"] == declared["target"], f"lens target drift: {lens_id}")
         require(descriptor["total"] == declared["total"] and descriptor["lossless"] == declared["lossless"], f"lens classification drift: {lens_id}")
@@ -316,6 +344,7 @@ def validate(data: dict) -> None:
     ]
     require(actual_vector_kinds == expected_vector_kinds, "lens vector inventory incomplete, reordered, or mislabeled")
     for vector in data["lensVectors"]:
+        require(set(vector) in ({"lens", "input", "output"}, {"lens", "input", "refusal"}), "lens vector field drift")
         status, result = apply_lens(vector["lens"], vector["input"])
         require(apply_lens(vector["lens"], vector["input"]) == (status, result), f"lens is nondeterministic: {vector['lens']}")
         if "output" in vector:
@@ -348,6 +377,7 @@ def validate(data: dict) -> None:
         "unknown-target": ("kan-claim-v1", "kan-claim-v9", (), "unsupported-target-codec"),
     }
     normalization = {c["name"]: (c["source"], c["target"], tuple(c["path"]), c["outcome"]) for c in data["normalizationCases"]}
+    require(all(set(c) == {"name", "source", "target", "path", "outcome"} for c in data["normalizationCases"]), "normalization case field drift")
     require(len(normalization) == len(data["normalizationCases"]), "duplicate normalization case")
     require(normalization == expected_normalization, "normalization matrix incomplete or mislabeled")
     for case in data["normalizationCases"]:
@@ -362,6 +392,8 @@ def validate(data: dict) -> None:
         "railway-reconstruction": ("external-vault", True), "did-recovery-material": ("external-vault", True),
     }
     secrets = {row["secret"]: (row["owner"], row["productionAuthority"]) for row in data["secretBoundaries"]}
+    require(all(set(row) == {"secret", "owner", "productionAuthority"} for row in data["secretBoundaries"]), "secret boundary field drift")
+    require(len(secrets) == len(data["secretBoundaries"]), "duplicate secret boundary")
     require(secrets == expected_secrets, "secret inventory incomplete or mislabeled")
 
 
@@ -369,7 +401,7 @@ def mutations(data: dict) -> list[tuple[str, dict]]:
     def delete_refusal_and_rebind(d: dict) -> None:
         d["lensVectors"] = [v for v in d["lensVectors"] if "refusal" not in v]
         vectors = [v for v in d["lensVectors"] if v["lens"] == "synthetic-v2-to-v1"]
-        descriptor = next(v for v in d["codecBinding"]["fromLenses"] if v["id"] == "synthetic-v2-to-v1")
+        descriptor = next(v for v in d["lensRecords"] if v["id"] == "synthetic-v2-to-v1")
         descriptor["vectors"] = {"$bytes": base64.b64encode(dag_cbor(vectors)).decode("ascii")}
         descriptor["vectorsCid"] = {"$link": dag_cbor_cid(vectors)}
 
@@ -382,6 +414,8 @@ def mutations(data: dict) -> list[tuple[str, dict]]:
         ("schema bytes", lambda d: d["schemas"]["envelope"]["value"]["defs"].clear()),
         ("schema cid", lambda d: d["schemas"]["envelope"].__setitem__("cid", d["schemas"]["payload"]["cid"])),
         ("binding label", lambda d: d["bindingCases"][0].__setitem__("outcome", "idempotent")),
+        ("duplicate binding case", lambda d: d["bindingCases"].append(copy.deepcopy(d["bindingCases"][0]))),
+        ("undeclared codec field", lambda d: d["codecBinding"].__setitem__("extra", True)),
         ("split publication", lambda d: d["publicationCases"][0].__setitem__("applyWritesCalls", 3)),
         ("lens output", lambda d: d["lensVectors"][1]["output"].__setitem__("annotations", ["wrong"])),
         ("delete all lens vectors", lambda d: d.__setitem__("lensVectors", [])),
@@ -395,6 +429,7 @@ def mutations(data: dict) -> list[tuple[str, dict]]:
         ("lossy default", lambda d: d["normalizationCases"][1].__setitem__("path", ["synthetic-v2-summary"])),
         ("provenance", lambda d: d["requiredViewProvenance"].remove("sourceRecordCid")),
         ("secret deletion", lambda d: d["secretBoundaries"].pop()),
+        ("duplicate secret boundary", lambda d: d["secretBoundaries"].append(copy.deepcopy(d["secretBoundaries"][0]))),
     ]
     result = []
     for name, edit in edits:
@@ -417,13 +452,13 @@ def main() -> int:
             print(f"mutation survived: {name}", file=sys.stderr)
     require(killed == len(mutations(data)), "mutation suite incomplete")
     limit_controls = 0
-    for desired, sizes, overhead in (
-        (["codec:a", "codec:b"], {"codec:a": 1, "codec:b": 1}, 0),
-        ([f"schema:{index}" for index in range(201)], {f"schema:{index}": 1 for index in range(201)}, 0),
-        (["codec:a"], {"codec:a": MAX_COMMIT_BLOCK_BYTES}, 1),
+    for action in (
+        lambda: validate_publication_shape(["codec:a", "codec:b"], {"codec:a", "codec:b"}),
+        lambda: validate_publication_shape([f"schema:{index}" for index in range(201)], {f"schema:{index}" for index in range(201)}),
+        lambda: require_commit_closure_limit(MAX_COMMIT_BLOCK_BYTES + 1),
     ):
         try:
-            validate_publication_limits(desired, sizes, overhead)
+            action()
         except Invalid:
             limit_controls += 1
     require(limit_controls == 3, "publication limit controls incomplete")

@@ -1,7 +1,7 @@
 {
   "version": 2,
   "authority": {
-    "nsids": ["tools.kan.claim", "tools.kan.codec", "tools.kan.defs", "tools.kan.getClaim", "tools.kan.getIdentity", "tools.kan.getSubject"],
+    "nsids": ["tools.kan.claim", "tools.kan.codec", "tools.kan.defs", "tools.kan.lens", "tools.kan.getClaim", "tools.kan.getIdentity", "tools.kan.getSubject"],
     "dnsName": "_lexicon.kan.tools", "dnsValue": "did=did:web:kan.tools", "did": "did:web:kan.tools",
     "didUrl": "https://kan.tools/.well-known/did.json", "pdsEndpoint": "https://pds.kan.tools",
     "appView": {"serviceId": "did:web:kan.tools#kan_appview", "serviceType": "KanAppView", "serviceDid": "did:web:appview.kan.tools", "uri": "https://api.kan.tools"}
@@ -40,14 +40,14 @@
     "payloadLexicon":{"$bytes":"pGJpZHF0b29scy5rYW4uZml4dHVyZWRkZWZzoW5jbGFpbUNvbnRlbnRWMqNkdHlwZWZvYmplY3RocmVxdWlyZWSDZ21lc3NhZ2VkdGFnc2thbm5vdGF0aW9uc2pwcm9wZXJ0aWVzo2R0YWdzo2R0eXBlZWFycmF5ZWl0ZW1zomR0eXBlZnN0cmluZ2ltYXhMZW5ndGgYgGltYXhMZW5ndGgZJxBnbWVzc2FnZaJkdHlwZWZzdHJpbmdpbWF4TGVuZ3RoGSAAa2Fubm90YXRpb25zo2R0eXBlZWFycmF5ZWl0ZW1zomR0eXBlZnN0cmluZ2ltYXhMZW5ndGgYgGltYXhMZW5ndGgZJxBlJHR5cGV4GmNvbS5hdHByb3RvLmxleGljb24uc2NoZW1hZ2xleGljb24B"}, "payloadMaxBytes":4096,
     "sourceRepository":"https://example.invalid/kan-rfc3-proposal-fixture", "sourceCommit":"0000000000000000000000000000000000000000",
     "sourceTag":"v0.0.0-fixture", "canonicalSpecification":"https://github.com/kan-tools/kan/blob/main/rfcs/3-authoritative-lexicon-publication.md",
-    "fixtureOnly":true,
-    "fromLenses":[
-      {"id":"identity-v1","sourceCodec":"kan-claim-v1","targetCodec":"kan-claim-v1","vectorsCid":{"$link":"bafyreiahin6ugrg3tbujql6qvgi6aayfnecmn7xt26kbzp6s72iwq2qefa"},"vectors":{"$bytes":"gaNkbGVuc2tpZGVudGl0eS12MWVpbnB1dKJkdGFnc4FjcmZjZ21lc3NhZ2VlaGVsbG9mb3V0cHV0omR0YWdzgWNyZmNnbWVzc2FnZWVoZWxsbw=="},"vectorsMaxBytes":2048,"total":true,"lossless":true},
-      {"id":"v1-to-synthetic-v2","sourceCodec":"kan-claim-v1","targetCodec":"kan-claim-v2-test","vectorsCid":{"$link":"bafyreifgbrs3matyltojd5c5an6qpnmmcrioibvcv25qpyrvmdsm6jkdd4"},"vectors":{"$bytes":"gaNkbGVuc3J2MS10by1zeW50aGV0aWMtdjJlaW5wdXSiZHRhZ3OBY3JmY2dtZXNzYWdlZWhlbGxvZm91dHB1dKNkdGFnc4FjcmZjZ21lc3NhZ2VlaGVsbG9rYW5ub3RhdGlvbnOA"},"vectorsMaxBytes":2048,"total":true,"lossless":true},
-      {"id":"synthetic-v2-to-v1","sourceCodec":"kan-claim-v2-test","targetCodec":"kan-claim-v1","vectorsCid":{"$link":"bafyreigsbksx3qdrl7y7oxnpunemwoemnc5reyxy2qzrfl5tm7kct3v2tu"},"vectors":{"$bytes":"gqNkbGVuc3JzeW50aGV0aWMtdjItdG8tdjFlaW5wdXSjZHRhZ3OBY3JmY2dtZXNzYWdlZWhlbGxva2Fubm90YXRpb25zgGZvdXRwdXSiZHRhZ3OBY3JmY2dtZXNzYWdlZWhlbGxvo2RsZW5zcnN5bnRoZXRpYy12Mi10by12MWVpbnB1dKNkdGFnc4BnbWVzc2FnZWVoZWxsb2thbm5vdGF0aW9uc4FjbmV3Z3JlZnVzYWx4HWFubm90YXRpb25zLW5vdC1yZXByZXNlbnRhYmxl"},"vectorsMaxBytes":2048,"total":false,"lossless":true},
-      {"id":"synthetic-v2-summary","sourceCodec":"kan-claim-v2-test","targetCodec":"kan-claim-v1","vectorsCid":{"$link":"bafyreietittlptobpp3pmkkzztdlmk5adqovxeahubtdajlwgeu444uo2i"},"vectors":{"$bytes":"gaNkbGVuc3RzeW50aGV0aWMtdjItc3VtbWFyeWVpbnB1dKNkdGFnc4FjcmZjZ21lc3NhZ2VlaGVsbG9rYW5ub3RhdGlvbnOBY25ld2ZvdXRwdXSiZHRhZ3OBY3JmY2dtZXNzYWdlZWhlbGxv"},"vectorsMaxBytes":2048,"total":true,"lossless":false}
-    ]
+    "fixtureOnly":true
   },
+  "lensRecords":[
+    {"$type":"tools.kan.lens","rkey":"identity-v1","id":"identity-v1","sourceCodec":"kan-claim-v1","targetCodec":"kan-claim-v1","vectorsCid":{"$link":"bafyreiahin6ugrg3tbujql6qvgi6aayfnecmn7xt26kbzp6s72iwq2qefa"},"vectors":{"$bytes":"gaNkbGVuc2tpZGVudGl0eS12MWVpbnB1dKJkdGFnc4FjcmZjZ21lc3NhZ2VlaGVsbG9mb3V0cHV0omR0YWdzgWNyZmNnbWVzc2FnZWVoZWxsbw=="},"vectorsMaxBytes":2048,"total":true,"lossless":true,"sourceRepository":"https://example.invalid/kan-rfc3-proposal-fixture","sourceCommit":"0000000000000000000000000000000000000000","sourceTag":"v0.0.0-fixture","canonicalSpecification":"https://github.com/kan-tools/kan/blob/main/rfcs/3-authoritative-lexicon-publication.md"},
+    {"$type":"tools.kan.lens","rkey":"v1-to-synthetic-v2","id":"v1-to-synthetic-v2","sourceCodec":"kan-claim-v1","targetCodec":"kan-claim-v2-test","vectorsCid":{"$link":"bafyreifgbrs3matyltojd5c5an6qpnmmcrioibvcv25qpyrvmdsm6jkdd4"},"vectors":{"$bytes":"gaNkbGVuc3J2MS10by1zeW50aGV0aWMtdjJlaW5wdXSiZHRhZ3OBY3JmY2dtZXNzYWdlZWhlbGxvZm91dHB1dKNkdGFnc4FjcmZjZ21lc3NhZ2VlaGVsbG9rYW5ub3RhdGlvbnOA"},"vectorsMaxBytes":2048,"total":true,"lossless":true,"sourceRepository":"https://example.invalid/kan-rfc3-proposal-fixture","sourceCommit":"0000000000000000000000000000000000000000","sourceTag":"v0.0.0-fixture","canonicalSpecification":"https://github.com/kan-tools/kan/blob/main/rfcs/3-authoritative-lexicon-publication.md"},
+    {"$type":"tools.kan.lens","rkey":"synthetic-v2-to-v1","id":"synthetic-v2-to-v1","sourceCodec":"kan-claim-v2-test","targetCodec":"kan-claim-v1","vectorsCid":{"$link":"bafyreigsbksx3qdrl7y7oxnpunemwoemnc5reyxy2qzrfl5tm7kct3v2tu"},"vectors":{"$bytes":"gqNkbGVuc3JzeW50aGV0aWMtdjItdG8tdjFlaW5wdXSjZHRhZ3OBY3JmY2dtZXNzYWdlZWhlbGxva2Fubm90YXRpb25zgGZvdXRwdXSiZHRhZ3OBY3JmY2dtZXNzYWdlZWhlbGxvo2RsZW5zcnN5bnRoZXRpYy12Mi10by12MWVpbnB1dKNkdGFnc4BnbWVzc2FnZWVoZWxsb2thbm5vdGF0aW9uc4FjbmV3Z3JlZnVzYWx4HWFubm90YXRpb25zLW5vdC1yZXByZXNlbnRhYmxl"},"vectorsMaxBytes":2048,"total":false,"lossless":true,"sourceRepository":"https://example.invalid/kan-rfc3-proposal-fixture","sourceCommit":"0000000000000000000000000000000000000000","sourceTag":"v0.0.0-fixture","canonicalSpecification":"https://github.com/kan-tools/kan/blob/main/rfcs/3-authoritative-lexicon-publication.md"},
+    {"$type":"tools.kan.lens","rkey":"synthetic-v2-summary","id":"synthetic-v2-summary","sourceCodec":"kan-claim-v2-test","targetCodec":"kan-claim-v1","vectorsCid":{"$link":"bafyreietittlptobpp3pmkkzztdlmk5adqovxeahubtdajlwgeu444uo2i"},"vectors":{"$bytes":"gaNkbGVuc3RzeW50aGV0aWMtdjItc3VtbWFyeWVpbnB1dKNkdGFnc4FjcmZjZ21lc3NhZ2VlaGVsbG9rYW5ub3RhdGlvbnOBY25ld2ZvdXRwdXSiZHRhZ3OBY3JmY2dtZXNzYWdlZWhlbGxv"},"vectorsMaxBytes":2048,"total":true,"lossless":false,"sourceRepository":"https://example.invalid/kan-rfc3-proposal-fixture","sourceCommit":"0000000000000000000000000000000000000000","sourceTag":"v0.0.0-fixture","canonicalSpecification":"https://github.com/kan-tools/kan/blob/main/rfcs/3-authoritative-lexicon-publication.md"}
+  ],
   "bindingCases": [
     {"name":"create-new","existing":null,"desired":"canonical","outcome":"create"},
     {"name":"repeat-identical","existing":"canonical","desired":"canonical","outcome":"idempotent"},
@@ -55,9 +55,9 @@
     {"name":"reject-rkey-mismatch","existing":null,"desired":"different-rkey","outcome":"codec-binding-conflict"}
   ],
   "publicationCases": [
-    {"name":"two-schema-one-codec","desiredWrites":["schema:claim","schema:fixture","codec:kan-claim-v2-test"],"applyWritesCalls":1,"injectBeforeCommit":false,"readback":"match","commits":1,"outcome":"verified"},
-    {"name":"precommit-injected-failure","desiredWrites":["schema:claim","schema:fixture","codec:kan-claim-v2-test"],"applyWritesCalls":0,"injectBeforeCommit":true,"readback":"unchanged","commits":0,"outcome":"unchanged"},
-    {"name":"write-ok-readback-fails","desiredWrites":["schema:claim","schema:fixture","codec:kan-claim-v2-test"],"applyWritesCalls":1,"injectBeforeCommit":false,"readback":"mismatch","commits":1,"outcome":"published-unverified"},
+    {"name":"two-schema-one-codec","desiredWrites":["schema:claim","schema:fixture","codec:kan-claim-v2-test","lens:identity-v1","lens:v1-to-synthetic-v2","lens:synthetic-v2-to-v1","lens:synthetic-v2-summary"],"applyWritesCalls":1,"injectBeforeCommit":false,"readback":"match","commits":1,"outcome":"verified"},
+    {"name":"precommit-injected-failure","desiredWrites":["schema:claim","schema:fixture","codec:kan-claim-v2-test","lens:identity-v1","lens:v1-to-synthetic-v2","lens:synthetic-v2-to-v1","lens:synthetic-v2-summary"],"applyWritesCalls":0,"injectBeforeCommit":true,"readback":"unchanged","commits":0,"outcome":"unchanged"},
+    {"name":"write-ok-readback-fails","desiredWrites":["schema:claim","schema:fixture","codec:kan-claim-v2-test","lens:identity-v1","lens:v1-to-synthetic-v2","lens:synthetic-v2-to-v1","lens:synthetic-v2-summary"],"applyWritesCalls":1,"injectBeforeCommit":false,"readback":"mismatch","commits":1,"outcome":"published-unverified"},
     {"name":"retry-public-verification","desiredWrites":[],"applyWritesCalls":0,"injectBeforeCommit":false,"readback":"match","commits":0,"outcome":"verified"}
   ],
   "lenses": [
