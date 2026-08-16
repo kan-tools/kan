@@ -8,8 +8,9 @@ relationship to Architecture Decision Records are defined by
 ## Index
 
 - [RFC 0: RFC and ADR process](0-rfc-and-adr-process.md) — Accepted
-- [RFC 1: Principal, repository, and delegated identity](1-identity-system.md) — Review
+- [RFC 1: Principal, repository, and delegated identity](1-identity-system.md) — Accepted
+- [RFC 2: kan URI schemes and resolution](2-kan-uri-scheme.md) — Draft
 
-RFC 1 specifies the kan identity architecture. The next expected proposal is
-RFC 2, the kan URI scheme; the ordering records that URI identity resources
-depend on the identity model.
+RFC 1 specifies the kan identity architecture. RFC 2 specifies the kan URI
+schemes; the ordering records that URI identity resources depend on the
+identity model.
