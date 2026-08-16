@@ -538,3 +538,22 @@ fn lexicon_boundaries_accept_the_limit_and_reject_every_overflow_class() {
         Err(Error::LexiconConstraint(_))
     ));
 }
+
+#[test]
+fn did_format_matches_the_pinned_atproto_syntax_validator() {
+    let id = Identity::generate();
+    let mut accepted = content(id.did(), ClaimBody::Observation { text: "x".into() }, None);
+    // @atproto/syntax deliberately validates this by regex without parsing
+    // interior percent escapes. The Rust projection must accept the same set.
+    accepted.author.did = "did:key:abc%zz".into();
+    assert!(project(&id, accepted).is_ok());
+
+    let mut rejected = content(id.did(), ClaimBody::Observation { text: "x".into() }, None);
+    // The pinned validator permits lowercase letters, but not digits, in the
+    // method component.
+    rejected.author.did = "did:k1:abc".into();
+    assert!(matches!(
+        project(&id, rejected),
+        Err(Error::LexiconConstraint(_))
+    ));
+}

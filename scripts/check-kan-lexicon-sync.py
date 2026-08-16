@@ -47,9 +47,14 @@ if revision != SOURCE["revision"]:
 
 for nsid in ("tools.kan.claim", "tools.kan.defs", "tools.kan.getClaim", "tools.kan.getSubject", "tools.kan.getIdentity"):
     name = nsid.removeprefix("tools.kan.")
-    canonical = UPSTREAM / SOURCE["root"] / f"{name}.json"
+    canonical_path = f'{SOURCE["root"]}/{name}.json'
+    canonical = subprocess.run(
+        ["git", "-C", str(UPSTREAM), "show", f'{SOURCE["revision"]}:{canonical_path}'],
+        check=True,
+        capture_output=True,
+    ).stdout
     snapshot = ROOT / SOURCE["snapshots"] / f"{nsid}.json"
-    if canonical.read_bytes() != snapshot.read_bytes():
+    if canonical != snapshot.read_bytes():
         fail(f"snapshot drift: {snapshot.relative_to(ROOT)}")
 
 print(f"kan Lexicon sync: 5 schemas match {revision}")

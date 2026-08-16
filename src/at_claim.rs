@@ -676,6 +676,11 @@ fn validate_bytes(path: &str, value: Option<&[u8]>, maximum: usize) -> Result<()
 }
 
 fn validate_did(path: &str, value: &str) -> Result<(), Error> {
+    // Match the `format: did` implementation in the pinned @atproto/syntax
+    // dependency exactly: /^did:[a-z]+:[a-zA-Z0-9._:%-]*[a-zA-Z0-9._-]$/
+    // with a 2048-byte ceiling. That validator intentionally does not inspect
+    // interior percent escapes; becoming stricter here would reject records
+    // the canonical Lexicon client accepts and break cross-language parity.
     if value.len() > 2048 {
         return constraint(format!("{path} is not a DID"));
     }
