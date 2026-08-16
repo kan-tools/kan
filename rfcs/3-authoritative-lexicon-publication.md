@@ -1,10 +1,10 @@
 # RFC 3: Authoritative Lexicon publication and versioned AppView
 
-- Status: Draft
+- Status: Review
 - Authors: kan maintainers
 - Created: 2026-08-16
-- Discussion: Not yet opened
-- Review-period-ends: Not yet assigned
+- Discussion: https://github.com/kan-tools/kan/pull/231
+- Review-period-ends: 2026-08-19T20:21:34Z
 - Review-override: None
 - Supersedes: RFC 2 requirements 17 and 18 where explicitly stated
 - Superseded-by: None
