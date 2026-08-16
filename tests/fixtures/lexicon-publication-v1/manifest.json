@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "authority": {
+    "nsids": [
+      "tools.kan.claim",
+      "tools.kan.codec",
+      "tools.kan.defs",
+      "tools.kan.getClaim",
+      "tools.kan.getIdentity",
+      "tools.kan.getSubject"
+    ],
+    "dnsName": "_lexicon.kan.tools",
+    "dnsValue": "did=did:web:kan.tools",
+    "did": "did:web:kan.tools",
+    "didUrl": "https://kan.tools/.well-known/did.json",
+    "appView": {
+      "serviceId": "did:web:kan.tools#kan_appview",
+      "serviceType": "KanAppView",
+      "serviceDid": "did:web:appview.kan.tools",
+      "uri": "https://api.kan.tools"
+    }
+  },
+  "codecGrammar": "[a-z][a-z0-9]*(?:-[a-z0-9]+)*",
+  "codecMaxBytes": 32,
+  "codecCases": [
+    {"input": "kan-claim-v1", "valid": true},
+    {"input": "k", "valid": true},
+    {"input": "kan-claim-2", "valid": true},
+    {"input": "Kan-claim-v1", "valid": false},
+    {"input": "kan--claim", "valid": false},
+    {"input": "kan_claim_v1", "valid": false},
+    {"input": "2-kan", "valid": false},
+    {"input": "kan-claim-v1-abcdefghijklmnopqrstuvwxyz", "valid": false}
+  ],
+  "codecBinding": {
+    "$type": "tools.kan.codec",
+    "rkey": "kan-claim-v1",
+    "codec": "kan-claim-v1",
+    "claimLexicon": "tools.kan.claim",
+    "lexiconRecordCid": "bafyreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "repositoryCommit": "bafyreibbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "sourceRepository": "https://github.com/kan-tools/kan-lexicon",
+    "sourceCommit": "21223656d9954f93d4dc5b0a16c144b6bce1902c",
+    "sourceTag": "v0.1.0",
+    "canonicalSpecification": "https://github.com/kan-tools/kan/blob/main/rfcs/3-authoritative-lexicon-publication.md",
+    "fromLenses": []
+  },
+  "bindingCases": [
+    {"name": "create-new", "existing": null, "desired": "canonical", "outcome": "create"},
+    {"name": "repeat-identical", "existing": "canonical", "desired": "canonical", "outcome": "idempotent"},
+    {"name": "reject-rebind", "existing": "canonical", "desired": "different-record-cid", "outcome": "codec-binding-conflict"},
+    {"name": "reject-rkey-mismatch", "existing": null, "desired": "different-rkey", "outcome": "codec-binding-conflict"}
+  ],
+  "publicationCases": [
+    {"name": "two-schema-one-codec", "schemaWrites": 2, "codecCreates": 1, "commits": 1, "outcome": "verified"},
+    {"name": "precommit-injected-failure", "schemaWrites": 2, "codecCreates": 1, "commits": 0, "outcome": "unchanged"},
+    {"name": "write-ok-readback-fails", "schemaWrites": 1, "codecCreates": 0, "commits": 1, "outcome": "published-unverified"},
+    {"name": "retry-public-verification", "schemaWrites": 0, "codecCreates": 0, "commits": 0, "outcome": "verified"}
+  ],
+  "lenses": [
+    {"id": "identity-v1", "source": "kan-claim-v1", "target": "kan-claim-v1", "total": true, "lossless": true},
+    {"id": "v1-to-synthetic-v2", "source": "kan-claim-v1", "target": "kan-claim-v2-test", "total": true, "lossless": true},
+    {"id": "synthetic-v2-to-v1", "source": "kan-claim-v2-test", "target": "kan-claim-v1", "total": false, "lossless": true},
+    {"id": "synthetic-v2-summary", "source": "kan-claim-v2-test", "target": "kan-claim-v1", "total": true, "lossless": false}
+  ],
+  "normalizationCases": [
+    {"name": "identity", "source": "kan-claim-v1", "target": "kan-claim-v1", "path": [], "outcome": "success"},
+    {"name": "default-current", "source": "kan-claim-v1", "target": "kan-claim-v2-test", "path": ["v1-to-synthetic-v2"], "outcome": "success"},
+    {"name": "partial-not-default", "source": "kan-claim-v2-test", "target": "kan-claim-v1", "path": [], "outcome": "lens-path-unavailable"},
+    {"name": "lossy-not-default", "source": "kan-claim-v2-test", "target": "kan-claim-v1", "path": [], "outcome": "lens-path-unavailable"},
+    {"name": "unknown-source", "source": "kan-claim-v9", "target": "kan-claim-v2-test", "path": [], "outcome": "unsupported-source-codec"},
+    {"name": "unknown-target", "source": "kan-claim-v1", "target": "kan-claim-v9", "path": [], "outcome": "unsupported-target-codec"}
+  ],
+  "requiredViewProvenance": [
+    "sourceCodec",
+    "viewCodec",
+    "sourceUri",
+    "sourceRecordCid",
+    "lensesApplied"
+  ],
+  "secretBoundaries": [
+    {"secret": "release-source", "owner": "github-public", "productionAuthority": false},
+    {"secret": "github-app-private-key", "owner": "railway-runtime", "productionAuthority": false},
+    {"secret": "pds-admin-credential", "owner": "railway-runtime", "productionAuthority": true},
+    {"secret": "repository-signing-key", "owner": "pds-volume", "productionAuthority": true},
+    {"secret": "railway-reconstruction", "owner": "external-vault", "productionAuthority": true},
+    {"secret": "did-recovery-material", "owner": "external-vault", "productionAuthority": true}
+  ]
+}
