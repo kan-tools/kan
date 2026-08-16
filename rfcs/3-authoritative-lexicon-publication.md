@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-16
 - Discussion: https://github.com/kan-tools/kan/pull/231
-- Review-period-ends: 2026-08-19T21:14:25Z
+- Review-period-ends: 2026-08-19T21:27:31Z
 - Review-override: None
 - Supersedes: RFC 2 requirements 14, 15, and 17 where explicitly stated; amends requirement 18
 - Superseded-by: None
@@ -86,7 +86,9 @@ workflow must not become authority to rewrite the canonical schema repository.
 - **Normalized view:** An AppView response projected from a verified raw record
   to a requested codec.
 - **Publication:** One atomic repository commit containing current schema-rkey
-  updates and create-only codec entries with self-contained immutable schemas.
+  updates and exactly one new create-only codec entry with self-contained
+  immutable schemas. A release with multiple new codecs uses multiple
+  independently atomic publications.
 - **Deployment provenance:** The source tag and commit, generated artifact
   digests, ATProto repository commit, record CIDs, and verification result for
   one publication attempt.
@@ -229,6 +231,15 @@ Each embedded value MUST declare a Lexicon byte maximum and the complete codec
 record MUST remain within ATProto's one-megabyte record limit. A codec whose
 schemas and normative vectors do not fit is not publishable under this RFC; it
 MUST NOT truncate evidence or publish an oversized codec entry.
+
+A publication MUST create no more than one codec entry, MUST contain no more
+than 200 repository operations, and the complete block closure of its proposed
+repository commit MUST be no larger than 2,000,000 bytes. The publisher MUST
+construct and measure that closure before mutation and fail closed when either
+aggregate limit is exceeded. Per-record validation does not establish commit
+feasibility. Several codecs from one source release are published sequentially
+as separately verified atomic publications; a later failure does not invalidate
+an earlier immutable binding.
 
 Codec records are create-only. A request to create a byte-identical existing
 entry is an idempotent success without a write. Any non-identical existing
@@ -404,11 +415,13 @@ or source snapshots.
 4. Resolve current authoritative records and compare the complete desired set.
 5. Reject tag drift, source drift, an older desired binding, deletion, or a
    conflicting codec rkey.
-6. Construct one guarded `com.atproto.repo.applyWrites` request containing all
-   changed current schema rkeys and every new create-only codec entry with its
-   embedded immutable schemas and vectors.
-7. Commit once. A failure leaves both the current schema surface and every new
-   codec absent; there is no staged-unactivated state.
+6. Select exactly one new codec, construct one guarded
+   `com.atproto.repo.applyWrites` request containing its changed current schema
+   rkeys and create-only codec entry, and reject more than 200 operations or a
+   proposed commit block closure larger than 2,000,000 bytes before mutation.
+7. Commit once. A failure leaves both the current schema surface and that codec
+   absent; there is no staged-unactivated state. Repeat from step 4 for another
+   codec from the same release.
 8. Starting from public DNS, read back and verify the complete desired set.
 9. Record `verified` deployment provenance only after step 8. A committed write
    whose public read-back fails is `published-unverified`; retry verification
@@ -466,9 +479,10 @@ repository publication.
   Lossy or partial conversion is never silent.
 - **Provenance laundering:** A normalized view always exposes its raw AT URI,
   record CID, source codec, target codec, and lens path.
-- **Mixed release:** Current schema updates and self-contained codec entries
-  share one atomic commit. Complete-set public read-back is required before
-  success.
+- **Mixed release:** Current schema updates and one self-contained codec entry
+  share one atomic commit. Aggregate operation and block-closure limits are
+  checked before mutation. A multi-codec release is a sequence of independently
+  verified publications, never an oversized all-codec transaction.
 - **DNS or domain loss:** This loses Lexicon and DID authority by design.
   Domain protection, registrar recovery, DNSSEC where operationally supported,
   and independent monitoring are required controls.
@@ -582,8 +596,9 @@ concrete schema values as deterministic DAG-CBOR, reproduces their CIDs,
 executes the synthetic lens examples and laws, requires every finite matrix and
 inventory exactly, and runs hostile mutation controls. The controls include the
 invalid states found during cold review: empty authority, insecure endpoint,
-mislabeled resolution and binding, changed schema bytes or CID, zero-schema
-successful publication, wrong lens output, unknown-codec identity, lossy
+mislabeled or duplicated resolution, deletion of negative codec cases, changed
+schema bytes or CID, split or multi-codec publication, wrong lens output,
+deletion of a coherently rehashed refusal vector, unknown-codec identity, lossy
 default normalization, missing provenance, and deleted secrets. The harness
 does not import kan's Rust implementation.
 
@@ -591,17 +606,20 @@ The checked codec record is explicitly `fixtureOnly` and uses the reserved
 synthetic codec `kan-claim-v2-test`. It contains the actual base64-encoded
 DAG-CBOR envelope, payload, and per-lens vector bytes; linked CIDs and declared
 byte maxima must reproduce those bytes, and the complete encoded record must
-remain below one megabyte. Its `example.invalid` repository, zero commit, and
+remain below one megabyte. The fixture publication contains exactly one codec,
+three operations, and a conservatively overhead-padded block closure below two
+million bytes. Its `example.invalid` repository, zero commit, and
 fixture tag are deliberately non-publishable sentinel provenance. The checker
 requires those exact sentinels so proposal evidence cannot masquerade as a
 released `kan-lexicon` binding. A production entry MUST omit `fixtureOnly` and
 pass the immutable Git source-reproduction requirement.
 
 The publication vectors execute a repository-state transition: all desired
-schema and codec keys enter one candidate map and become visible through one
-simulated `applyWrites` commit, while injected pre-commit failure preserves the
-prior map byte-for-byte and verification retry performs no write. This proves
-the proposal state machine, not the behavior of the unbuilt publisher or PDS.
+schema keys and the single codec key enter one candidate map and become visible
+through one simulated `applyWrites` commit, while injected pre-commit failure
+preserves the prior map byte-for-byte and verification retry performs no write.
+This proves the proposal state machine, not the behavior of the unbuilt
+publisher or PDS.
 
 These are proposal self-consistency vectors, not evidence that the unbuilt
 publisher, AppView, infrastructure, or independent implementations satisfy the

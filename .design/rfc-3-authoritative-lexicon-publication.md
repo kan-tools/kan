@@ -37,9 +37,12 @@ GitHub workflow holds production publication credentials.
   protected vault outside GitHub and Railway.
 - REQ-5: Publication materializes each schema as a
   `com.atproto.lexicon.schema` record whose rkey equals its NSID. One guarded
-  repository commit atomically updates current schema rkeys and creates every
-  associated codec entry, which embeds the canonical envelope schema, payload
-  schema, and lens vectors with their content CIDs. Publication is idempotent,
+  repository commit atomically updates current schema rkeys and creates exactly
+  one associated codec entry, which embeds the canonical envelope schema,
+  payload schema, and lens vectors with their content CIDs. The publisher
+  rejects more than 200 operations or a proposed commit block closure larger
+  than 2,000,000 bytes before mutation. A release with several new codecs uses
+  separately verified atomic publications. Publication is idempotent,
   rejects tag or source drift, and never declares success until complete-set
   read-back through DNS, DID, and the public PDS route matches the tagged
   source.
@@ -128,7 +131,9 @@ GitHub workflow holds production publication credentials.
       source tree differing from the release provenance. (REQ-4, REQ-5)
 - [ ] AC-5: A publication fixture changing multiple mutually referring
       Lexicons produces one guarded commit containing current schema updates
-      and create-only codec entries with embedded immutable schemas. An
+      and exactly one create-only codec entry with embedded immutable schemas.
+      It proves the 200-operation and 2,000,000-byte complete-block-closure
+      limits are checked before mutation. An
       injected pre-commit failure leaves all schema and codec rkeys unchanged,
       and public read-back checks the complete set rather than only changed
       records.
@@ -338,8 +343,10 @@ the last verified immutable release provenance.
   infrastructure identities are separate where their lifecycle warrants it.
 - RQ-2: Railway is the runtime and secret boundary. GitHub validates releases and
   emits events but holds no production publication or deployment credential.
-- RQ-3: Current schemas and self-contained codec entries publish in one atomic
-  commit, followed by complete public-route read-back; no mutable
+- RQ-3: Current schemas and exactly one self-contained codec entry publish in
+  one atomic commit within ATProto's operation and complete-block-closure
+  limits, followed by complete public-route read-back. Multi-codec releases use
+  separately verified publications; no mutable
   release-manifest record or historical PDS API is a second source of truth.
 - RQ-4: `tools.kan.claim` remains stable and required `codec` supplies explicit
   record-level versioning. An append-only register binds codecs to immutable
