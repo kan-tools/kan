@@ -73,8 +73,11 @@ means.
 - REQ-14: `tools.kan.claim` is the canonical claim collection on every
   substrate, including the local MST in `src/store/log.rs`. One signed kan
   claim occupies one immutable record keyed by its kan content CID. Migration
-  from the early `dev.kan.claim` collection converts every claim supported by
-  the current kan decoder into the typed `tools.kan.claim` representation. The
+  from the early `dev.kan.claim` collection converts every decoder-supported
+  claim that satisfies the current Lexicon and ATProto record-size constraints
+  into the typed `tools.kan.claim` representation. A claim outside those
+  bounds fails explicitly before any MST mutation and remains readable from
+  the legacy append-only history. The
   specified inverse conversion reproduces the original canonical signed
   `ClaimContent` bytes, preserving claim CIDs, signatures, and append-only
   reachability; migration neither dual-writes nor treats an ATProto record CID
@@ -106,8 +109,9 @@ means.
   an implementation independent of kan, use closed unions for the current
   supported claim and identity variants, and define the exact query
   parameters, typed outputs, pagination fields, and stable XRPC error names.
-  Narrative fields retain enough capacity for current valid kan claims within
-  ATProto's record-size limit; the independent style linter's resulting six
+  Narrative fields retain enough capacity for claims admitted to the current
+  canonical collection within ATProto's record-size limit; the independent
+  style linter's resulting six
   `large-string` warnings are an explicit compatibility exception rather than
   a reason to move signed content into non-invertible blob references.
 
@@ -161,13 +165,17 @@ means.
       REQ-10, REQ-13)
 - [x] AC-13: Migration fixtures containing only `dev.kan.claim`, only
       `tools.kan.claim`, and both collections prove that migration verifies
-      every claim, converts legacy records through the current typed schema,
+      every claim, converts compatible legacy records through the current
+      typed schema,
       reconstructs the original canonical `ClaimContent` bytes byte-for-byte,
       preserves claim CIDs and signatures, rejects non-identical key
       collisions, produces one canonical `tools.kan.claim` entry per claim,
       and remains readable after reopening. Negative controls for an unknown
-      body kind, unsupported codec, non-invertible conversion, and substitution
-      of the enclosing ATProto record CID for the claim CID all fail. (REQ-14)
+      body kind, unsupported codec, a value beyond a Lexicon bound,
+      non-invertible conversion, and substitution of the enclosing ATProto
+      record CID for the claim CID all fail before a partial migration commits.
+      Boundary tests cover every declared byte, array, signature, TID, integer,
+      and encoded-record constraint. (REQ-14)
 - [ ] AC-14: Lexicons published from `kan-tools/kan-lexicon` for
       `tools.kan.claim`,
       `tools.kan.defs`, `tools.kan.getClaim`, `tools.kan.getSubject`, and

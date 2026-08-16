@@ -65,6 +65,17 @@ fn bodies() -> Vec<ClaimBody> {
     ]
 }
 
+fn project(identity: &Identity, content: ClaimContent) -> Result<Record, Error> {
+    let claim_cid = content_cid(&content).unwrap();
+    Record::from_claim(
+        Claim {
+            content,
+            sig: identity.sign(&claim_cid.to_bytes()).unwrap(),
+        },
+        "3jzfcijpj2z2a".into(),
+    )
+}
+
 #[test]
 fn every_known_body_round_trips_with_absent_and_present_recorded_at() {
     let id = Identity::generate();
@@ -114,7 +125,7 @@ fn every_anchor_subject_and_artifact_variant_round_trips() {
                         content: c.clone(),
                         sig
                     },
-                    "tid".into()
+                    "3jzfcijpj2z2a".into()
                 )
                 .unwrap()
                 .verify()
@@ -132,7 +143,7 @@ fn hostile_records_fail_closed() {
     let c = content(id.did(), ClaimBody::Observation { text: "x".into() }, None);
     let cc = content_cid(&c).unwrap();
     let sig = id.sign(&cc.to_bytes()).unwrap();
-    let mut record = Record::from_claim(Claim { content: c, sig }, "tid".into()).unwrap();
+    let mut record = Record::from_claim(Claim { content: c, sig }, "3jzfcijpj2z2a".into()).unwrap();
     record.codec = "other".into();
     assert!(matches!(
         record.verify(),
@@ -152,7 +163,7 @@ fn hostile_records_fail_closed() {
                 content: unknown,
                 sig: vec![]
             },
-            "tid".into()
+            "3jzfcijpj2z2a".into()
         ),
         Err(Error::UnsupportedClaimCodec(_))
     ));
@@ -164,7 +175,7 @@ fn tampering_cid_content_or_signature_is_rejected() {
     let c = content(id.did(), ClaimBody::Observation { text: "x".into() }, None);
     let cc = content_cid(&c).unwrap();
     let sig = id.sign(&cc.to_bytes()).unwrap();
-    let base = Record::from_claim(Claim { content: c, sig }, "tid".into()).unwrap();
+    let base = Record::from_claim(Claim { content: c, sig }, "3jzfcijpj2z2a".into()).unwrap();
     let mut r = base.clone();
     r.claim_cid = cid("wrong").to_string();
     assert_eq!(r.verify(), Err(Error::CidMismatch));
@@ -187,7 +198,7 @@ fn wire_projection_uses_lexicon_discriminator_and_omits_absent_timestamp() {
                 content: c,
                 sig: id.sign(&cc.to_bytes()).unwrap(),
             },
-            "tid".into(),
+            "3jzfcijpj2z2a".into(),
         )
         .unwrap(),
     )
@@ -260,7 +271,7 @@ fn wire_projection_covers_every_closed_union_discriminator_and_enum_spelling() {
                     content: c,
                     sig: id.sign(&cc.to_bytes()).unwrap(),
                 },
-                "tid".into(),
+                "3jzfcijpj2z2a".into(),
             )
             .unwrap(),
         )
@@ -295,7 +306,7 @@ fn wire_projection_covers_every_closed_union_discriminator_and_enum_spelling() {
                     content: c,
                     sig: id.sign(&cc.to_bytes()).unwrap(),
                 },
-                "tid".into(),
+                "3jzfcijpj2z2a".into(),
             )
             .unwrap(),
         )
@@ -321,7 +332,7 @@ fn wire_projection_covers_every_closed_union_discriminator_and_enum_spelling() {
                 content: c,
                 sig: id.sign(&cc.to_bytes()).unwrap(),
             },
-            "tid".into(),
+            "3jzfcijpj2z2a".into(),
         )
         .unwrap(),
     )
@@ -342,7 +353,7 @@ fn wire_projection_covers_every_closed_union_discriminator_and_enum_spelling() {
                 content: c,
                 sig: id.sign(&cc.to_bytes()).unwrap(),
             },
-            "tid".into(),
+            "3jzfcijpj2z2a".into(),
         )
         .unwrap(),
     )
@@ -364,7 +375,7 @@ fn wire_projection_covers_every_closed_union_discriminator_and_enum_spelling() {
                 content: c,
                 sig: id.sign(&cc.to_bytes()).unwrap(),
             },
-            "tid".into(),
+            "3jzfcijpj2z2a".into(),
         )
         .unwrap(),
     )
@@ -404,4 +415,126 @@ fn wire_projection_covers_every_closed_union_discriminator_and_enum_spelling() {
     ] {
         assert_eq!(serde_json::to_value(value).unwrap(), spelling);
     }
+}
+
+#[test]
+fn lexicon_boundaries_accept_the_limit_and_reject_every_overflow_class() {
+    let id = Identity::generate();
+
+    let mut at_title_limit = content(
+        id.did(),
+        ClaimBody::Subject {
+            // Lexicon maxLength counts UTF-8 bytes, not Unicode scalar values.
+            title: "é".repeat(4096),
+            subject_kind: SubjectKind::Issue,
+        },
+        Some(9_007_199_254_740_991),
+    );
+    at_title_limit.author.agent = Some(vec![0; 128]);
+    assert!(project(&id, at_title_limit).is_ok());
+
+    let mut cases = Vec::new();
+    let mut value = content(id.did(), ClaimBody::Observation { text: "x".into() }, None);
+    value.author.agent = Some(vec![0; 129]);
+    cases.push(("agent", value));
+
+    let mut value = content(id.did(), ClaimBody::Observation { text: "x".into() }, None);
+    value.author.did = "not-a-did".into();
+    cases.push(("author DID", value));
+
+    let mut value = content(id.did(), ClaimBody::Observation { text: "x".into() }, None);
+    value.workspace = Anchor::FileAt("x".repeat(4097).into(), "s".into());
+    cases.push(("path", value));
+
+    let mut value = content(id.did(), ClaimBody::Observation { text: "x".into() }, None);
+    value.workspace = Anchor::Commit("x".repeat(129));
+    cases.push(("sha", value));
+
+    let mut value = content(id.did(), ClaimBody::Observation { text: "x".into() }, None);
+    value.subject = SubjectRef::Local("x".repeat(4097));
+    cases.push(("local subject", value));
+
+    let value = content(
+        id.did(),
+        ClaimBody::Subject {
+            title: "x".repeat(8193),
+            subject_kind: SubjectKind::Issue,
+        },
+        None,
+    );
+    cases.push(("title", value));
+
+    let value = content(
+        id.did(),
+        ClaimBody::Observation {
+            text: "x".repeat(900_001),
+        },
+        None,
+    );
+    cases.push(("narrative", value));
+
+    let mut value = content(id.did(), ClaimBody::Observation { text: "x".into() }, None);
+    value.cites = vec![cid("cite"); 10_001];
+    cases.push(("cites", value));
+
+    let mut value = content(id.did(), ClaimBody::Observation { text: "x".into() }, None);
+    value.artifacts = vec![ArtifactRef::Commit("s".into()); 10_001];
+    cases.push(("artifacts", value));
+
+    let value = content(
+        id.did(),
+        ClaimBody::RoleDeclaration {
+            did: id.did(),
+            name: "x".repeat(129),
+        },
+        None,
+    );
+    cases.push(("role name", value));
+
+    let value = content(
+        id.did(),
+        ClaimBody::Observation { text: "x".into() },
+        Some(9_007_199_254_740_992),
+    );
+    cases.push(("recordedAt", value));
+
+    let mut value = content(
+        id.did(),
+        ClaimBody::Observation {
+            text: "x".repeat(900_000),
+        },
+        None,
+    );
+    value.cites = vec![cid("cite"); 4_000];
+    cases.push(("encoded record", value));
+
+    for (label, value) in cases {
+        assert!(
+            matches!(project(&id, value), Err(Error::LexiconConstraint(_))),
+            "{label} overflow was accepted"
+        );
+    }
+
+    let value = content(id.did(), ClaimBody::Observation { text: "x".into() }, None);
+    let claim_cid = content_cid(&value).unwrap();
+    assert!(matches!(
+        Record::from_claim(
+            Claim {
+                content: value.clone(),
+                sig: vec![0; 257]
+            },
+            "3jzfcijpj2z2a".into()
+        ),
+        Err(Error::LexiconConstraint(_))
+    ));
+    assert!(matches!(
+        Record::from_claim(
+            Claim {
+                content: value,
+                sig: id.sign(&claim_cid.to_bytes()).unwrap()
+            },
+            "not-a-tid".into()
+        ),
+        Err(Error::LexiconConstraint(_))
+    ));
 }

@@ -11,7 +11,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "tests/fixtures/uri-v1/manifest.json"
 SOURCE = json.loads(MANIFEST.read_text(encoding="utf-8"))["lexiconSource"]
-UPSTREAM = Path(os.environ.get("KAN_LEXICON_CHECKOUT", ROOT.parent / "kan-lexicon"))
+
+
+def default_upstream() -> Path:
+    common = subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "--git-common-dir"],
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
+    common_dir = (ROOT / common).resolve() if not Path(common).is_absolute() else Path(common)
+    repository = common_dir.parent if common_dir.name == ".git" else ROOT
+    return repository.parent / "kan-lexicon"
+
+
+configured_upstream = os.environ.get("KAN_LEXICON_CHECKOUT")
+UPSTREAM = Path(configured_upstream) if configured_upstream else default_upstream()
 
 
 def fail(message: str) -> None:

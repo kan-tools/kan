@@ -15,6 +15,8 @@ use crate::{
 };
 
 pub const CODEC: &str = "kan-claim-v1";
+const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+const MAX_RECORD_BYTES: usize = 1_000_000;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
@@ -22,6 +24,8 @@ pub enum Error {
     UnsupportedClaimCodec(String),
     #[error("claim content is not invertible: {0}")]
     NonInvertible(String),
+    #[error("claim is outside the tools.kan.claim Lexicon: {0}")]
+    LexiconConstraint(String),
     #[error("claim CID is invalid")]
     InvalidCid,
     #[error("claim CID does not match reconstructed content")]
@@ -557,6 +561,29 @@ impl Content {
             recorded_at: self.recorded_at,
         })
     }
+
+    fn validate_lexicon(&self) -> Result<(), Error> {
+        validate_did("content.author.did", &self.author.did)?;
+        validate_bytes("content.author.agent", self.author.agent.as_deref(), 128)?;
+        validate_anchor("content.workspace", &self.workspace)?;
+        validate_subject("content.subject", &self.subject)?;
+        validate_body("content.body", &self.body)?;
+        validate_len("content.cites", self.cites.len(), 10_000)?;
+        for (index, cite) in self.cites.iter().enumerate() {
+            validate_cid_link(&format!("content.cites[{index}]"), cite)?;
+        }
+        validate_len("content.artifacts", self.artifacts.len(), 10_000)?;
+        for (index, artifact) in self.artifacts.iter().enumerate() {
+            validate_artifact(&format!("content.artifacts[{index}]"), artifact)?;
+        }
+        if self
+            .recorded_at
+            .is_some_and(|value| value > MAX_SAFE_INTEGER)
+        {
+            return constraint("content.recordedAt exceeds the interoperable integer range");
+        }
+        Ok(())
+    }
 }
 
 impl Record {
@@ -565,17 +592,20 @@ impl Record {
             return Err(Error::NonInvertible("empty rev".into()));
         }
         let claim_cid = content_cid(&claim.content).map_err(|e| Error::Cid(e.to_string()))?;
-        Ok(Self {
+        let record = Self {
             claim_cid: claim_cid.to_string(),
             codec: CODEC.into(),
             content: Content::from_claim(claim.content)?,
             signature: claim.sig,
             rev,
-        })
+        };
+        record.validate_lexicon()?;
+        Ok(record)
     }
 
     /// Invert the projection, require the original CID, and verify its signature.
     pub fn verify(self) -> Result<Claim, Error> {
+        self.validate_lexicon()?;
         if self.codec != CODEC {
             return Err(Error::UnsupportedClaimCodec(self.codec));
         }
@@ -595,5 +625,159 @@ impl Record {
             content,
             sig: self.signature,
         })
+    }
+
+    fn validate_lexicon(&self) -> Result<(), Error> {
+        if self.codec != CODEC {
+            return Err(Error::UnsupportedClaimCodec(self.codec.clone()));
+        }
+        Cid::from_str(&self.claim_cid).map_err(|_| Error::InvalidCid)?;
+        validate_tid(&self.rev)?;
+        validate_bytes("signature", Some(&self.signature), 256)?;
+        self.content.validate_lexicon()?;
+        let encoded = atproto_dasl::to_vec(self)
+            .map_err(|error| Error::NonInvertible(format!("record encoding failed: {error}")))?;
+        if encoded.len() > MAX_RECORD_BYTES {
+            return constraint(format!(
+                "encoded record is {} bytes; maximum is {MAX_RECORD_BYTES}",
+                encoded.len()
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn constraint<T>(message: impl Into<String>) -> Result<T, Error> {
+    Err(Error::LexiconConstraint(message.into()))
+}
+
+fn validate_utf8(path: &str, value: &str, maximum: usize) -> Result<(), Error> {
+    if value.len() > maximum {
+        return constraint(format!(
+            "{path} is {} UTF-8 bytes; maximum is {maximum}",
+            value.len()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_len(path: &str, actual: usize, maximum: usize) -> Result<(), Error> {
+    if actual > maximum {
+        return constraint(format!("{path} has {actual} items; maximum is {maximum}"));
+    }
+    Ok(())
+}
+
+fn validate_bytes(path: &str, value: Option<&[u8]>, maximum: usize) -> Result<(), Error> {
+    if let Some(value) = value {
+        validate_len(path, value.len(), maximum)?;
+    }
+    Ok(())
+}
+
+fn validate_did(path: &str, value: &str) -> Result<(), Error> {
+    if value.len() > 2048 {
+        return constraint(format!("{path} is not a DID"));
+    }
+    let Some(rest) = value.strip_prefix("did:") else {
+        return constraint(format!("{path} is not a DID"));
+    };
+    let Some((method, identifier)) = rest.split_once(':') else {
+        return constraint(format!("{path} is not a DID"));
+    };
+    if method.is_empty()
+        || identifier.is_empty()
+        || !method.bytes().all(|byte| byte.is_ascii_lowercase())
+        || !identifier.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b':' | b'%')
+        })
+        || !identifier
+            .as_bytes()
+            .last()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+    {
+        return constraint(format!("{path} is not a DID"));
+    }
+    Ok(())
+}
+
+fn validate_tid(value: &str) -> Result<(), Error> {
+    if value.len() != 13
+        || !value
+            .as_bytes()
+            .first()
+            .is_some_and(|byte| matches!(byte, b'2'..=b'7' | b'a'..=b'j'))
+        || !value
+            .bytes()
+            .all(|byte| matches!(byte, b'2'..=b'7' | b'a'..=b'z'))
+    {
+        return constraint("rev is not an ATProto TID");
+    }
+    Ok(())
+}
+
+fn validate_cid_link(path: &str, value: &CidLink) -> Result<(), Error> {
+    Cid::from_str(&value.link)
+        .map(|_| ())
+        .map_err(|_| Error::LexiconConstraint(format!("{path} is not a CID link")))
+}
+
+fn validate_anchor(path: &str, value: &AnchorValue) -> Result<(), Error> {
+    match value {
+        AnchorValue::Workspace { genesis_cid } => {
+            validate_utf8(&format!("{path}.genesisCid"), genesis_cid, 512)
+        }
+        AnchorValue::Commit { sha } => validate_utf8(&format!("{path}.sha"), sha, 128),
+        AnchorValue::Blob { cid } => validate_cid_link(&format!("{path}.cid"), cid),
+        AnchorValue::FileAt { path: file, sha }
+        | AnchorValue::LineRangeAt {
+            path: file, sha, ..
+        } => {
+            validate_utf8(&format!("{path}.path"), file, 4096)?;
+            validate_utf8(&format!("{path}.sha"), sha, 128)
+        }
+    }
+}
+
+fn validate_subject(path: &str, value: &SubjectValue) -> Result<(), Error> {
+    match value {
+        SubjectValue::Local { rkey } => validate_utf8(&format!("{path}.rkey"), rkey, 4096),
+        SubjectValue::Anchor { anchor } => validate_anchor(&format!("{path}.anchor"), anchor),
+    }
+}
+
+fn validate_artifact(path: &str, value: &ArtifactValue) -> Result<(), Error> {
+    match value {
+        ArtifactValue::Commit { sha } => validate_utf8(&format!("{path}.sha"), sha, 128),
+        ArtifactValue::FileAt { path: file, sha }
+        | ArtifactValue::LineRangeAt {
+            path: file, sha, ..
+        } => {
+            validate_utf8(&format!("{path}.path"), file, 4096)?;
+            validate_utf8(&format!("{path}.sha"), sha, 128)
+        }
+        ArtifactValue::ToolOutput { cid } => validate_cid_link(&format!("{path}.cid"), cid),
+    }
+}
+
+fn validate_body(path: &str, value: &Body) -> Result<(), Error> {
+    match value {
+        Body::Subject { title, .. } => validate_utf8(&format!("{path}.title"), title, 8192),
+        Body::Observation { text }
+        | Body::Plan { text }
+        | Body::Decision { text }
+        | Body::Blocker { text }
+        | Body::Resolution { text }
+        | Body::Result { text } => validate_utf8(&format!("{path}.text"), text, 900_000),
+        Body::Relation { target, .. } => validate_subject(&format!("{path}.target"), target),
+        Body::RoleDeclaration { did, name } => {
+            validate_did(&format!("{path}.did"), did)?;
+            validate_utf8(&format!("{path}.name"), name, 128)
+        }
+        Body::Retraction { supersedes } => {
+            validate_cid_link(&format!("{path}.supersedes"), supersedes)
+        }
+        Body::Rejects { claim } => validate_cid_link(&format!("{path}.claim"), claim),
+        Body::Status { .. } | Body::Publication { .. } => Ok(()),
     }
 }

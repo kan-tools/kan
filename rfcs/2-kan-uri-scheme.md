@@ -661,8 +661,9 @@ output property. Read methods therefore expose `claimView.record` through the
 explicit `claimRecordView` object, which duplicates the fields of the current
 supported `tools.kan.claim` record without claiming to be a second stored
 record type. AppViews and direct-PDS readers convert supported historical
-records to this current view before returning them; unsupported or
-non-invertible history fails with `UnsupportedClaimCodec`.
+records to this current view before returning them. Unknown body encodings or
+codecs fail with `UnsupportedClaimCodec`; violations of the declared current
+schema fail with `InvalidClaim`.
 
 #### Claim record conversion
 
@@ -676,7 +677,14 @@ converted record but is never substituted for the kan claim CID in signatures
 or citations.
 
 Publishing or migration first decodes a historical record with the current kan
-decoder. Every supported historical enum tag is converted to the corresponding
+decoder. Decoder support alone does not guarantee ATProto publishability:
+before any MST mutation, conversion checks every Lexicon byte and array bound,
+the interoperable integer range, DID and TID formats, and the one-megabyte
+encoded-record ceiling. An incompatible historical claim remains intact and
+readable in append-only legacy history but is not inserted into
+`tools.kan.claim`; migration fails explicitly rather than truncating or
+rewriting signed content. Every supported historical enum tag that passes
+those checks is converted to the corresponding
 closed `$type` union member in `tools.kan.defs`; tuple fields become named
 objects, Rust snake-case fields become lower camel case, and enum values become
 the declared kebab-case values. In particular, historical absence of
@@ -703,8 +711,9 @@ Verification applies the specified inverse conversion for `kan-claim-v1`,
 reconstructs canonical historical `ClaimContent` DAG-CBOR, requires its hash to
 equal `claimCid`, and verifies `signature` over that CID. A conversion is
 accepted only when this round trip reproduces the exact signed bytes. Unknown
-body kinds, unsupported codecs, and non-invertible records fail as
-`UnsupportedClaimCodec`; there is no opaque escape hatch. Writers emit only
+body kinds and unsupported codecs fail as `UnsupportedClaimCodec`; declared
+schema violations and other non-invertible records fail as `InvalidClaim`.
+There is no opaque escape hatch. Writers emit only
 `tools.kan.claim` and never dual-write. Historical CAR blocks remain append-
 only and reachable through their earlier commits.
 

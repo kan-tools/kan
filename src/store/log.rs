@@ -1401,7 +1401,7 @@ mod claim_collection_migration_tests {
 
         let mut writer = Log::open_or_create(&path, &identity).await.unwrap();
         let mut conflict = writer.get_stored(cid.clone()).await.unwrap().unwrap();
-        conflict.rev.push('x');
+        conflict.rev = "3jzfcijpj2z2b".into();
         seed_legacy(&mut writer, &identity, &cid, &conflict).await;
         drop(writer);
         assert!(matches!(
@@ -1424,6 +1424,45 @@ mod claim_collection_migration_tests {
         assert!(matches!(
             Log::open_or_create(&path, &identity).await,
             Err(Error::AtClaim(crate::at_claim::Error::BadSignature))
+        ));
+        let reader = Log::open_read_only(&path).await.unwrap();
+        assert_eq!(reader.current_root(), before);
+        assert_eq!(
+            reader
+                .mst
+                .list_collection(LEGACY_COLLECTION)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(reader
+            .mst
+            .list_collection(COLLECTION)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn lexicon_incompatible_legacy_claim_stops_migration_without_committing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("log");
+        let identity = Identity::generate();
+        let mut writer = Log::open_or_create(&path, &identity).await.unwrap();
+        let (_, mut stored) = signed(&identity, "placeholder", "3jzfcijpj2z2a");
+        stored.claim.content.body = ClaimBody::Observation {
+            text: "x".repeat(900_001),
+        };
+        let claim_cid = content_cid(&stored.claim.content).unwrap();
+        stored.claim.sig = identity.sign(&claim_cid.to_bytes()).unwrap();
+        seed_legacy(&mut writer, &identity, &claim_cid, &stored).await;
+        let before = writer.current_root();
+        drop(writer);
+
+        assert!(matches!(
+            Log::open_or_create(&path, &identity).await,
+            Err(Error::AtClaim(crate::at_claim::Error::LexiconConstraint(_)))
         ));
         let reader = Log::open_read_only(&path).await.unwrap();
         assert_eq!(reader.current_root(), before);
