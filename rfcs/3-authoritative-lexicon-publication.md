@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-16
 - Discussion: https://github.com/kan-tools/kan/pull/231
-- Review-period-ends: 2026-08-19T20:55:19Z
+- Review-period-ends: 2026-08-19T21:14:25Z
 - Review-override: None
 - Supersedes: RFC 2 requirements 14, 15, and 17 where explicitly stated; amends requirement 18
 - Superseded-by: None
@@ -586,6 +586,22 @@ mislabeled resolution and binding, changed schema bytes or CID, zero-schema
 successful publication, wrong lens output, unknown-codec identity, lossy
 default normalization, missing provenance, and deleted secrets. The harness
 does not import kan's Rust implementation.
+
+The checked codec record is explicitly `fixtureOnly` and uses the reserved
+synthetic codec `kan-claim-v2-test`. It contains the actual base64-encoded
+DAG-CBOR envelope, payload, and per-lens vector bytes; linked CIDs and declared
+byte maxima must reproduce those bytes, and the complete encoded record must
+remain below one megabyte. Its `example.invalid` repository, zero commit, and
+fixture tag are deliberately non-publishable sentinel provenance. The checker
+requires those exact sentinels so proposal evidence cannot masquerade as a
+released `kan-lexicon` binding. A production entry MUST omit `fixtureOnly` and
+pass the immutable Git source-reproduction requirement.
+
+The publication vectors execute a repository-state transition: all desired
+schema and codec keys enter one candidate map and become visible through one
+simulated `applyWrites` commit, while injected pre-commit failure preserves the
+prior map byte-for-byte and verification retry performs no write. This proves
+the proposal state machine, not the behavior of the unbuilt publisher or PDS.
 
 These are proposal self-consistency vectors, not evidence that the unbuilt
 publisher, AppView, infrastructure, or independent implementations satisfy the

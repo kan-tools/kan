@@ -23,21 +23,30 @@
   ],
   "schemas": {
     "envelope": {
-      "value": {"$type":"com.atproto.lexicon.schema","lexicon":1,"id":"tools.kan.claim","defs":{"main":{"type":"record","key":"cid","record":{"type":"object","required":["codec","claimCid","signature","rev","content"],"properties":{"codec":{"type":"string","maxLength":32},"claimCid":{"type":"string","format":"cid"},"signature":{"type":"bytes","maxLength":256},"rev":{"type":"string","format":"tid"},"content":{"type":"unknown"}}}}}},
-      "cid": "bafyreieesn4kit554dq35p5ggvwynchcfzfbvtklamb6czg35jsp5iwcpm"
+      "value": {"$type":"com.atproto.lexicon.schema","lexicon":1,"id":"tools.kan.claim","defs":{"main":{"type":"record","key":"any","record":{"type":"object","required":["codec","claimCid","signature","rev","content"],"properties":{"codec":{"type":"string","maxLength":32},"claimCid":{"type":"string","format":"cid"},"signature":{"type":"bytes","maxLength":256},"rev":{"type":"string","format":"tid"},"content":{"type":"unknown"}}}}}},
+      "cid": "bafyreigfsyurcjbtufljedn54f2gn6d7akvzjf6woc5nzyym67oo5hypsu"
     },
     "payload": {
-      "ref": "tools.kan.defs#claimContent",
-      "sourceFile": ".design/rfc-2-lexicons/tools.kan.defs.json",
-      "cid": "bafyreihxmx56hopxn5q75sfgmbfdzpe2h4qpnr4wfu4ns7pedgybw3defa"
+      "ref": "tools.kan.fixture#claimContentV2",
+      "value": {"$type":"com.atproto.lexicon.schema","lexicon":1,"id":"tools.kan.fixture","defs":{"claimContentV2":{"type":"object","required":["message","tags","annotations"],"properties":{"message":{"type":"string","maxLength":8192},"tags":{"type":"array","maxLength":10000,"items":{"type":"string","maxLength":128}},"annotations":{"type":"array","maxLength":10000,"items":{"type":"string","maxLength":128}}}}}},
+      "cid": "bafyreidjnhx55myvetxh3fpuitj7h2tdjnztbvqriep7zv5gyvvrxfo6a4"
     }
   },
   "codecBinding": {
-    "$type":"tools.kan.codec", "rkey":"kan-claim-v1", "codec":"kan-claim-v1", "claimLexicon":"tools.kan.claim",
-    "envelopeSchema":"envelope", "payloadSchema":"tools.kan.defs#claimContent", "payloadSchemaRecord":"payload",
-    "sourceRepository":"https://github.com/kan-tools/kan-lexicon", "sourceCommit":"21223656d9954f93d4dc5b0a16c144b6bce1902c",
-    "sourceTag":"v0.1.0", "canonicalSpecification":"https://github.com/kan-tools/kan/blob/main/rfcs/3-authoritative-lexicon-publication.md",
-    "fromLenses":["identity-v1","v1-to-synthetic-v2"]
+    "$type":"tools.kan.codec", "rkey":"kan-claim-v2-test", "codec":"kan-claim-v2-test", "claimLexicon":"tools.kan.claim",
+    "envelopeLexiconRecordCid":{"$link":"bafyreigfsyurcjbtufljedn54f2gn6d7akvzjf6woc5nzyym67oo5hypsu"},
+    "envelopeLexicon":{"$bytes":"pGJpZG90b29scy5rYW4uY2xhaW1kZGVmc6FkbWFpbqNja2V5Y2FueWR0eXBlZnJlY29yZGZyZWNvcmSjZHR5cGVmb2JqZWN0aHJlcXVpcmVkhWVjb2RlY2hjbGFpbUNpZGlzaWduYXR1cmVjcmV2Z2NvbnRlbnRqcHJvcGVydGllc6VjcmV2omR0eXBlZnN0cmluZ2Zmb3JtYXRjdGlkZWNvZGVjomR0eXBlZnN0cmluZ2ltYXhMZW5ndGgYIGdjb250ZW50oWR0eXBlZ3Vua25vd25oY2xhaW1DaWSiZHR5cGVmc3RyaW5nZmZvcm1hdGNjaWRpc2lnbmF0dXJlomR0eXBlZWJ5dGVzaW1heExlbmd0aBkBAGUkdHlwZXgaY29tLmF0cHJvdG8ubGV4aWNvbi5zY2hlbWFnbGV4aWNvbgE="}, "envelopeMaxBytes":4096,
+    "payloadSchema":"tools.kan.fixture#claimContentV2", "payloadLexiconRecordCid":{"$link":"bafyreidjnhx55myvetxh3fpuitj7h2tdjnztbvqriep7zv5gyvvrxfo6a4"},
+    "payloadLexicon":{"$bytes":"pGJpZHF0b29scy5rYW4uZml4dHVyZWRkZWZzoW5jbGFpbUNvbnRlbnRWMqNkdHlwZWZvYmplY3RocmVxdWlyZWSDZ21lc3NhZ2VkdGFnc2thbm5vdGF0aW9uc2pwcm9wZXJ0aWVzo2R0YWdzo2R0eXBlZWFycmF5ZWl0ZW1zomR0eXBlZnN0cmluZ2ltYXhMZW5ndGgYgGltYXhMZW5ndGgZJxBnbWVzc2FnZaJkdHlwZWZzdHJpbmdpbWF4TGVuZ3RoGSAAa2Fubm90YXRpb25zo2R0eXBlZWFycmF5ZWl0ZW1zomR0eXBlZnN0cmluZ2ltYXhMZW5ndGgYgGltYXhMZW5ndGgZJxBlJHR5cGV4GmNvbS5hdHByb3RvLmxleGljb24uc2NoZW1hZ2xleGljb24B"}, "payloadMaxBytes":4096,
+    "sourceRepository":"https://example.invalid/kan-rfc3-proposal-fixture", "sourceCommit":"0000000000000000000000000000000000000000",
+    "sourceTag":"v0.0.0-fixture", "canonicalSpecification":"https://github.com/kan-tools/kan/blob/main/rfcs/3-authoritative-lexicon-publication.md",
+    "fixtureOnly":true,
+    "fromLenses":[
+      {"id":"identity-v1","sourceCodec":"kan-claim-v1","targetCodec":"kan-claim-v1","vectorsCid":{"$link":"bafyreiahin6ugrg3tbujql6qvgi6aayfnecmn7xt26kbzp6s72iwq2qefa"},"vectors":{"$bytes":"gaNkbGVuc2tpZGVudGl0eS12MWVpbnB1dKJkdGFnc4FjcmZjZ21lc3NhZ2VlaGVsbG9mb3V0cHV0omR0YWdzgWNyZmNnbWVzc2FnZWVoZWxsbw=="},"vectorsMaxBytes":2048,"total":true,"lossless":true},
+      {"id":"v1-to-synthetic-v2","sourceCodec":"kan-claim-v1","targetCodec":"kan-claim-v2-test","vectorsCid":{"$link":"bafyreifgbrs3matyltojd5c5an6qpnmmcrioibvcv25qpyrvmdsm6jkdd4"},"vectors":{"$bytes":"gaNkbGVuc3J2MS10by1zeW50aGV0aWMtdjJlaW5wdXSiZHRhZ3OBY3JmY2dtZXNzYWdlZWhlbGxvZm91dHB1dKNkdGFnc4FjcmZjZ21lc3NhZ2VlaGVsbG9rYW5ub3RhdGlvbnOA"},"vectorsMaxBytes":2048,"total":true,"lossless":true},
+      {"id":"synthetic-v2-to-v1","sourceCodec":"kan-claim-v2-test","targetCodec":"kan-claim-v1","vectorsCid":{"$link":"bafyreigsbksx3qdrl7y7oxnpunemwoemnc5reyxy2qzrfl5tm7kct3v2tu"},"vectors":{"$bytes":"gqNkbGVuc3JzeW50aGV0aWMtdjItdG8tdjFlaW5wdXSjZHRhZ3OBY3JmY2dtZXNzYWdlZWhlbGxva2Fubm90YXRpb25zgGZvdXRwdXSiZHRhZ3OBY3JmY2dtZXNzYWdlZWhlbGxvo2RsZW5zcnN5bnRoZXRpYy12Mi10by12MWVpbnB1dKNkdGFnc4BnbWVzc2FnZWVoZWxsb2thbm5vdGF0aW9uc4FjbmV3Z3JlZnVzYWx4HWFubm90YXRpb25zLW5vdC1yZXByZXNlbnRhYmxl"},"vectorsMaxBytes":2048,"total":false,"lossless":true},
+      {"id":"synthetic-v2-summary","sourceCodec":"kan-claim-v2-test","targetCodec":"kan-claim-v1","vectorsCid":{"$link":"bafyreietittlptobpp3pmkkzztdlmk5adqovxeahubtdajlwgeu444uo2i"},"vectors":{"$bytes":"gaNkbGVuc3RzeW50aGV0aWMtdjItc3VtbWFyeWVpbnB1dKNkdGFnc4FjcmZjZ21lc3NhZ2VlaGVsbG9rYW5ub3RhdGlvbnOBY25ld2ZvdXRwdXSiZHRhZ3OBY3JmY2dtZXNzYWdlZWhlbGxv"},"vectorsMaxBytes":2048,"total":true,"lossless":false}
+    ]
   },
   "bindingCases": [
     {"name":"create-new","existing":null,"desired":"canonical","outcome":"create"},
@@ -46,10 +55,10 @@
     {"name":"reject-rkey-mismatch","existing":null,"desired":"different-rkey","outcome":"codec-binding-conflict"}
   ],
   "publicationCases": [
-    {"name":"two-schema-one-codec","schemaWrites":2,"codecCreates":1,"commits":1,"outcome":"verified"},
-    {"name":"precommit-injected-failure","schemaWrites":0,"codecCreates":0,"commits":0,"outcome":"unchanged"},
-    {"name":"write-ok-readback-fails","schemaWrites":2,"codecCreates":1,"commits":1,"outcome":"published-unverified"},
-    {"name":"retry-public-verification","schemaWrites":0,"codecCreates":0,"commits":0,"outcome":"verified"}
+    {"name":"two-schema-one-codec","desiredWrites":["schema:claim","schema:fixture","codec:kan-claim-v2-test"],"applyWritesCalls":1,"injectBeforeCommit":false,"readback":"match","commits":1,"outcome":"verified"},
+    {"name":"precommit-injected-failure","desiredWrites":["schema:claim","schema:fixture","codec:kan-claim-v2-test"],"applyWritesCalls":0,"injectBeforeCommit":true,"readback":"unchanged","commits":0,"outcome":"unchanged"},
+    {"name":"write-ok-readback-fails","desiredWrites":["schema:claim","schema:fixture","codec:kan-claim-v2-test"],"applyWritesCalls":1,"injectBeforeCommit":false,"readback":"mismatch","commits":1,"outcome":"published-unverified"},
+    {"name":"retry-public-verification","desiredWrites":[],"applyWritesCalls":0,"injectBeforeCommit":false,"readback":"match","commits":0,"outcome":"verified"}
   ],
   "lenses": [
     {"id":"identity-v1","source":"kan-claim-v1","target":"kan-claim-v1","total":true,"lossless":true},

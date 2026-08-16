@@ -308,6 +308,15 @@ path, making normalization an inspectable projection in the same spirit as
 kan's fold: raw attested data remains intact, while simplification occurs at
 the view boundary.
 
+The proposal fixture uses `kan-claim-v2-test` with an explicit `fixtureOnly`
+sentinel rather than falsely claiming an unpublished envelope came from the
+released `kan-lexicon` v0.1.0 tag. It serializes the actual synthetic envelope,
+payload, and per-lens vector DAG-CBOR bytes into the codec record, verifies
+their linked CIDs and maxima, enforces the complete record-size ceiling, and
+executes the one-commit repository transition. Production source provenance
+remains an implementation acceptance criterion and cannot be satisfied until
+the corresponding immutable `kan-lexicon` release exists.
+
 ### Recovery and drift
 
 Railway staging and production have separate services, secrets, volumes, and
