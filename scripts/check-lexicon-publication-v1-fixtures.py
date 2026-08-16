@@ -130,6 +130,24 @@ def apply_lens(lens_id: str, value: dict) -> tuple[str, object]:
     raise Invalid(f"unknown lens implementation: {lens_id}")
 
 
+def select_path(edges: list[tuple[str, str, str, bool, bool]], source: str, target: str) -> tuple[str, ...] | None:
+    if source == target:
+        return ()
+    candidates: list[tuple[str, ...]] = []
+    frontier = [(source, (), frozenset({source}))]
+    while frontier:
+        node, path, visited = frontier.pop(0)
+        for lens_id, edge_source, edge_target, total, lossless in edges:
+            if edge_source != node or not total or not lossless or edge_target in visited:
+                continue
+            next_path = (*path, lens_id)
+            if edge_target == target:
+                candidates.append(next_path)
+            else:
+                frontier.append((edge_target, next_path, visited | {edge_target}))
+    return min(candidates, key=lambda path: (len(path), path)) if candidates else None
+
+
 def validate_publication_shape(desired: list[str], known_writes: set[str]) -> None:
     codec_writes = [key for key in desired if key.startswith("codec:")]
     require(len(codec_writes) <= 1, "publication contains more than one new codec")
@@ -172,6 +190,7 @@ def validate(data: dict) -> None:
     require(set(data) == {"version", "authority", "resolutionCases", "codecGrammar", "codecMaxBytes", "codecCases", "schemas", "codecBinding", "lensRecords", "bindingCases", "publicationCases", "lenses", "lensVectors", "normalizationCases", "requiredViewProvenance", "secretBoundaries"}, "manifest field inventory drift")
 
     authority = data["authority"]
+    require(set(authority) == {"nsids", "dnsName", "dnsValue", "did", "didUrl", "pdsEndpoint", "didDocument", "appView"}, "authority field inventory drift")
     expected_nsids = {
         "tools.kan.claim", "tools.kan.codec", "tools.kan.defs", "tools.kan.lens",
         "tools.kan.getClaim", "tools.kan.getIdentity", "tools.kan.getSubject",
@@ -183,11 +202,18 @@ def validate(data: dict) -> None:
     require(authority["did"] == "did:web:kan.tools", "wrong authority DID")
     require(authority["didUrl"] == "https://kan.tools/.well-known/did.json", "wrong did:web URL")
     require(authority["pdsEndpoint"] == "https://pds.kan.tools", "wrong PDS endpoint")
+    expected_services = [
+        {"id": "did:web:kan.tools#atproto_pds", "type": "AtprotoPersonalDataServer", "serviceEndpoint": "https://pds.kan.tools"},
+        {"id": "did:web:kan.tools#kan_appview", "type": "KanAppView", "serviceEndpoint": {"uri": "https://api.kan.tools", "serviceDid": "did:web:appview.kan.tools"}},
+    ]
+    require(authority["didDocument"] == {"id": authority["did"], "service": expected_services}, "authority DID document drift")
     appview = authority["appView"]
+    require(set(appview) == {"serviceId", "serviceType", "serviceDid", "uri", "serviceDidResolution"}, "AppView field inventory drift")
     require(appview["serviceDid"] == "did:web:appview.kan.tools", "wrong or invalid service DID")
     require(appview["serviceId"] == authority["did"] + "#kan_appview", "wrong service id")
     require(appview["serviceType"] == "KanAppView", "wrong service type")
     require(https_origin(appview["uri"]), "AppView endpoint is not an HTTPS origin")
+    require(appview["serviceDidResolution"] == {"id": appview["serviceDid"], "resolved": True, "authenticatedEndpoint": appview["uri"]}, "AppView service DID resolution drift")
     for nsid in authority["nsids"]:
         parts = nsid.split(".")
         require(len(parts) >= 3, f"invalid NSID: {nsid}")
@@ -246,7 +272,8 @@ def validate(data: dict) -> None:
         "$type", "rkey", "codec", "claimLexicon", "envelopeLexiconRecordCid",
         "envelopeLexicon", "envelopeMaxBytes", "payloadSchema",
         "payloadLexiconRecordCid", "payloadLexicon", "payloadMaxBytes",
-        "sourceRepository", "sourceCommit", "sourceTag", "canonicalSpecification",
+        "sourceRepository", "sourceCommit", "sourceTag", "canonicalSpecificationRepository",
+        "canonicalSpecificationCommit", "canonicalSpecificationPath",
         "fixtureOnly",
     }
     require(set(binding) == expected_binding_keys, "codec record field inventory drift")
@@ -265,7 +292,9 @@ def validate(data: dict) -> None:
     require(binding["fixtureOnly"] is True, "proposal fixture claims production provenance")
     require(binding["sourceRepository"] == "https://example.invalid/kan-rfc3-proposal-fixture", "fixture provenance drift")
     require(binding["sourceCommit"] == "0" * 40 and binding["sourceTag"] == "v0.0.0-fixture", "fixture provenance is not explicitly synthetic")
-    require(binding["canonicalSpecification"] == "https://github.com/kan-tools/kan/blob/main/rfcs/3-authoritative-lexicon-publication.md", "canonical specification drift")
+    require(binding["canonicalSpecificationRepository"] == "https://example.invalid/kan-rfc3-proposal-fixture", "canonical specification repository drift")
+    require(binding["canonicalSpecificationCommit"] == "0" * 40, "canonical specification commit drift")
+    require(binding["canonicalSpecificationPath"] == "rfcs/3-authoritative-lexicon-publication.md", "canonical specification path drift")
     codec_bytes = len(dag_cbor(binding))
     require(codec_bytes <= MAX_RECORD_BYTES, "codec record exceeds one-megabyte limit")
 
@@ -312,12 +341,14 @@ def validate(data: dict) -> None:
         require(len(lens_id.encode("ascii")) <= 64 and lens_id_grammar.fullmatch(lens_id) is not None, f"invalid lens id: {lens_id}")
         require(descriptor["$type"] == "tools.kan.lens", f"wrong lens record type: {lens_id}")
         require(descriptor["rkey"] == descriptor["id"], f"lens rkey mismatch: {lens_id}")
-        require(set(descriptor) == {"$type", "rkey", "id", "sourceCodec", "targetCodec", "vectorsCid", "vectors", "vectorsMaxBytes", "total", "lossless", "sourceRepository", "sourceCommit", "sourceTag", "canonicalSpecification"}, f"lens record field inventory drift: {lens_id}")
+        require(set(descriptor) == {"$type", "rkey", "id", "sourceCodec", "targetCodec", "vectorsCid", "vectors", "vectorsMaxBytes", "total", "lossless", "sourceRepository", "sourceCommit", "sourceTag", "canonicalSpecificationRepository", "canonicalSpecificationCommit", "canonicalSpecificationPath"}, f"lens record field inventory drift: {lens_id}")
         require(descriptor["sourceCodec"] in {"kan-claim-v1", binding["codec"]}, f"unknown lens source codec: {lens_id}")
         require(descriptor["targetCodec"] in {"kan-claim-v1", binding["codec"]}, f"unknown lens target codec: {lens_id}")
         require(descriptor["sourceRepository"] == binding["sourceRepository"], f"lens source repository drift: {lens_id}")
         require(descriptor["sourceCommit"] == binding["sourceCommit"] and descriptor["sourceTag"] == binding["sourceTag"], f"lens source revision drift: {lens_id}")
-        require(descriptor["canonicalSpecification"] == binding["canonicalSpecification"], f"lens specification drift: {lens_id}")
+        require(descriptor["canonicalSpecificationRepository"] == binding["canonicalSpecificationRepository"], f"lens specification repository drift: {lens_id}")
+        require(descriptor["canonicalSpecificationCommit"] == binding["canonicalSpecificationCommit"], f"lens specification commit drift: {lens_id}")
+        require(descriptor["canonicalSpecificationPath"] == binding["canonicalSpecificationPath"], f"lens specification path drift: {lens_id}")
         require(len(dag_cbor(descriptor)) <= MAX_RECORD_BYTES, f"lens record exceeds one-megabyte limit: {lens_id}")
         require(descriptor["sourceCodec"] == declared["source"], f"lens source drift: {lens_id}")
         require(descriptor["targetCodec"] == declared["target"], f"lens target drift: {lens_id}")
@@ -331,6 +362,8 @@ def validate(data: dict) -> None:
     require(lenses["identity-v1"]["total"] and lenses["identity-v1"]["lossless"], "identity lens invalid")
     require(not lenses["synthetic-v2-to-v1"]["total"] and lenses["synthetic-v2-to-v1"]["lossless"], "partial lens classification drift")
     require(lenses["synthetic-v2-summary"]["total"] and not lenses["synthetic-v2-summary"]["lossless"], "lossy lens classification drift")
+    graph_edges = [(lens["id"], lens["source"], lens["target"], lens["total"], lens["lossless"]) for lens in data["lenses"]]
+    require(select_path(graph_edges, "kan-claim-v1", "kan-claim-v2-test") == ("v1-to-synthetic-v2",), "deterministic lens path drift")
     expected_vector_kinds = [
         ("identity-v1", "output"),
         ("v1-to-synthetic-v2", "output"),
@@ -424,7 +457,7 @@ def mutations(data: dict) -> list[tuple[str, dict]]:
         ("delete refusal and rebind vectors", delete_refusal_and_rebind),
         ("lie about lens endpoints", lambda d: [lens.__setitem__("source", "kan-claim-v9") for lens in d["lenses"]]),
         ("nonexistent shaped provenance", lambda d: d["codecBinding"].__setitem__("sourceCommit", "1" * 40)),
-        ("canonical specification substitution", lambda d: [row.__setitem__("canonicalSpecification", "https://attacker.example/spec") for row in [d["codecBinding"], *d["lensRecords"]]]),
+        ("canonical specification substitution", lambda d: [row.__setitem__("canonicalSpecificationRepository", "https://attacker.example/spec") for row in [d["codecBinding"], *d["lensRecords"]]]),
         ("oversized codec record", lambda d: d["codecBinding"].__setitem__("padding", {"$bytes": "AAAA" * 400_000})),
         ("multiple codecs in publication", lambda d: d["publicationCases"][0]["desiredWrites"].append("codec:another")),
         ("delete embedded schema", lambda d: d["codecBinding"].pop("payloadLexicon")),
@@ -465,6 +498,12 @@ def main() -> int:
         except Invalid:
             limit_controls += 1
     require(limit_controls == 3, "publication limit controls incomplete")
+    path_controls = (
+        select_path([("z", "a", "b", True, True), ("a", "a", "b", True, True)], "a", "b") == ("a",),
+        select_path([("z", "a", "c", True, True), ("a", "a", "b", True, True), ("b", "b", "c", True, True)], "a", "c") == ("z",),
+        select_path([("lossy", "a", "b", True, False), ("partial", "a", "b", False, True)], "a", "b") is None,
+    )
+    require(all(path_controls), "deterministic path-selection controls failed")
     print(
         "Lexicon publication v2 fixtures: "
         f"{len(data['resolutionCases'])} resolution, {len(data['codecCases'])} codec, "
@@ -473,6 +512,7 @@ def main() -> int:
     )
     print(f"Lexicon publication v2 mutation controls: {killed}/{len(mutations(data))} killed")
     print(f"Lexicon publication v2 aggregate-limit controls: {limit_controls}/3 rejected")
+    print(f"Lexicon publication v2 path-selection controls: {sum(path_controls)}/3 passed")
     return 0
 
 

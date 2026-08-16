@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-16
 - Discussion: https://github.com/kan-tools/kan/pull/231
-- Review-period-ends: 2026-08-19T22:31:55Z
+- Review-period-ends: 2026-08-19T22:37:40Z
 - Review-override: None
 - Supersedes: RFC 2 requirements 14, 15, and 17 where explicitly stated; amends requirement 18
 - Superseded-by: None
@@ -200,7 +200,9 @@ payloadLexicon:          bytes
 sourceRepository:        URI
 sourceCommit:            40 lowercase hexadecimal Git object ID
 sourceTag:               immutable release-tag string
-canonicalSpecification: URI
+canonicalSpecificationRepository: URI
+canonicalSpecificationCommit: 40 lowercase hexadecimal Git object ID
+canonicalSpecificationPath: repository-relative path
 ```
 
 The separate collection `tools.kan.lens` has one record per directed lens. Its
@@ -218,7 +220,9 @@ lossless:     boolean
 sourceRepository: URI
 sourceCommit: 40 lowercase hexadecimal Git object ID
 sourceTag:    immutable release-tag string
-canonicalSpecification: URI
+canonicalSpecificationRepository: URI
+canonicalSpecificationCommit: 40 lowercase hexadecimal Git object ID
+canonicalSpecificationPath: repository-relative path
 ```
 
 `codec` MUST equal the rkey. `claimLexicon` for kan claim codecs MUST equal
@@ -232,6 +236,12 @@ reference; `payloadLexiconRecordCid` MUST reproduce from those bytes. For
 `sourceCommit` and `sourceTag` MUST reproduce all embedded schema bytes from
 `sourceRepository`. Each lens entry's `vectorsCid` MUST reproduce from its
 canonical embedded `vectors` bytes and the same immutable source revision.
+`canonicalSpecificationRepository` MUST identify `kan-tools/kan`, its commit
+MUST be a full immutable Git object ID containing
+`canonicalSpecificationPath`, and that path MUST be this governing accepted
+RFC revision. Production records MUST NOT use a branch URL, symbolic ref,
+proposal sentinel, or a schema-source commit as a substitute for this semantic
+provenance pin.
 
 Each embedded value MUST declare a Lexicon byte maximum, and every codec or lens
 record MUST remain within ATProto's one-megabyte record limit. A schema or
@@ -247,9 +257,10 @@ placeholders for the PDS-chosen TID, signature, and content hashes, and reject
 when that size-equivalent preflight CAR exceeds the limit. The publisher does
 not possess the signing key and does not claim to construct the actual signed
 commit. The PDS MUST independently enforce the limits before atomically
-committing, and after `applyWrites` the publisher MUST fetch and verify the
-resulting `commit.blocks` CAR length through the sync API. Per-record validation
-does not establish commit feasibility. Several codecs from one
+committing. Standard repository APIs do not expose the exact per-commit
+`commit.blocks` CAR for post-hoc reconstruction, so the publisher MUST NOT
+claim such verification; its post-write check is complete public record
+read-back. Per-record validation does not establish commit feasibility. Several codecs from one
 source release are published sequentially as separately verified atomic
 publications; a later failure does not invalidate an earlier immutable binding.
 
@@ -379,7 +390,7 @@ Unicode-normalized, percent-decoded, or treated as semantic-version ranges.
 
 A codec binding is equal only when every normative registry field is equal,
 including both schemas and CIDs, payload reference, source commit and tag,
-and canonical specification URI. A lens binding is equal only when its ID,
+and canonical-specification repository, commit, and path. A lens binding is equal only when its ID,
 endpoints, classification, vector bytes and CID, and source provenance are all
 equal. Two bindings with the same schema or vectors but different provenance
 are not the same binding.
@@ -436,7 +447,8 @@ or source snapshots.
    lens record's `sourceCodec` and `targetCodec`.
 4. Hash and decode the embedded vectors, require `vectorsCid` to reproduce,
    and reproduce them from the lens record's immutable Git repository, commit,
-   and tag.
+   and tag. Resolve the separately pinned canonical-specification repository,
+   commit, and path before accepting semantics.
 5. Build the directed graph from exactly that snapshot. Consumers MUST NOT
    infer edges from codec records, release order, local implementations, or
    records observed in a different repository commit.
@@ -455,8 +467,7 @@ or source snapshots.
    rkeys, create-only codec entry, and any create-only lens entries released
    with it. Reject a reused lens ID, more than 200 operations, or a
    size-equivalent preflight `commit.blocks` CAR larger than 2,000,000 bytes
-   before mutation; require the PDS to enforce the same limits atomically and
-   fetch the resulting CAR for verification after the write.
+   before mutation; require the PDS to enforce the same limits atomically.
 7. Commit once. A failure leaves both the current schema surface and that codec
    absent; there is no staged-unactivated state. Repeat from step 4 for another
    codec from the same release.
@@ -472,8 +483,11 @@ or source snapshots.
 3. Resolve and verify the codec binding and one complete lens-graph snapshot.
 4. Verify canonical content CID and signature under that codec.
 5. Select the requested target or the AppView's declared preferred codec.
-6. Find a path of registered total lenses. For equal codecs, use the empty
-   identity path.
+6. Retain only registered lenses declared total and lossless. For equal codecs,
+   use the empty identity path. Otherwise choose the path with the fewest
+   edges, breaking ties by the bytewise lexicographically smallest ordered
+   lens-ID sequence. This rule is normative; implementations MUST NOT use
+   iteration order, publication order, or local preference.
 7. Apply each lens deterministically and validate every intermediate value.
 8. Return the typed view with raw provenance and ordered path.
 9. On any failure, return its stable error without a partial or fallback view.
@@ -616,7 +630,8 @@ Normative proposal vectors live at
 covers:
 
 1. exact `tools.kan` authority derivation and non-recursive DNS lookup;
-2. `did:web:kan.tools` resolution and a distinct AppView service DID;
+2. exact `did:web:kan.tools` DID-document PDS and AppView service entries plus
+   a separately resolved and endpoint-bound AppView service DID;
 3. valid and invalid codec strings;
 4. exact codec/rkey equality and immutable binding fields;
 5. idempotent create and conflicting rebind;
@@ -651,8 +666,9 @@ byte maxima must reproduce those bytes, and the complete encoded record must
 remain below one megabyte. The fixture publication contains exactly one codec
 and seven operations, including four globally keyed lens records. It does not
 construct an MST, signed commit, inversion proof, or CAR and therefore makes no
-claim to prove the size-equivalent preflight or actual returned commit-block
-CAR; those remain AC-5 evidence for the publisher and PDS implementations. Its
+claim to prove the size-equivalent preflight or the PDS's internal commit-block
+CAR enforcement; those remain AC-5 evidence for the publisher and PDS
+implementations. Its
 `example.invalid` repository, zero commit, and
 fixture tag are deliberately non-publishable sentinel provenance. The checker
 requires those exact sentinels so proposal evidence cannot masquerade as a

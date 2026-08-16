@@ -76,7 +76,9 @@ GitHub workflow holds production publication credentials.
   declared current preferred codec and accepts an optional requested target
   codec. Every normalized response discloses `sourceCodec`, `viewCodec`, the
   original AT URI and record CID, and the ordered lens identifiers applied.
-  Missing or non-total lens paths fail with a stable typed error. Raw retrieval
+  Missing, partial, or lossy lens paths fail with a stable typed error. Among
+  eligible paths the AppView minimizes hop count and then chooses the bytewise
+  lexicographically smallest lens-ID sequence. Raw retrieval
   remains available through standard ATProto repository APIs and is never
   replaced by a normalized view.
 - REQ-10: `kan-tools/kan-appview` is portable application code, not Railway
@@ -121,7 +123,8 @@ GitHub workflow holds production publication credentials.
       authority out of `kan`. (REQ-1, REQ-2)
 - [ ] AC-2: Resolution vectors derive `_lexicon.kan.tools` from each published
       `tools.kan.*` NSID, require exactly `did=did:web:kan.tools`, resolve the
-      independently hosted DID document, and reach the configured PDS. Negative
+      independently hosted DID document, validate its exact standard PDS
+      service entry, and reach the configured PDS. Negative
       vectors reject a wrong DID, wrong authority group, missing TXT record,
       unavailable DID document, and PDS endpoint mismatch. (REQ-3)
 - [ ] AC-3: A secrets inventory assigns every credential and recovery artifact
@@ -141,8 +144,9 @@ GitHub workflow holds production publication credentials.
       reproduces deterministic MST/inversion block shapes and a size-equivalent
       preflight CAR using fixed-width placeholders for PDS-chosen values. The
       PDS constructs and signs the actual commit, enforces the 200-operation
-      and 2,000,000-byte `commit.blocks` CAR limits atomically, and the
-      publisher fetches the resulting CAR through the sync API for length
+      and 2,000,000-byte `commit.blocks` CAR limits atomically. Standard APIs
+      do not expose that exact per-commit CAR after the fact; the publisher
+      performs complete public record read-back without claiming CAR
       verification. An
       injected pre-commit failure leaves all schema and codec rkeys unchanged,
       and public read-back checks the complete set rather than only changed
@@ -191,8 +195,10 @@ GitHub workflow holds production publication credentials.
       REQ-13)
 - [ ] AC-14: A service-discovery fixture proves that Lexicon resolution remains
       rooted in `did:web:kan.tools` while the canonical AppView endpoint can
-      authenticate as a different declared service DID. Changing the AppView
-      DID or endpoint cannot change the codec register or Lexicon authority.
+      authenticate as a different declared, separately resolved service DID
+      whose authenticated endpoint matches the authority service entry.
+      Changing the AppView DID or endpoint cannot change the codec register or
+      Lexicon authority.
       (REQ-3, REQ-10, REQ-13)
 - [ ] AC-15: Staging exercises initial deployment, repeated deployment,
       credential rotation, PDS restart, AppView replacement, public DNS/DID/PDS
