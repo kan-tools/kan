@@ -1,0 +1,62 @@
+{
+  "v": 1,
+  "fixtures": {
+    "at-current-equivalent": {
+      "accountDid": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+      "handles": ["alice.example"],
+      "locator": "kan-tools:day",
+      "scope": "kan-repo:bafyreift4xnurx4suratbzmvtvo2m3icusrazffnadcacockwknswai6j4",
+      "commit": "bafyreihrgx4m5k7nbnf6fitgmochxud25lugynybjibnqdsyrjc5ngeg54",
+      "appview": {
+        "service": "did:web:kan.tools#kan_appview",
+        "endpoint": "https://kan.tools",
+        "indexedCommit": "bafyreihrgx4m5k7nbnf6fitgmochxud25lugynybjibnqdsyrjc5ngeg54",
+        "completeness": "selection",
+        "claimCids": ["bafyreidwqmyomktbm6jgsktjt6s7fa4bvjeoukvmlsqnaiktooonvnzx7q"]
+      },
+      "pds": {
+        "service": "did:plc:ewvi7nxzyoun6zhxrhs64oiz#atproto_pds",
+        "endpoint": "https://pds.example.com",
+        "commit": "bafyreihrgx4m5k7nbnf6fitgmochxud25lugynybjibnqdsyrjc5ngeg54",
+        "completeness": "committed",
+        "claimCids": ["bafyreidwqmyomktbm6jgsktjt6s7fa4bvjeoukvmlsqnaiktooonvnzx7q"]
+      }
+    },
+    "at-history-missing": {
+      "accountDid": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
+      "currentCommit": "bafyreihrgx4m5k7nbnf6fitgmochxud25lugynybjibnqdsyrjc5ngeg54",
+      "requestedCommit": "bafyreihvcmlbzjkttvwpxljpq7ohkpgnlnzcqqyrppq3ebsjd23dn4u4be",
+      "retained": false
+    },
+    "source-denied": {
+      "locator": "kan-tools:day",
+      "scope": "kan-repo:bafyreift4xnurx4suratbzmvtvo2m3icusrazffnadcacockwknswai6j4",
+      "source": "private-team",
+      "exists": true,
+      "accessible": false
+    },
+    "source-absent": {
+      "locator": "kan-tools:day",
+      "scope": "kan-repo:bafyreift4xnurx4suratbzmvtvo2m3icusrazffnadcacockwknswai6j4",
+      "source": "missing",
+      "exists": false
+    },
+    "resource-absent": {
+      "locator": "kan-tools:day",
+      "scope": "kan-repo:bafyreift4xnurx4suratbzmvtvo2m3icusrazffnadcacockwknswai6j4",
+      "source": "appview",
+      "snapshotExists": true,
+      "resourceExists": false
+    },
+    "ambiguous-locator": {
+      "locator": "kan-tools:day",
+      "verifiedScopes": [
+        "kan-repo:bafyreift4xnurx4suratbzmvtvo2m3icusrazffnadcacockwknswai6j4",
+        "kan-repo:bafyreihrgx4m5k7nbnf6fitgmochxud25lugynybjibnqdsyrjc5ngeg54"
+      ]
+    },
+    "scope-missing": {
+      "knownLocators": ["kan-tools:day"]
+    }
+  }
+}

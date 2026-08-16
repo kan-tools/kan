@@ -1,0 +1,42 @@
+{
+  "lexicon": 1,
+  "id": "tools.kan.getClaim",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Resolve one kan claim from one account repository and kan scope at an optional immutable commit.",
+      "parameters": {
+        "type": "params",
+        "required": ["repo", "scope", "cid"],
+        "properties": {
+          "repo": {"type": "string", "format": "did"},
+          "scope": {"type": "string", "maxLength": 512},
+          "cid": {"type": "string", "format": "cid"},
+          "commit": {"type": "string", "format": "cid"}
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["canonicalUri", "replayUri", "provenance", "claim"],
+          "properties": {
+            "canonicalUri": {"type": "string", "format": "uri"},
+            "replayUri": {"type": "string", "format": "uri"},
+            "provenance": {"type": "ref", "ref": "tools.kan.defs#provenance"},
+            "claim": {"type": "ref", "ref": "tools.kan.defs#claimView"}
+          }
+        }
+      },
+      "errors": [
+        {"name": "RepoNotFound"},
+        {"name": "ScopeNotFound"},
+        {"name": "ClaimNotFound"},
+        {"name": "SnapshotUnavailable"},
+        {"name": "InvalidClaim"},
+        {"name": "UnsupportedClaimCodec"},
+        {"name": "IndexNotReady"}
+      ]
+    }
+  }
+}

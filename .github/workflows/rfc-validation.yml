@@ -6,12 +6,22 @@ on:
       - "rfcs/**"
       - "adrs/**"
       - "scripts/check-rfcs-adrs.sh"
+      - "scripts/check-kan-lexicon-sync.py"
+      - "scripts/check-uri-v1-fixtures.py"
+      - "scripts/uri_v1_reference.py"
+      - ".design/rfc-2-lexicons/**"
+      - "tests/fixtures/uri-v1/**"
       - ".github/workflows/rfc-validation.yml"
   pull_request:
     paths:
       - "rfcs/**"
       - "adrs/**"
       - "scripts/check-rfcs-adrs.sh"
+      - "scripts/check-kan-lexicon-sync.py"
+      - "scripts/check-uri-v1-fixtures.py"
+      - "scripts/uri_v1_reference.py"
+      - ".design/rfc-2-lexicons/**"
+      - "tests/fixtures/uri-v1/**"
       - ".github/workflows/rfc-validation.yml"
 
 permissions:
@@ -22,7 +32,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The duplicate immutable pin is intentional: changing the RFC pin also
+      # changes this reviewed workflow, and the sync step proves equivalence.
+      - uses: actions/checkout@v4
+        with:
+          repository: kan-tools/kan-lexicon
+          ref: 21223656d9954f93d4dc5b0a16c144b6bce1902c
+          path: .upstream/kan-lexicon
       - name: Prove the validator rejects a historical-record mutation
         run: ./scripts/check-rfcs-adrs.sh --self-test
       - name: Validate RFCs and ADRs
         run: ./scripts/check-rfcs-adrs.sh
+      - name: Reject canonical Lexicon drift
+        env:
+          KAN_LEXICON_CHECKOUT: ${{ github.workspace }}/.upstream/kan-lexicon
+        run: python3 scripts/check-kan-lexicon-sync.py

@@ -1,0 +1,22 @@
+{
+  "lexicon": 1,
+  "id": "tools.kan.claim",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A signed kan claim converted to the current Lexicon representation while retaining its original claim CID and signature.",
+      "key": "any",
+      "record": {
+        "type": "object",
+        "required": ["claimCid", "codec", "content", "signature", "rev"],
+        "properties": {
+          "claimCid": {"type": "string", "format": "cid"},
+          "codec": {"type": "string", "maxLength": 32, "knownValues": ["kan-claim-v1"]},
+          "content": {"type": "ref", "ref": "tools.kan.defs#claimContent"},
+          "signature": {"type": "bytes", "maxLength": 256},
+          "rev": {"type": "string", "format": "tid"}
+        }
+      }
+    }
+  }
+}

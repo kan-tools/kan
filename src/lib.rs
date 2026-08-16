@@ -3,6 +3,7 @@
 //! See `docs/SPEC.md` (authoritative) and `docs/HANDOFF.md` (orientation).
 
 pub mod actions;
+pub mod at_claim;
 pub mod cid;
 pub mod claim;
 pub mod cli;

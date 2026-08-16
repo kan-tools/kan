@@ -20,9 +20,13 @@ hash_stdin() {
 if [[ "${1:-}" == "--self-test" ]]; then
   fixture=$(mktemp -d "${TMPDIR:-/tmp}/kan-rfc-adr-check.XXXXXX")
   trap 'rm -rf "$fixture"' EXIT
-  mkdir -p "$fixture/scripts"
+  mkdir -p "$fixture/scripts" "$fixture/tests/fixtures" "$fixture/.design"
   cp -R adrs rfcs docs "$fixture/"
+  cp -R tests/fixtures/uri-v1 "$fixture/tests/fixtures/"
+  cp -R .design/rfc-2-lexicons "$fixture/.design/"
   cp "$0" "$fixture/scripts/check-rfcs-adrs.sh"
+  cp scripts/check-uri-v1-fixtures.py "$fixture/scripts/"
+  cp scripts/uri_v1_reference.py "$fixture/scripts/"
   perl -pi -e 's/Bus-factor/Bus factor/' "$fixture/adrs/1-repo-mst-cid-signing-crate-family-atrium-rs-not-atproto-repo.md"
   if KAN_RFC_ADR_ROOT="$fixture" "$fixture/scripts/check-rfcs-adrs.sh" >"$fixture/output" 2>&1; then
     fail "self-test mutation was accepted"
@@ -68,7 +72,28 @@ done < "$manifest"
 ! find adrs -maxdepth 1 -type f -name '0[0-9]*-*.md' | grep -q . || fail "ADR filenames must not have leading zeroes"
 ! grep -Eq '^## ADR-[0-9]+' docs/DECISIONS.md || fail "docs/DECISIONS.md still contains live ADR records"
 
-for file in rfcs/0-rfc-and-adr-process.md rfcs/1-identity-system.md rfcs/template.md; do
+rfc_count=0
+for file in rfcs/[0-9]*-*.md; do
+  base=$(basename "$file")
+  number=${base%%-*}
+  [[ "$number" != 0[0-9]* ]] || fail "RFC filenames must not have leading zeroes: $file"
+  title=$(sed -n "s/^# RFC $number: //p" "$file")
+  [[ -n "$title" ]] || fail "$file title does not match its filename number"
+  [[ -f "$file" ]] || fail "missing $file"
+  for section in Summary Motivation Terminology 'Detailed design' 'Canonicalization and equivalence' 'Resolution or processing algorithm' 'Authority and trust model' 'Security considerations' Compatibility 'Alternatives considered' 'Reference test vectors' 'Unresolved questions' 'Implementation status'; do
+    grep -Fqx "## $section" "$file" || fail "$file lacks section: $section"
+  done
+  status=$(sed -n 's/^- Status: //p' "$file")
+  case "$status" in
+    Draft|Review|Accepted|Implemented|Rejected|Withdrawn|Superseded) ;;
+    *) fail "RFC $number has unrecognized status: $status" ;;
+  esac
+  links=$(grep -Fxc -- "- [RFC $number: $title]($base) — $status" rfcs/README.md || true)
+  [[ "$links" -eq 1 ]] || fail "$file must have exactly one status-matching index entry"
+  rfc_count=$((rfc_count + 1))
+done
+
+for file in rfcs/template.md; do
   [[ -f "$file" ]] || fail "missing $file"
   for section in Summary Motivation Terminology 'Detailed design' 'Canonicalization and equivalence' 'Resolution or processing algorithm' 'Authority and trust model' 'Security considerations' Compatibility 'Alternatives considered' 'Reference test vectors' 'Unresolved questions' 'Implementation status'; do
     grep -Fqx "## $section" "$file" || fail "$file lacks section: $section"
@@ -80,17 +105,8 @@ for section in Context Decision Rationale Consequences Evidence 'Alternatives co
   grep -Fqx "## $section" adrs/template.md || fail "adrs/template.md lacks section: $section"
 done
 
-status=$(sed -n 's/^- Status: //p' rfcs/0-rfc-and-adr-process.md)
-case "$status" in
-  Draft|Review|Accepted|Implemented|Rejected|Withdrawn|Superseded) ;;
-  *) fail "RFC 0 has unrecognized status: $status" ;;
-esac
+python3 scripts/check-uri-v1-fixtures.py --self-test
 
-identity_status=$(sed -n 's/^- Status: //p' rfcs/1-identity-system.md)
-case "$identity_status" in
-  Draft|Review|Accepted|Implemented|Rejected|Withdrawn|Superseded) ;;
-  *) fail "RFC 1 has unrecognized status: $identity_status" ;;
-esac
 grep -Fq 'kan.did.genesis.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks identity domain separation"
 grep -Fq 'kan.repository.inception.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks repository domain separation"
 grep -Fq 'kan.repository.governance.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks governance domain separation"
@@ -111,4 +127,4 @@ grep -Fq 'permanent gaps are valid' rfcs/0-rfc-and-adr-process.md || fail "RFC 0
 grep -Fq 'RFC 1, the kan identity architecture' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 does not reserve identity as the expected next proposal"
 grep -Fq 'RFC 2 is' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 does not sequence the URI proposal after identity"
 
-echo "RFC/ADR check: 91 reconstructed ADRs, RFC 0, and RFC 1 are structurally valid"
+echo "RFC/ADR check: 91 reconstructed ADRs and $rfc_count numbered RFCs are structurally valid"
