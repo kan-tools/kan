@@ -53,6 +53,14 @@ def validate(data: dict) -> None:
     require(binding["$type"] == "tools.kan.codec", "wrong codec record type")
     require(binding["codec"] == binding["rkey"], "codec/rkey mismatch")
     require(binding["claimLexicon"] == "tools.kan.claim", "wrong claim Lexicon")
+    require(
+        binding["payloadSchema"] == "tools.kan.defs#claimContent",
+        "wrong v1 payload schema",
+    )
+    require(
+        binding["envelopeLexiconRecordCid"] != binding["payloadLexiconRecordCid"],
+        "envelope and payload CIDs unexpectedly alias",
+    )
     require(re.fullmatch(r"[0-9a-f]{40}", binding["sourceCommit"]) is not None, "bad source commit")
     require(binding["sourceTag"].startswith("v"), "source tag must be a release tag")
 
@@ -72,8 +80,17 @@ def validate(data: dict) -> None:
     )
 
     publication = {case["name"]: case for case in data["publicationCases"]}
-    require(publication["two-schema-one-codec"]["commits"] == 1, "publication not atomic")
-    require(publication["precommit-injected-failure"]["commits"] == 0, "failure committed")
+    require(
+        publication["staged-schema-atomic-activation"]["commits"] == 2
+        and publication["staged-schema-atomic-activation"]["activationCommits"] == 1,
+        "publication does not stage then activate",
+    )
+    require(
+        publication["activation-injected-failure"]["commits"] == 1
+        and publication["activation-injected-failure"]["activationCommits"] == 0
+        and publication["activation-injected-failure"]["codecCreates"] == 0,
+        "failed activation made a codec resolvable",
+    )
     require(
         publication["write-ok-readback-fails"]["outcome"] == "published-unverified",
         "read-back failure declared deployed",
@@ -123,8 +140,8 @@ def mutations(data: dict) -> list[tuple[str, dict]]:
     result: list[tuple[str, dict]] = []
     for name, edit in [
         ("authority", lambda d: d["authority"].__setitem__("dnsName", "_lexicon.tools.kan")),
-        ("codec binding", lambda d: d["codecBinding"].__setitem__("rkey", "kan-claim-v2")),
-        ("atomicity", lambda d: d["publicationCases"][1].__setitem__("commits", 1)),
+        ("codec binding", lambda d: d["codecBinding"].__setitem__("payloadSchema", "tools.kan.defs#claimContentV2")),
+        ("atomic activation", lambda d: d["publicationCases"][1].__setitem__("codecCreates", 1)),
         ("lens eligibility", lambda d: d["normalizationCases"][1].__setitem__("path", ["synthetic-v2-summary"])),
         ("provenance", lambda d: d["requiredViewProvenance"].remove("sourceRecordCid")),
         ("secret boundary", lambda d: d["secretBoundaries"][0].__setitem__("productionAuthority", True)),

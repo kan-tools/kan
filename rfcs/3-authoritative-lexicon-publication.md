@@ -4,9 +4,9 @@
 - Authors: kan maintainers
 - Created: 2026-08-16
 - Discussion: https://github.com/kan-tools/kan/pull/231
-- Review-period-ends: 2026-08-19T20:21:34Z
+- Review-period-ends: 2026-08-19T20:33:29Z
 - Review-override: None
-- Supersedes: RFC 2 requirements 17 and 18 where explicitly stated
+- Supersedes: RFC 2 requirement 17 where explicitly stated; amends requirement 18
 - Superseded-by: None
 
 ## Summary
@@ -84,8 +84,8 @@ workflow must not become authority to rewrite the canonical schema repository.
   ATProto repository.
 - **Normalized view:** An AppView response projected from a verified raw record
   to a requested codec.
-- **Publication:** One atomic repository commit containing all changed schema
-  records and newly created codec entries for an immutable release.
+- **Publication:** A guarded schema-staging commit followed by one atomic
+  create-only codec-activation commit for an immutable release.
 - **Deployment provenance:** The source tag and commit, generated artifact
   digests, ATProto repository commit, record CIDs, and verification result for
   one publication attempt.
@@ -160,9 +160,13 @@ versioned claim payload
 ```
 
 `codec` is the only schema-version discriminator. A second `schemaVersion`
-field is forbidden. The envelope MUST remain extensible enough for an older
-transport to preserve a record carrying an unknown future codec without
-interpreting it as a known version or stripping fields.
+field is forbidden. The Lexicon envelope MUST use an open payload boundary:
+it validates the common envelope fields but does not close future payload
+shapes over the v1 definitions. Exact payload validation is selected by the
+codec entry. An older transport MUST therefore preserve a record carrying an
+unknown future codec without interpreting it as a known version or stripping
+fields. Generated clients MUST expose that unsupported payload as raw ATProto
+data rather than deserialize and reserialize it through the v1 type.
 
 The exact `kan-claim-v1` payload and inverse conversion remain those defined by
 RFC 2 and implemented by `src/at_claim.rs`. RFC 3 changes neither its canonical
@@ -184,7 +188,9 @@ the codec string. Its record contains:
 $type:                   tools.kan.codec
 codec:                   Codec
 claimLexicon:            NSID
-lexiconRecordCid:        CID link
+envelopeLexiconRecordCid: CID link
+payloadSchema:           Lexicon reference
+payloadLexiconRecordCid: CID link
 repositoryCommit:        CID link
 sourceRepository:        URI
 sourceCommit:            40 lowercase hexadecimal Git object ID
@@ -205,10 +211,20 @@ lossless:     boolean
 ```
 
 `codec` MUST equal the rkey. `claimLexicon` for kan claim codecs MUST equal
-`tools.kan.claim`. `lexiconRecordCid` MUST be the record CID reached at
+`tools.kan.claim`. `envelopeLexiconRecordCid` MUST be the record CID reached at
 `com.atproto.lexicon.schema/<claimLexicon>` in `repositoryCommit`.
-`sourceCommit` MUST reproduce that schema record and the referenced codec and
-lens vectors from `sourceRepository` at `sourceTag`.
+`payloadSchema` MUST be an exact Lexicon NSID-plus-fragment reference, and
+`payloadLexiconRecordCid` MUST be the CID of the schema record defining that
+reference in the same `repositoryCommit`. For `kan-claim-v1`, `payloadSchema`
+is `tools.kan.defs#claimContent`. `sourceCommit` MUST reproduce both schema
+records and the referenced codec and lens vectors from `sourceRepository` at
+`sourceTag`.
+
+`repositoryCommit` is the schema-staging commit, not the later commit that
+contains this codec entry. A record cannot contain its own containing commit
+CID because that commit CID depends on the record bytes. Publication therefore
+stages schemas first and activates their codec bindings in a subsequent atomic
+create-only commit.
 
 Codec records are create-only. A request to create a byte-identical existing
 entry is an idempotent success without a write. Any non-identical existing
@@ -263,7 +279,8 @@ Before projection the AppView MUST:
 
 1. verify the raw ATProto repository proof and record CID;
 2. resolve the exact codec entry;
-3. validate the raw record against the registered schema record CID;
+3. validate the raw record against the registered envelope and payload schema
+   record CIDs;
 4. reconstruct and verify the kan content CID and signature; and
 5. select a path consisting only of registered lenses.
 
@@ -326,14 +343,14 @@ Codec equality is exact ASCII byte equality. Codec strings are not case-folded,
 Unicode-normalized, percent-decoded, or treated as semantic-version ranges.
 
 A codec binding is equal only when every normative registry field is equal,
-including schema record CID, repository commit, source commit and tag,
+including both schema record CIDs, payload reference, repository commit, source commit and tag,
 canonical specification URI, and ordered lens descriptors. Two bindings with
 the same schema JSON but different provenance are not the same binding.
 
-Lexicon JSON source follows ATProto Lexicon semantics. Its immutable identity
-in the registry is the DAG-CBOR schema record CID, not whitespace or JSON
+Lexicon JSON source follows ATProto Lexicon semantics. Each schema's immutable
+identity in the registry is its DAG-CBOR record CID, not whitespace or JSON
 object order in a checked-out file. The source tag and Git commit MUST
-deterministically reproduce the registered record CID.
+deterministically reproduce both registered record CIDs.
 
 Lens path equality is ordered identifier equality. Two paths producing equal
 view values remain distinct provenance when their identifiers differ.
@@ -363,8 +380,9 @@ or source snapshots.
 1. Validate the codec grammar.
 2. Resolve `tools.kan.codec/<codec>` from the Lexicon authority repository.
 3. Require record `$type`, codec, and rkey equality.
-4. Load the registered schema at `repositoryCommit` and require its record CID
-   to equal `lexiconRecordCid`.
+4. Load the registered envelope and payload schemas at `repositoryCommit` and
+   require their record CIDs to equal `envelopeLexiconRecordCid` and
+   `payloadLexiconRecordCid`.
 5. Reproduce the schema and normative fixtures from the registered Git commit
    and tag.
 6. Validate every referenced lens descriptor and vectors CID.
@@ -380,11 +398,14 @@ or source snapshots.
 4. Resolve current authoritative records and compare the complete desired set.
 5. Reject tag drift, source drift, an older desired binding, deletion, or a
    conflicting codec rkey.
-6. Construct one `com.atproto.repo.applyWrites` request containing guarded
-   updates for changed schema rkeys and creates for new codec rkeys.
-7. Commit once. A pre-commit failure leaves all prior rkeys unchanged.
-8. Starting from public DNS, read back and verify the complete desired set.
-9. Record `verified` deployment provenance only after step 8. A committed write
+6. Construct one guarded `com.atproto.repo.applyWrites` request containing all
+   changed schema rkeys and commit the schema-staging state.
+7. Compute and verify every codec entry against that schema-staging commit.
+8. Construct one create-only `applyWrites` request containing all new codec
+   entries and commit the activation state. Before this commit, staged schemas
+   do not make a new codec resolvable. A failure leaves every new codec absent.
+9. Starting from public DNS, read back and verify the complete desired set.
+10. Record `verified` deployment provenance only after step 9. A committed write
    whose public read-back fails is `published-unverified`; retry verification
    before considering another write.
 
@@ -440,8 +461,8 @@ repository publication.
   Lossy or partial conversion is never silent.
 - **Provenance laundering:** A normalized view always exposes its raw AT URI,
   record CID, source codec, target codec, and lens path.
-- **Mixed release:** Schema and registry writes share one repository commit;
-  complete-set public read-back is required before success.
+- **Mixed release:** Schema staging is inert until the atomic codec-activation
+  commit. Complete-set public read-back is required before success.
 - **DNS or domain loss:** This loses Lexicon and DID authority by design.
   Domain protection, registrar recovery, DNSSEC where operationally supported,
   and independent monitoring are required controls.
@@ -465,14 +486,16 @@ CIDs, signatures, local MST keys, and legacy-to-current migration results do
 not change. An identity lens from v1 to v1 MUST reproduce the same decoded
 value and canonical bytes.
 
-RFC 3 supersedes only these RFC 2 requirements:
+RFC 3 amends only these parts of RFC 2:
 
-- RFC 2 REQ-18's closed current claim representation is amended to an
-  extensible envelope with exact typing selected by the append-only codec
-  register. The v1 variant remains closed and exactly specified.
 - RFC 2 REQ-17's statement that the Lexicon authority DID is also the canonical
   AppView service DID is replaced. Its DID document remains the discovery root,
   but the service endpoint names and authenticates a separately governed DID.
+- RFC 2 REQ-18 continues to make `kan-tools/kan-lexicon` the canonical schema
+  source. Its five current closed v1 schemas remain the exact v1 definition,
+  while the `tools.kan.claim` transport envelope becomes open at the versioned
+  payload boundary and exact typing is selected by the append-only codec
+  register.
 
 Older consumers that support only v1 MUST preserve unsupported future records
 and report `unsupported-source-codec`; they MUST NOT decode them as v1. Newer
@@ -528,7 +551,7 @@ Normative proposal vectors live at
 3. valid and invalid codec strings;
 4. exact codec/rkey equality and immutable binding fields;
 5. idempotent create and conflicting rebind;
-6. atomic multi-schema publication and injected pre-commit failure;
+6. schema staging, atomic codec activation, and injected activation failure;
 7. current-schema drift versus exact historical codec resolution;
 8. identity, total lossless, partial, lossy, missing, and composed lens paths;
 9. default and requested AppView target codecs;

@@ -37,7 +37,9 @@
     "rkey": "kan-claim-v1",
     "codec": "kan-claim-v1",
     "claimLexicon": "tools.kan.claim",
-    "lexiconRecordCid": "bafyreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "envelopeLexiconRecordCid": "bafyreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "payloadSchema": "tools.kan.defs#claimContent",
+    "payloadLexiconRecordCid": "bafyreicccccccccccccccccccccccccccccccccccccccccccccccccccc",
     "repositoryCommit": "bafyreibbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "sourceRepository": "https://github.com/kan-tools/kan-lexicon",
     "sourceCommit": "21223656d9954f93d4dc5b0a16c144b6bce1902c",
@@ -52,8 +54,8 @@
     {"name": "reject-rkey-mismatch", "existing": null, "desired": "different-rkey", "outcome": "codec-binding-conflict"}
   ],
   "publicationCases": [
-    {"name": "two-schema-one-codec", "schemaWrites": 2, "codecCreates": 1, "commits": 1, "outcome": "verified"},
-    {"name": "precommit-injected-failure", "schemaWrites": 2, "codecCreates": 1, "commits": 0, "outcome": "unchanged"},
+    {"name": "staged-schema-atomic-activation", "schemaWrites": 2, "codecCreates": 1, "commits": 2, "activationCommits": 1, "outcome": "verified"},
+    {"name": "activation-injected-failure", "schemaWrites": 2, "codecCreates": 0, "commits": 1, "activationCommits": 0, "outcome": "staged-unactivated"},
     {"name": "write-ok-readback-fails", "schemaWrites": 1, "codecCreates": 0, "commits": 1, "outcome": "published-unverified"},
     {"name": "retry-public-verification", "schemaWrites": 0, "codecCreates": 0, "commits": 0, "outcome": "verified"}
   ],
