@@ -633,8 +633,68 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         }
     }
 
+    fn compact_code(source: &str) -> String {
+        let bytes = source.as_bytes();
+        let mut out = String::new();
+        let mut index = 0usize;
+        let mut block_depth = 0usize;
+        let mut quoted = false;
+        let mut escaped = false;
+        while index < bytes.len() {
+            if block_depth > 0 {
+                if bytes[index..].starts_with(b"/*") {
+                    block_depth += 1;
+                    index += 2;
+                } else if bytes[index..].starts_with(b"*/") {
+                    block_depth -= 1;
+                    index += 2;
+                } else {
+                    index += 1;
+                }
+                continue;
+            }
+            if quoted {
+                if escaped {
+                    escaped = false;
+                } else if bytes[index] == b'\\' {
+                    escaped = true;
+                } else if bytes[index] == b'"' {
+                    quoted = false;
+                }
+                index += 1;
+                continue;
+            }
+            if bytes[index..].starts_with(b"//") {
+                index += bytes[index..]
+                    .iter()
+                    .position(|byte| *byte == b'\n')
+                    .unwrap_or(bytes.len() - index);
+            } else if bytes[index..].starts_with(b"/*") {
+                block_depth = 1;
+                index += 2;
+            } else if bytes[index] == b'"' {
+                quoted = true;
+                index += 1;
+            } else {
+                let ch = source[index..].chars().next().unwrap();
+                if !ch.is_whitespace() {
+                    out.push(ch);
+                }
+                index += ch.len_utf8();
+            }
+        }
+        assert_eq!(
+            block_depth, 0,
+            "unterminated block comment in production source"
+        );
+        out
+    }
+
     fn calls(source: &str) -> Vec<(String, String, String)> {
-        let prefix = "crate::persistence::";
+        // Match the module boundary, not one spelling of the route to it.
+        // `crate::`, `super::`, and a crate alias such as `c::persistence::`
+        // must all enter the same exact call inventory.
+        let prefix = "persistence::";
         let mut out = Vec::new();
         let mut cursor = 0;
         while let Some(relative) = source[cursor..].find(prefix) {
@@ -744,7 +804,13 @@ fn every_persistence_facade_call_is_independently_inventoried() {
                 "{module} imports or re-exports the persistence facade; call it fully qualified so the mutation inventory remains complete: {line}"
             );
         }
-        let compact: String = source.chars().filter(|ch| !ch.is_whitespace()).collect();
+        let compact = compact_code(&source);
+        let module_declaration = usize::from(module == "src/lib.rs");
+        assert_eq!(
+            compact.matches("persistence").count(),
+            compact.matches("crate::persistence::").count() + module_declaration,
+            "{module} reaches the persistence facade through a non-canonical alias or token route"
+        );
         for broad_suppression in [
             "allow(clippy::all",
             "expect(clippy::all",
@@ -760,15 +826,15 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         }
         match module.as_str() {
             "src/lib.rs" => {
-                assert_eq!(source.matches("clippy::disallowed_methods").count(), 1);
-                assert_eq!(source.matches("clippy::disallowed_types").count(), 1);
-                assert!(source.contains("#![deny(clippy::disallowed_methods)]"));
-                assert!(source.contains("#![deny(clippy::disallowed_types)]"));
+                assert_eq!(compact.matches("clippy::disallowed_methods").count(), 1);
+                assert_eq!(compact.matches("clippy::disallowed_types").count(), 1);
+                assert!(compact.contains("#![deny(clippy::disallowed_methods)]"));
+                assert!(compact.contains("#![deny(clippy::disallowed_types)]"));
             }
             _ => {
                 assert!(
-                    !source.contains("clippy::disallowed_methods")
-                        && !source.contains("clippy::disallowed_types"),
+                    !compact.contains("clippy::disallowed_methods")
+                        && !compact.contains("clippy::disallowed_types"),
                     "{module} locally suppresses or redefines the compiler persistence policy; only src/persistence.rs may allow it"
                 );
             }
