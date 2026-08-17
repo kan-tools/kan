@@ -12,6 +12,7 @@ pub mod cli;
 pub mod context;
 pub mod fold;
 pub mod git;
+pub mod identity;
 pub mod json;
 pub mod mcp;
 pub mod mst;
