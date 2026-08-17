@@ -12,7 +12,10 @@ implemented	derived	local-log	invocation	local-log:LOCK	*	src/store/log.rs	crate
 implemented	authoritative-kan	git-tree	claim	git-tree:.claims	*	src/transport/git_tree.rs	crate::transport::git_tree::GitTree	validate:published-claim	deletion-loses-that-replica	docs/SPEC.md#storage-and-transport
 implemented	authoritative-kan	repo-config	repository	repo-config:auto-git-tree	*	src/workspace.rs	crate::workspace::Workspace	select:auto-git-tree-connection	recomputed-from-repository-context	docs/SPEC.md#storage-and-transport
 implemented	derived	overlay	claim	overlay:repo.car	*	src/workspace.rs	crate::workspace::Workspace	derive:overlay-from-git-tree	delete-and-rebuild	docs/SPEC.md#storage-and-transport
+implemented	derived	overlay	claim	overlay:repo.car.damaged-*	*	src/store/log.rs	crate::workspace::Workspace	derive:overlay-from-git-tree	delete-and-rebuild	docs/SPEC.md#storage-and-transport
+implemented	derived	overlay	invocation	overlay:repo.repair	*	src/store/log.rs	crate::workspace::Workspace	derive:car-repair-temp	atomic-replace-or-delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	overlay	repository	overlay:HEAD	*	src/workspace.rs	crate::workspace::Workspace	derive:overlay-root	delete-and-rebuild	docs/SPEC.md#storage-and-transport
+implemented	derived	overlay	invocation	overlay:HEAD.tmp	*	src/store/log.rs	crate::workspace::Workspace	derive:atomic-head-replacement	atomic-rename-or-delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	overlay	invocation	overlay:LOCK	*	src/workspace.rs	crate::workspace::Workspace	derive:write-coordination	delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	sqlite-index	repository	sqlite:meta	key	src/store/index.rs	crate::store::index::Index	derive:index-freshness	delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	sqlite-index	repository	sqlite:meta	value	src/store/index.rs	crate::store::index::Index	derive:index-freshness	delete-and-rebuild	docs/SPEC.md#storage-and-transport

@@ -86,12 +86,36 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
         "identity:selected-file",
     ),
     ("src/sign.rs", "pointer", "identity:selected-pointer"),
-    ("src/store/log.rs", "\"repo.car\"", "local-log:repo.car"),
-    ("src/store/log.rs", "\"HEAD\"", "local-log:HEAD"),
-    ("src/store/log.rs", "\"tmp\"", "local-log:HEAD.tmp"),
-    ("src/store/log.rs", "\"repair\"", "local-log:repo.repair"),
-    ("src/store/log.rs", "\"LOCK\"", "local-log:LOCK"),
-    ("src/store/log.rs", "name", "local-log:repo.car.damaged-*"),
+    (
+        "src/store/log.rs",
+        "\"repo.car\"",
+        "local-log:repo.car, overlay:repo.car",
+    ),
+    (
+        "src/store/log.rs",
+        "\"HEAD\"",
+        "local-log:HEAD, overlay:HEAD",
+    ),
+    (
+        "src/store/log.rs",
+        "\"tmp\"",
+        "local-log:HEAD.tmp, overlay:HEAD.tmp",
+    ),
+    (
+        "src/store/log.rs",
+        "\"repair\"",
+        "local-log:repo.repair, overlay:repo.repair",
+    ),
+    (
+        "src/store/log.rs",
+        "\"LOCK\"",
+        "local-log:LOCK, overlay:LOCK",
+    ),
+    (
+        "src/store/log.rs",
+        "name",
+        "local-log:repo.car.damaged-*, overlay:repo.car.damaged-*",
+    ),
     (
         "src/store/log.rs",
         "\"log\"",
@@ -171,7 +195,9 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
     ("src/store/index.rs", "create_dir_all", "Sqlite", 1),
     ("src/store/index.rs", "remove_file", "Sqlite", 2),
     ("src/store/log.rs", "copy_async", "LocalLogDamaged", 1),
+    ("src/store/log.rs", "copy_async", "Overlay", 1),
     ("src/store/log.rs", "create_dir_all_async", "LocalLogCar", 1),
+    ("src/store/log.rs", "create_dir_all_async", "Overlay", 1),
     (
         "src/store/log.rs",
         "create_file_async",
@@ -179,10 +205,14 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         1,
     ),
     ("src/store/log.rs", "create_file_async", "LocalLogRepair", 1),
+    ("src/store/log.rs", "create_file_async", "Overlay", 2),
     ("src/store/log.rs", "open_append_async", "LocalLogCar", 1),
+    ("src/store/log.rs", "open_append_async", "Overlay", 1),
     ("src/store/log.rs", "open_lock_file", "LocalLogLock", 1),
+    ("src/store/log.rs", "open_lock_file", "Overlay", 1),
     ("src/store/log.rs", "rename_async", "LocalLogCar", 1),
     ("src/store/log.rs", "rename_async", "LocalLogHead", 1),
+    ("src/store/log.rs", "rename_async", "Overlay", 2),
     ("src/transport/git_tree.rs", "create_dir_all", "GitTree", 1),
     ("src/transport/git_tree.rs", "remove_file", "GitTree", 1),
     ("src/transport/git_tree.rs", "write", "GitTree", 1),
@@ -538,6 +568,7 @@ fn every_filesystem_mutation_names_its_catalog_surface_at_the_call_site() {
         "std::fs::remove_dir",
         "std::fs::hard_link",
         "std::fs::set_permissions",
+        "std::fs::DirBuilder::create",
         "fs::create_dir_all",
         "fs::File::create",
         "fs::OpenOptions::new",
@@ -588,6 +619,17 @@ fn every_filesystem_mutation_names_its_catalog_surface_at_the_call_site() {
 
 #[test]
 fn every_persistence_facade_call_is_independently_inventoried() {
+    fn rust_sources(root: &std::path::Path, out: &mut Vec<String>) {
+        for entry in std::fs::read_dir(root).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                rust_sources(&path, out);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                out.push(path.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+
     fn calls(source: &str) -> Vec<(String, String)> {
         let prefix = "crate::persistence::";
         let mut out = Vec::new();
@@ -670,11 +712,14 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         })
         .collect();
     let mut actual = BTreeMap::new();
-    for module in PERSISTENCE_MODULES {
-        if *module == "src/persistence.rs" {
+    let mut modules = Vec::new();
+    rust_sources(std::path::Path::new("src"), &mut modules);
+    modules.sort();
+    for module in modules {
+        if module == "src/persistence.rs" {
             continue;
         }
-        let source = std::fs::read_to_string(module).unwrap();
+        let source = std::fs::read_to_string(&module).unwrap();
         for line in source
             .lines()
             .filter(|line| line.trim_start().starts_with("use "))
@@ -686,7 +731,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         }
         for (function, capability) in calls(&source) {
             *actual
-                .entry((module.to_string(), function, capability))
+                .entry((module.clone(), function, capability))
                 .or_insert(0usize) += 1;
         }
     }
@@ -720,6 +765,7 @@ fn compiler_resolves_filesystem_aliases_to_the_single_mutation_facade() {
         "tokio::fs::remove_dir_all",
         "tokio::fs::remove_dir",
         "tokio::fs::hard_link",
+        "tokio::fs::DirBuilder::create",
         "tokio::fs::File::create",
         "tokio::fs::File::options",
         "tokio::fs::OpenOptions::open",
@@ -728,8 +774,10 @@ fn compiler_resolves_filesystem_aliases_to_the_single_mutation_facade() {
     }
     let library = std::fs::read_to_string("src/lib.rs").unwrap();
     assert!(library.contains("#![deny(clippy::disallowed_methods)]"));
+    assert!(library.contains("#![deny(clippy::disallowed_types)]"));
     let facade = std::fs::read_to_string("src/persistence.rs").unwrap();
     assert!(facade.contains("#![allow(clippy::disallowed_methods)]"));
+    assert!(facade.contains("#![allow(clippy::disallowed_types)]"));
 
     let catalog_artifacts: BTreeSet<_> = rows()
         .into_iter()
@@ -885,6 +933,35 @@ fn run_kan(path: &std::path::Path, args: &[&str]) -> std::process::Output {
         .env("KAN_NO_KEYCHAIN", "1")
         .output()
         .unwrap()
+}
+
+#[test]
+fn workspace_routes_overlay_io_through_overlay_capabilities() {
+    let workspace = std::fs::read_to_string("src/workspace.rs").unwrap();
+    assert_eq!(
+        workspace.matches("Log::open_or_create_overlay").count(),
+        3,
+        "every writable overlay open must select the overlay capability route"
+    );
+    assert_eq!(
+        workspace.matches("Log::open_overlay_read_only").count(),
+        1,
+        "the read-only overlay must retain its surface identity for any later write"
+    );
+    for forbidden in [
+        "Log::open_or_create(&kan_dir.join(\"overlay\")",
+        "Log::open_or_create(&overlay_dir",
+        "Log::open_read_only(&kan_dir.join(\"overlay\")",
+    ] {
+        assert!(
+            !workspace.contains(forbidden),
+            "overlay path borrowed the authoritative local-log route: {forbidden}"
+        );
+    }
+
+    let log = std::fs::read_to_string("src/store/log.rs").unwrap();
+    assert!(log.contains("Self::open_or_create_on(dir, identity, LogSurface::Overlay)"));
+    assert!(log.contains("Self::open_read_only_on(dir, LogSurface::Overlay)"));
 }
 
 #[test]
@@ -1111,6 +1188,50 @@ fn production_workspace_bypasses_an_unopenable_projection_path() {
     let appended = run_kan(repo.path(), &["show", "after-unopenable-index", "--json"]);
     assert!(appended.status.success());
     assert!(String::from_utf8_lossy(&appended.stdout).contains("still authoritative"));
+}
+
+#[cfg(unix)]
+#[test]
+fn production_workspace_bypasses_an_unremovable_corrupt_projection() {
+    use std::os::unix::fs::PermissionsExt;
+
+    struct RestoreMode {
+        path: std::path::PathBuf,
+        mode: u32,
+    }
+    impl Drop for RestoreMode {
+        fn drop(&mut self) {
+            let _ =
+                std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(self.mode));
+        }
+    }
+
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let write = run_kan(repo.path(), &["observe", "locked-index", "authoritative"]);
+    assert!(write.status.success());
+    let before = run_kan(repo.path(), &["show", "locked-index", "--json"]);
+    assert!(before.status.success());
+
+    let kan_dir = repo.path().join(".kan");
+    let index = kan_dir.join("index.sqlite");
+    std::fs::remove_file(&index).unwrap();
+    std::fs::write(&index, b"not a sqlite database").unwrap();
+    let original_mode = std::fs::metadata(&kan_dir).unwrap().permissions().mode();
+    std::fs::set_permissions(&kan_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let restore = RestoreMode {
+        path: kan_dir,
+        mode: original_mode,
+    };
+
+    let after = run_kan(repo.path(), &["show", "locked-index", "--json"]);
+    drop(restore);
+    assert!(
+        after.status.success(),
+        "an unremovable disposable projection blocked an authoritative read: {}",
+        String::from_utf8_lossy(&after.stderr)
+    );
+    assert_eq!(before.stdout, after.stdout);
 }
 
 #[test]

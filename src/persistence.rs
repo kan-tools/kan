@@ -5,6 +5,7 @@
 //! this module supplies capability, not authority classification.
 
 #![allow(clippy::disallowed_methods)]
+#![allow(clippy::disallowed_types)]
 
 use std::path::Path;
 
@@ -72,7 +73,14 @@ impl SurfaceWrite {
             Self::LocalLogHeadTemp => &["local-log:HEAD.tmp"],
             Self::LocalLogLock => &["local-log:LOCK"],
             Self::GitTree => &["git-tree:.claims"],
-            Self::Overlay => &["overlay:repo.car", "overlay:HEAD", "overlay:LOCK"],
+            Self::Overlay => &[
+                "overlay:repo.car",
+                "overlay:repo.car.damaged-*",
+                "overlay:repo.repair",
+                "overlay:HEAD",
+                "overlay:HEAD.tmp",
+                "overlay:LOCK",
+            ],
             Self::Sqlite => &["sqlite:meta"],
             Self::Count => &[],
         }

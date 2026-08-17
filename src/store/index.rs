@@ -165,9 +165,20 @@ impl Index {
                 // CREATE INDEX IF NOT EXISTS fail before Workspace can
                 // compare it with the authoritative reference. Reopen the
                 // disposable database and recreate only this binary's schema.
+                // If cleanup or recreation is denied, bypass the disposable
+                // file: projection damage must not control authoritative read
+                // availability.
                 // surface-write: sqlite:meta
-                crate::persistence::remove_file(crate::persistence::SurfaceWrite::Sqlite, path)?;
-                Self::with_connection(rusqlite::Connection::open(path)?, Some(path.to_path_buf()))
+                if crate::persistence::remove_file(crate::persistence::SurfaceWrite::Sqlite, path)
+                    .is_err()
+                {
+                    return Self::open_in_memory();
+                }
+                let Ok(connection) = rusqlite::Connection::open(path) else {
+                    return Self::open_in_memory();
+                };
+                Self::with_connection(connection, Some(path.to_path_buf()))
+                    .or_else(|_| Self::open_in_memory())
             }
         }
     }

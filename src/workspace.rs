@@ -26,7 +26,10 @@ use crate::{
 pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
     crate::surface::SurfaceValue::new("repo-config:auto-git-tree", "*"),
     crate::surface::SurfaceValue::new("overlay:repo.car", "*"),
+    crate::surface::SurfaceValue::new("overlay:repo.car.damaged-*", "*"),
+    crate::surface::SurfaceValue::new("overlay:repo.repair", "*"),
     crate::surface::SurfaceValue::new("overlay:HEAD", "*"),
+    crate::surface::SurfaceValue::new("overlay:HEAD.tmp", "*"),
     crate::surface::SurfaceValue::new("overlay:LOCK", "*"),
 ];
 
@@ -354,7 +357,7 @@ impl Workspace {
         // Now the stores can be writable, which is also where `.kan/` comes
         // into existence.
         self.log = Log::open_or_create(&kan_dir.join("log"), &identity).await?;
-        self.overlay = Log::open_or_create(&kan_dir.join("overlay"), &identity).await?;
+        self.overlay = Log::open_or_create_overlay(&kan_dir.join("overlay"), &identity).await?;
         self.index = Index::open(&kan_dir.join("index.sqlite"))?;
         self.published =
             ingest_published(&self.root, &identity, &self.log, &mut self.overlay).await?;
@@ -400,7 +403,7 @@ impl Workspace {
                 crate::persistence::SurfaceWrite::Overlay,
                 &overlay_dir,
             )?;
-            self.overlay = Log::open_or_create(&overlay_dir, &identity).await?;
+            self.overlay = Log::open_or_create_overlay(&overlay_dir, &identity).await?;
             self.published =
                 ingest_published(&self.root, &identity, &self.log, &mut self.overlay).await?;
 
@@ -459,7 +462,7 @@ impl Workspace {
         let git = GitSubstrate::open(&root)?;
 
         let mut log = Log::open_read_only(&kan_dir.join("log")).await?;
-        let mut overlay = Log::open_read_only(&kan_dir.join("overlay")).await?;
+        let mut overlay = Log::open_overlay_read_only(&kan_dir.join("overlay")).await?;
 
         // A workspace that does not exist gets a projection that does not
         // touch disk. Where `.kan/` *is* present, the index file is fair game
@@ -606,7 +609,7 @@ impl Workspace {
                 &overlay_dir,
             )?;
         }
-        self.overlay = Log::open_or_create(&overlay_dir, identity).await?;
+        self.overlay = Log::open_or_create_overlay(&overlay_dir, identity).await?;
         self.published =
             ingest_published(&self.root, identity, &self.log, &mut self.overlay).await?;
         self.reproject().await

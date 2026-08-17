@@ -2,6 +2,7 @@
 //!
 //! See `docs/SPEC.md` (authoritative) and `docs/HANDOFF.md` (orientation).
 #![deny(clippy::disallowed_methods)]
+#![deny(clippy::disallowed_types)]
 
 pub mod actions;
 pub mod at_claim;
