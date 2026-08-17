@@ -55,7 +55,7 @@ recovery.
   or `stale` (in `.claims/`, but the log holds newer live claims not yet
   published) — computed by comparing the fold's live claims per subject
   against `git_tree::published_subjects` (`src/transport/git_tree.rs:1696`).
-  It surfaces in both `actions::status` (`src/actions.rs:2315`) and
+  It surfaces in both `actions::status` (`src/actions.rs:2140`) and
   `actions::status_json` (`src/actions.rs::status_json`). This is the kan-native move:
   make the gap **data**, a column, not a nag or a hook — the same shape as
   `context`'s omission reporting, the tool refusing to let a partial picture
@@ -184,7 +184,7 @@ and REQ-4 is where the two passes meet. REQ-7 extends the version-gap honesty
 that already exists per-record (`RecordHeader.v` vs `FORMAT_VERSION`) to the
 whole-log restore loop so one future-versioned record cannot abort the restore.
 
-**The durability column (REQ-5).** `actions::status` (`src/actions.rs:2315`)
+**The durability column (REQ-5).** `actions::status` (`src/actions.rs:2140`)
 already folds live claims per subject and already has the machinery to compare
 against `.claims/`: `git_tree::published_subjects` (`src/transport/git_tree.rs:1696`)
 returns the published set. The state is a pure comparison — live-claim CIDs per

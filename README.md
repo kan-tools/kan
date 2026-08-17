@@ -33,6 +33,37 @@ The first write mints this repo's signing identity (see
 claim, and reading a repo that has none leaves it untouched. To let an agent
 use kan over MCP instead of the CLI, run `kan mcp install`.
 
+## Machine-readable orientation
+
+Programs usually do not need every claim body merely to learn what a workspace
+contains. Use a manifest-then-hydrate read:
+
+```sh
+kan status --json                              # compact subject manifest
+kan show --json --subject login-bug            # hydrate exact subjects
+kan show --json --subject one --subject two
+kan show --json --prefix telos/                 # hydrate visible prefixes
+kan show --all --json                           # complete live claim graph
+```
+
+`status --json` includes body-free claim counts, kind counts, the deterministic
+fold head, and revisions for every visible merge class. The envelope revision
+is scoped to the returned trust frame; a narrative-only append changes it even
+when settled status does not. Revisions hash visible CIDs and naming only.
+Excluded CIDs and wholly excluded subject names never enter them, while
+`excluded_by_trust` still says when the view is partial.
+
+Selected `show` accepts repeatable exact names and prefixes, opens and folds the
+workspace once, and returns full `ShowJson` entries. Exact names match trusted
+`SameAs` aliases; overlapping selectors return a merge class once; inbound
+edges from unselected subjects remain present. `visible_subjects` and
+`matched_subjects` make a successful zero-match response explicit.
+
+Use `show --all --json` when the consumer genuinely needs the complete live
+graph. It retains the complete, all-or-nothing ADR-71/ADR-81 contract. `context`
+answers a different question: it is ranked and token-budgeted, so it is useful
+for filling a model window but is deliberately not an inventory.
+
 ## Why
 
 AI coding agents forget everything between sessions, and coordinating several of

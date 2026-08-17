@@ -222,6 +222,26 @@ pub enum Command {
     Show {
         /// Omit when using `--all`.
         subject: Option<String>,
+        /// Exact visible subject names to hydrate. Repeat for several.
+        ///
+        /// This flag selects the bulk JSON envelope; the existing positional
+        /// `kan show <subject> --json` keeps its single-subject shape.
+        #[arg(
+            long = "subject",
+            value_name = "SUBJECT",
+            requires = "json",
+            conflicts_with_all = ["subject", "all"]
+        )]
+        selected_subjects: Vec<String>,
+        /// Visible folded subject-name prefixes to hydrate. Repeat for
+        /// several and combine with `--subject` when useful.
+        #[arg(
+            long = "prefix",
+            value_name = "PREFIX",
+            requires = "json",
+            conflicts_with_all = ["subject", "all"]
+        )]
+        prefixes: Vec<String>,
         /// Every subject's live claims, from one invocation.
         ///
         /// A program reading the whole claim graph otherwise pays one process
@@ -1350,14 +1370,20 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
         },
         Command::Show {
             subject,
+            selected_subjects,
+            prefixes,
             all,
             json,
             trust,
         } => {
             let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
             let empty_reason = empty_reason.as_deref();
-            match (all, subject) {
-                (true, _) if !json => {
+            match (
+                all,
+                subject,
+                selected_subjects.is_empty() && prefixes.is_empty(),
+            ) {
+                (true, _, _) if !json => {
                     return Err(actions::Error::Usage(
                         "`kan show --all` needs `--json`. It exists for programs reading the \
                          whole claim graph in one invocation; the rendered form is for \
@@ -1367,8 +1393,18 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
                     )
                     .into())
                 }
-                (true, _) => print!("{}", actions::show_all_json(ws, &trust, empty_reason)?),
-                (false, None) => {
+                (true, _, _) => print!("{}", actions::show_all_json(ws, &trust, empty_reason)?),
+                (false, _, false) => print!(
+                    "{}",
+                    actions::show_selected_json(
+                        ws,
+                        &selected_subjects,
+                        &prefixes,
+                        &trust,
+                        empty_reason,
+                    )?
+                ),
+                (false, None, true) => {
                     return Err(actions::Error::Usage(
                         "give a subject to show (`kan show <subject>`), or `--all --json` for \
                          every subject at once"
@@ -1376,7 +1412,7 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
                     )
                     .into())
                 }
-                (false, Some(subject)) => print!(
+                (false, Some(subject), true) => print!(
                     "{}",
                     if json {
                         actions::show_json(ws, &subject, &trust, empty_reason)?

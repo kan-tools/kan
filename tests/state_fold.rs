@@ -15,7 +15,7 @@ use kan::{
     },
     fold::{self, state::StateView, TrustBase},
     git::GitSubstrate,
-    relations,
+    relations::{self, RelationProvider},
     sign::Identity,
     store::log::Log,
 };
@@ -306,7 +306,7 @@ fn ac10_git_ancestry_orders_claims_with_zero_attested_cites() {
     let claims = vec![earlier, later.clone()];
 
     let substrate = GitSubstrate::open(dir.path()).unwrap();
-    let edges = relations::compute_default(&claims, &substrate);
+    let edges = relations::GitAncestry.relations(&claims, &substrate);
     assert!(
         edges
             .iter()
@@ -325,6 +325,53 @@ fn ac10_git_ancestry_orders_claims_with_zero_attested_cites() {
         }
         other => panic!("expected Settled via computed GitAncestry edge, got {other:?}"),
     }
+}
+
+#[test]
+fn demand_driven_classification_matches_eager_edges_for_three_positions() {
+    let dir = tempfile::tempdir().unwrap();
+    git(dir.path(), &["init", "-q"]);
+    let mut claims = Vec::new();
+    for (index, value) in [
+        StatusValue::Blocked,
+        StatusValue::Resolved,
+        StatusValue::Open,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        git(
+            dir.path(),
+            &[
+                "-c",
+                "user.email=kan-test@example.com",
+                "-c",
+                "user.name=kan-test",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                &format!("position-{index}"),
+            ],
+        );
+        let sha = git(dir.path(), &["rev-parse", "HEAD"]);
+        claims.push(status_claim(
+            &author(&format!("did:key:{index}"), None),
+            "issue-1",
+            value,
+            vec![],
+            vec![ArtifactRef::Commit(sha)],
+        ));
+    }
+
+    let substrate = GitSubstrate::open(dir.path()).unwrap();
+    let eager_edges = relations::GitAncestry.relations(&claims, &substrate);
+    let eager = fold::state::classify(&claims, &eager_edges);
+    let lazy = fold::state::classify_with(&claims, |live| {
+        assert_eq!(live.len(), 3);
+        relations::GitAncestry.relations(live, &substrate)
+    });
+    assert_eq!(lazy, eager);
 }
 
 /// Genesis is a pure function of the repo's history — computed twice on the

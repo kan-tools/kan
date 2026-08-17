@@ -326,6 +326,7 @@ exit: ok
 --- stdout ---
 {
   "v": 1,
+  "revision": "<REVISION-0>",
   "subjects": [
     {
       "subject": "overlap",
@@ -333,6 +334,16 @@ exit: ok
         "overlap"
       ],
       "state": "Unclassified",
+      "claim_count": 2,
+      "kind_counts": {
+        "Observation": 2
+      },
+      "head": {
+        "cid": "<CID-5>",
+        "kind": "Observation",
+        "recorded_at": <MICROS>
+      },
+      "revision": "<REVISION-1>",
       "excluded_by_trust": 0,
       "durability": "stale"
     },
@@ -342,6 +353,18 @@ exit: ok
         "shared"
       ],
       "state": "Unclassified",
+      "claim_count": 4,
+      "kind_counts": {
+        "Observation": 2,
+        "Publication": 1,
+        "Subject": 1
+      },
+      "head": {
+        "cid": "<CID-3>",
+        "kind": "Publication",
+        "recorded_at": <MICROS>
+      },
+      "revision": "<REVISION-2>",
       "excluded_by_trust": 0,
       "durability": "published"
     }

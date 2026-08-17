@@ -71,12 +71,27 @@ pub fn value_of(claim: &Claim) -> StatusValue {
     }
 }
 
-/// `class_claims` must already be trust-filtered and chronologically
-/// ordered (oldest first) — exactly what `fold::fold`'s
-/// `SubjectView.claims` provides. `computed_edges` should cover (or at
-/// least include) these same claims' CIDs; edges elsewhere simply never
-/// match anything.
+/// Classify with an already-computed edge set. This remains the reference
+/// entry point for callers and tests that already have enrichment in hand;
+/// production Git-backed reads use [`classify_with`] so unused ancestry is
+/// never computed.
 pub fn classify(class_claims: &[(Cid, Claim)], computed_edges: &[ComputedEdge]) -> StateView {
+    classify_with(class_claims, |_| computed_edges.to_vec())
+}
+
+/// Classify while obtaining computed edges only if live positions disagree.
+///
+/// `class_claims` must already be trust-filtered and chronologically ordered
+/// (oldest first), exactly what `fold::fold`'s `SubjectView.claims` provides.
+/// The callback receives only the latest live Status position per author and
+/// is not invoked for no status, one position, or an all-agreeing set. That
+/// call boundary is the structural guarantee behind kan#202: a caller cannot
+/// accidentally compute Git ancestry before the fold knows it will consume
+/// an `Ancestry` edge.
+pub fn classify_with<F>(class_claims: &[(Cid, Claim)], computed_edges: F) -> StateView
+where
+    F: FnOnce(&[(Cid, Claim)]) -> Vec<ComputedEdge>,
+{
     let status_claims = class_claims
         .iter()
         .filter(|(_, claim)| claim.content.body.kind() == ClaimKind::Status);
@@ -123,7 +138,8 @@ pub fn classify(class_claims: &[(Cid, Claim)], computed_edges: &[ComputedEdge]) 
     // edge or a computed `Ancestry` edge to another live position — the
     // "computably-ordered" tier. What's left is the genuinely contested,
     // incomparable remainder.
-    let dominated = dominated_cids(&live, computed_edges);
+    let computed_edges = computed_edges(&live);
+    let dominated = dominated_cids(&live, &computed_edges);
     let (resolved, open): (Vec<_>, Vec<_>) = live
         .into_iter()
         .partition(|(cid, _)| dominated.contains(cid));

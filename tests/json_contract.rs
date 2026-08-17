@@ -21,7 +21,7 @@
 use kan::{
     claim::{
         Anchor, AuthorId, ClaimBody, ClaimContent, Layer, RelationKind, Rkey, StatusValue,
-        SubjectRef,
+        SubjectKind, SubjectRef,
     },
     json,
 };
@@ -211,6 +211,195 @@ fn the_schema_version_is_pinned() {
     );
 }
 
+/// kan#232: revision bytes are a public cache/fingerprint contract, not merely
+/// "some stable hash." Pinning a vector makes changes to domains, framing,
+/// CID encoding, trust-frame encoding, or alias ordering deliberate.
+#[test]
+fn manifest_revision_vectors_are_pinned() {
+    let first = claim(
+        "alpha",
+        ClaimBody::Observation {
+            text: "first".to_string(),
+        },
+    );
+    let second = claim(
+        "alias",
+        ClaimBody::Decision {
+            text: "second".to_string(),
+        },
+    );
+    let class = kan::fold::SubjectView {
+        subjects: vec![
+            SubjectRef::Local(Rkey::from("alpha")),
+            SubjectRef::Local(Rkey::from("alias")),
+        ],
+        claims: vec![first, second],
+        flagged_oversized: false,
+        witnesses: vec![],
+    };
+    let view = kan::fold::FoldedView {
+        classes: vec![class.clone()],
+    };
+    let trust = kan::fold::TrustBase::solo(author());
+
+    assert_eq!(
+        json::subject_revision(&class),
+        "sha256:2746326cb8d6464b62a79b5544656e3f76d742c9a3ebd376dca40de8bdf51ce1"
+    );
+    assert_eq!(
+        json::view_revision(&view, &trust),
+        "sha256:3facbb5643e6881665517810994d44787dc39f4439a378c790c5e41268e2b101"
+    );
+    assert_ne!(
+        json::subject_revision(&class),
+        json::view_revision(&view, &trust),
+        "subject and view domains must not collide"
+    );
+}
+
+#[test]
+fn manifest_revision_vector_pins_legacy_agents_author_order_and_weights() {
+    let class = kan::fold::SubjectView {
+        subjects: vec![SubjectRef::Local(Rkey::from("alpha"))],
+        claims: vec![claim(
+            "alpha",
+            ClaimBody::Observation {
+                text: "visible".to_string(),
+            },
+        )],
+        flagged_oversized: false,
+        witnesses: vec![],
+    };
+    let view = kan::fold::FoldedView {
+        classes: vec![class],
+    };
+    let trust = kan::fold::TrustBase::peer_contested(std::collections::HashMap::from([
+        (
+            AuthorId {
+                did: "did:key:zB".to_string(),
+                agent: None,
+            },
+            1.0,
+        ),
+        (
+            AuthorId {
+                did: "did:key:zA".to_string(),
+                agent: Some(vec![0x01, 0x02]),
+            },
+            0.25,
+        ),
+        (
+            AuthorId {
+                did: "did:key:zA".to_string(),
+                agent: None,
+            },
+            0.5,
+        ),
+    ]));
+
+    assert_eq!(
+        json::view_revision(&view, &trust),
+        "sha256:0499b0677187466c817e037f5c44201eaa7aaa30c433a71a72ae992700eb6103"
+    );
+}
+
+#[test]
+fn manifest_counts_unknown_and_corrective_kinds_without_bodies() {
+    let observation = claim(
+        "s",
+        ClaimBody::Observation {
+            text: "body must not enter the manifest".to_string(),
+        },
+    );
+    let absent_target = claim(
+        "elsewhere",
+        ClaimBody::Observation {
+            text: "not in the live class".to_string(),
+        },
+    )
+    .0;
+    let status = claim(
+        "s",
+        ClaimBody::Status {
+            value: StatusValue::Blocked,
+        },
+    );
+    let relation = claim(
+        "s",
+        ClaimBody::Relation {
+            kind: RelationKind::About,
+            target: SubjectRef::Local(Rkey::from("target")),
+        },
+    );
+    let retraction = claim(
+        "s",
+        ClaimBody::Retraction {
+            supersedes: absent_target.clone(),
+        },
+    );
+    let rejection = claim(
+        "s",
+        ClaimBody::Rejects {
+            claim: absent_target,
+        },
+    );
+    let subject = claim(
+        "s",
+        ClaimBody::Subject {
+            title: "A title that must not enter the manifest".to_string(),
+            subject_kind: SubjectKind::Issue,
+        },
+    );
+    let unknown = claim(
+        "s",
+        ClaimBody::Unknown {
+            kind: "dev.kan.claim.future".to_string(),
+            raw: vec![0xa0],
+        },
+    );
+    let class = kan::fold::SubjectView {
+        subjects: vec![SubjectRef::Local(Rkey::from("s"))],
+        claims: vec![
+            observation,
+            status,
+            relation,
+            retraction,
+            rejection,
+            subject,
+            unknown,
+        ],
+        flagged_oversized: false,
+        witnesses: vec![],
+    };
+    let excluded = json::ExcludedByTrust::new(Default::default());
+    let state = kan::fold::state::classify(&class.claims, &[]);
+    let entry = serde_json::to_value(json::status_entry(
+        &class,
+        &state,
+        &excluded,
+        kan::actions::Durability::Unpublished,
+    ))
+    .unwrap();
+
+    assert_eq!(entry["claim_count"], 7);
+    assert_eq!(entry["kind_counts"]["Observation"], 1);
+    assert_eq!(entry["kind_counts"]["Status"], 1);
+    assert_eq!(entry["kind_counts"]["Relation"], 1);
+    assert_eq!(entry["kind_counts"]["Retraction"], 1);
+    assert_eq!(entry["kind_counts"]["Rejects"], 1);
+    assert_eq!(entry["kind_counts"]["Subject"], 1);
+    assert_eq!(entry["kind_counts"]["Unknown"], 1);
+    assert_eq!(entry["head"]["kind"], "Unknown");
+    assert!(
+        !entry.to_string().contains("body must not enter"),
+        "manifest serialized narrative text: {entry}"
+    );
+    assert!(
+        !entry.to_string().contains("A title that must not enter"),
+        "manifest serialized a Subject body: {entry}"
+    );
+}
+
 /// AC-5's second half: a claim kind this build does not recognize still
 /// **serializes** rather than aborting the whole payload.
 ///
@@ -265,6 +454,14 @@ fn every_payload_envelope_is_pinned() {
         state: "Settled".to_string(),
         value: None,
         cid: None,
+        claim_count: 1,
+        kind_counts: std::collections::BTreeMap::from([("Observation".to_string(), 1)]),
+        head: json::HeadJson {
+            cid: "bafyhead".to_string(),
+            kind: "Observation".to_string(),
+            recorded_at: None,
+        },
+        revision: "sha256:subject".to_string(),
         excluded_by_trust: 0,
         durability: "unpublished".to_string(),
     })
@@ -275,6 +472,10 @@ fn every_payload_envelope_is_pinned() {
             "subject",
             "subjects",
             "state",
+            "claim_count",
+            "kind_counts",
+            "head",
+            "revision",
             "excluded_by_trust",
             "durability",
         ],
@@ -284,9 +485,12 @@ fn every_payload_envelope_is_pinned() {
     // Emitted even in the healthy state: a field that appears only on bad
     // news is indistinguishable from an older kan that never reports it.
     assert_eq!(entry["durability"], "unpublished");
+    let head_keys: Vec<String> = entry["head"].as_object().unwrap().keys().cloned().collect();
+    assert_pinned(&["cid", "kind"], &head_keys, "HeadJson");
 
     let status = serde_json::to_value(json::StatusJson {
         v: json::SCHEMA_VERSION,
+        revision: "sha256:view".to_string(),
         subjects: vec![],
         trust: trust(),
         excluded_by_trust: 0,
@@ -298,6 +502,7 @@ fn every_payload_envelope_is_pinned() {
     assert_pinned(
         &[
             "v",
+            "revision",
             "subjects",
             "trust",
             "excluded_by_trust",
@@ -392,6 +597,33 @@ fn every_payload_envelope_is_pinned() {
         ],
         &keys,
         "ShowAllJson",
+    );
+
+    let selected = serde_json::to_value(json::ShowSelectedJson {
+        v: json::SCHEMA_VERSION,
+        trust: trust(),
+        excluded_by_trust: 0,
+        published_read_error_count: 0,
+        published_read_errors: vec![],
+        visible_subjects: 3,
+        matched_subjects: 1,
+        subjects: vec![],
+    })
+    .unwrap();
+    let keys: Vec<String> = selected.as_object().unwrap().keys().cloned().collect();
+    assert_pinned(
+        &[
+            "v",
+            "trust",
+            "excluded_by_trust",
+            "published_read_error_count",
+            "published_read_errors",
+            "visible_subjects",
+            "matched_subjects",
+            "subjects",
+        ],
+        &keys,
+        "ShowSelectedJson",
     );
 
     let diagnostic = serde_json::to_value(json::PublishedReadErrorJson {
