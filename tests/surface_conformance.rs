@@ -155,6 +155,39 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/transport/git_tree.rs",
     "src/workspace.rs",
 ];
+const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    ("src/actions.rs", "create_dir_all", "Container", 1),
+    ("src/actions.rs", "remove_file", "IdentityKeyMaterial", 1),
+    ("src/actions.rs", "remove_file", "IdentityPointer", 2),
+    ("src/actions.rs", "rename", "IdentityBackup", 2),
+    ("src/sign.rs", "create_dir_all", "Container", 1),
+    ("src/sign.rs", "create_dir_all", "IdentityKeyMaterial", 2),
+    ("src/sign.rs", "create_dir_all", "IdentitySeed", 1),
+    ("src/sign.rs", "remove_file", "IdentityPointer", 1),
+    ("src/sign.rs", "set_permissions", "IdentityKeyMaterial", 1),
+    ("src/sign.rs", "write", "IdentityKeyMaterial", 1),
+    ("src/sign.rs", "write", "IdentityPointer", 1),
+    ("src/sign.rs", "write", "IdentitySeed", 1),
+    ("src/store/index.rs", "create_dir_all", "Sqlite", 1),
+    ("src/store/index.rs", "remove_file", "Sqlite", 2),
+    ("src/store/log.rs", "copy_async", "LocalLogDamaged", 1),
+    ("src/store/log.rs", "create_dir_all_async", "LocalLogCar", 1),
+    (
+        "src/store/log.rs",
+        "create_file_async",
+        "LocalLogHeadTemp",
+        1,
+    ),
+    ("src/store/log.rs", "create_file_async", "LocalLogRepair", 1),
+    ("src/store/log.rs", "open_append_async", "LocalLogCar", 1),
+    ("src/store/log.rs", "open_lock_file", "LocalLogLock", 1),
+    ("src/store/log.rs", "rename_async", "LocalLogCar", 1),
+    ("src/store/log.rs", "rename_async", "LocalLogHead", 1),
+    ("src/transport/git_tree.rs", "create_dir_all", "GitTree", 1),
+    ("src/transport/git_tree.rs", "remove_file", "GitTree", 1),
+    ("src/transport/git_tree.rs", "write", "GitTree", 1),
+    ("src/workspace.rs", "remove_dir_all", "Overlay", 2),
+];
 
 #[derive(Debug)]
 struct Row<'a> {
@@ -554,6 +587,116 @@ fn every_filesystem_mutation_names_its_catalog_surface_at_the_call_site() {
 }
 
 #[test]
+fn every_persistence_facade_call_is_independently_inventoried() {
+    fn calls(source: &str) -> Vec<(String, String)> {
+        let prefix = "crate::persistence::";
+        let mut out = Vec::new();
+        let mut cursor = 0;
+        while let Some(relative) = source[cursor..].find(prefix) {
+            let start = cursor + relative;
+            let suffix = &source[start + prefix.len()..];
+            if suffix.starts_with("SurfaceWrite::") {
+                cursor = start + prefix.len();
+                continue;
+            }
+            let function: String = suffix
+                .chars()
+                .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+                .collect();
+            let rest = &suffix[function.len()..];
+            assert!(
+                !function.is_empty() && rest.starts_with('('),
+                "persistence facade must be called directly, never imported, aliased, or stored: {}",
+                &source[start..source.len().min(start + 120)]
+            );
+
+            let mut depth = 0usize;
+            let mut quoted = false;
+            let mut escaped = false;
+            let mut end = None;
+            for (index, ch) in rest.char_indices() {
+                if quoted {
+                    if escaped {
+                        escaped = false;
+                    } else if ch == '\\' {
+                        escaped = true;
+                    } else if ch == '"' {
+                        quoted = false;
+                    }
+                    continue;
+                }
+                match ch {
+                    '"' => quoted = true,
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = Some(index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let end = end.expect("unterminated persistence facade call");
+            let arguments = &rest[..=end];
+            let marker = "SurfaceWrite::";
+            let capability_start = arguments.find(marker).unwrap_or_else(|| {
+                panic!("{function} call has no literal SurfaceWrite capability")
+            }) + marker.len();
+            let capability: String = arguments[capability_start..]
+                .chars()
+                .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+                .collect();
+            assert!(!capability.is_empty(), "{function} has an empty capability");
+            let function_len = function.len();
+            out.push((function, capability));
+            cursor = start + prefix.len() + function_len + end + 1;
+        }
+        out
+    }
+
+    let expected: BTreeMap<_, _> = PERSISTENCE_MUTATION_SITES
+        .iter()
+        .map(|(module, function, capability, count)| {
+            (
+                (
+                    module.to_string(),
+                    function.to_string(),
+                    capability.to_string(),
+                ),
+                *count,
+            )
+        })
+        .collect();
+    let mut actual = BTreeMap::new();
+    for module in PERSISTENCE_MODULES {
+        if *module == "src/persistence.rs" {
+            continue;
+        }
+        let source = std::fs::read_to_string(module).unwrap();
+        for line in source
+            .lines()
+            .filter(|line| line.trim_start().starts_with("use "))
+        {
+            assert!(
+                !line.contains("persistence"),
+                "{module} imports the persistence facade; call it fully qualified so the mutation inventory remains complete: {line}"
+            );
+        }
+        for (function, capability) in calls(&source) {
+            *actual
+                .entry((module.to_string(), function, capability))
+                .or_insert(0usize) += 1;
+        }
+    }
+    assert_eq!(
+        actual, expected,
+        "persistence facade call inventory changed; classify every new or removed mutation site explicitly"
+    );
+}
+
+#[test]
 fn compiler_resolves_filesystem_aliases_to_the_single_mutation_facade() {
     let policy = std::fs::read_to_string("clippy.toml").unwrap();
     for method in [
@@ -566,6 +709,8 @@ fn compiler_resolves_filesystem_aliases_to_the_single_mutation_facade() {
         "std::fs::remove_dir_all",
         "std::fs::set_permissions",
         "std::fs::File::create",
+        "std::fs::File::create_new",
+        "std::fs::File::options",
         "std::fs::OpenOptions::open",
         "tokio::fs::create_dir_all",
         "tokio::fs::write",
@@ -576,6 +721,7 @@ fn compiler_resolves_filesystem_aliases_to_the_single_mutation_facade() {
         "tokio::fs::remove_dir",
         "tokio::fs::hard_link",
         "tokio::fs::File::create",
+        "tokio::fs::File::options",
         "tokio::fs::OpenOptions::open",
     ] {
         assert!(policy.contains(method), "compiler policy omits `{method}`");
@@ -590,11 +736,18 @@ fn compiler_resolves_filesystem_aliases_to_the_single_mutation_facade() {
         .filter(|row| row.status == "implemented")
         .map(|row| row.artifact)
         .collect();
-    for artifact in kan::persistence::SurfaceWrite::ALL_ARTIFACTS {
-        assert!(
-            catalog_artifacts.contains(artifact),
-            "typed persistence capability cites uncataloged artifact `{artifact}`"
-        );
+    assert_eq!(
+        kan::persistence::SurfaceWrite::ALL.len(),
+        kan::persistence::SurfaceWrite::Count as usize,
+        "SurfaceWrite variant omitted from the exhaustive capability inventory"
+    );
+    for capability in kan::persistence::SurfaceWrite::ALL {
+        for artifact in capability.artifacts() {
+            assert!(
+                *artifact == "container:workspace" || catalog_artifacts.contains(artifact),
+                "typed persistence capability cites uncataloged artifact `{artifact}`"
+            );
+        }
     }
 }
 
@@ -923,6 +1076,44 @@ fn production_workspace_recreates_a_malformed_projection_schema() {
 }
 
 #[test]
+fn production_workspace_bypasses_an_unopenable_projection_path() {
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let write = run_kan(
+        repo.path(),
+        &["observe", "unopenable-index", "authoritative"],
+    );
+    assert!(write.status.success());
+    let before = run_kan(repo.path(), &["show", "unopenable-index", "--json"]);
+    assert!(before.status.success());
+
+    let index = repo.path().join(".kan/index.sqlite");
+    std::fs::rename(&index, repo.path().join(".kan/index.sqlite.saved")).unwrap();
+    std::fs::create_dir(&index).unwrap();
+
+    let after = run_kan(repo.path(), &["show", "unopenable-index", "--json"]);
+    assert!(
+        after.status.success(),
+        "disposable projection path blocked an authoritative read: {}",
+        String::from_utf8_lossy(&after.stderr)
+    );
+    assert_eq!(before.stdout, after.stdout);
+
+    let append = run_kan(
+        repo.path(),
+        &["observe", "after-unopenable-index", "still authoritative"],
+    );
+    assert!(
+        append.status.success(),
+        "disposable projection path made an authoritative append report failure: {}",
+        String::from_utf8_lossy(&append.stderr)
+    );
+    let appended = run_kan(repo.path(), &["show", "after-unopenable-index", "--json"]);
+    assert!(appended.status.success());
+    assert!(String::from_utf8_lossy(&appended.stdout).contains("still authoritative"));
+}
+
+#[test]
 fn caller_selected_role_key_is_an_implemented_authoritative_surface() {
     let values = implemented_values();
     assert!(values.contains(&(
@@ -934,13 +1125,13 @@ fn caller_selected_role_key_is_an_implemented_authoritative_surface() {
         .find(|row| row.artifact == "identity:role-key-path")
         .unwrap();
     assert_eq!(row.reader, "crate::sign");
-    assert_eq!(row.rule, "validate:identity-at-rest");
+    assert_eq!(row.rule, "validate:role-key");
     let default_row = rows()
         .into_iter()
         .find(|row| row.artifact == "identity:roles.d")
         .unwrap();
     assert_eq!(default_row.reader, "crate::sign");
-    assert_eq!(default_row.rule, "validate:identity-at-rest");
+    assert_eq!(default_row.rule, "validate:role-key");
 
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());

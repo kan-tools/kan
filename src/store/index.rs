@@ -146,7 +146,18 @@ impl Index {
             // surface-write: sqlite:meta
             crate::persistence::create_dir_all(crate::persistence::SurfaceWrite::Sqlite, parent)?;
         }
-        let connection = rusqlite::Connection::open(path)?;
+        let connection = match rusqlite::Connection::open(path) {
+            Ok(connection) => connection,
+            Err(_) => {
+                // The projection path itself can be unusable even while the
+                // authoritative log is intact: a directory, broken symlink,
+                // or permissions failure prevents SQLite from opening a file.
+                // Do not delete an object we could not identify safely. Read
+                // through a recomputed in-memory projection instead; a later
+                // open can return to the file once the path is usable again.
+                return Self::open_in_memory();
+            }
+        };
         match Self::with_connection(connection, Some(path.to_path_buf())) {
             Ok(index) => Ok(index),
             Err(_) => {

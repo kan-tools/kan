@@ -9,6 +9,7 @@
 use std::path::Path;
 
 #[derive(Clone, Copy, Debug)]
+#[repr(u8)]
 pub enum SurfaceWrite {
     Container,
     IdentityKeyMaterial,
@@ -24,29 +25,58 @@ pub enum SurfaceWrite {
     GitTree,
     Overlay,
     Sqlite,
+    Count,
 }
 
 impl SurfaceWrite {
-    pub const ALL_ARTIFACTS: &'static [&'static str] = &[
-        "identity:identity",
-        "identity:roles.d",
-        "identity:role-key-path",
-        "identity:seed-id",
-        "identity:identity-id",
-        "identity:seed",
-        "identity:seed.replaced-*",
-        "identity:seed.protected-*",
-        "identity:identity.protected-*",
-        "local-log:repo.car",
-        "local-log:repo.car.damaged-*",
-        "local-log:repo.repair",
-        "local-log:HEAD",
-        "local-log:HEAD.tmp",
-        "local-log:LOCK",
-        "git-tree:.claims",
-        "overlay:repo.car",
-        "sqlite:meta",
+    pub const ALL: &'static [Self] = &[
+        Self::Container,
+        Self::IdentityKeyMaterial,
+        Self::IdentityPointer,
+        Self::IdentitySeed,
+        Self::IdentityBackup,
+        Self::LocalLogCar,
+        Self::LocalLogDamaged,
+        Self::LocalLogRepair,
+        Self::LocalLogHead,
+        Self::LocalLogHeadTemp,
+        Self::LocalLogLock,
+        Self::GitTree,
+        Self::Overlay,
+        Self::Sqlite,
     ];
+
+    /// Catalog artifacts a capability is permitted to mutate. This match is
+    /// compiler-exhaustive; `Count` makes omission from `ALL` mechanically
+    /// visible as well. The conformance suite binds both sides to the catalog.
+    pub const fn artifacts(self) -> &'static [&'static str] {
+        match self {
+            Self::Container => &["container:workspace"],
+            Self::IdentityKeyMaterial => &[
+                "identity:identity",
+                "identity:roles.d",
+                "identity:role-key-path",
+                "identity:seed",
+            ],
+            Self::IdentityPointer => &["identity:seed-id", "identity:identity-id"],
+            Self::IdentitySeed => &["identity:seed"],
+            Self::IdentityBackup => &[
+                "identity:seed.replaced-*",
+                "identity:seed.protected-*",
+                "identity:identity.protected-*",
+            ],
+            Self::LocalLogCar => &["local-log:repo.car"],
+            Self::LocalLogDamaged => &["local-log:repo.car.damaged-*"],
+            Self::LocalLogRepair => &["local-log:repo.repair"],
+            Self::LocalLogHead => &["local-log:HEAD"],
+            Self::LocalLogHeadTemp => &["local-log:HEAD.tmp"],
+            Self::LocalLogLock => &["local-log:LOCK"],
+            Self::GitTree => &["git-tree:.claims"],
+            Self::Overlay => &["overlay:repo.car", "overlay:HEAD", "overlay:LOCK"],
+            Self::Sqlite => &["sqlite:meta"],
+            Self::Count => &[],
+        }
+    }
 }
 
 pub fn create_dir_all(_surface: SurfaceWrite, path: &Path) -> std::io::Result<()> {
