@@ -1312,10 +1312,19 @@ and reconciliation payloads, proof authorization against every exact parent,
 proof-set collapse by logical event identifier, and order-independent
 resolution of linear history, forks, reconciliations, orphans, authenticated
 missing history, invalid evidence, and authenticated unsupported extensions.
+`src/identity/capability.rs` implements validated capability values and
+canonical delegation and revocation producers with static P-256 `did:key`
+authorization. Its pure path evaluator enforces one named head, strict
+single-parent attenuation, active-root anchoring, governance ancestry,
+segment-aware subject coverage, inclusive time bounds, and revocation of a
+delegation or any descendant. It preserves unavailable trusted time as a
+separate revocation and admission result instead of guessing from an asserted
+claim timestamp.
 
 The complete reference-vector manifest, Ed25519, external/recursive DID
-controller resolution, delegation, modern authorship, system identity state,
-persistence, and default-write cutover remain unimplemented. Issue #244's
-operation-wire and absent-removal ambiguities are closed by the normative typed
-schema above and its pinned implementation vector. This status is therefore an
-implementation checkpoint, not a claim that RFC 1 is shipped.
+controller resolution, lossless capability-evidence resolution, modern
+authorship, system identity state, persistence, and default-write cutover remain
+unimplemented. Issue #244's operation-wire and absent-removal ambiguities are
+closed by the normative typed schema above and its pinned implementation
+vector. This status is therefore an implementation checkpoint, not a claim that
+RFC 1 is shipped.

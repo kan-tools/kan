@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{claim::Claim, fold::TrustBase};
 
+pub mod capability;
 pub mod control;
 pub mod did_kan;
 pub mod did_kan_state;

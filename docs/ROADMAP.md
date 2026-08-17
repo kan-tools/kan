@@ -61,8 +61,12 @@ requires a valid static P-256 `did:key` proof from a listed governance root.
 events and resolves unordered evidence deterministically: proof variants share
 one logical event, sibling leaves are contested, reconciliation requires
 authorization at every parent, and missing history remains distinct from
-invalid or unsupported evidence. Persistence/write integration remains
-pending.
+invalid or unsupported evidence. `src/identity/capability.rs` now adds validated
+capability values, canonical delegation and revocation producers, static P-256
+`did:key` authorization, strict single-parent attenuation, current-root and
+governance-ancestry checks, and deterministic path evaluation across scope,
+trusted-time, and ancestor-revocation boundaries. Raw evidence resolution,
+persistence, and write integration remain pending.
 
 ## Later public-protocol track: RFC 3
 
