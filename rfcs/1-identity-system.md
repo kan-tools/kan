@@ -1273,9 +1273,14 @@ decoding that preserves unsupported event and proof fields without narrowing
 their bytes or identifiers. `src/identity/did_kan.rs` implements validated
 genesis payload production, canonical identifier derivation, a pinned initial
 identifier vector, and the offline listed-recovery-controller proof gate.
+`src/identity/did_kan_state.rs` implements the wire-independent state projection
+and ordered administration transitions, including canonical collection output,
+recovery-authority immutability, and duplicate/final-invariant checks.
 
-The complete reference-vector manifest, Ed25519, `did:kan` updates and
+The complete reference-vector manifest, Ed25519, signed `did:kan` updates and
 resolution, repository inception and governance, delegation, modern authorship,
-system identity state, and default-write cutover remain unimplemented. This
-status is therefore an implementation checkpoint, not a claim that RFC 1 is
-shipped.
+system identity state, and default-write cutover remain unimplemented. Signed
+update work is blocked on issue #244: this RFC closes the v1 operation set but
+does not yet define each operation's canonical DAG-CBOR form or the validity of
+removing an absent target. This status is therefore an implementation
+checkpoint, not a claim that RFC 1 is shipped.

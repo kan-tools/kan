@@ -125,37 +125,12 @@ impl DidKanGenesis {
             "verificationMethods",
         )?;
         for method in &self.verification_methods {
-            validate_did_url(&method.id)?;
-            validate_did(&method.controller)?;
-            match method.alg.as_str() {
-                "Ed25519" if method.public_key.len() == 32 => {}
-                "P256"
-                    if method.public_key.len() == 33
-                        && atrium_crypto::did::format_did_key(
-                            atrium_crypto::Algorithm::P256,
-                            &method.public_key,
-                        )
-                        .is_ok() => {}
-                "Ed25519" | "P256" => {
-                    return Err(Error::PublicKeyLength {
-                        alg: method.alg.clone(),
-                        found: method.public_key.len(),
-                    });
-                }
-                _ => return Err(Error::Algorithm(method.alg.clone())),
-            }
-            validate_sorted_unique_nonempty(&method.purposes, "verificationMethods.purposes")?;
+            validate_verification_method(method)?;
         }
 
         validate_key_order(self.services.iter().map(|service| &service.id), "services")?;
         for service in &self.services {
-            validate_did_url(&service.id)?;
-            if service.service_type.is_empty() {
-                return Err(Error::EmptyServiceType);
-            }
-            if service.endpoint.is_empty() {
-                return Err(Error::EmptyServiceEndpoint);
-            }
+            validate_service(service)?;
         }
         Ok(())
     }
@@ -205,7 +180,10 @@ impl DidKanGenesis {
     }
 }
 
-fn validate_sorted_unique_nonempty<T: Ord>(values: &[T], field: &'static str) -> Result<(), Error> {
+pub(super) fn validate_sorted_unique_nonempty<T: Ord>(
+    values: &[T],
+    field: &'static str,
+) -> Result<(), Error> {
     if values.is_empty() {
         return Err(Error::Empty(field));
     }
@@ -226,7 +204,10 @@ fn validate_key_order<'a>(
     Ok(())
 }
 
-fn reject_duplicates<T: Ord + Clone>(values: &[T], field: &'static str) -> Result<(), Error> {
+pub(super) fn reject_duplicates<T: Ord + Clone>(
+    values: &[T],
+    field: &'static str,
+) -> Result<(), Error> {
     let mut seen = BTreeSet::new();
     if values.iter().any(|value| !seen.insert(value.clone())) {
         return Err(Error::Duplicate(field));
@@ -245,7 +226,7 @@ fn reject_duplicate_keys<'a>(
     Ok(())
 }
 
-fn validate_did(did: &str) -> Result<(), Error> {
+pub(super) fn validate_did(did: &str) -> Result<(), Error> {
     let Some(rest) = did.strip_prefix("did:") else {
         return Err(Error::Did(did.to_string()));
     };
@@ -265,6 +246,40 @@ fn validate_did_url(url: &str) -> Result<(), Error> {
     validate_did(did)?;
     if fragment.is_empty() || fragment.contains('#') {
         return Err(Error::DidUrl(url.to_string()));
+    }
+    Ok(())
+}
+
+pub(super) fn validate_verification_method(method: &VerificationMethod) -> Result<(), Error> {
+    validate_did_url(&method.id)?;
+    validate_did(&method.controller)?;
+    match method.alg.as_str() {
+        "Ed25519" if method.public_key.len() == 32 => {}
+        "P256"
+            if method.public_key.len() == 33
+                && atrium_crypto::did::format_did_key(
+                    atrium_crypto::Algorithm::P256,
+                    &method.public_key,
+                )
+                .is_ok() => {}
+        "Ed25519" | "P256" => {
+            return Err(Error::PublicKeyLength {
+                alg: method.alg.clone(),
+                found: method.public_key.len(),
+            });
+        }
+        _ => return Err(Error::Algorithm(method.alg.clone())),
+    }
+    validate_sorted_unique_nonempty(&method.purposes, "verificationMethods.purposes")
+}
+
+pub(super) fn validate_service(service: &Service) -> Result<(), Error> {
+    validate_did_url(&service.id)?;
+    if service.service_type.is_empty() {
+        return Err(Error::EmptyServiceType);
+    }
+    if service.endpoint.is_empty() {
+        return Err(Error::EmptyServiceEndpoint);
     }
     Ok(())
 }

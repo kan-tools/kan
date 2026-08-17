@@ -46,8 +46,13 @@ purpose, and service ordering; derives the base32-lower SHA-256 multihash DID
 from canonical unsigned payload bytes; pins one deterministic identifier
 vector; and requires a valid listed recovery-controller proof. The complete
 normative vector manifest remains a gate before this becomes a persistence or
-write surface; identity updates/resolution, repository inception, governance,
-modern authorship, and write cutover also remain pending.
+write surface. `src/identity/did_kan_state.rs` now projects genesis into a full
+identity state and applies the closed administration-operation semantics in
+listed order without defining a wire representation. Signed update production
+and resolution are blocked on [#244](https://github.com/kan-tools/kan/issues/244),
+which records RFC 1's missing canonical `IdentityOperation` encoding and
+absent-removal rule. Repository inception, governance, modern authorship, and
+write cutover also remain pending.
 
 ## Later public-protocol track: RFC 3
 

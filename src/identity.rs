@@ -12,6 +12,7 @@ use crate::{claim::Claim, fold::TrustBase};
 
 pub mod control;
 pub mod did_kan;
+pub mod did_kan_state;
 
 /// Whether the claim's bytes and exact signing authority authenticate it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
