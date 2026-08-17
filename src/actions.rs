@@ -1466,11 +1466,12 @@ pub async fn restore(ws: &mut Workspace) -> Result<String, Error> {
 
     for record in tree.read_all_with_rev() {
         match record {
-            Ok((cid, claim, rev)) => {
+            Ok((_cid, claim, rev)) => {
                 if claim.content.author.did == mine {
                     restorable.push(crate::store::log::StoredClaim {
                         claim,
-                        rev: rev.unwrap_or_else(|| cid.to_string()),
+                        rev: rev
+                            .unwrap_or_else(|| crate::store::log::LEGACY_PUBLISHED_REV.to_string()),
                     });
                 } else {
                     foreign_authors.insert(claim.content.author.did.clone());

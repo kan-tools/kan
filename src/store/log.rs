@@ -3,9 +3,12 @@
 //! ADR-13 for incremental append).
 //!
 //! Claims are stored content-addressed, keyed by their own `content_cid`
-//! (`crate::cid::content_cid`) under the `dev.kan.claim` collection (matching
-//! `docs/SPEC.md` §10.1's future lexicon namespace), inside a single on-disk
-//! CAR file — this is the same on-disk artifact atproto sync would use later.
+//! (`crate::cid::content_cid`) under the typed `tools.kan.claim` collection,
+//! inside a single on-disk CAR file — this is the same on-disk artifact
+//! atproto sync would use later. Logs written with the historical
+//! `dev.kan.claim` collection are verified and migrated on the next writable
+//! open; old blocks remain in the append-only CAR while old keys leave the
+//! live MST.
 //!
 //! `atproto-repo`'s `CarWriter` always writes a fresh header at construction
 //! time, and there's no public "resume writing an existing file" mode. But
@@ -56,7 +59,13 @@ use crate::{
     store::tid::TidGenerator,
 };
 
-const COLLECTION: &str = "dev.kan.claim";
+const LEGACY_COLLECTION: &str = "dev.kan.claim";
+const COLLECTION: &str = "tools.kan.claim";
+
+/// Canonical ordering value for published records written before the git-tree
+/// envelope carried a `rev`. TID zero sorts before every timestamped record;
+/// claims sharing it remain deterministically ordered by their content CID.
+pub(crate) const LEGACY_PUBLISHED_REV: &str = "2222222222222";
 
 /// Opaque filesystem artifacts owned by one log. Their internal CAR/MST
 /// fields have their own conformance suite, so the surface catalog treats the
@@ -88,6 +97,16 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("claim signature does not verify against its own author")]
     BadSignature,
+    #[error(transparent)]
+    AtClaim(#[from] crate::at_claim::Error),
+    #[error("legacy and current claim records conflict at key {0}")]
+    ClaimMigrationConflict(String),
+    #[error("claim migration cannot load {collection}/{key} record block {record_cid}")]
+    MissingClaimRecord {
+        collection: &'static str,
+        key: String,
+        record_cid: String,
+    },
     #[error("log exists but its CAR file has no root")]
     MissingRoot,
     /// The CAR's header cannot be read at all — a zero-byte file (the
@@ -122,7 +141,7 @@ pub enum Error {
 /// What's actually stored in the MST: the signed claim plus its log-revision
 /// TID, captured at append time (ordering is log structure, not claim
 /// content, so it lives in the envelope rather than `ClaimContent`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredClaim {
     pub claim: Claim,
     pub rev: String,
@@ -380,7 +399,9 @@ impl Log {
             dir,
         )
         .await?;
-        Self::open_inner(dir, Some(identity.did())).await
+        let mut log = Self::open_inner(dir, Some(identity.did())).await?;
+        log.migrate_claim_collection(identity).await?;
+        Ok(log)
     }
 
     async fn open_inner(dir: &Path, did: Option<String>) -> Result<Self, Error> {
@@ -826,7 +847,7 @@ impl Log {
     }
 
     /// Sign and append a claim, keyed by its own `content_cid` under the
-    /// `dev.kan.claim` collection. Returns that CID — the claim's citable
+    /// `tools.kan.claim` collection. Returns that CID — the claim's citable
     /// identity (`docs/SPEC.md` §1, no explicit id field).
     pub async fn append(
         &mut self,
@@ -850,6 +871,110 @@ impl Log {
         let result = self.append_locked(content, identity).await;
         guard.release();
         result
+    }
+
+    /// Move legacy `dev.kan.claim` entries into the typed current collection.
+    ///
+    /// Validation is completed before the in-memory tree changes. The new
+    /// commit removes legacy keys from the live MST but the append-only CAR
+    /// retains every historical block and commit that contained them.
+    async fn migrate_claim_collection(&mut self, identity: &Identity) -> Result<(), Error> {
+        let legacy = self.mst.list_collection(LEGACY_COLLECTION).await?;
+        if legacy.is_empty() {
+            return Ok(());
+        }
+
+        let guard = self.lock_for_write().await?;
+        let result = self.migrate_claim_collection_locked(identity).await;
+        guard.release();
+        result
+    }
+
+    async fn migrate_claim_collection_locked(&mut self, identity: &Identity) -> Result<(), Error> {
+        self.reload_if_stale().await?;
+        let legacy = self.mst.list_collection(LEGACY_COLLECTION).await?;
+        if legacy.is_empty() {
+            return Ok(());
+        }
+
+        let mut converted = Vec::with_capacity(legacy.len());
+        for (legacy_key, record_cid) in &legacy {
+            let path = RecordPath::from_mst_key(legacy_key)?;
+            let claim_cid: Cid = path.rkey.parse().map_err(Error::InvalidCid)?;
+            let bytes = self.mst.storage().get(record_cid).await?.ok_or_else(|| {
+                Error::MissingClaimRecord {
+                    collection: LEGACY_COLLECTION,
+                    key: path.rkey.clone(),
+                    record_cid: record_cid.to_string(),
+                }
+            })?;
+            let stored: StoredClaim = atproto_dasl::from_slice(&bytes).map_err(|e| {
+                Error::Car(atproto_dasl::errors::CarError::Io(std::io::Error::other(e)))
+            })?;
+            let record =
+                crate::at_claim::Record::from_claim(stored.claim.clone(), stored.rev.clone())?;
+            if record.claim_cid != claim_cid.to_string() || record.clone().verify()? != stored.claim
+            {
+                return Err(Error::BadSignature);
+            }
+
+            let current_key = RecordPath::new(COLLECTION, path.rkey.clone()).to_mst_key();
+            if let Some(current_record_cid) = self.mst.get(&current_key).await? {
+                let current_bytes = self
+                    .mst
+                    .storage()
+                    .get(&current_record_cid)
+                    .await?
+                    .ok_or_else(|| Error::MissingClaimRecord {
+                        collection: COLLECTION,
+                        key: path.rkey.clone(),
+                        record_cid: current_record_cid.to_string(),
+                    })?;
+                let current: crate::at_claim::Record = atproto_dasl::from_slice(&current_bytes)
+                    .map_err(|e| {
+                        Error::Car(atproto_dasl::errors::CarError::Io(std::io::Error::other(e)))
+                    })?;
+                let current_stored = StoredClaim {
+                    claim: current.clone().verify()?,
+                    rev: current.rev,
+                };
+                if current_stored != stored {
+                    return Err(Error::ClaimMigrationConflict(path.rkey));
+                }
+            } else {
+                let current_bytes = atproto_dasl::to_vec(&record).map_err(|e| {
+                    Error::Car(atproto_dasl::errors::CarError::Io(std::io::Error::other(e)))
+                })?;
+                converted.push((current_key, current_bytes));
+            }
+        }
+
+        let mut final_entries: Vec<(String, Cid)> = self
+            .mst
+            .entries()
+            .await?
+            .into_iter()
+            .filter(|(key, _)| !key.starts_with(&format!("{LEGACY_COLLECTION}/")))
+            .collect();
+        for (key, bytes) in converted {
+            let record_cid = Cid::from(compute_cid(&bytes));
+            self.mst.storage_mut().put(&record_cid, bytes).await?;
+            final_entries.push((key, record_cid));
+        }
+        self.mst.replace_entries(final_entries).await?;
+
+        let unsigned = Commit::new_unsigned(
+            self.writing_did()?,
+            Cid::from(mst_root(&self.mst)?),
+            self.tid.next(),
+            self.commit_cid.clone(),
+        );
+        let commit_sig = identity.sign(&unsigned.to_bytes()?)?;
+        let commit = unsigned.sign(commit_sig);
+        let new_commit_cid = write_commit(&mut self.mst, &commit).await?;
+        self.commit_cid = Some(new_commit_cid.clone());
+        self.persist_new_blocks(&new_commit_cid).await?;
+        Ok(())
     }
 
     /// The append itself, with the write lock already held. Split out so the
@@ -901,7 +1026,8 @@ impl Log {
             rev: self.tid.next(),
         };
 
-        let record_bytes = atproto_dasl::to_vec(&stored).map_err(|e| {
+        let record = crate::at_claim::Record::from_claim(stored.claim.clone(), stored.rev.clone())?;
+        let record_bytes = atproto_dasl::to_vec(&record).map_err(|e| {
             Error::Car(atproto_dasl::errors::CarError::Io(std::io::Error::other(e)))
         })?;
         let record_cid = Cid::from(compute_cid(&record_bytes));
@@ -936,7 +1062,11 @@ impl Log {
     /// write lock at all, not a substitute for the authoritative check.
     pub async fn contains(&self, claim_cid: &Cid) -> Result<bool, Error> {
         let key = RecordPath::new(COLLECTION, claim_cid.to_string()).to_mst_key();
-        Ok(self.mst.get(&key).await?.is_some())
+        if self.mst.get(&key).await?.is_some() {
+            return Ok(true);
+        }
+        let legacy_key = RecordPath::new(LEGACY_COLLECTION, claim_cid.to_string()).to_mst_key();
+        Ok(self.mst.get(&legacy_key).await?.is_some())
     }
 
     /// Insert a fully-formed `StoredClaim` **verbatim** — same content, same
@@ -1009,7 +1139,8 @@ impl Log {
             self.last_recorded_at = self.last_recorded_at.max(micros);
         }
 
-        let record_bytes = atproto_dasl::to_vec(&stored).map_err(|e| {
+        let record = crate::at_claim::Record::from_claim(stored.claim.clone(), stored.rev.clone())?;
+        let record_bytes = atproto_dasl::to_vec(&record).map_err(|e| {
             Error::Car(atproto_dasl::errors::CarError::Io(std::io::Error::other(e)))
         })?;
         let record_cid = Cid::from(compute_cid(&record_bytes));
@@ -1043,15 +1174,38 @@ impl Log {
     /// time.
     pub async fn get_stored(&mut self, claim_cid: Cid) -> Result<Option<StoredClaim>, Error> {
         let key = RecordPath::new(COLLECTION, claim_cid.to_string()).to_mst_key();
-        let Some(record_cid) = self.mst.get(&key).await? else {
-            return Ok(None);
+        let (record_cid, legacy) = if let Some(record_cid) = self.mst.get(&key).await? {
+            (record_cid, false)
+        } else {
+            let legacy_key = RecordPath::new(LEGACY_COLLECTION, claim_cid.to_string()).to_mst_key();
+            let Some(record_cid) = self.mst.get(&legacy_key).await? else {
+                return Ok(None);
+            };
+            (record_cid, true)
         };
         let Some(bytes) = self.mst.storage().get(&record_cid).await? else {
             return Ok(None);
         };
-        let stored: StoredClaim = atproto_dasl::from_slice(&bytes).map_err(|e| {
-            Error::Car(atproto_dasl::errors::CarError::Io(std::io::Error::other(e)))
-        })?;
+        let stored = if legacy {
+            atproto_dasl::from_slice(&bytes).map_err(|e| {
+                Error::Car(atproto_dasl::errors::CarError::Io(std::io::Error::other(e)))
+            })?
+        } else {
+            let record: crate::at_claim::Record =
+                atproto_dasl::from_slice(&bytes).map_err(|e| {
+                    Error::Car(atproto_dasl::errors::CarError::Io(std::io::Error::other(e)))
+                })?;
+            let rev = record.rev.clone();
+            StoredClaim {
+                claim: record.verify().map_err(|error| match error {
+                    crate::at_claim::Error::BadSignature | crate::at_claim::Error::CidMismatch => {
+                        Error::BadSignature
+                    }
+                    other => Error::AtClaim(other),
+                })?,
+                rev,
+            }
+        };
 
         let recomputed = content_cid(&stored.claim.content)?;
         if recomputed != claim_cid
@@ -1092,12 +1246,16 @@ impl Log {
         let entries = self.mst.entries().await?;
         self.warn_once_if_claims_are_unreachable(&entries).await?;
         let mut out = Vec::with_capacity(entries.len());
+        let mut seen = HashSet::new();
         for (key, _record_cid) in entries {
             let path = RecordPath::from_mst_key(&key)?;
-            if path.collection != COLLECTION {
+            if path.collection != COLLECTION && path.collection != LEGACY_COLLECTION {
                 continue;
             }
             let claim_cid: Cid = path.rkey.parse().map_err(Error::InvalidCid)?;
+            if !seen.insert(claim_cid.clone()) {
+                continue;
+            }
             match self.get_stored(claim_cid.clone()).await {
                 Ok(Some(stored)) => out.push((claim_cid, stored)),
                 Ok(None) => {}
@@ -1158,4 +1316,253 @@ async fn write_commit(mst: &mut Mst<MemoryStorage>, commit: &Commit) -> Result<C
     let cid = Cid::from(compute_cid(&bytes));
     mst.storage_mut().put(&cid, bytes).await?;
     Ok(cid)
+}
+
+#[cfg(test)]
+mod claim_collection_migration_tests {
+    use super::*;
+    use crate::claim::{Anchor, AuthorId, ClaimBody, Rkey, SubjectRef};
+
+    fn signed(identity: &Identity, text: &str, rev: &str) -> (Cid, StoredClaim) {
+        let content = ClaimContent {
+            author: AuthorId {
+                did: identity.did(),
+                agent: None,
+            },
+            workspace: Anchor::Workspace("migration-fixture".into()),
+            subject: SubjectRef::Local(Rkey::from("migration")),
+            body: ClaimBody::Observation { text: text.into() },
+            cites: vec![],
+            artifacts: vec![],
+            recorded_at: Some(42),
+        };
+        let cid = content_cid(&content).unwrap();
+        let sig = identity.sign(&cid.to_bytes()).unwrap();
+        (
+            cid,
+            StoredClaim {
+                claim: Claim { content, sig },
+                rev: rev.into(),
+            },
+        )
+    }
+
+    async fn seed_legacy(
+        log: &mut Log,
+        identity: &Identity,
+        claim_cid: &Cid,
+        stored: &StoredClaim,
+    ) -> Cid {
+        let bytes = atproto_dasl::to_vec(stored).unwrap();
+        let record_cid = Cid::from(compute_cid(&bytes));
+        log.mst.storage_mut().put(&record_cid, bytes).await.unwrap();
+        let key = RecordPath::new(LEGACY_COLLECTION, claim_cid.to_string()).to_mst_key();
+        log.mst.insert(&key, record_cid.clone()).await.unwrap();
+        let unsigned = Commit::new_unsigned(
+            identity.did(),
+            Cid::from(mst_root(&log.mst).unwrap()),
+            log.tid.next(),
+            log.commit_cid.clone(),
+        );
+        let signature = identity.sign(&unsigned.to_bytes().unwrap()).unwrap();
+        let commit = unsigned.sign(signature);
+        let root = write_commit(&mut log.mst, &commit).await.unwrap();
+        log.commit_cid = Some(root.clone());
+        log.persist_new_blocks(&root).await.unwrap();
+        record_cid
+    }
+
+    #[tokio::test]
+    async fn legacy_only_migrates_once_and_survives_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("log");
+        let identity = Identity::generate();
+        let mut writer = Log::open_or_create(&path, &identity).await.unwrap();
+        let (claim_cid, stored) = signed(&identity, "legacy", "3jzfcijpj2z2a");
+        let historical_record = seed_legacy(&mut writer, &identity, &claim_cid, &stored).await;
+        drop(writer);
+
+        let mut migrated = Log::open_or_create(&path, &identity).await.unwrap();
+        assert!(migrated
+            .mst
+            .list_collection(LEGACY_COLLECTION)
+            .await
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            migrated
+                .mst
+                .list_collection(COLLECTION)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            migrated.get_stored(claim_cid.clone()).await.unwrap(),
+            Some(stored.clone())
+        );
+        assert!(migrated
+            .mst
+            .storage()
+            .get(&historical_record)
+            .await
+            .unwrap()
+            .is_some());
+        let migrated_root = migrated.current_root();
+        drop(migrated);
+
+        let mut reopened = Log::open_or_create(&path, &identity).await.unwrap();
+        assert_eq!(
+            reopened.current_root(),
+            migrated_root,
+            "migration must be idempotent"
+        );
+        assert_eq!(reopened.get_stored(claim_cid).await.unwrap(), Some(stored));
+    }
+
+    #[tokio::test]
+    async fn identical_mixed_collections_coalesce_but_conflicts_fail_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("log");
+        let identity = Identity::generate();
+        let mut writer = Log::open_or_create(&path, &identity).await.unwrap();
+        let cid = writer
+            .append(
+                signed(&identity, "same", "unused").1.claim.content,
+                &identity,
+            )
+            .await
+            .unwrap();
+        let current = writer.get_stored(cid.clone()).await.unwrap().unwrap();
+        seed_legacy(&mut writer, &identity, &cid, &current).await;
+        drop(writer);
+        let migrated = Log::open_or_create(&path, &identity).await.unwrap();
+        assert_eq!(
+            migrated
+                .mst
+                .list_collection(COLLECTION)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        drop(migrated);
+
+        let mut writer = Log::open_or_create(&path, &identity).await.unwrap();
+        let mut conflict = writer.get_stored(cid.clone()).await.unwrap().unwrap();
+        conflict.rev = "3jzfcijpj2z2b".into();
+        seed_legacy(&mut writer, &identity, &cid, &conflict).await;
+        drop(writer);
+        assert!(matches!(
+            Log::open_or_create(&path, &identity).await,
+            Err(Error::ClaimMigrationConflict(key)) if key == cid.to_string()
+        ));
+    }
+
+    #[tokio::test]
+    async fn unverifiable_legacy_claim_stops_migration_without_committing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("log");
+        let identity = Identity::generate();
+        let mut writer = Log::open_or_create(&path, &identity).await.unwrap();
+        let (cid, mut stored) = signed(&identity, "forged", "3jzfcijpj2z2a");
+        stored.claim.sig[0] ^= 1;
+        seed_legacy(&mut writer, &identity, &cid, &stored).await;
+        let before = writer.current_root();
+        drop(writer);
+        assert!(matches!(
+            Log::open_or_create(&path, &identity).await,
+            Err(Error::AtClaim(crate::at_claim::Error::BadSignature))
+        ));
+        let reader = Log::open_read_only(&path).await.unwrap();
+        assert_eq!(reader.current_root(), before);
+        assert_eq!(
+            reader
+                .mst
+                .list_collection(LEGACY_COLLECTION)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(reader
+            .mst
+            .list_collection(COLLECTION)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn lexicon_incompatible_legacy_claim_stops_migration_without_committing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("log");
+        let identity = Identity::generate();
+        let mut writer = Log::open_or_create(&path, &identity).await.unwrap();
+        let (_, mut stored) = signed(&identity, "placeholder", "3jzfcijpj2z2a");
+        stored.claim.content.body = ClaimBody::Observation {
+            text: "x".repeat(900_001),
+        };
+        let claim_cid = content_cid(&stored.claim.content).unwrap();
+        stored.claim.sig = identity.sign(&claim_cid.to_bytes()).unwrap();
+        seed_legacy(&mut writer, &identity, &claim_cid, &stored).await;
+        let before = writer.current_root();
+        drop(writer);
+
+        assert!(matches!(
+            Log::open_or_create(&path, &identity).await,
+            Err(Error::AtClaim(crate::at_claim::Error::LexiconConstraint(_)))
+        ));
+        let reader = Log::open_read_only(&path).await.unwrap();
+        assert_eq!(reader.current_root(), before);
+        assert_eq!(
+            reader
+                .mst
+                .list_collection(LEGACY_COLLECTION)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(reader
+            .mst
+            .list_collection(COLLECTION)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn unknown_history_and_record_cid_substitution_fail_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unknown");
+        let identity = Identity::generate();
+        let mut writer = Log::open_or_create(&path, &identity).await.unwrap();
+        let (_, mut stored) = signed(&identity, "placeholder", "3jzfcijpj2z2a");
+        stored.claim.content.body = ClaimBody::Unknown {
+            kind: "FutureBody".into(),
+            raw: vec![0xa0],
+        };
+        let unknown_cid = content_cid(&stored.claim.content).unwrap();
+        stored.claim.sig = identity.sign(&unknown_cid.to_bytes()).unwrap();
+        seed_legacy(&mut writer, &identity, &unknown_cid, &stored).await;
+        drop(writer);
+        assert!(matches!(
+            Log::open_or_create(&path, &identity).await,
+            Err(Error::AtClaim(crate::at_claim::Error::UnsupportedClaimCodec(kind)))
+                if kind == "FutureBody"
+        ));
+
+        let path = dir.path().join("substitution");
+        let mut writer = Log::open_or_create(&path, &identity).await.unwrap();
+        let (_, stored) = signed(&identity, "valid claim", "3jzfcijpj2z2a");
+        let enclosing_record_cid = content_cid(&"enclosing ATProto record").unwrap();
+        seed_legacy(&mut writer, &identity, &enclosing_record_cid, &stored).await;
+        drop(writer);
+        assert!(matches!(
+            Log::open_or_create(&path, &identity).await,
+            Err(Error::BadSignature)
+        ));
+    }
 }

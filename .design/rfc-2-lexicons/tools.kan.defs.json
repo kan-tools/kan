@@ -1,0 +1,247 @@
+{
+  "lexicon": 1,
+  "id": "tools.kan.defs",
+  "defs": {
+    "author": {
+      "type": "object",
+      "required": ["did"],
+      "properties": {
+        "did": {"type": "string", "format": "did"},
+        "agent": {"type": "bytes", "maxLength": 128}
+      }
+    },
+    "span": {
+      "type": "object",
+      "required": ["start", "end"],
+      "properties": {
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 0}
+      }
+    },
+    "workspaceAnchor": {
+      "type": "object",
+      "required": ["genesisCid"],
+      "properties": {"genesisCid": {"type": "string", "maxLength": 512}}
+    },
+    "commitAnchor": {
+      "type": "object",
+      "required": ["sha"],
+      "properties": {"sha": {"type": "string", "maxLength": 128}}
+    },
+    "blobAnchor": {
+      "type": "object",
+      "required": ["cid"],
+      "properties": {"cid": {"type": "cid-link"}}
+    },
+    "fileAtAnchor": {
+      "type": "object",
+      "required": ["path", "sha"],
+      "properties": {
+        "path": {"type": "string", "maxLength": 4096},
+        "sha": {"type": "string", "maxLength": 128}
+      }
+    },
+    "lineRangeAtAnchor": {
+      "type": "object",
+      "required": ["path", "sha", "span"],
+      "properties": {
+        "path": {"type": "string", "maxLength": 4096},
+        "sha": {"type": "string", "maxLength": 128},
+        "span": {"type": "ref", "ref": "#span"}
+      }
+    },
+    "localSubject": {
+      "type": "object",
+      "required": ["rkey"],
+      "properties": {"rkey": {"type": "string", "maxLength": 4096}}
+    },
+    "anchorSubject": {
+      "type": "object",
+      "required": ["anchor"],
+      "properties": {"anchor": {"type": "union", "closed": true, "refs": ["#workspaceAnchor", "#commitAnchor", "#blobAnchor", "#fileAtAnchor", "#lineRangeAtAnchor"]}}
+    },
+    "commitArtifact": {
+      "type": "object",
+      "required": ["sha"],
+      "properties": {"sha": {"type": "string", "maxLength": 128}}
+    },
+    "fileAtArtifact": {
+      "type": "object",
+      "required": ["path", "sha"],
+      "properties": {
+        "path": {"type": "string", "maxLength": 4096},
+        "sha": {"type": "string", "maxLength": 128}
+      }
+    },
+    "lineRangeAtArtifact": {
+      "type": "object",
+      "required": ["path", "sha", "span"],
+      "properties": {
+        "path": {"type": "string", "maxLength": 4096},
+        "sha": {"type": "string", "maxLength": 128},
+        "span": {"type": "ref", "ref": "#span"}
+      }
+    },
+    "toolOutputArtifact": {
+      "type": "object",
+      "required": ["cid"],
+      "properties": {"cid": {"type": "cid-link"}}
+    },
+    "subjectBody": {
+      "type": "object",
+      "required": ["title", "subjectKind"],
+      "properties": {
+        "title": {"type": "string", "maxLength": 8192},
+        "subjectKind": {"type": "string", "maxLength": 16, "knownValues": ["issue", "idea", "question"]}
+      }
+    },
+    "observationBody": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {"text": {"type": "string", "maxLength": 900000}}
+    },
+    "planBody": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {"text": {"type": "string", "maxLength": 900000}}
+    },
+    "decisionBody": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {"text": {"type": "string", "maxLength": 900000}}
+    },
+    "blockerBody": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {"text": {"type": "string", "maxLength": 900000}}
+    },
+    "resolutionBody": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {"text": {"type": "string", "maxLength": 900000}}
+    },
+    "resultBody": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {"text": {"type": "string", "maxLength": 900000}}
+    },
+    "statusBody": {
+      "type": "object",
+      "required": ["value"],
+      "properties": {"value": {"type": "string", "maxLength": 16, "knownValues": ["open", "in-progress", "blocked", "resolved", "closed"]}}
+    },
+    "relationBody": {
+      "type": "object",
+      "required": ["kind", "target"],
+      "properties": {
+        "kind": {"type": "string", "maxLength": 32, "knownValues": ["same-as", "blocks", "about", "manifests-at", "depends-on", "accepts", "in-tension-with", "supersedes", "refutes"]},
+        "target": {"type": "union", "closed": true, "refs": ["#localSubject", "#anchorSubject"]}
+      }
+    },
+    "retractionBody": {
+      "type": "object",
+      "required": ["supersedes"],
+      "properties": {"supersedes": {"type": "cid-link"}}
+    },
+    "rejectsBody": {
+      "type": "object",
+      "required": ["claim"],
+      "properties": {"claim": {"type": "cid-link"}}
+    },
+    "publicationBody": {
+      "type": "object",
+      "required": ["layer"],
+      "properties": {"layer": {"type": "string", "maxLength": 32, "knownValues": ["git-tree"]}}
+    },
+    "roleDeclarationBody": {
+      "type": "object",
+      "required": ["did", "name"],
+      "properties": {
+        "did": {"type": "string", "format": "did"},
+        "name": {"type": "string", "maxLength": 128}
+      }
+    },
+    "claimContent": {
+      "type": "object",
+      "required": ["author", "workspace", "subject", "body", "cites", "artifacts"],
+      "properties": {
+        "author": {"type": "ref", "ref": "#author"},
+        "workspace": {"type": "union", "closed": true, "refs": ["#workspaceAnchor", "#commitAnchor", "#blobAnchor", "#fileAtAnchor", "#lineRangeAtAnchor"]},
+        "subject": {"type": "union", "closed": true, "refs": ["#localSubject", "#anchorSubject"]},
+        "body": {"type": "union", "closed": true, "refs": ["#subjectBody", "#observationBody", "#planBody", "#decisionBody", "#blockerBody", "#resolutionBody", "#resultBody", "#statusBody", "#relationBody", "#retractionBody", "#rejectsBody", "#publicationBody", "#roleDeclarationBody"]},
+        "cites": {"type": "array", "maxLength": 10000, "items": {"type": "cid-link"}},
+        "artifacts": {"type": "array", "maxLength": 10000, "items": {"type": "union", "closed": true, "refs": ["#commitArtifact", "#fileAtArtifact", "#lineRangeAtArtifact", "#toolOutputArtifact"]}},
+        "recordedAt": {"type": "integer", "minimum": 0}
+      }
+    },
+    "appViewState": {
+      "type": "object",
+      "required": ["service", "endpoint", "indexedCommit", "indexedAt"],
+      "properties": {
+        "service": {"type": "string", "maxLength": 2200},
+        "endpoint": {"type": "string", "format": "uri"},
+        "indexedCommit": {"type": "string", "format": "cid"},
+        "indexedAt": {"type": "string", "format": "datetime"},
+        "sequence": {"type": "integer", "minimum": 0}
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["repo", "scope", "source", "commit", "completeness"],
+      "properties": {
+        "repo": {"type": "string", "format": "did"},
+        "scope": {"type": "string", "maxLength": 512},
+        "source": {"type": "string", "maxLength": 16, "knownValues": ["appview", "pds"]},
+        "commit": {"type": "string", "format": "cid"},
+        "completeness": {"type": "string", "maxLength": 16, "knownValues": ["committed", "selection", "unknown"]},
+        "appView": {"type": "ref", "ref": "#appViewState"}
+      }
+    },
+    "claimView": {
+      "type": "object",
+      "required": ["uri", "recordCid", "claimCid", "record"],
+      "properties": {
+        "uri": {"type": "string", "format": "at-uri"},
+        "recordCid": {"type": "string", "format": "cid"},
+        "claimCid": {"type": "string", "format": "cid"},
+        "record": {"type": "ref", "ref": "#claimRecordView"}
+      }
+    },
+    "claimRecordView": {
+      "type": "object",
+      "description": "The current supported tools.kan.claim projection returned by read APIs. Historical records are converted to this shape before exposure.",
+      "required": ["claimCid", "codec", "content", "signature", "rev"],
+      "properties": {
+        "claimCid": {"type": "string", "format": "cid"},
+        "codec": {"type": "string", "maxLength": 32, "knownValues": ["kan-claim-v1"]},
+        "content": {"type": "ref", "ref": "#claimContent"},
+        "signature": {"type": "bytes", "maxLength": 256},
+        "rev": {"type": "string", "format": "tid"}
+      }
+    },
+    "scopeIdentity": {
+      "type": "object",
+      "required": ["scope", "inception"],
+      "properties": {
+        "scope": {"type": "string", "maxLength": 512},
+        "inception": {"type": "ref", "ref": "#claimView"}
+      }
+    },
+    "authorityIdentity": {
+      "type": "object",
+      "required": ["did", "service"],
+      "properties": {
+        "did": {"type": "string", "format": "did"},
+        "service": {"type": "string", "maxLength": 2200}
+      }
+    },
+    "principalIdentity": {
+      "type": "object",
+      "required": ["did"],
+      "properties": {
+        "did": {"type": "string", "format": "did"},
+        "version": {"type": "string", "maxLength": 512}
+      }
+    }
+  }
+}

@@ -608,6 +608,38 @@ impl<S: BlockStorage> Mst<S> {
             .filter(|(key, _)| key.starts_with(&prefix))
             .collect())
     }
+
+    /// Replace the live key set with an explicitly supplied canonical set.
+    /// Record blocks remain in storage; only the root and MST node blocks
+    /// change. Used by collection migrations that must remove an entire old
+    /// namespace without relying on a sequence of shape-sensitive deletes.
+    pub(crate) async fn replace_entries(
+        &mut self,
+        mut pairs: Vec<(String, Cid)>,
+    ) -> Result<Option<CidCore>, Error> {
+        pairs.sort_by(|a, b| a.0.cmp(&b.0));
+        if let Some(window) = pairs.windows(2).find(|window| window[0].0 == window[1].0) {
+            return Err(Error::StructureViolation {
+                reason: format!("duplicate key {} in replacement set", window[0].0),
+            });
+        }
+        let root = self.build_canonical(&pairs).await?;
+        if let Some(root) = &root {
+            let rebuilt = self.collect_keys(root).await?;
+            let expected: Vec<&String> = pairs.iter().map(|(key, _)| key).collect();
+            if rebuilt.iter().collect::<Vec<_>>() != expected {
+                return Err(Error::StructureViolation {
+                    reason: "canonical replacement changed the key set".into(),
+                });
+            }
+        } else if !pairs.is_empty() {
+            return Err(Error::StructureViolation {
+                reason: "canonical replacement lost a non-empty key set".into(),
+            });
+        }
+        self.root = root;
+        Ok(root)
+    }
 }
 
 /// Convenience type alias for in-memory MST.

@@ -93,6 +93,21 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/store/log.rs", "\"LOCK\"", "local-log:LOCK"),
     ("src/store/log.rs", "name", "local-log:repo.car.damaged-*"),
     (
+        "src/store/log.rs",
+        "\"log\"",
+        "test-only temporary log directory",
+    ),
+    (
+        "src/store/log.rs",
+        "\"unknown\"",
+        "test-only unsupported-codec log directory",
+    ),
+    (
+        "src/store/log.rs",
+        "\"substitution\"",
+        "test-only substituted-record log directory",
+    ),
+    (
         "src/transport/git_tree.rs",
         "CLAIMS_DIR",
         "git-tree:.claims",

@@ -30,7 +30,7 @@ Explicitly OUT for v1: sync/atproto/lexicons, TUI, web dashboard, editor
 extensions, >2 trust policies, enforcement hooks, incremental fold. The
 local-only spine (this section) shipped through v0.3.0-beta.1; sync now has
 a concrete staging plan (`.design/sync-layer-architecture-and-staging.md`,
-`docs/DECISIONS.md` ADR-35) — see that doc before starting any sync-adjacent
+[`ADR-0035`](adrs/35-sync-layer-staging-plan-and-a-version-roadmap-through-1-0.md)) — see that doc before starting any sync-adjacent
 work rather than treating "out for v1" as still open-ended.
 
 ## House rules
@@ -66,7 +66,7 @@ The local-only path must be *dramatically* simpler than the multi-actor path
 If it isn't, the abstraction is wrong — stop and reconsider.
 
 ## CLI vocabulary (git-like, verb-first)
-Declared in four AX-driven phases (`docs/DECISIONS.md` ADR-32) — `kan --help`
+Declared in four AX-driven phases ([`ADR-0032`](adrs/32-verb-lexicon-reorganized-by-ax-phase-mcp-tool-surface-catches-up-to-the.md)) — `kan --help`
 reflects this order directly, so treat it as the source of truth over this
 line if they ever drift:
 - Recording: `observe | plan | decide | block | resolve | result`
@@ -86,7 +86,7 @@ entirely as a calling convention over existing primitives (subject naming,
 belongs in the companion tool that consumes kan via CLI/MCP — not a new mode
 of kan itself. Full rationale and worked examples (why `kan session
 start/end` was removed, why a proposed vector index still belongs in kan):
-`docs/DECISIONS.md` ADR-18.
+[`ADR-0018`](adrs/18-the-kan-companion-tool-scope-boundary-kan-session-removed.md).
 
 That companion tool now exists: **`day`** (`kan-tools/day`, on crates.io) —
 the structured *process* layer to kan's structured *knowledge* layer. It

@@ -1079,7 +1079,8 @@ async fn read_published(
                     cid.clone(),
                     crate::store::log::StoredClaim {
                         claim,
-                        rev: rev.unwrap_or_else(|| cid.to_string()),
+                        rev: rev
+                            .unwrap_or_else(|| crate::store::log::LEGACY_PUBLISHED_REV.to_string()),
                     },
                 ));
             }
@@ -1180,13 +1181,11 @@ async fn ingest_published(
                 pending.push(crate::store::log::StoredClaim {
                     claim,
                     // A record published before v0.7.0-beta.1 carries no
-                    // `rev`. Falling back to the content CID keeps ordering
-                    // *deterministic* across clones — every reader derives
-                    // the same value from the same bytes — which a locally
-                    // generated TID would not. It orders such claims apart
-                    // from timed ones rather than pretending to a time
-                    // nobody recorded.
-                    rev: rev.unwrap_or_else(|| cid.to_string()),
+                    // `rev`. TID zero keeps those records before timed ones
+                    // without inventing a timestamp. Their content CID is the
+                    // fold's deterministic tie-breaker, so clone ordering is
+                    // stable even when several historical records share it.
+                    rev: rev.unwrap_or_else(|| crate::store::log::LEGACY_PUBLISHED_REV.to_string()),
                 });
             }
             Err(e) => {

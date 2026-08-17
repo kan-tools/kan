@@ -1,0 +1,51 @@
+{
+  "lexicon": 1,
+  "id": "tools.kan.getIdentity",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Resolve scope, authority, or principal identity evidence from one account repository.",
+      "parameters": {
+        "type": "params",
+        "required": ["repo", "kind"],
+        "properties": {
+          "repo": {"type": "string", "format": "did"},
+          "scope": {"type": "string", "maxLength": 512},
+          "kind": {"type": "string", "maxLength": 16, "knownValues": ["scope", "authority", "principal"]},
+          "did": {"type": "string", "format": "did"},
+          "version": {"type": "string", "maxLength": 512},
+          "commit": {"type": "string", "format": "cid"},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+          "cursor": {"type": "string", "maxLength": 2048}
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["canonicalUri", "replayUri", "provenance", "identity", "evidence"],
+          "properties": {
+            "canonicalUri": {"type": "string", "format": "uri"},
+            "replayUri": {"type": "string", "format": "uri"},
+            "provenance": {"type": "ref", "ref": "tools.kan.defs#provenance"},
+            "identity": {"type": "union", "closed": true, "refs": ["tools.kan.defs#scopeIdentity", "tools.kan.defs#authorityIdentity", "tools.kan.defs#principalIdentity"]},
+            "evidence": {"type": "array", "maxLength": 1000, "items": {"type": "ref", "ref": "tools.kan.defs#claimView"}},
+            "cursor": {"type": "string", "maxLength": 2048}
+          }
+        }
+      },
+      "errors": [
+        {"name": "RepoNotFound"},
+        {"name": "ScopeNotFound"},
+        {"name": "IdentityNotFound"},
+        {"name": "VersionNotFound"},
+        {"name": "SnapshotUnavailable"},
+        {"name": "InvalidCursor"},
+        {"name": "CursorSnapshotMismatch"},
+        {"name": "InvalidClaim"},
+        {"name": "UnsupportedClaimCodec"},
+        {"name": "IndexNotReady"}
+      ]
+    }
+  }
+}

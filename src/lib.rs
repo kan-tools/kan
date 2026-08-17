@@ -4,6 +4,7 @@
 #![deny(clippy::disallowed_methods)]
 
 pub mod actions;
+pub mod at_claim;
 pub mod cid;
 pub mod claim;
 pub mod cli;
