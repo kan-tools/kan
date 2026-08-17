@@ -1,11 +1,11 @@
 # RFC 2: kan URI schemes and resolution
 
-- Status: Draft
+- Status: Accepted
 - Authors: kan maintainers
 - Created: 2026-08-15
-- Discussion: Not yet opened
-- Review-period-ends: Not yet assigned
-- Review-override: None
+- Discussion: https://github.com/kan-tools/kan/pull/230
+- Review-period-ends: Not applicable; maintainer override
+- Review-override: Maintainer 🚀 approval before merge of https://github.com/kan-tools/kan/pull/230 (2026-08-16; maintainer: @maxinelevesque)
 - Supersedes: None
 - Superseded-by: None
 

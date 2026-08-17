@@ -106,6 +106,7 @@ for section in Context Decision Rationale Consequences Evidence 'Alternatives co
 done
 
 python3 scripts/check-uri-v1-fixtures.py --self-test
+python3 scripts/check-lexicon-publication-v1-fixtures.py
 
 grep -Fq 'kan.did.genesis.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks identity domain separation"
 grep -Fq 'kan.repository.inception.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks repository domain separation"
