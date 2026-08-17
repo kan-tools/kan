@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-16
 - Discussion: https://github.com/kan-tools/kan/pull/231
-- Review-period-ends: 2026-08-20T00:41:35Z
+- Review-period-ends: 2026-08-20T00:50:11Z
 - Review-override: None
 - Supersedes: RFC 2 requirements 14, 15, and 17 where explicitly stated; amends requirement 18
 - Superseded-by: None
@@ -363,9 +363,18 @@ viewCodec
 sourceUri
 sourceRecordCid
 lensesApplied[]
+content = open union of typed claim payload objects
+claimCid
+signature
 ```
 
-The original content CID and signature remain available in the typed view.
+The view Lexicon MUST define `content` as the same append-only open union used
+by `tools.kan.claim`. `viewCodec` MUST resolve to a codec entry whose
+`payloadSchema` equals `content.$type`; a mismatch fails as
+`codec-content-type-mismatch` before returning a view. Thus each known target
+codec produces a concrete generated response arm, while an unknown target is
+never mislabeled as a known typed view. The original content CID and signature
+remain available in the typed view.
 Raw records remain retrievable through standard ATProto repository APIs.
 
 Stable failures are:
@@ -672,7 +681,8 @@ covers:
    lens examples;
 9. exact default, requested, partial, lossy, and unknown-codec normalization
    outcomes;
-10. the required normalized-view provenance field set;
+10. the required normalized-view fields, open content union, and exact
+    `viewCodec`/`content.$type` pairs;
 11. public GitHub, private Railway, PDS-volume, and external-vault secret
     boundaries; and
 12. published-unverified recovery without a blind second write.
@@ -687,7 +697,8 @@ substitution, mislabeled or duplicated resolution, deletion of negative codec
 or codec/type cases, closing the content union, accepting a mismatched
 codec/type pair, changed schema bytes or CID, split or multi-codec publication, wrong lens output,
 deletion of a coherently rehashed refusal vector, unknown-codec identity, lossy
-default normalization, missing provenance, and deleted secrets. The harness
+default normalization, omitted view content, accepted view type mismatch,
+corrupted unknown-arm bytes, and deleted secrets. The harness
 does not import kan's Rust implementation.
 
 The checked envelope is an exact open union with known v1 and synthetic-v2
@@ -695,7 +706,9 @@ arms. Its matrix requires `$type`, accepts each registered codec/arm pair,
 rejects mismatches, and preserves an unknown codec plus unknown arm without
 semantic decoding. A wire-projection fixture proves that removing the
 wire-only discriminator reproduces identical canonical internal bytes, while a
-raw unknown-arm fixture survives deterministic DAG-CBOR re-emission. The
+raw unknown-arm fixture begins with canonical DAG-CBOR containing nested
+unknown data, bytes, and a CID link, decodes through the raw transport
+representation, and reproduces the same bytes and CID on re-emission. The
 checked codec record is explicitly `fixtureOnly` and uses the reserved
 synthetic codec `kan-claim-v2-test`. It contains the actual base64-encoded
 DAG-CBOR envelope, payload, and per-lens vector bytes; linked CIDs and declared

@@ -84,6 +84,72 @@ def dag_cbor_cid(value: object) -> str:
     return "b" + base64.b32encode(cid_bytes).decode("ascii").lower().rstrip("=")
 
 
+def dag_cbor_decode(raw: bytes) -> object:
+    """Decode the deterministic DAG-CBOR subset exercised by the fixtures."""
+    def read(offset: int) -> tuple[object, int]:
+        require(offset < len(raw), "truncated DAG-CBOR")
+        initial = raw[offset]
+        offset += 1
+        major, additional = initial >> 5, initial & 31
+
+        def argument() -> tuple[int, int]:
+            nonlocal offset
+            if additional < 24:
+                return additional, offset
+            widths = {24: 1, 25: 2, 26: 4, 27: 8}
+            require(additional in widths, "indefinite or reserved DAG-CBOR argument")
+            width = widths[additional]
+            require(offset + width <= len(raw), "truncated DAG-CBOR argument")
+            value = int.from_bytes(raw[offset:offset + width], "big")
+            offset += width
+            return value, offset
+
+        if major in {0, 1, 2, 3, 4, 5}:
+            size, _ = argument()
+        if major == 0:
+            return size, offset
+        if major == 1:
+            return -1 - size, offset
+        if major in {2, 3}:
+            require(offset + size <= len(raw), "truncated DAG-CBOR value")
+            value = raw[offset:offset + size]
+            offset += size
+            if major == 2:
+                return {"$bytes": base64.b64encode(value).decode("ascii")}, offset
+            try:
+                return value.decode("utf-8"), offset
+            except UnicodeDecodeError as error:
+                raise Invalid("invalid DAG-CBOR text") from error
+        if major == 4:
+            result = []
+            for _ in range(size):
+                item, offset = read(offset)
+                result.append(item)
+            return result, offset
+        if major == 5:
+            result = {}
+            for _ in range(size):
+                key, offset = read(offset)
+                require(isinstance(key, str) and key not in result, "invalid DAG-CBOR map key")
+                result[key], offset = read(offset)
+            return result, offset
+        if major == 6:
+            tag, _ = argument()
+            require(tag == 42, "unsupported DAG-CBOR tag")
+            link, offset = read(offset)
+            require(isinstance(link, dict) and set(link) == {"$bytes"}, "invalid DAG-CBOR CID payload")
+            cid_bytes = base64.b64decode(link["$bytes"], validate=True)
+            require(cid_bytes.startswith(b"\x00") and len(cid_bytes) > 1, "invalid DAG-CBOR CID prefix")
+            return {"$link": "b" + base64.b32encode(cid_bytes[1:]).decode("ascii").lower().rstrip("=")}, offset
+        if major == 7 and additional in {20, 21, 22}:
+            return ({20: False, 21: True, 22: None}[additional], offset)
+        raise Invalid("unsupported DAG-CBOR item")
+
+    value, offset = read(0)
+    require(offset == len(raw), "trailing DAG-CBOR bytes")
+    return value
+
+
 def schema_value(schema: dict) -> dict:
     if "value" in schema:
         return schema["value"]
@@ -199,7 +265,7 @@ def simulate_publication(case: dict, known_writes: set[str]) -> tuple[int, str]:
 
 def validate(data: dict) -> None:
     require(data.get("version") == 2, "version must be 2")
-    require(set(data) == {"version", "authority", "resolutionCases", "codecGrammar", "codecMaxBytes", "codecCases", "codecTypeCases", "wireTypeProjection", "unknownUnionRoundTrip", "schemas", "codecBinding", "lensRecords", "bindingCases", "publicationCases", "lenses", "lensVectors", "normalizationCases", "requiredViewProvenance", "secretBoundaries"}, "manifest field inventory drift")
+    require(set(data) == {"version", "authority", "resolutionCases", "codecGrammar", "codecMaxBytes", "codecCases", "codecTypeCases", "wireTypeProjection", "unknownUnionRoundTrip", "schemas", "codecBinding", "lensRecords", "bindingCases", "publicationCases", "lenses", "lensVectors", "normalizationCases", "viewContract", "secretBoundaries"}, "manifest field inventory drift")
 
     authority = data["authority"]
     require(set(authority) == {"nsids", "dnsName", "dnsValue", "did", "didUrl", "pdsEndpoint", "didDocument", "appView"}, "authority field inventory drift")
@@ -287,10 +353,15 @@ def validate(data: dict) -> None:
     require(dag_cbor(projected_internal) == dag_cbor(projection["internal"]), "wire-only type changed canonical internal bytes")
 
     unknown = data["unknownUnionRoundTrip"]
-    require(set(unknown) == {"codec", "content"}, "unknown union fixture field drift")
-    require(codec_type_outcome(unknown["codec"], unknown["content"].get("$type")) == "preserved-unsupported", "unknown union is not preserved unsupported")
-    unknown_bytes = dag_cbor(unknown["content"])
-    require(dag_cbor(copy.deepcopy(unknown["content"])) == unknown_bytes, "unknown union arm is not byte-stable")
+    require(set(unknown) == {"codec", "canonicalBytes", "contentCid"}, "unknown union fixture field drift")
+    unknown_bytes = embedded_bytes(unknown["canonicalBytes"])
+    decoded_unknown = dag_cbor_decode(unknown_bytes)
+    require(isinstance(decoded_unknown, dict), "unknown union arm did not decode as an object")
+    require(codec_type_outcome(unknown["codec"], decoded_unknown.get("$type")) == "preserved-unsupported", "unknown union is not preserved unsupported")
+    require(linked_cid(unknown["contentCid"]) == dag_cbor_cid(decoded_unknown), "unknown union CID drift")
+    require(dag_cbor(decoded_unknown) == unknown_bytes, "unknown union arm is not byte-stable after decode")
+    require(isinstance(decoded_unknown.get("future", {}).get("blob"), dict), "unknown bytes field was lost")
+    require(isinstance(decoded_unknown.get("future", {}).get("link"), dict), "unknown CID link was lost")
 
     schemas = data["schemas"]
     require(set(schemas) == {"envelope", "payload"}, "schema set drift")
@@ -460,7 +531,18 @@ def validate(data: dict) -> None:
             lens = lenses[lens_id]
             require(lens["total"] and lens["lossless"], f"default path uses ineligible lens: {lens_id}")
 
-    require(set(data["requiredViewProvenance"]) == {"sourceCodec", "viewCodec", "sourceUri", "sourceRecordCid", "lensesApplied"}, "view provenance incomplete")
+    view_contract = data["viewContract"]
+    require(set(view_contract) == {"required", "contentUnion", "cases"}, "view contract field drift")
+    require(set(view_contract["required"]) == {"sourceCodec", "viewCodec", "sourceUri", "sourceRecordCid", "lensesApplied", "content", "claimCid", "signature"}, "view fields incomplete")
+    require(view_contract["contentUnion"] == envelope_record["properties"]["content"], "view content union diverges from claim content union")
+    expected_view_cases = [
+        ("v1-view", "kan-claim-v1", "tools.kan.defs#claimContent", "typed"),
+        ("v2-view", "kan-claim-v2-test", "tools.kan.fixture#claimContentV2", "typed"),
+        ("mismatched-view", "kan-claim-v1", "tools.kan.fixture#claimContentV2", "codec-content-type-mismatch"),
+    ]
+    actual_view_cases = [(c["name"], c["viewCodec"], c["contentType"], c["outcome"]) for c in view_contract["cases"]]
+    require(actual_view_cases == expected_view_cases, "view codec/content matrix incomplete or mislabeled")
+    require(all(codec_type_outcome(c["viewCodec"], c["contentType"]) == c["outcome"] for c in view_contract["cases"]), "view codec/content pairing not enforced")
     expected_secrets = {
         "release-source": ("github-public", False), "github-app-private-key": ("railway-runtime", False),
         "pds-admin-credential": ("railway-runtime", True), "repository-signing-key": ("pds-volume", True),
@@ -494,6 +576,7 @@ def mutations(data: dict) -> list[tuple[str, dict]]:
         ("drop wire content type", lambda d: d["wireTypeProjection"]["wire"].pop("$type")),
         ("pollute internal content type", lambda d: d["wireTypeProjection"]["internal"].__setitem__("$type", "tools.kan.defs#claimContent")),
         ("reinterpret unknown union", lambda d: d["unknownUnionRoundTrip"].__setitem__("codec", "kan-claim-v1")),
+        ("corrupt unknown union bytes", lambda d: d["unknownUnionRoundTrip"]["canonicalBytes"].__setitem__("$bytes", d["unknownUnionRoundTrip"]["canonicalBytes"]["$bytes"][:-4] + "AAAA")),
         ("schema bytes", lambda d: d["schemas"]["envelope"]["value"]["defs"].clear()),
         ("schema cid", lambda d: d["schemas"]["envelope"].__setitem__("cid", d["schemas"]["payload"]["cid"])),
         ("binding label", lambda d: d["bindingCases"][0].__setitem__("outcome", "idempotent")),
@@ -511,7 +594,8 @@ def mutations(data: dict) -> list[tuple[str, dict]]:
         ("delete embedded schema", lambda d: d["codecBinding"].pop("payloadLexicon")),
         ("unknown identity", lambda d: d["normalizationCases"][0].__setitem__("source", "kan-claim-v9")),
         ("lossy default", lambda d: d["normalizationCases"][1].__setitem__("path", ["synthetic-v2-summary"])),
-        ("provenance", lambda d: d["requiredViewProvenance"].remove("sourceRecordCid")),
+        ("view content omission", lambda d: d["viewContract"]["required"].remove("content")),
+        ("view pair acceptance", lambda d: d["viewContract"]["cases"][2].__setitem__("outcome", "typed")),
         ("secret deletion", lambda d: d["secretBoundaries"].pop()),
         ("duplicate secret boundary", lambda d: d["secretBoundaries"].append(copy.deepcopy(d["secretBoundaries"][0]))),
     ]

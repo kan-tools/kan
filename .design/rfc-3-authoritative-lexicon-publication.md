@@ -76,8 +76,11 @@ GitHub workflow holds production publication credentials.
   explicitly classified and are never selected by default normalization.
 - REQ-9: The reference AppView defaults typed view XRPC responses to its
   declared current preferred codec and accepts an optional requested target
-  codec. Every normalized response discloses `sourceCodec`, `viewCodec`, the
-  original AT URI and record CID, and the ordered lens identifiers applied.
+  codec. Every normalized response carries `content` in the same append-only
+  open typed union as `tools.kan.claim`; `viewCodec` must resolve to a codec
+  entry whose `payloadSchema` equals `content.$type`. It also discloses
+  `sourceCodec`, the original AT URI and record CID, and the ordered lens
+  identifiers applied.
   Missing, partial, or lossy lens paths fail with a stable typed error. Among
   eligible paths the AppView minimizes hop count and then chooses the bytewise
   lexicographically smallest lens-ID sequence. Raw retrieval
@@ -187,10 +190,12 @@ GitHub workflow holds production publication credentials.
       lossy lens is never used by default normalization. (REQ-8)
 - [ ] AC-11: AppView contract tests request the default and an explicit target
       codec and assert `sourceCodec`, `viewCodec`, original AT URI, original
-      record CID, and ordered lens identifiers. Unsupported target codecs,
-      absent paths, partial paths, invalid signatures, and claim-CID mismatch
-      return stable declared errors without a fabricated view. (REQ-9,
-      REQ-10)
+      record CID, ordered lens identifiers, and a concrete known arm of the
+      open view-content union. Exact fixtures accept registered
+      `viewCodec`/`content.$type` pairs and reject a mismatch. Unsupported
+      target codecs, absent paths, partial paths, invalid signatures, and
+      claim-CID mismatch return stable declared errors without a fabricated
+      view. (REQ-9, REQ-10)
 - [ ] AC-12: The reference AppView's conformance suite runs both in its normal
       Railway deployment and in an independent local container against a
       conforming test PDS, with equivalent typed XRPC results and provenance.
@@ -221,7 +226,8 @@ GitHub workflow holds production publication credentials.
       alerts on any divergence from the last verified release provenance.
       (REQ-5, REQ-7, REQ-10, REQ-12, REQ-14)
 - [ ] AC-17: `kan-atproto` can encode/decode every known union arm, preserve and
-      byte-stably re-emit an unknown arm, and reject a codec/arm mismatch
+      byte-stably re-emit canonical DAG-CBOR for an unknown arm containing
+      nested values, bytes, and a CID link, and reject a codec/arm mismatch
       without constructing domain `ClaimContent`. Dependency and source scans
       prove the crate has no domain-model dependency and `$type` handling does
       not spread outside it and the thin `src/at_claim.rs` adapter. (REQ-15)

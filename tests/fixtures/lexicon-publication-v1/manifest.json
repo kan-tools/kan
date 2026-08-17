@@ -39,7 +39,8 @@
   },
   "unknownUnionRoundTrip": {
     "codec":"kan-claim-v9",
-    "content":{"$type":"tools.kan.future#claimContentV9","future":{"nested":[1,true,"preserve-me"]}}
+    "canonicalBytes":{"$bytes":"omUkdHlwZXgfdG9vbHMua2FuLmZ1dHVyZSNjbGFpbUNvbnRlbnRWOWZmdXR1cmWjZGJsb2JJAP91bmtub3duZGxpbmvYKlglAAFxEiDyoQzZnggfhJE8rUIsuJZkWqumr/rG6xT0g4n7BVJy/mZuZXN0ZWSDAfVrcHJlc2VydmUtbWU="},
+    "contentCid":{"$link":"bafyreihe2vxwldxtnw65qkqyn7eg6ccf4h62lwe2sogh6xv3mo5dc762di"}
   },
   "schemas": {
     "envelope": {
@@ -101,7 +102,15 @@
     {"name":"unknown-source","source":"kan-claim-v9","target":"kan-claim-v2-test","path":[],"outcome":"unsupported-source-codec"},
     {"name":"unknown-target","source":"kan-claim-v1","target":"kan-claim-v9","path":[],"outcome":"unsupported-target-codec"}
   ],
-  "requiredViewProvenance": ["sourceCodec","viewCodec","sourceUri","sourceRecordCid","lensesApplied"],
+  "viewContract": {
+    "required":["sourceCodec","viewCodec","sourceUri","sourceRecordCid","lensesApplied","content","claimCid","signature"],
+    "contentUnion":{"type":"union","refs":["tools.kan.defs#claimContent","tools.kan.fixture#claimContentV2"],"closed":false},
+    "cases":[
+      {"name":"v1-view","viewCodec":"kan-claim-v1","contentType":"tools.kan.defs#claimContent","outcome":"typed"},
+      {"name":"v2-view","viewCodec":"kan-claim-v2-test","contentType":"tools.kan.fixture#claimContentV2","outcome":"typed"},
+      {"name":"mismatched-view","viewCodec":"kan-claim-v1","contentType":"tools.kan.fixture#claimContentV2","outcome":"codec-content-type-mismatch"}
+    ]
+  },
   "secretBoundaries": [
     {"secret":"release-source","owner":"github-public","productionAuthority":false},
     {"secret":"github-app-private-key","owner":"railway-runtime","productionAuthority":false},
