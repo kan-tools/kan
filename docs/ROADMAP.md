@@ -19,7 +19,32 @@ routes filesystem mutations through typed persistence capabilities. That work
 landed in [PR #233](https://github.com/kan-tools/kan/pull/233) and closed
 [issue #216](https://github.com/kan-tools/kan/issues/216).
 
-## Active public-protocol track: RFC 3
+## Active product track: identity first
+
+The active sequence is identity → URI-native local application → kan-native
+hosted service → ATProto interoperability. Later milestones may prototype
+against an earlier contract, but they do not become authorities for identity,
+repository scope, admission, or URI semantics.
+
+| Milestone | Outcome | Governing design |
+|---|---|---|
+| 1 — Identity | Stable principals, repository scopes, governance, delegated admission, and four separately reported read judgments | [RFC 1](../rfcs/1-identity-system.md) |
+| 2 — Local URI application | Existing CLI and MCP reads compile to one RFC 2 resolution request and canonical `kan://local/...` URI | [RFC 2](../rfcs/2-kan-uri-scheme.md) |
+| 3 — Hosted kan | A Railway-deployable kan-native authority resolves the same typed resources while keeping authenticated ingest separate | [identity-first roadmap](../.design/identity-first-uri-native-roadmap.md) |
+| 4 — ATProto | RFC 3 codecs, publication, and AppView adapt the proven identity and URI model | [RFC 3](../rfcs/3-authoritative-lexicon-publication.md) |
+
+Milestone 1 began in commit `4ad239a`. The implemented first slice is deliberately
+compatibility-only: `src/identity.rs` defines RFC 1's cryptographic validity,
+identity standing, repository admission, and view-trust results; applies the
+ordered admission table; and evaluates preserved legacy claims without changing
+their bytes or the default writer. `src/identity/control.rs` adds the common
+domain-separated control-event producer model, canonical proof ordering,
+logical/proved event identifiers, and static P-256 `did:key` proof checking.
+Lossless event decoding and the normative vectors remain gates before this
+becomes a persistence or write surface; repository inception, governance,
+modern authorship, and write cutover also remain pending.
+
+## Later public-protocol track: RFC 3
 
 [RFC 3](../rfcs/3-authoritative-lexicon-publication.md) specifies authoritative
 `tools.kan.*` Lexicon publication, immutable codec/lens bindings, and a portable
@@ -40,10 +65,11 @@ The tracking epic is [#29](https://github.com/kan-tools/kan/issues/29):
 | 4 | [#240 — Railway deployment and independent recovery](https://github.com/kan-tools/kan/issues/240) | #237, #238, #239 |
 | 5 | [#241 — end-to-end release qualification and drift probes](https://github.com/kan-tools/kan/issues/241) | #235–#240 |
 
-The first parallel implementation wave is therefore #235 and #237, subject to
-RFC 3 completing review. Production is not complete until #241 verifies the
-public route from DNS and DID resolution through authoritative PDS records and
-normalized AppView responses, including recovery and provenance evidence.
+The issue dependency graph remains valid, but execution begins only after the
+identity, local-URI, and hosted-kan milestones prove the model it will carry.
+Production is not complete until #241 verifies the public route from DNS and
+DID resolution through authoritative PDS records and normalized AppView
+responses, including recovery and provenance evidence.
 
 ## Repository-family ownership
 
@@ -59,12 +85,13 @@ normalized AppView responses, including recovery and provenance evidence.
 ## Separate and deferred tracks
 
 HostedRelay, its product/access model, firehose ingest, and additional AppView
-selection policy are not silently folded into RFC 3. The older
-`.design/sync-layer-architecture-and-staging.md` and ADR-35 remain useful
+selection policy are not silently folded into RFC 3. A permissioned hosted-kan
+resolver is likewise distinct from HostedRelay's opaque encrypted backup. The
+older `.design/sync-layer-architecture-and-staging.md` and ADR-35 remain useful
 history for HostedRelay sequencing, but their `dev.kan.*`, `did:plc`, version,
 and public-ATProto assumptions are superseded for RFC 3 by the RFC and the
-issue graph above. The longer-term identity program remains tracked in
-[#30](https://github.com/kan-tools/kan/issues/30).
+issue graph above. Identity implementation and issue #30 now belong to the
+active first milestone.
 
 ## Which document wins
 

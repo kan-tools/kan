@@ -1259,7 +1259,17 @@ None.
 ## Implementation status
 
 Accepted by the unanimous maintainer review override in pull request #229 after
-independent architecture and bounded acceptance review. Not implemented: the
-current implementation remains the compatibility source described above.
-Acceptance authorizes staged implementation; it does not mark any behavior
-shipped.
+independent architecture and bounded acceptance review. Staged implementation
+began in commit `4ad239a` with the compatibility-only judgment kernel in
+`src/identity.rs`: the four read judgments and ordered repository-admission
+table are typed, and preserved legacy claims can be evaluated without changing
+their bytes, signer selection, fold behavior, or the default writer.
+
+The supported-v1 control-event producer model is also implemented in
+`src/identity/control.rs`: domain-separated signing bytes, exact
+`IdentityVersion` values, canonical proof ordering, separate logical and proved
+event CIDs, and static P-256 `did:key` proof checking. Lossless decoding and
+unknown-field preservation, reference vectors, Ed25519, `did:kan` resolution,
+repository inception and governance, delegation, modern authorship, system
+identity state, and default-write cutover remain unimplemented. This status is
+therefore an implementation checkpoint, not a claim that RFC 1 is shipped.

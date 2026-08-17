@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{claim::Claim, fold::TrustBase};
 
+pub mod control;
+
 /// Whether the claim's bytes and exact signing authority authenticate it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
