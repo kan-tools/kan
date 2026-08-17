@@ -41,9 +41,13 @@ their bytes or the default writer. `src/identity/control.rs` adds the common
 domain-separated control-event producer model, canonical proof ordering,
 logical/proved event identifiers, static P-256 `did:key` proof checking, and a
 lossless canonical decoder that retains and discloses unsupported fields. The
-normative vectors remain a gate before this becomes a persistence or write
-surface; repository inception, governance, modern authorship, and write cutover
-also remain pending.
+first `did:kan` genesis slice validates controller, verification-method,
+purpose, and service ordering; derives the base32-lower SHA-256 multihash DID
+from canonical unsigned payload bytes; pins one deterministic identifier
+vector; and requires a valid listed recovery-controller proof. The complete
+normative vector manifest remains a gate before this becomes a persistence or
+write surface; identity updates/resolution, repository inception, governance,
+modern authorship, and write cutover also remain pending.
 
 ## Later public-protocol track: RFC 3
 

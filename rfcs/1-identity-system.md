@@ -1270,7 +1270,12 @@ The supported-v1 control-event producer model is also implemented in
 `IdentityVersion` values, canonical proof ordering, separate logical and proved
 event CIDs, static P-256 `did:key` proof checking, and canonical lossless
 decoding that preserves unsupported event and proof fields without narrowing
-their bytes or identifiers. Reference vectors, Ed25519, `did:kan` resolution,
-repository inception and governance, delegation, modern authorship, system
-identity state, and default-write cutover remain unimplemented. This status is
-therefore an implementation checkpoint, not a claim that RFC 1 is shipped.
+their bytes or identifiers. `src/identity/did_kan.rs` implements validated
+genesis payload production, canonical identifier derivation, a pinned initial
+identifier vector, and the offline listed-recovery-controller proof gate.
+
+The complete reference-vector manifest, Ed25519, `did:kan` updates and
+resolution, repository inception and governance, delegation, modern authorship,
+system identity state, and default-write cutover remain unimplemented. This
+status is therefore an implementation checkpoint, not a claim that RFC 1 is
+shipped.
