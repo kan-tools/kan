@@ -151,6 +151,160 @@ pub struct ControlEvent {
     pub proofs: Vec<Proof>,
 }
 
+/// A canonical control event retained at the lossless protocol boundary.
+///
+/// `raw` includes fields this build does not understand. Such an event is
+/// reported as unsupported, but its bytes and both identifiers remain
+/// available; an older reader never re-encodes it through a narrower struct.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PreservedControlEvent {
+    raw: Ipld,
+    signing_input: Ipld,
+    canonical_bytes: Vec<u8>,
+    unsupported_fields: Vec<String>,
+}
+
+impl PreservedControlEvent {
+    pub fn raw(&self) -> &Ipld {
+        &self.raw
+    }
+
+    pub fn canonical_bytes(&self) -> &[u8] {
+        &self.canonical_bytes
+    }
+
+    pub fn unsupported_fields(&self) -> &[String] {
+        &self.unsupported_fields
+    }
+
+    pub fn is_supported(&self) -> bool {
+        self.unsupported_fields.is_empty() && self.typed().is_some()
+    }
+
+    pub fn typed(&self) -> Option<ControlEvent> {
+        let bytes = atproto_dasl::to_vec(&self.raw).ok()?;
+        atproto_dasl::from_reader(&bytes[..]).ok()
+    }
+
+    pub fn logical_cid(&self) -> Result<Cid, crate::cid::Error> {
+        crate::cid::content_cid(&self.signing_input)
+    }
+
+    pub fn proved_cid(&self) -> Result<Cid, crate::cid::Error> {
+        crate::cid::content_cid(&self.raw)
+    }
+}
+
+/// Decode a canonical control event without discarding fields unknown to this
+/// build. Common-envelope defects are invalid; additive fields are preserved
+/// and disclosed as unsupported.
+pub fn decode_preserving(bytes: &[u8]) -> Result<PreservedControlEvent, DecodeError> {
+    let raw: Ipld = atproto_dasl::from_reader(bytes)?;
+    let canonical_bytes = atproto_dasl::to_vec(&raw)?;
+    if canonical_bytes != bytes {
+        return Err(DecodeError::NonCanonical);
+    }
+    let Ipld::Map(entries) = &raw else {
+        return Err(DecodeError::Malformed("event is not a map"));
+    };
+
+    match entries.get("v") {
+        Some(Ipld::Integer(v)) if *v == CONTROL_EVENT_VERSION as i128 => {}
+        Some(Ipld::Integer(v)) => {
+            return Err(DecodeError::UnsupportedVersion(*v));
+        }
+        _ => return Err(DecodeError::Malformed("v is not an unsigned integer")),
+    }
+    require_nonempty_string(entries, "domain")?;
+    require_nonempty_string(entries, "type")?;
+    let payload = entries
+        .get("payload")
+        .ok_or(DecodeError::Malformed("payload is missing"))?;
+    if !matches!(payload, Ipld::Map(_)) {
+        return Err(DecodeError::Malformed("payload is not a map"));
+    }
+    if contains_float(payload) {
+        return Err(DecodeError::Malformed("payload contains a float"));
+    }
+    let Some(Ipld::List(proofs)) = entries.get("proofs") else {
+        return Err(DecodeError::Malformed("proofs is not a list"));
+    };
+    if proofs.is_empty() {
+        return Err(DecodeError::Malformed("proofs is empty"));
+    }
+
+    let known_event_fields = ["v", "domain", "type", "payload", "proofs"];
+    let mut unsupported_fields: Vec<String> = entries
+        .keys()
+        .filter(|key| !known_event_fields.contains(&key.as_str()))
+        .map(|key| key.to_string())
+        .collect();
+    let mut proof_identities = BTreeSet::new();
+    let mut previous_key = None;
+    for (index, proof) in proofs.iter().enumerate() {
+        let Ipld::Map(fields) = proof else {
+            return Err(DecodeError::Malformed("proof is not a map"));
+        };
+        let method = require_nonempty_string(fields, "method")?;
+        validate_method(method).map_err(|_| DecodeError::Malformed("invalid proof method"))?;
+        let controller = fields
+            .get("controllerState")
+            .ok_or(DecodeError::Malformed("controllerState is missing"))?;
+        let alg = require_nonempty_string(fields, "alg")?;
+        let Some(Ipld::Bytes(sig)) = fields.get("sig") else {
+            return Err(DecodeError::Malformed("proof sig is not bytes"));
+        };
+        let known_proof_fields = ["method", "controllerState", "alg", "sig"];
+        unsupported_fields.extend(
+            fields
+                .keys()
+                .filter(|key| !known_proof_fields.contains(&key.as_str()))
+                .map(|key| format!("proofs[{index}].{key}")),
+        );
+
+        let controller_bytes = atproto_dasl::to_vec(controller)?;
+        let key = (
+            method.as_bytes().to_vec(),
+            controller_bytes,
+            alg.as_bytes().to_vec(),
+            sig.clone(),
+        );
+        let identity = (key.0.clone(), key.1.clone(), key.2.clone());
+        if !proof_identities.insert(identity) {
+            return Err(DecodeError::DuplicateProof);
+        }
+        if previous_key.as_ref().is_some_and(|prior| prior > &key) {
+            return Err(DecodeError::UnsortedProofs);
+        }
+        previous_key = Some(key);
+    }
+
+    unsupported_fields.sort();
+    let mut signing_entries = entries.clone();
+    signing_entries.remove("proofs");
+    let signing_input = Ipld::Map(signing_entries);
+    let preserved = PreservedControlEvent {
+        raw,
+        signing_input,
+        canonical_bytes,
+        unsupported_fields,
+    };
+    if preserved.typed().is_none() && preserved.unsupported_fields.is_empty() {
+        preserved_with_shape_marker(preserved)
+    } else {
+        Ok(preserved)
+    }
+}
+
+fn preserved_with_shape_marker(
+    mut preserved: PreservedControlEvent,
+) -> Result<PreservedControlEvent, DecodeError> {
+    preserved
+        .unsupported_fields
+        .push("unsupported-control-shape".to_string());
+    Ok(preserved)
+}
+
 impl ControlEvent {
     /// Build a canonical event, sorting proofs and refusing duplicate proof
     /// identities. Sorting is producer convenience; [`Self::validate`]
@@ -284,6 +438,18 @@ fn validate_method(method: &str) -> Result<(), Error> {
     Ok(())
 }
 
+fn require_nonempty_string<'a>(
+    entries: &'a std::collections::BTreeMap<String, Ipld>,
+    field: &'static str,
+) -> Result<&'a str, DecodeError> {
+    match entries.get(field) {
+        Some(Ipld::String(value)) if !value.is_empty() => Ok(value),
+        _ => Err(DecodeError::Malformed(
+            "required text field is missing or empty",
+        )),
+    }
+}
+
 fn contains_float(value: &Ipld) -> bool {
     match value {
         Ipld::Float(_) => true,
@@ -319,4 +485,22 @@ pub enum Error {
     Encode(#[from] atproto_dasl::EncodeError),
     #[error(transparent)]
     Cid(#[from] crate::cid::Error),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DecodeError {
+    #[error("control event is not canonical DAG-CBOR")]
+    NonCanonical,
+    #[error("unsupported control-event version {0}")]
+    UnsupportedVersion(i128),
+    #[error("malformed control event: {0}")]
+    Malformed(&'static str),
+    #[error("duplicate proof method/controller-state/algorithm tuple")]
+    DuplicateProof,
+    #[error("proof array is not in canonical order")]
+    UnsortedProofs,
+    #[error(transparent)]
+    Decode(#[from] atproto_dasl::DecodeError),
+    #[error(transparent)]
+    Encode(#[from] atproto_dasl::EncodeError),
 }

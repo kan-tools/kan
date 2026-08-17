@@ -39,10 +39,11 @@ identity standing, repository admission, and view-trust results; applies the
 ordered admission table; and evaluates preserved legacy claims without changing
 their bytes or the default writer. `src/identity/control.rs` adds the common
 domain-separated control-event producer model, canonical proof ordering,
-logical/proved event identifiers, and static P-256 `did:key` proof checking.
-Lossless event decoding and the normative vectors remain gates before this
-becomes a persistence or write surface; repository inception, governance,
-modern authorship, and write cutover also remain pending.
+logical/proved event identifiers, static P-256 `did:key` proof checking, and a
+lossless canonical decoder that retains and discloses unsupported fields. The
+normative vectors remain a gate before this becomes a persistence or write
+surface; repository inception, governance, modern authorship, and write cutover
+also remain pending.
 
 ## Later public-protocol track: RFC 3
 

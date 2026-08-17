@@ -1268,8 +1268,9 @@ their bytes, signer selection, fold behavior, or the default writer.
 The supported-v1 control-event producer model is also implemented in
 `src/identity/control.rs`: domain-separated signing bytes, exact
 `IdentityVersion` values, canonical proof ordering, separate logical and proved
-event CIDs, and static P-256 `did:key` proof checking. Lossless decoding and
-unknown-field preservation, reference vectors, Ed25519, `did:kan` resolution,
+event CIDs, static P-256 `did:key` proof checking, and canonical lossless
+decoding that preserves unsupported event and proof fields without narrowing
+their bytes or identifiers. Reference vectors, Ed25519, `did:kan` resolution,
 repository inception and governance, delegation, modern authorship, system
 identity state, and default-write cutover remain unimplemented. This status is
 therefore an implementation checkpoint, not a claim that RFC 1 is shipped.

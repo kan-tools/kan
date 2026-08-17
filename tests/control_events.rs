@@ -4,7 +4,8 @@ use atproto_dasl::Ipld;
 use kan::{
     identity::{
         control::{
-            verify_static_did_key_proof, ControlEvent, Error, IdentityVersion, Proof, SigningInput,
+            decode_preserving, verify_static_did_key_proof, ControlEvent, DecodeError, Error,
+            IdentityVersion, Proof, SigningInput,
         },
         CryptographicValidity,
     },
@@ -138,4 +139,91 @@ fn static_proof_requires_the_exact_absolute_method_fragment() {
         verify_static_did_key_proof(&input, &proof),
         CryptographicValidity::Invalid
     );
+}
+
+#[test]
+fn supported_event_decodes_without_changing_bytes_or_identifiers() {
+    let input = SigningInput::new("kan.test.v1", "test", payload(5)).unwrap();
+    let identity = Identity::generate();
+    let event = ControlEvent::new(input.clone(), vec![signed_proof(&input, &identity)]).unwrap();
+    let bytes = event.canonical_bytes().unwrap();
+    let decoded = decode_preserving(&bytes).unwrap();
+
+    assert!(decoded.is_supported());
+    assert!(decoded.unsupported_fields().is_empty());
+    assert_eq!(decoded.canonical_bytes(), bytes);
+    assert_eq!(decoded.logical_cid().unwrap(), event.logical_cid().unwrap());
+    assert_eq!(decoded.proved_cid().unwrap(), event.proved_cid().unwrap());
+}
+
+#[test]
+fn unknown_event_field_is_preserved_and_changes_the_logical_identifier() {
+    let input = SigningInput::new("kan.test.v1", "test", payload(6)).unwrap();
+    let identity = Identity::generate();
+    let event = ControlEvent::new(input.clone(), vec![signed_proof(&input, &identity)]).unwrap();
+    let original = decode_preserving(&event.canonical_bytes().unwrap()).unwrap();
+    let mut raw = original.raw().clone();
+    let Ipld::Map(fields) = &mut raw else {
+        unreachable!()
+    };
+    fields.insert("future".to_string(), Ipld::String("kept".to_string()));
+    let bytes = atproto_dasl::to_vec(&raw).unwrap();
+    let decoded = decode_preserving(&bytes).unwrap();
+
+    assert!(!decoded.is_supported());
+    assert_eq!(decoded.unsupported_fields(), &["future"]);
+    assert_eq!(decoded.canonical_bytes(), bytes);
+    assert_ne!(
+        decoded.logical_cid().unwrap(),
+        original.logical_cid().unwrap()
+    );
+}
+
+#[test]
+fn unknown_proof_field_changes_only_the_proved_identifier() {
+    let input = SigningInput::new("kan.test.v1", "test", payload(7)).unwrap();
+    let identity = Identity::generate();
+    let event = ControlEvent::new(input.clone(), vec![signed_proof(&input, &identity)]).unwrap();
+    let original = decode_preserving(&event.canonical_bytes().unwrap()).unwrap();
+    let mut raw = original.raw().clone();
+    let Ipld::Map(event_fields) = &mut raw else {
+        unreachable!()
+    };
+    let Some(Ipld::List(proofs)) = event_fields.get_mut("proofs") else {
+        unreachable!()
+    };
+    let Ipld::Map(proof) = &mut proofs[0] else {
+        unreachable!()
+    };
+    proof.insert("future".to_string(), Ipld::Bool(true));
+    let decoded = decode_preserving(&atproto_dasl::to_vec(&raw).unwrap()).unwrap();
+
+    assert_eq!(decoded.unsupported_fields(), &["proofs[0].future"]);
+    assert_eq!(
+        decoded.logical_cid().unwrap(),
+        original.logical_cid().unwrap()
+    );
+    assert_ne!(
+        decoded.proved_cid().unwrap(),
+        original.proved_cid().unwrap()
+    );
+}
+
+#[test]
+fn lossless_decoder_rejects_semantically_unsorted_proofs() {
+    let input = SigningInput::new("kan.test.v1", "test", payload(8)).unwrap();
+    let one = Identity::generate();
+    let two = Identity::generate();
+    let mut event = ControlEvent::new(
+        input.clone(),
+        vec![signed_proof(&input, &one), signed_proof(&input, &two)],
+    )
+    .unwrap();
+    event.proofs.reverse();
+    let bytes = atproto_dasl::to_vec(&event).unwrap();
+
+    assert!(matches!(
+        decode_preserving(&bytes),
+        Err(DecodeError::UnsortedProofs)
+    ));
 }
