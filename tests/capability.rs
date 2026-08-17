@@ -1,13 +1,15 @@
 use std::collections::HashSet;
 
+use atproto_dasl::Ipld;
 use kan::{
     cid::content_cid,
     identity::{
         capability::{
-            evaluate_path, Capability, Coverage, Delegation, Error, GovernanceAuthority,
-            Revocation, CAPABILITY_DELEGATE, CLAIM_WRITE, DELEGATION_DOMAIN, DELEGATION_EVENT_TYPE,
+            evaluate_path, resolve as resolve_capabilities, resolve_preserved, Capability,
+            Coverage, Delegation, Error, GovernanceAuthority, Revocation, CAPABILITY_DELEGATE,
+            CLAIM_WRITE, DELEGATION_DOMAIN, DELEGATION_EVENT_TYPE,
         },
-        control::{IdentityVersion, Proof, SigningInput},
+        control::{decode_preserving, ControlEvent, IdentityVersion, Proof, SigningInput},
         repository_inception::RepositoryInception,
         CapabilityEvidence, RevocationStanding, TrustedTime,
     },
@@ -559,4 +561,247 @@ fn revocation_requires_original_grantor_or_current_root_and_a_matching_target() 
         ),
         Err(Error::RevokerNotAuthorized)
     ));
+}
+
+#[test]
+fn raw_evidence_resolution_is_order_independent_and_collapses_proof_variants() {
+    let root = Identity::generate();
+    let delegate = Identity::generate();
+    let child = Identity::generate();
+    let stranger = Identity::generate();
+    let governance = authority(&root.did());
+    let parent = Delegation::root(
+        &governance,
+        root.did(),
+        IdentityVersion::Static,
+        governance.active_event.clone(),
+        delegate.did(),
+        Capability::new(
+            governance.repository.clone(),
+            None,
+            vec![CAPABILITY_DELEGATE.to_string(), CLAIM_WRITE.to_string()],
+            None,
+            None,
+            true,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let parent_input = parent.signing_input().unwrap();
+    let parent_event = parent
+        .proved_event(vec![proof(&root, &parent_input)])
+        .unwrap();
+    let invalid_parent_variant =
+        ControlEvent::new(parent_input.clone(), vec![proof(&stranger, &parent_input)]).unwrap();
+    let parent_state = parent.state().unwrap();
+    let child_delegation = Delegation::child(
+        &governance,
+        &parent_state,
+        IdentityVersion::Static,
+        child.did(),
+        Capability::new(
+            governance.repository.clone(),
+            Some("bug".to_string()),
+            vec![CLAIM_WRITE.to_string()],
+            None,
+            None,
+            false,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let child_input = child_delegation.signing_input().unwrap();
+    let child_event = child_delegation
+        .proved_event(vec![proof(&delegate, &child_input)])
+        .unwrap();
+    let child_id = child_event.logical_cid().unwrap();
+    let revocation = Revocation::new(
+        &governance,
+        &parent_state,
+        root.did(),
+        IdentityVersion::Static,
+        governance.active_event.clone(),
+        None,
+    )
+    .unwrap();
+    let revocation_input = revocation.signing_input().unwrap();
+    let revocation_event = revocation
+        .proved_event(
+            &governance,
+            &parent_state,
+            vec![proof(&root, &revocation_input)],
+        )
+        .unwrap();
+
+    let forward = resolve_capabilities(
+        &governance,
+        &[
+            parent_event.clone(),
+            invalid_parent_variant.clone(),
+            child_event.clone(),
+            revocation_event.clone(),
+        ],
+    );
+    let reverse = resolve_capabilities(
+        &governance,
+        &[
+            revocation_event,
+            child_event,
+            invalid_parent_variant,
+            parent_event,
+        ],
+    );
+    assert_eq!(forward, reverse);
+    assert_eq!(forward.delegations.len(), 2);
+    assert_eq!(forward.revocations.len(), 1);
+    assert!(forward.orphans.is_empty());
+    assert_eq!(
+        forward
+            .evaluate(&governance, &child_id, CLAIM_WRITE, "bug/1", None,)
+            .capability,
+        CapabilityEvidence::CompleteWithoutCoveringPath
+    );
+}
+
+#[test]
+fn raw_evidence_resolution_separates_missing_unsupported_and_invalid() {
+    let root = Identity::generate();
+    let delegate = Identity::generate();
+    let child = Identity::generate();
+    let governance = authority(&root.did());
+    let parent = Delegation::root(
+        &governance,
+        root.did(),
+        IdentityVersion::Static,
+        governance.active_event.clone(),
+        delegate.did(),
+        Capability::new(
+            governance.repository.clone(),
+            None,
+            vec![CLAIM_WRITE.to_string()],
+            None,
+            None,
+            true,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let parent_state = parent.state().unwrap();
+    let child_delegation = Delegation::child(
+        &governance,
+        &parent_state,
+        IdentityVersion::Static,
+        child.did(),
+        Capability::new(
+            governance.repository.clone(),
+            None,
+            vec![CLAIM_WRITE.to_string()],
+            None,
+            None,
+            false,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let child_input = child_delegation.signing_input().unwrap();
+    let child_event = child_delegation
+        .proved_event(vec![proof(&delegate, &child_input)])
+        .unwrap();
+    let missing = resolve_capabilities(&governance, std::slice::from_ref(&child_event));
+    assert_eq!(missing.missing_references, vec![parent_state.event.clone()]);
+    assert_eq!(missing.orphans, vec![child_event.logical_cid().unwrap()]);
+
+    let root_input = parent.signing_input().unwrap();
+    let mut future_payload = root_input.payload.clone();
+    let Ipld::Map(fields) = &mut future_payload else {
+        unreachable!();
+    };
+    fields.insert("futureField".to_string(), Ipld::Bool(true));
+    let future_input =
+        SigningInput::new(DELEGATION_DOMAIN, DELEGATION_EVENT_TYPE, future_payload).unwrap();
+    let future_event =
+        ControlEvent::new(future_input.clone(), vec![proof(&root, &future_input)]).unwrap();
+    let mut nested_future_payload = root_input.payload.clone();
+    let Ipld::Map(fields) = &mut nested_future_payload else {
+        unreachable!();
+    };
+    let Some(Ipld::Map(capability)) = fields.get_mut("capability") else {
+        unreachable!();
+    };
+    capability.insert("futureLimit".to_string(), Ipld::Integer(1));
+    let nested_future_input = SigningInput::new(
+        DELEGATION_DOMAIN,
+        DELEGATION_EVENT_TYPE,
+        nested_future_payload,
+    )
+    .unwrap();
+    let nested_future_event = ControlEvent::new(
+        nested_future_input.clone(),
+        vec![proof(&root, &nested_future_input)],
+    )
+    .unwrap();
+    let mut invalid_event = parent
+        .proved_event(vec![proof(&root, &root_input)])
+        .unwrap();
+    invalid_event.domain = "wrong.domain".to_string();
+    let invalid_id = invalid_event.logical_cid().unwrap();
+    let result = resolve_capabilities(
+        &governance,
+        &[
+            future_event.clone(),
+            nested_future_event.clone(),
+            invalid_event,
+        ],
+    );
+    assert_eq!(result.unsupported.len(), 2);
+    assert!(result
+        .unsupported
+        .contains(&future_event.logical_cid().unwrap()));
+    assert!(result
+        .unsupported
+        .contains(&nested_future_event.logical_cid().unwrap()));
+    assert_eq!(result.invalid, vec![invalid_id]);
+    assert_eq!(result.orphans.len(), 3);
+    assert!(result.missing_references.is_empty());
+}
+
+#[test]
+fn preserved_additive_envelope_fields_are_not_narrowed_into_typed_events() {
+    let root = Identity::generate();
+    let delegate = Identity::generate();
+    let governance = authority(&root.did());
+    let delegation = Delegation::root(
+        &governance,
+        root.did(),
+        IdentityVersion::Static,
+        governance.active_event.clone(),
+        delegate.did(),
+        Capability::new(
+            governance.repository.clone(),
+            None,
+            vec![CLAIM_WRITE.to_string()],
+            None,
+            None,
+            false,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let input = delegation.signing_input().unwrap();
+    let event = delegation.proved_event(vec![proof(&root, &input)]).unwrap();
+    let encoded = event.canonical_bytes().unwrap();
+    let mut raw: Ipld = atproto_dasl::from_reader(&encoded[..]).unwrap();
+    let Ipld::Map(fields) = &mut raw else {
+        unreachable!();
+    };
+    fields.insert("futureEnvelopeField".to_string(), Ipld::Bool(true));
+    let future_bytes = atproto_dasl::to_vec(&raw).unwrap();
+    let preserved = decode_preserving(&future_bytes).unwrap();
+    let future_id = preserved.logical_cid().unwrap();
+    assert_eq!(preserved.canonical_bytes(), future_bytes);
+
+    let resolution = resolve_preserved(&governance, &[preserved]);
+    assert!(resolution.delegations.is_empty());
+    assert_eq!(resolution.unsupported, vec![future_id]);
+    assert!(resolution.invalid.is_empty());
 }

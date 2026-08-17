@@ -1320,11 +1320,17 @@ segment-aware subject coverage, inclusive time bounds, and revocation of a
 delegation or any descendant. It preserves unavailable trusted time as a
 separate revocation and admission result instead of guessing from an asserted
 claim timestamp.
+The same module resolves unordered typed or losslessly preserved control-event
+evidence, collapses proof variants by logical event identifier, recognizes
+delegation parents before children, authenticates revocations against their
+recognized targets, and reports missing references, unsupported evidence, and
+invalid evidence separately. Additive envelope fields retain their original
+bytes and logical identifiers and are never narrowed into the supported event
+shape.
 
 The complete reference-vector manifest, Ed25519, external/recursive DID
-controller resolution, lossless capability-evidence resolution, modern
-authorship, system identity state, persistence, and default-write cutover remain
-unimplemented. Issue #244's operation-wire and absent-removal ambiguities are
-closed by the normative typed schema above and its pinned implementation
-vector. This status is therefore an implementation checkpoint, not a claim that
-RFC 1 is shipped.
+controller resolution, modern authorship, system identity state, persistence,
+and default-write cutover remain unimplemented. Issue #244's operation-wire and
+absent-removal ambiguities are closed by the normative typed schema above and
+its pinned implementation vector. This status is therefore an implementation
+checkpoint, not a claim that RFC 1 is shipped.

@@ -65,8 +65,12 @@ invalid or unsupported evidence. `src/identity/capability.rs` now adds validated
 capability values, canonical delegation and revocation producers, static P-256
 `did:key` authorization, strict single-parent attenuation, current-root and
 governance-ancestry checks, and deterministic path evaluation across scope,
-trusted-time, and ancestor-revocation boundaries. Raw evidence resolution,
-persistence, and write integration remain pending.
+trusted-time, and ancestor-revocation boundaries. Its evidence resolver now
+collapses proof variants, recognizes parents before children regardless of
+observation order, authenticates revocations against recognized targets, and
+keeps missing, unsupported, and invalid evidence distinct while retaining
+additive envelope fields through the lossless control boundary. Persistence and
+write integration remain pending.
 
 ## Later public-protocol track: RFC 3
 

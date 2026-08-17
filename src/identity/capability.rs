@@ -1,12 +1,18 @@
 //! RFC 1 repository capabilities, delegations, and revocations.
 
-use std::collections::{BTreeSet, HashSet};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeSet, HashMap, HashSet},
+};
 
 use atproto_dasl::{Cid, Ipld};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    control::{verify_static_did_key_proof, ControlEvent, IdentityVersion, Proof, SigningInput},
+    control::{
+        verify_static_did_key_proof, ControlEvent, IdentityVersion, PreservedControlEvent, Proof,
+        SigningInput,
+    },
     did_kan::validate_did,
     repository_inception::validate_repository_id,
     CryptographicValidity,
@@ -354,6 +360,16 @@ impl Delegation {
         Ok(())
     }
 
+    fn validate_parent(&self, parent: &DelegationState) -> Result<(), Error> {
+        if self.parent.as_ref() != Some(&parent.event) {
+            return Err(Error::DelegationMismatch);
+        }
+        if self.grantor != parent.delegate || self.governance_event != parent.governance_event {
+            return Err(Error::ParentMismatch);
+        }
+        self.capability.attenuates(&parent.capability)
+    }
+
     pub fn canonical_bytes(&self) -> Result<Vec<u8>, Error> {
         self.validate_structure()?;
         Ok(atproto_dasl::to_vec(self)?)
@@ -510,6 +526,471 @@ impl Revocation {
             effective_at: self.effective_at,
         })
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilityResolution {
+    pub delegations: Vec<DelegationState>,
+    pub revocations: Vec<RevocationState>,
+    pub orphans: Vec<Cid>,
+    pub missing_references: Vec<Cid>,
+    pub unsupported: Vec<Cid>,
+    pub invalid: Vec<Cid>,
+    pub diagnostics: Vec<String>,
+}
+
+impl CapabilityResolution {
+    pub fn evaluate(
+        &self,
+        governance: &GovernanceAuthority,
+        head: &Cid,
+        operation: &str,
+        subject: &str,
+        evaluation_instant: Option<i64>,
+    ) -> CapabilityPathEvaluation {
+        evaluate_path(
+            governance,
+            head,
+            &self.delegations,
+            &self.revocations,
+            operation,
+            subject,
+            evaluation_instant,
+        )
+    }
+}
+
+/// Resolve capability control events without consulting observation order,
+/// timestamps, proof count, or external state. Proof variants sharing a
+/// logical identifier contribute authorization evidence to the same event.
+pub fn resolve(
+    governance: &GovernanceAuthority,
+    candidates: &[ControlEvent],
+) -> CapabilityResolution {
+    let mut diagnostics = BTreeSet::new();
+    let mut orphans = HashSet::new();
+    let mut unsupported = HashSet::new();
+    let mut invalid = HashSet::new();
+    let mut evidence_ids = HashSet::new();
+    let mut invalid_envelope_ids = HashSet::new();
+    let mut groups: HashMap<Cid, CandidateGroup> = HashMap::new();
+
+    for event in candidates {
+        let Ok(cid) = event.logical_cid() else {
+            diagnostics.insert("candidate has an invalid signing input".to_string());
+            continue;
+        };
+        evidence_ids.insert(cid.clone());
+        if let Err(error) = event.validate() {
+            diagnostics.insert(format!("{cid}: invalid control envelope: {error}"));
+            invalid_envelope_ids.insert(cid);
+            continue;
+        }
+        groups
+            .entry(cid)
+            .and_modify(|group| group.proofs.extend(event.proofs.clone()))
+            .or_insert_with(|| CandidateGroup {
+                input: event.signing_input(),
+                proofs: event.proofs.clone(),
+                decoded: decode_payload(event),
+            });
+    }
+    for cid in invalid_envelope_ids {
+        if !groups.contains_key(&cid) {
+            orphans.insert(cid.clone());
+            invalid.insert(cid);
+        }
+    }
+
+    let mut delegations = HashMap::new();
+    let mut pending: HashSet<Cid> = groups
+        .iter()
+        .filter_map(|(cid, group)| {
+            matches!(group.decoded, DecodedPayload::Delegation(_)).then_some(cid.clone())
+        })
+        .collect();
+
+    classify_non_delegations(
+        &groups,
+        &mut orphans,
+        &mut unsupported,
+        &mut invalid,
+        &mut diagnostics,
+    );
+
+    loop {
+        let mut progressed = false;
+        for cid in sorted_cids(pending.clone()) {
+            let group = &groups[&cid];
+            let DecodedPayload::Delegation(delegation) = &group.decoded else {
+                unreachable!();
+            };
+            let parent = match &delegation.parent {
+                Some(parent) => {
+                    let Some(parent) = delegations.get(parent) else {
+                        continue;
+                    };
+                    Some(parent)
+                }
+                None => None,
+            };
+            let result = delegation
+                .validate_structure()
+                .and_then(|()| delegation.validate_governance(governance))
+                .and_then(|()| match parent {
+                    Some(parent) => delegation.validate_parent(parent),
+                    None => Ok(()),
+                })
+                .and_then(|()| {
+                    authorize_principal(
+                        &group.input,
+                        &group.proofs,
+                        &delegation.grantor,
+                        &delegation.grantor_identity_version,
+                    )
+                });
+            match result {
+                Ok(()) => {
+                    let mut state = delegation
+                        .state()
+                        .expect("validated delegation has a state");
+                    state.event = cid.clone();
+                    delegations.insert(cid.clone(), state);
+                }
+                Err(error) => classify_error(
+                    &cid,
+                    error,
+                    &mut orphans,
+                    &mut unsupported,
+                    &mut invalid,
+                    &mut diagnostics,
+                ),
+            }
+            pending.remove(&cid);
+            progressed = true;
+        }
+        if !progressed {
+            break;
+        }
+    }
+
+    let mut missing_references = HashSet::new();
+    for cid in pending {
+        orphans.insert(cid.clone());
+        let DecodedPayload::Delegation(delegation) = &groups[&cid].decoded else {
+            unreachable!();
+        };
+        if let Some(parent) = &delegation.parent {
+            if !evidence_ids.contains(parent) {
+                missing_references.insert(parent.clone());
+                diagnostics.insert(format!("{cid}: missing delegation parent {parent}"));
+            } else {
+                invalid.insert(cid.clone());
+                diagnostics.insert(format!("{cid}: delegation parent is not recognized"));
+            }
+        }
+    }
+
+    let mut revocations = HashMap::new();
+    for cid in sorted_cids(groups.keys().cloned().collect()) {
+        let group = &groups[&cid];
+        let DecodedPayload::Revocation(revocation) = &group.decoded else {
+            continue;
+        };
+        let Some(target) = delegations.get(&revocation.delegation) else {
+            orphans.insert(cid.clone());
+            if !evidence_ids.contains(&revocation.delegation) {
+                missing_references.insert(revocation.delegation.clone());
+                diagnostics.insert(format!(
+                    "{cid}: missing revoked delegation {}",
+                    revocation.delegation
+                ));
+            } else {
+                invalid.insert(cid.clone());
+                diagnostics.insert(format!("{cid}: revoked delegation is not recognized"));
+            }
+            continue;
+        };
+        let result = revocation
+            .validate_against(governance, target)
+            .and_then(|()| {
+                authorize_principal(
+                    &group.input,
+                    &group.proofs,
+                    &revocation.revoker,
+                    &revocation.revoker_identity_version,
+                )
+            });
+        match result {
+            Ok(()) => {
+                let mut state = revocation
+                    .state()
+                    .expect("validated revocation has a state");
+                state.event = cid.clone();
+                revocations.insert(cid, state);
+            }
+            Err(error) => classify_error(
+                &cid,
+                error,
+                &mut orphans,
+                &mut unsupported,
+                &mut invalid,
+                &mut diagnostics,
+            ),
+        }
+    }
+
+    CapabilityResolution {
+        delegations: sorted_states(delegations),
+        revocations: sorted_states(revocations),
+        orphans: sorted_cids(orphans),
+        missing_references: sorted_cids(missing_references),
+        unsupported: sorted_cids(unsupported),
+        invalid: sorted_cids(invalid),
+        diagnostics: diagnostics.into_iter().collect(),
+    }
+}
+
+/// Resolve events received through the lossless control-event boundary.
+/// Additive envelope/proof fields remain addressed by their original logical
+/// identifiers and are disclosed as unsupported instead of being narrowed.
+pub fn resolve_preserved(
+    governance: &GovernanceAuthority,
+    candidates: &[PreservedControlEvent],
+) -> CapabilityResolution {
+    let mut typed = Vec::new();
+    let mut preserved_unsupported = Vec::new();
+    for event in candidates {
+        if event.unsupported_fields().is_empty() {
+            if let Some(event) = event.typed() {
+                typed.push(event);
+                continue;
+            }
+        }
+        if let Ok(cid) = event.logical_cid() {
+            preserved_unsupported.push((cid, event.unsupported_fields().to_vec()));
+        }
+    }
+    let mut resolution = resolve(governance, &typed);
+    let mut orphans: HashSet<Cid> = resolution.orphans.into_iter().collect();
+    let mut unsupported: HashSet<Cid> = resolution.unsupported.into_iter().collect();
+    let mut diagnostics: BTreeSet<String> = resolution.diagnostics.into_iter().collect();
+    for (cid, fields) in preserved_unsupported {
+        orphans.insert(cid.clone());
+        unsupported.insert(cid.clone());
+        diagnostics.insert(format!(
+            "{cid}: unsupported preserved control fields {}",
+            fields.join(", ")
+        ));
+    }
+    resolution.orphans = sorted_cids(orphans);
+    resolution.unsupported = sorted_cids(unsupported);
+    resolution.diagnostics = diagnostics.into_iter().collect();
+    resolution
+}
+
+#[derive(Debug, Clone)]
+struct CandidateGroup {
+    input: SigningInput,
+    proofs: Vec<Proof>,
+    decoded: DecodedPayload,
+}
+
+#[derive(Debug, Clone)]
+enum DecodedPayload {
+    Delegation(Delegation),
+    Revocation(Revocation),
+    Unsupported(String),
+    Invalid(String),
+}
+
+fn decode_payload(event: &ControlEvent) -> DecodedPayload {
+    let (known, kind) = match (event.domain.as_str(), event.event_type.as_str()) {
+        (DELEGATION_DOMAIN, DELEGATION_EVENT_TYPE) => (
+            &[
+                "v",
+                "repository",
+                "grantor",
+                "grantorIdentityVersion",
+                "governanceEvent",
+                "delegate",
+                "parent",
+                "capability",
+            ][..],
+            DELEGATION_EVENT_TYPE,
+        ),
+        (REVOCATION_DOMAIN, REVOCATION_EVENT_TYPE) => (
+            &[
+                "v",
+                "repository",
+                "delegation",
+                "revoker",
+                "revokerIdentityVersion",
+                "governanceEvent",
+                "effectiveAt",
+            ][..],
+            REVOCATION_EVENT_TYPE,
+        ),
+        _ => {
+            return DecodedPayload::Invalid(
+                "wrong capability event domain or event type".to_string(),
+            )
+        }
+    };
+    let Ipld::Map(fields) = &event.payload else {
+        return DecodedPayload::Invalid("capability payload is not a map".to_string());
+    };
+    let unknown: Vec<&str> = fields
+        .keys()
+        .filter(|field| !known.contains(&field.as_str()))
+        .map(String::as_str)
+        .collect();
+    if !unknown.is_empty() {
+        return DecodedPayload::Unsupported(format!(
+            "unsupported {kind} fields {}",
+            unknown.join(", ")
+        ));
+    }
+    if kind == DELEGATION_EVENT_TYPE {
+        let Some(Ipld::Map(capability)) = fields.get("capability") else {
+            return DecodedPayload::Invalid("capability is not a map".to_string());
+        };
+        let known_capability = [
+            "repository",
+            "subjectPrefix",
+            "operations",
+            "notBefore",
+            "notAfter",
+            "delegable",
+        ];
+        let unknown_capability: Vec<&str> = capability
+            .keys()
+            .filter(|field| !known_capability.contains(&field.as_str()))
+            .map(String::as_str)
+            .collect();
+        if !unknown_capability.is_empty() {
+            return DecodedPayload::Unsupported(format!(
+                "unsupported capability fields {}",
+                unknown_capability.join(", ")
+            ));
+        }
+    }
+    match fields.get("v") {
+        Some(Ipld::Integer(1)) => {}
+        Some(Ipld::Integer(version)) => {
+            return DecodedPayload::Unsupported(format!("unsupported version {version}"))
+        }
+        _ => return DecodedPayload::Invalid("v is not an integer".to_string()),
+    }
+    let bytes = match atproto_dasl::to_vec(&event.payload) {
+        Ok(bytes) => bytes,
+        Err(error) => return DecodedPayload::Invalid(error.to_string()),
+    };
+    if kind == DELEGATION_EVENT_TYPE {
+        let decoded: Delegation = match atproto_dasl::from_reader(&bytes[..]) {
+            Ok(decoded) => decoded,
+            Err(error) => return DecodedPayload::Invalid(error.to_string()),
+        };
+        match decoded.validate_structure() {
+            Ok(()) => DecodedPayload::Delegation(decoded),
+            Err(Error::UnsupportedVersion(_) | Error::UnsupportedOperation(_)) => {
+                DecodedPayload::Unsupported("unsupported delegation semantics".to_string())
+            }
+            Err(error) => DecodedPayload::Invalid(error.to_string()),
+        }
+    } else {
+        let decoded: Revocation = match atproto_dasl::from_reader(&bytes[..]) {
+            Ok(decoded) => decoded,
+            Err(error) => return DecodedPayload::Invalid(error.to_string()),
+        };
+        match decoded.validate_structure() {
+            Ok(()) => DecodedPayload::Revocation(decoded),
+            Err(Error::UnsupportedVersion(_)) => {
+                DecodedPayload::Unsupported("unsupported revocation semantics".to_string())
+            }
+            Err(error) => DecodedPayload::Invalid(error.to_string()),
+        }
+    }
+}
+
+fn classify_non_delegations(
+    groups: &HashMap<Cid, CandidateGroup>,
+    orphans: &mut HashSet<Cid>,
+    unsupported: &mut HashSet<Cid>,
+    invalid: &mut HashSet<Cid>,
+    diagnostics: &mut BTreeSet<String>,
+) {
+    for (cid, group) in groups {
+        match &group.decoded {
+            DecodedPayload::Unsupported(reason) => {
+                orphans.insert(cid.clone());
+                unsupported.insert(cid.clone());
+                diagnostics.insert(format!("{cid}: {reason}"));
+            }
+            DecodedPayload::Invalid(reason) => {
+                orphans.insert(cid.clone());
+                invalid.insert(cid.clone());
+                diagnostics.insert(format!("{cid}: {reason}"));
+            }
+            DecodedPayload::Delegation(_) | DecodedPayload::Revocation(_) => {}
+        }
+    }
+}
+
+fn classify_error(
+    cid: &Cid,
+    error: Error,
+    orphans: &mut HashSet<Cid>,
+    unsupported: &mut HashSet<Cid>,
+    invalid: &mut HashSet<Cid>,
+    diagnostics: &mut BTreeSet<String>,
+) {
+    if matches!(
+        error,
+        Error::UnsupportedVersion(_)
+            | Error::UnsupportedOperation(_)
+            | Error::UnsupportedController(_)
+            | Error::UnsupportedAuthorization
+            | Error::IdentityVersionMismatch
+    ) {
+        unsupported.insert(cid.clone());
+    } else {
+        invalid.insert(cid.clone());
+    }
+    orphans.insert(cid.clone());
+    diagnostics.insert(format!("{cid}: {error}"));
+}
+
+trait EventState {
+    fn event(&self) -> &Cid;
+}
+
+impl EventState for DelegationState {
+    fn event(&self) -> &Cid {
+        &self.event
+    }
+}
+
+impl EventState for RevocationState {
+    fn event(&self) -> &Cid {
+        &self.event
+    }
+}
+
+fn sorted_states<T: EventState>(states: HashMap<Cid, T>) -> Vec<T> {
+    let mut states: Vec<T> = states.into_values().collect();
+    states.sort_by(|left, right| cid_cmp(left.event(), right.event()));
+    states
+}
+
+fn cid_cmp(left: &Cid, right: &Cid) -> Ordering {
+    left.to_bytes().cmp(&right.to_bytes())
+}
+
+fn sorted_cids(values: HashSet<Cid>) -> Vec<Cid> {
+    let mut values: Vec<Cid> = values.into_iter().collect();
+    values.sort_by(cid_cmp);
+    values
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -732,6 +1213,8 @@ pub enum Error {
     RevokerNotAuthorized,
     #[error("revocation does not name the supplied delegation")]
     DelegationMismatch,
+    #[error("child delegation does not match its parent grantor and governance origin")]
+    ParentMismatch,
     #[error("supported authorization requires static did:key")]
     IdentityVersionMismatch,
     #[error("unsupported controller: {0}")]
