@@ -1342,6 +1342,21 @@ fn caller_selected_role_key_is_an_implemented_authoritative_surface() {
         external.exists(),
         "caller-selected role key was not created"
     );
+
+    let default = run_kan(repo.path(), &["identity", "role", "add", "reviewer"]);
+    assert!(
+        default.status.success(),
+        "{}",
+        String::from_utf8_lossy(&default.stderr)
+    );
+    let default_key = repo.path().join(".kan/roles.d/reviewer");
+    assert!(default_key.exists(), "default role key was not created");
+    let role = Identity::load_existing(&default_key).expect("default role key must be readable");
+    let role_did = role.did();
+    assert!(
+        String::from_utf8_lossy(&default.stdout).contains(&role_did),
+        "declared role DID did not come from the persisted default key"
+    );
 }
 
 fn copy_tree(from: &std::path::Path, to: &std::path::Path) {

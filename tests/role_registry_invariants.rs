@@ -228,3 +228,31 @@ fn a_declared_role_outlives_its_key_file() {
         "deleting a role's key file hid the claims it had already written: {view}"
     );
 }
+
+/// The registry's default-key route persists the key it declares under the
+/// cataloged `.kan/roles.d/<name>` artifact, and the declaration's DID is the
+/// DID that key actually controls. Membership-only assertions cannot prove
+/// this at-rest binding.
+#[test]
+fn a_default_role_persists_the_key_that_its_declaration_names() {
+    let dir = git_repo();
+    let add = kan_as(dir.path(), None, &["identity", "role", "add", "auditor"]);
+    assert!(add.ok, "role add failed: {}", add.stderr);
+
+    let key = dir.path().join(".kan/roles.d/auditor");
+    assert!(
+        key.is_file(),
+        "default role key was not persisted at {key:?}"
+    );
+    let key_did = did_of(dir.path(), Some(&key));
+
+    let listed = kan_as(dir.path(), None, &["identity", "role", "list", "--json"]);
+    assert!(listed.ok, "role list failed: {}", listed.stderr);
+    let view: serde_json::Value = serde_json::from_str(&listed.stdout).expect("role list JSON");
+    let roles = view["roles"].as_array().expect("roles array");
+    let auditor = roles
+        .iter()
+        .find(|role| role["name"] == "auditor")
+        .unwrap_or_else(|| panic!("auditor missing from {}", listed.stdout));
+    assert_eq!(auditor["did"], key_did);
+}

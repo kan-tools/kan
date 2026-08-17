@@ -289,13 +289,13 @@ impl Identity {
     /// rewrite that quietly needs a `create_dir_all` at every call site.
     pub fn save(&self, path: &Path) -> Result<(), Error> {
         if let Some(parent) = path.parent() {
-            // surface-write: identity:identity,identity:role-key-path
+            // surface-write: identity:identity,identity:roles.d,identity:role-key-path
             crate::persistence::create_dir_all(
                 crate::persistence::SurfaceWrite::IdentityKeyMaterial,
                 parent,
             )?;
         }
-        // surface-write: identity:identity,identity:role-key-path
+        // surface-write: identity:identity,identity:roles.d,identity:role-key-path
         crate::persistence::write(
             crate::persistence::SurfaceWrite::IdentityKeyMaterial,
             path,
@@ -389,7 +389,7 @@ pub struct Role {
 /// REQ-6).
 pub fn mint_role_key(name: &str, key_path: &Path) -> Result<Role, Error> {
     if let Some(parent) = key_path.parent() {
-        // surface-write: identity:role-key-path
+        // surface-write: identity:roles.d,identity:role-key-path
         crate::persistence::create_dir_all(
             crate::persistence::SurfaceWrite::IdentityKeyMaterial,
             parent,
