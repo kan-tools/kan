@@ -736,14 +736,42 @@ fn every_persistence_facade_call_is_independently_inventoried() {
             continue;
         }
         let source = std::fs::read_to_string(&module).unwrap();
-        for line in source
-            .lines()
-            .filter(|line| line.trim_start().starts_with("use "))
-        {
-            assert!(
-                !line.contains("persistence"),
-                "{module} imports the persistence facade; call it fully qualified so the mutation inventory remains complete: {line}"
+        if let Some(line) = source.lines().find(|line| {
+            let code = line.trim_start();
+            code.contains("use ") && code.contains("persistence")
+        }) {
+            panic!(
+                "{module} imports or re-exports the persistence facade; call it fully qualified so the mutation inventory remains complete: {line}"
             );
+        }
+        let compact: String = source.chars().filter(|ch| !ch.is_whitespace()).collect();
+        for broad_suppression in [
+            "allow(clippy::all",
+            "expect(clippy::all",
+            "allow(clippy::restriction",
+            "expect(clippy::restriction",
+            "allow(warnings",
+            "expect(warnings",
+        ] {
+            assert!(
+                !compact.contains(broad_suppression),
+                "{module} broadly suppresses the compiler persistence policy via `{broad_suppression}`"
+            );
+        }
+        match module.as_str() {
+            "src/lib.rs" => {
+                assert_eq!(source.matches("clippy::disallowed_methods").count(), 1);
+                assert_eq!(source.matches("clippy::disallowed_types").count(), 1);
+                assert!(source.contains("#![deny(clippy::disallowed_methods)]"));
+                assert!(source.contains("#![deny(clippy::disallowed_types)]"));
+            }
+            _ => {
+                assert!(
+                    !source.contains("clippy::disallowed_methods")
+                        && !source.contains("clippy::disallowed_types"),
+                    "{module} locally suppresses or redefines the compiler persistence policy; only src/persistence.rs may allow it"
+                );
+            }
         }
         for (function, capability, annotation) in calls(&source) {
             let typed = kan::persistence::SurfaceWrite::ALL
