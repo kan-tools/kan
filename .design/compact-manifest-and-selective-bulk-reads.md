@@ -286,20 +286,20 @@ None remaining.
 
 ## Resolved Questions
 
-- The focused PR is stacked on `design/read-write-surface`, so kan#216 remains
+- RQ-1: The focused PR is stacked on `design/read-write-surface`, so kan#216 remains
   the base and the review diff contains only kan#232 plus the required kan#202
   closure.
-- kan#202 is closed fully in this PR: demand-driven ancestry, production
+- RQ-2: kan#202 is closed fully in this PR: demand-driven ancestry, production
   call-site inventory, subprocess-counting regression controls, and the
   tightened perf-grid prediction all ship together.
-- The existing positional `show` form remains intact. Repeatable `--subject`
+- RQ-3: The existing positional `show` form remains intact. Repeatable `--subject`
   and `--prefix` flags select the new bulk envelope and cannot be mixed with
   the positional form or `--all`.
-- Revisions use public versioned `sha256:<hex>` values with domain-separated,
+- RQ-4: Revisions use public versioned `sha256:<hex>` values with domain-separated,
   length-prefixed preimages. Subject revisions cover ordered visible CIDs;
   whole-view revisions additionally cover the visible trust frame and class
   naming without hashing excluded evidence.
-- Selection occurs after the complete trusted fold. Exact aliases and visible
+- RQ-5: Selection occurs after the complete trusted fold. Exact aliases and visible
   prefixes select a class once; inbound edges are computed from the unfiltered
   folded graph; all-or-nothing failure is retained.
 
