@@ -568,6 +568,9 @@ fn every_filesystem_mutation_names_its_catalog_surface_at_the_call_site() {
         "std::fs::remove_dir",
         "std::fs::hard_link",
         "std::fs::set_permissions",
+        "std::os::unix::fs::symlink",
+        "std::os::windows::fs::symlink_file",
+        "std::os::windows::fs::symlink_dir",
         "std::fs::DirBuilder::create",
         "fs::create_dir_all",
         "fs::File::create",
@@ -630,7 +633,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         }
     }
 
-    fn calls(source: &str) -> Vec<(String, String)> {
+    fn calls(source: &str) -> Vec<(String, String, String)> {
         let prefix = "crate::persistence::";
         let mut out = Vec::new();
         let mut cursor = 0;
@@ -691,8 +694,21 @@ fn every_persistence_facade_call_is_independently_inventoried() {
                 .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
                 .collect();
             assert!(!capability.is_empty(), "{function} has an empty capability");
+            let line_start = source[..start].rfind('\n').map_or(0, |newline| newline + 1);
+            let preceding = source[..line_start]
+                .lines()
+                .rev()
+                .find(|line| !line.trim().is_empty())
+                .unwrap_or("");
+            let annotation = preceding
+                .trim()
+                .strip_prefix("// surface-write: ")
+                .unwrap_or_else(|| {
+                    panic!("{function} call has no preceding surface-write annotation")
+                })
+                .to_string();
             let function_len = function.len();
-            out.push((function, capability));
+            out.push((function, capability, annotation));
             cursor = start + prefix.len() + function_len + end + 1;
         }
         out
@@ -729,7 +745,18 @@ fn every_persistence_facade_call_is_independently_inventoried() {
                 "{module} imports the persistence facade; call it fully qualified so the mutation inventory remains complete: {line}"
             );
         }
-        for (function, capability) in calls(&source) {
+        for (function, capability, annotation) in calls(&source) {
+            let typed = kan::persistence::SurfaceWrite::ALL
+                .iter()
+                .find(|candidate| format!("{candidate:?}") == capability)
+                .unwrap_or_else(|| panic!("unknown SurfaceWrite capability `{capability}`"));
+            for artifact in annotation.split(',') {
+                assert!(
+                    typed.artifacts().contains(&artifact),
+                    "{module} {function} labels `{artifact}` with capability `{capability}`, whose allowed artifacts are {:?}",
+                    typed.artifacts()
+                );
+            }
             *actual
                 .entry((module.clone(), function, capability))
                 .or_insert(0usize) += 1;
@@ -756,8 +783,13 @@ fn compiler_resolves_filesystem_aliases_to_the_single_mutation_facade() {
         "std::fs::File::create",
         "std::fs::File::create_new",
         "std::fs::File::options",
+        "std::fs::File::set_len",
+        "std::fs::File::set_permissions",
+        "std::fs::File::set_modified",
+        "std::fs::File::set_times",
         "std::fs::OpenOptions::open",
         "tokio::fs::create_dir_all",
+        "tokio::fs::create_dir",
         "tokio::fs::write",
         "tokio::fs::rename",
         "tokio::fs::copy",
@@ -765,9 +797,13 @@ fn compiler_resolves_filesystem_aliases_to_the_single_mutation_facade() {
         "tokio::fs::remove_dir_all",
         "tokio::fs::remove_dir",
         "tokio::fs::hard_link",
+        "tokio::fs::set_permissions",
+        "tokio::fs::symlink",
         "tokio::fs::DirBuilder::create",
         "tokio::fs::File::create",
         "tokio::fs::File::options",
+        "tokio::fs::File::set_len",
+        "tokio::fs::File::set_permissions",
         "tokio::fs::OpenOptions::open",
     ] {
         assert!(policy.contains(method), "compiler policy omits `{method}`");
