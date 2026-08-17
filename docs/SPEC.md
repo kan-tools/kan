@@ -465,11 +465,19 @@ to trust the projection, or silently moved off the ordinary test path; this is
 the operational boundary of the tension between
 `telos/performance-at-scale` and `telos/raw-data-and-projections`.
 
-### 10.2 Lexicon separation (when atproto lands)
-Three independent lexicons — separability is the ecosystem contribution:
-1. `*.claim` — base claim record (kind, body, subject, cites, artifacts). No trust semantics.
-2. `*.relation.sameAs` (+ other relations) — the directed morphisms. Pure arrows, no weight.
-3. `*.trust.*` — **separate** record type expressing a user's enrichment base (which authors/agents/computable-providers they weight, how). Publishable, forkable, subscribable. *This is the covering/enrichment made a first-class shareable artifact* (para-institutional infra).
+### 10.2 Public Lexicons and version-aware views
+
+[RFC 2](../rfcs/2-kan-uri-scheme.md) defines the implemented
+`kan-claim-v1` conversion and five draft Lexicons. [RFC 3](../rfcs/3-authoritative-lexicon-publication.md),
+currently in Review, proposes the next public contract: stable
+`tools.kan.claim`, an explicit codec discriminator, an open typed-content
+union, append-only `tools.kan.codec` and `tools.kan.lens` registers, and a
+portable version-aware AppView.
+
+Until RFC 3 is accepted and implemented, RFC 2 and the shipped
+`kan-claim-v1` behavior remain current. Implementation order, repository
+ownership, and release qualification are tracked in
+[`docs/ROADMAP.md`](ROADMAP.md); planning issues do not override RFC status.
 
 ---
 
@@ -485,11 +493,15 @@ Three independent lexicons — separability is the ecosystem contribution:
 - CLI + MCP server. **Budgeted context assembly** (the actual product: query the claim graph under a token budget → maximal-value claim set for an agent's window).
 - SQLite disposable index.
 
-**DO NOT BUILD (yet):**
+**NOT PART OF THE LOCAL SPINE:**
 - Sync of any kind (HostedRelay, AtProto), lexicons, firehose.
 - TUI, web dashboard, VS Code extension.
 - More trust *enrichments* than the two reference bases (`Solo` and `PeerContested`). Language rule-files. Config presets. Enforcement hooks (prefer affordance over control — legibility, not blocking).
 - Incremental/streaming fold (reference recompute first).
+
+This is a boundary around the local-spine milestone, not a permanent ban.
+Separately governed follow-on work is listed in `docs/ROADMAP.md`, and public
+protocol commitments remain subject to the RFC lifecycle.
 
 > **Implementation note (v0.12.0-beta.3).** This bullet used to read ">2
 > trust policies". `TrustBase` now has three variants — `Solo`,

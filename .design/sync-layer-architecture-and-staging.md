@@ -1,5 +1,13 @@
 # Feature: Sync layer architecture and staging plan
 
+> **Current applicability (2026-08-16):** This is the historical staging
+> design that introduced the Transport/LocalOnly/GitTree sequence and remains
+> useful context for the separate HostedRelay track. It is no longer the
+> current public-ATProto publication plan. RFC 3 and `docs/ROADMAP.md` govern
+> that work through issue #29 and #235–#241; where this file says `dev.kan.*`,
+> `did:plc`, or assigns old target versions to public ATProto work, the newer
+> RFC 3 plan takes precedence.
+
 ## Summary
 kan's local-only spine (M1–M6, shipped through v0.3.0-beta.1) deliberately
 deferred the multi-actor half of the original vision: `docs/SPEC.md` §10's

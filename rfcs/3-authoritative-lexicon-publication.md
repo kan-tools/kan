@@ -762,8 +762,16 @@ None.
 
 ## Implementation status
 
-Not implemented. The governing design is
-`.design/rfc-3-authoritative-lexicon-publication.md`. RFC 2 supplies the
-existing `kan-claim-v1` conversion and five draft schemas. Implementation will
-add the codec register and version-aware schemas in `kan-lexicon`, the portable
-`kan-appview` repository, and private Railway deployment in `kan-infra`.
+Not implemented. This RFC remains in Review through the timestamp in its
+header; the issue graph is implementation planning, not an acceptance
+override. The governing design is
+`.design/rfc-3-authoritative-lexicon-publication.md`, and the dependency-ordered
+roadmap is tracked by
+[#29](https://github.com/kan-tools/kan/issues/29) and child issues #235–#241.
+
+The prerequisite read/write authority boundary landed in
+[#216](https://github.com/kan-tools/kan/issues/216). RFC 2 still supplies the
+implemented `kan-claim-v1` conversion and five draft schemas. RFC 3
+implementation will add the `kan-atproto` wire crate, codec/lens registers and
+version-aware schemas in `kan-lexicon`, the portable `kan-appview` repository,
+and private Railway deployment in `kan-infra`.

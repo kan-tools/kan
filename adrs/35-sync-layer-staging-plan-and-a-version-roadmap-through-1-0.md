@@ -5,6 +5,16 @@
 - Reconstruction: Reconstructed from the historical `docs/DECISIONS.md` during RFC 0 migration.
 - Original-number: ADR-35
 
+## Current applicability
+
+This reconstructed ADR preserves the roadmap decision made on 2026-07-20; its
+version table is historical. The Transport/LocalOnly/GitTree and HostedRelay
+sequencing remains useful context. Public ATProto Lexicon authority,
+publication, AppView ownership, repository boundaries, and implementation
+ordering are now governed by RFC 3 (currently Review), `docs/ROADMAP.md`, and
+the issue graph under #29. Those newer sources replace this ADR's public
+ATProto namespace, identity, infrastructure, and target-version assumptions.
+
 ## Context
 
 Not recorded contemporaneously.

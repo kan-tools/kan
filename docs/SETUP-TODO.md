@@ -2,6 +2,12 @@
 
 *Getting from "name planted" to "building the spine." Ordered so nothing blocks on something later. Check off as you go.*
 
+> **Status:** Historical bootstrap checklist. Phases 0–4 explain how the
+> shipped local spine was assembled. Current network/publication work is
+> governed by `docs/ROADMAP.md` and RFC 3; the active items in Phases 5–6 below
+> point to that issue graph rather than preserving the original `dev.kan.*` /
+> `did:plc` sketch as a plan.
+
 ---
 
 ## Phase 0 — Reserve & scaffold (mostly done)
@@ -10,17 +16,20 @@
 - [x] Reserve crate name (`cargo publish` a `0.0.0` stub)
 - [ ] Create GitHub repos on a clean namespace (no `forecast-bio` / Kira):
   - [x] `kan` — the crate (public) — `github.com/kan-tools/kan`
+  - [x] `kan-lexicon` — Lexicon source and fixtures (public)
+  - [ ] `kan-appview` — portable reference AppView (public; issue #239)
   - [ ] `kan-infra` — Railway/atproto ops (**private**)
 - [x] Push stub `lib.rs` + real `README.md` so the parked repo reads as WIP, not abandoned
 - [x] Pick license (`MIT`) and add `LICENSE`
 
-## Phase 1 — Domains
+## Phase 1 — Namespace authority
 
-- [ ] Register **`kan.dev`** (or confirm) — the boring infra + lexicon-namespace root
-- [ ] (optional) Register **`kan.tools`** as fallback namespace root
-- [ ] Register **`kan.cat`** — handle alias + mirror site (the bit)
-  - [ ] Fill the `.cat` declaration of intended use honestly (site presents content in Catalan among other languages)
-  - [ ] Note: real Catalan content required — blurb drafted (`kan-landing-blurb-en-ca.md`), get a native-speaker pass
+- [ ] Complete issue #237: `_lexicon.kan.tools` resolves exactly to
+      `did=did:web:kan.tools`.
+- [ ] Host `https://kan.tools/.well-known/did.json` outside Railway and bind it
+      to the authoritative PDS service endpoint.
+- [ ] Keep other domains, handles, and service DIDs separate from Lexicon
+      authority unless an accepted RFC explicitly joins their lifecycles.
 
 ## Phase 2 — Hand the design spec to Claude Code
 
@@ -47,7 +56,9 @@
 - [x] CLI (git-like verbs: `kan observe|plan|decide|block|resolve|result|same|relate|mark|retract|reject|show|status|issues|context|publish`) (M3/M4b/M5). Note: `session` was removed (ADR-18) — process/session concepts live in the companion tool `day`, not kan.
 - [x] MCP server: claim-append + **budgeted context assembly** (the actual product) (M5, ADR-15)
 
-**Do NOT build yet:** sync/atproto/lexicons, TUI, web dashboard, VS Code ext, >2 policies, enforcement hooks, incremental fold.
+**Not part of the local spine:** sync/atproto/lexicons, TUI, web dashboard,
+VS Code extensions, >2 enrichments, enforcement hooks, incremental fold.
+Separately governed follow-on work is listed in `docs/ROADMAP.md`.
 
 **Smell test:** local-only path must be *dramatically* simpler than multi-actor. If it isn't, the abstraction is wrong.
 
@@ -59,22 +70,29 @@
 - [x] Property: `fold` is deterministic in (claim set, enrichment) — `tests/fold_determinism.rs`
 - [x] Guardrail test: identity component size > N flags instead of enumerating — `tests/identity_fold.rs::oversized_component_is_flagged`
 
-## Phase 5 — Identity & infra (parallel track, `kan-infra` repo)
+## Phase 5 — Authority and recoverable infrastructure
 
-*Full detail in `kan-identity-infra.md`. Key ordering below.*
+- [ ] Complete #237's DNS/static-DID authority route.
+- [ ] Complete #240's separate Railway staging and production environments.
+- [ ] Deploy persistent PDS state, the private publisher, and a pinned public
+      AppView artifact.
+- [ ] Inventory credentials and recovery artifacts across GitHub, Railway,
+      the PDS volume, and an independent protected vault.
+- [ ] Keep an independently restorable recovery copy outside Railway and test
+      full reconstruction before production promotion.
 
-- [ ] Deploy PDS on Railway → `pds.kan.dev`, **persistent volume**, TLS verified
-- [ ] Create account → obtain `did:plc:…` (NOT `did:web`)
-- [ ] **⚠ Back up rotation keys offline, multi-location, before anything else**
-- [ ] Set handle `kan.cat`; DNS TXT `_atproto.kan.cat`; verify bidirectional resolution
-- [ ] Web deploy: `kan.dev` canonical + `kan.cat` mirror with Catalan toggle (static, not a PDS)
-- [ ] Volume backups off-Railway + test CAR export
-- [ ] Dry-run a PDS migration once (confirm DID/handle/repo survive)
+## Phase 6 — RFC 3 implementation
 
-## Phase 6 — Lexicons (only after the spine works locally)
+- [ ] #235 — `kan-atproto` wire boundary and claim-envelope migration.
+- [ ] #236 — versioned `tools.kan.*` Lexicons and codec/lens registers.
+- [ ] #237 — DNS and `did:web` namespace authority (parallel foundation).
+- [ ] #238 — release-verified atomic publisher.
+- [ ] #239 — portable reference AppView.
+- [ ] #240 — Railway deployment and recovery.
+- [ ] #241 — end-to-end release qualification and scheduled drift probes.
 
-- [ ] Design NSID tree under `dev.kan.*`: `claim`, `relation.sameAs`, `relation.blocks`, `trust.policy`, `subject.anchor`, …
-- [ ] Then: `HostedRelay` transport → `AtProto` transport → firehose ingest → AppView = the fold over subscribed logs
+HostedRelay, firehose ingest, and hosted-private-scope product design remain
+separate follow-ons; RFC 3 does not silently absorb them.
 
 ---
 
@@ -89,7 +107,7 @@
 
 ## The one-line priorities
 
-1. **Repos + `kan.dev` + hand the spec to Claude Code.** (unblocks everything)
-2. **Build the local-only spine.** (the actual product, one machine)
-3. **Keys backed up before identity goes live.** (the survival invariant)
-4. Everything else — sync, lexicons, `.cat` bit — is after the spine works.
+1. **Keep the shipped local spine and its read/write contract green.**
+2. **Complete RFC 3 review; then start #235 and #237 in parallel.**
+3. **Do not publish production state before #241's whole-route qualification.**
+4. **Keep independent recovery material before sealing runtime credentials.**
