@@ -1252,6 +1252,37 @@ fn production_workspace_recovers_when_a_projection_column_has_the_wrong_type() {
 }
 
 #[test]
+fn production_workspace_recovers_when_projection_metadata_has_the_wrong_type() {
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let write = run_kan(repo.path(), &["observe", "meta-poison", "authoritative"]);
+    assert!(
+        write.status.success(),
+        "{}",
+        String::from_utf8_lossy(&write.stderr)
+    );
+    let before = run_kan(repo.path(), &["show", "meta-poison", "--json"]);
+    assert!(before.status.success());
+
+    let connection = rusqlite::Connection::open(repo.path().join(".kan/index.sqlite")).unwrap();
+    connection
+        .execute(
+            "UPDATE meta SET value = X'00' WHERE key = 'built_from_root_v2'",
+            [],
+        )
+        .unwrap();
+    drop(connection);
+
+    let after = run_kan(repo.path(), &["show", "meta-poison", "--json"]);
+    assert!(
+        after.status.success(),
+        "derived metadata corruption blocked an authoritative read: {}",
+        String::from_utf8_lossy(&after.stderr)
+    );
+    assert_eq!(before.stdout, after.stdout);
+}
+
+#[test]
 fn production_workspace_recreates_a_malformed_projection_schema() {
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());

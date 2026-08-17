@@ -492,27 +492,26 @@ impl Workspace {
             overlay.current_root(),
             published.content_hash.as_deref(),
         );
-        // The fingerprint authenticates the inputs, not bytes in the
-        // disposable SQLite file. A decodable cache can still substitute a
-        // different valid claim or corrupt derived origin/subject columns.
-        // Recompute an independent in-memory reference on every open;
-        // SQLite is a query projection, never evidence for itself.
-        let log_claims = log.iter_all().await?;
-        let mut foreign = overlay.iter_all().await?;
-        foreign.extend(arrived);
+        // The input fingerprint is content-addressed; the row seal detects
+        // corruption inside the disposable SQLite projection. Neither makes
+        // SQLite authoritative. A mismatch takes the deliberately expensive
+        // path below and recomputes from the signed log/published records.
+        // The common path stays an index read instead of signature-verifying
+        // the entire log on every one-process CLI invocation.
+        let projection_fresh = matches!(index.built_from_root(), Ok(root) if root == fingerprint)
+            && matches!(index.projection_is_consistent(), Ok(true));
+        if !projection_fresh {
+            let log_claims = log.iter_all().await?;
+            let mut foreign = overlay.iter_all().await?;
+            foreign.extend(arrived);
 
-        // #150's poisoned state, handled by *not projecting* the duplicates
-        // rather than by repairing the overlay. The write path repairs the
-        // overlay; a read needs no signing identity merely to deduplicate it.
-        let in_log: std::collections::HashSet<&Cid> = log_claims.iter().map(|(c, _)| c).collect();
-        foreign.retain(|(cid, _)| !in_log.contains(cid));
+            // #150's poisoned state, handled by *not projecting* duplicates.
+            // The write path repairs the overlay; a read needs no signing
+            // identity merely to deduplicate it.
+            let in_log: std::collections::HashSet<&Cid> =
+                log_claims.iter().map(|(c, _)| c).collect();
+            foreign.retain(|(cid, _)| !in_log.contains(cid));
 
-        let mut reference = Index::open_in_memory()?;
-        reference.rebuild(&log_claims, &foreign, fingerprint.as_ref())?;
-        // Any SQLite read/type/schema error is itself a mismatch. A
-        // disposable projection must never be able to prevent recovery from
-        // the authoritative media by failing while it is being compared.
-        if !matches!(index.projection_matches(&reference), Ok(true)) {
             index.recreate_current_schema()?;
             index.rebuild(&log_claims, &foreign, fingerprint.as_ref())?;
         }

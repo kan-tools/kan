@@ -20,6 +20,7 @@ implemented	derived	overlay	invocation	overlay:LOCK	*	src/workspace.rs	crate::wo
 implemented	derived	sqlite-index	repository	sqlite:meta	key	src/store/index.rs	crate::store::index::Index	derive:index-freshness	delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	sqlite-index	repository	sqlite:meta	value	src/store/index.rs	crate::store::index::Index	derive:index-freshness	delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	sqlite-index	repository	sqlite:meta-key	built_from_root_v2	src/store/index.rs	crate::store::index::Index	derive:index-freshness	delete-and-rebuild	docs/SPEC.md#storage-and-transport
+implemented	derived	sqlite-index	repository	sqlite:meta-key	projection_digest_v2	src/store/index.rs	crate::store::index::Index	derive:index-freshness	delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	sqlite-index	claim	sqlite:claims_v2	content_cid	src/store/index.rs	crate::store::index::Index	derive:index-from-media	delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	sqlite-index	claim	sqlite:claims_v2	rev	src/store/index.rs	crate::store::index::Index	derive:index-from-media	delete-and-rebuild	docs/SPEC.md#storage-and-transport
 implemented	derived	sqlite-index	claim	sqlite:claims_v2	author_did	src/store/index.rs	crate::store::index::Index	derive:index-from-media	delete-and-rebuild	docs/SPEC.md#storage-and-transport
