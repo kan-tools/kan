@@ -51,12 +51,17 @@ identity state and applies the closed administration-operation semantics in
 listed order without defining a wire representation. Signed update production
 and resolution are blocked on [#244](https://github.com/kan-tools/kan/issues/244),
 which records RFC 1's missing canonical `IdentityOperation` encoding and
-absent-removal rule. Governance, modern authorship, and write cutover also
-remain pending. In parallel, the repository-inception slice now validates and
+absent-removal rule. Modern authorship and write cutover also remain pending.
+In parallel, the repository-inception slice now validates and
 canonically orders the unsigned payload, derives the full `kan-repo:` SHA-256
 multihash identifier, pins a deterministic vector, and
 requires a valid static P-256 `did:key` proof from a listed governance root.
-Governance updates and persistence/write integration remain pending.
+`src/identity/governance.rs` now produces canonical update and reconciliation
+events and resolves unordered evidence deterministically: proof variants share
+one logical event, sibling leaves are contested, reconciliation requires
+authorization at every parent, and missing history remains distinct from
+invalid or unsupported evidence. Persistence/write integration remains
+pending.
 
 ## Later public-protocol track: RFC 3
 

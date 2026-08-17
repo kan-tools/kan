@@ -13,6 +13,7 @@ use crate::{claim::Claim, fold::TrustBase};
 pub mod control;
 pub mod did_kan;
 pub mod did_kan_state;
+pub mod governance;
 pub mod repository_inception;
 
 /// Whether the claim's bytes and exact signing authority authenticate it.

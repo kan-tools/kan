@@ -144,7 +144,9 @@ impl RepositoryInception {
             atrium_crypto::multibase::Base::Base32Lower,
             multihash,
         );
-        Ok(format!("kan-repo:{encoded}"))
+        let repository = format!("kan-repo:{encoded}");
+        validate_repository_id(&repository)?;
+        Ok(repository)
     }
 
     pub fn signing_input(&self) -> Result<SigningInput, Error> {
@@ -174,6 +176,22 @@ impl RepositoryInception {
         }
         Ok(ControlEvent::new(input, proofs)?)
     }
+}
+
+pub(super) fn validate_repository_id(repository: &str) -> Result<(), Error> {
+    let encoded = repository
+        .strip_prefix("kan-repo:")
+        .ok_or_else(|| Error::RepositoryId(repository.to_string()))?;
+    let (base, bytes) = atrium_crypto::multibase::decode(encoded)
+        .map_err(|_| Error::RepositoryId(repository.to_string()))?;
+    if base != atrium_crypto::multibase::Base::Base32Lower
+        || bytes.len() != 34
+        || bytes[..2] != [0x12, 0x20]
+        || atrium_crypto::multibase::encode(base, &bytes) != encoded
+    {
+        return Err(Error::RepositoryId(repository.to_string()));
+    }
+    Ok(())
 }
 
 fn canonical_key<T: Serialize>(value: &T) -> Result<Vec<u8>, atproto_dasl::EncodeError> {
@@ -230,6 +248,8 @@ pub enum Error {
     Duplicate(&'static str),
     #[error("repository inception needs a valid proof from a listed governance root")]
     NoGovernanceProof,
+    #[error("invalid canonical repository identifier: {0}")]
+    RepositoryId(String),
     #[error(transparent)]
     Identity(#[from] super::did_kan::Error),
     #[error(transparent)]

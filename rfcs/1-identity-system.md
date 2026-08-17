@@ -1280,11 +1280,16 @@ recovery-authority immutability, and duplicate/final-invariant checks.
 repository-inception payload, canonical encoded-value list ordering, full
 base32-lower SHA-256 multihash `kan-repo:` derivation, a pinned identifier
 vector, and the supported static P-256 `did:key` listed-root proof gate.
+`src/identity/governance.rs` implements canonical repository-governance update
+and reconciliation payloads, proof authorization against every exact parent,
+proof-set collapse by logical event identifier, and order-independent
+resolution of linear history, forks, reconciliations, orphans, authenticated
+missing history, invalid evidence, and authenticated unsupported extensions.
 
 The complete reference-vector manifest, Ed25519, signed `did:kan` updates and
-resolution, repository governance, delegation, modern authorship,
-system identity state, and default-write cutover remain unimplemented. Signed
-update work is blocked on issue #244: this RFC closes the v1 operation set but
-does not yet define each operation's canonical DAG-CBOR form or the validity of
-removing an absent target. This status is therefore an implementation
-checkpoint, not a claim that RFC 1 is shipped.
+resolution, delegation, modern authorship, system identity state, persistence,
+and default-write cutover remain unimplemented. Signed update work is blocked
+on issue #244: this RFC closes the v1 operation set but does not yet define each
+operation's canonical DAG-CBOR form or the validity of removing an absent
+target. This status is therefore an implementation checkpoint, not a claim
+that RFC 1 is shipped.
