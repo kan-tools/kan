@@ -214,6 +214,18 @@ impl GovernanceAuthority {
         })
     }
 
+    pub fn from_active(
+        repository: String,
+        active: &super::governance::ActiveGovernance,
+    ) -> Result<Self, Error> {
+        Self::new(
+            repository,
+            active.active_event.clone(),
+            active.governance_roots.clone(),
+            active.ancestral_events().iter().cloned().collect(),
+        )
+    }
+
     fn recognizes(&self, event: &Cid) -> bool {
         self.ancestors.contains(event)
     }

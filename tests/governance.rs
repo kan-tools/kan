@@ -146,10 +146,13 @@ fn reconciliation_requires_authorization_at_every_parent_and_closes_the_fork() {
     let root_c = Identity::generate();
     let root_d = Identity::generate();
     let (inception, inception_event, state_0) = repository(&root_a);
+    let inception_id = state_0.event.clone();
     let left = GovernanceEvent::update(&state_0, vec![root_b.did()]).unwrap();
     let right = GovernanceEvent::update(&state_0, vec![root_c.did()]).unwrap();
     let (left_event, left_state) = proved(&left, std::slice::from_ref(&state_0), &[&root_a]);
     let (right_event, right_state) = proved(&right, &[state_0], &[&root_a]);
+    let left_id = left_event.logical_cid().unwrap();
+    let right_id = right_event.logical_cid().unwrap();
     let reconcile = GovernanceEvent::reconcile(
         &[left_state.clone(), right_state.clone()],
         vec![root_d.did()],
@@ -163,13 +166,19 @@ fn reconciliation_requires_authorization_at_every_parent_and_closes_the_fork() {
         )
         .is_err());
     let (reconcile_event, _) = proved(&reconcile, &[left_state, right_state], &[&root_b, &root_c]);
+    let reconcile_id = reconcile_event.logical_cid().unwrap();
 
     let result = resolve(
         &inception,
         &inception_event,
         &[reconcile_event, right_event, left_event],
     );
-    assert_eq!(active(result).governance_roots, vec![root_d.did()]);
+    let resolved = active(result);
+    assert_eq!(resolved.governance_roots, vec![root_d.did()]);
+    assert_eq!(resolved.ancestral_events().len(), 4);
+    for expected in [inception_id, left_id, right_id, reconcile_id] {
+        assert!(resolved.ancestral_events().contains(&expected));
+    }
 }
 
 #[test]

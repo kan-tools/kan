@@ -244,9 +244,17 @@ pub struct ActiveGovernance {
     pub standing: ActiveGovernanceStanding,
     pub active_event: Cid,
     pub governance_roots: Vec<String>,
+    #[serde(default)]
+    ancestral_events: Vec<Cid>,
     pub orphans: Vec<Cid>,
     pub missing_references: Vec<Cid>,
     pub diagnostics: Vec<String>,
+}
+
+impl ActiveGovernance {
+    pub fn ancestral_events(&self) -> &[Cid] {
+        &self.ancestral_events
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -581,14 +589,45 @@ pub fn resolve(
         .next()
         .expect("recognized inception always leaves at least one leaf");
     let active = &states[&active_event];
+    let ancestral_events = collect_ancestral_events(&active_event, &states, &groups);
     GovernanceResolution::Active(ActiveGovernance {
         standing: ActiveGovernanceStanding::Active,
         active_event,
         governance_roots: active.governance_roots.clone(),
+        ancestral_events,
         orphans: sorted_cids(orphans),
         missing_references: sorted_cids(missing_references),
         diagnostics: reasons.into_iter().collect(),
     })
+}
+
+fn collect_ancestral_events(
+    active_event: &Cid,
+    states: &HashMap<Cid, GovernanceState>,
+    groups: &HashMap<Cid, CandidateGroup>,
+) -> Vec<Cid> {
+    let mut ancestors = HashSet::new();
+    let mut pending = vec![active_event.clone()];
+    while let Some(event) = pending.pop() {
+        if !ancestors.insert(event.clone()) {
+            continue;
+        }
+        let Some(CandidateGroup {
+            decoded: DecodedPayload::Supported { event, .. },
+            ..
+        }) = groups.get(&event)
+        else {
+            continue;
+        };
+        pending.extend(
+            event
+                .parents
+                .iter()
+                .filter(|parent| states.contains_key(*parent))
+                .cloned(),
+        );
+    }
+    sorted_cids(ancestors)
 }
 
 #[derive(Debug, Clone)]
