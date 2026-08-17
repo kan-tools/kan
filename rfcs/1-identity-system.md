@@ -1276,9 +1276,13 @@ identifier vector, and the offline listed-recovery-controller proof gate.
 `src/identity/did_kan_state.rs` implements the wire-independent state projection
 and ordered administration transitions, including canonical collection output,
 recovery-authority immutability, and duplicate/final-invariant checks.
+`src/identity/repository_inception.rs` implements the canonical unsigned
+repository-inception payload, canonical encoded-value list ordering, full
+base32-lower SHA-256 multihash `kan-repo:` derivation, a pinned identifier
+vector, and the supported static P-256 `did:key` listed-root proof gate.
 
 The complete reference-vector manifest, Ed25519, signed `did:kan` updates and
-resolution, repository inception and governance, delegation, modern authorship,
+resolution, repository governance, delegation, modern authorship,
 system identity state, and default-write cutover remain unimplemented. Signed
 update work is blocked on issue #244: this RFC closes the v1 operation set but
 does not yet define each operation's canonical DAG-CBOR form or the validity of
