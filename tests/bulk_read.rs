@@ -214,6 +214,7 @@ fn the_bulk_read_honours_the_trust_selector() {
     }
     assert!(kan(dir.path(), &a, &["observe", "shared", "from a"]).1);
     assert!(kan(dir.path(), &b, &["observe", "shared", "from b"]).1);
+    assert!(kan(dir.path(), &b, &["observe", "secret/only-b", "hidden"]).1);
 
     // v0.11 (`.design/identity-surface.md` REQ-1): the default base is
     // `Local`, so both authors are visible with no `--trust` argument and
@@ -227,7 +228,12 @@ fn the_bulk_read_honours_the_trust_selector() {
         default["excluded_by_trust"], 0,
         "nothing in the log should be excluded under Local: {default}"
     );
-    let default_claims = default["subjects"].as_array().unwrap()[0]["claims"]
+    let default_claims = default["subjects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["subject"] == "shared")
+        .unwrap()["claims"]
         .as_array()
         .unwrap();
     assert_eq!(
@@ -244,8 +250,49 @@ fn the_bulk_read_honours_the_trust_selector() {
     );
     let mine: serde_json::Value = serde_json::from_str(&mine).unwrap();
     assert_eq!(
-        mine["excluded_by_trust"], 1,
+        mine["excluded_by_trust"], 2,
         "`--trust me` should still exclude the other author, and disclose it: {mine}"
+    );
+
+    let (default_status, ok) = kan(dir.path(), &a, &["status", "--json"]);
+    assert!(ok);
+    let default_status: serde_json::Value = serde_json::from_str(&default_status).unwrap();
+    let (mine_status, ok) = kan(dir.path(), &a, &["status", "--json", "--trust", "me"]);
+    assert!(ok);
+    let mine_status: serde_json::Value = serde_json::from_str(&mine_status).unwrap();
+    let shared = |status: &serde_json::Value| -> serde_json::Value {
+        status["subjects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["subject"] == "shared")
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(shared(&default_status)["claim_count"], 2);
+    assert_eq!(shared(&mine_status)["claim_count"], 1);
+    assert_ne!(
+        shared(&default_status)["revision"],
+        shared(&mine_status)["revision"]
+    );
+    assert_ne!(default_status["revision"], mine_status["revision"]);
+    assert!(
+        !mine_status.to_string().contains("secret/only-b"),
+        "status manifest leaked a wholly excluded subject name: {mine_status}"
+    );
+
+    let (selected, ok) = kan(
+        dir.path(),
+        &a,
+        &["show", "--json", "--prefix", "secret/", "--trust", "me"],
+    );
+    assert!(ok);
+    let selected: serde_json::Value = serde_json::from_str(&selected).unwrap();
+    assert_eq!(selected["matched_subjects"], 0);
+    assert_eq!(selected["excluded_by_trust"], 2);
+    assert!(
+        !selected.to_string().contains("secret/only-b"),
+        "prefix selection leaked a wholly excluded subject name: {selected}"
     );
 
     let b_did = kan(dir.path(), &b, &["identity", "did"]).0;
@@ -261,7 +308,12 @@ fn the_bulk_read_honours_the_trust_selector() {
     let both: serde_json::Value = serde_json::from_str(&both).unwrap();
     assert_eq!(both["trust"]["base"], "PeerContested");
     assert_eq!(both["excluded_by_trust"], 0);
-    let claims = both["subjects"].as_array().unwrap()[0]["claims"]
+    let claims = both["subjects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["subject"] == "shared")
+        .unwrap()["claims"]
         .as_array()
         .unwrap();
     assert_eq!(claims.len(), 2, "expected both authors' claims: {both}");
@@ -365,4 +417,242 @@ fn retracting_a_subjects_only_claim_does_not_remove_the_subject() {
         show_out.contains("solo"),
         "the subject vanished after its only claim was retracted: {show_out}"
     );
+}
+
+/// kan#232: selected hydration is not a second interpretation of `show`.
+/// It is client-side filtering of the complete bulk response, performed
+/// before serialization and without another workspace open.
+#[test]
+fn selected_bulk_entries_equal_client_side_filtering() {
+    let (dir, key) = varied_log();
+    let (all, ok) = kan(dir.path(), &key, &["show", "--all", "--json"]);
+    assert!(ok, "show --all failed: {all}");
+    let all: serde_json::Value = serde_json::from_str(&all).unwrap();
+
+    let (selected, ok) = kan(
+        dir.path(),
+        &key,
+        &[
+            "show",
+            "--json",
+            "--subject",
+            "subject-2",
+            "--prefix",
+            "subject-4",
+        ],
+    );
+    assert!(ok, "selected show failed: {selected}");
+    let selected: serde_json::Value = serde_json::from_str(&selected).unwrap();
+
+    let expected: Vec<serde_json::Value> = all["subjects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| {
+            entry["subjects"].as_array().unwrap().iter().any(|name| {
+                let name = name.as_str().unwrap();
+                name == "subject-2" || name.starts_with("subject-4")
+            })
+        })
+        .cloned()
+        .collect();
+    assert_eq!(selected["subjects"], serde_json::Value::Array(expected));
+    assert_eq!(
+        selected["visible_subjects"],
+        all["subjects"].as_array().unwrap().len()
+    );
+    assert_eq!(selected["matched_subjects"], 2);
+}
+
+#[test]
+fn selectors_match_aliases_deduplicate_and_keep_external_inbound_edges() {
+    let (dir, key) = varied_log();
+
+    // subject-3 is an alias of subject-2. Exact + overlapping prefix must
+    // still return that folded class once, under show-all's primary label.
+    let (merged, ok) = kan(
+        dir.path(),
+        &key,
+        &[
+            "show",
+            "--json",
+            "--subject",
+            "subject-3",
+            "--prefix",
+            "subject-",
+            "--subject",
+            "subject-2",
+        ],
+    );
+    assert!(ok, "selected alias show failed: {merged}");
+    let merged: serde_json::Value = serde_json::from_str(&merged).unwrap();
+    let matching: Vec<&serde_json::Value> = merged["subjects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| {
+            entry["subjects"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|name| name == "subject-3")
+        })
+        .collect();
+    assert_eq!(matching.len(), 1, "merged class was duplicated: {merged}");
+    assert_eq!(matching[0]["subject"], "subject-2");
+
+    // subject-4 points at subject-5. Selecting only the target must retain
+    // the inbound edge from the unselected source.
+    let (target, ok) = kan(
+        dir.path(),
+        &key,
+        &["show", "--json", "--subject", "subject-5"],
+    );
+    assert!(ok, "selected target show failed: {target}");
+    let target: serde_json::Value = serde_json::from_str(&target).unwrap();
+    assert_eq!(target["matched_subjects"], 1);
+    let inbound = target["subjects"][0]["inbound"].as_array().unwrap();
+    assert!(
+        inbound.iter().any(|edge| edge["source"] == "subject-4"),
+        "inbound edge from unselected source disappeared: {target}"
+    );
+}
+
+#[test]
+fn selected_bulk_reports_zero_matches_explicitly() {
+    let (dir, key) = varied_log();
+    let (out, ok) = kan(
+        dir.path(),
+        &key,
+        &["show", "--json", "--prefix", "does-not-exist/"],
+    );
+    assert!(ok, "zero-match selection failed: {out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(out["matched_subjects"], 0);
+    assert!(out["visible_subjects"].as_u64().unwrap() > 0);
+    assert_eq!(out["subjects"], serde_json::json!([]));
+}
+
+#[test]
+fn status_manifest_agrees_with_bulk_show_and_revisions_are_stable() {
+    let (dir, key) = varied_log();
+    let read = || {
+        let (status, ok) = kan(dir.path(), &key, &["status", "--json"]);
+        assert!(ok, "status failed: {status}");
+        let (all, ok) = kan(dir.path(), &key, &["show", "--all", "--json"]);
+        assert!(ok, "show --all failed: {all}");
+        (
+            serde_json::from_str::<serde_json::Value>(&status).unwrap(),
+            serde_json::from_str::<serde_json::Value>(&all).unwrap(),
+        )
+    };
+
+    let (before, all) = read();
+    for row in before["subjects"].as_array().unwrap() {
+        let shown = all["subjects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["subject"] == row["subject"])
+            .unwrap();
+        let claims = shown["claims"].as_array().unwrap();
+        assert_eq!(row["claim_count"], claims.len());
+        assert_eq!(row["head"]["cid"], claims.last().unwrap()["cid"]);
+
+        let mut expected = std::collections::BTreeMap::<String, usize>::new();
+        for claim in claims {
+            *expected
+                .entry(claim["kind"].as_str().unwrap().to_string())
+                .or_default() += 1;
+        }
+        assert_eq!(row["kind_counts"], serde_json::to_value(expected).unwrap());
+        let revision = row["revision"].as_str().unwrap();
+        assert!(revision.starts_with("sha256:"));
+        assert_eq!(revision.len(), 71);
+    }
+    assert_eq!(before["revision"].as_str().unwrap().len(), 71);
+
+    let (repeated, _) = read();
+    assert_eq!(before["revision"], repeated["revision"]);
+    assert_eq!(before["subjects"], repeated["subjects"]);
+
+    let old_row = before["subjects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["subject"] == "subject-1")
+        .unwrap()["revision"]
+        .clone();
+    let (_, ok) = kan(
+        dir.path(),
+        &key,
+        &["observe", "subject-1", "a narrative-only append"],
+    );
+    assert!(ok);
+    let (after, _) = read();
+    assert_ne!(before["revision"], after["revision"]);
+    let new_row = &after["subjects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["subject"] == "subject-1")
+        .unwrap()["revision"];
+    assert_ne!(&old_row, new_row);
+}
+
+#[test]
+fn whole_view_revision_is_scoped_to_the_named_trust_frame() {
+    let (dir, key) = varied_log();
+    let (local, ok) = kan(dir.path(), &key, &["status", "--json"]);
+    assert!(ok);
+    let (solo, ok) = kan(dir.path(), &key, &["status", "--json", "--trust", "me"]);
+    assert!(ok);
+    let local: serde_json::Value = serde_json::from_str(&local).unwrap();
+    let solo: serde_json::Value = serde_json::from_str(&solo).unwrap();
+    assert_eq!(local["subjects"], solo["subjects"]);
+    assert_ne!(local["trust"]["base"], solo["trust"]["base"]);
+    assert_ne!(local["revision"], solo["revision"]);
+}
+
+#[test]
+fn selected_bulk_has_one_whole_read_and_no_per_subject_read_loop() {
+    let source = std::fs::read_to_string("src/actions.rs").unwrap();
+    let selected = source
+        .split("pub fn show_selected_json")
+        .nth(1)
+        .unwrap()
+        .split("/// `kan status")
+        .next()
+        .unwrap();
+    assert_eq!(selected.matches("all_stored_claims()?").count(), 1);
+    assert_eq!(selected.matches("fold::fold(").count(), 1);
+    assert!(
+        !selected.contains("view.subject(") && !selected.contains("show_json("),
+        "selected hydration introduced a fallible per-subject read: {selected}"
+    );
+}
+
+#[tokio::test]
+async fn selected_bulk_propagates_a_whole_read_failure_without_partial_json() {
+    let (dir, key) = varied_log();
+    let workspace = kan::workspace::Workspace::open(dir.path()).await.unwrap();
+    let claims = workspace.index.all_stored_claims().unwrap();
+    let trust = kan::fold::TrustBase::local(
+        claims
+            .iter()
+            .map(|(_, stored)| stored.claim.content.author.clone()),
+    );
+    let connection = rusqlite::Connection::open(dir.path().join(".kan/index.sqlite")).unwrap();
+    connection
+        .execute("UPDATE claims_v2 SET raw = X'00'", [])
+        .unwrap();
+
+    let result =
+        kan::actions::show_selected_json(&workspace, &["subject-1".to_string()], &[], &trust, None);
+    let error = result.expect_err("a corrupt whole read must fail selected hydration");
+    assert!(
+        !error.to_string().contains("subjects"),
+        "failure was disguised as a partial subjects response: {error}"
+    );
+    drop(key);
 }

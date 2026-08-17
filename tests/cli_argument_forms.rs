@@ -137,6 +137,55 @@ fn giving_the_subject_both_ways_is_refused() {
     );
 }
 
+/// kan#232: selected bulk show is an explicit machine-only shape. The old
+/// positional form remains valid, while selector flags compose only with one
+/// another and `--json`.
+#[test]
+fn selected_show_argument_forms_are_unambiguous() {
+    if kan().is_none() {
+        return;
+    }
+    let repo = Repo::new();
+    assert!(repo.run(&["observe", "alpha", "one"]).status.success());
+
+    for args in [
+        vec!["show", "alpha", "--json"],
+        vec!["show", "--json", "--subject", "alpha"],
+        vec!["show", "--json", "--prefix", "a"],
+        vec![
+            "show",
+            "--json",
+            "--subject",
+            "alpha",
+            "--subject",
+            "beta",
+            "--prefix",
+            "telos/",
+        ],
+    ] {
+        let out = repo.run(&args);
+        assert!(
+            out.status.success(),
+            "accepted selected-show form {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    for args in [
+        vec!["show", "--subject", "alpha"],
+        vec!["show", "--prefix", "a"],
+        vec!["show", "alpha", "--json", "--subject", "alpha"],
+        vec!["show", "--all", "--json", "--subject", "alpha"],
+        vec!["show", "--all", "--json", "--prefix", "a"],
+    ] {
+        let out = repo.run(&args);
+        assert!(
+            !out.status.success(),
+            "ambiguous selected-show form unexpectedly passed: {args:?}"
+        );
+    }
+}
+
 /// A verb that needs a subject, given only text, says which forms it accepts
 /// and quotes the text back — the original failure cost a retyped claim
 /// because the error named neither.

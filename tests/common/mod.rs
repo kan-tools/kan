@@ -124,6 +124,7 @@ pub fn normalize(raw: &str, root: &Path) -> String {
     let mut out = String::with_capacity(s.len());
     let mut cids: Vec<String> = Vec::new();
     let mut dids: Vec<String> = Vec::new();
+    let mut revisions: Vec<String> = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
         if let Some(len) = match_did(&bytes[i..]) {
@@ -138,6 +139,10 @@ pub fn normalize(raw: &str, root: &Path) -> String {
         } else if let Some(len) = match_cid(&bytes[i..]) {
             let tok: String = bytes[i..i + len].iter().collect();
             out.push_str(&placeholder("CID", &tok, &mut cids));
+            i += len;
+        } else if let Some(len) = match_revision(&bytes[i..]) {
+            let tok: String = bytes[i..i + len].iter().collect();
+            out.push_str(&placeholder("REVISION", &tok, &mut revisions));
             i += len;
         } else if let Some(len) = match_rfc3339(&bytes[i..]) {
             out.push_str("<TIME>");
@@ -241,6 +246,22 @@ fn match_cid(s: &[char]) -> Option<usize> {
         len += 1;
     }
     (len == 59).then_some(len)
+}
+
+/// A compact-manifest revision: `sha256:` followed by 64 lowercase hex
+/// digits. Like a CID, the value is stable for one claim set but necessarily
+/// differs between independently minted golden workspaces.
+fn match_revision(s: &[char]) -> Option<usize> {
+    const PREFIX: &str = "sha256:";
+    let prefix: Vec<char> = PREFIX.chars().collect();
+    if !s.starts_with(&prefix) || s.len() < PREFIX.len() + 64 {
+        return None;
+    }
+    let digest = &s[PREFIX.len()..PREFIX.len() + 64];
+    digest
+        .iter()
+        .all(|c| c.is_ascii_digit() || ('a'..='f').contains(c))
+        .then_some(PREFIX.len() + 64)
 }
 
 /// `2026-08-03T16:36:03Z`

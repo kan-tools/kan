@@ -1,18 +1,17 @@
 //! Cold review of the F1/F2 branch, performance regression guard.
 //!
 //! The F9 fix routed `kan show`/`kan context` through `superseded_status_cids`,
-//! which classified a subject under computed edges. Its first cut called
-//! `relations::compute_default` over EVERY claim in the class, spawning
-//! `O(k²)` `git merge-base` subprocesses in `k` = distinct commit anchors —
-//! ~12 s on a 50-commit subject, on the agent-facing read path. But
-//! `state::classify` only ever reads an `Ancestry` edge between two live
-//! `Status` claims, so the edge input is now narrowed to the status claims.
+//! which classified a subject under computed edges. Its first cut ran the
+//! default provider union over EVERY claim in the class, spawning `O(k²)`
+//! `git merge-base` subprocesses in `k` = distinct commit anchors — ~12 s on
+//! a 50-commit subject, on the agent-facing read path. kan#202 completes the
+//! repair: `state::classify_with` requests `GitAncestry` only after live
+//! Status positions disagree, and only over those positions.
 //!
-//! This test builds a subject whose class holds many narrative claims on
-//! distinct commits and only two status claims, and asserts `kan show`
-//! returns quickly. Without the narrowing the same read fans out into
-//! hundreds of `git merge-base` calls and blows the (deliberately generous)
-//! bound; with it the work is `O(2²)` regardless of commit count.
+//! This older elapsed-time regression remains as a large narrative-class
+//! control. `tests/status_ancestry_demand.rs` carries the exact subprocess
+//! assertions: zero for no/single/agreeing positions, pairs-among-live for a
+//! disagreement.
 
 use std::process::Command;
 use std::time::Instant;
@@ -90,7 +89,8 @@ async fn show_of_a_many_commit_subject_stays_fast() {
         .await
         .unwrap();
     }
-    // Two status claims — the only ones classification actually orders.
+    // Two same-author status claims collapse to one live position before any
+    // ancestry provider is requested.
     let last = git(dir.path(), &["rev-parse", "HEAD"]);
     for value in [StatusValue::Blocked, StatusValue::Resolved] {
         log.append(mk(ClaimBody::Status { value }, last.clone()), &identity)
@@ -128,7 +128,7 @@ async fn show_of_a_many_commit_subject_stays_fast() {
     assert!(
         elapsed.as_secs() < 6,
         "kan show of a {N}-commit subject took {elapsed:?} -- the status \
-         classification is fanning out git subprocesses over every claim \
-         again instead of the status claims alone"
+         classification is fanning out git subprocesses before it knows \
+         ancestry is needed"
     );
 }

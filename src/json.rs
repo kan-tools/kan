@@ -28,7 +28,10 @@
 //! that needs to verify a claim reads the log or a published record, not
 //! this.
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 use crate::{
     claim::{Claim, ClaimBody, SubjectRef},
@@ -110,6 +113,17 @@ pub struct ClaimJson {
     /// Only ever set on `Status` claims.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub superseded: bool,
+}
+
+/// A body-free pointer to the final live claim in a merge class's stable
+/// folded order. `recorded_at` is descriptive author-attested metadata; it
+/// does not decide which claim is the head.
+#[derive(Debug, Serialize)]
+pub struct HeadJson {
+    pub cid: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recorded_at: Option<u64>,
 }
 
 /// The trust base a view was folded under, carried *in the response*.
@@ -271,6 +285,14 @@ pub struct StatusEntryJson {
     pub value: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cid: Option<String>,
+    /// Trusted, visible, live claims in this folded merge class.
+    pub claim_count: usize,
+    /// Counts by the same stable kind names [`ClaimJson`] emits.
+    pub kind_counts: BTreeMap<String, usize>,
+    /// The final live claim in the fold's deterministic order.
+    pub head: HeadJson,
+    /// Domain-separated digest of the ordered visible claim CIDs.
+    pub revision: String,
     /// Live claims on this subject the trust base excluded.
     pub excluded_by_trust: usize,
     /// `unpublished` | `published` | `stale` — whether this subject would
@@ -284,6 +306,8 @@ pub struct StatusEntryJson {
 #[derive(Debug, Serialize)]
 pub struct StatusJson {
     pub v: u32,
+    /// Domain-separated digest of the visible classes and trust frame.
+    pub revision: String,
     pub subjects: Vec<StatusEntryJson>,
     pub trust: TrustJson,
     /// Total live claims excluded by the trust base across the whole log —
@@ -362,6 +386,26 @@ pub struct ShowAllJson {
     pub subjects: Vec<ShowJson>,
 }
 
+/// A complete `ShowJson` hydration for selected visible merge classes.
+///
+/// This is intentionally a separate envelope from [`ShowAllJson`]: ADR-71's
+/// complete graph-transfer response stays unchanged, while a selected reader
+/// can prove that zero subjects matched and how wide the pre-selection view
+/// was without guessing from an absent array entry.
+#[derive(Debug, Serialize)]
+pub struct ShowSelectedJson {
+    pub v: u32,
+    pub trust: TrustJson,
+    pub excluded_by_trust: usize,
+    pub published_read_error_count: usize,
+    pub published_read_errors: Vec<PublishedReadErrorJson>,
+    /// Folded merge classes before selection, not the number of alias names.
+    pub visible_subjects: usize,
+    /// Deduplicated folded merge classes after selection.
+    pub matched_subjects: usize,
+    pub subjects: Vec<ShowJson>,
+}
+
 /// This workspace's declared signing identities. The active one is listed
 /// separately rather than folded into `roles`, because "who am I writing as"
 /// and "who has this workspace declared" are different questions and a
@@ -398,7 +442,7 @@ impl ClaimJson {
         let body = &claim.content.body;
         let mut out = Self {
             cid: cid.to_string(),
-            kind: format!("{:?}", body.kind()),
+            kind: claim_kind_name(body),
             subject: subject_name(&claim.content.subject),
             author: claim.content.author.did.clone(),
             recorded_at: claim.content.recorded_at,
@@ -432,9 +476,87 @@ impl ClaimJson {
     }
 }
 
+/// One stable spelling for a claim kind across full and compact JSON views.
+pub fn claim_kind_name(body: &ClaimBody) -> String {
+    format!("{:?}", body.kind())
+}
+
+const SUBJECT_REVISION_DOMAIN: &[u8] = b"kan.status.subject-revision.v1";
+const VIEW_REVISION_DOMAIN: &[u8] = b"kan.status.view-revision.v1";
+
+fn hash_bytes(hasher: &mut Sha256, value: &[u8]) {
+    hasher.update((value.len() as u64).to_be_bytes());
+    hasher.update(value);
+}
+
+fn format_revision(bytes: &[u8]) -> String {
+    let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+    format!("sha256:{hex}")
+}
+
+fn subject_revision_bytes(class: &SubjectView) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hash_bytes(&mut hasher, SUBJECT_REVISION_DOMAIN);
+    hasher.update((class.claims.len() as u64).to_be_bytes());
+    for (cid, _) in &class.claims {
+        hash_bytes(&mut hasher, &cid.to_bytes());
+    }
+    hasher.finalize().into()
+}
+
+/// Revision for one merge class, over visible CID bytes only.
+pub fn subject_revision(class: &SubjectView) -> String {
+    format_revision(&subject_revision_bytes(class))
+}
+
+/// Revision for the whole visible fold under one trust frame.
+///
+/// Hidden claims and wholly hidden subject names are absent because this
+/// walks only the already trust-filtered [`FoldedView`]. The trust base is
+/// still part of the preimage so two frames that happen to admit the same
+/// claim set do not collide accidentally.
+pub fn view_revision(view: &FoldedView, trust: &crate::fold::TrustBase) -> String {
+    let mut hasher = Sha256::new();
+    hash_bytes(&mut hasher, VIEW_REVISION_DOMAIN);
+    hash_bytes(&mut hasher, trust.name().as_bytes());
+
+    let authors = trust.authors();
+    hasher.update((authors.len() as u64).to_be_bytes());
+    for (author, weight) in authors {
+        hash_bytes(&mut hasher, author.did.as_bytes());
+        match author.agent {
+            Some(agent) => {
+                hasher.update([1]);
+                hash_bytes(&mut hasher, &agent);
+            }
+            None => hasher.update([0]),
+        }
+        hasher.update(weight.to_bits().to_be_bytes());
+    }
+
+    hasher.update((view.classes.len() as u64).to_be_bytes());
+    for class in &view.classes {
+        let primary = class.subjects.first().map(subject_name).unwrap_or_default();
+        hash_bytes(&mut hasher, primary.as_bytes());
+        let mut aliases: Vec<String> = class.subjects.iter().skip(1).map(subject_name).collect();
+        aliases.sort();
+        hasher.update((aliases.len() as u64).to_be_bytes());
+        for alias in aliases {
+            hash_bytes(&mut hasher, alias.as_bytes());
+        }
+        hasher.update(subject_revision_bytes(class));
+    }
+    format_revision(&hasher.finalize())
+}
+
 /// Classification name and winning value for a merge class.
-pub fn state_of(class: &SubjectView) -> (String, Option<String>, Option<String>) {
-    match crate::fold::state::classify(&class.claims, &[]) {
+///
+/// The action layer supplies the classification because computed Git edges
+/// require a workspace. Reclassifying here with an empty edge set made JSON
+/// report `Contested` where the rendered surface, correctly using ancestry,
+/// reported `Settled`.
+pub fn state_fields(state: &StateView) -> (String, Option<String>, Option<String>) {
+    match state {
         StateView::Unclassified => ("Unclassified".to_string(), None, None),
         StateView::Settled { value, claim } => (
             "Settled".to_string(),
@@ -456,17 +578,36 @@ pub fn state_of(class: &SubjectView) -> (String, Option<String>, Option<String>)
 
 pub fn status_entry(
     class: &SubjectView,
+    state: &StateView,
     excluded: &ExcludedByTrust,
     durability: crate::actions::Durability,
 ) -> StatusEntryJson {
-    let (state, value, cid) = state_of(class);
+    let (state, value, cid) = state_fields(state);
     let subjects: Vec<String> = class.subjects.iter().map(subject_name).collect();
+    let mut kind_counts = BTreeMap::new();
+    for (_, claim) in &class.claims {
+        *kind_counts
+            .entry(claim_kind_name(&claim.content.body))
+            .or_insert(0) += 1;
+    }
+    let (head_cid, head_claim) = class
+        .claims
+        .last()
+        .expect("folded classes contain at least one live claim");
     StatusEntryJson {
         subject: subjects.first().cloned().unwrap_or_default(),
         subjects,
         state,
         value,
         cid,
+        claim_count: class.claims.len(),
+        kind_counts,
+        head: HeadJson {
+            cid: head_cid.to_string(),
+            kind: claim_kind_name(&head_claim.content.body),
+            recorded_at: head_claim.content.recorded_at,
+        },
+        revision: subject_revision(class),
         excluded_by_trust: excluded.for_class(class),
         durability: durability.name().to_string(),
     }
@@ -476,11 +617,12 @@ pub fn status_entry(
 pub fn all_status(
     view: &FoldedView,
     excluded: &ExcludedByTrust,
+    classify: impl Fn(&SubjectView) -> StateView,
     durability: impl Fn(&SubjectView) -> crate::actions::Durability,
 ) -> Vec<StatusEntryJson> {
     view.classes
         .iter()
-        .map(|c| status_entry(c, excluded, durability(c)))
+        .map(|c| status_entry(c, &classify(c), excluded, durability(c)))
         .collect()
 }
 

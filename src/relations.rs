@@ -157,22 +157,9 @@ impl RelationProvider for GitSameFile {
     }
 }
 
-/// Run every provider over `claims`, unioning their edges — §6's "the fold
-/// consumes their union" of attested ⊔ computable relational input.
-pub fn compute_all(
-    claims: &[(Cid, Claim)],
-    substrate: &GitSubstrate,
-    providers: &[&dyn RelationProvider],
-) -> Vec<ComputedEdge> {
-    providers
-        .iter()
-        .flat_map(|p| p.relations(claims, substrate))
-        .collect()
-}
-
-/// `GitAncestry` + `GitSameFile` — the v1 provider set (§6.1), both
-/// default-on.
-pub fn compute_default(claims: &[(Cid, Claim)], substrate: &GitSubstrate) -> Vec<ComputedEdge> {
-    let providers: [&dyn RelationProvider; 2] = [&GitAncestry, &GitSameFile];
-    compute_all(claims, substrate, &providers)
-}
+// There is deliberately no catch-all "default providers" helper. The two
+// production consumers need different edge kinds over radically different
+// input sets: status classification asks lazily for `GitAncestry` over live
+// disagreeing Status positions, while related-subject lookup asks for
+// `GitSameFile` over the folded view. A convenience union here caused kan#181
+// and kan#202 by making compute-more-than-consumed the easiest call to write.

@@ -99,6 +99,7 @@ fn a_merged_claim_keeps_its_own_subject() {
 fn every_payload_is_versioned() {
     let out = json::StatusJson {
         v: json::SCHEMA_VERSION,
+        revision: "sha256:test".to_string(),
         subjects: vec![],
         trust: json::TrustJson::new(&kan::fold::TrustBase::solo(kan::claim::AuthorId {
             did: "did:key:zTest".to_string(),

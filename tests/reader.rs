@@ -401,6 +401,14 @@ fn every_json_read_surface_discloses_a_bad_published_record() {
     let invocations: &[&[&str]] = &[
         &["show", "finding", "--trust", &author_did, "--json"],
         &["show", "--all", "--trust", &author_did, "--json"],
+        &[
+            "show",
+            "--json",
+            "--subject",
+            "finding",
+            "--trust",
+            &author_did,
+        ],
         &["status", "--trust", &author_did, "--json"],
         &["issues", "--trust", &author_did, "--json"],
         &[
@@ -428,7 +436,9 @@ fn every_json_read_surface_discloses_a_bad_published_record() {
             expected = Some(errors);
         }
 
-        if args.starts_with(&["show", "--all"]) {
+        if args.starts_with(&["show", "--all"])
+            || (args.first() == Some(&"show") && value.get("matched_subjects").is_some())
+        {
             for subject in value["subjects"].as_array().unwrap() {
                 assert!(subject.get("published_read_error_count").is_none());
                 assert!(subject.get("published_read_errors").is_none());

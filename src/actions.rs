@@ -15,7 +15,7 @@ use crate::{
     context::{self, TiktokenEstimator, TokenEstimator},
     fold::{self, state::StateView, FoldedView, SubjectView, TrustBase},
     json::ExcludedByTrust,
-    relations,
+    relations::{self, RelationProvider},
     workspace::Workspace,
 };
 
@@ -1849,28 +1849,18 @@ fn format_micros(micros: u64) -> String {
     format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{sec:02}Z")
 }
 
-/// Computed edges for classifying a subject's status, over the `Status`
-/// claims ALONE rather than every claim in the class.
+/// Git-ancestry edges for the live disagreeing Status positions supplied by
+/// `state::classify_with`.
 ///
-/// `state::classify`'s `dominated_cids` only ever consults an `Ancestry`
-/// edge between two live `Status` claims — a narrative claim's commit anchor
-/// participates in no edge it reads. Computing `compute_default` over all
-/// class claims therefore spawned `O(k²)` `git merge-base` subprocesses in
-/// `k` = distinct commit anchors for nothing: a `show` of a subject spanning
-/// 50 commits took ~12 s where the answer needs only the handful of edges
-/// among its status claims. Narrowing the input here is semantics-preserving
-/// (the dropped edges were never read) and is what keeps the F9 edge-set fix
-/// from turning the agent-facing read path into a fork storm.
+/// The fold owns the demand boundary: this function is never reached for an
+/// unclassified, single-position, or all-agreeing subject. Naming
+/// `GitAncestry` directly also prevents the old compute-more-than-consumed
+/// failure where `compute_default` ran `GitSameFile` beside it for no reader.
 fn status_classification_edges(
     ws: &Workspace,
-    claims: &[(Cid, crate::claim::Claim)],
+    live_disagreement: &[(Cid, crate::claim::Claim)],
 ) -> Vec<crate::relations::ComputedEdge> {
-    let status_only: Vec<(Cid, crate::claim::Claim)> = claims
-        .iter()
-        .filter(|(_, c)| c.content.body.kind() == crate::claim::ClaimKind::Status)
-        .cloned()
-        .collect();
-    relations::compute_default(&status_only, &ws.git)
+    relations::GitAncestry.relations(live_disagreement, &ws.git)
 }
 
 /// Status claims on this subject that a later status has replaced.
@@ -1887,8 +1877,9 @@ fn superseded_status_cids(
     // as live under `kan show`/`context` — the two read surfaces disagreeing
     // about the same subject (review/full-pass-v0.12 F9). SPEC §9 step 2b
     // makes the poset attested ⊔ computable; both halves belong here.
-    let edges = status_classification_edges(ws, claims);
-    let live = match crate::fold::state::classify(claims, &edges) {
+    let live = match crate::fold::state::classify_with(claims, |positions| {
+        status_classification_edges(ws, positions)
+    }) {
         crate::fold::state::StateView::Unclassified => return Default::default(),
         other => other.live_cids(),
     };
@@ -2098,11 +2089,10 @@ pub fn show(
 /// REQ-20: subjects sharing a `GitSameFile` edge with `subject_view`, via
 /// any of their claims — minimal scope, a read-only surfacing of
 /// already-computed data, not a new ranking/scoring mechanism.
-/// `relations::compute_default` only sees edges within the claim slice it's
-/// given, and a same-file relation is inherently cross-subject, so this
-/// runs it over every live claim in `view` (not just `subject_view`'s own),
-/// then keeps only edges that cross from `subject_view` into some other
-/// class.
+/// A same-file relation is inherently cross-subject, so this runs the one
+/// provider it consumes over every live claim in `view` (not just
+/// `subject_view`'s own), then keeps only edges that cross from
+/// `subject_view` into some other class.
 fn related_subjects_by_file(
     view: &FoldedView,
     subject_view: &SubjectView,
@@ -2113,15 +2103,11 @@ fn related_subjects_by_file(
         .iter()
         .flat_map(|c| c.claims.iter().cloned())
         .collect();
-    // ONLY the provider whose edges this function keeps. `compute_default`
-    // also runs `GitAncestry`, which spawns `git merge-base --is-ancestor`
-    // per distinct commit pair -- over every live claim in the workspace,
-    // because a same-file relation is inherently cross-subject -- and the
-    // loop below then discards 100% of what that bought. Measured at 141
-    // SECONDS on day's 12 MB log, against 72 ms for `show --json`, which
-    // never calls this at all (#181). The whole difference was one call.
-    let providers: [&dyn relations::RelationProvider; 1] = [&relations::GitSameFile];
-    let edges = relations::compute_all(&all_claims, git, &providers);
+    // ONLY the provider whose edges this function keeps. The former default
+    // union also ran `GitAncestry` over every live claim in the workspace and
+    // discarded 100% of those edges: 141 seconds against 72 ms for the JSON
+    // read on day's log (#181).
+    let edges = relations::GitSameFile.relations(&all_claims, git);
     let mine: std::collections::HashSet<&Cid> =
         subject_view.claims.iter().map(|(cid, _)| cid).collect();
 
@@ -2244,12 +2230,9 @@ fn subject_hint(view: &FoldedView) -> String {
 /// caller-and-purpose (`issues` used to call this twice: once to check
 /// "is this done," once more to render it).
 fn classify_subject(ws: &Workspace, subject_view: &SubjectView) -> StateView {
-    // Edges over the status claims only — see `status_classification_edges`.
-    // `kan status`/`issues` classify every subject, so the same `O(k²)`
-    // subprocess fan-out this avoids for `show` was a pre-existing cost here
-    // too (it is the shape `kan#165` is about).
-    let edges = status_classification_edges(ws, &subject_view.claims);
-    fold::state::classify(&subject_view.claims, &edges)
+    fold::state::classify_with(&subject_view.claims, |positions| {
+        status_classification_edges(ws, positions)
+    })
 }
 
 /// A merge-class's subject label, in a form `kan show` accepts verbatim.
@@ -2447,6 +2430,11 @@ fn write_state_line(out: &mut String, label: &str, subject_view: &SubjectView, s
 /// the class of bug that made `day` see an empty log while `kan show`
 /// displayed it perfectly (ADR-50).
 fn is_open_issue(ws: &Workspace, subject_view: &SubjectView) -> bool {
+    let state = classify_subject(ws, subject_view);
+    is_open_issue_with_state(subject_view, &state)
+}
+
+fn is_open_issue_with_state(subject_view: &SubjectView, state: &StateView) -> bool {
     let has_status_claim = subject_view
         .claims
         .iter()
@@ -2470,7 +2458,7 @@ fn is_open_issue(ws: &Workspace, subject_view: &SubjectView) -> bool {
         .any(|(_, c)| matches!(c.content.body, ClaimBody::Resolution { .. }));
     let done = has_resolution
         || matches!(
-            classify_subject(ws, subject_view),
+            state,
             StateView::Settled {
                 value: StatusValue::Resolved | StatusValue::Closed,
                 ..
@@ -2621,6 +2609,48 @@ pub fn show_json(
     to_json(&out)
 }
 
+/// One canonical bulk-show entry. Both complete and selected bulk reads call
+/// this exact constructor, so selection cannot become a second `ShowJson`
+/// interpretation. `view` remains complete: inbound edges from an unselected
+/// source are still visible in a selected target.
+fn bulk_show_entry(
+    ws: &Workspace,
+    view: &FoldedView,
+    class: &SubjectView,
+    excluded: &ExcludedByTrust,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> crate::json::ShowJson {
+    let superseded = superseded_status_cids(ws, &class.claims);
+    let names: Vec<String> = class
+        .subjects
+        .iter()
+        .map(crate::json::subject_name)
+        .collect();
+    let primary = names.first().cloned().unwrap_or_default();
+    let inbound = class
+        .subjects
+        .first()
+        .map(|subject| inbound_edges_json(view, subject))
+        .unwrap_or_default();
+    crate::json::ShowJson {
+        v: crate::json::SCHEMA_VERSION,
+        subject: primary,
+        subjects: names,
+        claims: class
+            .claims
+            .iter()
+            .map(|(cid, claim)| crate::json::ClaimJson::new(cid, claim, superseded.contains(cid)))
+            .collect(),
+        flagged_oversized: class.flagged_oversized,
+        inbound,
+        trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
+        excluded_by_trust: excluded.for_class(class),
+        published_read_error_count: None,
+        published_read_errors: None,
+    }
+}
+
 /// `kan show --all --json` — every subject's live claims, from one open
 /// (#123, `.design/kan-read-contract.md` REQ-5).
 ///
@@ -2639,40 +2669,7 @@ pub fn show_all_json(
     let subjects: Vec<crate::json::ShowJson> = view
         .classes
         .iter()
-        .map(|class| {
-            let superseded = superseded_status_cids(ws, &class.claims);
-            let names: Vec<String> = class
-                .subjects
-                .iter()
-                .map(crate::json::subject_name)
-                .collect();
-            // The class's own first name, matching what `all_status` uses as
-            // a label, so a consumer can join the two responses on it.
-            let primary = names.first().cloned().unwrap_or_default();
-            let inbound = class
-                .subjects
-                .first()
-                .map(|s| inbound_edges_json(&view, s))
-                .unwrap_or_default();
-            crate::json::ShowJson {
-                v: crate::json::SCHEMA_VERSION,
-                subject: primary,
-                subjects: names,
-                claims: class
-                    .claims
-                    .iter()
-                    .map(|(cid, claim)| {
-                        crate::json::ClaimJson::new(cid, claim, superseded.contains(cid))
-                    })
-                    .collect(),
-                flagged_oversized: class.flagged_oversized,
-                inbound,
-                trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
-                excluded_by_trust: excluded.for_class(class),
-                published_read_error_count: None,
-                published_read_errors: None,
-            }
-        })
+        .map(|class| bulk_show_entry(ws, &view, class, &excluded, trust, empty_reason))
         .collect();
 
     to_json(&crate::json::ShowAllJson {
@@ -2690,6 +2687,57 @@ pub fn show_all_json(
     })
 }
 
+/// Selected structured hydration: exact names and visible folded prefixes,
+/// from the same one-read/one-fold path as `show --all`.
+pub fn show_selected_json(
+    ws: &Workspace,
+    exact: &[String],
+    prefixes: &[String],
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
+    let claims = ws.index.all_stored_claims()?;
+    let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
+    let view = fold::fold(claims, trust);
+    let visible_subjects = view.classes.len();
+
+    let selected: Vec<&SubjectView> = view
+        .classes
+        .iter()
+        .filter(|class| {
+            class
+                .subjects
+                .iter()
+                .map(crate::json::subject_name)
+                .any(|name| {
+                    exact.iter().any(|wanted| wanted == &name)
+                        || prefixes.iter().any(|prefix| name.starts_with(prefix))
+                })
+        })
+        .collect();
+    let matched_subjects = selected.len();
+    let subjects = selected
+        .into_iter()
+        .map(|class| bulk_show_entry(ws, &view, class, &excluded, trust, empty_reason))
+        .collect();
+
+    to_json(&crate::json::ShowSelectedJson {
+        v: crate::json::SCHEMA_VERSION,
+        trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
+        excluded_by_trust: excluded.total(),
+        published_read_error_count: ws.published.read_errors().len(),
+        published_read_errors: ws
+            .published
+            .read_errors()
+            .iter()
+            .map(crate::json::PublishedReadErrorJson::from)
+            .collect(),
+        visible_subjects,
+        matched_subjects,
+        subjects,
+    })
+}
+
 /// `kan status [subject] --json`.
 pub fn status_json(
     ws: &Workspace,
@@ -2700,21 +2748,30 @@ pub fn status_json(
     let claims = ws.index.all_stored_claims()?;
     let excluded = ExcludedByTrust::new(fold::excluded_by_trust(&claims, trust));
     let view = fold::fold(claims, trust);
+    let revision = crate::json::view_revision(&view, trust);
     let subjects = match subject {
         Some(name) => view
             .subject(&SubjectRef::Local(Rkey::from(name)))
             .map(|c| {
+                let state = classify_subject(ws, c);
                 vec![crate::json::status_entry(
                     c,
+                    &state,
                     &excluded,
                     durability_of(ws, c),
                 )]
             })
             .unwrap_or_default(),
-        None => crate::json::all_status(&view, &excluded, |c| durability_of(ws, c)),
+        None => crate::json::all_status(
+            &view,
+            &excluded,
+            |c| classify_subject(ws, c),
+            |c| durability_of(ws, c),
+        ),
     };
     to_json(&crate::json::StatusJson {
         v: crate::json::SCHEMA_VERSION,
+        revision,
         subjects,
         trust: crate::json::TrustJson::with_empty_reason(trust, empty_reason),
         excluded_by_trust: excluded.total(),
@@ -2740,8 +2797,11 @@ pub fn issues_json(
     let subjects = view
         .classes
         .iter()
-        .filter(|c| is_open_issue(ws, c))
-        .map(|c| crate::json::status_entry(c, &excluded, durability_of(ws, c)))
+        .filter_map(|c| {
+            let state = classify_subject(ws, c);
+            is_open_issue_with_state(c, &state)
+                .then(|| crate::json::status_entry(c, &state, &excluded, durability_of(ws, c)))
+        })
         .collect();
     to_json(&crate::json::IssuesJson {
         v: crate::json::SCHEMA_VERSION,

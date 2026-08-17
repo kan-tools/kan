@@ -404,6 +404,7 @@ exit: ok
 --- stdout ---
 {
   "v": 1,
+  "revision": "<REVISION-0>",
   "subjects": [
     {
       "subject": "alpha",
@@ -413,6 +414,21 @@ exit: ok
       "state": "Settled",
       "value": "Open",
       "cid": "<CID-5>",
+      "claim_count": 7,
+      "kind_counts": {
+        "Blocker": 1,
+        "Observation": 1,
+        "Plan": 1,
+        "Publication": 1,
+        "Status": 2,
+        "Subject": 1
+      },
+      "head": {
+        "cid": "<CID-6>",
+        "kind": "Publication",
+        "recorded_at": <MICROS>
+      },
+      "revision": "<REVISION-1>",
       "excluded_by_trust": 0,
       "durability": "published"
     },
@@ -424,6 +440,20 @@ exit: ok
       "state": "Settled",
       "value": "Resolved",
       "cid": "<CID-10>",
+      "claim_count": 5,
+      "kind_counts": {
+        "Observation": 1,
+        "Relation": 1,
+        "Resolution": 1,
+        "Retraction": 1,
+        "Status": 1
+      },
+      "head": {
+        "cid": "<CID-11>",
+        "kind": "Retraction",
+        "recorded_at": <MICROS>
+      },
+      "revision": "<REVISION-2>",
       "excluded_by_trust": 0,
       "durability": "unpublished"
     }
@@ -463,6 +493,21 @@ exit: ok
       "state": "Settled",
       "value": "Open",
       "cid": "<CID-5>",
+      "claim_count": 7,
+      "kind_counts": {
+        "Blocker": 1,
+        "Observation": 1,
+        "Plan": 1,
+        "Publication": 1,
+        "Status": 2,
+        "Subject": 1
+      },
+      "head": {
+        "cid": "<CID-6>",
+        "kind": "Publication",
+        "recorded_at": <MICROS>
+      },
+      "revision": "<REVISION-1>",
       "excluded_by_trust": 0,
       "durability": "published"
     }
