@@ -3,10 +3,11 @@
 //! file and `rebuild` reconstructs it from `Log::iter_all` — nothing here is
 //! a second source of truth (AC-6).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use atproto_dasl::Cid;
 use rusqlite::OptionalExtension;
+use sha2::Digest;
 
 use crate::claim::AuthorId;
 use crate::store::log::StoredClaim;
@@ -36,6 +37,7 @@ use crate::store::log::StoredClaim;
 /// exactly the breakage this avoids.
 const CLAIMS_TABLE: &str = "claims_v2";
 const BUILT_FROM_ROOT_KEY: &str = "built_from_root_v2";
+const PROJECTION_DIGEST_KEY: &str = "projection_digest_v2";
 
 /// Which store a projected claim came from.
 ///
@@ -126,6 +128,7 @@ fn decode_message(e: &atproto_dasl::DecodeError) -> String {
 
 pub struct Index {
     conn: rusqlite::Connection,
+    path: Option<PathBuf>,
 }
 
 impl Index {
@@ -137,17 +140,52 @@ impl Index {
     /// file and the directory holding it, which is the vivification #149 is
     /// about, arriving through the back door.
     pub fn open_in_memory() -> Result<Self, Error> {
-        Self::with_connection(rusqlite::Connection::open_in_memory()?)
+        Self::with_connection(rusqlite::Connection::open_in_memory()?, None)
     }
 
     pub fn open(path: &Path) -> Result<Self, Error> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+            // surface-write: sqlite:meta
+            crate::persistence::create_dir_all(crate::persistence::SurfaceWrite::Sqlite, parent)?;
         }
-        Self::with_connection(rusqlite::Connection::open(path)?)
+        let connection = match rusqlite::Connection::open(path) {
+            Ok(connection) => connection,
+            Err(_) => {
+                // The projection path itself can be unusable even while the
+                // authoritative log is intact: a directory, broken symlink,
+                // or permissions failure prevents SQLite from opening a file.
+                // Do not delete an object we could not identify safely. Read
+                // through a recomputed in-memory projection instead; a later
+                // open can return to the file once the path is usable again.
+                return Self::open_in_memory();
+            }
+        };
+        match Self::with_connection(connection, Some(path.to_path_buf())) {
+            Ok(index) => Ok(index),
+            Err(_) => {
+                // A structurally corrupt current projection may make even
+                // CREATE INDEX IF NOT EXISTS fail before Workspace can
+                // compare it with the authoritative reference. Reopen the
+                // disposable database and recreate only this binary's schema.
+                // If cleanup or recreation is denied, bypass the disposable
+                // file: projection damage must not control authoritative read
+                // availability.
+                // surface-write: sqlite:meta
+                if crate::persistence::remove_file(crate::persistence::SurfaceWrite::Sqlite, path)
+                    .is_err()
+                {
+                    return Self::open_in_memory();
+                }
+                let Ok(connection) = rusqlite::Connection::open(path) else {
+                    return Self::open_in_memory();
+                };
+                Self::with_connection(connection, Some(path.to_path_buf()))
+                    .or_else(|_| Self::open_in_memory())
+            }
+        }
     }
 
-    fn with_connection(conn: rusqlite::Connection) -> Result<Self, Error> {
+    fn with_connection(conn: rusqlite::Connection, path: Option<PathBuf>) -> Result<Self, Error> {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS meta (
                 key   TEXT PRIMARY KEY,
@@ -176,7 +214,60 @@ impl Index {
              CREATE INDEX IF NOT EXISTS {CLAIMS_TABLE}_by_origin
                 ON {CLAIMS_TABLE}(origin);"
         ))?;
-        Ok(Self { conn })
+        Ok(Self { conn, path })
+    }
+
+    /// Recreate this binary's disposable schema after structural corruption.
+    /// No authoritative data lives here. Older versioned claim tables are
+    /// deliberately retained; `meta` is shared but contains only disposable
+    /// freshness hints, so recreating it merely makes other binaries rebuild.
+    pub fn recreate_current_schema(&mut self) -> Result<(), Error> {
+        if let Some(path) = self.path.clone() {
+            // Establish a complete in-memory projection before touching the
+            // disposable file. If its parent is read-only, removal or
+            // recreation can fail even though the authoritative log is
+            // perfectly readable; in that case the in-memory index remains
+            // the recovery target for the rebuild below.
+            let fallback = Self::open_in_memory()?;
+            let old = std::mem::replace(self, fallback);
+            drop(old);
+            // surface-write: sqlite:meta
+            if crate::persistence::remove_file(crate::persistence::SurfaceWrite::Sqlite, &path)
+                .is_err()
+            {
+                return Ok(());
+            }
+            if let Ok(recreated) = Self::open(&path) {
+                *self = recreated;
+            }
+            return Ok(());
+        }
+        self.conn.execute_batch(&format!(
+            "DROP TABLE IF EXISTS {CLAIMS_TABLE};
+             DROP TABLE IF EXISTS meta;"
+        ))?;
+        self.conn.execute_batch(
+            "CREATE TABLE meta (
+                key   TEXT PRIMARY KEY,
+                value TEXT
+             );",
+        )?;
+        self.conn.execute_batch(&format!(
+            "CREATE TABLE {CLAIMS_TABLE} (
+                content_cid  TEXT PRIMARY KEY,
+                rev          TEXT NOT NULL,
+                author_did   TEXT NOT NULL,
+                author_agent BLOB,
+                origin       TEXT NOT NULL,
+                subject_key  TEXT NOT NULL,
+                kind         TEXT NOT NULL,
+                raw          BLOB NOT NULL
+             );
+             CREATE INDEX {CLAIMS_TABLE}_by_rev ON {CLAIMS_TABLE}(rev);
+             CREATE INDEX {CLAIMS_TABLE}_by_subject ON {CLAIMS_TABLE}(subject_key);
+             CREATE INDEX {CLAIMS_TABLE}_by_origin ON {CLAIMS_TABLE}(origin);"
+        ))?;
+        Ok(())
     }
 
     /// Wipe and repopulate the index from `claims` (the full contents of a
@@ -188,6 +279,24 @@ impl Index {
     /// half-updated claims table read back as "fresh" by
     /// `built_from_root`'s caller.
     pub fn rebuild(
+        &mut self,
+        log_claims: &[(Cid, StoredClaim)],
+        foreign_claims: &[(Cid, StoredClaim)],
+        built_from_root: Option<&Cid>,
+    ) -> Result<(), Error> {
+        match self.rebuild_once(log_claims, foreign_claims, built_from_root) {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                // Projection failures are never allowed to turn an already
+                // committed authoritative append into a reported failure.
+                // Discard the derived schema/file and retry from inputs.
+                self.recreate_current_schema()?;
+                self.rebuild_once(log_claims, foreign_claims, built_from_root)
+            }
+        }
+    }
+
+    fn rebuild_once(
         &mut self,
         log_claims: &[(Cid, StoredClaim)],
         foreign_claims: &[(Cid, StoredClaim)],
@@ -221,12 +330,20 @@ impl Index {
                 )?;
             }
         }
+        let projection_digest = Self::projection_digest(&tx)?;
         tx.execute(
             &format!(
                 "INSERT INTO meta (key, value) VALUES ('{BUILT_FROM_ROOT_KEY}', ?1)
                  ON CONFLICT(key) DO UPDATE SET value = excluded.value"
             ),
             rusqlite::params![built_from_root.map(|c| c.to_string())],
+        )?;
+        tx.execute(
+            &format!(
+                "INSERT INTO meta (key, value) VALUES ('{PROJECTION_DIGEST_KEY}', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+            ),
+            [projection_digest],
         )?;
         tx.commit()?;
         Ok(())
@@ -281,6 +398,86 @@ impl Index {
         Ok(out)
     }
 
+    /// Whether the persisted projection still has the exact schema and row
+    /// bytes committed by `rebuild`. This is a cheap corruption detector, not
+    /// an authority claim: a mismatch causes full reference recomputation from
+    /// the log and published records. Keeping the seal beside the disposable
+    /// rows avoids signature-verifying the whole authoritative log on every
+    /// ordinary CLI open while still detecting valid-CBOR substitution and
+    /// corruption of denormalized query columns.
+    pub fn projection_is_consistent(&self) -> Result<bool, Error> {
+        let stored: Option<String> = self
+            .conn
+            .query_row(
+                &format!("SELECT value FROM meta WHERE key = '{PROJECTION_DIGEST_KEY}'"),
+                [],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(stored) = stored else {
+            return Ok(false);
+        };
+        let expected_schema = Self::open_in_memory()?;
+        Ok(stored == Self::projection_digest(&self.conn)?
+            && Self::schema_objects(&self.conn)? == Self::schema_objects(&expected_schema.conn)?)
+    }
+
+    fn projection_digest(conn: &rusqlite::Connection) -> Result<String, Error> {
+        fn add(hasher: &mut sha2::Sha256, bytes: &[u8]) {
+            hasher.update((bytes.len() as u64).to_be_bytes());
+            hasher.update(bytes);
+        }
+
+        let mut stmt = conn.prepare(&format!(
+            "SELECT content_cid, rev, author_did, author_agent, origin, subject_key, kind, raw
+             FROM {CLAIMS_TABLE} ORDER BY content_cid"
+        ))?;
+        let mapped = stmt.query_map([], |row| {
+            Ok(ProjectionRow {
+                content_cid: row.get(0)?,
+                rev: row.get(1)?,
+                author_did: row.get(2)?,
+                author_agent: row.get(3)?,
+                origin: row.get(4)?,
+                subject_key: row.get(5)?,
+                kind: row.get(6)?,
+                raw: row.get(7)?,
+            })
+        })?;
+        let mut hasher = sha2::Sha256::new();
+        for row in mapped {
+            let row = row?;
+            add(&mut hasher, row.content_cid.as_bytes());
+            add(&mut hasher, row.rev.as_bytes());
+            add(&mut hasher, row.author_did.as_bytes());
+            match row.author_agent {
+                Some(agent) => {
+                    hasher.update([1]);
+                    add(&mut hasher, &agent);
+                }
+                None => hasher.update([0]),
+            }
+            add(&mut hasher, row.origin.as_bytes());
+            add(&mut hasher, row.subject_key.as_bytes());
+            add(&mut hasher, row.kind.as_bytes());
+            add(&mut hasher, &row.raw);
+        }
+        Ok(format!("{:x}", hasher.finalize()))
+    }
+
+    fn schema_objects(conn: &rusqlite::Connection) -> Result<Vec<SchemaObject>, Error> {
+        let mut stmt = conn.prepare(
+            "SELECT type, name, tbl_name, sql
+             FROM sqlite_master
+             WHERE name = 'meta' OR name = ?1 OR tbl_name = ?1
+             ORDER BY type, name",
+        )?;
+        let mapped = stmt.query_map([CLAIMS_TABLE], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?;
+        mapped.collect::<Result<_, _>>().map_err(Error::from)
+    }
+
     /// Every distinct `AuthorId` with a claim in `.kan/log` — the membership
     /// of `TrustBase::Local`, and the reason a default read needs no identity
     /// (`.design/identity-surface.md` REQ-1).
@@ -328,3 +525,17 @@ impl Index {
         Ok(self.len()? == 0)
     }
 }
+
+#[derive(Debug, PartialEq, Eq)]
+struct ProjectionRow {
+    content_cid: String,
+    rev: String,
+    author_did: String,
+    author_agent: Option<Vec<u8>>,
+    origin: String,
+    subject_key: String,
+    kind: String,
+    raw: Vec<u8>,
+}
+
+type SchemaObject = (String, String, String, Option<String>);

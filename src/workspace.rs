@@ -21,6 +21,18 @@ use crate::{
     store::{index::Index, log::Log},
 };
 
+/// Workspace-owned surface facts: its automatic GitTree connection plus
+/// derived overlay files whose inner format belongs to the log module.
+pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
+    crate::surface::SurfaceValue::new("repo-config:auto-git-tree", "*"),
+    crate::surface::SurfaceValue::new("overlay:repo.car", "*"),
+    crate::surface::SurfaceValue::new("overlay:repo.car.damaged-*", "*"),
+    crate::surface::SurfaceValue::new("overlay:repo.repair", "*"),
+    crate::surface::SurfaceValue::new("overlay:HEAD", "*"),
+    crate::surface::SurfaceValue::new("overlay:HEAD.tmp", "*"),
+    crate::surface::SurfaceValue::new("overlay:LOCK", "*"),
+];
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("identity error: {0}")]
@@ -345,7 +357,7 @@ impl Workspace {
         // Now the stores can be writable, which is also where `.kan/` comes
         // into existence.
         self.log = Log::open_or_create(&kan_dir.join("log"), &identity).await?;
-        self.overlay = Log::open_or_create(&kan_dir.join("overlay"), &identity).await?;
+        self.overlay = Log::open_or_create_overlay(&kan_dir.join("overlay"), &identity).await?;
         self.index = Index::open(&kan_dir.join("index.sqlite"))?;
         self.published =
             ingest_published(&self.root, &identity, &self.log, &mut self.overlay).await?;
@@ -386,8 +398,12 @@ impl Workspace {
                  derived, and the log was never touched."
             );
             let overlay_dir = kan_dir.join("overlay");
-            std::fs::remove_dir_all(&overlay_dir)?;
-            self.overlay = Log::open_or_create(&overlay_dir, &identity).await?;
+            // surface-write: overlay:repo.car
+            crate::persistence::remove_dir_all(
+                crate::persistence::SurfaceWrite::Overlay,
+                &overlay_dir,
+            )?;
+            self.overlay = Log::open_or_create_overlay(&overlay_dir, &identity).await?;
             self.published =
                 ingest_published(&self.root, &identity, &self.log, &mut self.overlay).await?;
 
@@ -446,7 +462,7 @@ impl Workspace {
         let git = GitSubstrate::open(&root)?;
 
         let mut log = Log::open_read_only(&kan_dir.join("log")).await?;
-        let mut overlay = Log::open_read_only(&kan_dir.join("overlay")).await?;
+        let mut overlay = Log::open_overlay_read_only(&kan_dir.join("overlay")).await?;
 
         // A workspace that does not exist gets a projection that does not
         // touch disk. Where `.kan/` *is* present, the index file is fair game
@@ -476,30 +492,27 @@ impl Workspace {
             overlay.current_root(),
             published.content_hash.as_deref(),
         );
-        if fingerprint != index.built_from_root()? {
+        // The input fingerprint is content-addressed; the row seal detects
+        // corruption inside the disposable SQLite projection. Neither makes
+        // SQLite authoritative. A mismatch takes the deliberately expensive
+        // path below and recomputes from the signed log/published records.
+        // The common path stays an index read instead of signature-verifying
+        // the entire log on every one-process CLI invocation.
+        let projection_fresh = matches!(index.built_from_root(), Ok(root) if root == fingerprint)
+            && matches!(index.projection_is_consistent(), Ok(true));
+        if !projection_fresh {
             let log_claims = log.iter_all().await?;
             let mut foreign = overlay.iter_all().await?;
             foreign.extend(arrived);
 
-            // #150's poisoned state, handled by *not projecting* the
-            // duplicates rather than by repairing the overlay.
-            //
-            // The write path discards and rebuilds the overlay, which needs a
-            // signing identity to re-ingest — so a read cannot do that, and
-            // must not acquire one in order to try. It does not have to:
-            // `content_cid` is a PRIMARY KEY, so all a duplicate does is fail
-            // the rebuild, and skipping it leaves a workspace that reads
-            // correctly and completely. Every claim is still projected, once,
-            // from the log.
-            //
-            // That makes a read of a poisoned workspace *work*, where before
-            // this milestone it was the thing that bricked it. The overlay is
-            // still repaired by the next write, loudly, exactly as v0.9.2
-            // made it.
+            // #150's poisoned state, handled by *not projecting* duplicates.
+            // The write path repairs the overlay; a read needs no signing
+            // identity merely to deduplicate it.
             let in_log: std::collections::HashSet<&Cid> =
                 log_claims.iter().map(|(c, _)| c).collect();
             foreign.retain(|(cid, _)| !in_log.contains(cid));
 
+            index.recreate_current_schema()?;
             index.rebuild(&log_claims, &foreign, fingerprint.as_ref())?;
         }
 
@@ -589,9 +602,13 @@ impl Workspace {
         let identity = self.identity.as_ref().ok_or(Error::NoIdentity)?;
         let overlay_dir = self.root.join(".kan").join("overlay");
         if overlay_dir.exists() {
-            std::fs::remove_dir_all(&overlay_dir)?;
+            // surface-write: overlay:repo.car
+            crate::persistence::remove_dir_all(
+                crate::persistence::SurfaceWrite::Overlay,
+                &overlay_dir,
+            )?;
         }
-        self.overlay = Log::open_or_create(&overlay_dir, identity).await?;
+        self.overlay = Log::open_or_create_overlay(&overlay_dir, identity).await?;
         self.published =
             ingest_published(&self.root, identity, &self.log, &mut self.overlay).await?;
         self.reproject().await

@@ -21,10 +21,10 @@ recovery.
   signature **against the record's own `content.author.did`**, and inserts it
   without re-signing. This is the primitive both restore and ingest share and
   is the thing today's `Log::append` cannot be: `append_locked`
-  (`src/store/log.rs:689`) signs with the *local* identity, so re-appending a
+  (`src/store/log.rs:982`) signs with the *local* identity, so re-appending a
   restored or foreign claim reproduces the same content CID but replaces the
-  signature, and `Log::get`'s own-author verification (`Error::ClaimSignatureInvalid`,
-  `src/store/log.rs:75`) then rejects it.
+  signature, and `Log::get`'s own-author verification (`Error::BadSignature`,
+  `src/store/log.rs:99`) then rejects it.
 - REQ-2: A restore entry point reconstructs the local log from `.claims/`:
   it reads every record via `git_tree::GitTree::read_all`
   (`src/transport/git_tree.rs:739`), which already returns byte-complete,
@@ -54,7 +54,7 @@ recovery.
   `unpublished` (lives only in `.kan/`), `published` (in `.claims/`, current),
   or `stale` (in `.claims/`, but the log holds newer live claims not yet
   published) — computed by comparing the fold's live claims per subject
-  against `git_tree::published_subjects` (`src/transport/git_tree.rs:1606`).
+  against `git_tree::published_subjects` (`src/transport/git_tree.rs:1696`).
   It surfaces in both `actions::status` (`src/actions.rs:2315`) and
   `actions::status_json` (`src/actions.rs::status_json`). This is the kan-native move:
   make the gap **data**, a column, not a nag or a hook — the same shape as
@@ -148,15 +148,15 @@ non-negotiable invariant holds because ingest is insert-only and restore writes
 a fresh `log/` from records it verified first.
 
 **The primitive (REQ-1).** `store::log::Log` grows `ingest(stored:
-StoredClaim)`. It differs from `append_locked` (`src/store/log.rs:689`) in
+StoredClaim)`. It differs from `append_locked` (`src/store/log.rs:982`) in
 exactly one way that matters: it does not call `identity.sign` over the
 content. It verifies `sign::verify(&stored.claim.content.author.did,
-&content_cid.to_bytes(), &stored.claim.sig)` (`src/sign.rs:510`) and, on
+&content_cid.to_bytes(), &stored.claim.sig)` (`src/store/log.rs:1122`) and, on
 success, writes the block and commits — the commit itself is still signed by
-the local identity (`src/store/log.rs:717`), which is correct: the commit
+the local identity (`src/store/log.rs:1159`), which is correct: the commit
 attests to the repo's current state, while each record keeps its own author's
 signature. `append`'s existing `recorded_at` guard (`get_or_insert`,
-`src/store/log.rs:677`) already anticipated this ingest path in its comment;
+`src/store/log.rs:1014`) already anticipated this ingest path in its comment;
 `ingest` is that path.
 
 **Restore vs. ingest, keyed on the author (REQ-2, REQ-3, REQ-4).** The
@@ -186,7 +186,7 @@ whole-log restore loop so one future-versioned record cannot abort the restore.
 
 **The durability column (REQ-5).** `actions::status` (`src/actions.rs:2315`)
 already folds live claims per subject and already has the machinery to compare
-against `.claims/`: `git_tree::published_subjects` (`src/transport/git_tree.rs:1606`)
+against `.claims/`: `git_tree::published_subjects` (`src/transport/git_tree.rs:1696`)
 returns the published set. The state is a pure comparison — live-claim CIDs per
 subject vs. the CIDs present in that subject's `.claims/` file — yielding
 `unpublished` / `published` / `stale`. It threads into the existing per-subject

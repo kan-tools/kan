@@ -67,6 +67,18 @@ const COLLECTION: &str = "tools.kan.claim";
 /// claims sharing it remain deterministically ordered by their content CID.
 pub(crate) const LEGACY_PUBLISHED_REV: &str = "2222222222222";
 
+/// Opaque filesystem artifacts owned by one log. Their internal CAR/MST
+/// fields have their own conformance suite, so the surface catalog treats the
+/// container as one value rather than duplicating that format specification.
+pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
+    crate::surface::SurfaceValue::new("local-log:repo.car", "*"),
+    crate::surface::SurfaceValue::new("local-log:repo.car.damaged-*", "*"),
+    crate::surface::SurfaceValue::new("local-log:repo.repair", "*"),
+    crate::surface::SurfaceValue::new("local-log:HEAD", "*"),
+    crate::surface::SurfaceValue::new("local-log:HEAD.tmp", "*"),
+    crate::surface::SurfaceValue::new("local-log:LOCK", "*"),
+];
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("repository error: {0}")]
@@ -150,6 +162,9 @@ pub struct Log {
     /// re-serializing everything `mst.storage()` has ever seen.
     persisted: HashSet<Cid>,
     lock_path: std::path::PathBuf,
+    /// The authoritative log and derived overlay share CAR machinery, but
+    /// their files are distinct declared persistence surfaces.
+    surface: LogSurface,
     /// The DID that goes into a commit this log writes — `None` for a log
     /// opened read-only, which has no signing identity and cannot commit.
     ///
@@ -202,6 +217,179 @@ pub struct Log {
 /// is the property an `O_EXCL` lockfile would not have given us.
 struct WriteGuard {
     file: std::fs::File,
+}
+
+#[derive(Clone, Copy)]
+enum LogSurface {
+    Local,
+    Overlay,
+}
+
+impl LogSurface {
+    async fn create_dir(self, dir: &Path) -> std::io::Result<()> {
+        match self {
+            Self::Local => {
+                // surface-write: local-log:repo.car
+                crate::persistence::create_dir_all_async(
+                    crate::persistence::SurfaceWrite::LocalLogCar,
+                    dir,
+                )
+                .await
+            }
+            Self::Overlay => {
+                // surface-write: overlay:repo.car
+                crate::persistence::create_dir_all_async(
+                    crate::persistence::SurfaceWrite::Overlay,
+                    dir,
+                )
+                .await
+            }
+        }
+    }
+
+    async fn copy_damaged(self, from: &Path, to: &Path) -> std::io::Result<u64> {
+        match self {
+            Self::Local => {
+                // surface-write: local-log:repo.car.damaged-*
+                crate::persistence::copy_async(
+                    crate::persistence::SurfaceWrite::LocalLogDamaged,
+                    from,
+                    to,
+                )
+                .await
+            }
+            Self::Overlay => {
+                // surface-write: overlay:repo.car.damaged-*
+                crate::persistence::copy_async(crate::persistence::SurfaceWrite::Overlay, from, to)
+                    .await
+            }
+        }
+    }
+
+    async fn create_repair(self, path: &Path) -> std::io::Result<tokio::fs::File> {
+        match self {
+            Self::Local => {
+                // surface-write: local-log:repo.repair
+                crate::persistence::create_file_async(
+                    crate::persistence::SurfaceWrite::LocalLogRepair,
+                    path,
+                )
+                .await
+            }
+            Self::Overlay => {
+                // surface-write: overlay:repo.repair
+                crate::persistence::create_file_async(
+                    crate::persistence::SurfaceWrite::Overlay,
+                    path,
+                )
+                .await
+            }
+        }
+    }
+
+    async fn rename_car(self, from: &Path, to: &Path) -> std::io::Result<()> {
+        match self {
+            Self::Local => {
+                // surface-write: local-log:repo.car
+                crate::persistence::rename_async(
+                    crate::persistence::SurfaceWrite::LocalLogCar,
+                    from,
+                    to,
+                )
+                .await
+            }
+            Self::Overlay => {
+                // surface-write: overlay:repo.car
+                crate::persistence::rename_async(
+                    crate::persistence::SurfaceWrite::Overlay,
+                    from,
+                    to,
+                )
+                .await
+            }
+        }
+    }
+
+    async fn open_append(self, path: &Path) -> std::io::Result<tokio::fs::File> {
+        match self {
+            Self::Local => {
+                // surface-write: local-log:repo.car
+                crate::persistence::open_append_async(
+                    crate::persistence::SurfaceWrite::LocalLogCar,
+                    path,
+                )
+                .await
+            }
+            Self::Overlay => {
+                // surface-write: overlay:repo.car
+                crate::persistence::open_append_async(
+                    crate::persistence::SurfaceWrite::Overlay,
+                    path,
+                )
+                .await
+            }
+        }
+    }
+
+    async fn create_head_temp(self, path: &Path) -> std::io::Result<tokio::fs::File> {
+        match self {
+            Self::Local => {
+                // surface-write: local-log:HEAD.tmp
+                crate::persistence::create_file_async(
+                    crate::persistence::SurfaceWrite::LocalLogHeadTemp,
+                    path,
+                )
+                .await
+            }
+            Self::Overlay => {
+                // surface-write: overlay:HEAD.tmp
+                crate::persistence::create_file_async(
+                    crate::persistence::SurfaceWrite::Overlay,
+                    path,
+                )
+                .await
+            }
+        }
+    }
+
+    async fn rename_head(self, from: &Path, to: &Path) -> std::io::Result<()> {
+        match self {
+            Self::Local => {
+                // surface-write: local-log:HEAD
+                crate::persistence::rename_async(
+                    crate::persistence::SurfaceWrite::LocalLogHead,
+                    from,
+                    to,
+                )
+                .await
+            }
+            Self::Overlay => {
+                // surface-write: overlay:HEAD
+                crate::persistence::rename_async(
+                    crate::persistence::SurfaceWrite::Overlay,
+                    from,
+                    to,
+                )
+                .await
+            }
+        }
+    }
+
+    fn open_lock(self, path: &Path) -> std::io::Result<std::fs::File> {
+        match self {
+            Self::Local => {
+                // surface-write: local-log:LOCK
+                crate::persistence::open_lock_file(
+                    crate::persistence::SurfaceWrite::LocalLogLock,
+                    path,
+                )
+            }
+            Self::Overlay => {
+                // surface-write: overlay:LOCK
+                crate::persistence::open_lock_file(crate::persistence::SurfaceWrite::Overlay, path)
+            }
+        }
+    }
 }
 
 impl WriteGuard {
@@ -356,15 +544,23 @@ impl Log {
     /// as it found it. A read that vivifies a workspace is the defect (#149);
     /// "read it if it is there" is the whole behaviour.
     pub async fn open_read_only(dir: &Path) -> Result<Self, Error> {
+        Self::open_read_only_on(dir, LogSurface::Local).await
+    }
+
+    pub(crate) async fn open_overlay_read_only(dir: &Path) -> Result<Self, Error> {
+        Self::open_read_only_on(dir, LogSurface::Overlay).await
+    }
+
+    async fn open_read_only_on(dir: &Path, surface: LogSurface) -> Result<Self, Error> {
         if !dir.join("repo.car").exists() {
-            return Ok(Self::empty(dir, None));
+            return Ok(Self::empty(dir, None, surface));
         }
-        Self::open_inner(dir, None).await
+        Self::open_inner(dir, None, surface).await
     }
 
     /// The in-memory shape of a log with nothing in it, for a directory that
     /// may not exist. Touches no disk.
-    fn empty(dir: &Path, did: Option<String>) -> Self {
+    fn empty(dir: &Path, did: Option<String>, surface: LogSurface) -> Self {
         Self {
             car_path: dir.join("repo.car"),
             head_path: dir.join("HEAD"),
@@ -372,6 +568,7 @@ impl Log {
             commit_cid: None,
             persisted: HashSet::new(),
             lock_path: dir.join("LOCK"),
+            surface,
             did,
             tid: TidGenerator::new(),
             last_recorded_at: 0,
@@ -381,13 +578,32 @@ impl Log {
     }
 
     pub async fn open_or_create(dir: &Path, identity: &Identity) -> Result<Self, Error> {
-        fs::create_dir_all(dir).await?;
-        let mut log = Self::open_inner(dir, Some(identity.did())).await?;
+        Self::open_or_create_on(dir, identity, LogSurface::Local).await
+    }
+
+    pub(crate) async fn open_or_create_overlay(
+        dir: &Path,
+        identity: &Identity,
+    ) -> Result<Self, Error> {
+        Self::open_or_create_on(dir, identity, LogSurface::Overlay).await
+    }
+
+    async fn open_or_create_on(
+        dir: &Path,
+        identity: &Identity,
+        surface: LogSurface,
+    ) -> Result<Self, Error> {
+        surface.create_dir(dir).await?;
+        let mut log = Self::open_inner(dir, Some(identity.did()), surface).await?;
         log.migrate_claim_collection(identity).await?;
         Ok(log)
     }
 
-    async fn open_inner(dir: &Path, did: Option<String>) -> Result<Self, Error> {
+    async fn open_inner(
+        dir: &Path,
+        did: Option<String>,
+        surface: LogSurface,
+    ) -> Result<Self, Error> {
         let car_path = dir.join("repo.car");
         let head_path = dir.join("HEAD");
         let lock_path = dir.join("LOCK");
@@ -514,6 +730,7 @@ impl Log {
                 commit_cid: Some(root),
                 persisted,
                 lock_path,
+                surface,
                 did,
                 // Floor the recording clock at the last durable append's
                 // wall-clock time, so a fresh process cannot mint a
@@ -532,6 +749,7 @@ impl Log {
                 commit_cid: None,
                 persisted: HashSet::new(),
                 lock_path,
+                surface,
                 did,
                 tid: TidGenerator::new(),
                 last_recorded_at: 0,
@@ -572,7 +790,7 @@ impl Log {
             name.push(format!(".damaged-{}", now_micros()));
             self.car_path.with_file_name(name)
         };
-        fs::copy(&self.car_path, &damaged).await?;
+        self.surface.copy_damaged(&self.car_path, &damaged).await?;
         eprintln!(
             "warning: repairing {} -- the pre-repair file is kept at {}. If the damage \
              was mid-file rather than at the tail, blocks after it exist only in that \
@@ -582,7 +800,7 @@ impl Log {
         );
 
         let tmp = self.car_path.with_extension("repair");
-        let mut out = fs::File::create(&tmp).await?;
+        let mut out = self.surface.create_repair(&tmp).await?;
         out.write_all(&CarHeader::with_root(root).to_bytes()?)
             .await?;
 
@@ -600,7 +818,7 @@ impl Log {
         }
         out.sync_all().await?;
         drop(out);
-        fs::rename(&tmp, &self.car_path).await?;
+        self.surface.rename_car(&tmp, &self.car_path).await?;
         self.persisted = written;
         Ok(())
     }
@@ -610,11 +828,7 @@ impl Log {
     /// file's first-ever write), then update `HEAD`.
     async fn persist_new_blocks(&mut self, root: &Cid) -> Result<(), Error> {
         let file_is_new = !self.car_path.exists();
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.car_path)
-            .await?;
+        let mut file = self.surface.open_append(&self.car_path).await?;
 
         if file_is_new {
             let header = CarHeader::with_root(root.clone());
@@ -667,12 +881,12 @@ impl Log {
     /// entry pointing at them need not be.
     async fn write_head_atomically(&self, root: &Cid) -> Result<(), Error> {
         let tmp_path = self.head_path.with_extension("tmp");
-        let mut tmp = fs::File::create(&tmp_path).await?;
+        let mut tmp = self.surface.create_head_temp(&tmp_path).await?;
         tmp.write_all(root.to_string().as_bytes()).await?;
         tmp.sync_all().await?;
         drop(tmp);
 
-        fs::rename(&tmp_path, &self.head_path).await?;
+        self.surface.rename_head(&tmp_path, &self.head_path).await?;
 
         if let Some(dir) = self.head_path.parent() {
             // Best-effort: a filesystem that refuses to open a directory for
@@ -709,16 +923,12 @@ impl Log {
     /// command a moment earlier.
     async fn lock_for_write(&self) -> Result<WriteGuard, Error> {
         let lock_path = self.lock_path.clone();
+        let surface = self.surface;
         // `fs4`'s blocking `lock()` on a `std::fs::File`, moved off the async
         // runtime: it parks the calling thread until the lock is available,
         // which would stall other tasks on a shared worker thread.
         let file = tokio::task::spawn_blocking(move || -> std::io::Result<std::fs::File> {
-            let file = std::fs::OpenOptions::new()
-                .create(true)
-                .read(true)
-                .write(true)
-                .truncate(false)
-                .open(&lock_path)?;
+            let file = surface.open_lock(&lock_path)?;
             fs4::FileExt::lock(&file)?;
             Ok(file)
         })

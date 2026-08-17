@@ -1,3 +1,6 @@
+#![deny(clippy::disallowed_methods)]
+#![deny(clippy::disallowed_types)]
+
 use clap::Parser;
 use kan::cli::{run, Cli};
 

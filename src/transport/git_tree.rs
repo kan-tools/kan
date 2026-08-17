@@ -45,6 +45,11 @@ pub type ReadRecord = Result<(Cid, Claim, Option<String>), Error>;
 /// layer.
 pub const CLAIMS_DIR: &str = ".claims";
 
+/// The GitTree record is authenticated field-by-field by this module. The
+/// surface catalog therefore treats its versioned framing as one opaque value.
+pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] =
+    &[crate::surface::SurfaceValue::new("git-tree:.claims", "*")];
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("io error under {path}: {source}")]
@@ -1228,7 +1233,9 @@ pub fn write_subject(
             .push((claim, rev.as_deref()));
     }
 
-    std::fs::create_dir_all(&subject_dir).map_err(io(&subject_dir))?;
+    // surface-write: git-tree:.claims
+    crate::persistence::create_dir_all(crate::persistence::SurfaceWrite::GitTree, &subject_dir)
+        .map_err(io(&subject_dir))?;
 
     let mut paths = Vec::new();
     for (did, group) in &by_author {
@@ -1271,7 +1278,9 @@ pub fn write_subject(
                 version,
             )?);
         }
-        std::fs::write(&path, out).map_err(io(&path))?;
+        // surface-write: git-tree:.claims
+        crate::persistence::write(crate::persistence::SurfaceWrite::GitTree, &path, out)
+            .map_err(io(&path))?;
         paths.push(path);
     }
 
@@ -1299,7 +1308,9 @@ pub fn write_subject(
     };
     let authors: Vec<&str> = by_author.keys().copied().collect();
     let retired = if flat.exists() && retirable_by(&flat, subject, &authors) {
-        std::fs::remove_file(&flat).map_err(io(&flat))?;
+        // surface-write: git-tree:.claims
+        crate::persistence::remove_file(crate::persistence::SurfaceWrite::GitTree, &flat)
+            .map_err(io(&flat))?;
         Some(flat)
     } else {
         None

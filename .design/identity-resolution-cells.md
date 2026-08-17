@@ -218,7 +218,7 @@ singular. It is not:
   (`keychain_account` writes that file before the guard runs), and this is the
   cost.
 - an empty log plus a keychain answering `NoEntry` sends `load_or_create` to
-  `Self::generate()` and `set_secret` (`src/sign.rs:304–331`), filing a
+  `Self::generate()` and `set_secret` (`src/sign.rs:1443`, `:1389`), filing a
   **brand-new DID into the keychain** for a workspace that had one.
 - **`Entry::new` failing falls through to `load_or_create_plaintext`, which
   has no guard at all** (`src/sign.rs:254`, #180) — the only minting path in

@@ -407,7 +407,65 @@ render(enrichment E):
   - `AtProto` — PDS + firehose; public ecosystem; lexicons = evangelism.
 - **AppView = the fold.** Choosing which actors to index = choosing the covering family = the Grothendieck topology. Different AppViews over the same claims = different topoi.
 
-### 10.1 Lexicon separation (when atproto lands)
+### 10.1 Read/write surface and authority
+
+Authority, source, medium, scope and projection are independent axes. “One
+source of truth” above rejects SQLite as authority; it does **not** mean there
+is one privileged physical file. A signed kan claim remains authoritative kan
+data when carried in the local CAR, a tracked `.claims/` tree, a replica, or an
+atproto repository. Those are different substrate connections with different
+availability and ownership, not derived copies of one privileged medium.
+
+Every input to a kan view belongs to exactly one authority class:
+
+- **`authoritative-kan`** — values whose semantics and validation kan owns:
+  signed claims on any claim substrate, identity roots and selectors, and
+  repository- or system-scoped kan configuration.
+- **`authoritative-other`** — values kan reads whose semantics another system
+  owns. Git commits, objects, ancestry and filesystem facts are the current
+  example. Their provider remains attributed at the boundary.
+- **`derived`** — deterministic outputs over declared authoritative inputs:
+  overlay and SQLite rows, folds, caches, computed edges, and rendered views.
+  Persisting one for performance never makes it evidence for itself.
+
+Git crosses this boundary in two roles. Git's own objects and relationships
+are `authoritative-other`. Signed kan CBOR claims published inside `.claims/`
+are `authoritative-kan`; Git is only their carrier. When kan discovers a Git
+repository it automatically supplies the GitTree substrate connection as
+repository-scoped kan configuration. Future connection manifests may add
+replica or atproto media without changing the authority of the claims they
+carry.
+
+The exhaustive machine-readable declaration is
+`tests/fixtures/read-write-surface.tsv`. Structured storage is declared per
+persisted field or column; an opaque container may use `*` only where an
+independent format oracle already exists. Each row names status, authority,
+source kind, scope, artifact, value, writer, reader, validation/selection/
+derivation rule, lifecycle, and governing design. Planned connections prove
+the vocabulary can represent future media but do not count as implemented.
+
+`tests/surface_conformance.rs` constructs the implementation inventory
+independently and compares it with the committed table in both directions. It
+introspects SQLite at runtime, takes filesystem/keychain artifact facts from
+their persistence-owning modules, requires every concrete filesystem mutation
+site to name its catalog artifact, and recomputes disposable projections from
+authoritative inputs. The mutation-site check is path-syntax-independent: a
+literal, constant, formatted path, or helper call cannot introduce a write
+without declaring its surface. Compiler-resolved policy confines raw mutation
+APIs to the persistence facade, including when an import is aliased. An
+invocation of that facade requires a typed surface capability whose artifact
+set is checked against the catalog. An implemented value with no row and a row
+with no implemented owner are both errors. The oracle is semantic
+recomputation from raw inputs, never agreement between two caches.
+
+Reference recomputation is intentionally correctness-first. If it becomes too
+expensive even for the bounded CI fixtures, that is the event requiring a new
+recorded independent-oracle decision. The check must not be ignored, weakened
+to trust the projection, or silently moved off the ordinary test path; this is
+the operational boundary of the tension between
+`telos/performance-at-scale` and `telos/raw-data-and-projections`.
+
+### 10.2 Lexicon separation (when atproto lands)
 Three independent lexicons — separability is the ecosystem contribution:
 1. `*.claim` — base claim record (kind, body, subject, cites, artifacts). No trust semantics.
 2. `*.relation.sameAs` (+ other relations) — the directed morphisms. Pure arrows, no weight.

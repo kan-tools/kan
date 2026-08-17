@@ -69,7 +69,7 @@ implementation. Milestones 1+ are staged, not specified, below.)*
 `src/transport.rs` sits at the same level as `relations.rs`/`context.rs`/
 `workspace.rs` in `src/lib.rs`'s module list. `LocalOnly` wraps
 `store::log::Log` (`src/store/log.rs`) — `Log::append`
-(`src/store/log.rs:207`) and `Log::iter_all` (`:294`) already have exactly
+(`src/store/log.rs:852`) and `Log::iter_all` (`:1245`) already have exactly
 the `async fn ... -> Result<_, Error>` shape `Transport`'s methods should
 match, so this is adaptation of an existing pattern, not a new one.
 

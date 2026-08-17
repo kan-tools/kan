@@ -46,3 +46,9 @@ x25519-dalek = { version = "2", features = ["static_secrets"] }
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 tempfile = "3.27.0"
 tokio = { version = "1.52.4", features = ["process"] }
+
+# Test fixtures deliberately corrupt/remove files. Production library code
+# raises this lint to deny in src/lib.rs; integration-test crates inherit this
+# allow so their fault injection need not use the production mutation facade.
+[lints.clippy]
+disallowed_methods = "allow"
