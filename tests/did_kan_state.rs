@@ -65,9 +65,15 @@ fn administration_applies_operations_in_order_and_preserves_recovery_authority()
         .apply_administration(
             next_event.clone(),
             &[
-                IdentityOperation::AddAdministrationController(new_administrator.did()),
-                IdentityOperation::RemoveAdministrationController(old_administrator.did()),
-                IdentityOperation::AddMethod(device_method.clone()),
+                IdentityOperation::AddAdministrationController {
+                    did: new_administrator.did(),
+                },
+                IdentityOperation::RemoveAdministrationController {
+                    did: old_administrator.did(),
+                },
+                IdentityOperation::AddMethod {
+                    method: device_method.clone(),
+                },
                 IdentityOperation::SetMethodPurposes {
                     id: device_method.id.clone(),
                     purposes: vec![
@@ -75,7 +81,9 @@ fn administration_applies_operations_in_order_and_preserves_recovery_authority()
                         VerificationPurpose::Authentication,
                     ],
                 },
-                IdentityOperation::AddService(service.clone()),
+                IdentityOperation::AddService {
+                    service: service.clone(),
+                },
             ],
         )
         .unwrap();
@@ -110,7 +118,9 @@ fn listed_order_is_semantic() {
         .apply_administration(
             event.clone(),
             &[
-                IdentityOperation::AddMethod(device_method.clone()),
+                IdentityOperation::AddMethod {
+                    method: device_method.clone(),
+                },
                 IdentityOperation::SetMethodPurposes {
                     id: device_method.id.clone(),
                     purposes: vec![VerificationPurpose::Assertion],
@@ -126,7 +136,9 @@ fn listed_order_is_semantic() {
                     id: device_method.id.clone(),
                     purposes: vec![VerificationPurpose::Assertion],
                 },
-                IdentityOperation::AddMethod(device_method),
+                IdentityOperation::AddMethod {
+                    method: device_method,
+                },
             ],
         ),
         Err(Error::MissingMethod(_))
@@ -141,16 +153,18 @@ fn administration_rejects_recovery_changes_and_empty_controller_results() {
     assert!(matches!(
         state.apply_administration(
             event.clone(),
-            &[IdentityOperation::RemoveRecoveryController(recovery.did())]
+            &[IdentityOperation::RemoveRecoveryController {
+                did: recovery.did(),
+            }]
         ),
         Err(Error::RecoveryOperationInAdministration)
     ));
     assert!(matches!(
         state.apply_administration(
             event.clone(),
-            &[IdentityOperation::RemoveAdministrationController(
-                administrator.did()
-            )]
+            &[IdentityOperation::RemoveAdministrationController {
+                did: administrator.did(),
+            }]
         ),
         Err(Error::NoAdministrationControllers)
     ));
@@ -171,8 +185,12 @@ fn duplicate_ids_fail_instead_of_overwriting_state() {
         state.apply_administration(
             event.clone(),
             &[
-                IdentityOperation::AddMethod(device_method.clone()),
-                IdentityOperation::AddMethod(device_method),
+                IdentityOperation::AddMethod {
+                    method: device_method.clone(),
+                },
+                IdentityOperation::AddMethod {
+                    method: device_method,
+                },
             ]
         ),
         Err(Error::DuplicateMethod(_))
@@ -180,26 +198,25 @@ fn duplicate_ids_fail_instead_of_overwriting_state() {
     assert!(matches!(
         state.apply_administration(
             event,
-            &[IdentityOperation::AddAdministrationController(
-                administrator.did()
-            )]
+            &[IdentityOperation::AddAdministrationController {
+                did: administrator.did(),
+            }]
         ),
         Err(Error::DuplicateAdministrationController(_))
     ));
 }
 
 #[test]
-fn absent_removal_stays_blocked_until_rfc1_defines_its_validity() {
+fn absent_removal_is_invalid() {
     let (state, _, _) = state();
     let event = content_cid(&"absent-removal").unwrap();
 
     assert!(matches!(
         state.apply_administration(
             event,
-            &[IdentityOperation::RemoveService(format!(
-                "{}#missing",
-                state.did
-            ))]
+            &[IdentityOperation::RemoveService {
+                id: format!("{}#missing", state.did),
+            }]
         ),
         Err(Error::UndefinedRemovalTarget(_))
     ));

@@ -239,7 +239,7 @@ pub(super) fn validate_did(did: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn validate_did_url(url: &str) -> Result<(), Error> {
+pub(super) fn validate_did_url(url: &str) -> Result<(), Error> {
     let Some((did, fragment)) = url.split_once('#') else {
         return Err(Error::DidUrl(url.to_string()));
     };

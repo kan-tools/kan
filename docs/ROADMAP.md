@@ -48,10 +48,11 @@ vector; and requires a valid listed recovery-controller proof. The complete
 normative vector manifest remains a gate before this becomes a persistence or
 write surface. `src/identity/did_kan_state.rs` now projects genesis into a full
 identity state and applies the closed administration-operation semantics in
-listed order without defining a wire representation. Signed update production
-and resolution are blocked on [#244](https://github.com/kan-tools/kan/issues/244),
-which records RFC 1's missing canonical `IdentityOperation` encoding and
-absent-removal rule. Modern authorship and write cutover also remain pending.
+listed order. `src/identity/did_kan_update.rs` now fixes the typed serde
+representation tracked by [#244](https://github.com/kan-tools/kan/issues/244),
+makes absent-target removals invalid, pins canonical update bytes and a logical
+CID, and resolves signed administration/recovery evidence without observation
+order. Modern authorship and write cutover remain pending.
 In parallel, the repository-inception slice now validates and
 canonically orders the unsigned payload, derives the full `kan-repo:` SHA-256
 multihash identifier, pins a deterministic vector, and

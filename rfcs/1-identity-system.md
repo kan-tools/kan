@@ -426,19 +426,39 @@ branches cannot be retired by unilateral authority from either branch.
 An event is a recognized historical event exactly when it is intrinsically
 valid and reachable from genesis through cited logical parents, even if retired.
 
-Identity operations are closed in v1:
+Identity operations are closed in v1. This Rust-equivalent serde definition is
+normative for their IPLD representation; every variant is one map whose `op`
+field is the camel-case variant name and whose remaining fields are the named
+struct-variant operands:
 
-```text
-addMethod(VerificationMethod) | removeMethod(id)
-setMethodPurposes(id, purposes)
-addAdministrationController(did) | removeAdministrationController(did)
-addRecoveryController(did) | removeRecoveryController(did)  // recovery only
-addService(Service) | removeService(id)
+```rust
+#[serde(tag = "op", rename_all = "camelCase", deny_unknown_fields)]
+enum IdentityOperation {
+    AddMethod { method: VerificationMethod },
+    RemoveMethod { id: String },
+    SetMethodPurposes { id: String, purposes: Vec<VerificationPurpose> },
+    AddAdministrationController { did: String },
+    RemoveAdministrationController { did: String },
+    AddRecoveryController { did: String },       // recovery only
+    RemoveRecoveryController { did: String },    // recovery only
+    AddService { service: Service },
+    RemoveService { id: String },
+}
 ```
 
-An event that uses an unknown operation is preserved but is `unsupported` for
-state transition. An administration event containing a recovery-controller
-operation is `invalid`.
+The operation array is an ordered program, not a set, and MUST NOT be sorted or
+deduplicated. Each operation applies to the working state produced by every
+earlier operation. Removing a method, controller, or service absent from that
+working state is invalid; removal is not an idempotent no-op. Consequently,
+remove-then-add is the v1 spelling for replacement, while add-then-remove is
+invalid when the identifier already exists.
+
+An event that uses an unknown operation, or an otherwise recognized operation
+with an additive field, is preserved but is `unsupported` for the complete
+state transition; a resolver MUST NOT apply a recognized prefix or suffix.
+A known operation with a missing or wrongly typed required operand is
+`invalid`. An administration event containing a recovery-controller operation
+is likewise `invalid`.
 
 Profile data—including names, handles, avatars, biographies, repository roles,
 and human identity assertions—is forbidden in identity operations. It belongs
@@ -1274,8 +1294,15 @@ their bytes or identifiers. `src/identity/did_kan.rs` implements validated
 genesis payload production, canonical identifier derivation, a pinned initial
 identifier vector, and the offline listed-recovery-controller proof gate.
 `src/identity/did_kan_state.rs` implements the wire-independent state projection
-and ordered administration transitions, including canonical collection output,
-recovery-authority immutability, and duplicate/final-invariant checks.
+and ordered administration and recovery transitions, including canonical
+collection output, exact recovery-authority/epoch progression, and
+duplicate/absent-target/final-invariant checks.
+`src/identity/did_kan_update.rs` implements the normative internally tagged
+operation enum, typed update payload and validated producer boundary, a pinned
+administration-update byte/CID vector, static P-256 controller authorization,
+and order-independent resolution of linear history, forks, proof variants,
+explicit recovery retirement, credible missing history, invalid evidence, and
+authenticated unsupported extensions.
 `src/identity/repository_inception.rs` implements the canonical unsigned
 repository-inception payload, canonical encoded-value list ordering, full
 base32-lower SHA-256 multihash `kan-repo:` derivation, a pinned identifier
@@ -1286,10 +1313,9 @@ proof-set collapse by logical event identifier, and order-independent
 resolution of linear history, forks, reconciliations, orphans, authenticated
 missing history, invalid evidence, and authenticated unsupported extensions.
 
-The complete reference-vector manifest, Ed25519, signed `did:kan` updates and
-resolution, delegation, modern authorship, system identity state, persistence,
-and default-write cutover remain unimplemented. Signed update work is blocked
-on issue #244: this RFC closes the v1 operation set but does not yet define each
-operation's canonical DAG-CBOR form or the validity of removing an absent
-target. This status is therefore an implementation checkpoint, not a claim
-that RFC 1 is shipped.
+The complete reference-vector manifest, Ed25519, external/recursive DID
+controller resolution, delegation, modern authorship, system identity state,
+persistence, and default-write cutover remain unimplemented. Issue #244's
+operation-wire and absent-removal ambiguities are closed by the normative typed
+schema above and its pinned implementation vector. This status is therefore an
+implementation checkpoint, not a claim that RFC 1 is shipped.
