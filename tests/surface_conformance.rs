@@ -10,6 +10,7 @@ use kan::{
     sign::Identity,
     store::{index::Index, log::Log},
 };
+use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
@@ -792,10 +793,53 @@ fn every_persistence_facade_call_is_independently_inventoried() {
     rust_sources(std::path::Path::new("src"), &mut modules);
     modules.sort();
     for module in modules {
+        let source = std::fs::read_to_string(&module).unwrap();
+        let compact = compact_code(&source);
         if module == "src/persistence.rs" {
+            assert_eq!(
+                format!("{:x}", Sha256::digest(source.as_bytes())),
+                "06237083493464bccd87613913fca7b88bf17efce6cf1dd9382e402f76b50251",
+                "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
+            );
+            assert!(
+                !compact.contains("macro_rules!"),
+                "the raw-mutation facade may not export or hide calls in a macro; every expanded call site must remain independently inventoried"
+            );
+            assert_eq!(
+                compact.matches("implSurfaceWrite{").count(),
+                1,
+                "SurfaceWrite may have only its catalog-artifact implementation; mutation methods would bypass call-site inventory"
+            );
+            assert!(
+                !compact.contains("forSurfaceWrite{") && !compact.contains("trait"),
+                "the persistence facade may not add extension or trait methods to SurfaceWrite"
+            );
+            let marker = "implSurfaceWrite{";
+            let body_start = compact.find(marker).unwrap() + marker.len();
+            let mut depth = 1usize;
+            let mut body_end = None;
+            for (offset, ch) in compact[body_start..].char_indices() {
+                match ch {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            body_end = Some(body_start + offset);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let body = &compact[body_start..body_end.expect("unterminated SurfaceWrite impl")];
+            assert_eq!(
+                body.matches("fn").count(),
+                1,
+                "SurfaceWrite may expose only artifacts(); facade mutations must remain free functions with inventoried call sites"
+            );
+            assert!(body.contains("pubconstfnartifacts(self)"));
             continue;
         }
-        let source = std::fs::read_to_string(&module).unwrap();
         if let Some(line) = source.lines().find(|line| {
             let code = line.trim_start();
             code.contains("use ") && code.contains("persistence")
@@ -804,7 +848,19 @@ fn every_persistence_facade_call_is_independently_inventoried() {
                 "{module} imports or re-exports the persistence facade; call it fully qualified so the mutation inventory remains complete: {line}"
             );
         }
-        let compact = compact_code(&source);
+        assert!(
+            !compact.contains("$crate::persistence::"),
+            "{module} reaches the persistence facade through a macro-only `$crate` route"
+        );
+        assert!(
+            !compact.contains("macro_rules!") || !compact.contains("crate::persistence::"),
+            "{module} hides a persistence mutation inside a macro; inventory each expanded call directly"
+        );
+        assert_eq!(
+            source.matches("crate::persistence::").count(),
+            compact.matches("crate::persistence::").count(),
+            "{module} must spell every persistence route exactly as `crate::persistence::` so the call-site inventory sees it"
+        );
         let module_declaration = usize::from(module == "src/lib.rs");
         assert_eq!(
             compact.matches("persistence").count(),
@@ -825,7 +881,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
             );
         }
         match module.as_str() {
-            "src/lib.rs" => {
+            "src/lib.rs" | "src/main.rs" => {
                 assert_eq!(compact.matches("clippy::disallowed_methods").count(), 1);
                 assert_eq!(compact.matches("clippy::disallowed_types").count(), 1);
                 assert!(compact.contains("#![deny(clippy::disallowed_methods)]"));
@@ -865,6 +921,11 @@ fn every_persistence_facade_call_is_independently_inventoried() {
 #[test]
 fn compiler_resolves_filesystem_aliases_to_the_single_mutation_facade() {
     let policy = std::fs::read_to_string("clippy.toml").unwrap();
+    assert_eq!(
+        format!("{:x}", Sha256::digest(policy.as_bytes())),
+        "92a6e752525c4f798066c599cc7bc7c7e33bf6c0b90ea4b619b7ebc31064e790",
+        "the compiler mutation policy changed; review and update its committed digest together with raw-API negative controls"
+    );
     for method in [
         "std::fs::create_dir",
         "std::fs::create_dir_all",
@@ -905,6 +966,9 @@ fn compiler_resolves_filesystem_aliases_to_the_single_mutation_facade() {
     let library = std::fs::read_to_string("src/lib.rs").unwrap();
     assert!(library.contains("#![deny(clippy::disallowed_methods)]"));
     assert!(library.contains("#![deny(clippy::disallowed_types)]"));
+    let binary = std::fs::read_to_string("src/main.rs").unwrap();
+    assert!(binary.contains("#![deny(clippy::disallowed_methods)]"));
+    assert!(binary.contains("#![deny(clippy::disallowed_types)]"));
     let facade = std::fs::read_to_string("src/persistence.rs").unwrap();
     assert!(facade.contains("#![allow(clippy::disallowed_methods)]"));
     assert!(facade.contains("#![allow(clippy::disallowed_types)]"));
@@ -1364,8 +1428,66 @@ fn production_workspace_bypasses_an_unremovable_corrupt_projection() {
     assert_eq!(before.stdout, after.stdout);
 }
 
+#[cfg(unix)]
+#[test]
+fn production_workspace_bypasses_an_unremovable_semantically_poisoned_projection() {
+    use std::os::unix::fs::PermissionsExt;
+
+    struct RestoreMode {
+        path: std::path::PathBuf,
+        mode: u32,
+    }
+    impl Drop for RestoreMode {
+        fn drop(&mut self) {
+            let _ =
+                std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(self.mode));
+        }
+    }
+
+    let repo = tempfile::tempdir().unwrap();
+    init_repo(repo.path());
+    let write = run_kan(
+        repo.path(),
+        &["observe", "locked-valid-index", "authoritative"],
+    );
+    assert!(write.status.success());
+    let before = run_kan(repo.path(), &["show", "locked-valid-index", "--json"]);
+    assert!(before.status.success());
+
+    let kan_dir = repo.path().join(".kan");
+    let index = kan_dir.join("index.sqlite");
+    let connection = rusqlite::Connection::open(&index).unwrap();
+    connection
+        .execute("UPDATE claims_v2 SET origin = 'semantically-poisoned'", [])
+        .unwrap();
+    drop(connection);
+
+    let original_mode = std::fs::metadata(&kan_dir).unwrap().permissions().mode();
+    std::fs::set_permissions(&kan_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let restore = RestoreMode {
+        path: kan_dir,
+        mode: original_mode,
+    };
+
+    let after = run_kan(repo.path(), &["show", "locked-valid-index", "--json"]);
+    drop(restore);
+    assert!(
+        after.status.success(),
+        "an unremovable poisoned projection blocked an authoritative read: {}",
+        String::from_utf8_lossy(&after.stderr)
+    );
+    assert_eq!(before.stdout, after.stdout);
+}
+
 #[test]
 fn caller_selected_role_key_is_an_implemented_authoritative_surface() {
+    let sign = std::fs::read_to_string("src/sign.rs").unwrap();
+    assert!(
+        sign.contains(
+            "// surface-write: identity:seed,identity:identity,identity:roles.d,identity:role-key-path\n        crate::persistence::set_permissions"
+        ),
+        "private-key permission tightening must declare both default roles.d and caller-selected role-key artifacts"
+    );
     let values = implemented_values();
     assert!(values.contains(&(
         "identity:role-key-path".to_string(),

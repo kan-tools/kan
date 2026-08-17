@@ -1160,7 +1160,7 @@ fn restrict_permissions(path: &Path) -> std::io::Result<()> {
     let mut perms = std::fs::metadata(path)?.permissions();
     if perms.mode() & 0o077 != 0 {
         perms.set_mode(0o600);
-        // surface-write: identity:seed,identity:identity,identity:role-key-path
+        // surface-write: identity:seed,identity:identity,identity:roles.d,identity:role-key-path
         crate::persistence::set_permissions(
             crate::persistence::SurfaceWrite::IdentityKeyMaterial,
             path,

@@ -221,11 +221,23 @@ impl Index {
     /// freshness hints, so recreating it merely makes other binaries rebuild.
     pub fn recreate_current_schema(&mut self) -> Result<(), Error> {
         if let Some(path) = self.path.clone() {
-            let old = std::mem::replace(&mut self.conn, rusqlite::Connection::open_in_memory()?);
+            // Establish a complete in-memory projection before touching the
+            // disposable file. If its parent is read-only, removal or
+            // recreation can fail even though the authoritative log is
+            // perfectly readable; in that case the in-memory index remains
+            // the recovery target for the rebuild below.
+            let fallback = Self::open_in_memory()?;
+            let old = std::mem::replace(self, fallback);
             drop(old);
             // surface-write: sqlite:meta
-            crate::persistence::remove_file(crate::persistence::SurfaceWrite::Sqlite, &path)?;
-            *self = Self::open(&path)?;
+            if crate::persistence::remove_file(crate::persistence::SurfaceWrite::Sqlite, &path)
+                .is_err()
+            {
+                return Ok(());
+            }
+            if let Ok(recreated) = Self::open(&path) {
+                *self = recreated;
+            }
             return Ok(());
         }
         self.conn.execute_batch(&format!(
