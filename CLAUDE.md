@@ -11,7 +11,10 @@ AI agents, in Rust. This file orients you; the authoritative design is in `docs/
 2. `docs/SPEC.md` — AUTHORITATIVE data model, identity model, anchors, computable
    relations, the fold algorithm, storage, and the v1 scope fence. If anything
    here conflicts with SPEC.md, SPEC.md wins.
-3. `docs/SETUP-TODO.md` — the phased build checklist.
+3. `docs/ROADMAP.md` — the current shipped baseline, active RFC 3 issue graph,
+   repository boundaries, and document precedence.
+4. `docs/SETUP-TODO.md` — the historical bootstrap checklist, with its active
+   network phases redirected to the current roadmap.
 
 ## The one non-negotiable invariant
 The fold reads morphisms; it never mutates objects. **No operation destroys a
@@ -26,12 +29,14 @@ disposable SQLite index → the fold (identity-before-state, same enrichment,
 decategorify only at render) → git anchors + computable relation providers →
 CLI + MCP server with budgeted context assembly.
 
-Explicitly OUT for v1: sync/atproto/lexicons, TUI, web dashboard, editor
-extensions, >2 trust policies, enforcement hooks, incremental fold. The
-local-only spine (this section) shipped through v0.3.0-beta.1; sync now has
-a concrete staging plan (`.design/sync-layer-architecture-and-staging.md`,
-[`ADR-0035`](adrs/35-sync-layer-staging-plan-and-a-version-roadmap-through-1-0.md)) — see that doc before starting any sync-adjacent
-work rather than treating "out for v1" as still open-ended.
+Explicitly OUT for the local spine: sync/atproto/lexicons, TUI, web dashboard,
+editor extensions, >2 trust enrichments, enforcement hooks, incremental fold.
+The local-only spine shipped through v0.3.0-beta.1. Do not treat that historical
+scope fence as an open-ended ban or use ADR-35's old version table as the
+current plan. Read `docs/ROADMAP.md` first for sync-adjacent work; public
+ATProto publication is governed by RFC 3 (currently Review) and issues
+#235–#241 under epic #29. The older sync staging design remains context for the
+separate HostedRelay track.
 
 ## House rules
 - Rust. Use `atproto-repo` + `atproto-dasl` for MST/CAR/CID (`atrium-crypto`
@@ -54,6 +59,10 @@ work rather than treating "out for v1" as still open-ended.
      `cargo install kan`.
 - Correctness before performance. The reference fold recomputes; caching and
   incremental folds are follow-ups, optimized only against passing fixtures.
+- A persistence change is also a surface-contract change. Update
+  `tests/fixtures/read-write-surface.tsv`, the typed capability at the mutation
+  site, and `tests/surface_conformance.rs` together; derived media never become
+  authority merely because they are persisted or fast.
 - The fold is a pure, deterministic function of (claim set, enrichment). Guard this.
 - Affordance, not enforcement — agents act; the record is made legible; drift
   surfaces in the graph as data. Do NOT port crosslink's blocking hooks.

@@ -98,10 +98,11 @@ too: foreign-authored claims are verified against their own author and
 folded from an overlay beside the local log, which stays *claims I
 authored* (ADR-43, ADR-59).
 
-Reading is where the trust posture becomes visible. The default view shows
-only the identity you are running as, and any read that leaves claims out
-now says so — on both the human output and `--json` — so a partial view
-cannot pass for a complete one (ADR-57).
+Reading is where the trust posture becomes visible. The default `local` view
+shows every author represented in this workspace's authoritative log; it does
+not resolve a signing identity. Any read that leaves claims out says so — on
+both the human output and `--json` — so a partial view cannot pass for a
+complete one (ADR-57, ADR-83).
 
 Durability arrived in v0.9. `kan status` says, per subject, whether it would
 survive losing `.kan/` — `unpublished`, `published`, or `stale` — and
@@ -115,10 +116,18 @@ unrecognized claim kind is preserved as a verifiable opaque claim rather
 than rejected — so an older kan meeting a newer log says what it does not
 understand instead of failing outright (ADR-44).
 
-The rest of sync — a private-team `HostedRelay` transport, then the public
-atproto layer — has a concrete staged plan targeting `v1.0.0`; see
-`.design/sync-layer-architecture-and-staging.md` and
-[`ADR-0035`](adrs/35-sync-layer-staging-plan-and-a-version-roadmap-through-1-0.md).
+The storage boundary is explicit rather than conventional: `docs/SPEC.md`
+§10.1 classifies authoritative kan data, authoritative external inputs, and
+derived projections, while a committed catalog and conformance suite bind that
+model to every implemented persistence surface.
+
+The current forward plan is in [`docs/ROADMAP.md`](docs/ROADMAP.md). Public
+ATProto publication and version-aware views are specified by
+[RFC 3](rfcs/3-authoritative-lexicon-publication.md), currently in Review, and
+tracked as a dependency graph under
+[#29](https://github.com/kan-tools/kan/issues/29). The older HostedRelay/version
+sequence in `.design/sync-layer-architecture-and-staging.md` and ADR-35 remains
+historical context, not the current public publication checklist.
 
 ## Identity
 
