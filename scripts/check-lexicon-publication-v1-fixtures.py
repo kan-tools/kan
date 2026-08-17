@@ -159,6 +159,18 @@ def require_commit_closure_limit(serialized_car_bytes: int) -> None:
     require(serialized_car_bytes <= MAX_COMMIT_BLOCK_BYTES, "publication exceeds commit block limit")
 
 
+def codec_type_outcome(codec: str, content_type: str | None) -> str:
+    if content_type is None:
+        return "invalid-open-union"
+    bindings = {
+        "kan-claim-v1": "tools.kan.defs#claimContent",
+        "kan-claim-v2-test": "tools.kan.fixture#claimContentV2",
+    }
+    if codec in bindings:
+        return "typed" if content_type == bindings[codec] else "codec-content-type-mismatch"
+    return "preserved-unsupported" if content_type not in bindings.values() else "codec-content-type-mismatch"
+
+
 def simulate_publication(case: dict, known_writes: set[str]) -> tuple[int, str]:
     before = {"schema:claim": "old-claim", "schema:fixture": "old-fixture"}
     after = copy.deepcopy(before)
@@ -187,7 +199,7 @@ def simulate_publication(case: dict, known_writes: set[str]) -> tuple[int, str]:
 
 def validate(data: dict) -> None:
     require(data.get("version") == 2, "version must be 2")
-    require(set(data) == {"version", "authority", "resolutionCases", "codecGrammar", "codecMaxBytes", "codecCases", "schemas", "codecBinding", "lensRecords", "bindingCases", "publicationCases", "lenses", "lensVectors", "normalizationCases", "requiredViewProvenance", "secretBoundaries"}, "manifest field inventory drift")
+    require(set(data) == {"version", "authority", "resolutionCases", "codecGrammar", "codecMaxBytes", "codecCases", "codecTypeCases", "wireTypeProjection", "unknownUnionRoundTrip", "schemas", "codecBinding", "lensRecords", "bindingCases", "publicationCases", "lenses", "lensVectors", "normalizationCases", "requiredViewProvenance", "secretBoundaries"}, "manifest field inventory drift")
 
     authority = data["authority"]
     require(set(authority) == {"nsids", "dnsName", "dnsValue", "did", "didUrl", "pdsEndpoint", "didDocument", "appView"}, "authority field inventory drift")
@@ -250,6 +262,36 @@ def validate(data: dict) -> None:
         actual = len(raw) <= 32 and bool(grammar.fullmatch(case["input"]))
         require(actual == case["valid"], f"codec case mismatch: {case['input']}")
 
+    expected_codec_type_rows = [
+        ("v1-known-arm", "kan-claim-v1", "tools.kan.defs#claimContent", "typed"),
+        ("v2-known-arm", "kan-claim-v2-test", "tools.kan.fixture#claimContentV2", "typed"),
+        ("v1-with-v2-arm", "kan-claim-v1", "tools.kan.fixture#claimContentV2", "codec-content-type-mismatch"),
+        ("v2-with-v1-arm", "kan-claim-v2-test", "tools.kan.defs#claimContent", "codec-content-type-mismatch"),
+        ("future-unknown-arm", "kan-claim-v9", "tools.kan.future#claimContentV9", "preserved-unsupported"),
+        ("known-codec-unknown-arm", "kan-claim-v1", "tools.kan.future#claimContentV9", "codec-content-type-mismatch"),
+        ("missing-content-type", "kan-claim-v1", None, "invalid-open-union"),
+    ]
+    codec_type_rows = [(c["name"], c["codec"], c["contentType"], c["outcome"]) for c in data["codecTypeCases"]]
+    require(all(set(c) == {"name", "codec", "contentType", "outcome"} for c in data["codecTypeCases"]), "codec/type case field drift")
+    require(codec_type_rows == expected_codec_type_rows, "codec/type matrix incomplete, duplicated, or mislabeled")
+    for case in data["codecTypeCases"]:
+        require(codec_type_outcome(case["codec"], case["contentType"]) == case["outcome"], f"codec/type outcome mismatch: {case['name']}")
+
+    projection = data["wireTypeProjection"]
+    require(set(projection) == {"codec", "contentType", "internal", "wire"}, "wire projection field drift")
+    require(projection["codec"] == "kan-claim-v1", "wire projection codec drift")
+    require(projection["wire"].get("$type") == projection["contentType"], "wire projection type drift")
+    projected_internal = copy.deepcopy(projection["wire"])
+    projected_internal.pop("$type")
+    require(projected_internal == projection["internal"], "wire-only type polluted internal content")
+    require(dag_cbor(projected_internal) == dag_cbor(projection["internal"]), "wire-only type changed canonical internal bytes")
+
+    unknown = data["unknownUnionRoundTrip"]
+    require(set(unknown) == {"codec", "content"}, "unknown union fixture field drift")
+    require(codec_type_outcome(unknown["codec"], unknown["content"].get("$type")) == "preserved-unsupported", "unknown union is not preserved unsupported")
+    unknown_bytes = dag_cbor(unknown["content"])
+    require(dag_cbor(copy.deepcopy(unknown["content"])) == unknown_bytes, "unknown union arm is not byte-stable")
+
     schemas = data["schemas"]
     require(set(schemas) == {"envelope", "payload"}, "schema set drift")
     for name, schema in schemas.items():
@@ -260,7 +302,7 @@ def validate(data: dict) -> None:
     record_key = schema_value(schemas["envelope"])["defs"]["main"]["key"]
     require(record_key in {"tid", "nsid", "any"} or record_key.startswith("literal:"), "invalid Lexicon record key mode")
     envelope_record = schema_value(schemas["envelope"])["defs"]["main"]["record"]
-    require(envelope_record["properties"]["content"] == {"type": "unknown"}, "payload boundary is not open")
+    require(envelope_record["properties"]["content"] == {"type": "union", "refs": ["tools.kan.defs#claimContent", "tools.kan.fixture#claimContentV2"], "closed": False}, "payload boundary is not an exact open typed union")
     require(set(envelope_record["required"]) == {"codec", "claimCid", "signature", "rev", "content"}, "envelope requirements drift")
     payload_ref = schemas["payload"]["ref"].split("#", 1)
     payload_value = schema_value(schemas["payload"])
@@ -446,6 +488,12 @@ def mutations(data: dict) -> list[tuple[str, dict]]:
         ("resolution label", lambda d: d["resolutionCases"][1].__setitem__("outcome", "success")),
         ("duplicate canonical resolution", lambda d: d["resolutionCases"].append(copy.deepcopy(d["resolutionCases"][0]))),
         ("delete negative codec cases", lambda d: d.__setitem__("codecCases", [c for c in d["codecCases"] if c["valid"]])),
+        ("delete codec/type mismatch cases", lambda d: d.__setitem__("codecTypeCases", [c for c in d["codecTypeCases"] if c["outcome"] != "codec-content-type-mismatch"])),
+        ("accept mismatched codec/type", lambda d: d["codecTypeCases"][2].__setitem__("outcome", "typed")),
+        ("close content union", lambda d: d["schemas"]["envelope"]["value"]["defs"]["main"]["record"]["properties"]["content"].__setitem__("closed", True)),
+        ("drop wire content type", lambda d: d["wireTypeProjection"]["wire"].pop("$type")),
+        ("pollute internal content type", lambda d: d["wireTypeProjection"]["internal"].__setitem__("$type", "tools.kan.defs#claimContent")),
+        ("reinterpret unknown union", lambda d: d["unknownUnionRoundTrip"].__setitem__("codec", "kan-claim-v1")),
         ("schema bytes", lambda d: d["schemas"]["envelope"]["value"]["defs"].clear()),
         ("schema cid", lambda d: d["schemas"]["envelope"].__setitem__("cid", d["schemas"]["payload"]["cid"])),
         ("binding label", lambda d: d["bindingCases"][0].__setitem__("outcome", "idempotent")),
@@ -506,7 +554,7 @@ def main() -> int:
     require(all(path_controls), "deterministic path-selection controls failed")
     print(
         "Lexicon publication v2 fixtures: "
-        f"{len(data['resolutionCases'])} resolution, {len(data['codecCases'])} codec, "
+        f"{len(data['resolutionCases'])} resolution, {len(data['codecCases'])} codec, {len(data['codecTypeCases'])} codec/type, "
         f"{len(data['bindingCases'])} binding, {len(data['publicationCases'])} publication, "
         f"{len(data['lensVectors'])} lens, {len(data['normalizationCases'])} normalization cases"
     )

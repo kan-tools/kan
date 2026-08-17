@@ -4,7 +4,7 @@
 - Authors: kan maintainers
 - Created: 2026-08-16
 - Discussion: https://github.com/kan-tools/kan/pull/231
-- Review-period-ends: 2026-08-19T22:40:05Z
+- Review-period-ends: 2026-08-20T00:41:35Z
 - Review-override: None
 - Supersedes: RFC 2 requirements 14, 15, and 17 where explicitly stated; amends requirement 18
 - Superseded-by: None
@@ -36,10 +36,10 @@ RFC 2 made `tools.kan.claim` the canonical claim collection and defined five
 Lexicons, but deliberately stopped before authoritative network publication.
 Publishing those schemas makes two previously reversible assumptions durable:
 
-1. RFC 2's current projection closes the claim union over `kan-claim-v1`.
-   Treating the schema that resolves today as the only meaning of every
-   historical record makes incompatible evolution require either a new
-   collection or ambiguous reinterpretation.
+1. RFC 2's current projection fixes claim content to `kan-claim-v1` without a
+   top-level content-arm discriminator. Treating the schema that resolves today
+   as the only meaning of every historical record makes incompatible evolution
+   require either a new collection or ambiguous reinterpretation.
 2. RFC 2 uses the Lexicon namespace DID as the canonical AppView service DID.
    Namespace control and application operation have different key, deployment,
    and recovery lifecycles.
@@ -160,21 +160,38 @@ codec      = Codec
 claimCid   = CID string
 signature  = bytes
 rev        = TID
-versioned claim payload
+content    = open union of typed claim payload objects
 ```
 
 `codec` is the only schema-version discriminator. A second `schemaVersion`
-field is forbidden. The Lexicon envelope MUST use an open payload boundary:
-it validates the common envelope fields but does not close future payload
-shapes over the v1 definitions. Exact payload validation is selected by the
-codec entry. An older transport MUST therefore preserve a record carrying an
-unknown future codec without interpreting it as a known version or stripping
-fields. Generated clients MUST expose that unsupported payload as raw ATProto
-data rather than deserialize and reserialize it through the v1 type.
+field is forbidden. `content` MUST be an open Lexicon union (`closed: false`)
+whose initial known arm is `tools.kan.defs#claimContent`. Every value therefore
+carries the union-required `$type`; later schema releases append known arms and
+MUST NOT remove an arm or close the union. Exact payload validation is selected
+by the codec entry, whose `payloadSchema` MUST equal `content.$type` before
+semantic decoding. A structurally valid but unregistered pair fails as
+`codec-content-type-mismatch`.
+
+An older transport MUST preserve a record carrying an unknown union arm and
+future codec without interpreting it as a known version or stripping fields.
+Generated clients MUST expose that unsupported arm as raw ATProto data rather
+than deserialize and reserialize it through the v1 type. The open union gives
+generated clients concrete Rust types for known arms; the codec remains a
+distinct discriminator for canonical bytes, CID/signature rules, and lenses.
 
 The exact `kan-claim-v1` payload and inverse conversion remain those defined by
-RFC 2 and implemented by `src/at_claim.rs`. RFC 3 changes neither its canonical
-content bytes, content CID, nor signature semantics.
+RFC 2 and implemented by `src/at_claim.rs`. The union `$type` is ATProto
+wire-only metadata: conversion removes it before constructing internal
+`ClaimContent`, and adds it when projecting outward. RFC 3 changes neither the
+internal content model nor its canonical content bytes, content CID, or
+signature semantics.
+
+The implementation MUST isolate Lexicon-generated and compatibility-wrapped
+wire DTOs in a publishable `kan-atproto` crate under the `kan` workspace. That
+crate owns open-union known/unknown representation, `$type`, DAG-CBOR record
+bounds, and codec/content-type validation without depending on kan's domain
+model. `src/at_claim.rs` becomes the thin adapter between those DTOs and
+`ClaimContent`; domain modules MUST NOT acquire Lexicon `$type` fields.
 
 Codec strings MUST:
 
@@ -233,6 +250,11 @@ canonicalSpecificationPath: repository-relative path
 `payloadLexicon` MUST be canonical DAG-CBOR for the schema record defining that
 reference; `payloadLexiconRecordCid` MUST reproduce from those bytes. For
 `kan-claim-v1`, `payloadSchema` is `tools.kan.defs#claimContent`.
+For every known record, `payloadSchema` MUST equal the exact `$type` of the
+selected open-union content arm. A known codec paired with another known or
+unknown arm, or an unknown codec paired with a known arm, fails before semantic
+decode as `codec-content-type-mismatch`. An unknown codec with an unknown arm
+may be preserved and reported but is never semantically decoded.
 `sourceCommit` and `sourceTag` MUST reproduce all embedded schema bytes from
 `sourceRepository`. Each lens entry's `vectorsCid` MUST reproduce from its
 canonical embedded `vectors` bytes and the same immutable source revision.
@@ -324,7 +346,8 @@ Before projection the AppView MUST:
 1. verify the raw ATProto repository proof and record CID;
 2. resolve the exact codec entry;
 3. hash and decode the embedded envelope and payload schemas, then validate the
-   raw record against them;
+   raw record against them and require `content.$type` to equal the codec
+   entry's `payloadSchema`;
 4. reconstruct and verify the kan content CID and signature; and
 5. resolve one verified repository snapshot of the complete
    `tools.kan.lens` collection and select a path consisting only of those
@@ -351,6 +374,7 @@ Stable failures are:
 |---|---|
 | `unsupported-source-codec` | no valid codec entry or decoder |
 | `unsupported-target-codec` | requested target is unknown |
+| `codec-content-type-mismatch` | codec binding and open-union `$type` disagree |
 | `lens-path-unavailable` | no registered total path connects source and target |
 | `lens-refused` | an explicitly requested partial projection refused its input |
 | `schema-binding-mismatch` | registry provenance does not reproduce the schema |
@@ -554,10 +578,15 @@ repository publication.
 
 ## Compatibility
 
-`kan-claim-v1` remains byte-for-byte compatible with RFC 2. Existing content
-CIDs, signatures, local MST keys, and legacy-to-current migration results do
-not change. An identity lens from v1 to v1 MUST reproduce the same decoded
-value and canonical bytes.
+`kan-claim-v1` remains canonically compatible with RFC 2. Existing internal
+content bytes, content CIDs, signatures, local MST keys, and
+legacy-to-current claim conversion results do not change. Its ATProto wire
+projection gains the required `content.$type` union discriminator, so the
+ATProto record bytes and record CID are intentionally reprojected before first
+authoritative publication. Existing pre-RFC-3 local ATProto records are input
+to that deterministic migration, not a second accepted network shape. An
+identity lens from v1 to v1 MUST reproduce the same internal decoded value and
+canonical bytes.
 
 RFC 3 amends only these parts of RFC 2:
 
@@ -565,9 +594,9 @@ RFC 3 amends only these parts of RFC 2:
   AppView service DID is replaced. Its DID document remains the discovery root,
   but the service endpoint names and authenticates a separately governed DID.
 - RFC 2 REQ-18 continues to make `kan-tools/kan-lexicon` the canonical schema
-  source. Its five current closed v1 schemas remain the exact v1 definition,
-  while the `tools.kan.claim` transport envelope becomes open at the versioned
-  payload boundary and exact typing is selected by the append-only codec
+  source. Its five current v1 schemas remain the exact v1 definition, while
+  `tools.kan.claim.content` becomes an open union whose known arms are typed by
+  `$type`; exact codec/arm compatibility is selected by the append-only codec
   register.
 - RFC 2 REQ-14 and the affected REQ-15 current-view rules continue to reject
   unsupported codecs at semantic decode and AppView projection boundaries, but
@@ -632,7 +661,8 @@ covers:
 1. exact `tools.kan` authority derivation and non-recursive DNS lookup;
 2. exact `did:web:kan.tools` DID-document PDS and AppView service entries plus
    a separately resolved and endpoint-bound AppView service DID;
-3. valid and invalid codec strings;
+3. valid and invalid codec strings, known typed open-union arms, mismatched
+   codec/arm pairs, and preserved unknown arms;
 4. exact codec/rkey equality and immutable binding fields;
 5. idempotent create and conflicting rebind;
 6. atomic schema, codec, and globally keyed lens publication plus injected
@@ -654,12 +684,19 @@ inventory exactly, and runs hostile mutation controls. The controls include the
 invalid states found during cold review: empty authority, insecure or
 substituted PDS/AppView endpoints and service DIDs, canonical-specification
 substitution, mislabeled or duplicated resolution, deletion of negative codec
-cases, changed schema bytes or CID, split or multi-codec publication, wrong lens output,
+or codec/type cases, closing the content union, accepting a mismatched
+codec/type pair, changed schema bytes or CID, split or multi-codec publication, wrong lens output,
 deletion of a coherently rehashed refusal vector, unknown-codec identity, lossy
 default normalization, missing provenance, and deleted secrets. The harness
 does not import kan's Rust implementation.
 
-The checked codec record is explicitly `fixtureOnly` and uses the reserved
+The checked envelope is an exact open union with known v1 and synthetic-v2
+arms. Its matrix requires `$type`, accepts each registered codec/arm pair,
+rejects mismatches, and preserves an unknown codec plus unknown arm without
+semantic decoding. A wire-projection fixture proves that removing the
+wire-only discriminator reproduces identical canonical internal bytes, while a
+raw unknown-arm fixture survives deterministic DAG-CBOR re-emission. The
+checked codec record is explicitly `fixtureOnly` and uses the reserved
 synthetic codec `kan-claim-v2-test`. It contains the actual base64-encoded
 DAG-CBOR envelope, payload, and per-lens vector bytes; linked CIDs and declared
 byte maxima must reproduce those bytes, and the complete encoded record must
@@ -684,13 +721,15 @@ publisher or PDS.
 
 These are proposal self-consistency vectors, not evidence that the unbuilt
 publisher, AppView, infrastructure, or independent implementations satisfy the
-implementation acceptance criteria. AC-3 through AC-16 remain pending where
+implementation acceptance criteria. AC-3 through AC-17 remain pending where
 they require those artifacts; RFC acceptance approves the contract, not a
 fiction that deployment evidence already exists.
 
 Implementation acceptance additionally requires two codec/lens implementations
 to pass canonical byte vectors and one portable AppView run outside Railway to
-produce the same typed views as the deployed service.
+produce the same typed views as the deployed service. The `kan-atproto` crate
+and pre-publication local-record migration must also satisfy the wire-isolation
+and canonical-content invariants before production publication.
 
 ## Unresolved questions
 

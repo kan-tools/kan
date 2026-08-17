@@ -22,10 +22,29 @@
     {"input":"Kan-claim-v1","valid":false}, {"input":"kan--claim","valid":false}, {"input":"kan_claim_v1","valid":false},
     {"input":"2-kan","valid":false}, {"input":"kan-claim-v1-abcdefghijklmnopqrstuvwxyz","valid":false}
   ],
+  "codecTypeCases": [
+    {"name":"v1-known-arm","codec":"kan-claim-v1","contentType":"tools.kan.defs#claimContent","outcome":"typed"},
+    {"name":"v2-known-arm","codec":"kan-claim-v2-test","contentType":"tools.kan.fixture#claimContentV2","outcome":"typed"},
+    {"name":"v1-with-v2-arm","codec":"kan-claim-v1","contentType":"tools.kan.fixture#claimContentV2","outcome":"codec-content-type-mismatch"},
+    {"name":"v2-with-v1-arm","codec":"kan-claim-v2-test","contentType":"tools.kan.defs#claimContent","outcome":"codec-content-type-mismatch"},
+    {"name":"future-unknown-arm","codec":"kan-claim-v9","contentType":"tools.kan.future#claimContentV9","outcome":"preserved-unsupported"},
+    {"name":"known-codec-unknown-arm","codec":"kan-claim-v1","contentType":"tools.kan.future#claimContentV9","outcome":"codec-content-type-mismatch"},
+    {"name":"missing-content-type","codec":"kan-claim-v1","contentType":null,"outcome":"invalid-open-union"}
+  ],
+  "wireTypeProjection": {
+    "codec":"kan-claim-v1",
+    "contentType":"tools.kan.defs#claimContent",
+    "internal":{"message":"hello","tags":["rfc"]},
+    "wire":{"$type":"tools.kan.defs#claimContent","message":"hello","tags":["rfc"]}
+  },
+  "unknownUnionRoundTrip": {
+    "codec":"kan-claim-v9",
+    "content":{"$type":"tools.kan.future#claimContentV9","future":{"nested":[1,true,"preserve-me"]}}
+  },
   "schemas": {
     "envelope": {
-      "value": {"$type":"com.atproto.lexicon.schema","lexicon":1,"id":"tools.kan.claim","defs":{"main":{"type":"record","key":"any","record":{"type":"object","required":["codec","claimCid","signature","rev","content"],"properties":{"codec":{"type":"string","maxLength":32},"claimCid":{"type":"string","format":"cid"},"signature":{"type":"bytes","maxLength":256},"rev":{"type":"string","format":"tid"},"content":{"type":"unknown"}}}}}},
-      "cid": "bafyreigfsyurcjbtufljedn54f2gn6d7akvzjf6woc5nzyym67oo5hypsu"
+      "value": {"$type":"com.atproto.lexicon.schema","lexicon":1,"id":"tools.kan.claim","defs":{"main":{"type":"record","key":"any","record":{"type":"object","required":["codec","claimCid","signature","rev","content"],"properties":{"codec":{"type":"string","maxLength":32},"claimCid":{"type":"string","format":"cid"},"signature":{"type":"bytes","maxLength":256},"rev":{"type":"string","format":"tid"},"content":{"type":"union","refs":["tools.kan.defs#claimContent","tools.kan.fixture#claimContentV2"],"closed":false}}}}}},
+      "cid": "bafyreihsuegnthqid6cjcpfniiwlrftelkv2nl72y3vrj5edrh5qkuts7y"
     },
     "payload": {
       "ref": "tools.kan.fixture#claimContentV2",
@@ -35,8 +54,8 @@
   },
   "codecBinding": {
     "$type":"tools.kan.codec", "rkey":"kan-claim-v2-test", "codec":"kan-claim-v2-test", "claimLexicon":"tools.kan.claim",
-    "envelopeLexiconRecordCid":{"$link":"bafyreigfsyurcjbtufljedn54f2gn6d7akvzjf6woc5nzyym67oo5hypsu"},
-    "envelopeLexicon":{"$bytes":"pGJpZG90b29scy5rYW4uY2xhaW1kZGVmc6FkbWFpbqNja2V5Y2FueWR0eXBlZnJlY29yZGZyZWNvcmSjZHR5cGVmb2JqZWN0aHJlcXVpcmVkhWVjb2RlY2hjbGFpbUNpZGlzaWduYXR1cmVjcmV2Z2NvbnRlbnRqcHJvcGVydGllc6VjcmV2omR0eXBlZnN0cmluZ2Zmb3JtYXRjdGlkZWNvZGVjomR0eXBlZnN0cmluZ2ltYXhMZW5ndGgYIGdjb250ZW50oWR0eXBlZ3Vua25vd25oY2xhaW1DaWSiZHR5cGVmc3RyaW5nZmZvcm1hdGNjaWRpc2lnbmF0dXJlomR0eXBlZWJ5dGVzaW1heExlbmd0aBkBAGUkdHlwZXgaY29tLmF0cHJvdG8ubGV4aWNvbi5zY2hlbWFnbGV4aWNvbgE="}, "envelopeMaxBytes":4096,
+    "envelopeLexiconRecordCid":{"$link":"bafyreihsuegnthqid6cjcpfniiwlrftelkv2nl72y3vrj5edrh5qkuts7y"},
+    "envelopeLexicon":{"$bytes":"pGJpZG90b29scy5rYW4uY2xhaW1kZGVmc6FkbWFpbqNja2V5Y2FueWR0eXBlZnJlY29yZGZyZWNvcmSjZHR5cGVmb2JqZWN0aHJlcXVpcmVkhWVjb2RlY2hjbGFpbUNpZGlzaWduYXR1cmVjcmV2Z2NvbnRlbnRqcHJvcGVydGllc6VjcmV2omR0eXBlZnN0cmluZ2Zmb3JtYXRjdGlkZWNvZGVjomR0eXBlZnN0cmluZ2ltYXhMZW5ndGgYIGdjb250ZW50o2RyZWZzgngbdG9vbHMua2FuLmRlZnMjY2xhaW1Db250ZW50eCB0b29scy5rYW4uZml4dHVyZSNjbGFpbUNvbnRlbnRWMmR0eXBlZXVuaW9uZmNsb3NlZPRoY2xhaW1DaWSiZHR5cGVmc3RyaW5nZmZvcm1hdGNjaWRpc2lnbmF0dXJlomR0eXBlZWJ5dGVzaW1heExlbmd0aBkBAGUkdHlwZXgaY29tLmF0cHJvdG8ubGV4aWNvbi5zY2hlbWFnbGV4aWNvbgE="}, "envelopeMaxBytes":4096,
     "payloadSchema":"tools.kan.fixture#claimContentV2", "payloadLexiconRecordCid":{"$link":"bafyreidjnhx55myvetxh3fpuitj7h2tdjnztbvqriep7zv5gyvvrxfo6a4"},
     "payloadLexicon":{"$bytes":"pGJpZHF0b29scy5rYW4uZml4dHVyZWRkZWZzoW5jbGFpbUNvbnRlbnRWMqNkdHlwZWZvYmplY3RocmVxdWlyZWSDZ21lc3NhZ2VkdGFnc2thbm5vdGF0aW9uc2pwcm9wZXJ0aWVzo2R0YWdzo2R0eXBlZWFycmF5ZWl0ZW1zomR0eXBlZnN0cmluZ2ltYXhMZW5ndGgYgGltYXhMZW5ndGgZJxBnbWVzc2FnZaJkdHlwZWZzdHJpbmdpbWF4TGVuZ3RoGSAAa2Fubm90YXRpb25zo2R0eXBlZWFycmF5ZWl0ZW1zomR0eXBlZnN0cmluZ2ltYXhMZW5ndGgYgGltYXhMZW5ndGgZJxBlJHR5cGV4GmNvbS5hdHByb3RvLmxleGljb24uc2NoZW1hZ2xleGljb24B"}, "payloadMaxBytes":4096,
     "sourceRepository":"https://example.invalid/kan-rfc3-proposal-fixture", "sourceCommit":"0000000000000000000000000000000000000000",

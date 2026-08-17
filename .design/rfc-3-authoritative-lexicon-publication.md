@@ -50,9 +50,11 @@ GitHub workflow holds production publication credentials.
 - REQ-6: `tools.kan.claim` remains the stable semantic collection across
   representation changes. Its required `codec` field is the sole claim-schema
   version discriminator; RFC 3 does not add a redundant `schemaVersion` field.
-  The record envelope has an explicitly open payload boundary, and a consumer
-  dispatches exact payload decoding and validation by codec rather than
-  applying whichever claim schema resolves as current.
+  `content` is an open Lexicon union whose known object arms carry `$type` and
+  generate concrete wire types. The codec entry's `payloadSchema` must equal
+  the selected arm's `$type`; invalid combinations fail before semantic decode.
+  Unknown codec/arm pairs are preserved as raw ATProto data but unsupported by
+  semantic readers.
 - REQ-7: The authority repository carries append-only `tools.kan.codec` and
   `tools.kan.lens` registers. Codec records are keyed by codec string; lens
   records are keyed by a globally unique lens ID and bind exact source and
@@ -114,6 +116,11 @@ GitHub workflow holds production publication credentials.
   secret-boundary negative controls, and recovery. A failed check cannot be
   waived by treating a Git tag, Railway deployment, or successful write
   response as equivalent to verified public availability.
+- REQ-15: A publishable `kan-atproto` workspace crate owns Lexicon-generated
+  wire DTOs, the typed open union and raw unknown arm, `$type`, record bounds,
+  and codec/content-type validation without depending on kan's domain model.
+  `src/at_claim.rs` is reduced to a thin adapter; internal `ClaimContent`, its
+  canonical bytes, CID, and signatures never acquire wire-only `$type` data.
 
 ## Acceptance Criteria
 
@@ -158,10 +165,11 @@ GitHub workflow holds production publication credentials.
       binding, or changing an existing codec-register entry fails before a
       repository commit. (REQ-5, REQ-7, REQ-11)
 - [ ] AC-7: The evolved `tools.kan.claim` Lexicon requires exactly one `codec`
-      discriminator, accepts `kan-claim-v1`, and demonstrates with a synthetic
-      future codec that an old transport can preserve and report an unsupported
-      record without interpreting it as v1 or stripping its unknown payload.
-      (REQ-6, REQ-11, REQ-13)
+      discriminator and an open `content` union with typed v1 and synthetic
+      future arms. Fixtures require `$type`, accept exact registered codec/arm
+      pairs, reject every mismatch as `codec-content-type-mismatch`, and show
+      an old transport preserving an unknown codec plus unknown arm without
+      interpreting it as v1. (REQ-6, REQ-11, REQ-13)
 - [ ] AC-8: Codec/lens-register fixtures resolve a codec to exact embedded
       envelope and payload schema bytes and CIDs and resolve a complete,
       globally keyed lens graph from one repository snapshot. They reproduce
@@ -189,10 +197,12 @@ GitHub workflow holds production publication credentials.
       No test imports private `kan-infra` code or configuration. (REQ-2,
       REQ-10)
 - [ ] AC-13: Compatibility fixtures prove every RFC 2 `kan-claim-v1` record
-      still reconstructs identical canonical signed content, content CID, and
-      signature after the envelope change and through a v1-to-v1 AppView
-      projection. Existing legacy migration fixtures remain green. (REQ-11,
-      REQ-13)
+      reprojects through a wire-only `content.$type` while reconstructing
+      identical internal canonical signed content, content CID, and signature.
+      Pre-RFC-3 local ATProto records migrate deterministically to the union
+      shape before publication, the v1 identity AppView projection is
+      unchanged, and existing legacy migration fixtures remain green. (REQ-11,
+      REQ-13, REQ-15)
 - [ ] AC-14: A service-discovery fixture proves that Lexicon resolution remains
       rooted in `did:web:kan.tools` while the canonical AppView endpoint can
       authenticate as a different declared, separately resolved service DID
@@ -210,6 +220,11 @@ GitHub workflow holds production publication credentials.
       checks the deployed AppView artifact and normalization contract, and
       alerts on any divergence from the last verified release provenance.
       (REQ-5, REQ-7, REQ-10, REQ-12, REQ-14)
+- [ ] AC-17: `kan-atproto` can encode/decode every known union arm, preserve and
+      byte-stably re-emit an unknown arm, and reject a codec/arm mismatch
+      without constructing domain `ClaimContent`. Dependency and source scans
+      prove the crate has no domain-model dependency and `$type` handling does
+      not spread outside it and the thin `src/at_claim.rs` adapter. (REQ-15)
 
 ## Architecture
 
@@ -220,7 +235,9 @@ different visibility and release units. The architectural source of truth
 remains this repository's `rfcs/` tree. The current projection and migration
 implementation in `src/at_claim.rs` and `src/store/log.rs` remains the
 executable definition of `kan-claim-v1` until the RFC implementation extracts
-its normative codec vectors.
+wire DTOs and validation into the publishable `kan-atproto` workspace crate.
+That crate does not depend on domain `ClaimContent`; `src/at_claim.rs` retains
+only explicit conversions between the wire crate and internal types.
 
 The public `kan-tools/kan-lexicon` repository continues to own the five schemas
 currently pinned by `scripts/check-kan-lexicon-sync.py`, and gains the codec
@@ -288,9 +305,13 @@ normative version dispatch mechanism. The collection continues to mean “a kan
 claim”; codecs distinguish canonical representations without fragmenting
 firehose filters, storage collections, or the semantic record type.
 
-The authoritative current Lexicon is an extensible transport envelope. Exact
-typing comes from the append-only codec register, not from assuming the current
-schema existed when a historical record was written. A register entry binds:
+The authoritative current Lexicon is an extensible transport envelope whose
+`content` field is an open union. Known arms such as
+`tools.kan.defs#claimContent` generate explicit wire DTOs and carry `$type`;
+unknown arms remain raw objects. Exact semantic typing comes from requiring the
+codec register's `payloadSchema` to equal the selected arm's `$type`, not from
+assuming the current schema existed when a historical record was written. A
+register entry binds:
 
 ```text
 codec                 = kan-claim-v1
@@ -315,6 +336,13 @@ available from the live codec record without depending on retained repository
 commits. Separate globally keyed `tools.kan.lens` records carry vector bytes,
 CIDs, endpoints, and their source and semantic provenance. The signed authority
 repository proves that each create-only binding remains current.
+
+Wire-only `$type` never enters internal `ClaimContent`. The `kan-atproto` crate
+owns known and raw-unknown union arms and rejects invalid codec/arm pairs;
+`src/at_claim.rs` removes the discriminator on inward conversion and restores
+it on outward projection. This deliberately changes the pre-publication
+ATProto record projection while preserving internal canonical bytes, content
+CIDs, and signatures.
 
 ### Lenses and normalized views
 
