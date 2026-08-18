@@ -302,6 +302,19 @@ impl Identity {
         }
     }
 
+    /// Install this key as a new system credential without overwriting any
+    /// existing secret. The file is owner-only from its first observable
+    /// instant rather than repaired after creation.
+    pub(crate) fn save_system_credential_new(&self, path: &Path) -> Result<(), Error> {
+        // surface-write: credentials:owner-only-file
+        crate::persistence::write_new_owner_only(
+            crate::persistence::SurfaceWrite::SystemCredentials,
+            path,
+            &self.keypair.export(),
+        )?;
+        Ok(())
+    }
+
     /// Write this key to `path` at `0600`, creating its parent if needed.
     ///
     /// The `create_dir_all` matches [`Seed::save`] and is not new behaviour

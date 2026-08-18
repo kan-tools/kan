@@ -33,6 +33,8 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("atomic-profile-install", "tests/system_identity.rs"),
     ("profile-write-coordination", "tests/system_identity.rs"),
     ("profile-credential-key", "tests/system_identity.rs"),
+    ("stable-enrollment-nonce", "tests/system_identity_cli.rs"),
+    ("platform-config-root", "tests/system_identity_cli.rs"),
     ("identity-precedence", "tests/identity_cells.rs"),
     ("role-key", "tests/role_registry_invariants.rs"),
     ("legacy-role-config", "tests/role_declarations.rs"),
@@ -97,6 +99,36 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
         "src/identity/system.rs",
         "\"credentials\"",
         "credentials:owner-only-file",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"enrollment-nonce\"",
+        "identity-profiles:enrollment-nonce",
+    ),
+    (
+        "src/identity/system.rs",
+        "name",
+        "credentials:owner-only-file",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"Library\"",
+        "platform configuration directory",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"Application Support\"",
+        "platform configuration directory",
+    ),
+    (
+        "src/identity/system.rs",
+        "\".config\"",
+        "platform configuration directory",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"kan\"",
+        "platform configuration directory",
     ),
     (
         "src/identity/system.rs",
@@ -264,6 +296,12 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         "src/identity/system.rs",
         "create_dir_all",
         "IdentityProfiles",
+        2,
+    ),
+    (
+        "src/identity/system.rs",
+        "create_dir_all",
+        "SystemCredentials",
         1,
     ),
     (
@@ -280,6 +318,12 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
     ),
     ("src/identity/system.rs", "rename", "IdentityProfiles", 1),
     ("src/identity/system.rs", "write", "IdentityProfiles", 1),
+    (
+        "src/identity/system.rs",
+        "write_new_owner_only",
+        "IdentityProfiles",
+        1,
+    ),
     ("src/identity/ledger.rs", "remove_file", "IdentityLedger", 1),
     ("src/identity/ledger.rs", "rename", "IdentityLedger", 1),
     ("src/identity/ledger.rs", "write", "IdentityLedger", 1),
@@ -291,6 +335,12 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
     ("src/sign.rs", "write", "IdentityKeyMaterial", 1),
     ("src/sign.rs", "write", "IdentityPointer", 1),
     ("src/sign.rs", "write", "IdentitySeed", 1),
+    (
+        "src/sign.rs",
+        "write_new_owner_only",
+        "SystemCredentials",
+        1,
+    ),
     ("src/store/index.rs", "create_dir_all", "Sqlite", 1),
     ("src/store/index.rs", "remove_file", "Sqlite", 2),
     ("src/store/log.rs", "copy_async", "LocalLogDamaged", 1),
@@ -900,7 +950,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "5623808cb7155d95abd763c71407fd7cb632e75d9ce7eede097627831fd1fdac",
+                "8d12284dab3e57728766678eae9c9d5022053af839d124f94343a75e2e3590b9",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

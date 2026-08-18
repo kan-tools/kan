@@ -19,6 +19,10 @@ pub enum Error {
     Mcp(#[from] Box<crate::mcp::Error>),
     #[error(transparent)]
     Sign(#[from] crate::sign::Error),
+    #[error(transparent)]
+    SystemIdentity(#[from] crate::identity::system::Error),
+    #[error(transparent)]
+    Enrollment(#[from] crate::identity::enrollment::Error),
 }
 
 #[derive(Debug, Parser)]
@@ -380,6 +384,24 @@ pub fn confirm(question: &str) -> Result<bool, actions::Error> {
 
 #[derive(Debug, Subcommand)]
 pub enum IdentityAction {
+    /// Initialize this installation's system-level human identity and daily
+    /// device. This does not open or modify a repository.
+    Init {
+        /// Local profile alias selected as the default actor.
+        #[arg(long, default_value = "daily")]
+        alias: String,
+        /// Override the platform kan configuration directory.
+        #[arg(long)]
+        config_dir: Option<std::path::PathBuf>,
+        /// Import an existing owner-only P-256 recovery key instead of
+        /// creating one in the system credentials directory.
+        #[arg(long)]
+        recovery_key: Option<std::path::PathBuf>,
+        /// Import an existing owner-only P-256 daily-device key instead of
+        /// creating one in the system credentials directory.
+        #[arg(long)]
+        daily_key: Option<std::path::PathBuf>,
+    },
     /// Print this repo's `did:key` identifier. Public, safe to share.
     Did,
     /// Print the 24-word recovery phrase for this repo's signing key.
@@ -733,7 +755,82 @@ pub struct NarrativeArgs {
     pub verbose: bool,
 }
 
+fn run_system_identity_init(
+    alias: &str,
+    config_dir: Option<&std::path::Path>,
+    recovery_key: Option<&std::path::Path>,
+    daily_key: Option<&std::path::Path>,
+) -> Result<(), Error> {
+    use crate::identity::{
+        enrollment::DailyDeviceEnrollment,
+        system::{CredentialReference, SystemIdentityStore},
+    };
+
+    crate::identity::system::validate_alias(alias)?;
+    let config_root = match config_dir {
+        Some(root) => root.to_path_buf(),
+        None => SystemIdentityStore::platform_config_root()?,
+    };
+    let store = SystemIdentityStore::at(&config_root);
+    if let Some(profile) = store.default_profile()? {
+        if profile.alias() != alias {
+            return Err(crate::identity::system::Error::AlreadyInitialized(
+                profile.alias().to_string(),
+            )
+            .into());
+        }
+    }
+
+    let recovery_name = format!("recovery-{alias}.key");
+    let daily_name = format!("device-{alias}.key");
+    let recovery = store.ensure_owner_only_credential(&recovery_name, recovery_key)?;
+    let daily = store.ensure_owner_only_credential(&daily_name, daily_key)?;
+    let enrollment = DailyDeviceEnrollment::new(
+        store.enrollment_nonce()?,
+        alias.to_string(),
+        &recovery,
+        CredentialReference::OwnerOnlyFile {
+            path: recovery_name.clone(),
+        },
+        &daily,
+        CredentialReference::OwnerOnlyFile {
+            path: daily_name.clone(),
+        },
+    )?;
+    let installed = enrollment.install(&config_root)?;
+
+    println!("initialized system identity: {}", installed.principal);
+    println!("default actor: {alias}");
+    println!(
+        "daily verification method: {}",
+        enrollment.daily_method().id
+    );
+    println!("config root: {}", config_root.display());
+    println!("recovery credential: credentials/{recovery_name}");
+    println!("daily credential: credentials/{daily_name}");
+    Ok(())
+}
+
 pub async fn run(cli: Cli) -> Result<(), Error> {
+    if let Command::Identity {
+        action:
+            IdentityAction::Init {
+                alias,
+                config_dir,
+                recovery_key,
+                daily_key,
+            },
+    } = &cli.command
+    {
+        run_system_identity_init(
+            alias,
+            config_dir.as_deref(),
+            recovery_key.as_deref(),
+            daily_key.as_deref(),
+        )?;
+        return Ok(());
+    }
+
     let cwd = crate::workspace::cwd()?;
 
     // `kan mcp` doesn't open a single `Workspace` up front — it's a
@@ -992,6 +1089,11 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             // something else. The read-only actions are routed away above.
             ws.commit_identity().await?;
             match action {
+                IdentityAction::Init { .. } => {
+                    unreachable!(
+                        "system identity initialization is dispatched before workspace open"
+                    )
+                }
                 IdentityAction::Did => println!("{}", ws.identity()?.did()),
                 IdentityAction::EncryptionKey => {
                     println!("{}", ws.identity()?.encryption_key().public_hex())

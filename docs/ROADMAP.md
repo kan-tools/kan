@@ -92,8 +92,15 @@ the daily method to all non-recovery v1 purposes, verifies separately declared
 recovery and daily credentials, installs both events, and selects the default
 profile last under one initialization lock. Competing setups publish only the
 selected history, and any credential or ledger failure leaves no selectable
-actor. Provider-side credential creation/import and CLI orchestration remain,
-followed by repository routing.
+actor. `kan identity init` now performs that enrollment without opening a
+repository: it resolves the platform configuration root (or `--config-dir`),
+creates or explicitly imports owner-only recovery and daily P-256 credentials
+without overwrite, persists the enrollment nonce so a crash/retry cannot mint
+a different principal, and reports only public identifiers and credential
+paths. Invalid aliases, insecure imports, conflicting keys, and a different
+existing default fail closed; an identical retry is idempotent. OS-keychain
+creation and hardware, agent, and external-signer execution remain, followed
+by repository routing and modern-authorship cutover.
 
 ## Later public-protocol track: RFC 3
 

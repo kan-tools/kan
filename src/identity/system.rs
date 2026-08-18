@@ -20,8 +20,12 @@ pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
     crate::surface::SurfaceValue::new("identity-profiles:default", "default-actor-alias"),
     crate::surface::SurfaceValue::new("identity-profiles:.tmp-*", "atomic-profile-install"),
     crate::surface::SurfaceValue::new("identity-profiles:LOCK", "initialization-coordination"),
+    crate::surface::SurfaceValue::new("identity-profiles:enrollment-nonce", "initialization-nonce"),
     crate::surface::SurfaceValue::new("credentials:owner-only-file", "p256-private-key"),
+    crate::surface::SurfaceValue::new("system-config:KAN_CONFIG_DIR", "config-root-override"),
 ];
+
+pub const CONFIG_DIR_ENV: &str = "KAN_CONFIG_DIR";
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -297,6 +301,109 @@ impl SystemIdentityStore {
         &self.config_root
     }
 
+    /// Resolve kan's platform configuration root. An explicit environment
+    /// override is useful for isolated installations and automation; it never
+    /// changes repository-local state.
+    pub fn platform_config_root() -> Result<PathBuf, Error> {
+        if let Some(root) = std::env::var_os(CONFIG_DIR_ENV) {
+            return Ok(PathBuf::from(root));
+        }
+        #[cfg(target_os = "windows")]
+        if let Some(root) = std::env::var_os("APPDATA") {
+            return Ok(PathBuf::from(root).join("kan"));
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(home) = std::env::var_os("HOME") {
+            return Ok(PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join("kan"));
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        {
+            if let Some(root) = std::env::var_os("XDG_CONFIG_HOME") {
+                return Ok(PathBuf::from(root).join("kan"));
+            }
+            if let Some(home) = std::env::var_os("HOME") {
+                return Ok(PathBuf::from(home).join(".config").join("kan"));
+            }
+        }
+        Err(Error::ConfigRootUnavailable)
+    }
+
+    /// Create or import one explicitly named owner-only credential. Existing
+    /// credentials are never overwritten; creation converges on the winner of
+    /// a concurrent first write, while import additionally requires the
+    /// existing key to be identical.
+    pub fn ensure_owner_only_credential(
+        &self,
+        name: &str,
+        import_from: Option<&Path>,
+    ) -> Result<crate::sign::Identity, Error> {
+        validate_credential_path(name)?;
+        let candidate = match import_from {
+            Some(source) => {
+                require_owner_only_file(source)?;
+                crate::sign::Identity::load_existing(source)?
+            }
+            None => crate::sign::Identity::generate(),
+        };
+        let credentials = self.config_root.join("credentials");
+        existing_directory_or_absent(&credentials)?;
+        // surface-write: credentials:owner-only-file
+        crate::persistence::create_dir_all(
+            crate::persistence::SurfaceWrite::SystemCredentials,
+            &credentials,
+        )?;
+        let destination = credentials.join(name);
+        match candidate.save_system_credential_new(&destination) {
+            Ok(()) => Ok(candidate),
+            Err(crate::sign::Error::Io(error))
+                if error.kind() == std::io::ErrorKind::AlreadyExists =>
+            {
+                require_owner_only_file(&destination)?;
+                let existing = crate::sign::Identity::load_existing(&destination)?;
+                if import_from.is_some() && existing.did() != candidate.did() {
+                    return Err(Error::CredentialConflict(destination));
+                }
+                Ok(existing)
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// Return the once-generated nonce used by retryable first enrollment.
+    /// It is public identity input, not a credential, but is kept locally so a
+    /// crash and retry cannot silently mint a different principal.
+    pub fn enrollment_nonce(&self) -> Result<[u8; 32], Error> {
+        let profiles = self.profiles_dir();
+        existing_directory_or_absent(&profiles)?;
+        // surface-write: identity-profiles:enrollment-nonce
+        crate::persistence::create_dir_all(
+            crate::persistence::SurfaceWrite::IdentityProfiles,
+            &profiles,
+        )?;
+        let path = profiles.join("enrollment-nonce");
+        let mut candidate = [0u8; 32];
+        rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut candidate);
+        // surface-write: identity-profiles:enrollment-nonce
+        match crate::persistence::write_new_owner_only(
+            crate::persistence::SurfaceWrite::IdentityProfiles,
+            &path,
+            &candidate,
+        ) {
+            Ok(()) => Ok(candidate),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                require_owner_only_file(&path)?;
+                let bytes = std::fs::read(&path)?;
+                bytes
+                    .try_into()
+                    .map_err(|bytes: Vec<u8>| Error::EnrollmentNonceLength(bytes.len()))
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
     /// Deliberately install the first profile and select it as default.
     /// Repeating the identical request is idempotent; a different existing
     /// profile or default actor is a refusal, not an implicit actor switch.
@@ -486,7 +593,7 @@ fn install_immutable(directory: &Path, destination: &Path, bytes: &[u8]) -> Resu
     Ok(())
 }
 
-fn validate_alias(alias: &str) -> Result<(), Error> {
+pub fn validate_alias(alias: &str) -> Result<(), Error> {
     if alias.is_empty()
         || alias.len() > 64
         || !alias.bytes().all(|byte| {
@@ -513,10 +620,10 @@ fn require_nonempty(value: &str, field: &'static str) -> Result<(), Error> {
 fn validate_credential_path(path: &str) -> Result<(), Error> {
     require_nonempty(path, "credential path")?;
     let path = Path::new(path);
+    let components = path.components().collect::<Vec<_>>();
     if path.is_absolute()
-        || path
-            .components()
-            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+        || components.len() != 1
+        || !matches!(components[0], std::path::Component::Normal(_))
     {
         return Err(Error::InvalidCredentialPath(path.to_path_buf()));
     }
@@ -566,6 +673,8 @@ pub enum Error {
     UnsupportedVersion(u64),
     #[error("invalid identity profile alias: {0}")]
     InvalidAlias(String),
+    #[error("cannot locate the platform configuration directory; set KAN_CONFIG_DIR")]
+    ConfigRootUnavailable,
     #[error("unsupported system identity principal: {0}")]
     UnsupportedPrincipal(String),
     #[error("verification method `{method}` does not belong to principal `{principal}`")]
@@ -594,6 +703,10 @@ pub enum Error {
     UnsafeCredential(PathBuf),
     #[error("credential file is not owner-only: {0}")]
     CredentialPermissions(PathBuf),
+    #[error("credential conflicts with existing key at {0}")]
+    CredentialConflict(PathBuf),
+    #[error("stored enrollment nonce has {0} bytes, expected 32")]
+    EnrollmentNonceLength(usize),
     #[error("credential provider is not executable by this build: {0:?}")]
     ProviderUnsupported(CredentialReference),
     #[error("resolved method mismatch: expected `{expected}`, got `{actual}`")]

@@ -1363,11 +1363,20 @@ and daily credentials, installs both public events, and selects the profile
 last while holding the first-initialization lock. It is idempotent for the same
 plan; credential substitution, missing providers, ledger failure, and competing
 first setup cannot expose a partially initialized or losing actor.
+`kan identity init` supplies the explicit provider-side orchestration for the
+owner-only-file profile: it runs without repository discovery, resolves the
+platform configuration root or an explicit override, creates or imports
+recovery and daily P-256 credentials with create-new owner-only writes, and
+retains a stable initialization nonce for crash-safe retries. Existing secrets
+are never overwritten, imported keys must match any existing destination, and
+the command emits only public identifiers and paths. Its end-to-end tests cover
+fresh setup, import, identical retry, permissions, and rejection before state
+creation for an invalid alias.
 
 The complete reference-vector manifest, external/recursive DID controller
 resolution, modern authorship, hardware/agent/external-signer credential
-execution, provider-side credential creation/import, CLI enrollment,
-repository connections, and default-write cutover remain unimplemented. Issue
+execution, OS-keychain provider creation/import, repository connections, and
+default-write cutover remain unimplemented. Issue
 #244's operation-wire and
 absent-removal ambiguities are closed by the normative typed schema above and
 its pinned implementation vector. This status is therefore an implementation
