@@ -431,6 +431,55 @@ pub fn verify_static_did_key_proof(input: &SigningInput, proof: &Proof) -> Crypt
     }
 }
 
+/// Verify a proof against one exact resolved verification method and identity
+/// state. The caller remains responsible for establishing that `method` is
+/// authorized at `controller_state`; this function binds the proof bytes to
+/// all three facts without treating the method's key as the principal.
+pub fn verify_resolved_method_proof(
+    input: &SigningInput,
+    proof: &Proof,
+    method: &super::did_kan::VerificationMethod,
+    controller_state: &IdentityVersion,
+) -> CryptographicValidity {
+    if input.validate().is_err()
+        || super::did_kan::validate_verification_method(method).is_err()
+        || proof.method != method.id
+        || proof.alg != method.alg
+        || &proof.controller_state != controller_state
+    {
+        return CryptographicValidity::Invalid;
+    }
+    let Ok(bytes) = input.canonical_bytes() else {
+        return CryptographicValidity::Invalid;
+    };
+    match method.alg.as_str() {
+        "P256" => {
+            let Ok(key_did) = atrium_crypto::did::format_did_key(
+                atrium_crypto::Algorithm::P256,
+                &method.public_key,
+            ) else {
+                return CryptographicValidity::Invalid;
+            };
+            if crate::sign::verify(&key_did, &bytes, &proof.sig) {
+                CryptographicValidity::Valid
+            } else {
+                CryptographicValidity::Invalid
+            }
+        }
+        "Ed25519" => {
+            let mut multikey = Vec::with_capacity(34);
+            multikey.extend_from_slice(&[0xed, 0x01]);
+            multikey.extend_from_slice(&method.public_key);
+            let fingerprint = atrium_crypto::multibase::encode(
+                atrium_crypto::multibase::Base::Base58Btc,
+                &multikey,
+            );
+            verify_ed25519_did_key(&fingerprint, &bytes, &proof.sig)
+        }
+        _ => CryptographicValidity::Unsupported,
+    }
+}
+
 fn is_ed25519_fingerprint(fingerprint: &str) -> bool {
     atrium_crypto::multibase::decode(fingerprint)
         .ok()

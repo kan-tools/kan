@@ -1306,7 +1306,11 @@ authenticated unsupported extensions.
 `src/identity/repository_inception.rs` implements the canonical unsigned
 repository-inception payload, canonical encoded-value list ordering, full
 base32-lower SHA-256 multihash `kan-repo:` derivation, a pinned identifier
-vector, and the supported static P-256 `did:key` listed-root proof gate.
+vector, and listed-root proof gates for static P-256 `did:key` and an exact
+active `did:kan` state. The latter requires one resolved method carrying
+`capabilityDelegation` and binds the principal, method, historical state,
+algorithm, public key, and signature without treating the key as the
+principal. The shared resolved-method verifier covers P-256 and Ed25519.
 `src/identity/governance.rs` implements canonical repository-governance update
 and reconciliation payloads, proof authorization against every exact parent,
 proof-set collapse by logical event identifier, and order-independent

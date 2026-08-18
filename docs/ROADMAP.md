@@ -57,6 +57,9 @@ In parallel, the repository-inception slice now validates and
 canonically orders the unsigned payload, derives the full `kan-repo:` SHA-256
 multihash identifier, pins a deterministic vector, and
 requires a valid static P-256 `did:key` proof from a listed governance root.
+It can now also bind repository inception to the exact active state and
+`capabilityDelegation` method of the enrolled system `did:kan` principal;
+method, state, algorithm, purpose, and signature substitution all fail closed.
 `src/identity/governance.rs` now produces canonical update and reconciliation
 events and resolves unordered evidence deterministically: proof variants share
 one logical event, sibling leaves are contested, reconciliation requires

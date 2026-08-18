@@ -1,7 +1,11 @@
 use atproto_dasl::Ipld;
 use ed25519_dalek::{Signer, SigningKey};
 use kan::identity::{
-    control::{verify_static_did_key_proof, IdentityVersion, Proof, SigningInput},
+    control::{
+        verify_resolved_method_proof, verify_static_did_key_proof, IdentityVersion, Proof,
+        SigningInput,
+    },
+    did_kan::{VerificationMethod, VerificationPurpose},
     CryptographicValidity,
 };
 
@@ -125,5 +129,42 @@ fn algorithm_substitution_is_invalid_and_unknown_codecs_are_unsupported() {
     assert_eq!(
         verify_static_did_key_proof(&input, &proof(&unknown, "Ed25519", signature)),
         CryptographicValidity::Unsupported
+    );
+}
+
+#[test]
+fn resolved_ed25519_method_binds_the_exact_method_and_identity_state() {
+    let signing = SigningKey::from_bytes(&[0x24; 32]);
+    let input = input();
+    let state = IdentityVersion::VersionId("operation-7".to_string());
+    let method = VerificationMethod {
+        id: "did:plc:example#atproto".to_string(),
+        controller: "did:plc:example".to_string(),
+        alg: "Ed25519".to_string(),
+        public_key: signing.verifying_key().as_bytes().to_vec(),
+        purposes: vec![VerificationPurpose::Assertion],
+    };
+    let proof = Proof {
+        method: method.id.clone(),
+        controller_state: state.clone(),
+        alg: method.alg.clone(),
+        sig: signing
+            .sign(&input.canonical_bytes().unwrap())
+            .to_bytes()
+            .to_vec(),
+    };
+
+    assert_eq!(
+        verify_resolved_method_proof(&input, &proof, &method, &state),
+        CryptographicValidity::Valid
+    );
+    assert_eq!(
+        verify_resolved_method_proof(
+            &input,
+            &proof,
+            &method,
+            &IdentityVersion::VersionId("operation-8".to_string())
+        ),
+        CryptographicValidity::Invalid
     );
 }

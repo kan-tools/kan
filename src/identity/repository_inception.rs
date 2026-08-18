@@ -10,8 +10,12 @@ use serde::{
 use sha2::{Digest, Sha256};
 
 use super::{
-    control::{verify_static_did_key_proof, ControlEvent, Proof, SigningInput},
-    did_kan::validate_did,
+    control::{
+        verify_resolved_method_proof, verify_static_did_key_proof, ControlEvent, IdentityVersion,
+        Proof, SigningInput,
+    },
+    did_kan::{validate_did, VerificationPurpose},
+    did_kan_update::ResolvedDidKanState,
     CryptographicValidity,
 };
 
@@ -171,6 +175,33 @@ impl RepositoryInception {
                     && verify_static_did_key_proof(&input, proof) == CryptographicValidity::Valid
             })
         });
+        if !authorized {
+            return Err(Error::NoGovernanceProof);
+        }
+        Ok(ControlEvent::new(input, proofs)?)
+    }
+
+    /// Produce inception governed by one exact active `did:kan` state. This
+    /// is the bridge used by a system identity's daily device: the principal,
+    /// method, historical state, purpose, and signature must all agree.
+    pub fn proved_event_with_did_kan_state(
+        &self,
+        state: &ResolvedDidKanState,
+        proofs: Vec<Proof>,
+    ) -> Result<ControlEvent, Error> {
+        let input = self.signing_input()?;
+        let expected_state = IdentityVersion::Event(state.active_event.clone());
+        let authorized = self.governance_roots.iter().any(|root| root == &state.did)
+            && proofs.iter().any(|proof| {
+                state.verification_methods.iter().any(|method| {
+                    method.controller == state.did
+                        && method
+                            .purposes
+                            .contains(&VerificationPurpose::CapabilityDelegation)
+                        && verify_resolved_method_proof(&input, proof, method, &expected_state)
+                            == CryptographicValidity::Valid
+                })
+            });
         if !authorized {
             return Err(Error::NoGovernanceProof);
         }

@@ -1,10 +1,14 @@
 use kan::{
     identity::{
         control::{IdentityVersion, Proof},
+        did_kan::VerificationPurpose,
+        did_kan_update::{resolve, DidKanResolution},
+        enrollment::DailyDeviceEnrollment,
         repository_inception::{
             AnchorValue, Error, RepositoryInception, SubstrateAnchor, INCEPTION_DOMAIN,
             INCEPTION_EVENT_TYPE,
         },
+        system::CredentialReference,
     },
     sign::Identity,
 };
@@ -213,6 +217,75 @@ fn proved_inception_requires_a_listed_governance_root() {
     let stranger = Identity::generate();
     assert!(matches!(
         inception.proved_event(vec![proof(&stranger, &inception)]),
+        Err(Error::NoGovernanceProof)
+    ));
+}
+
+#[test]
+fn active_did_kan_daily_method_can_govern_repository_inception() {
+    let recovery = Identity::generate();
+    let daily = Identity::generate();
+    let enrollment = DailyDeviceEnrollment::new(
+        [0x66; 32],
+        "daily".to_string(),
+        &recovery,
+        CredentialReference::OwnerOnlyFile {
+            path: "recovery.key".to_string(),
+        },
+        &daily,
+        CredentialReference::OwnerOnlyFile {
+            path: "daily.key".to_string(),
+        },
+    )
+    .unwrap();
+    let DidKanResolution::Active(state) = resolve(
+        enrollment.genesis(),
+        enrollment.genesis_event(),
+        &[enrollment.administration_event().clone()],
+    ) else {
+        panic!("daily enrollment must resolve active");
+    };
+    let inception = RepositoryInception::new(
+        [0x77; 32],
+        vec!["kan".to_string()],
+        vec![state.did.clone()],
+        vec![],
+    )
+    .unwrap();
+    let input = inception.signing_input().unwrap();
+    let proof = Proof {
+        method: enrollment.daily_method().id.clone(),
+        controller_state: IdentityVersion::Event(state.active_event.clone()),
+        alg: "P256".to_string(),
+        sig: daily.sign(&input.canonical_bytes().unwrap()).unwrap(),
+    };
+
+    let event = inception
+        .proved_event_with_did_kan_state(&state, vec![proof.clone()])
+        .unwrap();
+    assert_eq!(event.signing_input(), input);
+
+    let mut wrong_state = proof.clone();
+    wrong_state.controller_state =
+        IdentityVersion::Event(enrollment.genesis_event().proved_cid().unwrap());
+    assert!(matches!(
+        inception.proved_event_with_did_kan_state(&state, vec![wrong_state]),
+        Err(Error::NoGovernanceProof)
+    ));
+
+    let mut no_delegation = (*state).clone();
+    no_delegation.verification_methods[0]
+        .purposes
+        .retain(|purpose| *purpose != VerificationPurpose::CapabilityDelegation);
+    assert!(matches!(
+        inception.proved_event_with_did_kan_state(&no_delegation, vec![proof.clone()]),
+        Err(Error::NoGovernanceProof)
+    ));
+
+    let mut bad_signature = proof;
+    bad_signature.sig[0] ^= 1;
+    assert!(matches!(
+        inception.proved_event_with_did_kan_state(&state, vec![bad_signature]),
         Err(Error::NoGovernanceProof)
     ));
 }
