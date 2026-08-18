@@ -35,6 +35,22 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("profile-credential-key", "tests/system_identity.rs"),
     ("stable-enrollment-nonce", "tests/system_identity_cli.rs"),
     ("platform-config-root", "tests/system_identity_cli.rs"),
+    (
+        "repository-inception-store",
+        "tests/repository_identity_store.rs",
+    ),
+    (
+        "stable-repository-nonce",
+        "tests/repository_identity_store.rs",
+    ),
+    (
+        "repository-write-coordination",
+        "tests/repository_identity_store.rs",
+    ),
+    (
+        "atomic-repository-inception-install",
+        "tests/repository_identity_store.rs",
+    ),
     ("identity-precedence", "tests/identity_cells.rs"),
     ("role-key", "tests/role_registry_invariants.rs"),
     ("legacy-role-config", "tests/role_declarations.rs"),
@@ -84,6 +100,26 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
         "src/identity/ledger.rs",
         "\"events\"",
         "identity-ledger:events/*.cbor",
+    ),
+    (
+        "src/identity/repository_store.rs",
+        "\"inception.cbor\"",
+        "repository-identity:inception.cbor",
+    ),
+    (
+        "src/identity/repository_store.rs",
+        "\"initialization-nonce\"",
+        "repository-identity:initialization-nonce",
+    ),
+    (
+        "src/identity/repository_store.rs",
+        "\"LOCK\"",
+        "repository-identity:LOCK",
+    ),
+    (
+        "src/identity/repository_store.rs",
+        "format!(\".tmp-{}-{sequence}\", std::process::id())",
+        "repository-identity:.tmp-*",
     ),
     (
         "src/identity/system.rs",
@@ -273,6 +309,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
 const PERSISTENCE_MODULES: &[&str] = &[
     "src/actions.rs",
     "src/identity/ledger.rs",
+    "src/identity/repository_store.rs",
     "src/identity/system.rs",
     "src/sign.rs",
     "src/store/index.rs",
@@ -297,6 +334,42 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         "create_dir_all",
         "IdentityProfiles",
         2,
+    ),
+    (
+        "src/identity/repository_store.rs",
+        "create_dir_all",
+        "RepositoryIdentity",
+        2,
+    ),
+    (
+        "src/identity/repository_store.rs",
+        "open_lock_file",
+        "RepositoryIdentity",
+        1,
+    ),
+    (
+        "src/identity/repository_store.rs",
+        "remove_file",
+        "RepositoryIdentity",
+        1,
+    ),
+    (
+        "src/identity/repository_store.rs",
+        "rename",
+        "RepositoryIdentity",
+        1,
+    ),
+    (
+        "src/identity/repository_store.rs",
+        "write",
+        "RepositoryIdentity",
+        1,
+    ),
+    (
+        "src/identity/repository_store.rs",
+        "write_new_owner_only",
+        "RepositoryIdentity",
+        1,
     ),
     (
         "src/identity/system.rs",
@@ -466,6 +539,7 @@ fn implemented_values() -> BTreeSet<(String, String)> {
         .chain(kan::git::SURFACE_VALUES)
         .chain(kan::actions::SURFACE_VALUES)
         .chain(kan::identity::ledger::SURFACE_VALUES)
+        .chain(kan::identity::repository_store::SURFACE_VALUES)
         .chain(kan::identity::system::SURFACE_VALUES)
         .map(|SurfaceValue { artifact, value }| ((*artifact).into(), (*value).into()));
     declared.chain(sqlite_values()).collect()
@@ -511,6 +585,7 @@ fn catalog_is_well_formed_and_cites_real_designs() {
                 "identity-store",
                 "identity-ledger",
                 "identity-profiles",
+                "repository-identity",
                 "external-git",
                 "overlay",
                 "sqlite-index"
@@ -950,7 +1025,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "8d12284dab3e57728766678eae9c9d5022053af839d124f94343a75e2e3590b9",
+                "c13e0b2f25c19f26b9294375f22d182230b97bffd62318ab6dfb09f264a6a793",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

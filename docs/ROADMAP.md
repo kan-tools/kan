@@ -60,6 +60,10 @@ requires a valid static P-256 `did:key` proof from a listed governance root.
 It can now also bind repository inception to the exact active state and
 `capabilityDelegation` method of the enrolled system `did:kan` principal;
 method, state, algorithm, purpose, and signature substitution all fail closed.
+Workspace-local repository identity persistence now retains the canonical
+inception event immutably under `.kan/repository`, with a stable inception
+nonce, serialized first installation, atomic visibility, idempotent proof
+variants, and fail-closed conflict and symlink handling. Reads create nothing.
 `src/identity/governance.rs` now produces canonical update and reconciliation
 events and resolves unordered evidence deterministically: proof variants share
 one logical event, sibling leaves are contested, reconciliation requires

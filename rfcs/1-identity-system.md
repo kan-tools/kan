@@ -1311,6 +1311,14 @@ active `did:kan` state. The latter requires one resolved method carrying
 `capabilityDelegation` and binds the principal, method, historical state,
 algorithm, public key, and signature without treating the key as the
 principal. The shared resolved-method verifier covers P-256 and Ed25519.
+`src/identity/repository_store.rs` supplies the first repository-state
+persistence slice. It retains the canonical proved inception event immutably
+under the workspace's `.kan/repository`, persists the identifier nonce before
+event construction so retries remain stable, serializes first installation,
+and makes the event visible atomically. The same inception with another proof
+variant is idempotent; a different inception, malformed bytes, or symlinked
+state fails closed. All four artifacts are independently cataloged through the
+typed persistence boundary, and read-only open creates nothing.
 `src/identity/governance.rs` implements canonical repository-governance update
 and reconciliation payloads, proof authorization against every exact parent,
 proof-set collapse by logical event identifier, and order-independent

@@ -19,6 +19,7 @@ pub mod enrollment;
 pub mod governance;
 pub mod ledger;
 pub mod repository_inception;
+pub mod repository_store;
 pub mod system;
 
 /// Whether the claim's bytes and exact signing authority authenticate it.
