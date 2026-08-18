@@ -18,6 +18,7 @@ pub enum SurfaceWrite {
     IdentitySeed,
     IdentityBackup,
     IdentityLedger,
+    IdentityProfiles,
     LocalLogCar,
     LocalLogDamaged,
     LocalLogRepair,
@@ -38,6 +39,7 @@ impl SurfaceWrite {
         Self::IdentitySeed,
         Self::IdentityBackup,
         Self::IdentityLedger,
+        Self::IdentityProfiles,
         Self::LocalLogCar,
         Self::LocalLogDamaged,
         Self::LocalLogRepair,
@@ -71,6 +73,12 @@ impl SurfaceWrite {
             Self::IdentityLedger => &[
                 "identity-ledger:events/*.cbor",
                 "identity-ledger:events/.tmp-*",
+            ],
+            Self::IdentityProfiles => &[
+                "identity-profiles:profiles/*.json",
+                "identity-profiles:default",
+                "identity-profiles:.tmp-*",
+                "identity-profiles:LOCK",
             ],
             Self::LocalLogCar => &["local-log:repo.car"],
             Self::LocalLogDamaged => &["local-log:repo.car.damaged-*"],

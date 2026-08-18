@@ -28,6 +28,10 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("identity-at-rest", "tests/at_rest_guards.rs"),
     ("control-event-ledger", "tests/identity_ledger.rs"),
     ("atomic-control-event-install", "tests/identity_ledger.rs"),
+    ("identity-profile-config", "tests/system_identity.rs"),
+    ("default-actor-profile", "tests/system_identity.rs"),
+    ("atomic-profile-install", "tests/system_identity.rs"),
+    ("profile-write-coordination", "tests/system_identity.rs"),
     ("identity-precedence", "tests/identity_cells.rs"),
     ("role-key", "tests/role_registry_invariants.rs"),
     ("legacy-role-config", "tests/role_declarations.rs"),
@@ -77,6 +81,41 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
         "src/identity/ledger.rs",
         "\"events\"",
         "identity-ledger:events/*.cbor",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"identity\"",
+        "identity profiles root",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"profiles\"",
+        "identity-profiles:profiles/*.json",
+    ),
+    (
+        "src/identity/system.rs",
+        "format!(\"{}.json\", profile.alias)",
+        "identity-profiles:profiles/*.json",
+    ),
+    (
+        "src/identity/system.rs",
+        "format!(\"{alias}.json\")",
+        "identity-profiles:profiles/*.json",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"default\"",
+        "identity-profiles:default",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"LOCK\"",
+        "identity-profiles:LOCK",
+    ),
+    (
+        "src/identity/system.rs",
+        "format!(\".tmp-{}-{sequence}\", std::process::id())",
+        "identity-profiles:.tmp-*",
     ),
     (
         "src/identity/ledger.rs",
@@ -191,6 +230,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
 const PERSISTENCE_MODULES: &[&str] = &[
     "src/actions.rs",
     "src/identity/ledger.rs",
+    "src/identity/system.rs",
     "src/sign.rs",
     "src/store/index.rs",
     "src/store/log.rs",
@@ -209,6 +249,26 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         "IdentityLedger",
         1,
     ),
+    (
+        "src/identity/system.rs",
+        "create_dir_all",
+        "IdentityProfiles",
+        1,
+    ),
+    (
+        "src/identity/system.rs",
+        "open_lock_file",
+        "IdentityProfiles",
+        1,
+    ),
+    (
+        "src/identity/system.rs",
+        "remove_file",
+        "IdentityProfiles",
+        1,
+    ),
+    ("src/identity/system.rs", "rename", "IdentityProfiles", 1),
+    ("src/identity/system.rs", "write", "IdentityProfiles", 1),
     ("src/identity/ledger.rs", "remove_file", "IdentityLedger", 1),
     ("src/identity/ledger.rs", "rename", "IdentityLedger", 1),
     ("src/identity/ledger.rs", "write", "IdentityLedger", 1),
@@ -345,6 +405,7 @@ fn implemented_values() -> BTreeSet<(String, String)> {
         .chain(kan::git::SURFACE_VALUES)
         .chain(kan::actions::SURFACE_VALUES)
         .chain(kan::identity::ledger::SURFACE_VALUES)
+        .chain(kan::identity::system::SURFACE_VALUES)
         .map(|SurfaceValue { artifact, value }| ((*artifact).into(), (*value).into()));
     declared.chain(sqlite_values()).collect()
 }
@@ -388,6 +449,7 @@ fn catalog_is_well_formed_and_cites_real_designs() {
                 "system-config",
                 "identity-store",
                 "identity-ledger",
+                "identity-profiles",
                 "external-git",
                 "overlay",
                 "sqlite-index"
@@ -827,7 +889,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "b77c7bb81dd719faa1cd6ba4e0597c362c84e2cd50dd206c5782ad7bca4ffbbf",
+                "5623808cb7155d95abd763c71407fd7cb632e75d9ce7eede097627831fd1fdac",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

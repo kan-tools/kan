@@ -1335,11 +1335,20 @@ and filename/content disagreement or symlinked event storage fails closed. The
 ledger's authoritative event files and derived atomic-install temporaries are
 separately registered in the typed persistence capability and read/write
 surface catalog.
+`src/identity/system.rs` implements versioned local identity profiles and
+deliberate first initialization. A profile binds a path-safe alias and
+principal DID to exactly one typed OS-keychain, owner-only-file, hardware,
+agent, or external-signer reference without accessing or embedding the secret.
+Initialization serializes competing writers, atomically installs the profile,
+and selects its alias as the default actor; identical repetition is idempotent
+while a conflicting actor is refused before its profile is written. Profile,
+default-selection, temporary-install, and coordination-lock artifacts are
+separately cataloged.
 
 The complete reference-vector manifest, Ed25519, external/recursive DID
 controller resolution, modern authorship, system profiles and credential
-routing, repository connections, and default-write cutover remain
-unimplemented. Issue #244's operation-wire and absent-removal ambiguities are
-closed by the normative typed schema above and its pinned implementation
-vector. This status is therefore an implementation checkpoint, not a claim that
-RFC 1 is shipped.
+provider execution, daily-device enrollment, repository connections, and
+default-write cutover remain unimplemented. Issue #244's operation-wire and
+absent-removal ambiguities are closed by the normative typed schema above and
+its pinned implementation vector. This status is therefore an implementation
+checkpoint, not a claim that RFC 1 is shipped.

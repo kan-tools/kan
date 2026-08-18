@@ -73,8 +73,15 @@ additive envelope fields through the lossless control boundary.
 `src/identity/ledger.rs` begins durable integration with a read-only-on-open,
 immutable local control-event ledger: canonical bytes
 are atomically installed under proved-event CIDs, proof variants coexist, and
-temporary crash residue is never evidence. System profiles, credentials,
-repository routing, and default-write integration remain pending.
+temporary crash residue is never evidence.
+`src/identity/system.rs` now supplies the profile portion: versioned local
+profiles bind a path-safe alias and principal DID to one typed credential
+provider reference, while deliberate first initialization atomically installs
+the profile and selects its alias as the default actor. Reads never create
+state or access credentials, identical initialization is idempotent, and
+conflicting or concurrent initialization cannot silently switch actors.
+Credential-provider execution, device enrollment, and repository routing
+remain pending.
 
 ## Later public-protocol track: RFC 3
 
