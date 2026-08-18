@@ -1354,11 +1354,21 @@ uses the exact canonical signing-input bytes, and applies strict verification
 that rejects weak keys, small-order points, and non-canonical signatures;
 algorithm/key substitution is invalid while genuinely unknown algorithms or
 key codecs remain unsupported.
+`src/identity/enrollment.rs` constructs fresh daily-device enrollment as two
+distinct protocol states: a recovery-controller-proved `did:kan` genesis and
+the required first administration event that enrolls the daily P-256 method
+for administration, assertion, authentication, capability delegation, and
+capability invocation. Installation exercises separately referenced recovery
+and daily credentials, installs both public events, and selects the profile
+last while holding the first-initialization lock. It is idempotent for the same
+plan; credential substitution, missing providers, ledger failure, and competing
+first setup cannot expose a partially initialized or losing actor.
 
 The complete reference-vector manifest, external/recursive DID controller
 resolution, modern authorship, hardware/agent/external-signer credential
-execution, daily-device enrollment, repository connections, and default-write
-cutover remain unimplemented. Issue #244's operation-wire and
+execution, provider-side credential creation/import, CLI enrollment,
+repository connections, and default-write cutover remain unimplemented. Issue
+#244's operation-wire and
 absent-removal ambiguities are closed by the normative typed schema above and
 its pinned implementation vector. This status is therefore an implementation
 checkpoint, not a claim that RFC 1 is shipped.

@@ -86,7 +86,14 @@ now select an exact `(principal, verification method, controller state)` actor,
 and explicit owner-only-file or OS-keychain execution signs only after the
 loaded P-256 key matches the resolved method; path escape, loose permissions,
 symlinks, and key substitution fail closed. Hardware, agent, and external-
-signer execution, device enrollment, and repository routing remain pending.
+signer execution remain pending. The daily-device enrollment plan now creates
+a proved `did:kan` genesis and the mandatory first administration event, binds
+the daily method to all non-recovery v1 purposes, verifies separately declared
+recovery and daily credentials, installs both events, and selects the default
+profile last under one initialization lock. Competing setups publish only the
+selected history, and any credential or ledger failure leaves no selectable
+actor. Provider-side credential creation/import and CLI orchestration remain,
+followed by repository routing.
 
 ## Later public-protocol track: RFC 3
 

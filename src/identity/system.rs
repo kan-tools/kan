@@ -67,7 +67,84 @@ impl CredentialReference {
 pub struct ActorReference {
     principal: String,
     verification_method: String,
+    #[serde(with = "identity_version_json")]
     controller_state: IdentityVersion,
+}
+
+mod identity_version_json {
+    use atproto_dasl::Cid;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    use super::IdentityVersion;
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct WireRef<'a> {
+        kind: &'static str,
+        value: Option<&'a str>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Wire {
+        kind: String,
+        value: Option<String>,
+    }
+
+    pub fn serialize<S: Serializer>(
+        state: &IdentityVersion,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let cid_text;
+        let wire = match state {
+            IdentityVersion::Static => WireRef {
+                kind: "static",
+                value: None,
+            },
+            IdentityVersion::Event(cid) => {
+                cid_text = cid.to_string();
+                WireRef {
+                    kind: "event",
+                    value: Some(&cid_text),
+                }
+            }
+            IdentityVersion::VersionId(value) => WireRef {
+                kind: "versionId",
+                value: Some(value),
+            },
+            IdentityVersion::DocumentCid(cid) => {
+                cid_text = cid.to_string();
+                WireRef {
+                    kind: "documentCid",
+                    value: Some(&cid_text),
+                }
+            }
+        };
+        wire.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<IdentityVersion, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        match (wire.kind.as_str(), wire.value) {
+            ("static", None) => Ok(IdentityVersion::Static),
+            ("event", Some(value)) => value
+                .parse::<Cid>()
+                .map(IdentityVersion::Event)
+                .map_err(serde::de::Error::custom),
+            ("versionId", Some(value)) if !value.is_empty() => {
+                Ok(IdentityVersion::VersionId(value))
+            }
+            ("documentCid", Some(value)) => value
+                .parse::<Cid>()
+                .map(IdentityVersion::DocumentCid)
+                .map_err(serde::de::Error::custom),
+            _ => Err(serde::de::Error::custom(
+                "invalid identity profile controller state",
+            )),
+        }
+    }
 }
 
 impl ActorReference {
@@ -224,6 +301,17 @@ impl SystemIdentityStore {
     /// Repeating the identical request is idempotent; a different existing
     /// profile or default actor is a refusal, not an implicit actor switch.
     pub fn initialize(&self, profile: &IdentityProfile) -> Result<(), Error> {
+        self.initialize_with(profile, || Ok(()))
+    }
+
+    /// Run prerequisite installation under the same lock that selects the
+    /// first actor. Candidate conflicts are checked before `prerequisite`, and
+    /// the profile/default become visible only after it succeeds.
+    pub(crate) fn initialize_with(
+        &self,
+        profile: &IdentityProfile,
+        prerequisite: impl FnOnce() -> Result<(), Error>,
+    ) -> Result<(), Error> {
         profile.validate()?;
         let profiles = self.profiles_dir();
         existing_directory_or_absent(&profiles)?;
@@ -245,6 +333,7 @@ impl SystemIdentityStore {
         let mut encoded = serde_json::to_vec_pretty(profile)?;
         encoded.push(b'\n');
         let default = profiles.join("default");
+        let profile_path = profiles.join(format!("{}.json", profile.alias));
         let expected = format!("{}\n", profile.alias);
         if existing_file(&default)? {
             let actual = std::fs::read_to_string(&default)?;
@@ -252,11 +341,9 @@ impl SystemIdentityStore {
                 return Err(Error::AlreadyInitialized(actual.trim().to_string()));
             }
         }
-        install_immutable(
-            &profiles,
-            &profiles.join(format!("{}.json", profile.alias)),
-            &encoded,
-        )?;
+        verify_immutable_or_absent(&profile_path, &encoded)?;
+        prerequisite()?;
+        install_immutable(&profiles, &profile_path, &encoded)?;
         if existing_file(&default)? {
             return Ok(());
         }
@@ -347,6 +434,13 @@ impl SystemIdentityStore {
     fn profiles_dir(&self) -> PathBuf {
         self.config_root.join("identity").join("profiles")
     }
+}
+
+fn verify_immutable_or_absent(path: &Path, expected: &[u8]) -> Result<(), Error> {
+    if existing_file(path)? && std::fs::read(path)? != expected {
+        return Err(Error::ProfileConflict(path.to_path_buf()));
+    }
+    Ok(())
 }
 
 struct ProfileLock(std::fs::File);
@@ -520,4 +614,6 @@ pub enum Error {
     Control(#[from] super::control::Error),
     #[error("system identity credential key is invalid: {0}")]
     Crypto(#[from] atrium_crypto::Error),
+    #[error("system identity ledger failed: {0}")]
+    Ledger(#[from] super::ledger::Error),
 }
