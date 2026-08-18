@@ -582,6 +582,43 @@ impl SystemIdentityStore {
         method: &VerificationMethod,
         input: &SigningInput,
     ) -> Result<Proof, Error> {
+        let bytes = input.canonical_bytes()?;
+        let sig = self.sign_bytes(profile, method, &bytes)?;
+        Ok(Proof {
+            method: method.id.clone(),
+            controller_state: profile.actor.controller_state.clone(),
+            alg: method.alg.clone(),
+            sig,
+        })
+    }
+
+    /// Sign one modern claim CID using the profile's exact resolved method.
+    /// Claim signing remains structurally separate from control-event signing:
+    /// the message is the claim CID bytes, never a control `SigningInput`.
+    pub fn sign_claim_cid(
+        &self,
+        profile: &IdentityProfile,
+        method: &VerificationMethod,
+        claim: &atproto_dasl::Cid,
+    ) -> Result<Vec<u8>, Error> {
+        if !method
+            .purposes
+            .contains(&super::did_kan::VerificationPurpose::Assertion)
+        {
+            return Err(Error::CredentialMethodPurpose {
+                method: method.id.clone(),
+                purpose: "assertion",
+            });
+        }
+        self.sign_bytes(profile, method, &claim.to_bytes())
+    }
+
+    fn sign_bytes(
+        &self,
+        profile: &IdentityProfile,
+        method: &VerificationMethod,
+        message: &[u8],
+    ) -> Result<Vec<u8>, Error> {
         profile.validate()?;
         validate_verification_method(method)?;
         if method.id != profile.actor.verification_method
@@ -615,12 +652,7 @@ impl SystemIdentityStore {
                 method: method.id.clone(),
             });
         }
-        Ok(Proof {
-            method: method.id.clone(),
-            controller_state: profile.actor.controller_state.clone(),
-            alg: method.alg.clone(),
-            sig: identity.sign(&input.canonical_bytes()?)?,
-        })
+        Ok(identity.sign(message)?)
     }
 
     fn profiles_dir(&self) -> PathBuf {
@@ -804,6 +836,11 @@ pub enum Error {
     CredentialMethodMismatch { expected: String, actual: String },
     #[error("selected credential does not hold the key for verification method `{method}`")]
     CredentialKeyMismatch { method: String },
+    #[error("verification method `{method}` does not carry required `{purpose}` purpose")]
+    CredentialMethodPurpose {
+        method: String,
+        purpose: &'static str,
+    },
     #[error("identity profile path is a symlink or has the wrong file type: {0}")]
     UnsafeEntry(PathBuf),
     #[error("system identity I/O failed: {0}")]

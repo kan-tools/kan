@@ -74,6 +74,17 @@ explicit identical options remain idempotent, while changed inception options
 are refused. Missing or stale actors and unsupported ledger envelopes fail
 before repository inception is installed, and this path never creates or
 consults the legacy workspace signing identity.
+`src/identity/authorship.rs` now implements the non-ambiguous first modern-
+authorship boundary: the exact typed `Author { principal,
+verificationMethod, identityVersion }` map is canonically encoded and pinned,
+cannot represent a role or legacy agent, and verifies a claim CID only against
+the cited active `did:kan` event and resolved assertion method. System profiles
+can sign claim-CID bytes through the same provider/key-match gate used for
+control events, while `assertion` validity remains independent from
+`capabilityInvocation` repository reach. The complete modern claim-content
+map, legacy/modern storage discriminator, historical-state verification, and
+default writer cutover remain pending; the accepted RFC fixes the nested
+author value but does not yet fix those complete signed-envelope bytes.
 `src/identity/governance.rs` now produces canonical update and reconciliation
 events and resolves unordered evidence deterministically: proof variants share
 one logical event, sibling leaves are contested, reconciliation requires

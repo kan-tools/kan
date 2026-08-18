@@ -452,6 +452,21 @@ pub fn verify_resolved_method_proof(
     let Ok(bytes) = input.canonical_bytes() else {
         return CryptographicValidity::Invalid;
     };
+    verify_resolved_method_signature(&bytes, &proof.sig, method)
+}
+
+/// Verify arbitrary caller-selected bytes with one already-resolved method.
+/// Principal, purpose, and historical-state authorization remain the caller's
+/// responsibility; this helper binds only algorithm, public key, message, and
+/// signature.
+pub fn verify_resolved_method_signature(
+    message: &[u8],
+    signature: &[u8],
+    method: &super::did_kan::VerificationMethod,
+) -> CryptographicValidity {
+    if super::did_kan::validate_verification_method(method).is_err() {
+        return CryptographicValidity::Invalid;
+    }
     match method.alg.as_str() {
         "P256" => {
             let Ok(key_did) = atrium_crypto::did::format_did_key(
@@ -460,7 +475,7 @@ pub fn verify_resolved_method_proof(
             ) else {
                 return CryptographicValidity::Invalid;
             };
-            if crate::sign::verify(&key_did, &bytes, &proof.sig) {
+            if crate::sign::verify(&key_did, message, signature) {
                 CryptographicValidity::Valid
             } else {
                 CryptographicValidity::Invalid
@@ -474,7 +489,7 @@ pub fn verify_resolved_method_proof(
                 atrium_crypto::multibase::Base::Base58Btc,
                 &multikey,
             );
-            verify_ed25519_did_key(&fingerprint, &bytes, &proof.sig)
+            verify_ed25519_did_key(&fingerprint, message, signature)
         }
         _ => CryptographicValidity::Unsupported,
     }

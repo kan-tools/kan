@@ -1333,6 +1333,18 @@ refused without replacing the installed bytes. Missing or stale profiles and
 unsupported public-ledger envelopes fail closed. This establishes the system
 actor as the initial single governance root; explicit multiple-root setup and
 later governance changes remain separate work.
+`src/identity/authorship.rs` implements the exact modern `Author` value as a
+closed typed map containing only principal, verification method, and identity
+version. Its pinned canonical vector makes roles and the legacy `agent` field
+unrepresentable. The current `did:kan` verification slice binds a claim-CID
+signature to the exact active event, principal, method, algorithm, public key,
+and `assertion` purpose, while reporting `capabilityInvocation` repository
+reach independently. `SystemIdentityStore` signs claim-CID bytes only after the
+same profile/method/provider/key correspondence required for control proofs.
+This is intentionally not the default writer: the complete modern
+claim-content envelope and the legacy/modern storage discriminator require a
+normative byte shape before new interoperable CIDs can be minted, and
+historical active-ancestor verification remains to be implemented.
 `src/identity/governance.rs` implements canonical repository-governance update
 and reconciliation payloads, proof authorization against every exact parent,
 proof-set collapse by logical event identifier, and order-independent
@@ -1402,6 +1414,7 @@ creation for an invalid alias.
 The complete reference-vector manifest, external/recursive DID controller
 resolution, modern authorship, hardware/agent/external-signer credential
 execution, OS-keychain provider creation/import, explicit multi-root inception,
+the complete modern claim envelope and historical-state verification,
 repository connections, and default-write cutover remain unimplemented. Issue
 #244's operation-wire and
 absent-removal ambiguities are closed by the normative typed schema above and
