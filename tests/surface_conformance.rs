@@ -128,6 +128,16 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ),
     (
         "src/identity/system.rs",
+        "\"ledger\"",
+        "identity-ledger:events/*.cbor",
+    ),
+    (
+        "src/identity/system.rs",
+        "\", \"",
+        "diagnostic join separator, not a path",
+    ),
+    (
+        "src/identity/system.rs",
         "\"profiles\"",
         "identity-profiles:profiles/*.json",
     ),

@@ -64,6 +64,16 @@ Workspace-local repository identity persistence now retains the canonical
 inception event immutably under `.kan/repository`, with a stable inception
 nonce, serialized first installation, atomic visibility, idempotent proof
 variants, and fail-closed conflict and symlink handling. Reads create nothing.
+The explicit root `kan init` command now composes that store with the selected
+system profile and public identity ledger: it resolves the profile's exact
+active `did:kan` event and `capabilityDelegation` method, signs inception with
+that credential, defaults the immutable discovery name to the Git directory,
+and records kan's Git-genesis digest as a `gitGenesis` substrate anchor. A
+plain retry reads the installed identity without consulting credentials;
+explicit identical options remain idempotent, while changed inception options
+are refused. Missing or stale actors and unsupported ledger envelopes fail
+before repository inception is installed, and this path never creates or
+consults the legacy workspace signing identity.
 `src/identity/governance.rs` now produces canonical update and reconciliation
 events and resolves unordered evidence deterministically: proof variants share
 one logical event, sibling leaves are contested, reconciliation requires
@@ -107,7 +117,8 @@ a different principal, and reports only public identifiers and credential
 paths. Invalid aliases, insecure imports, conflicting keys, and a different
 existing default fail closed; an identical retry is idempotent. OS-keychain
 creation and hardware, agent, and external-signer execution remain, followed
-by repository routing and modern-authorship cutover.
+by repository-connection configuration and modern-authorship/default-write
+cutover.
 
 ## Later public-protocol track: RFC 3
 

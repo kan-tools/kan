@@ -1319,6 +1319,20 @@ and makes the event visible atomically. The same inception with another proof
 variant is idempotent; a different inception, malformed bytes, or symlinked
 state fails closed. All four artifacts are independently cataloged through the
 typed persistence boundary, and read-only open creates nothing.
+The root `kan init` command now supplies the deliberate local orchestration for
+that persistence slice. It opens the Git substrate without opening the legacy
+workspace identity, resolves the selected system profile against the complete
+public identity ledger, requires the profile's exact active `did:kan` event and
+verification method, exercises its credential, and installs the resulting
+proved inception. The default immutable name is the Git repository directory
+name and the existing kan Git-genesis digest is retained as a textual
+`gitGenesis` substrate anchor; neither value defines the repository identifier.
+Plain retries return the installed repository without credential access,
+explicit identical retries are idempotent, and changed inception options are
+refused without replacing the installed bytes. Missing or stale profiles and
+unsupported public-ledger envelopes fail closed. This establishes the system
+actor as the initial single governance root; explicit multiple-root setup and
+later governance changes remain separate work.
 `src/identity/governance.rs` implements canonical repository-governance update
 and reconciliation payloads, proof authorization against every exact parent,
 proof-set collapse by logical event identifier, and order-independent
@@ -1387,8 +1401,8 @@ creation for an invalid alias.
 
 The complete reference-vector manifest, external/recursive DID controller
 resolution, modern authorship, hardware/agent/external-signer credential
-execution, OS-keychain provider creation/import, repository connections, and
-default-write cutover remain unimplemented. Issue
+execution, OS-keychain provider creation/import, explicit multi-root inception,
+repository connections, and default-write cutover remain unimplemented. Issue
 #244's operation-wire and
 absent-removal ambiguities are closed by the normative typed schema above and
 its pinned implementation vector. This status is therefore an implementation

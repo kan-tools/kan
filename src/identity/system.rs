@@ -488,6 +488,91 @@ impl SystemIdentityStore {
             .ok_or_else(|| Error::DefaultProfileMissing(alias.to_string()))
     }
 
+    /// Resolve the exact active `did:kan` state and method selected by a
+    /// profile from this installation's authoritative public ledger. This is
+    /// read-only and never accesses the credential provider.
+    pub fn resolve_profile_method(
+        &self,
+        profile: &IdentityProfile,
+    ) -> Result<
+        (
+            super::did_kan_update::ResolvedDidKanState,
+            VerificationMethod,
+        ),
+        Error,
+    > {
+        let super::control::IdentityVersion::Event(expected_event) =
+            profile.actor.controller_state()
+        else {
+            return Err(Error::ProfileResolution(
+                "profile does not cite a did:kan event state".to_string(),
+            ));
+        };
+        let evidence =
+            super::ledger::IdentityLedger::at(self.config_root.join("identity").join("ledger"))
+                .read_all()?;
+        if let Some(event) = evidence.iter().find(|event| !event.is_supported()) {
+            return Err(Error::ProfileResolution(format!(
+                "public identity ledger contains unsupported control fields: {}",
+                event.unsupported_fields().join(", ")
+            )));
+        }
+        let typed = evidence
+            .iter()
+            .filter_map(super::control::PreservedControlEvent::typed)
+            .collect::<Vec<_>>();
+        let candidates = typed
+            .iter()
+            .filter(|event| {
+                event.domain == super::did_kan_update::UPDATE_DOMAIN
+                    && event.event_type == super::did_kan_update::UPDATE_EVENT_TYPE
+                    && matches!(
+                        &event.payload,
+                        atproto_dasl::Ipld::Map(fields)
+                            if fields.get("did")
+                                == Some(&atproto_dasl::Ipld::String(profile.principal().to_string()))
+                    )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        for event in typed.iter().filter(|event| {
+            event.domain == super::did_kan::GENESIS_DOMAIN
+                && event.event_type == super::did_kan::GENESIS_EVENT_TYPE
+        }) {
+            let payload = atproto_dasl::to_vec(&event.payload)?;
+            let genesis: super::did_kan::DidKanGenesis =
+                match atproto_dasl::from_reader(&payload[..]) {
+                    Ok(genesis) => genesis,
+                    Err(_) => continue,
+                };
+            if genesis.did()? != profile.principal() {
+                continue;
+            }
+            let super::did_kan_update::DidKanResolution::Active(state) =
+                super::did_kan_update::resolve(&genesis, event, &candidates)
+            else {
+                continue;
+            };
+            if &state.active_event != expected_event {
+                continue;
+            }
+            let Some(method) = state
+                .verification_methods
+                .iter()
+                .find(|method| method.id == profile.actor.verification_method())
+                .cloned()
+            else {
+                continue;
+            };
+            return Ok((*state, method));
+        }
+        Err(Error::ProfileResolution(format!(
+            "profile `{}` does not resolve to one active ledger state and method",
+            profile.alias()
+        )))
+    }
+
     /// Execute the profile's explicitly selected credential provider and
     /// produce a proof only when its key is the resolved verification method.
     /// No provider is touched until this method is called.
@@ -695,6 +780,10 @@ pub enum Error {
     AlreadyInitialized(String),
     #[error("default identity profile is missing: {0}")]
     DefaultProfileMissing(String),
+    #[error("system identity has no default actor; run `kan identity init` first")]
+    NoDefaultProfile,
+    #[error("system identity profile does not exist: {0}")]
+    ProfileMissing(String),
     #[error("identity profile conflicts with existing bytes at {0}")]
     ProfileConflict(PathBuf),
     #[error("credential path must be relative to the system credentials directory: {0}")]
@@ -707,6 +796,8 @@ pub enum Error {
     CredentialConflict(PathBuf),
     #[error("stored enrollment nonce has {0} bytes, expected 32")]
     EnrollmentNonceLength(usize),
+    #[error("system identity profile resolution failed: {0}")]
+    ProfileResolution(String),
     #[error("credential provider is not executable by this build: {0:?}")]
     ProviderUnsupported(CredentialReference),
     #[error("resolved method mismatch: expected `{expected}`, got `{actual}`")]
@@ -729,4 +820,8 @@ pub enum Error {
     Crypto(#[from] atrium_crypto::Error),
     #[error("system identity ledger failed: {0}")]
     Ledger(#[from] super::ledger::Error),
+    #[error("system identity DAG-CBOR encoding failed: {0}")]
+    Encode(#[from] atproto_dasl::EncodeError),
+    #[error("system identity DAG-CBOR decoding failed: {0}")]
+    Decode(#[from] atproto_dasl::DecodeError),
 }

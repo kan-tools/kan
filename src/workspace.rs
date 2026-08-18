@@ -1214,7 +1214,7 @@ pub fn cwd() -> Result<PathBuf, Error> {
 /// falls back to `start` unchanged if none is found anywhere above it, so
 /// the absence surfaces as `GitSubstrate::open`'s clear "not a git repo"
 /// error rather than a silent, different failure here.
-fn find_repo_root(start: &Path) -> PathBuf {
+pub(crate) fn find_repo_root(start: &Path) -> PathBuf {
     let mut dir = start;
     loop {
         if dir.join(".git").exists() {

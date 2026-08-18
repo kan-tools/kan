@@ -23,6 +23,14 @@ pub enum Error {
     SystemIdentity(#[from] crate::identity::system::Error),
     #[error(transparent)]
     Enrollment(#[from] crate::identity::enrollment::Error),
+    #[error(transparent)]
+    RepositoryIdentity(#[from] crate::identity::repository_store::Error),
+    #[error(transparent)]
+    RepositoryInception(#[from] crate::identity::repository_inception::Error),
+    #[error(transparent)]
+    Git(#[from] crate::git::Error),
+    #[error(transparent)]
+    IdentityControl(#[from] crate::identity::control::Error),
 }
 
 #[derive(Debug, Parser)]
@@ -324,6 +332,26 @@ pub enum Command {
     /// a lost signing key looks like from the inside: run `kan identity
     /// restore` first.
     Restore,
+
+    /// Deliberately establish this repository's stable identity and initial
+    /// governance using a configured system actor.
+    Init {
+        /// Immutable inception-time discovery hint. Repeat for multiple names;
+        /// defaults to the Git repository directory name.
+        #[arg(long = "name")]
+        names: Vec<String>,
+        /// System identity profile to govern and initially act in this
+        /// repository. Defaults to the configured system actor.
+        #[arg(long)]
+        actor: Option<String>,
+        /// Override the platform kan configuration directory.
+        #[arg(long)]
+        config_dir: Option<std::path::PathBuf>,
+        /// Repository path to initialize. Defaults to the current directory
+        /// and resolves upward like every other kan repository command.
+        #[arg(long)]
+        repository: Option<std::path::PathBuf>,
+    },
 
     /// Identity: recovery phrase export and restore.
     Identity {
@@ -755,6 +783,78 @@ pub struct NarrativeArgs {
     pub verbose: bool,
 }
 
+fn run_repository_init(
+    cwd: &std::path::Path,
+    names: &[String],
+    actor: Option<&str>,
+    config_dir: Option<&std::path::Path>,
+) -> Result<(), Error> {
+    use crate::identity::{
+        repository_inception::{AnchorValue, RepositoryInception, SubstrateAnchor},
+        repository_store::RepositoryIdentityStore,
+        system::SystemIdentityStore,
+    };
+
+    let git = crate::git::GitSubstrate::open(cwd)?;
+    let root = crate::workspace::find_repo_root(cwd);
+    let repository_store = RepositoryIdentityStore::at(root.join(".kan").join("repository"));
+    if names.is_empty() && actor.is_none() {
+        if let Some(installed) = repository_store.read()? {
+            println!(
+                "repository identity already initialized: {}",
+                installed.repository
+            );
+            return Ok(());
+        }
+    }
+    let git_genesis = git.genesis()?;
+
+    let config_root = match config_dir {
+        Some(root) => root.to_path_buf(),
+        None => SystemIdentityStore::platform_config_root()?,
+    };
+    let system = SystemIdentityStore::at(&config_root);
+    let profile = match actor {
+        Some(alias) => system
+            .profile(alias)?
+            .ok_or_else(|| crate::identity::system::Error::ProfileMissing(alias.to_string()))?,
+        None => system
+            .default_profile()?
+            .ok_or(crate::identity::system::Error::NoDefaultProfile)?,
+    };
+    let (state, method) = system.resolve_profile_method(&profile)?;
+    let names = if names.is_empty() {
+        vec![root
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .filter(|name| !name.is_empty())
+            .unwrap_or("repository")
+            .to_string()]
+    } else {
+        names.to_vec()
+    };
+    let inception = RepositoryInception::new(
+        repository_store.initialization_nonce()?,
+        names,
+        vec![profile.principal().to_string()],
+        vec![SubstrateAnchor {
+            anchor_type: "gitGenesis".to_string(),
+            value: AnchorValue::Text(git_genesis),
+        }],
+    )?;
+    let input = inception.signing_input()?;
+    let proof = system.sign(&profile, &method, &input)?;
+    let event = inception.proved_event_with_did_kan_state(&state, vec![proof])?;
+    let installed = repository_store.install(&event)?;
+
+    println!("initialized repository identity: {}", installed.repository);
+    println!("governance root: {}", profile.principal());
+    println!("current actor: {}", profile.alias());
+    println!("inception event: {}", installed.event.proved_cid()?);
+    println!("repository root: {}", root.display());
+    Ok(())
+}
+
 fn run_system_identity_init(
     alias: &str,
     config_dir: Option<&std::path::Path>,
@@ -828,6 +928,21 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             recovery_key.as_deref(),
             daily_key.as_deref(),
         )?;
+        return Ok(());
+    }
+
+    if let Command::Init {
+        names,
+        actor,
+        config_dir,
+        repository,
+    } = &cli.command
+    {
+        let cwd = match repository {
+            Some(path) => path.clone(),
+            None => crate::workspace::cwd()?,
+        };
+        run_repository_init(&cwd, names, actor.as_deref(), config_dir.as_deref())?;
         return Ok(());
     }
 
@@ -1287,6 +1402,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                 },
             }
         }
+        Command::Init { .. } => unreachable!("repository initialization is handled above"),
         Command::Mcp { .. } => unreachable!("handled above"),
     }
     Ok(())

@@ -1,9 +1,11 @@
+use atproto_dasl::Ipld;
 use kan::{
     identity::{
         control::IdentityVersion,
         did_kan::VerificationPurpose,
         did_kan_update::{resolve, DidKanResolution},
         enrollment::{DailyDeviceEnrollment, Error},
+        ledger::IdentityLedger,
         system::{CredentialReference, SystemIdentityStore},
     },
     sign::Identity,
@@ -91,6 +93,12 @@ fn install_proves_the_credential_then_publishes_events_then_selects_profile() {
             .unwrap();
     assert_eq!(events.len(), 2);
     assert_eq!(installed.principal, plan.profile().principal());
+    let (resolved, method) = store.resolve_profile_method(plan.profile()).unwrap();
+    assert_eq!(
+        &IdentityVersion::Event(resolved.active_event),
+        plan.profile().actor().controller_state()
+    );
+    assert_eq!(method, plan.daily_method().clone());
     assert_eq!(
         installed.genesis_event,
         plan.genesis_event().proved_cid().unwrap()
@@ -99,6 +107,27 @@ fn install_proves_the_credential_then_publishes_events_then_selects_profile() {
         installed.administration_event,
         plan.administration_event().proved_cid().unwrap()
     );
+}
+
+#[test]
+fn profile_resolution_refuses_an_unsupported_public_ledger_envelope() {
+    let temp = tempfile::tempdir().unwrap();
+    let (plan, _, _) = plan(temp.path(), [0x42; 32]);
+    plan.install(temp.path()).unwrap();
+    let encoded = plan.administration_event().canonical_bytes().unwrap();
+    let mut raw: Ipld = atproto_dasl::from_reader(&encoded[..]).unwrap();
+    let Ipld::Map(fields) = &mut raw else {
+        unreachable!();
+    };
+    fields.insert("futureEnvelopeField".to_string(), Ipld::Bool(true));
+    IdentityLedger::at(temp.path().join("identity").join("ledger"))
+        .append_canonical(&atproto_dasl::to_vec(&raw).unwrap())
+        .unwrap();
+
+    let error = SystemIdentityStore::at(temp.path())
+        .resolve_profile_method(plan.profile())
+        .unwrap_err();
+    assert!(error.to_string().contains("unsupported control fields"));
 }
 
 #[test]
