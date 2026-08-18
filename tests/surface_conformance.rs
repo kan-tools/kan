@@ -26,6 +26,8 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("index-from-media", "tests/surface_conformance.rs"),
     ("car-repair-temp", "tests/log_recovery.rs"),
     ("identity-at-rest", "tests/at_rest_guards.rs"),
+    ("control-event-ledger", "tests/identity_ledger.rs"),
+    ("atomic-control-event-install", "tests/identity_ledger.rs"),
     ("identity-precedence", "tests/identity_cells.rs"),
     ("role-key", "tests/role_registry_invariants.rs"),
     ("legacy-role-config", "tests/role_declarations.rs"),
@@ -71,6 +73,21 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/actions.rs", "\" = \"", "not a path"),
     ("src/actions.rs", "\"\\n\"", "not a path"),
     ("src/sign.rs", "", "thread join, not a path"),
+    (
+        "src/identity/ledger.rs",
+        "\"events\"",
+        "identity-ledger:events/*.cbor",
+    ),
+    (
+        "src/identity/ledger.rs",
+        "format!(\"{proved}.cbor\")",
+        "identity-ledger:events/*.cbor",
+    ),
+    (
+        "src/identity/ledger.rs",
+        "format!(\".tmp-{}-{sequence}-{}\", std::process::id(), proved)",
+        "identity-ledger:events/.tmp-*",
+    ),
     ("src/sign.rs", "\"identity\"", "identity:identity"),
     ("src/sign.rs", "\"log\"", "local-log directory"),
     ("src/sign.rs", "\"repo.car\"", "local-log:repo.car"),
@@ -173,6 +190,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
     "src/actions.rs",
+    "src/identity/ledger.rs",
     "src/sign.rs",
     "src/store/index.rs",
     "src/store/log.rs",
@@ -185,6 +203,15 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
     ("src/actions.rs", "remove_file", "IdentityKeyMaterial", 1),
     ("src/actions.rs", "remove_file", "IdentityPointer", 2),
     ("src/actions.rs", "rename", "IdentityBackup", 2),
+    (
+        "src/identity/ledger.rs",
+        "create_dir_all",
+        "IdentityLedger",
+        1,
+    ),
+    ("src/identity/ledger.rs", "remove_file", "IdentityLedger", 1),
+    ("src/identity/ledger.rs", "rename", "IdentityLedger", 1),
+    ("src/identity/ledger.rs", "write", "IdentityLedger", 1),
     ("src/sign.rs", "create_dir_all", "Container", 1),
     ("src/sign.rs", "create_dir_all", "IdentityKeyMaterial", 2),
     ("src/sign.rs", "create_dir_all", "IdentitySeed", 1),
@@ -317,6 +344,7 @@ fn implemented_values() -> BTreeSet<(String, String)> {
         .chain(kan::workspace::SURFACE_VALUES)
         .chain(kan::git::SURFACE_VALUES)
         .chain(kan::actions::SURFACE_VALUES)
+        .chain(kan::identity::ledger::SURFACE_VALUES)
         .map(|SurfaceValue { artifact, value }| ((*artifact).into(), (*value).into()));
     declared.chain(sqlite_values()).collect()
 }
@@ -359,6 +387,7 @@ fn catalog_is_well_formed_and_cites_real_designs() {
                 "repo-config",
                 "system-config",
                 "identity-store",
+                "identity-ledger",
                 "external-git",
                 "overlay",
                 "sqlite-index"
@@ -798,7 +827,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "06237083493464bccd87613913fca7b88bf17efce6cf1dd9382e402f76b50251",
+                "b77c7bb81dd719faa1cd6ba4e0597c362c84e2cd50dd206c5782ad7bca4ffbbf",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

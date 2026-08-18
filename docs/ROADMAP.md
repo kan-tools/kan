@@ -69,8 +69,12 @@ trusted-time, and ancestor-revocation boundaries. Its evidence resolver now
 collapses proof variants, recognizes parents before children regardless of
 observation order, authenticates revocations against recognized targets, and
 keeps missing, unsupported, and invalid evidence distinct while retaining
-additive envelope fields through the lossless control boundary. Persistence and
-write integration remain pending.
+additive envelope fields through the lossless control boundary.
+`src/identity/ledger.rs` begins durable integration with a read-only-on-open,
+immutable local control-event ledger: canonical bytes
+are atomically installed under proved-event CIDs, proof variants coexist, and
+temporary crash residue is never evidence. System profiles, credentials,
+repository routing, and default-write integration remain pending.
 
 ## Later public-protocol track: RFC 3
 

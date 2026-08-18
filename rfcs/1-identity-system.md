@@ -1327,10 +1327,19 @@ recognized targets, and reports missing references, unsupported evidence, and
 invalid evidence separately. Additive envelope fields retain their original
 bytes and logical identifiers and are never narrowed into the supported event
 shape.
+`src/identity/ledger.rs` implements the first system-state persistence slice as
+an immutable local control-event ledger. Supported and losslessly preserved
+canonical events are stored under proved-event CIDs, distinct proof variants
+coexist, read-only open creates nothing, interrupted-install residue is ignored,
+and filename/content disagreement or symlinked event storage fails closed. The
+ledger's authoritative event files and derived atomic-install temporaries are
+separately registered in the typed persistence capability and read/write
+surface catalog.
 
 The complete reference-vector manifest, Ed25519, external/recursive DID
-controller resolution, modern authorship, system identity state, persistence,
-and default-write cutover remain unimplemented. Issue #244's operation-wire and
-absent-removal ambiguities are closed by the normative typed schema above and
-its pinned implementation vector. This status is therefore an implementation
-checkpoint, not a claim that RFC 1 is shipped.
+controller resolution, modern authorship, system profiles and credential
+routing, repository connections, and default-write cutover remain
+unimplemented. Issue #244's operation-wire and absent-removal ambiguities are
+closed by the normative typed schema above and its pinned implementation
+vector. This status is therefore an implementation checkpoint, not a claim that
+RFC 1 is shipped.

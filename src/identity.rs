@@ -16,6 +16,7 @@ pub mod did_kan;
 pub mod did_kan_state;
 pub mod did_kan_update;
 pub mod governance;
+pub mod ledger;
 pub mod repository_inception;
 
 /// Whether the claim's bytes and exact signing authority authenticate it.
