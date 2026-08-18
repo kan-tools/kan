@@ -1337,13 +1337,17 @@ separately registered in the typed persistence capability and read/write
 surface catalog.
 `src/identity/system.rs` implements versioned local identity profiles and
 deliberate first initialization. A profile binds a path-safe alias and
-principal DID to exactly one typed OS-keychain, owner-only-file, hardware,
-agent, or external-signer reference without accessing or embedding the secret.
+exact actor tuple—principal DID, verification method, and historical controller
+state—to exactly one typed OS-keychain, owner-only-file, hardware, agent, or
+external-signer reference without accessing or embedding the secret.
 Initialization serializes competing writers, atomically installs the profile,
 and selects its alias as the default actor; identical repetition is idempotent
 while a conflicting actor is refused before its profile is written. Profile,
 default-selection, temporary-install, and coordination-lock artifacts are
-separately cataloged.
+separately cataloged. Explicit execution supports owner-only files below the
+system credentials directory and selected OS-keychain entries. It produces a
+proof only after the loaded P-256 key matches the resolved verification method;
+path escape, loose permissions, symlinks, and key substitution fail closed.
 `src/identity/control.rs` verifies both initially specified static `did:key`
 algorithms. Ed25519 verification accepts only canonical base58btc multikeys,
 uses the exact canonical signing-input bytes, and applies strict verification
@@ -1352,9 +1356,9 @@ algorithm/key substitution is invalid while genuinely unknown algorithms or
 key codecs remain unsupported.
 
 The complete reference-vector manifest, external/recursive DID controller
-resolution, modern authorship, credential-provider execution, daily-device
-enrollment, repository connections, and default-write cutover remain
-unimplemented. Issue #244's operation-wire and
+resolution, modern authorship, hardware/agent/external-signer credential
+execution, daily-device enrollment, repository connections, and default-write
+cutover remain unimplemented. Issue #244's operation-wire and
 absent-removal ambiguities are closed by the normative typed schema above and
 its pinned implementation vector. This status is therefore an implementation
 checkpoint, not a claim that RFC 1 is shipped.

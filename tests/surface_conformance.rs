@@ -32,6 +32,7 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("default-actor-profile", "tests/system_identity.rs"),
     ("atomic-profile-install", "tests/system_identity.rs"),
     ("profile-write-coordination", "tests/system_identity.rs"),
+    ("profile-credential-key", "tests/system_identity.rs"),
     ("identity-precedence", "tests/identity_cells.rs"),
     ("role-key", "tests/role_registry_invariants.rs"),
     ("legacy-role-config", "tests/role_declarations.rs"),
@@ -91,6 +92,16 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
         "src/identity/system.rs",
         "\"profiles\"",
         "identity-profiles:profiles/*.json",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"credentials\"",
+        "credentials:owner-only-file",
+    ),
+    (
+        "src/identity/system.rs",
+        "path",
+        "credentials:selected-owner-only-file",
     ),
     (
         "src/identity/system.rs",

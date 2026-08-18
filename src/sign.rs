@@ -279,6 +279,29 @@ impl Identity {
         })
     }
 
+    /// Load one explicitly named system-profile credential from the OS
+    /// keychain. This is execution of a selected provider reference, never
+    /// discovery or fallback; absence and keychain opt-out are refusals.
+    pub(crate) fn load_keychain_existing(service: &str, account: &str) -> Result<Self, Error> {
+        let Some(entry) = keychain_entry(service, account)? else {
+            return Err(Error::Refused(format!(
+                "OS keychain credential `{service}/{account}` is unavailable"
+            )));
+        };
+        let _warn = SlowKeychainWarning::start("reading the selected system identity credential");
+        match entry.get_secret() {
+            Ok(bytes) => Ok(Self {
+                keypair: P256Keypair::import(&bytes)?,
+            }),
+            Err(keyring::Error::NoEntry) => Err(Error::Refused(format!(
+                "OS keychain credential `{service}/{account}` does not exist"
+            ))),
+            Err(error) => Err(Error::KeychainUnreachable {
+                detail: error.to_string(),
+            }),
+        }
+    }
+
     /// Write this key to `path` at `0600`, creating its parent if needed.
     ///
     /// The `create_dir_all` matches [`Seed::save`] and is not new behaviour

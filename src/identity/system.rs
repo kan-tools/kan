@@ -7,7 +7,10 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use super::did_kan::validate_did;
+use super::{
+    control::{IdentityVersion, Proof, SigningInput},
+    did_kan::{validate_did, validate_did_url, validate_verification_method, VerificationMethod},
+};
 
 pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
     crate::surface::SurfaceValue::new(
@@ -17,6 +20,7 @@ pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
     crate::surface::SurfaceValue::new("identity-profiles:default", "default-actor-alias"),
     crate::surface::SurfaceValue::new("identity-profiles:.tmp-*", "atomic-profile-install"),
     crate::surface::SurfaceValue::new("identity-profiles:LOCK", "initialization-coordination"),
+    crate::surface::SurfaceValue::new("credentials:owner-only-file", "p256-private-key"),
 ];
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -43,7 +47,7 @@ impl CredentialReference {
                 require_nonempty(service, "credential service")?;
                 require_nonempty(account, "credential account")
             }
-            Self::OwnerOnlyFile { path } => require_nonempty(path, "credential path"),
+            Self::OwnerOnlyFile { path } => validate_credential_path(path),
             Self::Hardware { uri } | Self::ExternalSigner { uri } => {
                 require_nonempty(uri, "credential URI")
             }
@@ -55,25 +59,116 @@ impl CredentialReference {
     }
 }
 
+/// The exact actor state selected by a local profile. Keeping all three
+/// fields together prevents a credential key from silently standing in for
+/// the stable principal it is authorized to represent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ActorReference {
+    principal: String,
+    verification_method: String,
+    controller_state: IdentityVersion,
+}
+
+impl ActorReference {
+    pub fn new(
+        principal: String,
+        verification_method: String,
+        controller_state: IdentityVersion,
+    ) -> Result<Self, Error> {
+        let actor = Self {
+            principal,
+            verification_method,
+            controller_state,
+        };
+        actor.validate()?;
+        Ok(actor)
+    }
+
+    pub fn validate(&self) -> Result<(), Error> {
+        validate_did(&self.principal)?;
+        validate_did_url(&self.verification_method)?;
+        let method_did = self
+            .verification_method
+            .split_once('#')
+            .map(|(did, _)| did)
+            .ok_or_else(|| Error::MethodPrincipalMismatch {
+                principal: self.principal.clone(),
+                method: self.verification_method.clone(),
+            })?;
+        if method_did != self.principal {
+            return Err(Error::MethodPrincipalMismatch {
+                principal: self.principal.clone(),
+                method: self.verification_method.clone(),
+            });
+        }
+        let expected = match self.principal.split(':').nth(1) {
+            Some("key") => "static",
+            Some("kan") => "event",
+            Some("plc") => "versionId",
+            Some("web") => "documentCid",
+            _ => return Err(Error::UnsupportedPrincipal(self.principal.clone())),
+        };
+        let actual = match &self.controller_state {
+            IdentityVersion::Static => "static",
+            IdentityVersion::Event(_) => "event",
+            IdentityVersion::VersionId(_) => "versionId",
+            IdentityVersion::DocumentCid(_) => "documentCid",
+        };
+        if actual != expected {
+            return Err(Error::ControllerStateKind {
+                principal: self.principal.clone(),
+                expected,
+                actual,
+            });
+        }
+        if matches!(&self.controller_state, IdentityVersion::Static) {
+            let fingerprint = self.principal.strip_prefix("did:key:").ok_or_else(|| {
+                Error::ControllerStateKind {
+                    principal: self.principal.clone(),
+                    expected,
+                    actual,
+                }
+            })?;
+            if self.verification_method != format!("{}#{fingerprint}", self.principal) {
+                return Err(Error::StaticMethod(self.verification_method.clone()));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn principal(&self) -> &str {
+        &self.principal
+    }
+
+    pub fn verification_method(&self) -> &str {
+        &self.verification_method
+    }
+
+    pub fn controller_state(&self) -> &IdentityVersion {
+        &self.controller_state
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct IdentityProfile {
     v: u64,
     alias: String,
-    principal: String,
+    actor: ActorReference,
     credential: CredentialReference,
 }
 
 impl IdentityProfile {
     pub fn new(
         alias: String,
-        principal: String,
+        actor: ActorReference,
         credential: CredentialReference,
     ) -> Result<Self, Error> {
         let profile = Self {
             v: 1,
             alias,
-            principal,
+            actor,
             credential,
         };
         profile.validate()?;
@@ -85,7 +180,7 @@ impl IdentityProfile {
             return Err(Error::UnsupportedVersion(self.v));
         }
         validate_alias(&self.alias)?;
-        validate_did(&self.principal)?;
+        self.actor.validate()?;
         self.credential.validate()
     }
 
@@ -94,7 +189,11 @@ impl IdentityProfile {
     }
 
     pub fn principal(&self) -> &str {
-        &self.principal
+        self.actor.principal()
+    }
+
+    pub fn actor(&self) -> &ActorReference {
+        &self.actor
     }
 
     pub fn credential(&self) -> &CredentialReference {
@@ -195,6 +294,56 @@ impl SystemIdentityStore {
             .ok_or_else(|| Error::DefaultProfileMissing(alias.to_string()))
     }
 
+    /// Execute the profile's explicitly selected credential provider and
+    /// produce a proof only when its key is the resolved verification method.
+    /// No provider is touched until this method is called.
+    pub fn sign(
+        &self,
+        profile: &IdentityProfile,
+        method: &VerificationMethod,
+        input: &SigningInput,
+    ) -> Result<Proof, Error> {
+        profile.validate()?;
+        validate_verification_method(method)?;
+        if method.id != profile.actor.verification_method
+            || method.controller != profile.actor.principal
+            || method.alg != "P256"
+        {
+            return Err(Error::CredentialMethodMismatch {
+                expected: profile.actor.verification_method.clone(),
+                actual: method.id.clone(),
+            });
+        }
+        let expected_did =
+            atrium_crypto::did::format_did_key(atrium_crypto::Algorithm::P256, &method.public_key)?;
+        let identity = match &profile.credential {
+            CredentialReference::OwnerOnlyFile { path } => {
+                let path = self.config_root.join("credentials").join(path);
+                require_owner_only_file(&path)?;
+                crate::sign::Identity::load_existing(&path)?
+            }
+            CredentialReference::OsKeychain { service, account } => {
+                crate::sign::Identity::load_keychain_existing(service, account)?
+            }
+            CredentialReference::Hardware { .. }
+            | CredentialReference::Agent { .. }
+            | CredentialReference::ExternalSigner { .. } => {
+                return Err(Error::ProviderUnsupported(profile.credential.clone()));
+            }
+        };
+        if identity.did() != expected_did {
+            return Err(Error::CredentialKeyMismatch {
+                method: method.id.clone(),
+            });
+        }
+        Ok(Proof {
+            method: method.id.clone(),
+            controller_state: profile.actor.controller_state.clone(),
+            alg: method.alg.clone(),
+            sig: identity.sign(&input.canonical_bytes()?)?,
+        })
+    }
+
     fn profiles_dir(&self) -> PathBuf {
         self.config_root.join("identity").join("profiles")
     }
@@ -267,6 +416,34 @@ fn require_nonempty(value: &str, field: &'static str) -> Result<(), Error> {
     }
 }
 
+fn validate_credential_path(path: &str) -> Result<(), Error> {
+    require_nonempty(path, "credential path")?;
+    let path = Path::new(path);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(Error::InvalidCredentialPath(path.to_path_buf()));
+    }
+    Ok(())
+}
+
+fn require_owner_only_file(path: &Path) -> Result<(), Error> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(Error::UnsafeCredential(path.to_path_buf()));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err(Error::CredentialPermissions(path.to_path_buf()));
+        }
+    }
+    Ok(())
+}
+
 fn existing_file(path: &Path) -> Result<bool, Error> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
@@ -295,6 +472,18 @@ pub enum Error {
     UnsupportedVersion(u64),
     #[error("invalid identity profile alias: {0}")]
     InvalidAlias(String),
+    #[error("unsupported system identity principal: {0}")]
+    UnsupportedPrincipal(String),
+    #[error("verification method `{method}` does not belong to principal `{principal}`")]
+    MethodPrincipalMismatch { principal: String, method: String },
+    #[error("principal `{principal}` requires controller state `{expected}`, not `{actual}`")]
+    ControllerStateKind {
+        principal: String,
+        expected: &'static str,
+        actual: &'static str,
+    },
+    #[error("static did:key method must use its complete fingerprint fragment: {0}")]
+    StaticMethod(String),
     #[error("{0} must not be empty")]
     Empty(&'static str),
     #[error("identity profile `{expected}` contains alias `{actual}`")]
@@ -305,6 +494,18 @@ pub enum Error {
     DefaultProfileMissing(String),
     #[error("identity profile conflicts with existing bytes at {0}")]
     ProfileConflict(PathBuf),
+    #[error("credential path must be relative to the system credentials directory: {0}")]
+    InvalidCredentialPath(PathBuf),
+    #[error("credential is a symlink or has the wrong file type: {0}")]
+    UnsafeCredential(PathBuf),
+    #[error("credential file is not owner-only: {0}")]
+    CredentialPermissions(PathBuf),
+    #[error("credential provider is not executable by this build: {0:?}")]
+    ProviderUnsupported(CredentialReference),
+    #[error("resolved method mismatch: expected `{expected}`, got `{actual}`")]
+    CredentialMethodMismatch { expected: String, actual: String },
+    #[error("selected credential does not hold the key for verification method `{method}`")]
+    CredentialKeyMismatch { method: String },
     #[error("identity profile path is a symlink or has the wrong file type: {0}")]
     UnsafeEntry(PathBuf),
     #[error("system identity I/O failed: {0}")]
@@ -313,4 +514,10 @@ pub enum Error {
     Json(#[from] serde_json::Error),
     #[error("system identity DID is invalid: {0}")]
     Did(#[from] super::did_kan::Error),
+    #[error("system identity credential failed: {0}")]
+    Sign(#[from] crate::sign::Error),
+    #[error("system identity control event failed: {0}")]
+    Control(#[from] super::control::Error),
+    #[error("system identity credential key is invalid: {0}")]
+    Crypto(#[from] atrium_crypto::Error),
 }

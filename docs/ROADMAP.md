@@ -81,8 +81,12 @@ the profile and selects its alias as the default actor. Reads never create
 state or access credentials, identical initialization is idempotent, and
 conflicting or concurrent initialization cannot silently switch actors.
 Static `did:key` control proofs now support both RFC 1 algorithms: P-256 and
-strict Ed25519, including canonical multikey and signature checks. Credential-
-provider execution, device enrollment, and repository routing remain pending.
+strict Ed25519, including canonical multikey and signature checks. Profiles
+now select an exact `(principal, verification method, controller state)` actor,
+and explicit owner-only-file or OS-keychain execution signs only after the
+loaded P-256 key matches the resolved method; path escape, loose permissions,
+symlinks, and key substitution fail closed. Hardware, agent, and external-
+signer execution, device enrollment, and repository routing remain pending.
 
 ## Later public-protocol track: RFC 3
 
