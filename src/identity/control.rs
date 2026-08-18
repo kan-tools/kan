@@ -9,6 +9,7 @@
 use std::collections::BTreeSet;
 
 use atproto_dasl::{Cid, Ipld};
+use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{ser::SerializeMap, Deserialize, Serialize};
 
 use super::CryptographicValidity;
@@ -399,21 +400,83 @@ pub fn verify_static_did_key_proof(input: &SigningInput, proof: &Proof) -> Crypt
     if fragment.is_empty() || fragment != fingerprint {
         return CryptographicValidity::Invalid;
     }
-    if proof.alg != "P256" {
-        return CryptographicValidity::Unsupported;
+    let Ok(bytes) = input.canonical_bytes() else {
+        return CryptographicValidity::Invalid;
+    };
+    match proof.alg.as_str() {
+        "P256" => {
+            let did = did.to_string();
+            match atrium_crypto::did::parse_did_key(&did) {
+                Ok((atrium_crypto::Algorithm::P256, _)) => {
+                    if crate::sign::verify(&did, &bytes, &proof.sig) {
+                        CryptographicValidity::Valid
+                    } else {
+                        CryptographicValidity::Invalid
+                    }
+                }
+                Ok((atrium_crypto::Algorithm::Secp256k1, _)) => CryptographicValidity::Unsupported,
+                Err(atrium_crypto::Error::UnsupportedMultikeyType)
+                    if is_ed25519_fingerprint(fingerprint) =>
+                {
+                    CryptographicValidity::Invalid
+                }
+                Err(atrium_crypto::Error::UnsupportedMultikeyType) => {
+                    CryptographicValidity::Unsupported
+                }
+                Err(_) => CryptographicValidity::Invalid,
+            }
+        }
+        "Ed25519" => verify_ed25519_did_key(fingerprint, &bytes, &proof.sig),
+        _ => CryptographicValidity::Unsupported,
     }
-    let did = did.to_string();
-    match atrium_crypto::did::parse_did_key(&did) {
-        Ok((atrium_crypto::Algorithm::P256, _)) => input
-            .canonical_bytes()
-            .ok()
-            .filter(|bytes| crate::sign::verify(&did, bytes, &proof.sig))
-            .map_or(CryptographicValidity::Invalid, |_| {
-                CryptographicValidity::Valid
-            }),
-        Ok((atrium_crypto::Algorithm::Secp256k1, _))
-        | Err(atrium_crypto::Error::UnsupportedMultikeyType) => CryptographicValidity::Unsupported,
-        Err(_) => CryptographicValidity::Invalid,
+}
+
+fn is_ed25519_fingerprint(fingerprint: &str) -> bool {
+    atrium_crypto::multibase::decode(fingerprint)
+        .ok()
+        .is_some_and(|(base, multikey)| {
+            base == atrium_crypto::multibase::Base::Base58Btc
+                && multikey.len() == 34
+                && multikey.starts_with(&[0xed, 0x01])
+                && atrium_crypto::multibase::encode(base, &multikey) == fingerprint
+        })
+}
+
+/// Verify RFC 1's canonical Ed25519 `did:key` form. `verify_strict` rejects
+/// weak public keys, small-order R components, and non-canonical signatures;
+/// the explicit multicodec parse also prevents algorithm/key substitution.
+fn verify_ed25519_did_key(
+    fingerprint: &str,
+    message: &[u8],
+    signature: &[u8],
+) -> CryptographicValidity {
+    let Ok((base, multikey)) = atrium_crypto::multibase::decode(fingerprint) else {
+        return CryptographicValidity::Invalid;
+    };
+    if base != atrium_crypto::multibase::Base::Base58Btc
+        || atrium_crypto::multibase::encode(base, &multikey) != fingerprint
+    {
+        return CryptographicValidity::Invalid;
+    }
+    // unsigned-varint(0xed) followed by the canonical 32-byte public key.
+    let Ok(public_key) = <&[u8; 32]>::try_from(multikey.strip_prefix(&[0xed, 0x01]).unwrap_or(&[]))
+    else {
+        return if multikey.starts_with(&[0x80, 0x24]) || multikey.starts_with(&[0xe7, 0x01]) {
+            CryptographicValidity::Invalid
+        } else {
+            CryptographicValidity::Unsupported
+        };
+    };
+    let Ok(key) = VerifyingKey::from_bytes(public_key) else {
+        return CryptographicValidity::Invalid;
+    };
+    let Ok(signature) = Signature::from_slice(signature) else {
+        return CryptographicValidity::Invalid;
+    };
+    if key.verify_strict(message, &signature).is_ok() {
+        CryptographicValidity::Valid
+    } else {
+        CryptographicValidity::Invalid
     }
 }
 

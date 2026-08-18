@@ -1344,11 +1344,17 @@ and selects its alias as the default actor; identical repetition is idempotent
 while a conflicting actor is refused before its profile is written. Profile,
 default-selection, temporary-install, and coordination-lock artifacts are
 separately cataloged.
+`src/identity/control.rs` verifies both initially specified static `did:key`
+algorithms. Ed25519 verification accepts only canonical base58btc multikeys,
+uses the exact canonical signing-input bytes, and applies strict verification
+that rejects weak keys, small-order points, and non-canonical signatures;
+algorithm/key substitution is invalid while genuinely unknown algorithms or
+key codecs remain unsupported.
 
-The complete reference-vector manifest, Ed25519, external/recursive DID
-controller resolution, modern authorship, system profiles and credential
-provider execution, daily-device enrollment, repository connections, and
-default-write cutover remain unimplemented. Issue #244's operation-wire and
+The complete reference-vector manifest, external/recursive DID controller
+resolution, modern authorship, credential-provider execution, daily-device
+enrollment, repository connections, and default-write cutover remain
+unimplemented. Issue #244's operation-wire and
 absent-removal ambiguities are closed by the normative typed schema above and
 its pinned implementation vector. This status is therefore an implementation
 checkpoint, not a claim that RFC 1 is shipped.

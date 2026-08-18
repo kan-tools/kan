@@ -80,8 +80,9 @@ provider reference, while deliberate first initialization atomically installs
 the profile and selects its alias as the default actor. Reads never create
 state or access credentials, identical initialization is idempotent, and
 conflicting or concurrent initialization cannot silently switch actors.
-Credential-provider execution, device enrollment, and repository routing
-remain pending.
+Static `did:key` control proofs now support both RFC 1 algorithms: P-256 and
+strict Ed25519, including canonical multikey and signature checks. Credential-
+provider execution, device enrollment, and repository routing remain pending.
 
 ## Later public-protocol track: RFC 3
 
