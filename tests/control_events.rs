@@ -49,7 +49,7 @@ fn identity_versions_encode_the_required_kind_and_value_fields() {
 
 #[test]
 fn proof_bytes_change_the_proved_cid_but_not_the_logical_event() {
-    let input = SigningInput::new("kan.did.genesis.v1", "genesis", payload(7)).unwrap();
+    let input = SigningInput::new("tools.kan.did.genesis.v1", "genesis", payload(7)).unwrap();
     let identity = Identity::generate();
     let event = ControlEvent::new(input.clone(), vec![signed_proof(&input, &identity)]).unwrap();
     let mut changed = event.clone();
@@ -62,7 +62,7 @@ fn proof_bytes_change_the_proved_cid_but_not_the_logical_event() {
 #[test]
 fn domain_separation_changes_the_message_and_invalidates_the_proof() {
     let identity = Identity::generate();
-    let genesis = SigningInput::new("kan.did.genesis.v1", "genesis", payload(1)).unwrap();
+    let genesis = SigningInput::new("tools.kan.did.genesis.v1", "genesis", payload(1)).unwrap();
     let proof = signed_proof(&genesis, &identity);
     let repository = SigningInput::new("kan.repo.inception.v1", "genesis", payload(1)).unwrap();
 

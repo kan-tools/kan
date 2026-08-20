@@ -108,15 +108,15 @@ done
 python3 scripts/check-uri-v1-fixtures.py --self-test
 python3 scripts/check-lexicon-publication-v1-fixtures.py
 
-grep -Fq 'kan.did.genesis.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks identity domain separation"
-grep -Fq 'kan.repository.inception.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks repository domain separation"
-grep -Fq 'kan.repository.governance.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks governance domain separation"
-grep -Fq 'kan.capability.delegation.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks delegation domain separation"
-grep -Fq 'kan.capability.revocation.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks revocation domain separation"
+grep -Fq 'tools.kan.did.genesis.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks identity domain separation"
+grep -Fq 'tools.kan.scope.inception.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks scope-inception domain separation"
+grep -Fq 'tools.kan.scope.governance.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks scope-governance domain separation"
+grep -Fq 'tools.kan.capability.delegation.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks delegation domain separation"
+grep -Fq 'tools.kan.capability.revocation.v1' rfcs/1-identity-system.md || fail "RFC 1 lacks revocation domain separation"
 grep -Fq 'Event validity is intrinsic' rfcs/1-identity-system.md || fail "RFC 1 makes event validity view-relative"
 grep -Fq 'cryptographicValidity = valid | invalid | unsupported | unknown' rfcs/1-identity-system.md || fail "RFC 1 does not separate cryptographic validity"
 grep -Fq 'identityStateStanding = active | superseded | contested | unknown | static' rfcs/1-identity-system.md || fail "RFC 1 does not disclose identity-state standing"
-grep -Fq 'repositoryAdmission   = admitted | unadmitted | contested | unknown | not-applicable' rfcs/1-identity-system.md || fail "RFC 1 does not separate repository admission"
+grep -Fq 'scopeAdmission        = admitted | unadmitted | contested | unknown | not-applicable' rfcs/1-identity-system.md || fail "RFC 1 does not separate scope admission"
 grep -Fq 'viewTrust              = included | excluded | weighted' rfcs/1-identity-system.md || fail "RFC 1 does not separate view trust"
 
 perl -0777 -ne 'exit(/72 continuous\s+hours/ ? 0 : 1)' rfcs/0-rfc-and-adr-process.md || fail "RFC 0 lacks the 72-hour review rule"

@@ -7,7 +7,7 @@ use kan::{
             resolve, GovernanceEvent, GovernanceMode, GovernanceResolution, GovernanceState,
             NonActiveGovernanceStanding, GOVERNANCE_DOMAIN, GOVERNANCE_EVENT_TYPE,
         },
-        repository_inception::RepositoryInception,
+        scope_inception::ScopeInception,
     },
     sign::Identity,
 };
@@ -27,8 +27,8 @@ fn proof(identity: &Identity, input: &SigningInput) -> Proof {
     }
 }
 
-fn repository(root: &Identity) -> (RepositoryInception, ControlEvent, GovernanceState) {
-    let inception = RepositoryInception::new(
+fn scope(root: &Identity) -> (ScopeInception, ControlEvent, GovernanceState) {
+    let inception = ScopeInception::new(
         [0x71; 32],
         vec!["governed".to_string()],
         vec![root.did()],
@@ -73,8 +73,7 @@ fn hex(bytes: &[u8]) -> String {
 #[test]
 fn fixed_update_vector_pins_domain_payload_and_logical_identifier() {
     let inception =
-        RepositoryInception::new([0x72; 32], vec![], vec![VECTOR_ROOT.to_string()], vec![])
-            .unwrap();
+        ScopeInception::new([0x72; 32], vec![], vec![VECTOR_ROOT.to_string()], vec![]).unwrap();
     let state = GovernanceState::from_inception(&inception).unwrap();
     let update = GovernanceEvent::update(&state, vec![VECTOR_ROOT.to_string()]).unwrap();
     let input = update.signing_input().unwrap();
@@ -83,11 +82,11 @@ fn fixed_update_vector_pins_domain_payload_and_logical_identifier() {
     assert_eq!(input.event_type, GOVERNANCE_EVENT_TYPE);
     assert_eq!(
         hex(&update.canonical_bytes().unwrap()),
-        "a6617601646d6f64656675706461746567706172656e747381d82a58250001711220bed7f40df21a4c571b4406cfd0ba1f29f0e6ce523a411a74595bff7d71bbdaf56873657175656e6365016a7265706f7369746f727978416b616e2d7265706f3a6263697170706434323362716763366864677470626b666b6f7971337835616774717a3233336164357a346d64347779357a66746f3775696f676f7665726e616e6365526f6f74738178396469643a6b65793a7a446e61656e57444d36717035526138323964397750557a424b4241335636666d326367344b56503357464b7173595476"
+        "a6617601646d6f6465667570646174656573636f706558221220f78f9ad8606178e334de15154ec4377e80d38675bd807dcf183e5b1dc966efd167706172656e747381d82a582500017112204ade23e9f4c98bf6cccb45a362d5d1bc2b44ff4f02b03a3870a8267b356cb7e46873657175656e6365016f676f7665726e616e6365526f6f74738178396469643a6b65793a7a446e61656e57444d36717035526138323964397750557a424b4241335636666d326367344b56503357464b7173595476"
     );
     assert_eq!(
         input.logical_cid().unwrap().to_string(),
-        "bafyreiew5smxe66aed37yhsrgfvwzbr72dryn7wd5b2uyslz2sn5wyuadi"
+        "bafyreihhsfonuob4qdzd2xjcr2dlmkrsa265hcdza3kgslihi3ao7fmc6u"
     );
 }
 
@@ -96,7 +95,7 @@ fn reversed_linear_evidence_resolves_to_the_same_active_state() {
     let root_a = Identity::generate();
     let root_b = Identity::generate();
     let root_c = Identity::generate();
-    let (inception, inception_event, state_0) = repository(&root_a);
+    let (inception, inception_event, state_0) = scope(&root_a);
     let update_1 = GovernanceEvent::update(&state_0, vec![root_b.did()]).unwrap();
     let (event_1, state_1) = proved(&update_1, &[state_0], &[&root_a]);
     let update_2 = GovernanceEvent::update(&state_1, vec![root_c.did()]).unwrap();
@@ -118,7 +117,7 @@ fn sibling_updates_are_contested_regardless_of_input_order() {
     let root_a = Identity::generate();
     let root_b = Identity::generate();
     let root_c = Identity::generate();
-    let (inception, inception_event, state_0) = repository(&root_a);
+    let (inception, inception_event, state_0) = scope(&root_a);
     let left = GovernanceEvent::update(&state_0, vec![root_b.did()]).unwrap();
     let right = GovernanceEvent::update(&state_0, vec![root_c.did()]).unwrap();
     let (left_event, _) = proved(&left, std::slice::from_ref(&state_0), &[&root_a]);
@@ -145,7 +144,7 @@ fn reconciliation_requires_authorization_at_every_parent_and_closes_the_fork() {
     let root_b = Identity::generate();
     let root_c = Identity::generate();
     let root_d = Identity::generate();
-    let (inception, inception_event, state_0) = repository(&root_a);
+    let (inception, inception_event, state_0) = scope(&root_a);
     let inception_id = state_0.event.clone();
     let left = GovernanceEvent::update(&state_0, vec![root_b.did()]).unwrap();
     let right = GovernanceEvent::update(&state_0, vec![root_c.did()]).unwrap();
@@ -186,7 +185,7 @@ fn proof_variants_collapse_by_logical_event_identifier() {
     let root = Identity::generate();
     let next_root = Identity::generate();
     let stranger = Identity::generate();
-    let (inception, inception_event, state) = repository(&root);
+    let (inception, inception_event, state) = scope(&root);
     let update = GovernanceEvent::update(&state, vec![next_root.did()]).unwrap();
     let input = update.signing_input().unwrap();
     let valid = ControlEvent::new(input.clone(), vec![proof(&root, &input)]).unwrap();
@@ -201,7 +200,7 @@ fn proof_variants_collapse_by_logical_event_identifier() {
 fn a_noncanonical_proof_variant_does_not_poison_a_valid_variant() {
     let root = Identity::generate();
     let next_root = Identity::generate();
-    let (inception, inception_event, state) = repository(&root);
+    let (inception, inception_event, state) = scope(&root);
     let update = GovernanceEvent::update(&state, vec![next_root.did()]).unwrap();
     let input = update.signing_input().unwrap();
     let valid = ControlEvent::new(input.clone(), vec![proof(&root, &input)]).unwrap();
@@ -215,11 +214,11 @@ fn a_noncanonical_proof_variant_does_not_poison_a_valid_variant() {
 #[test]
 fn a_missing_update_parent_is_an_orphan_but_does_not_poison_the_active_head() {
     let root = Identity::generate();
-    let (inception, inception_event, state) = repository(&root);
+    let (inception, inception_event, state) = scope(&root);
     let missing = content_cid(&"missing-governance-parent").unwrap();
     let update = GovernanceEvent::new(
         GovernanceMode::Update,
-        state.repository.clone(),
+        state.scope,
         vec![missing.clone()],
         1,
         vec![root.did()],
@@ -237,11 +236,11 @@ fn a_missing_update_parent_is_an_orphan_but_does_not_poison_the_active_head() {
 #[test]
 fn an_authenticated_reconciliation_with_a_missing_parent_is_unknown_history() {
     let root = Identity::generate();
-    let (inception, inception_event, state) = repository(&root);
+    let (inception, inception_event, state) = scope(&root);
     let missing = content_cid(&"missing-reconciliation-parent").unwrap();
     let reconcile = GovernanceEvent::new(
         GovernanceMode::Reconcile,
-        state.repository.clone(),
+        state.scope,
         vec![state.event.clone(), missing.clone()],
         1,
         vec![root.did()],
@@ -262,7 +261,7 @@ fn an_authenticated_reconciliation_with_a_missing_parent_is_unknown_history() {
 #[test]
 fn an_authorized_additive_field_is_unsupported_without_displacing_its_parent() {
     let root = Identity::generate();
-    let (inception, inception_event, state) = repository(&root);
+    let (inception, inception_event, state) = scope(&root);
     let update = GovernanceEvent::update(&state, vec![root.did()]).unwrap();
     let mut input = update.signing_input().unwrap();
     let Ipld::Map(fields) = &mut input.payload else {
@@ -284,10 +283,10 @@ fn an_authorized_additive_field_is_unsupported_without_displacing_its_parent() {
 #[test]
 fn an_invalid_sequence_is_disclosed_and_ignored() {
     let root = Identity::generate();
-    let (inception, inception_event, state) = repository(&root);
+    let (inception, inception_event, state) = scope(&root);
     let invalid = GovernanceEvent::new(
         GovernanceMode::Update,
-        state.repository.clone(),
+        state.scope,
         vec![state.event.clone()],
         7,
         vec![root.did()],
@@ -308,7 +307,7 @@ fn an_invalid_sequence_is_disclosed_and_ignored() {
 #[test]
 fn an_authorized_future_version_is_unsupported_but_an_unreachable_one_is_only_an_orphan() {
     let root = Identity::generate();
-    let (inception, inception_event, state) = repository(&root);
+    let (inception, inception_event, state) = scope(&root);
     let update = GovernanceEvent::update(&state, vec![root.did()]).unwrap();
     let mut recognized_input = update.signing_input().unwrap();
     let Ipld::Map(fields) = &mut recognized_input.payload else {
@@ -331,7 +330,7 @@ fn an_authorized_future_version_is_unsupported_but_an_unreachable_one_is_only_an
     let missing = content_cid(&"future-version-missing-parent").unwrap();
     let unreachable = GovernanceEvent::new(
         GovernanceMode::Update,
-        state.repository.clone(),
+        state.scope,
         vec![missing.clone()],
         1,
         vec![root.did()],
@@ -357,10 +356,10 @@ fn an_authorized_future_version_is_unsupported_but_an_unreachable_one_is_only_an
 #[test]
 fn an_invalid_present_parent_is_not_misreported_as_missing_history() {
     let root = Identity::generate();
-    let (inception, inception_event, state) = repository(&root);
+    let (inception, inception_event, state) = scope(&root);
     let invalid_parent = GovernanceEvent::new(
         GovernanceMode::Update,
-        state.repository.clone(),
+        state.scope,
         vec![state.event.clone()],
         9,
         vec![root.did()],
@@ -372,7 +371,7 @@ fn an_invalid_present_parent_is_not_misreported_as_missing_history() {
     let invalid_id = invalid_event.logical_cid().unwrap();
     let reconcile = GovernanceEvent::new(
         GovernanceMode::Reconcile,
-        state.repository.clone(),
+        state.scope,
         vec![state.event.clone(), invalid_id],
         1,
         vec![root.did()],

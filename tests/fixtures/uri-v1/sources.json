@@ -5,7 +5,7 @@
       "accountDid": "did:plc:ewvi7nxzyoun6zhxrhs64oiz",
       "handles": ["alice.example"],
       "locator": "kan-tools:day",
-      "scope": "kan-repo:bafyreift4xnurx4suratbzmvtvo2m3icusrazffnadcacockwknswai6j4",
+      "scope": "bciqlonzrmcwluircewwu7evclx6tdwnc7aupnf6kb5no6nzlegmsiei",
       "commit": "bafyreihrgx4m5k7nbnf6fitgmochxud25lugynybjibnqdsyrjc5ngeg54",
       "appview": {
         "service": "did:web:kan.tools#kan_appview",
@@ -30,20 +30,20 @@
     },
     "source-denied": {
       "locator": "kan-tools:day",
-      "scope": "kan-repo:bafyreift4xnurx4suratbzmvtvo2m3icusrazffnadcacockwknswai6j4",
+      "scope": "bciqlonzrmcwluircewwu7evclx6tdwnc7aupnf6kb5no6nzlegmsiei",
       "source": "private-team",
       "exists": true,
       "accessible": false
     },
     "source-absent": {
       "locator": "kan-tools:day",
-      "scope": "kan-repo:bafyreift4xnurx4suratbzmvtvo2m3icusrazffnadcacockwknswai6j4",
+      "scope": "bciqlonzrmcwluircewwu7evclx6tdwnc7aupnf6kb5no6nzlegmsiei",
       "source": "missing",
       "exists": false
     },
     "resource-absent": {
       "locator": "kan-tools:day",
-      "scope": "kan-repo:bafyreift4xnurx4suratbzmvtvo2m3icusrazffnadcacockwknswai6j4",
+      "scope": "bciqlonzrmcwluircewwu7evclx6tdwnc7aupnf6kb5no6nzlegmsiei",
       "source": "appview",
       "snapshotExists": true,
       "resourceExists": false
@@ -51,8 +51,8 @@
     "ambiguous-locator": {
       "locator": "kan-tools:day",
       "verifiedScopes": [
-        "kan-repo:bafyreift4xnurx4suratbzmvtvo2m3icusrazffnadcacockwknswai6j4",
-        "kan-repo:bafyreihrgx4m5k7nbnf6fitgmochxud25lugynybjibnqdsyrjc5ngeg54"
+        "bciqlonzrmcwluircewwu7evclx6tdwnc7aupnf6kb5no6nzlegmsiei",
+        "bciqppd423bqgc6hdgtpbkfkoyq3x5agtqz233ad5z4md4wy5zfto7uiogi"
       ]
     },
     "scope-missing": {

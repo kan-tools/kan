@@ -19,7 +19,7 @@ with the kan scope in which it is evaluated.
 The schemes share one model:
 
 - a **scope** is the logical governance and admission namespace identified by
-  the RFC 1 `kan-repo:` identifier;
+  the RFC 1 binary `ScopeId` and its canonical base32lower display;
 - a **locator** is an authority-local name for a scope;
 - a **source** is a scope-specific body of evidence available to a resolver;
 - a **snapshot** is an immutable observation of a source; and
@@ -36,7 +36,7 @@ evaluation inputs in separate namespaces. Resolution is read-only.
 kan currently has content-addressed claims, hierarchical subjects, GitTree
 publication, local trust frames, and an accepted identity architecture, but no
 portable identifier for saying which resource to resolve through which source.
-Paths, Git remotes, ATProto handles, DIDs, and `kan-repo:` identifiers answer
+Paths, Git remotes, ATProto handles, DIDs, and scope identifiers answer
 different questions. Treating any one of them as the others creates concrete
 failure modes:
 
@@ -50,8 +50,8 @@ failure modes:
 - URI normalization changes a hierarchical subject and therefore changes
   capability coverage.
 
-RFC 1 separates principal identity, repository scope, cryptographic validity,
-repository admission, and consumer trust. This RFC carries that separation
+RFC 1 separates principal identity, governed scope, cryptographic validity,
+scope admission, and consumer trust. This RFC carries that separation
 through identifier and resolution syntax.
 
 The design is intentionally uniform where its substrates are not. Git accepts
@@ -61,12 +61,12 @@ one scope-locator grammar and map it deterministically onto each substrate.
 
 ## Terminology
 
-- **kan scope:** RFC 1's repository scope: the logical namespace in which
+- **kan scope:** RFC 1's governed scope: the logical namespace in which
   governance, capabilities, subject prefixes, and admission are evaluated. A
-  scope is identified by one canonical `kan-repo:` identifier. It is not a
+  scope is identified by one canonical `ScopeId`. It is not a
   principal, Git repository, or ATProto repository.
-- **Scope identifier:** The RFC 1 `kan-repo:` identifier derived from canonical
-  repository inception bytes.
+- **Scope identifier:** The RFC 1 `ScopeId` derived from canonical scope
+  inception bytes.
 - **Scope locator:** An authority-local, human-meaningful route such as
   `personal` or `kan-tools:day`. A locator is mutable and is not scope identity.
 - **Resolver authority:** The URI authority whose rules locate sources or an
@@ -172,8 +172,9 @@ at-authority  = %s"did" / at-handle
 transport-user = 1*(unreserved / pct-encoded / sub-delims)
 at-handle      = 1*(ALPHA / DIGIT / "." / "-")
 
-scope-locator = scope-id / named-locator
-scope-id      = %s"kan-repo:" multibase-hash
+scope-locator = direct-scope-selector / named-locator
+direct-scope-selector = %s"@id:" scope-id
+scope-id      = multibase-hash
 multibase-hash = %s"b" 1*(%x61-7A / %x32-37)
 
 named-locator = locator-label *( ":" locator-label )
@@ -183,7 +184,8 @@ git-label     = 1*(lower / DIGIT / "-" / "_" / "~" / ".")
 lower         = %x61-7A
 
 claim-tail    = %s"claim/" cid
-subject-tail  = %s"subject/" subject-path
+subject-tail  = %s"subject/" (subject-path / subject-cid-selector)
+subject-cid-selector = %s"@cid:" cid
 scope-id-tail = %s"identity/scope"
 auth-id-tail  = %s"identity/authority"
 principal-tail = %s"identity/principal/did/" did-method "/" did-msid
@@ -192,8 +194,9 @@ cid           = 1*(lower / DIGIT)
 did-method    = 1*lower
 did-msid      = segment-value
 subject-path  = subject-segment *( "/" subject-segment )
-subject-segment = 1*segment-value
-segment-value = unreserved / pct-encoded / sub-delims / ":" / "@"
+subject-segment = 1*regular-segment-value
+regular-segment-value = unreserved / pct-encoded / sub-delims / ":"
+segment-value = regular-segment-value / "@"
 
 kan-query     = query-pair *( "&" query-pair )
 query-pair    = query-name "=" query-value
@@ -262,10 +265,15 @@ Adding, removing, or renaming another locator MUST NOT change the parsing
 boundary or cause fallback. A missing exact locator is `scope-not-found`.
 Conflicting exact bindings are `ambiguous-scope-locator`.
 
-`kan-repo:` is reserved. A segment beginning with that prefix MUST parse and
-validate as an RFC 1 scope identifier; it cannot be a named locator. The
-authority still locates sources for a stable identifier. The identifier does
-not encode a network location.
+`@` is reserved at the start of every decoded scope-locator and subject
+segment, including when it arrived percent-encoded. A regular `ScopeLocator`
+or `SubjectPath` therefore cannot contain such a segment. In scope-selector
+position, `@id:<scope-id>` is the only supported selector and MUST validate as
+RFC 1's exact 34-byte SHA-256 multihash with canonical base32lower display. An
+unknown `@<keyword>:` is `unsupported-selector`; malformed syntax for a known
+selector is `invalid-selector` or `non-canonical-identifier`. The authority
+still locates sources for a stable identifier. The identifier does not encode
+a network location.
 
 Two authorities may expose different evidence sets for the same scope
 identifier. That is not a scope-identity conflict. A single named locator whose
@@ -289,6 +297,13 @@ forbidden.
 Everything after `/subject/` reconstructs one subject by decoding each segment
 once and joining the decoded segments with literal `/`. Literal `/` therefore
 has the same hierarchy semantics as RFC 1's `subjectPrefix`.
+
+`subject/@cid:<cid>` is the sole current exception. It denotes a typed
+`SubjectCidSelector` for a canonical preserved v1 `SubjectRef`; it is not a
+regular subject path and does not assert that the CID is a future canonical
+subject identity. The selector MUST occupy the complete subject value, so a
+following `/child` is invalid. This leaves room for a distinct canonical
+subject identifier in a later version without overloading legacy CIDs.
 
 A subject resolution returns unfolded claims and supporting evidence, then
 reports fold, admission, and trust results separately. Subject queries are
@@ -387,7 +402,7 @@ unavailable returns `snapshot-unavailable`; it never falls forward to current.
 `trust` selects a configured trust frame or canonical principal selector. An
 omitted value uses the resolver's configured default only when the result
 discloses the exact frame applied. Trust does not change source access or
-repository admission.
+scope admission.
 
 `at` is an unsigned, shortest-form base-10 Unix timestamp in microseconds. Zero
 is `0`; leading zeroes and signs are forbidden. It supplies RFC 1's trusted
@@ -405,12 +420,12 @@ percent-encoding rules below.
 
 ### Source access
 
-Source access, repository admission, and consumer trust are independent:
+Source access, scope admission, and consumer trust are independent:
 
 | Plane | Question |
 |---|---|
 | source access | May this requester receive evidence from this source? |
-| repository admission | Was this specific action authorized in the scope? |
+| scope admission | Was this specific action authorized in the scope? |
 | consumer trust | Does authentic evidence participate in this consumer's view? |
 
 Public and private characterize sources, not scopes. One scope may have public,
@@ -528,8 +543,8 @@ asks the Git source to resolve a mutable full ref. Every success reports the
 complete commit object identifier and an immutable `commit` replay URI.
 
 The Git remote and commit establish source provenance, not scope identity.
-Resolution verifies `RepositoryInception` evidence in the GitTree source and
-reports its derived `kan-repo:` identifier.
+Resolution verifies `ScopeInception` evidence in the GitTree source and
+reports its derived `ScopeId`.
 
 ### `kan+at` source
 
@@ -625,7 +640,7 @@ requires `repo`, `scope`, and `subject`; `getIdentity` requires `repo` and
 accept `limit` and opaque `cursor`. Later pages hold every other input fixed.
 
 `scope` is the decoded URI scope segment: either the exact named locator or the
-complete `kan-repo:` identifier. It is not silently rewritten before the
+complete `@id:<scope-id>` selector. It is not silently rewritten before the
 request. `getIdentity` applies these additional closed rules:
 
 | `kind` | `scope` | `did` | `version` |
@@ -753,7 +768,7 @@ non-canonical. All other rejected forms fail rather than normalize.
 
 Two canonical URIs are request-equivalent only when they are byte-identical.
 Two non-identical requests may resolve to the same target key—for example a
-named locator and direct `kan-repo:` locator, or different trust frames over one
+named locator and direct `@id:` selector, or different trust frames over one
 subject. Resolution MUST report target-key equality separately from request
 equivalence.
 
@@ -780,7 +795,7 @@ All schemes use this ordered algorithm:
 6. Apply `commit`, `ref`, or `snapshot`, producing one immutable snapshot per
    available source. Never substitute current for an unavailable immutable
    selection.
-7. Verify repository inception evidence and derive the scope identifier. Reject
+7. Verify scope inception evidence and derive the scope identifier. Reject
    a direct identifier mismatch and report conflicting locator bindings as
    ambiguous.
 8. Retrieve the typed resource and all available supporting identity,
@@ -789,7 +804,7 @@ All schemes use this ordered algorithm:
 9. For principal identity, apply `version` within the selected evidence.
 10. Perform cryptographic validity and identity-standing resolution under RFC
     1.
-11. For scoped actions and claims, resolve governance and repository admission
+11. For scoped actions and claims, resolve governance and scope admission
     under RFC 1 using `at` when time evidence is required.
 12. Apply `trust` independently. If omitted, disclose the exact configured
     default used.
@@ -849,10 +864,9 @@ Authority is plural and explicit:
   is true.
 - A kan authority manifest or AT account establishes routing provenance, not
   kan scope identity.
-- Canonical repository inception bytes establish scope identity.
+- Canonical scope inception bytes establish scope identity.
 - Identity events and DID method evidence establish principal control.
-- Governance, delegation, and revocation evidence establish repository
-  admission.
+- Governance, delegation, and revocation evidence establish scope admission.
 - Claim bytes, CIDs, and proofs establish authentic speech.
 - A source-access service decides whether evidence is disclosed.
 - The consumer supplies the trust frame applied after verification and
@@ -877,8 +891,8 @@ selection provenance; the client can verify and fold them.
   parameters MUST NOT carry private keys, bearer tokens, or service-auth JWTs.
 - **Locator rebinding:** Single-segment exact locators prevent a newly added
   longer prefix from changing an existing URI's repository/resource boundary.
-- **Repository substitution:** Named routes are verified against inception.
-  Direct `kan-repo:` requests fail when evidence derives another identifier.
+- **Scope substitution:** Named routes are verified against inception.
+  Direct `@id:` requests fail when evidence derives another identifier.
 - **Alias mutability:** Handles, locators, refs, and defaults are disclosed as
   mutable. Every successful resolution supplies immutable snapshot replay.
 - **Normalization attacks:** Parsing precedes one decoding pass. Encoded slash,
@@ -915,8 +929,8 @@ selection provenance; the client can verify and fold them.
 
 ## Compatibility
 
-This RFC changes no existing claim, subject, GitTree, DID, or `kan-repo:` bytes.
-Existing repository-local `did:key` authors and GitTree records remain readable
+This RFC changes no released claim, subject, GitTree, or DID bytes. Existing
+repository-local `did:key` authors and GitTree records remain readable
 under their existing compatibility rules.
 
 The schemes are new. Implementations MUST NOT infer URI meaning from current
@@ -929,7 +943,8 @@ syntax where this RFC differs. In particular:
   collection and rkey;
 - `kan://local/...` is machine-relative routing, while returned scope identity
   remains stable; and
-- `kan-repo:` remains RFC 1's identifier syntax, not a standalone URI scheme.
+- `@id:` is a typed URI selector around RFC 1's canonical `ScopeId` display,
+  not part of the signed or stored scope identifier.
 
 Future schemes or query parameters require an RFC. V1 parsers reject unknown
 parameters so an older implementation cannot silently ignore a security- or
@@ -996,7 +1011,7 @@ The mandatory finite matrix is:
 |---|---|
 | scheme | `kan`, `kan+git`, `kan+at` |
 | authority | local, DNS, Git username+DNS, AT handle, reserved DID |
-| scope locator | named, direct `kan-repo:`, missing, conflicting |
+| scope locator | named, direct `@id:`, missing, conflicting |
 | resource | claim, subject, scope identity, authority identity, scoped principal, freestanding principal |
 | source access | available, denied, absent |
 | snapshot | omitted/current, mutable ref, immutable available, immutable unavailable |
@@ -1031,7 +1046,7 @@ Vectors MUST include at least:
     admission;
 16. admission changing with trusted evaluation time without changing claim
     validity or source access;
-17. scope identity returning `kan-repo:`, inception, and active, contested,
+17. scope identity returning `ScopeId`, inception, and active, contested,
     unknown, unsupported, and invalid governance states;
 18. authority identity under hosted kan and ATProto, unknown local authority,
     and unsupported Git authority identity;

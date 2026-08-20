@@ -11,7 +11,7 @@ use super::{
     CryptographicValidity,
 };
 
-pub const GENESIS_DOMAIN: &str = "kan.did.genesis.v1";
+pub const GENESIS_DOMAIN: &str = "tools.kan.did.genesis.v1";
 pub const GENESIS_EVENT_TYPE: &str = "genesis";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

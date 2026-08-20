@@ -8,7 +8,7 @@ relationship to Architecture Decision Records are defined by
 ## Index
 
 - [RFC 0: RFC and ADR process](0-rfc-and-adr-process.md) — Accepted
-- [RFC 1: Principal, repository, and delegated identity](1-identity-system.md) — Accepted
+- [RFC 1: Principal, scope, and delegated identity](1-identity-system.md) — Accepted
 - [RFC 2: kan URI schemes and resolution](2-kan-uri-scheme.md) — Accepted
 - [RFC 3: Authoritative Lexicon publication and versioned AppView](3-authoritative-lexicon-publication.md) — Review
 

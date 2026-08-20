@@ -1,6 +1,6 @@
 //! RFC 1 control-event envelope and canonical identifiers.
 //!
-//! Identity and repository-control events are lower-level siblings of claims.
+//! Identity and scope-control events are lower-level siblings of claims.
 //! They share DAG-CBOR and CID machinery with claims, but sign a
 //! domain-separated [`SigningInput`] and keep proofs outside the logical event
 //! identifier. This module implements that common envelope without yet
@@ -16,7 +16,7 @@ use super::CryptographicValidity;
 
 pub const CONTROL_EVENT_VERSION: u64 = 1;
 
-/// Exact historical identity state named by a proof or modern claim.
+/// Exact historical identity state named by a proof or current claim.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdentityVersion {
     Static,

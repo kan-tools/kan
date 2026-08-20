@@ -1,4 +1,4 @@
-# RFC 1: Principal, repository, and delegated identity
+# RFC 1: Principal, scope, and delegated identity
 
 - Status: Accepted
 - Authors: kan maintainers
@@ -12,33 +12,33 @@
 ## Summary
 
 This RFC separates stable principals from their verification methods,
-repositories from speaking actors, authentic speech from repository admission,
-and repository admission from consumer trust. It defines an offline-capable
-`did:kan` method, content-addressed repository inception, disposable session
+governed scopes from speaking actors, authentic speech from scope admission,
+and scope admission from consumer trust. It defines an offline-capable
+`did:kan` method, content-addressed scope inception, disposable session
 agents, purpose-bound verification methods, and attenuating capability
 delegation.
 
 The governing posture is **permissive speech, restrictive reach**. Anyone may
-submit a cryptographically authentic claim. Repository governance determines
-whether that claim was authorized to act within a repository. A consumer then
+submit a cryptographically authentic claim. Scope governance determines
+whether that claim was authorized to act within a scope. A consumer then
 chooses whether and how the claim participates in a view. These are three
 separate results and MUST remain separately visible.
 
 This RFC is the identity input to the later kan URI RFC. It deliberately does
-not define URI authorities, repository routing, or acting-user syntax.
+not define URI authorities, scope routing, or acting-user syntax.
 
 ## Motivation
 
-kan currently identifies a repository with a signing key and often treats the
-key, author, local role, and repository as one operational object. That was a
+kan currently identifies a scope with a signing key and often treats the
+key, author, local role, and scope as one operational object. That was a
 useful local-first bootstrap, but it cannot cleanly express a human rotating a
-device key, one human governing several repositories, a fresh agent identity
+device key, one human governing several scopes, a fresh agent identity
 per harness session, attenuated subagent authority, external DID principals, or
 the difference between an unknown authorization chain and a denied action.
 
 Issue #30 has tracked the need for a real per-agent cryptographic identity
-system since the repository-local approach was introduced. The identity system
-grew through concrete fixes: repository-local `did:key`
+system since the legacy workspace-local approach was introduced. The identity
+system grew through concrete fixes: workspace-local `did:key`
 creation, role keys, adoption, keychain protection, seed rooting, and trust
 selectors. Those mechanisms preserve released workspaces and remain valuable
 compatibility inputs. They are not a sufficient ontology for multi-actor or
@@ -62,24 +62,24 @@ without being rewritten.
   `capabilityDelegation`.
 - **Identity event:** A content-addressed `did:kan` genesis, administration, or
   recovery event. It is a lower-level sibling of a claim, not a claim.
-- **Repository scope:** A content-addressed repository inception identifier and
-  its governance history. A repository is not a principal.
-- **Governance root:** A principal authorized by repository inception or a
-  later governance event to administer repository authority.
+- **Scope:** A content-addressed scope inception identifier and
+  its governance history. A scope is not a principal.
+- **Governance root:** A principal authorized by scope inception or a
+  later governance event to administer scope authority.
 - **Capability:** An authorization for a principal to perform named operations
-  within constrained repository, subject, and time scopes.
+  within constrained scope, subject, and time scopes.
 - **Delegation:** A signed record transferring a strict subset of a capability
   to another principal.
 - **Session agent:** A normally disposable principal created for one harness
   session, usually represented by a fresh `did:key`.
 - **Lineage:** A signed assertion that one principal created or invoked another.
   Lineage conveys provenance, not authority.
-- **Role:** A repository-local human-readable name or relationship. A role is
+- **Role:** A scope-local human-readable name or relationship. A role is
   neither a principal nor an implicit capability.
 - **Cryptographic validity:** Whether signed bytes, the named verification
   method, and its authorization at the relevant identity state are valid.
-- **Repository admission:** Whether governance and capability evidence
-  authorized the act within the repository.
+- **Scope admission:** Whether governance and capability evidence
+  authorized the act within the scope.
 - **View trust:** A consumer's fold-time decision to include, exclude, or weight
   authentic material.
 - **Known history:** The identity, governance, and delegation events available
@@ -92,7 +92,7 @@ model. Diagnostic JSON in reference vectors is not a wire encoding.
 
 ### Common event envelope
 
-Identity and repository-control events reuse kan's append-only storage, CID,
+Identity and scope-control events reuse kan's append-only storage, CID,
 and canonical DAG-CBOR machinery but have dedicated bootstrap validators. Every
 event is encoded as this map:
 
@@ -174,7 +174,7 @@ recursive. Each proof's authorization chain MUST terminate in a self-certifying
 method. Missing controller history yields `unknown`. A proof over an
 intrinsically valid cited event can remain cryptographically `valid` when the
 controller resolves contested, but its identity standing is disclosed as
-`contested` and repository admission maps to `contested`. A cycle that does not
+`contested` and scope admission maps to `contested`. A cycle that does not
 terminate in a self-certifying method is `invalid`.
 
 A verification-method reference is an absolute DID URL with a non-empty
@@ -239,7 +239,7 @@ Service {
 }
 ```
 
-The payload domain is `kan.did.genesis.v1` and event type is `genesis`.
+The payload domain is `tools.kan.did.genesis.v1` and event type is `genesis`.
 Controller lists MUST be non-empty, duplicate-free, and sorted by canonical DID
 bytes. Services MUST be unique by `id` and sorted by `id`.
 Every service endpoint is inert text at this layer; resolution MUST NOT
@@ -253,13 +253,13 @@ Version 1 controller lists use explicit 1-of-N authorization: one valid proof
 from any listed controller is sufficient. Threshold policies require a later
 protocol version because changing this rule changes event validity.
 
-Genesis is an identity-control bootstrap, not an invocable repository state.
+Genesis is an identity-control bootstrap, not an invocable scope state.
 Its methods and controllers may authorize subsequent identity administration
 or recovery, but an actor that directly cites genesis as its `IdentityVersion`
-cannot exercise repository reach, and an inception proof citing genesis as its
-`controllerState` does not satisfy repository inception's required root-proof
+cannot exercise scope reach, and an inception proof citing genesis as its
+`controllerState` does not satisfy scope inception's required root-proof
 authorization. A fresh `did:kan` principal therefore appends an administration
-event before its first repository-scoped action.
+event before its first scope-scoped action.
 
 Let `G` be the canonical DAG-CBOR bytes of the unsigned `DidKanGenesis` payload.
 Let `H` be the SHA-256 multihash of `G`, including multihash code `0x12` and
@@ -275,7 +275,7 @@ normalized. Proofs do not contribute to `G`; changing only a proof therefore
 does not change the DID.
 
 The complete proved event is encoded as `ControlEvent` with domain
-`kan.did.genesis.v1`. Its logical event identifier and proved-event CID are
+`tools.kan.did.genesis.v1`. Its logical event identifier and proved-event CID are
 computed as defined above. The DID, logical genesis event identifier, and each
 proved-event CID are distinct values.
 
@@ -297,7 +297,7 @@ DidKanUpdate {
 }
 ```
 
-The domain is `kan.did.update.v1` and event type is `update`. `previous` names the exact event being
+The domain is `tools.kan.did.update.v1` and event type is `update`. `previous` names the exact event being
 continued. `sequence` MUST equal the predecessor sequence plus one, with
 genesis treated as sequence zero. `operations` is non-empty and applied in
 listed order; it MUST NOT produce duplicate method or service identifiers.
@@ -333,19 +333,19 @@ permanently able to create a competing recovery branch, but cannot supersede or
 win over a later recovery epoch.
 
 A recovery event is likewise an identity-control checkpoint, not an invocable
-repository state. Its resulting methods and controllers may authorize
+scope state. Its resulting methods and controllers may authorize
 subsequent identity administration or recovery according to the rules above,
 but an inception proof citing the recovery event as its `controllerState` does
-not satisfy repository inception's required root-proof authorization. A claim,
+not satisfy scope inception's required root-proof authorization. A claim,
 governance event, delegation, revocation, lineage claim, or role claim that
 directly cites the recovery event as its actor's `IdentityVersion` is
 `unadmitted`, subject to the ordered admission-table precedence below.
 Cryptographic validity and the recovery event's identity standing remain
-independently reportable. A method becomes usable for repository reach
+independently reportable. A method becomes usable for scope reach
 only when it is present in a subsequent administration state; that
 non-recovery authorization span can later be retired by recovery. This rule
 prevents a method carried through or added by a recovery checkpoint from gaining
-permanently unrevocable repository reach.
+permanently unrevocable scope reach.
 
 Event validity is intrinsic to its canonical payload, cited parents, and
 proofs. Resolution is a pure function of an evidence set. For that set:
@@ -460,7 +460,7 @@ A known operation with a missing or wrongly typed required operand is
 `invalid`. An administration event containing a recovery-controller operation
 is likewise `invalid`.
 
-Profile data—including names, handles, avatars, biographies, repository roles,
+Profile data—including names, handles, avatars, biographies, scope roles,
 and human identity assertions—is forbidden in identity operations. It belongs
 in ordinary signed claims.
 
@@ -473,7 +473,7 @@ identity/ledger/   authoritative public histories controlled by this installatio
 identity/cache/    disposable verified histories fetched for other principals
 identity/profiles/ local aliases, defaults, resolver and credential references
 credentials/       private material or references to credential providers
-repositories/      repository routing and substrate connections
+repositories/      scope routing and substrate connections
 ```
 
 `identity/ledger/` MAY itself contain a `.kan/` append-only substrate. It MUST
@@ -486,12 +486,12 @@ selects a default actor. Credential providers include OS keychains, owner-only
 files, hardware keys, agent sockets, and external signers. A profile points to
 a provider; it does not require key export.
 
-### Repository inception and governance
+### Scope inception and governance
 
-A repository is identified by this unsigned payload:
+A scope is identified by this unsigned payload:
 
 ```text
-RepositoryInception {
+ScopeInception {
   "v":               1,
   "nonce":           bytes,                 // exactly 32 random bytes
   "names":           [text, ...],
@@ -505,14 +505,17 @@ SubstrateAnchor {
 }
 ```
 
-The domain is `kan.repository.inception.v1` and event type is `inception`.
+The domain is `tools.kan.scope.inception.v1` and event type is `inception`.
 Lists are duplicate-free and
 sorted by canonical encoded value. At least one governance root is required.
-The repository identifier is the base32-lower-no-pad multibase SHA-256
-multihash of the canonical unsigned payload, including the `b` multibase
-prefix, prefixed `kan-repo:`. It is not a DID and cannot author claims.
+The scope identifier is the exact 34-byte SHA-256 multihash of the canonical
+unsigned payload: bytes `0x12 0x20` followed by the 32-byte digest. Signed
+DAG-CBOR carries those bytes directly as `ScopeId`; serde does not encode a
+human-readable wrapper. Display and text input use the one canonical
+base32-lower-no-pad multibase spelling, including its leading `b`. A scope ID
+is not a DID and cannot author claims.
 
-Repository inception is carried in a `ControlEvent` and MUST contain at least
+Scope inception is carried in a `ControlEvent` and MUST contain at least
 one proof from a listed governance root. Its method MUST be authorized for
 `capabilityDelegation` at `Proof.controllerState`; `did:key` uses its implicit
 method. Version 1 governance is 1-of-N: one valid listed-root proof is sufficient
@@ -520,20 +523,20 @@ for inception and an ordinary governance update.
 
 `kan init` deliberately creates inception. It defaults the governance root and
 current actor to the configured system principal but permits explicit
-alternatives. Git genesis may be an anchor; it is not the repository identity.
+alternatives. Git genesis may be an anchor; it is not the scope identity.
 Changing the current actor does not change inception or governance.
 
 `names` are immutable inception-time discovery hints, not mutable identity.
-Renaming a project does not mint a new repository identifier; current names are
-ordinary signed repository claims. Substrate anchors record inception context
-and do not imply that every later clone or remote is a different repository.
+Renaming a project does not mint a new scope identifier; current names are
+ordinary signed scope claims. Substrate anchors record inception context
+and do not imply that every later clone or remote is a different scope.
 
 Governance evolves through:
 
 ```text
 GovernanceEvent {
   "v":               1,
-  "repository":      text,
+  "scope":            ScopeId,             // canonical 34-byte multihash
   "mode":            "update" or "reconcile",
   "parents":         [CID, ...],
   "sequence":        unsigned integer,
@@ -541,7 +544,7 @@ GovernanceEvent {
 }
 ```
 
-The domain is `kan.repository.governance.v1`, event type is `governance`, and
+The domain is `tools.kan.scope.governance.v1`, event type is `governance`, and
 `parents` contains logical event
 identifiers, is non-empty, sorted, and duplicate-free. `sequence` is one plus
 the maximum parent sequence, with inception at zero. `governanceRoots` is
@@ -597,14 +600,14 @@ Fields that do not apply contain empty arrays. Invalid or unsupported genesis
 selects the corresponding non-active result. Other invalid candidates are
 reported in `reasons` without changing the ordered classification.
 
-Every governance root holds an implicit full repository capability covering
-all subject paths, all v1 repository operations, unbounded time, and delegation.
+Every governance root holds an implicit full scope capability covering
+all subject paths, all v1 scope operations, unbounded time, and delegation.
 The zero-length path admits a root's own covered action. Governance and required
 delegations MUST be publishable over every claim substrate. Missing required
 history yields admission `unknown`; contested governance yields admission
 `contested`; neither is `unadmitted`.
 
-For current repository admission, root status and every capability path are
+For current scope admission, root status and every capability path are
 evaluated against the unique active governance leaf in the complete evidence
 set. A historical governance event supplies provenance but cannot select an
 older authority set. If governance is contested or unknown, every root-derived
@@ -620,7 +623,7 @@ persistence or rotation is intended.
 The following are separate signed records:
 
 1. lineage: principal X created or invoked principal Y;
-2. role naming: repository R names Y with local role A;
+2. role naming: scope R names Y with local role A;
 3. delegation: X grants Y capability C.
 
 Neither lineage nor role naming grants authority. A parent may create or name a
@@ -634,7 +637,7 @@ A capability contains:
 
 ```text
 Capability {
-  "repository":    text,                    // kan-repo identifier
+  "scope":         ScopeId,
   "subjectPrefix": text or null,
   "operations":    [text, ...],
   "notBefore":     signed integer or null,  // Unix microseconds
@@ -666,7 +669,7 @@ defined for those control events. The `delegable` field alone determines
 whether the holder may create an attenuated child; the
 `capability.delegate` operation classifies that event in admission reports but
 does not independently confer delegation power. Satisfying the applicable
-exclusive event rule is the control event's repository authorization; no second
+exclusive event rule is the control event's scope authorization; no second
 capability path for the classifier operation is required.
 
 Delegation and revocation payloads are:
@@ -674,7 +677,7 @@ Delegation and revocation payloads are:
 ```text
 Delegation {
   "v":                    1,
-  "repository":           text,
+  "scope":                 ScopeId,
   "grantor":              text,
   "grantorIdentityVersion": IdentityVersion,
   "governanceEvent":      CID,
@@ -685,7 +688,7 @@ Delegation {
 
 Revocation {
   "v":                    1,
-  "repository":           text,
+  "scope":                 ScopeId,
   "delegation":           CID,
   "revoker":              text,
   "revokerIdentityVersion": IdentityVersion,
@@ -694,8 +697,8 @@ Revocation {
 }
 ```
 
-Their domains are `kan.capability.delegation.v1` and
-`kan.capability.revocation.v1`; types are `delegation` and `revocation`.
+Their domains are `tools.kan.capability.delegation.v1` and
+`tools.kan.capability.revocation.v1`; types are `delegation` and `revocation`.
 Principal identity-version fields follow the method-specific rules above. A
 delegation's logical event identifier is its capability identity.
 `governanceEvent` names the exact historical governance state from which the
@@ -713,13 +716,13 @@ MUST classify it `invalid`.
 A delegation MUST contain a proof from `grantor` authorized for
 `capabilityDelegation` at `grantorIdentityVersion`. A revocation MUST contain
 such a proof from either the original grantor or a governance root in the same
-repository. An original grantor may revoke its own delegation regardless of
+scope. An original grantor may revoke its own delegation regardless of
 later root membership. A revoker acting as a governance root MUST be a root at
 the unique active governance leaf, and its cited `governanceEvent` MUST be an
 ancestor-or-equal of that leaf. Every child capability MUST be a
 subset of its parent:
 
-- repository is identical;
+- scope is identical;
 - subject prefix is equal or more specific;
 - operations are a subset;
 - time interval is equal or narrower;
@@ -728,7 +731,7 @@ subset of its parent:
 No union of several parent capabilities may create authority that no single
 valid path grants. Each claim names at most one delegation path head; a consumer
 MUST NOT splice edges from different paths. A revocation disables the named
-delegation and every descendant only when the revocation's own repository
+delegation and every descendant only when the revocation's own scope
 admission is `admitted`. A revocation evaluating `contested` or `unknown` makes
 the target path correspondingly `contested` or `unknown`; an `unadmitted`
 revocation, including one signed from a superseded identity state, is inert but
@@ -750,7 +753,7 @@ admission is a recomputation under a stated evidence set and trusted instant,
 not a fact stored on the claim. Revocation and expiry never change signer
 identity or signature validity.
 
-A non-root author's repository-scoped action that names no delegation head is
+A non-root author's scope-scoped action that names no delegation head is
 `unadmitted` when governance and identity history are complete and
 uncontested.
 
@@ -773,14 +776,14 @@ Verification establishes that the method signature is valid and that the
 principal authorized the method for `assertion` at `identityVersion`. A
 rotatable DID without an exact supported identity-version citation is invalid
 for new writes; legacy records use the
-compatibility rule below. The claim separately carries repository scope and an
+compatibility rule below. The claim separately carries scope and an
 optional delegation logical event identifier. A role name MUST NOT appear in
 `Author`.
 For new writes, `Author` is part of the canonical claim content whose CID is
 computed, and the verification method signs that CID using kan's claim-signing
 envelope. This envelope is structurally disjoint from every control-event
 domain and from the preserved legacy envelope.
-When the claim requests a repository-scoped operation, the same method MUST
+When the claim requests a scope-scoped operation, the same method MUST
 also carry `capabilityInvocation`; `assertion` authenticates speech while
 `capabilityInvocation` permits exercising delegated reach.
 
@@ -788,7 +791,7 @@ For supersession, retraction, and same-author authorization, the author is the
 stable `principal`, not the verification method. Key rotation therefore does
 not prevent a principal from retracting its own earlier claim. A fresh session
 agent is a different principal and cannot retract its predecessor session's
-claim without an explicit repository-authorized mechanism such as `Rejects`.
+claim without an explicit scope-authorized mechanism such as `Rejects`.
 
 ### Three independent judgments
 
@@ -797,7 +800,7 @@ Every structured read of a claim MUST disclose:
 ```text
 cryptographicValidity = valid | invalid | unsupported | unknown
 identityStateStanding = active | superseded | contested | unknown | static
-repositoryAdmission   = admitted | unadmitted | contested | unknown | not-applicable
+scopeAdmission        = admitted | unadmitted | contested | unknown | not-applicable
 viewTrust              = included | excluded | weighted
 ```
 
@@ -806,8 +809,8 @@ view-excluded claim remains inspectable. Storage policy may refuse an object
 operationally but MUST NOT redefine these semantic results.
 `identityStateStanding` reports the standing of the cited identity event without
 changing intrinsic signature validity. `static` applies to `did:key`.
-`repositoryAdmission: not-applicable` applies only when the object requests no
-repository-scoped operation.
+`scopeAdmission: not-applicable` applies only when the object requests no
+scope-scoped operation.
 
 Standing is a total, disjoint function evaluated in this precedence:
 
@@ -843,7 +846,7 @@ standing has admission `contested`. None of these changes an otherwise valid
 signature's cryptographic validity. A historical event on an unretired linear
 chain remains `active` after ordinary key rotation, so rotation does not
 retroactively remove honest history; recovery retirement does remove its
-repository reach.
+scope reach.
 
 ### Normative decision tables
 
@@ -852,7 +855,7 @@ take precedence; an implementation MUST produce the listed result rather than
 fall through to a later row. The detailed rules above define how each predicate
 is established, while these tables define how established predicates compose.
 
-Identity or governance resolution (`did:kan` genesis and repository inception
+Identity or governance resolution (`did:kan` genesis and scope inception
 are each the corresponding bootstrap event):
 
 | Evidence condition | Result |
@@ -877,11 +880,11 @@ Identity standing:
 | uniquely resolved, recognized, unretired `did:kan` event on the active ancestry | `active` |
 | `did:plc` or `did:web` condition | method-specific result defined above |
 
-Repository admission for an evaluated action:
+Scope admission for an evaluated action:
 
 | First matching condition | Admission |
 |---|---|
-| no repository-scoped operation requested | `not-applicable` |
+| no scope-scoped operation requested | `not-applicable` |
 | cryptographic validity `invalid` | `unadmitted` |
 | cryptographic validity `unsupported` or `unknown` | `unknown` |
 | identity standing `unknown` | `unknown` |
@@ -924,9 +927,9 @@ Sets represented as arrays have the sorting and uniqueness rules stated above.
 Order-sensitive operation arrays are not sets and are never reordered.
 
 DIDs are canonical according to their DID method. A `did:kan` has exactly one
-canonical textual representation. Repository identifiers likewise have one
+canonical textual representation. Scope identifiers likewise have one
 canonical representation. Equality of principals is DID equality after
-method-specific canonicalization; repository-local roles, profile aliases, and
+method-specific canonicalization; scope-local roles, profile aliases, and
 `SameAs` claims do not change cryptographic principal equality.
 
 CID computation uses the exact canonical bytes. A decoder that accepts a
@@ -944,14 +947,14 @@ To verify and evaluate a claim:
    unsupported DID methods or algorithms yield `unsupported`.
 3. Verify the signature and the method's `assertion` purpose. Failure yields
    `invalid`; success yields `valid`. Separately report the cited identity
-   state's standing in the complete evidence set. For a repository-scoped
+   state's standing in the complete evidence set. For a scope-scoped
    action, also require `capabilityInvocation`; its absence leaves the speech
    valid but makes admission `unadmitted`.
-4. Resolve repository inception and governance. Missing required evidence
+4. Resolve scope inception and governance. Missing required evidence
    yields admission `unknown`; multiple active governance leaves yield
    `contested`.
 5. Against the unique active governance leaf, find a governance-rooted
-   capability path covering the author, operation, repository, subject, and
+   capability path covering the author, operation, scope, subject, and
    explicit trusted evaluation instant. Every cited governance event MUST be
    ancestral to that leaf, and every root-derived head MUST originate from a
    principal that remains a root at that leaf. Check every
@@ -1055,12 +1058,12 @@ view trust frame.
 Authoritative inputs are deliberately plural:
 
 - identity genesis and authorized identity events establish principal control;
-- repository inception and governance events establish repository authority;
+- scope inception and governance events establish scope authority;
 - delegation and revocation records establish admitted reach;
 - claim bytes and proofs establish authentic speech;
 - the consumer supplies view trust at fold time;
 - system configuration selects local profiles, credential providers,
-  repository routing, and substrate connections without becoming shared truth.
+  scope routing, and substrate connections without becoming shared truth.
 
 The local append-only log and published GitTree claims are both authoritative
 kan claim substrates with different configured connections. Git data unrelated
@@ -1075,8 +1078,8 @@ verified from its content address, proof, and applicable authority history.
 
 - **Key confusion:** Principal and exact verification method are both signed;
   purpose checks prevent an authentication-only key from asserting claims.
-- **Repository impersonation:** Randomized content-addressed inception prevents
-  a path, Git remote, or mutable name from defining repository identity.
+- **Scope impersonation:** Randomized content-addressed inception prevents
+  a path, Git remote, or mutable name from defining scope identity.
 - **Fork choice attacks:** Observation order and timestamps never select a
   `did:kan` branch. Unresolved forks are visible as contested.
 - **Recovery capture:** Recovery authorization is checked at the selected
@@ -1094,23 +1097,23 @@ verified from its content address, proof, and applicable authority history.
 - **Administrative key removal:** Removing a method by ordinary administration
   is rotation hygiene, not retroactive revocation. A holder may continue to
   produce authentic actions by citing the earlier unretired state, and those
-  actions remain admitted while their independent repository capability path
+  actions remain admitted while their independent scope capability path
   remains admitted.
   Responding to compromise requires a recovery that retires every
   non-bootstrap, non-checkpoint administration span where that method gained
-  repository reach. That response also makes honest actions
+  scope reach. That response also makes honest actions
   depending on the retired span `superseded` and `unadmitted`; operators must
   weigh this explicit collateral cost rather than assume rotation revoked the
   stolen key.
 - **Bootstrap and recovery checkpoints:** Methods present at genesis or a
   recovery event may control later identity transitions but cannot directly
-  exercise repository reach. After genesis and after every recovery, one
+  exercise scope reach. After genesis and after every recovery, one
   administration event is required before the `did:kan` principal can perform
-  any repository-scoped act, including repository inception or governance.
+  any scope-scoped act, including scope inception or governance.
   Carrying a method into that administration state makes the later span usable
   and recoverably retirable. A compromised checkpoint method may still force a
   visible identity contest by creating an administrative fork; it cannot remain
-  a silently admitted repository actor.
+  a silently admitted scope actor.
 - **Proof malleability:** Logical event identity excludes proofs, so alternate
   valid signatures over one payload cannot manufacture a state fork.
 - **Delegation amplification:** Every edge is checked for strict attenuation;
@@ -1122,7 +1125,7 @@ verified from its content address, proof, and applicable authority history.
   silently produce denial.
 - **Secret leakage:** Identity ledgers and control events contain no private
   keys or profile PII. Credential providers are separate local state.
-- **Identifier ambiguity:** `did:kan` and `kan-repo:` reject alternate textual
+- **Identifier ambiguity:** `did:kan` and `ScopeId` reject alternate textual
   encodings. Unknown DID methods remain unsupported rather than misclassified.
 - **Implicit action:** Dereferencing and resolution are read-only. Signing and
   trust selection require explicit inputs outside an identifier.
@@ -1137,7 +1140,7 @@ verified from its content address, proof, and applicable authority history.
 
 ## Compatibility
 
-Existing repository-local `did:key` values remain valid static principals.
+Existing workspace-local `did:key` values remain valid static principals.
 Existing claim bytes, CIDs, signatures, and `AuthorId.agent` values MUST NOT be
 rewritten. Readers retain a compatibility projection that displays and verifies
 historical composite authorship. New writes MUST use principal plus
@@ -1151,11 +1154,11 @@ distinct from RFC-1 control-event domains and is not retroactively re-signed.
 Existing `RoleDeclaration` claims remain naming evidence and do not become
 retroactive capabilities. `KAN_IDENTITY_FILE`, `.kan/seed`, keychain pointers,
 and registered role keys become legacy credential/profile inputs; none defines
-the repository or human principal under this RFC.
+the scope or human principal under this RFC.
 
 Migration may record a witnessed continuity assertion between a chosen stable
-human principal and a legacy repository DID, then establish that principal as a
-repository governance root. It MUST NOT fabricate new authorship for old
+human principal and a legacy scope DID, then establish that principal as a
+scope governance root. It MUST NOT fabricate new authorship for old
 claims. A mixed workspace may contain legacy and RFC-1 records indefinitely.
 This RFC amends the existing fold rule that keyed same-author supersession on
 the complete legacy `AuthorId`: for RFC-1 claims, same-author authorization keys
@@ -1166,24 +1169,31 @@ equals the DID component of the legacy `AuthorId`; the legacy `agent` component
 is disregarded for that direction. A legacy-form claim can never supersede an
 RFC-1 claim.
 
+The unreleased `kan.repository.*`, textual `kan-repo:…`, and
+`.kan/repository` forms were development artifacts after the latest published
+release, not compatibility formats. Current code does not decode or alias them.
+If `kan init` finds `.kan/repository`, it refuses before creating `.kan/scope`
+and tells the operator to move the pre-release state aside and initialize
+again. It never silently migrates, rewrites, or deletes those bytes.
+
 Prior identity ADRs have these dispositions:
 
 - ADR 4's repository-local `did:key` remains a supported legacy static
-  principal; its repository-as-identity interpretation is superseded.
+  principal; its scope-as-identity interpretation is superseded.
 - ADRs 24, 58, 61, and 75 remain historical role/agent evidence; RFC 1
   supersedes composite authorship and any implication that a role grants reach.
 - ADRs 25, 55, and 65-68 remain compatibility guidance for existing secrets;
-  RFC 1 supersedes their use as the shared principal or repository model.
+  RFC 1 supersedes their use as the shared principal or scope model.
 - ADR 77's rule that escape hatches cannot bypass safety guards remains in
   force.
 - ADRs 83 and 84 become view-trust compatibility behavior and do not determine
-  repository admission.
+  scope admission.
 - ADRs 86-88 describe the legacy identity surface; their read-only and
   single-question resolver disciplines remain requirements where compatible.
 
 ## Alternatives considered
 
-- **Repository as principal:** Rejected because one signing key cannot cleanly
+- **Scope as principal:** Rejected because one signing key cannot cleanly
   represent governance, human continuity, device rotation, and session agents.
 - **Require ATProto identity:** Rejected because offline bootstrap and users
   without ATProto accounts are first-class requirements.
@@ -1212,7 +1222,7 @@ telos witness.
 
 The vector set MUST cover:
 
-1. repository inception and single-field identifier changes;
+1. scope inception and single-field identifier changes;
 2. `did:kan` genesis bytes, multihash DID, proof, and event CID;
 3. proof-only mutation changing event CID but not DID;
 4. linear administration, sibling fork, proof-set malleability, contested
@@ -1230,7 +1240,7 @@ The vector set MUST cover:
 6. governance update, fork, contested admission, multi-parent reconciliation,
    and removal of a root that attempts a fresh historical-anchor delegation and
    a governance-root revocation;
-7. valid attenuation and attempted repository, subject, operation, and time
+7. valid attenuation and attempted scope, subject, operation, and time
    amplification;
 8. root zero-length admission, revocation, a retired-key revocation that remains
    inert, trusted-time expiry, unknown-time
@@ -1249,13 +1259,13 @@ The vector set MUST cover:
     then becomes `superseded` and `unadmitted` after recovery-span retirement;
 14. `subjectPrefix: ""` covering only the literal empty subject;
 15. a method carried through and a method added by a recovery checkpoint:
-    direct repository actions citing the checkpoint are valid speech but
+    direct scope actions citing the checkpoint are valid speech but
     `unadmitted`, the same method carried into a later administration state may
     be admitted, and a subsequent recovery can retire that administration span;
 16. a genesis-enrolled method cited after administrative removal and best-effort
     recovery: direct genesis citation remains valid speech but is `unadmitted`,
     while carrying the method into an administration state creates the first
-    repository-reach span and permits later recovery retirement.
+    scope-reach span and permits later recovery retirement.
 
 Each valid vector MUST include diagnostic input, canonical DAG-CBOR hex,
 relevant multihash/CID strings, signature bytes, and the expected resolved
@@ -1270,7 +1280,7 @@ None.
 - A future UCAN capability profile that is provably equivalent to the v1 wire
   records and attenuation rules.
 - Controller and governance thresholds beyond v1's explicit 1-of-N rule.
-- URI syntax, authority matching, repository routing, Git transport inference,
+- URI syntax, authority matching, scope routing, Git transport inference,
   and identity-resource paths; these belong to RFC 2.
 - Hosted-kan, ATProto PDS, relay, archive, and replica protocols.
 - Day's packaging of roles, atoms, harnesses, models, and capabilities.
@@ -1281,7 +1291,7 @@ None.
 Accepted by the unanimous maintainer review override in pull request #229 after
 independent architecture and bounded acceptance review. Staged implementation
 began in commit `4ad239a` with the compatibility-only judgment kernel in
-`src/identity.rs`: the four read judgments and ordered repository-admission
+`src/identity.rs`: the four read judgments and ordered scope-admission
 table are typed, and preserved legacy claims can be evaluated without changing
 their bytes, signer selection, fold behavior, or the default writer.
 
@@ -1303,17 +1313,17 @@ administration-update byte/CID vector, static P-256 controller authorization,
 and order-independent resolution of linear history, forks, proof variants,
 explicit recovery retirement, credible missing history, invalid evidence, and
 authenticated unsupported extensions.
-`src/identity/repository_inception.rs` implements the canonical unsigned
-repository-inception payload, canonical encoded-value list ordering, full
-base32-lower SHA-256 multihash `kan-repo:` derivation, a pinned identifier
+`src/identity/scope_inception.rs` implements the canonical unsigned
+scope-inception payload, canonical encoded-value list ordering, full
+34-byte SHA-256 multihash derivation, canonical base32lower display, a pinned identifier
 vector, and listed-root proof gates for static P-256 `did:key` and an exact
 active `did:kan` state. The latter requires one resolved method carrying
 `capabilityDelegation` and binds the principal, method, historical state,
 algorithm, public key, and signature without treating the key as the
 principal. The shared resolved-method verifier covers P-256 and Ed25519.
-`src/identity/repository_store.rs` supplies the first repository-state
+`src/identity/scope_store.rs` supplies the first scope-state
 persistence slice. It retains the canonical proved inception event immutably
-under the workspace's `.kan/repository`, persists the identifier nonce before
+under the workspace's `.kan/scope`, persists the identifier nonce before
 event construction so retries remain stable, serializes first installation,
 and makes the event visible atomically. The same inception with another proof
 variant is idempotent; a different inception, malformed bytes, or symlinked
@@ -1326,8 +1336,8 @@ public identity ledger, requires the profile's exact active `did:kan` event and
 verification method, exercises its credential, and installs the resulting
 proved inception. The default immutable name is the Git repository directory
 name and the existing kan Git-genesis digest is retained as a textual
-`gitGenesis` substrate anchor; neither value defines the repository identifier.
-Plain retries return the installed repository without credential access,
+`gitGenesis` substrate anchor; neither value defines the scope identifier.
+Plain retries return the installed scope without credential access,
 explicit identical retries are idempotent, and changed inception options are
 refused without replacing the installed bytes. Missing or stale profiles and
 unsupported public-ledger envelopes fail closed. This establishes the system
@@ -1338,14 +1348,14 @@ closed typed map containing only principal, verification method, and identity
 version. Its pinned canonical vector makes roles and the legacy `agent` field
 unrepresentable. The current `did:kan` verification slice binds a claim-CID
 signature to the exact active event, principal, method, algorithm, public key,
-and `assertion` purpose, while reporting `capabilityInvocation` repository
+and `assertion` purpose, while reporting `capabilityInvocation` scope
 reach independently. `SystemIdentityStore` signs claim-CID bytes only after the
 same profile/method/provider/key correspondence required for control proofs.
 This is intentionally not the default writer: the complete modern
 claim-content envelope and the legacy/modern storage discriminator require a
 normative byte shape before new interoperable CIDs can be minted, and
 historical active-ancestor verification remains to be implemented.
-`src/identity/governance.rs` implements canonical repository-governance update
+`src/identity/governance.rs` implements canonical scope-governance update
 and reconciliation payloads, proof authorization against every exact parent,
 proof-set collapse by logical event identifier, and order-independent
 resolution of linear history, forks, reconciliations, orphans, authenticated
@@ -1402,7 +1412,7 @@ last while holding the first-initialization lock. It is idempotent for the same
 plan; credential substitution, missing providers, ledger failure, and competing
 first setup cannot expose a partially initialized or losing actor.
 `kan identity init` supplies the explicit provider-side orchestration for the
-owner-only-file profile: it runs without repository discovery, resolves the
+owner-only-file profile: it runs without scope discovery, resolves the
 platform configuration root or an explicit override, creates or imports
 recovery and daily P-256 credentials with create-new owner-only writes, and
 retains a stable initialization nonce for crash-safe retries. Existing secrets
@@ -1415,7 +1425,7 @@ The complete reference-vector manifest, external/recursive DID controller
 resolution, modern authorship, hardware/agent/external-signer credential
 execution, OS-keychain provider creation/import, explicit multi-root inception,
 the complete modern claim envelope and historical-state verification,
-repository connections, and default-write cutover remain unimplemented. Issue
+scope connections, and default-write cutover remain unimplemented. Issue
 #244's operation-wire and
 absent-removal ambiguities are closed by the normative typed schema above and
 its pinned implementation vector. This status is therefore an implementation

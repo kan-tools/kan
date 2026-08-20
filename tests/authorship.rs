@@ -97,7 +97,7 @@ fn author_shape_cannot_represent_a_role_or_legacy_agent() {
 }
 
 #[test]
-fn system_profile_signs_a_modern_claim_as_its_exact_active_method() {
+fn system_profile_signs_a_current_claim_as_its_exact_active_method() {
     let temp = tempfile::tempdir().unwrap();
     let (store, profile, state, method) = installed_actor(temp.path());
     let author = Author::new(
@@ -106,7 +106,7 @@ fn system_profile_signs_a_modern_claim_as_its_exact_active_method() {
         profile.actor().controller_state().clone(),
     )
     .unwrap();
-    let claim = content_cid(&"modern claim signing vector").unwrap();
+    let claim = content_cid(&"current claim signing vector").unwrap();
     let signature = store.sign_claim_cid(&profile, &method, &claim).unwrap();
 
     let verified = author.verify_active_did_kan_claim(&claim, &signature, &state);
@@ -114,7 +114,7 @@ fn system_profile_signs_a_modern_claim_as_its_exact_active_method() {
         verified.cryptographic_validity,
         CryptographicValidity::Valid
     );
-    assert!(verified.repository_invocation);
+    assert!(verified.scope_invocation);
     let changed = content_cid(&"different claim").unwrap();
     assert_eq!(
         author
@@ -125,7 +125,7 @@ fn system_profile_signs_a_modern_claim_as_its_exact_active_method() {
 }
 
 #[test]
-fn assertion_and_repository_invocation_remain_separate_purpose_checks() {
+fn assertion_and_scope_invocation_remain_separate_purpose_checks() {
     let temp = tempfile::tempdir().unwrap();
     let (store, profile, state, method) = installed_actor(temp.path());
     let author = Author::new(
@@ -146,7 +146,7 @@ fn assertion_and_repository_invocation_remain_separate_purpose_checks() {
         verified.cryptographic_validity,
         CryptographicValidity::Valid
     );
-    assert!(!verified.repository_invocation);
+    assert!(!verified.scope_invocation);
 
     let mut no_assertion = state;
     no_assertion.verification_methods[0]

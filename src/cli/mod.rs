@@ -24,9 +24,13 @@ pub enum Error {
     #[error(transparent)]
     Enrollment(#[from] crate::identity::enrollment::Error),
     #[error(transparent)]
-    RepositoryIdentity(#[from] crate::identity::repository_store::Error),
+    ScopeIdentity(#[from] crate::identity::scope_store::Error),
     #[error(transparent)]
-    RepositoryInception(#[from] crate::identity::repository_inception::Error),
+    ScopeInception(#[from] crate::identity::scope_inception::Error),
+    #[error("pre-release repository identity state exists at {0}; kan will not reinterpret it as a scope—move it aside and run `kan init` again")]
+    PreReleaseRepositoryIdentity(std::path::PathBuf),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
     #[error(transparent)]
     Git(#[from] crate::git::Error),
     #[error(transparent)]
@@ -333,7 +337,7 @@ pub enum Command {
     /// restore` first.
     Restore,
 
-    /// Deliberately establish this repository's stable identity and initial
+    /// Deliberately establish this workspace's stable scope and initial
     /// governance using a configured system actor.
     Init {
         /// Immutable inception-time discovery hint. Repeat for multiple names;
@@ -341,7 +345,7 @@ pub enum Command {
         #[arg(long = "name")]
         names: Vec<String>,
         /// System identity profile to govern and initially act in this
-        /// repository. Defaults to the configured system actor.
+        /// scope. Defaults to the configured system actor.
         #[arg(long)]
         actor: Option<String>,
         /// Override the platform kan configuration directory.
@@ -391,7 +395,7 @@ fn read_secret_line(prompt: &str) -> Result<String, Error> {
 
 /// A yes/no confirmation, for an act that destroys something.
 ///
-/// Sibling of [`read_secret_line`], and gated the same way: this repository
+/// Sibling of [`read_secret_line`], and gated the same way: this codebase
 /// already treats an interactive terminal as the signal that a human is
 /// present to answer for a sensitive irreversible act (`kan identity phrase`).
 /// Anything other than an explicit yes is a no -- a bare Enter must not delete
@@ -413,7 +417,7 @@ pub fn confirm(question: &str) -> Result<bool, actions::Error> {
 #[derive(Debug, Subcommand)]
 pub enum IdentityAction {
     /// Initialize this installation's system-level human identity and daily
-    /// device. This does not open or modify a repository.
+    /// device. This does not open or modify a workspace.
     Init {
         /// Local profile alias selected as the default actor.
         #[arg(long, default_value = "daily")]
@@ -783,27 +787,30 @@ pub struct NarrativeArgs {
     pub verbose: bool,
 }
 
-fn run_repository_init(
+fn run_scope_init(
     cwd: &std::path::Path,
     names: &[String],
     actor: Option<&str>,
     config_dir: Option<&std::path::Path>,
 ) -> Result<(), Error> {
     use crate::identity::{
-        repository_inception::{AnchorValue, RepositoryInception, SubstrateAnchor},
-        repository_store::RepositoryIdentityStore,
+        scope_inception::{AnchorValue, ScopeInception, SubstrateAnchor},
+        scope_store::ScopeIdentityStore,
         system::SystemIdentityStore,
     };
 
     let git = crate::git::GitSubstrate::open(cwd)?;
     let root = crate::workspace::find_repo_root(cwd);
-    let repository_store = RepositoryIdentityStore::at(root.join(".kan").join("repository"));
+    let pre_release_state = root.join(".kan").join("repository");
+    match std::fs::symlink_metadata(&pre_release_state) {
+        Ok(_) => return Err(Error::PreReleaseRepositoryIdentity(pre_release_state)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let scope_store = ScopeIdentityStore::at(root.join(".kan").join("scope"));
     if names.is_empty() && actor.is_none() {
-        if let Some(installed) = repository_store.read()? {
-            println!(
-                "repository identity already initialized: {}",
-                installed.repository
-            );
+        if let Some(installed) = scope_store.read()? {
+            println!("scope already initialized: {}", installed.scope);
             return Ok(());
         }
     }
@@ -828,13 +835,13 @@ fn run_repository_init(
             .file_name()
             .and_then(std::ffi::OsStr::to_str)
             .filter(|name| !name.is_empty())
-            .unwrap_or("repository")
+            .unwrap_or("scope")
             .to_string()]
     } else {
         names.to_vec()
     };
-    let inception = RepositoryInception::new(
-        repository_store.initialization_nonce()?,
+    let inception = ScopeInception::new(
+        scope_store.initialization_nonce()?,
         names,
         vec![profile.principal().to_string()],
         vec![SubstrateAnchor {
@@ -845,13 +852,13 @@ fn run_repository_init(
     let input = inception.signing_input()?;
     let proof = system.sign(&profile, &method, &input)?;
     let event = inception.proved_event_with_did_kan_state(&state, vec![proof])?;
-    let installed = repository_store.install(&event)?;
+    let installed = scope_store.install(&event)?;
 
-    println!("initialized repository identity: {}", installed.repository);
+    println!("initialized scope: {}", installed.scope);
     println!("governance root: {}", profile.principal());
     println!("current actor: {}", profile.alias());
     println!("inception event: {}", installed.event.proved_cid()?);
-    println!("repository root: {}", root.display());
+    println!("workspace root: {}", root.display());
     Ok(())
 }
 
@@ -942,7 +949,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             Some(path) => path.clone(),
             None => crate::workspace::cwd()?,
         };
-        run_repository_init(&cwd, names, actor.as_deref(), config_dir.as_deref())?;
+        run_scope_init(&cwd, names, actor.as_deref(), config_dir.as_deref())?;
         return Ok(());
     }
 
@@ -1402,7 +1409,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                 },
             }
         }
-        Command::Init { .. } => unreachable!("repository initialization is handled above"),
+        Command::Init { .. } => unreachable!("scope initialization is handled above"),
         Command::Mcp { .. } => unreachable!("handled above"),
     }
     Ok(())

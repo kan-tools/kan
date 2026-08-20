@@ -10,7 +10,7 @@ use kan::{
             CLAIM_WRITE, DELEGATION_DOMAIN, DELEGATION_EVENT_TYPE,
         },
         control::{decode_preserving, ControlEvent, IdentityVersion, Proof, SigningInput},
-        repository_inception::RepositoryInception,
+        scope_inception::{ScopeId, ScopeInception},
         CapabilityEvidence, RevocationStanding, TrustedTime,
     },
     sign::Identity,
@@ -19,10 +19,10 @@ use kan::{
 const ROOT: &str = "did:key:zDnaenWDM6qp5Ra829d9wPUzBKBA3V6fm2cg4KVP3WFKqsYTv";
 const DELEGATE: &str = "did:key:zDnaeZQRXpcTkQojRMTux2jYL8UDJvJAtLdyP7V3i36KcjjZF";
 
-fn repository(root: &str) -> String {
-    RepositoryInception::new([0x61; 32], vec![], vec![root.to_string()], vec![])
+fn scope(root: &str) -> ScopeId {
+    ScopeInception::new([0x61; 32], vec![], vec![root.to_string()], vec![])
         .unwrap()
-        .repository_id()
+        .scope_id()
         .unwrap()
 }
 
@@ -30,7 +30,7 @@ fn authority(root: &str) -> GovernanceAuthority {
     let active = content_cid(&"active-governance").unwrap();
     let historical = content_cid(&"historical-governance").unwrap();
     GovernanceAuthority::new(
-        repository(root),
+        scope(root),
         active,
         vec![root.to_string()],
         HashSet::from([historical]),
@@ -57,20 +57,13 @@ fn hex(bytes: &[u8]) -> String {
 
 #[test]
 fn capability_coverage_obeys_segment_and_time_boundaries() {
-    let repository = repository(ROOT);
-    let all = Capability::new(
-        repository.clone(),
-        None,
-        vec![CLAIM_WRITE.to_string()],
-        None,
-        None,
-        true,
-    )
-    .unwrap();
+    let scope = scope(ROOT);
+    let all =
+        Capability::new(scope, None, vec![CLAIM_WRITE.to_string()], None, None, true).unwrap();
     assert_eq!(all.covers(CLAIM_WRITE, "anything", None), Coverage::Yes);
 
     let bug = Capability::new(
-        repository.clone(),
+        scope,
         Some("bug".to_string()),
         vec![CLAIM_WRITE.to_string()],
         Some(10),
@@ -84,7 +77,7 @@ fn capability_coverage_obeys_segment_and_time_boundaries() {
     assert_eq!(bug.covers(CLAIM_WRITE, "bug", None), Coverage::UnknownTime);
 
     let empty = Capability::new(
-        repository,
+        scope,
         Some(String::new()),
         vec![CLAIM_WRITE.to_string()],
         None,
@@ -98,9 +91,9 @@ fn capability_coverage_obeys_segment_and_time_boundaries() {
 
 #[test]
 fn attenuation_rejects_every_amplification_axis() {
-    let repository = repository(ROOT);
+    let scope = scope(ROOT);
     let parent = Capability::new(
-        repository.clone(),
+        scope,
         Some("bug".to_string()),
         vec![CAPABILITY_DELEGATE.to_string(), CLAIM_WRITE.to_string()],
         Some(10),
@@ -109,7 +102,7 @@ fn attenuation_rejects_every_amplification_axis() {
     )
     .unwrap();
     let child = Capability::new(
-        repository.clone(),
+        scope,
         Some("bug/1".to_string()),
         vec![CLAIM_WRITE.to_string()],
         Some(11),
@@ -121,7 +114,7 @@ fn attenuation_rejects_every_amplification_axis() {
 
     let cases = [
         Capability::new(
-            repository.clone(),
+            scope,
             Some("feature".to_string()),
             vec![CLAIM_WRITE.to_string()],
             Some(11),
@@ -130,7 +123,7 @@ fn attenuation_rejects_every_amplification_axis() {
         )
         .unwrap(),
         Capability::new(
-            repository.clone(),
+            scope,
             Some("bug/1".to_string()),
             vec!["role.name".to_string()],
             Some(11),
@@ -139,7 +132,7 @@ fn attenuation_rejects_every_amplification_axis() {
         )
         .unwrap(),
         Capability::new(
-            repository,
+            scope,
             Some("bug/1".to_string()),
             vec![CLAIM_WRITE.to_string()],
             Some(9),
@@ -162,7 +155,7 @@ fn attenuation_rejects_every_amplification_axis() {
     ));
 
     let nondelegable = Capability::new(
-        parent.repository().to_string(),
+        parent.scope(),
         Some("bug".to_string()),
         vec![CAPABILITY_DELEGATE.to_string(), CLAIM_WRITE.to_string()],
         Some(10),
@@ -180,7 +173,7 @@ fn attenuation_rejects_every_amplification_axis() {
 fn fixed_root_delegation_vector_pins_bytes_and_logical_identifier() {
     let governance = authority(ROOT);
     let capability = Capability::new(
-        governance.repository.clone(),
+        governance.scope,
         Some("bug".to_string()),
         vec![CLAIM_WRITE.to_string()],
         None,
@@ -203,11 +196,11 @@ fn fixed_root_delegation_vector_pins_bytes_and_logical_identifier() {
     assert_eq!(input.event_type, DELEGATION_EVENT_TYPE);
     assert_eq!(
         hex(&delegation.canonical_bytes().unwrap()),
-        "a861760166706172656e74f6676772616e746f7278396469643a6b65793a7a446e61656e57444d36717035526138323964397750557a424b4241335636666d326367344b56503357464b71735954766864656c656761746578396469643a6b65793a7a446e61655a5152587063546b516f6a524d547578326a594c3855444a764a41744c6479503756336933364b636a6a5a466a6361706162696c697479a6686e6f744166746572f66964656c656761626c65f5696e6f744265666f7265f66a6f7065726174696f6e73816b636c61696d2e77726974656a7265706f7369746f727978416b616e2d7265706f3a62636971676134697071706172727876627833626836637962616d67786774346d377371706369377272747264346861766c68776a726a616d7375626a656374507265666978636275676a7265706f7369746f727978416b616e2d7265706f3a62636971676134697071706172727876627833626836637962616d67786774346d377371706369377272747264346861766c68776a726a616f676f7665726e616e63654576656e74d82a58250001711220f2e643cc61f942bf053831417d03e715e1f7f5639dcaa8e8bf3ce1480c3b4ebf766772616e746f724964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f6"
+        "a86176016573636f70655822122060710f83c118dea1bec27f0b01030d734f8cfca0f123f18ce23e1c1559ec98a466706172656e74f6676772616e746f7278396469643a6b65793a7a446e61656e57444d36717035526138323964397750557a424b4241335636666d326367344b56503357464b71735954766864656c656761746578396469643a6b65793a7a446e61655a5152587063546b516f6a524d547578326a594c3855444a764a41744c6479503756336933364b636a6a5a466a6361706162696c697479a66573636f70655822122060710f83c118dea1bec27f0b01030d734f8cfca0f123f18ce23e1c1559ec98a4686e6f744166746572f66964656c656761626c65f5696e6f744265666f7265f66a6f7065726174696f6e73816b636c61696d2e77726974656d7375626a656374507265666978636275676f676f7665726e616e63654576656e74d82a58250001711220f2e643cc61f942bf053831417d03e715e1f7f5639dcaa8e8bf3ce1480c3b4ebf766772616e746f724964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f6"
     );
     assert_eq!(
         input.logical_cid().unwrap().to_string(),
-        "bafyreig2ib5u3olni3k2hiyslivtvboqco4pzrcztpmfld5cmzummpzixu"
+        "bafyreif5lz3l4aqol5hhkowf66jlxein7v6ac2n4con26cn3w4egi3v3tu"
     );
 }
 
@@ -218,7 +211,7 @@ fn delegation_proofs_bind_the_exact_grantor() {
     let delegate = Identity::generate();
     let governance = authority(&root.did());
     let capability = Capability::new(
-        governance.repository.clone(),
+        governance.scope,
         None,
         vec![CLAIM_WRITE.to_string()],
         None,
@@ -257,7 +250,7 @@ fn child_delegation_requires_one_attenuated_parent_path() {
         governance.active_event.clone(),
         delegate.did(),
         Capability::new(
-            governance.repository.clone(),
+            governance.scope,
             None,
             vec![CAPABILITY_DELEGATE.to_string(), CLAIM_WRITE.to_string()],
             None,
@@ -275,7 +268,7 @@ fn child_delegation_requires_one_attenuated_parent_path() {
         IdentityVersion::Static,
         child.did(),
         Capability::new(
-            governance.repository.clone(),
+            governance.scope,
             Some("bug".to_string()),
             vec![CLAIM_WRITE.to_string()],
             None,
@@ -304,7 +297,7 @@ fn path_evaluation_distinguishes_missing_time_scope_and_revocation() {
         governance.active_event.clone(),
         delegate.did(),
         Capability::new(
-            governance.repository.clone(),
+            governance.scope,
             None,
             vec![CAPABILITY_DELEGATE.to_string(), CLAIM_WRITE.to_string()],
             None,
@@ -322,7 +315,7 @@ fn path_evaluation_distinguishes_missing_time_scope_and_revocation() {
         IdentityVersion::Static,
         child.did(),
         Capability::new(
-            governance.repository.clone(),
+            governance.scope,
             Some("bug".to_string()),
             vec![CLAIM_WRITE.to_string()],
             Some(10),
@@ -474,7 +467,7 @@ fn removed_governance_root_cannot_anchor_a_delegation_path() {
         original.active_event.clone(),
         DELEGATE.to_string(),
         Capability::new(
-            original.repository.clone(),
+            original.scope,
             None,
             vec![CLAIM_WRITE.to_string()],
             None,
@@ -485,7 +478,7 @@ fn removed_governance_root_cannot_anchor_a_delegation_path() {
     )
     .unwrap();
     let replacement_governance = GovernanceAuthority::new(
-        original.repository.clone(),
+        original.scope,
         original.active_event.clone(),
         vec![replacement.did()],
         original.ancestors.clone(),
@@ -525,7 +518,7 @@ fn revocation_requires_original_grantor_or_current_root_and_a_matching_target() 
         governance.active_event.clone(),
         delegate.did(),
         Capability::new(
-            governance.repository.clone(),
+            governance.scope,
             None,
             vec![CLAIM_WRITE.to_string()],
             None,
@@ -577,7 +570,7 @@ fn raw_evidence_resolution_is_order_independent_and_collapses_proof_variants() {
         governance.active_event.clone(),
         delegate.did(),
         Capability::new(
-            governance.repository.clone(),
+            governance.scope,
             None,
             vec![CAPABILITY_DELEGATE.to_string(), CLAIM_WRITE.to_string()],
             None,
@@ -600,7 +593,7 @@ fn raw_evidence_resolution_is_order_independent_and_collapses_proof_variants() {
         IdentityVersion::Static,
         child.did(),
         Capability::new(
-            governance.repository.clone(),
+            governance.scope,
             Some("bug".to_string()),
             vec![CLAIM_WRITE.to_string()],
             None,
@@ -676,7 +669,7 @@ fn raw_evidence_resolution_separates_missing_unsupported_and_invalid() {
         governance.active_event.clone(),
         delegate.did(),
         Capability::new(
-            governance.repository.clone(),
+            governance.scope,
             None,
             vec![CLAIM_WRITE.to_string()],
             None,
@@ -693,7 +686,7 @@ fn raw_evidence_resolution_separates_missing_unsupported_and_invalid() {
         IdentityVersion::Static,
         child.did(),
         Capability::new(
-            governance.repository.clone(),
+            governance.scope,
             None,
             vec![CLAIM_WRITE.to_string()],
             None,
@@ -777,7 +770,7 @@ fn preserved_additive_envelope_fields_are_not_narrowed_into_typed_events() {
         governance.active_event.clone(),
         delegate.did(),
         Capability::new(
-            governance.repository.clone(),
+            governance.scope,
             None,
             vec![CLAIM_WRITE.to_string()],
             None,

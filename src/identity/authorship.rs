@@ -1,8 +1,8 @@
-//! RFC 1 modern claim-author identity and exact-state signature verification.
+//! RFC 1 current claim-author identity and exact-state signature verification.
 //!
 //! This module deliberately implements the normative `Author` value before
 //! changing claim storage. Legacy `AuthorId` bytes remain owned by
-//! `crate::claim`; modern claim content and migration can now depend on one
+//! `crate::claim`; current claim content and migration can now depend on one
 //! closed author shape without making a role or legacy agent representable.
 
 use atproto_dasl::Cid;
@@ -100,7 +100,7 @@ impl Author {
         Ok(atproto_dasl::to_vec(self)?)
     }
 
-    /// Verify a modern claim against the currently active `did:kan` state.
+    /// Verify a current claim against the currently active `did:kan` state.
     /// A later historical-state resolver can supply the same checks for an
     /// active ancestor; this boundary never substitutes the current method
     /// for the exact event cited by the author.
@@ -134,7 +134,7 @@ impl Author {
         let cryptographic_validity =
             verify_resolved_method_signature(&claim_cid.to_bytes(), signature, method);
         AuthorshipVerification {
-            repository_invocation: cryptographic_validity == CryptographicValidity::Valid
+            scope_invocation: cryptographic_validity == CryptographicValidity::Valid
                 && method
                     .purposes
                     .contains(&VerificationPurpose::CapabilityInvocation),
@@ -152,27 +152,27 @@ fn identity_version_kind(version: &IdentityVersion) -> &'static str {
     }
 }
 
-/// Signature validity and the independent permission to exercise repository
+/// Signature validity and the independent permission to exercise scope
 /// reach. Missing `capabilityInvocation` never turns authentic speech into an
 /// invalid signature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AuthorshipVerification {
     pub cryptographic_validity: CryptographicValidity,
-    pub repository_invocation: bool,
+    pub scope_invocation: bool,
 }
 
 impl AuthorshipVerification {
     fn invalid() -> Self {
         Self {
             cryptographic_validity: CryptographicValidity::Invalid,
-            repository_invocation: false,
+            scope_invocation: false,
         }
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("unsupported modern author principal: {0}")]
+    #[error("unsupported current author principal: {0}")]
     UnsupportedPrincipal(String),
     #[error("verification method `{method}` does not belong to principal `{principal}`")]
     MethodPrincipalMismatch { principal: String, method: String },
@@ -184,8 +184,8 @@ pub enum Error {
     },
     #[error("static did:key author method must use its complete fingerprint fragment: {0}")]
     StaticMethod(String),
-    #[error("modern author DID is invalid: {0}")]
+    #[error("current author DID is invalid: {0}")]
     Did(#[from] super::did_kan::Error),
-    #[error("modern author DAG-CBOR encoding failed: {0}")]
+    #[error("current author DAG-CBOR encoding failed: {0}")]
     Encode(#[from] atproto_dasl::EncodeError),
 }

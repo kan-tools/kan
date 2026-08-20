@@ -1,4 +1,4 @@
-//! Immutable local storage for RFC 1 identity and repository-control events.
+//! Immutable local storage for RFC 1 identity and scope-control events.
 
 use std::{
     path::{Path, PathBuf},

@@ -1,15 +1,15 @@
 use kan::{
     identity::{
         control::{IdentityVersion, Proof},
-        repository_inception::RepositoryInception,
-        repository_store::{Error, RepositoryIdentityStore},
+        scope_inception::ScopeInception,
+        scope_store::{Error, ScopeIdentityStore},
     },
     sign::Identity,
 };
 
 fn event(nonce: [u8; 32], root: &Identity) -> kan::identity::control::ControlEvent {
     let inception =
-        RepositoryInception::new(nonce, vec!["kan".to_string()], vec![root.did()], vec![]).unwrap();
+        ScopeInception::new(nonce, vec!["kan".to_string()], vec![root.did()], vec![]).unwrap();
     let input = inception.signing_input().unwrap();
     let did = root.did();
     let proof = Proof {
@@ -24,8 +24,8 @@ fn event(nonce: [u8; 32], root: &Identity) -> kan::identity::control::ControlEve
 #[test]
 fn reads_create_nothing_and_nonce_is_stable() {
     let temp = tempfile::tempdir().unwrap();
-    let directory = temp.path().join(".kan/repository");
-    let store = RepositoryIdentityStore::at(&directory);
+    let directory = temp.path().join(".kan/scope");
+    let store = ScopeIdentityStore::at(&directory);
     assert!(store.read().unwrap().is_none());
     assert!(!directory.exists());
 
@@ -40,7 +40,7 @@ fn reads_create_nothing_and_nonce_is_stable() {
 #[test]
 fn proved_inception_installs_immutably_and_reopens() {
     let temp = tempfile::tempdir().unwrap();
-    let store = RepositoryIdentityStore::at(temp.path().join(".kan/repository"));
+    let store = ScopeIdentityStore::at(temp.path().join(".kan/scope"));
     let root = Identity::generate();
     let first_event = event([0x11; 32], &root);
 
@@ -49,13 +49,13 @@ fn proved_inception_installs_immutably_and_reopens() {
     assert_eq!(store.install(&event([0x11; 32], &root)).unwrap(), installed);
     assert_eq!(store.read().unwrap(), Some(installed.clone()));
     assert_eq!(installed.inception.nonce, vec![0x11; 32]);
-    assert!(installed.repository.starts_with("kan-repo:b"));
+    assert!(installed.scope.to_string().starts_with("bciq"));
 }
 
 #[test]
-fn a_different_inception_never_replaces_the_installed_repository() {
+fn a_different_inception_never_replaces_the_installed_scope() {
     let temp = tempfile::tempdir().unwrap();
-    let store = RepositoryIdentityStore::at(temp.path().join(".kan/repository"));
+    let store = ScopeIdentityStore::at(temp.path().join(".kan/scope"));
     let root = Identity::generate();
     let first = store.install(&event([0x21; 32], &root)).unwrap();
 
@@ -68,18 +68,18 @@ fn a_different_inception_never_replaces_the_installed_repository() {
 
 #[cfg(unix)]
 #[test]
-fn symlinked_repository_entries_fail_closed() {
+fn symlinked_scope_entries_fail_closed() {
     use std::os::unix::fs::symlink;
 
     let temp = tempfile::tempdir().unwrap();
-    let directory = temp.path().join(".kan/repository");
+    let directory = temp.path().join(".kan/scope");
     std::fs::create_dir_all(&directory).unwrap();
     let target = temp.path().join("target");
     std::fs::write(&target, b"not inception").unwrap();
     symlink(&target, directory.join("inception.cbor")).unwrap();
 
     assert!(matches!(
-        RepositoryIdentityStore::at(directory).read(),
+        ScopeIdentityStore::at(directory).read(),
         Err(Error::UnsafeEntry(_))
     ));
 }

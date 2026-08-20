@@ -24,18 +24,18 @@ landed in [PR #233](https://github.com/kan-tools/kan/pull/233) and closed
 The active sequence is identity → URI-native local application → kan-native
 hosted service → ATProto interoperability. Later milestones may prototype
 against an earlier contract, but they do not become authorities for identity,
-repository scope, admission, or URI semantics.
+governed scope, admission, or URI semantics.
 
 | Milestone | Outcome | Governing design |
 |---|---|---|
-| 1 — Identity | Stable principals, repository scopes, governance, delegated admission, and four separately reported read judgments | [RFC 1](../rfcs/1-identity-system.md) |
+| 1 — Identity | Stable principals, governed scopes, governance, delegated admission, and four separately reported read judgments | [RFC 1](../rfcs/1-identity-system.md) |
 | 2 — Local URI application | Existing CLI and MCP reads compile to one RFC 2 resolution request and canonical `kan://local/...` URI | [RFC 2](../rfcs/2-kan-uri-scheme.md) |
 | 3 — Hosted kan | A Railway-deployable kan-native authority resolves the same typed resources while keeping authenticated ingest separate | [identity-first roadmap](../.design/identity-first-uri-native-roadmap.md) |
 | 4 — ATProto | RFC 3 codecs, publication, and AppView adapt the proven identity and URI model | [RFC 3](../rfcs/3-authoritative-lexicon-publication.md) |
 
 Milestone 1 began in commit `4ad239a`. The implemented first slice is deliberately
 compatibility-only: `src/identity.rs` defines RFC 1's cryptographic validity,
-identity standing, repository admission, and view-trust results; applies the
+identity standing, scope admission, and view-trust results; applies the
 ordered admission table; and evaluates preserved legacy claims without changing
 their bytes or the default writer. `src/identity/control.rs` adds the common
 domain-separated control-event producer model, canonical proof ordering,
@@ -52,16 +52,16 @@ listed order. `src/identity/did_kan_update.rs` now fixes the typed serde
 representation tracked by [#244](https://github.com/kan-tools/kan/issues/244),
 makes absent-target removals invalid, pins canonical update bytes and a logical
 CID, and resolves signed administration/recovery evidence without observation
-order. Modern authorship and write cutover remain pending.
-In parallel, the repository-inception slice now validates and
-canonically orders the unsigned payload, derives the full `kan-repo:` SHA-256
-multihash identifier, pins a deterministic vector, and
+order. Current authorship and write cutover remain pending.
+In parallel, the scope-inception slice now validates and canonically orders
+the unsigned payload, derives an exact 34-byte SHA-256 multihash `ScopeId`
+with canonical base32lower display, pins a deterministic vector, and
 requires a valid static P-256 `did:key` proof from a listed governance root.
-It can now also bind repository inception to the exact active state and
+It can now also bind scope inception to the exact active state and
 `capabilityDelegation` method of the enrolled system `did:kan` principal;
 method, state, algorithm, purpose, and signature substitution all fail closed.
-Workspace-local repository identity persistence now retains the canonical
-inception event immutably under `.kan/repository`, with a stable inception
+Workspace-local scope persistence now retains the canonical inception event
+immutably under `.kan/scope`, with a stable inception
 nonce, serialized first installation, atomic visibility, idempotent proof
 variants, and fail-closed conflict and symlink handling. Reads create nothing.
 The explicit root `kan init` command now composes that store with the selected
@@ -72,17 +72,17 @@ and records kan's Git-genesis digest as a `gitGenesis` substrate anchor. A
 plain retry reads the installed identity without consulting credentials;
 explicit identical options remain idempotent, while changed inception options
 are refused. Missing or stale actors and unsupported ledger envelopes fail
-before repository inception is installed, and this path never creates or
+before scope inception is installed, and this path never creates or
 consults the legacy workspace signing identity.
-`src/identity/authorship.rs` now implements the non-ambiguous first modern-
+`src/identity/authorship.rs` now implements the non-ambiguous current
 authorship boundary: the exact typed `Author { principal,
 verificationMethod, identityVersion }` map is canonically encoded and pinned,
 cannot represent a role or legacy agent, and verifies a claim CID only against
 the cited active `did:kan` event and resolved assertion method. System profiles
 can sign claim-CID bytes through the same provider/key-match gate used for
 control events, while `assertion` validity remains independent from
-`capabilityInvocation` repository reach. The complete modern claim-content
-map, legacy/modern storage discriminator, historical-state verification, and
+`capabilityInvocation` scope reach. The complete current claim-content
+map, legacy/current storage discriminator, historical-state verification, and
 default writer cutover remain pending; the accepted RFC fixes the nested
 author value but does not yet fix those complete signed-envelope bytes.
 `src/identity/governance.rs` now produces canonical update and reconciliation
@@ -128,7 +128,7 @@ a different principal, and reports only public identifiers and credential
 paths. Invalid aliases, insecure imports, conflicting keys, and a different
 existing default fail closed; an identical retry is idempotent. OS-keychain
 creation and hardware, agent, and external-signer execution remain, followed
-by repository-connection configuration and modern-authorship/default-write
+by repository-connection configuration and current-authorship/default-write
 cutover.
 
 ## Later public-protocol track: RFC 3

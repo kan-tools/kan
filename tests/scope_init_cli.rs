@@ -1,9 +1,8 @@
 use clap::Parser;
 use kan::{
-    cli::{run, Cli},
+    cli::{run, Cli, Error as CliError},
     identity::{
-        repository_inception::AnchorValue, repository_store::RepositoryIdentityStore,
-        system::SystemIdentityStore,
+        scope_inception::AnchorValue, scope_store::ScopeIdentityStore, system::SystemIdentityStore,
     },
 };
 
@@ -48,7 +47,7 @@ fn system_init_args(config: &std::path::Path) -> Vec<String> {
     ]
 }
 
-fn repository_init_args(repo: &std::path::Path, config: &std::path::Path) -> Vec<String> {
+fn scope_init_args(repo: &std::path::Path, config: &std::path::Path) -> Vec<String> {
     vec![
         "kan".to_string(),
         "init".to_string(),
@@ -69,10 +68,10 @@ async fn init_uses_the_system_actor_without_creating_a_legacy_workspace_identity
         .await
         .unwrap();
 
-    run(Cli::parse_from(repository_init_args(&repo, &config)))
+    run(Cli::parse_from(scope_init_args(&repo, &config)))
         .await
         .unwrap();
-    let installed = RepositoryIdentityStore::at(repo.join(".kan/repository"))
+    let installed = ScopeIdentityStore::at(repo.join(".kan/scope"))
         .read()
         .unwrap()
         .unwrap();
@@ -97,7 +96,7 @@ async fn init_uses_the_system_actor_without_creating_a_legacy_workspace_identity
 }
 
 #[tokio::test]
-async fn identical_init_is_idempotent_and_keeps_the_same_repository_bytes() {
+async fn identical_init_is_idempotent_and_keeps_the_same_scope_bytes() {
     let temp = tempfile::tempdir().unwrap();
     let repo = temp.path().join("project");
     let config = temp.path().join("system-config");
@@ -105,10 +104,10 @@ async fn identical_init_is_idempotent_and_keeps_the_same_repository_bytes() {
     run(Cli::parse_from(system_init_args(&config)))
         .await
         .unwrap();
-    let args = repository_init_args(&repo, &config);
+    let args = scope_init_args(&repo, &config);
     run(Cli::parse_from(args.clone())).await.unwrap();
-    let inception = repo.join(".kan/repository/inception.cbor");
-    let nonce = repo.join(".kan/repository/initialization-nonce");
+    let inception = repo.join(".kan/scope/inception.cbor");
+    let nonce = repo.join(".kan/scope/initialization-nonce");
     let first_event = std::fs::read(&inception).unwrap();
     let first_nonce = std::fs::read(&nonce).unwrap();
 
@@ -127,28 +126,50 @@ async fn explicit_reinitialization_is_idempotent_or_refuses_a_changed_inception(
     run(Cli::parse_from(system_init_args(&config)))
         .await
         .unwrap();
-    let mut stable = repository_init_args(&repo, &config);
+    let mut stable = scope_init_args(&repo, &config);
     stable.extend(["--name".to_string(), "stable-name".to_string()]);
     run(Cli::parse_from(stable.clone())).await.unwrap();
-    let inception = repo.join(".kan/repository/inception.cbor");
+    let inception = repo.join(".kan/scope/inception.cbor");
     let first_event = std::fs::read(&inception).unwrap();
 
     run(Cli::parse_from(stable)).await.unwrap();
-    let mut changed = repository_init_args(&repo, &config);
+    let mut changed = scope_init_args(&repo, &config);
     changed.extend(["--name".to_string(), "changed-name".to_string()]);
     assert!(run(Cli::parse_from(changed)).await.is_err());
     assert_eq!(std::fs::read(inception).unwrap(), first_event);
 }
 
 #[tokio::test]
-async fn missing_system_identity_refuses_before_repository_state_exists() {
+async fn missing_system_identity_refuses_before_scope_state_exists() {
     let temp = tempfile::tempdir().unwrap();
     let repo = temp.path().join("project");
     let config = temp.path().join("missing-system-config");
     committed_repo(&repo);
 
-    assert!(run(Cli::parse_from(repository_init_args(&repo, &config)))
+    assert!(run(Cli::parse_from(scope_init_args(&repo, &config)))
         .await
         .is_err());
     assert!(!repo.join(".kan").exists());
+}
+
+#[tokio::test]
+async fn pre_release_repository_state_is_never_reinterpreted_or_mutated() {
+    let temp = tempfile::tempdir().unwrap();
+    let repo = temp.path().join("project");
+    let config = temp.path().join("system-config");
+    committed_repo(&repo);
+    let old_state = repo.join(".kan/repository");
+    std::fs::create_dir_all(&old_state).unwrap();
+    let marker = old_state.join("inception.cbor");
+    std::fs::write(&marker, b"pre-release bytes").unwrap();
+
+    let error = run(Cli::parse_from(scope_init_args(&repo, &config)))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        CliError::PreReleaseRepositoryIdentity(path) if path == old_state
+    ));
+    assert_eq!(std::fs::read(marker).unwrap(), b"pre-release bytes");
+    assert!(!repo.join(".kan/scope").exists());
 }

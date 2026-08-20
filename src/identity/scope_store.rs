@@ -1,4 +1,4 @@
-//! Immutable workspace-local persistence for RFC 1 repository inception.
+//! Immutable workspace-local persistence for RFC 1 scope inception.
 
 use std::{
     path::{Path, PathBuf},
@@ -7,39 +7,36 @@ use std::{
 
 use super::{
     control::{decode_preserving, ControlEvent},
-    repository_inception::{RepositoryInception, INCEPTION_DOMAIN, INCEPTION_EVENT_TYPE},
+    scope_inception::{ScopeId, ScopeInception, INCEPTION_DOMAIN, INCEPTION_EVENT_TYPE},
 };
 
 pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
     crate::surface::SurfaceValue::new(
-        "repository-identity:inception.cbor",
+        "scope-identity:inception.cbor",
         "canonical-proved-inception",
     ),
-    crate::surface::SurfaceValue::new(
-        "repository-identity:initialization-nonce",
-        "inception-nonce",
-    ),
-    crate::surface::SurfaceValue::new("repository-identity:LOCK", "initialization-coordination"),
-    crate::surface::SurfaceValue::new("repository-identity:.tmp-*", "atomic-inception-install"),
+    crate::surface::SurfaceValue::new("scope-identity:initialization-nonce", "inception-nonce"),
+    crate::surface::SurfaceValue::new("scope-identity:LOCK", "initialization-coordination"),
+    crate::surface::SurfaceValue::new("scope-identity:.tmp-*", "atomic-inception-install"),
 ];
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct InstalledRepository {
-    pub repository: String,
-    pub inception: RepositoryInception,
+pub struct InstalledScope {
+    pub scope: ScopeId,
+    pub inception: ScopeInception,
     pub event: ControlEvent,
 }
 
 #[derive(Debug, Clone)]
-pub struct RepositoryIdentityStore {
+pub struct ScopeIdentityStore {
     directory: PathBuf,
 }
 
-impl RepositoryIdentityStore {
-    /// Point at the exact workspace-local repository identity directory,
-    /// conventionally `.kan/repository`. Reads create nothing.
+impl ScopeIdentityStore {
+    /// Point at the exact workspace-local scope identity directory,
+    /// conventionally `.kan/scope`. Reads create nothing.
     pub fn at(directory: impl Into<PathBuf>) -> Self {
         Self {
             directory: directory.into(),
@@ -50,7 +47,7 @@ impl RepositoryIdentityStore {
         &self.directory
     }
 
-    pub fn read(&self) -> Result<Option<InstalledRepository>, Error> {
+    pub fn read(&self) -> Result<Option<InstalledScope>, Error> {
         let path = self.directory.join("inception.cbor");
         if !existing_file(&path)? {
             return Ok(None);
@@ -58,22 +55,22 @@ impl RepositoryIdentityStore {
         decode_installed(&std::fs::read(path)?).map(Some)
     }
 
-    /// Return the once-generated repository inception nonce. Persisting it
-    /// separately makes a retry derive the same repository identifier even
+    /// Return the once-generated scope inception nonce. Persisting it
+    /// separately makes a retry derive the same scope identifier even
     /// when failure happened before the proved event was installed.
     pub fn initialization_nonce(&self) -> Result<[u8; 32], Error> {
         existing_directory_or_absent(&self.directory)?;
-        // surface-write: repository-identity:initialization-nonce
+        // surface-write: scope-identity:initialization-nonce
         crate::persistence::create_dir_all(
-            crate::persistence::SurfaceWrite::RepositoryIdentity,
+            crate::persistence::SurfaceWrite::ScopeIdentity,
             &self.directory,
         )?;
         let path = self.directory.join("initialization-nonce");
         let mut candidate = [0u8; 32];
         rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut candidate);
-        // surface-write: repository-identity:initialization-nonce
+        // surface-write: scope-identity:initialization-nonce
         match crate::persistence::write_new_owner_only(
-            crate::persistence::SurfaceWrite::RepositoryIdentity,
+            crate::persistence::SurfaceWrite::ScopeIdentity,
             &path,
             &candidate,
         ) {
@@ -89,26 +86,26 @@ impl RepositoryIdentityStore {
         }
     }
 
-    /// Install one proved inception event. Identical repository inception is
-    /// idempotent even if its proof bytes differ; a different repository is a
+    /// Install one proved inception event. Identical scope inception is
+    /// idempotent even if its proof bytes differ; a different scope is a
     /// refusal. The event becomes visible through one atomic rename.
-    pub fn install(&self, event: &ControlEvent) -> Result<InstalledRepository, Error> {
+    pub fn install(&self, event: &ControlEvent) -> Result<InstalledScope, Error> {
         let candidate = decode_installed(&event.canonical_bytes()?)?;
         existing_directory_or_absent(&self.directory)?;
-        // surface-write: repository-identity:inception.cbor,repository-identity:LOCK,repository-identity:.tmp-*
+        // surface-write: scope-identity:inception.cbor,scope-identity:LOCK,scope-identity:.tmp-*
         crate::persistence::create_dir_all(
-            crate::persistence::SurfaceWrite::RepositoryIdentity,
+            crate::persistence::SurfaceWrite::ScopeIdentity,
             &self.directory,
         )?;
         let lock_path = self.directory.join("LOCK");
         existing_file(&lock_path)?;
-        // surface-write: repository-identity:LOCK
+        // surface-write: scope-identity:LOCK
         let lock_file = crate::persistence::open_lock_file(
-            crate::persistence::SurfaceWrite::RepositoryIdentity,
+            crate::persistence::SurfaceWrite::ScopeIdentity,
             &lock_path,
         )?;
         fs4::FileExt::lock(&lock_file)?;
-        let _lock = RepositoryLock(lock_file);
+        let _lock = ScopeLock(lock_file);
 
         let destination = self.directory.join("inception.cbor");
         if existing_file(&destination)? {
@@ -117,8 +114,8 @@ impl RepositoryIdentityStore {
                 return Ok(installed);
             }
             return Err(Error::Conflict {
-                existing: installed.repository,
-                candidate: candidate.repository,
+                existing: installed.scope,
+                candidate: candidate.scope,
             });
         }
 
@@ -126,21 +123,21 @@ impl RepositoryIdentityStore {
         let temporary = self
             .directory
             .join(format!(".tmp-{}-{sequence}", std::process::id()));
-        // surface-write: repository-identity:.tmp-*
+        // surface-write: scope-identity:.tmp-*
         crate::persistence::write(
-            crate::persistence::SurfaceWrite::RepositoryIdentity,
+            crate::persistence::SurfaceWrite::ScopeIdentity,
             &temporary,
             &event.canonical_bytes()?,
         )?;
-        // surface-write: repository-identity:inception.cbor,repository-identity:.tmp-*
+        // surface-write: scope-identity:inception.cbor,scope-identity:.tmp-*
         if let Err(error) = crate::persistence::rename(
-            crate::persistence::SurfaceWrite::RepositoryIdentity,
+            crate::persistence::SurfaceWrite::ScopeIdentity,
             &temporary,
             &destination,
         ) {
-            // surface-write: repository-identity:.tmp-*
+            // surface-write: scope-identity:.tmp-*
             let _ = crate::persistence::remove_file(
-                crate::persistence::SurfaceWrite::RepositoryIdentity,
+                crate::persistence::SurfaceWrite::ScopeIdentity,
                 &temporary,
             );
             return Err(error.into());
@@ -149,26 +146,26 @@ impl RepositoryIdentityStore {
     }
 }
 
-fn decode_installed(bytes: &[u8]) -> Result<InstalledRepository, Error> {
+fn decode_installed(bytes: &[u8]) -> Result<InstalledScope, Error> {
     let preserved = decode_preserving(bytes)?;
     let event = preserved.typed().ok_or(Error::UnsupportedInception)?;
     if event.domain != INCEPTION_DOMAIN || event.event_type != INCEPTION_EVENT_TYPE {
         return Err(Error::WrongEvent);
     }
     let payload = atproto_dasl::to_vec(&event.payload)?;
-    let inception: RepositoryInception = atproto_dasl::from_reader(&payload[..])?;
+    let inception: ScopeInception = atproto_dasl::from_reader(&payload[..])?;
     inception.validate()?;
-    let repository = inception.repository_id()?;
-    Ok(InstalledRepository {
-        repository,
+    let scope = inception.scope_id()?;
+    Ok(InstalledScope {
+        scope,
         inception,
         event,
     })
 }
 
-struct RepositoryLock(std::fs::File);
+struct ScopeLock(std::fs::File);
 
-impl Drop for RepositoryLock {
+impl Drop for ScopeLock {
     fn drop(&mut self) {
         let _ = fs4::FileExt::unlock(&self.0);
     }
@@ -206,15 +203,18 @@ fn existing_directory_or_absent(path: &Path) -> Result<bool, Error> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("repository identity conflicts: existing `{existing}`, candidate `{candidate}`")]
-    Conflict { existing: String, candidate: String },
-    #[error("stored repository initialization nonce has {0} bytes, expected 32")]
+    #[error("scope identity conflicts: existing `{existing}`, candidate `{candidate}`")]
+    Conflict {
+        existing: ScopeId,
+        candidate: ScopeId,
+    },
+    #[error("stored scope initialization nonce has {0} bytes, expected 32")]
     NonceLength(usize),
-    #[error("repository identity entry is a symlink or has the wrong file type: {0}")]
+    #[error("scope identity entry is a symlink or has the wrong file type: {0}")]
     UnsafeEntry(PathBuf),
-    #[error("stored repository identity is not an inception event")]
+    #[error("stored scope identity is not an inception event")]
     WrongEvent,
-    #[error("stored repository inception uses unsupported control fields")]
+    #[error("stored scope inception uses unsupported control fields")]
     UnsupportedInception,
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -223,7 +223,7 @@ pub enum Error {
     #[error(transparent)]
     DecodeControl(#[from] super::control::DecodeError),
     #[error(transparent)]
-    Inception(#[from] super::repository_inception::Error),
+    Inception(#[from] super::scope_inception::Error),
     #[error(transparent)]
     Encode(#[from] atproto_dasl::EncodeError),
     #[error(transparent)]

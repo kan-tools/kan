@@ -303,7 +303,7 @@ impl SystemIdentityStore {
 
     /// Resolve kan's platform configuration root. An explicit environment
     /// override is useful for isolated installations and automation; it never
-    /// changes repository-local state.
+    /// changes workspace-local state.
     pub fn platform_config_root() -> Result<PathBuf, Error> {
         if let Some(root) = std::env::var_os(CONFIG_DIR_ENV) {
             return Ok(PathBuf::from(root));
@@ -592,7 +592,7 @@ impl SystemIdentityStore {
         })
     }
 
-    /// Sign one modern claim CID using the profile's exact resolved method.
+    /// Sign one current claim CID using the profile's exact resolved method.
     /// Claim signing remains structurally separate from control-event signing:
     /// the message is the claim CID bytes, never a control `SigningInput`.
     pub fn sign_claim_cid(

@@ -15,7 +15,7 @@ use super::{
     CryptographicValidity,
 };
 
-pub const UPDATE_DOMAIN: &str = "kan.did.update.v1";
+pub const UPDATE_DOMAIN: &str = "tools.kan.did.update.v1";
 pub const UPDATE_EVENT_TYPE: &str = "update";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

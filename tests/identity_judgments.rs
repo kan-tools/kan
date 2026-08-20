@@ -5,9 +5,9 @@ use kan::{
     claim::{Anchor, AuthorId, Claim, ClaimBody, ClaimContent, Rkey, SubjectRef},
     fold::TrustBase,
     identity::{
-        evaluate_legacy_claim, repository_admission, AdmissionFacts, CapabilityEvidence,
-        CryptographicValidity, GovernanceResolution, IdentityStateStanding, RepositoryAdmission,
-        RevocationStanding, TrustedTime, ViewTrust,
+        evaluate_legacy_claim, scope_admission, AdmissionFacts, CapabilityEvidence,
+        CryptographicValidity, GovernanceResolution, IdentityStateStanding, RevocationStanding,
+        ScopeAdmission, TrustedTime, ViewTrust,
     },
     sign::Identity,
 };
@@ -34,7 +34,7 @@ fn signed_legacy(identity: &Identity) -> Claim {
 
 fn admitted_facts() -> AdmissionFacts {
     AdmissionFacts {
-        repository_scoped: true,
+        scope_scoped: true,
         cryptographic_validity: CryptographicValidity::Valid,
         identity_standing: IdentityStateStanding::Active,
         identity_checkpoint: false,
@@ -50,11 +50,11 @@ fn admission_table_is_ordered_and_total_over_each_failure_class() {
     let cases = [
         (
             AdmissionFacts {
-                repository_scoped: false,
+                scope_scoped: false,
                 cryptographic_validity: CryptographicValidity::Invalid,
                 ..admitted_facts()
             },
-            RepositoryAdmission::NotApplicable,
+            ScopeAdmission::NotApplicable,
         ),
         (
             AdmissionFacts {
@@ -62,118 +62,118 @@ fn admission_table_is_ordered_and_total_over_each_failure_class() {
                 identity_standing: IdentityStateStanding::Contested,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Unadmitted,
+            ScopeAdmission::Unadmitted,
         ),
         (
             AdmissionFacts {
                 cryptographic_validity: CryptographicValidity::Unsupported,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Unknown,
+            ScopeAdmission::Unknown,
         ),
         (
             AdmissionFacts {
                 cryptographic_validity: CryptographicValidity::Unknown,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Unknown,
+            ScopeAdmission::Unknown,
         ),
         (
             AdmissionFacts {
                 identity_standing: IdentityStateStanding::Unknown,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Unknown,
+            ScopeAdmission::Unknown,
         ),
         (
             AdmissionFacts {
                 identity_standing: IdentityStateStanding::Contested,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Contested,
+            ScopeAdmission::Contested,
         ),
         (
             AdmissionFacts {
                 identity_checkpoint: true,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Unadmitted,
+            ScopeAdmission::Unadmitted,
         ),
         (
             AdmissionFacts {
                 identity_standing: IdentityStateStanding::Superseded,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Unadmitted,
+            ScopeAdmission::Unadmitted,
         ),
         (
             AdmissionFacts {
                 governance: GovernanceResolution::UnknownHistory,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Unknown,
+            ScopeAdmission::Unknown,
         ),
         (
             AdmissionFacts {
                 governance: GovernanceResolution::Unsupported,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Unknown,
+            ScopeAdmission::Unknown,
         ),
         (
             AdmissionFacts {
                 governance: GovernanceResolution::Contested,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Contested,
+            ScopeAdmission::Contested,
         ),
         (
             AdmissionFacts {
                 governance: GovernanceResolution::Invalid,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Unadmitted,
+            ScopeAdmission::Unadmitted,
         ),
         (
             AdmissionFacts {
                 trusted_time: TrustedTime::Unavailable,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Unknown,
+            ScopeAdmission::Unknown,
         ),
         (
             AdmissionFacts {
                 revocation: RevocationStanding::Unknown,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Unknown,
+            ScopeAdmission::Unknown,
         ),
         (
             AdmissionFacts {
                 revocation: RevocationStanding::Contested,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Contested,
+            ScopeAdmission::Contested,
         ),
         (
             AdmissionFacts {
                 capability: CapabilityEvidence::Missing,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Unknown,
+            ScopeAdmission::Unknown,
         ),
         (
             AdmissionFacts {
                 capability: CapabilityEvidence::CompleteWithoutCoveringPath,
                 ..admitted_facts()
             },
-            RepositoryAdmission::Unadmitted,
+            ScopeAdmission::Unadmitted,
         ),
-        (admitted_facts(), RepositoryAdmission::Admitted),
+        (admitted_facts(), ScopeAdmission::Admitted),
     ];
 
     for (facts, expected) in cases {
-        assert_eq!(repository_admission(facts), expected, "facts: {facts:?}");
+        assert_eq!(scope_admission(facts), expected, "facts: {facts:?}");
     }
 }
 
@@ -189,7 +189,7 @@ fn legacy_claim_keeps_validity_standing_admission_and_trust_separate() {
         result.identity_state_standing,
         IdentityStateStanding::Static
     );
-    assert_eq!(result.repository_admission, RepositoryAdmission::Unknown);
+    assert_eq!(result.scope_admission, ScopeAdmission::Unknown);
     assert_eq!(result.view_trust, ViewTrust::Included);
 }
 
@@ -211,7 +211,7 @@ fn invalid_signature_does_not_change_static_standing_or_view_trust() {
         result.identity_state_standing,
         IdentityStateStanding::Static
     );
-    assert_eq!(result.repository_admission, RepositoryAdmission::Unadmitted);
+    assert_eq!(result.scope_admission, ScopeAdmission::Unadmitted);
     assert_eq!(result.view_trust, ViewTrust::Included);
 }
 
@@ -222,7 +222,7 @@ fn consumer_weight_is_reported_without_becoming_admission() {
     let trust = TrustBase::peer_contested(HashMap::from([(claim.content.author.clone(), 0.25)]));
 
     let result = evaluate_legacy_claim(&claim, &trust);
-    assert_eq!(result.repository_admission, RepositoryAdmission::Unknown);
+    assert_eq!(result.scope_admission, ScopeAdmission::Unknown);
     assert_eq!(result.view_trust, ViewTrust::Weighted(0.25));
 }
 
@@ -242,7 +242,7 @@ fn unsupported_did_method_is_not_misreported_as_a_bad_signature() {
         result.identity_state_standing,
         IdentityStateStanding::Unknown
     );
-    assert_eq!(result.repository_admission, RepositoryAdmission::Unknown);
+    assert_eq!(result.scope_admission, ScopeAdmission::Unknown);
 }
 
 #[test]
@@ -261,7 +261,7 @@ fn malformed_did_key_is_invalid_and_has_no_static_standing() {
         result.identity_state_standing,
         IdentityStateStanding::Unknown
     );
-    assert_eq!(result.repository_admission, RepositoryAdmission::Unadmitted);
+    assert_eq!(result.scope_admission, ScopeAdmission::Unadmitted);
 }
 
 #[test]
@@ -274,6 +274,6 @@ fn judgments_have_stable_rfc1_json_names() {
 
     assert_eq!(value["cryptographicValidity"], "valid");
     assert_eq!(value["identityStateStanding"], "static");
-    assert_eq!(value["repositoryAdmission"], "unknown");
+    assert_eq!(value["scopeAdmission"], "unknown");
     assert_eq!(value["viewTrust"], "excluded");
 }

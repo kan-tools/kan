@@ -1,4 +1,4 @@
-//! RFC 1 repository capabilities, delegations, and revocations.
+//! RFC 1 scope capabilities, delegations, and revocations.
 
 use std::{
     cmp::Ordering,
@@ -14,13 +14,13 @@ use super::{
         SigningInput,
     },
     did_kan::validate_did,
-    repository_inception::validate_repository_id,
+    scope_inception::ScopeId,
     CryptographicValidity,
 };
 
-pub const DELEGATION_DOMAIN: &str = "kan.capability.delegation.v1";
+pub const DELEGATION_DOMAIN: &str = "tools.kan.capability.delegation.v1";
 pub const DELEGATION_EVENT_TYPE: &str = "delegation";
-pub const REVOCATION_DOMAIN: &str = "kan.capability.revocation.v1";
+pub const REVOCATION_DOMAIN: &str = "tools.kan.capability.revocation.v1";
 pub const REVOCATION_EVENT_TYPE: &str = "revocation";
 
 pub const CLAIM_WRITE: &str = "claim.write";
@@ -42,7 +42,7 @@ const V1_OPERATIONS: [&str; 6] = [
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Capability {
-    repository: String,
+    scope: ScopeId,
     subject_prefix: Option<String>,
     operations: Vec<String>,
     not_before: Option<i64>,
@@ -52,7 +52,7 @@ pub struct Capability {
 
 impl Capability {
     pub fn new(
-        repository: String,
+        scope: ScopeId,
         subject_prefix: Option<String>,
         mut operations: Vec<String>,
         not_before: Option<i64>,
@@ -62,7 +62,7 @@ impl Capability {
         reject_duplicates(&operations, "operations")?;
         operations.sort();
         let capability = Self {
-            repository,
+            scope,
             subject_prefix,
             operations,
             not_before,
@@ -74,7 +74,6 @@ impl Capability {
     }
 
     pub fn validate(&self) -> Result<(), Error> {
-        validate_repository_id(&self.repository)?;
         validate_sorted_unique(&self.operations, "operations")?;
         if self
             .not_before
@@ -98,8 +97,8 @@ impl Capability {
         Ok(())
     }
 
-    pub fn repository(&self) -> &str {
-        &self.repository
+    pub fn scope(&self) -> ScopeId {
+        self.scope
     }
 
     pub fn subject_prefix(&self) -> Option<&str> {
@@ -152,8 +151,8 @@ impl Capability {
         if !parent.delegable {
             return Err(Error::ParentNotDelegable);
         }
-        if self.repository != parent.repository {
-            return Err(Error::RepositoryMismatch);
+        if self.scope != parent.scope {
+            return Err(Error::ScopeMismatch);
         }
         if !prefix_is_subset(
             self.subject_prefix.as_deref(),
@@ -192,7 +191,7 @@ pub enum Coverage {
 /// heads without allowing a historical governance event to select old roots.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GovernanceAuthority {
-    pub repository: String,
+    pub scope: ScopeId,
     pub active_event: Cid,
     pub governance_roots: Vec<String>,
     pub ancestors: HashSet<Cid>,
@@ -200,12 +199,11 @@ pub struct GovernanceAuthority {
 
 impl GovernanceAuthority {
     pub fn new(
-        repository: String,
+        scope: ScopeId,
         active_event: Cid,
         mut governance_roots: Vec<String>,
         mut ancestors: HashSet<Cid>,
     ) -> Result<Self, Error> {
-        validate_repository_id(&repository)?;
         reject_duplicates(&governance_roots, "governanceRoots")?;
         governance_roots.sort();
         for root in &governance_roots {
@@ -213,7 +211,7 @@ impl GovernanceAuthority {
         }
         ancestors.insert(active_event.clone());
         Ok(Self {
-            repository,
+            scope,
             active_event,
             governance_roots,
             ancestors,
@@ -221,11 +219,11 @@ impl GovernanceAuthority {
     }
 
     pub fn from_active(
-        repository: String,
+        scope: ScopeId,
         active: &super::governance::ActiveGovernance,
     ) -> Result<Self, Error> {
         Self::new(
-            repository,
+            scope,
             active.active_event.clone(),
             active.governance_roots.clone(),
             active.ancestral_events().iter().cloned().collect(),
@@ -247,7 +245,7 @@ impl GovernanceAuthority {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Delegation {
     v: u64,
-    repository: String,
+    scope: ScopeId,
     grantor: String,
     grantor_identity_version: IdentityVersion,
     governance_event: Cid,
@@ -259,7 +257,7 @@ pub struct Delegation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DelegationState {
     pub event: Cid,
-    pub repository: String,
+    pub scope: ScopeId,
     pub grantor: String,
     pub governance_event: Cid,
     pub delegate: String,
@@ -321,7 +319,7 @@ impl Delegation {
     ) -> Result<Self, Error> {
         let delegation = Self {
             v: 1,
-            repository: capability.repository.clone(),
+            scope: capability.scope,
             grantor,
             grantor_identity_version,
             governance_event,
@@ -337,19 +335,18 @@ impl Delegation {
         if self.v != 1 {
             return Err(Error::UnsupportedVersion(self.v));
         }
-        validate_repository_id(&self.repository)?;
         validate_did(&self.grantor)?;
         validate_did(&self.delegate)?;
         self.capability.validate_supported()?;
-        if self.capability.repository != self.repository {
-            return Err(Error::RepositoryMismatch);
+        if self.capability.scope != self.scope {
+            return Err(Error::ScopeMismatch);
         }
         Ok(())
     }
 
     pub fn validate_governance(&self, governance: &GovernanceAuthority) -> Result<(), Error> {
-        if self.repository != governance.repository {
-            return Err(Error::RepositoryMismatch);
+        if self.scope != governance.scope {
+            return Err(Error::ScopeMismatch);
         }
         if !governance.recognizes(&self.governance_event) {
             return Err(Error::GovernanceNotAncestral);
@@ -398,7 +395,7 @@ impl Delegation {
     pub fn state(&self) -> Result<DelegationState, Error> {
         Ok(DelegationState {
             event: self.signing_input()?.logical_cid()?,
-            repository: self.repository.clone(),
+            scope: self.scope,
             grantor: self.grantor.clone(),
             governance_event: self.governance_event.clone(),
             delegate: self.delegate.clone(),
@@ -412,7 +409,7 @@ impl Delegation {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Revocation {
     v: u64,
-    repository: String,
+    scope: ScopeId,
     delegation: Cid,
     revoker: String,
     revoker_identity_version: IdentityVersion,
@@ -423,7 +420,7 @@ pub struct Revocation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RevocationState {
     pub event: Cid,
-    pub repository: String,
+    pub scope: ScopeId,
     pub delegation: Cid,
     pub revoker: String,
     pub governance_event: Cid,
@@ -444,7 +441,7 @@ impl Revocation {
         }
         let revocation = Self {
             v: 1,
-            repository: delegation.repository.clone(),
+            scope: delegation.scope,
             delegation: delegation.event.clone(),
             revoker,
             revoker_identity_version,
@@ -459,7 +456,6 @@ impl Revocation {
         if self.v != 1 {
             return Err(Error::UnsupportedVersion(self.v));
         }
-        validate_repository_id(&self.repository)?;
         validate_did(&self.revoker)?;
         Ok(())
     }
@@ -470,10 +466,10 @@ impl Revocation {
         delegation: &DelegationState,
     ) -> Result<(), Error> {
         self.validate_structure()?;
-        if self.repository != governance.repository {
-            return Err(Error::RepositoryMismatch);
+        if self.scope != governance.scope {
+            return Err(Error::ScopeMismatch);
         }
-        if self.repository != delegation.repository || self.delegation != delegation.event {
+        if self.scope != delegation.scope || self.delegation != delegation.event {
             return Err(Error::DelegationMismatch);
         }
         if !governance.recognizes(&self.governance_event) {
@@ -519,7 +515,7 @@ impl Revocation {
     pub fn state(&self) -> Result<RevocationState, Error> {
         Ok(RevocationState {
             event: self.signing_input()?.logical_cid()?,
-            repository: self.repository.clone(),
+            scope: self.scope,
             delegation: self.delegation.clone(),
             revoker: self.revoker.clone(),
             governance_event: self.governance_event.clone(),
@@ -809,7 +805,7 @@ fn decode_payload(event: &ControlEvent) -> DecodedPayload {
         (DELEGATION_DOMAIN, DELEGATION_EVENT_TYPE) => (
             &[
                 "v",
-                "repository",
+                "scope",
                 "grantor",
                 "grantorIdentityVersion",
                 "governanceEvent",
@@ -822,7 +818,7 @@ fn decode_payload(event: &ControlEvent) -> DecodedPayload {
         (REVOCATION_DOMAIN, REVOCATION_EVENT_TYPE) => (
             &[
                 "v",
-                "repository",
+                "scope",
                 "delegation",
                 "revoker",
                 "revokerIdentityVersion",
@@ -856,7 +852,7 @@ fn decode_payload(event: &ControlEvent) -> DecodedPayload {
             return DecodedPayload::Invalid("capability is not a map".to_string());
         };
         let known_capability = [
-            "repository",
+            "scope",
             "subjectPrefix",
             "operations",
             "notBefore",
@@ -1002,7 +998,7 @@ pub struct CapabilityPathEvaluation {
 
 /// Evaluate one explicitly named delegation head. Inputs are recognized
 /// delegation/revocation states whose envelope, proof, identity standing, and
-/// repository admission were established by their respective resolvers.
+/// scope admission were established by their respective resolvers.
 pub fn evaluate_path(
     governance: &GovernanceAuthority,
     head: &Cid,
@@ -1023,8 +1019,7 @@ pub fn evaluate_path(
             capability: super::CapabilityEvidence::Missing,
         };
     };
-    if head_state.repository != governance.repository
-        || !governance.recognizes(&head_state.governance_event)
+    if head_state.scope != governance.scope || !governance.recognizes(&head_state.governance_event)
     {
         return no_covering_path();
     }
@@ -1057,7 +1052,7 @@ pub fn evaluate_path(
     }
 
     for revocation in revocations {
-        if revocation.repository != governance.repository
+        if revocation.scope != governance.scope
             || !governance.recognizes(&revocation.governance_event)
             || !path
                 .iter()
@@ -1191,14 +1186,14 @@ pub enum Error {
     NotSortedUnique(&'static str),
     #[error("{0} contains a duplicate")]
     Duplicate(&'static str),
-    #[error("unsupported repository operation: {0}")]
+    #[error("unsupported scope operation: {0}")]
     UnsupportedOperation(String),
     #[error("capability notBefore must not be after notAfter")]
     TimeRange,
     #[error("parent capability does not permit delegation")]
     ParentNotDelegable,
-    #[error("capability repository amplification")]
-    RepositoryMismatch,
+    #[error("capability scope amplification")]
+    ScopeMismatch,
     #[error("capability subject-prefix amplification")]
     SubjectAmplification,
     #[error("capability operation amplification")]
@@ -1226,7 +1221,7 @@ pub enum Error {
     #[error(transparent)]
     Identity(#[from] super::did_kan::Error),
     #[error(transparent)]
-    Inception(#[from] super::repository_inception::Error),
+    Inception(#[from] super::scope_inception::Error),
     #[error(transparent)]
     Control(#[from] super::control::Error),
     #[error(transparent)]

@@ -1,11 +1,13 @@
+use std::str::FromStr;
+
 use kan::{
     identity::{
         control::{IdentityVersion, Proof},
         did_kan::VerificationPurpose,
         did_kan_update::{resolve, DidKanResolution},
         enrollment::DailyDeviceEnrollment,
-        repository_inception::{
-            AnchorValue, Error, RepositoryInception, SubstrateAnchor, INCEPTION_DOMAIN,
+        scope_inception::{
+            AnchorValue, Error, ScopeId, ScopeInception, SubstrateAnchor, INCEPTION_DOMAIN,
             INCEPTION_EVENT_TYPE,
         },
         system::CredentialReference,
@@ -15,8 +17,8 @@ use kan::{
 
 const GOVERNANCE_ROOT: &str = "did:key:zDnaenWDM6qp5Ra829d9wPUzBKBA3V6fm2cg4KVP3WFKqsYTv";
 
-fn vector_inception() -> RepositoryInception {
-    RepositoryInception::new(
+fn vector_inception() -> ScopeInception {
+    ScopeInception::new(
         [0x22; 32],
         vec!["kan".to_string()],
         vec![GOVERNANCE_ROOT.to_string()],
@@ -28,11 +30,32 @@ fn vector_inception() -> RepositoryInception {
     .unwrap()
 }
 
+#[test]
+fn scope_id_is_bytes_on_wire_and_canonical_base32lower_in_text() {
+    let scope = vector_inception().scope_id().unwrap();
+    let encoded = atproto_dasl::to_vec(&scope).unwrap();
+
+    assert_eq!(&encoded[..2], &[0x58, 0x22]);
+    assert_eq!(&encoded[2..], scope.as_bytes());
+    let decoded: ScopeId = atproto_dasl::from_reader(&encoded[..]).unwrap();
+    assert_eq!(decoded, scope);
+    assert_eq!(ScopeId::from_str(&scope.to_string()).unwrap(), scope);
+
+    let text_bytes = atproto_dasl::to_vec(&scope.to_string()).unwrap();
+    let decoded_text: Result<ScopeId, _> = atproto_dasl::from_reader(&text_bytes[..]);
+    assert!(decoded_text.is_err());
+    assert!(ScopeId::from_str(&scope.to_string().to_uppercase()).is_err());
+
+    let mut wrong_hash = *scope.as_bytes();
+    wrong_hash[0] = 0x13;
+    assert!(ScopeId::from_bytes(wrong_hash).is_err());
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn proof(identity: &Identity, inception: &RepositoryInception) -> Proof {
+fn proof(identity: &Identity, inception: &ScopeInception) -> Proof {
     let input = inception.signing_input().unwrap();
     Proof {
         method: format!(
@@ -47,7 +70,7 @@ fn proof(identity: &Identity, inception: &RepositoryInception) -> Proof {
 }
 
 #[test]
-fn fixed_inception_vector_pins_canonical_bytes_and_repository_id() {
+fn fixed_inception_vector_pins_canonical_bytes_and_scope_id() {
     let inception = vector_inception();
 
     assert_eq!(
@@ -55,13 +78,13 @@ fn fixed_inception_vector_pins_canonical_bytes_and_repository_id() {
         "a5617601656e616d657381636b616e656e6f6e63655820222222222222222222222222222222222222222222222222222222222222222267616e63686f727381a2647479706569676974436f6d6d69746576616c75657828303030303030303030303030303030303030303030303030303030303030303030303030303030306f676f7665726e616e6365526f6f74738178396469643a6b65793a7a446e61656e57444d36717035526138323964397750557a424b4241335636666d326367344b56503357464b7173595476"
     );
     assert_eq!(
-        inception.repository_id().unwrap(),
-        "kan-repo:bciqlonzrmcwluircewwu7evclx6tdwnc7aupnf6kb5no6nzlegmsiei"
+        inception.scope_id().unwrap().to_string(),
+        "bciqlonzrmcwluircewwu7evclx6tdwnc7aupnf6kb5no6nzlegmsiei"
     );
 }
 
 #[test]
-fn signing_input_uses_the_repository_domain_and_exact_payload() {
+fn signing_input_uses_the_scope_domain_and_exact_payload() {
     let inception = vector_inception();
     let input = inception.signing_input().unwrap();
 
@@ -75,7 +98,7 @@ fn signing_input_uses_the_repository_domain_and_exact_payload() {
 
 #[test]
 fn constructor_sorts_by_canonical_encoded_value_not_rust_string_order() {
-    let inception = RepositoryInception::new(
+    let inception = ScopeInception::new(
         [0x33; 32],
         vec!["aa".to_string(), "b".to_string()],
         vec![GOVERNANCE_ROOT.to_string()],
@@ -89,32 +112,32 @@ fn constructor_sorts_by_canonical_encoded_value_not_rust_string_order() {
 }
 
 #[test]
-fn every_identifier_input_changes_the_repository_id() {
+fn every_identifier_input_changes_the_scope_id() {
     let baseline = vector_inception();
-    let baseline_id = baseline.repository_id().unwrap();
+    let baseline_id = baseline.scope_id().unwrap();
 
-    let changed_nonce = RepositoryInception::new(
+    let changed_nonce = ScopeInception::new(
         [0x23; 32],
         baseline.names.clone(),
         baseline.governance_roots.clone(),
         baseline.anchors.clone(),
     )
     .unwrap();
-    let changed_name = RepositoryInception::new(
+    let changed_name = ScopeInception::new(
         [0x22; 32],
         vec!["kan-tools".to_string()],
         baseline.governance_roots.clone(),
         baseline.anchors.clone(),
     )
     .unwrap();
-    let changed_root = RepositoryInception::new(
+    let changed_root = ScopeInception::new(
         [0x22; 32],
         baseline.names.clone(),
         vec![Identity::generate().did()],
         baseline.anchors.clone(),
     )
     .unwrap();
-    let changed_anchor = RepositoryInception::new(
+    let changed_anchor = ScopeInception::new(
         [0x22; 32],
         baseline.names.clone(),
         baseline.governance_roots.clone(),
@@ -125,16 +148,16 @@ fn every_identifier_input_changes_the_repository_id() {
     )
     .unwrap();
 
-    assert_ne!(baseline_id, changed_nonce.repository_id().unwrap());
-    assert_ne!(baseline_id, changed_name.repository_id().unwrap());
-    assert_ne!(baseline_id, changed_root.repository_id().unwrap());
-    assert_ne!(baseline_id, changed_anchor.repository_id().unwrap());
+    assert_ne!(baseline_id, changed_nonce.scope_id().unwrap());
+    assert_ne!(baseline_id, changed_name.scope_id().unwrap());
+    assert_ne!(baseline_id, changed_root.scope_id().unwrap());
+    assert_ne!(baseline_id, changed_anchor.scope_id().unwrap());
 }
 
 #[test]
 fn duplicate_inputs_and_an_empty_root_set_are_rejected() {
     assert!(matches!(
-        RepositoryInception::new(
+        ScopeInception::new(
             [0x44; 32],
             vec!["kan".to_string(), "kan".to_string()],
             vec![GOVERNANCE_ROOT.to_string()],
@@ -143,14 +166,14 @@ fn duplicate_inputs_and_an_empty_root_set_are_rejected() {
         Err(Error::Duplicate("names"))
     ));
     assert!(matches!(
-        RepositoryInception::new([0x44; 32], vec![], vec![], vec![]),
+        ScopeInception::new([0x44; 32], vec![], vec![], vec![]),
         Err(Error::NoGovernanceRoots)
     ));
 }
 
 #[test]
 fn byte_and_text_anchor_values_round_trip_without_conflation() {
-    let inception = RepositoryInception::new(
+    let inception = ScopeInception::new(
         [0x45; 32],
         vec![],
         vec![GOVERNANCE_ROOT.to_string()],
@@ -166,7 +189,7 @@ fn byte_and_text_anchor_values_round_trip_without_conflation() {
         ],
     )
     .unwrap();
-    let decoded: RepositoryInception =
+    let decoded: ScopeInception =
         atproto_dasl::from_reader(&inception.canonical_bytes().unwrap()[..]).unwrap();
 
     assert_eq!(decoded, inception);
@@ -184,7 +207,7 @@ fn byte_and_text_anchor_values_round_trip_without_conflation() {
 fn proved_inception_requires_a_listed_governance_root() {
     let root = Identity::generate();
     let second_root = Identity::generate();
-    let inception = RepositoryInception::new(
+    let inception = ScopeInception::new(
         [0x55; 32],
         vec!["kan".to_string()],
         vec![root.did(), second_root.did()],
@@ -222,7 +245,7 @@ fn proved_inception_requires_a_listed_governance_root() {
 }
 
 #[test]
-fn active_did_kan_daily_method_can_govern_repository_inception() {
+fn active_did_kan_daily_method_can_govern_scope_inception() {
     let recovery = Identity::generate();
     let daily = Identity::generate();
     let enrollment = DailyDeviceEnrollment::new(
@@ -245,7 +268,7 @@ fn active_did_kan_daily_method_can_govern_repository_inception() {
     ) else {
         panic!("daily enrollment must resolve active");
     };
-    let inception = RepositoryInception::new(
+    let inception = ScopeInception::new(
         [0x77; 32],
         vec!["kan".to_string()],
         vec![state.did.clone()],

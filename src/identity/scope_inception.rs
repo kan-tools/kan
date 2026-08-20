@@ -1,6 +1,6 @@
-//! RFC 1 repository inception and self-certifying repository identifiers.
+//! RFC 1 scope inception and self-certifying scope identifiers.
 
-use std::{cmp::Ordering, collections::BTreeSet};
+use std::{cmp::Ordering, collections::BTreeSet, fmt, str::FromStr};
 
 use atproto_dasl::Ipld;
 use serde::{
@@ -19,8 +19,96 @@ use super::{
     CryptographicValidity,
 };
 
-pub const INCEPTION_DOMAIN: &str = "kan.repository.inception.v1";
+pub const INCEPTION_DOMAIN: &str = "tools.kan.scope.inception.v1";
 pub const INCEPTION_EVENT_TYPE: &str = "inception";
+
+const SHA2_256_MULTIHASH_PREFIX: [u8; 2] = [0x12, 0x20];
+const SCOPE_ID_LENGTH: usize = 34;
+
+/// A self-certifying scope identifier.
+///
+/// Canonical DAG-CBOR represents this value as exactly 34 bytes containing a
+/// sha2-256 multihash. Human-facing text is canonical base32lower multibase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ScopeId([u8; SCOPE_ID_LENGTH]);
+
+impl ScopeId {
+    pub fn from_bytes(bytes: [u8; SCOPE_ID_LENGTH]) -> Result<Self, Error> {
+        if bytes[..2] != SHA2_256_MULTIHASH_PREFIX {
+            return Err(Error::InvalidScopeId(atrium_crypto::multibase::encode(
+                atrium_crypto::multibase::Base::Base32Lower,
+                bytes,
+            )));
+        }
+        Ok(Self(bytes))
+    }
+
+    pub fn as_bytes(&self) -> &[u8; SCOPE_ID_LENGTH] {
+        &self.0
+    }
+}
+
+impl fmt::Display for ScopeId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&atrium_crypto::multibase::encode(
+            atrium_crypto::multibase::Base::Base32Lower,
+            self.0,
+        ))
+    }
+}
+
+impl FromStr for ScopeId {
+    type Err = Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let (base, bytes) = atrium_crypto::multibase::decode(value)
+            .map_err(|_| Error::InvalidScopeId(value.to_string()))?;
+        if base != atrium_crypto::multibase::Base::Base32Lower
+            || bytes.len() != SCOPE_ID_LENGTH
+            || bytes[..2] != SHA2_256_MULTIHASH_PREFIX
+            || atrium_crypto::multibase::encode(base, &bytes) != value
+        {
+            return Err(Error::InvalidScopeId(value.to_string()));
+        }
+        let bytes: [u8; SCOPE_ID_LENGTH] = bytes
+            .try_into()
+            .map_err(|_| Error::InvalidScopeId(value.to_string()))?;
+        Ok(Self(bytes))
+    }
+}
+
+impl Serialize for ScopeId {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_bytes(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for ScopeId {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ScopeIdVisitor;
+
+        impl<'de> Visitor<'de> for ScopeIdVisitor {
+            type Value = ScopeId;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a 34-byte sha2-256 multihash scope identifier")
+            }
+
+            fn visit_bytes<E: de::Error>(self, value: &[u8]) -> Result<Self::Value, E> {
+                let bytes: [u8; SCOPE_ID_LENGTH] = value
+                    .try_into()
+                    .map_err(|_| E::invalid_length(value.len(), &self))?;
+                ScopeId::from_bytes(bytes).map_err(E::custom)
+            }
+
+            fn visit_byte_buf<E: de::Error>(self, value: Vec<u8>) -> Result<Self::Value, E> {
+                self.visit_bytes(&value)
+            }
+        }
+
+        deserializer.deserialize_bytes(ScopeIdVisitor)
+    }
+}
 
 /// The two value kinds admitted by an RFC 1 substrate anchor.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -78,11 +166,11 @@ pub struct SubstrateAnchor {
     pub value: AnchorValue,
 }
 
-/// Unsigned repository inception payload. Its canonical bytes derive the
-/// repository identifier; proofs are deliberately outside that identifier.
+/// Unsigned scope inception payload. Its canonical bytes derive the scope
+/// identifier; proofs are deliberately outside that identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct RepositoryInception {
+pub struct ScopeInception {
     pub v: u64,
     #[serde(with = "serde_bytes")]
     pub nonce: Vec<u8>,
@@ -91,7 +179,7 @@ pub struct RepositoryInception {
     pub anchors: Vec<SubstrateAnchor>,
 }
 
-impl RepositoryInception {
+impl ScopeInception {
     pub fn new(
         nonce: [u8; 32],
         mut names: Vec<String>,
@@ -139,18 +227,12 @@ impl RepositoryInception {
         Ok(atproto_dasl::to_vec(self)?)
     }
 
-    pub fn repository_id(&self) -> Result<String, Error> {
+    pub fn scope_id(&self) -> Result<ScopeId, Error> {
         let digest = Sha256::digest(self.canonical_bytes()?);
-        let mut multihash = Vec::with_capacity(34);
-        multihash.extend_from_slice(&[0x12, 0x20]);
-        multihash.extend_from_slice(&digest);
-        let encoded = atrium_crypto::multibase::encode(
-            atrium_crypto::multibase::Base::Base32Lower,
-            multihash,
-        );
-        let repository = format!("kan-repo:{encoded}");
-        validate_repository_id(&repository)?;
-        Ok(repository)
+        let mut multihash = [0u8; SCOPE_ID_LENGTH];
+        multihash[..2].copy_from_slice(&SHA2_256_MULTIHASH_PREFIX);
+        multihash[2..].copy_from_slice(&digest);
+        ScopeId::from_bytes(multihash)
     }
 
     pub fn signing_input(&self) -> Result<SigningInput, Error> {
@@ -209,22 +291,6 @@ impl RepositoryInception {
     }
 }
 
-pub(super) fn validate_repository_id(repository: &str) -> Result<(), Error> {
-    let encoded = repository
-        .strip_prefix("kan-repo:")
-        .ok_or_else(|| Error::RepositoryId(repository.to_string()))?;
-    let (base, bytes) = atrium_crypto::multibase::decode(encoded)
-        .map_err(|_| Error::RepositoryId(repository.to_string()))?;
-    if base != atrium_crypto::multibase::Base::Base32Lower
-        || bytes.len() != 34
-        || bytes[..2] != [0x12, 0x20]
-        || atrium_crypto::multibase::encode(base, &bytes) != encoded
-    {
-        return Err(Error::RepositoryId(repository.to_string()));
-    }
-    Ok(())
-}
-
 fn canonical_key<T: Serialize>(value: &T) -> Result<Vec<u8>, atproto_dasl::EncodeError> {
     atproto_dasl::to_vec(value)
 }
@@ -267,20 +333,20 @@ fn reject_duplicates<T: Ord + Clone>(values: &[T], field: &'static str) -> Resul
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("unsupported repository inception version {0}")]
+    #[error("unsupported scope inception version {0}")]
     UnsupportedVersion(u64),
-    #[error("repository inception nonce must be exactly 32 bytes, found {0}")]
+    #[error("scope inception nonce must be exactly 32 bytes, found {0}")]
     NonceLength(usize),
-    #[error("repository inception requires at least one governance root")]
+    #[error("scope inception requires at least one governance root")]
     NoGovernanceRoots,
     #[error("{0} must be sorted by canonical encoded value and duplicate-free")]
     NotSortedUnique(&'static str),
     #[error("{0} contains a duplicate")]
     Duplicate(&'static str),
-    #[error("repository inception needs a valid proof from a listed governance root")]
+    #[error("scope inception needs a valid proof from a listed governance root")]
     NoGovernanceProof,
-    #[error("invalid canonical repository identifier: {0}")]
-    RepositoryId(String),
+    #[error("invalid canonical scope identifier: {0}")]
+    InvalidScopeId(String),
     #[error(transparent)]
     Identity(#[from] super::did_kan::Error),
     #[error(transparent)]

@@ -2995,7 +2995,7 @@ pub fn authors(ws: &Workspace, json: bool) -> Result<String, Error> {
                     "did": did,
                     "declared": declared,
                     // Present only for v0.2-v0.6 claims written with
-                    // KAN_AGENT set; a modern author has none.
+                    // KAN_AGENT set; a current author has none.
                     "legacy_agent": agent.is_some(),
                 })
             })

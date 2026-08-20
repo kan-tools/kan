@@ -1,4 +1,4 @@
-//! RFC 1 repository governance events and deterministic evidence resolution.
+//! RFC 1 scope governance events and deterministic evidence resolution.
 
 use std::{
     cmp::Ordering,
@@ -11,11 +11,11 @@ use serde::{Deserialize, Serialize};
 use super::{
     control::{verify_static_did_key_proof, ControlEvent, Proof, SigningInput},
     did_kan::validate_did,
-    repository_inception::{validate_repository_id, RepositoryInception},
+    scope_inception::{ScopeId, ScopeInception},
     CryptographicValidity,
 };
 
-pub const GOVERNANCE_DOMAIN: &str = "kan.repository.governance.v1";
+pub const GOVERNANCE_DOMAIN: &str = "tools.kan.scope.governance.v1";
 pub const GOVERNANCE_EVENT_TYPE: &str = "governance";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,7 +29,7 @@ pub enum GovernanceMode {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GovernanceEvent {
     pub v: u64,
-    pub repository: String,
+    pub scope: ScopeId,
     pub mode: GovernanceMode,
     pub parents: Vec<Cid>,
     pub sequence: u64,
@@ -38,17 +38,17 @@ pub struct GovernanceEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GovernanceState {
-    pub repository: String,
+    pub scope: ScopeId,
     pub event: Cid,
     pub sequence: u64,
     pub governance_roots: Vec<String>,
 }
 
 impl GovernanceState {
-    pub fn from_inception(inception: &RepositoryInception) -> Result<Self, Error> {
+    pub fn from_inception(inception: &ScopeInception) -> Result<Self, Error> {
         inception.validate()?;
         Ok(Self {
-            repository: inception.repository_id()?,
+            scope: inception.scope_id()?,
             event: inception.signing_input()?.logical_cid()?,
             sequence: 0,
             governance_roots: inception.governance_roots.clone(),
@@ -59,7 +59,7 @@ impl GovernanceState {
 impl GovernanceEvent {
     pub fn new(
         mode: GovernanceMode,
-        repository: String,
+        scope: ScopeId,
         mut parents: Vec<Cid>,
         sequence: u64,
         mut governance_roots: Vec<String>,
@@ -70,7 +70,7 @@ impl GovernanceEvent {
         governance_roots.sort();
         let event = Self {
             v: 1,
-            repository,
+            scope,
             mode,
             parents,
             sequence,
@@ -83,7 +83,7 @@ impl GovernanceEvent {
     pub fn update(parent: &GovernanceState, governance_roots: Vec<String>) -> Result<Self, Error> {
         Self::new(
             GovernanceMode::Update,
-            parent.repository.clone(),
+            parent.scope,
             vec![parent.event.clone()],
             parent
                 .sequence
@@ -103,11 +103,8 @@ impl GovernanceEvent {
                 found: 0,
             });
         };
-        if parents
-            .iter()
-            .any(|parent| parent.repository != first.repository)
-        {
-            return Err(Error::RepositoryMismatch);
+        if parents.iter().any(|parent| parent.scope != first.scope) {
+            return Err(Error::ScopeMismatch);
         }
         let sequence = parents
             .iter()
@@ -118,7 +115,7 @@ impl GovernanceEvent {
             .ok_or(Error::SequenceOverflow)?;
         Self::new(
             GovernanceMode::Reconcile,
-            first.repository.clone(),
+            first.scope,
             parents.iter().map(|parent| parent.event.clone()).collect(),
             sequence,
             governance_roots,
@@ -129,7 +126,6 @@ impl GovernanceEvent {
         if self.v != 1 {
             return Err(Error::UnsupportedVersion(self.v));
         }
-        validate_repository_id(&self.repository)?;
         validate_sorted_unique_cids(&self.parents, "parents")?;
         validate_sorted_unique_nonempty(&self.governance_roots, "governanceRoots")?;
         for root in &self.governance_roots {
@@ -168,11 +164,8 @@ impl GovernanceEvent {
         if parents.len() != self.parents.len() {
             return Err(Error::MissingParentState);
         }
-        if parents
-            .iter()
-            .any(|parent| parent.repository != self.repository)
-        {
-            return Err(Error::RepositoryMismatch);
+        if parents.iter().any(|parent| parent.scope != self.scope) {
+            return Err(Error::ScopeMismatch);
         }
         let mut actual_parents: Vec<Cid> =
             parents.iter().map(|parent| parent.event.clone()).collect();
@@ -221,7 +214,7 @@ impl GovernanceEvent {
 
     fn state(&self, event: Cid) -> GovernanceState {
         GovernanceState {
-            repository: self.repository.clone(),
+            scope: self.scope,
             event,
             sequence: self.sequence,
             governance_roots: self.governance_roots.clone(),
@@ -283,7 +276,7 @@ pub enum GovernanceResolution {
 /// Resolve a complete in-memory evidence set without consulting observation
 /// order, wall-clock time, proof count, or external state.
 pub fn resolve(
-    inception: &RepositoryInception,
+    inception: &ScopeInception,
     inception_event: &ControlEvent,
     candidates: &[ControlEvent],
 ) -> GovernanceResolution {
@@ -297,7 +290,7 @@ pub fn resolve(
             HashSet::new(),
             orphans,
             missing_references,
-            ["invalid repository inception".to_string()],
+            ["invalid scope inception".to_string()],
         );
     };
     let Ok(expected_inception_input) = inception.signing_input() else {
@@ -306,7 +299,7 @@ pub fn resolve(
             HashSet::new(),
             orphans,
             missing_references,
-            ["invalid repository inception signing input".to_string()],
+            ["invalid scope inception signing input".to_string()],
         );
     };
     if inception_event.validate().is_err() {
@@ -338,7 +331,7 @@ pub fn resolve(
                 HashSet::new(),
                 orphans,
                 missing_references,
-                ["repository inception authorization is unsupported".to_string()],
+                ["scope inception authorization is unsupported".to_string()],
             );
         }
         Authorization::Invalid => {
@@ -347,7 +340,7 @@ pub fn resolve(
                 HashSet::new(),
                 orphans,
                 missing_references,
-                ["repository inception authorization is invalid".to_string()],
+                ["scope inception authorization is invalid".to_string()],
             );
         }
         Authorization::Valid => {}
@@ -524,14 +517,12 @@ pub fn resolve(
                 .map(|parent| parent.sequence)
                 .max()
                 .is_some_and(|known_max| event.sequence > known_max);
-            let repository_matches = available
-                .iter()
-                .all(|parent| parent.repository == event.repository);
+            let scope_matches = available.iter().all(|parent| parent.scope == event.scope);
             if !available.is_empty()
                 && available.len() < event.parents.len()
                 && has_absent_parent
                 && sequence_still_possible
-                && repository_matches
+                && scope_matches
                 && authorize_all(&group.input, &group.proofs, &available) == Authorization::Valid
             {
                 unknown_history = true;
@@ -653,7 +644,7 @@ enum DecodedPayload {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct GovernanceHeader {
-    repository: String,
+    scope: ScopeId,
     parents: Vec<Cid>,
     sequence: u64,
     governance_roots: Vec<String>,
@@ -661,7 +652,6 @@ struct GovernanceHeader {
 
 impl GovernanceHeader {
     fn validate_against(&self, parents: &[GovernanceState]) -> Result<(), Error> {
-        validate_repository_id(&self.repository)?;
         validate_sorted_unique_cids(&self.parents, "parents")?;
         validate_sorted_unique_nonempty(&self.governance_roots, "governanceRoots")?;
         for root in &self.governance_roots {
@@ -670,11 +660,8 @@ impl GovernanceHeader {
         if parents.len() != self.parents.len() {
             return Err(Error::MissingParentState);
         }
-        if parents
-            .iter()
-            .any(|parent| parent.repository != self.repository)
-        {
-            return Err(Error::RepositoryMismatch);
+        if parents.iter().any(|parent| parent.scope != self.scope) {
+            return Err(Error::ScopeMismatch);
         }
         let mut actual: Vec<Cid> = parents.iter().map(|parent| parent.event.clone()).collect();
         actual.sort_by(cid_cmp);
@@ -707,7 +694,7 @@ fn decode_payload(event: &ControlEvent) -> DecodedPayload {
     };
     let known = [
         "v",
-        "repository",
+        "scope",
         "mode",
         "parents",
         "sequence",
@@ -767,7 +754,7 @@ fn decode_payload(event: &ControlEvent) -> DecodedPayload {
 }
 
 fn decode_header(fields: &BTreeMap<String, Ipld>) -> Option<GovernanceHeader> {
-    let header_fields = ["repository", "parents", "sequence", "governanceRoots"];
+    let header_fields = ["scope", "parents", "sequence", "governanceRoots"];
     let projection: BTreeMap<String, Ipld> = fields
         .iter()
         .filter(|(key, _)| header_fields.contains(&key.as_str()))
@@ -916,8 +903,8 @@ pub enum Error {
     Duplicate(&'static str),
     #[error("{mode:?} governance event has {found} parents")]
     ParentCount { mode: GovernanceMode, found: usize },
-    #[error("governance event repository does not match its parents")]
-    RepositoryMismatch,
+    #[error("governance event scope does not match its parents")]
+    ScopeMismatch,
     #[error("governance event parents do not match the supplied states")]
     ParentMismatch,
     #[error("governance event is missing a parent state")]
@@ -933,7 +920,7 @@ pub enum Error {
     #[error(transparent)]
     Identity(#[from] super::did_kan::Error),
     #[error(transparent)]
-    Inception(#[from] super::repository_inception::Error),
+    Inception(#[from] super::scope_inception::Error),
     #[error(transparent)]
     Encode(#[from] atproto_dasl::EncodeError),
     #[error(transparent)]

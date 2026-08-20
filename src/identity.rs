@@ -1,7 +1,7 @@
 //! RFC 1 identity judgments and compatibility evaluation.
 //!
 //! This module is the compatibility-first seam between kan's legacy
-//! repository-local `did:key` claims and RFC 1's identity system. It does not
+//! workspace-local `did:key` claims and RFC 1's identity system. It does not
 //! resolve identity or governance history, select a signer, or write state.
 //! Instead it gives those future resolvers a closed vocabulary and composes
 //! their evidence using RFC 1's ordered admission table.
@@ -19,8 +19,8 @@ pub mod did_kan_update;
 pub mod enrollment;
 pub mod governance;
 pub mod ledger;
-pub mod repository_inception;
-pub mod repository_store;
+pub mod scope_inception;
+pub mod scope_store;
 pub mod system;
 
 /// Whether the claim's bytes and exact signing authority authenticate it.
@@ -44,10 +44,10 @@ pub enum IdentityStateStanding {
     Static,
 }
 
-/// Whether an authentic act was authorized to reach this repository scope.
+/// Whether an authentic act was authorized to reach this governed scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum RepositoryAdmission {
+pub enum ScopeAdmission {
     Admitted,
     Unadmitted,
     Contested,
@@ -70,11 +70,11 @@ pub enum ViewTrust {
 pub struct ClaimJudgments {
     pub cryptographic_validity: CryptographicValidity,
     pub identity_state_standing: IdentityStateStanding,
-    pub repository_admission: RepositoryAdmission,
+    pub scope_admission: ScopeAdmission,
     pub view_trust: ViewTrust,
 }
 
-/// Result of resolving repository governance evidence.
+/// Result of resolving scope-governance evidence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GovernanceResolution {
     Active,
@@ -109,15 +109,15 @@ pub enum CapabilityEvidence {
     CompleteWithCoveringPath,
 }
 
-/// Facts consumed by RFC 1's ordered repository-admission table.
+/// Facts consumed by RFC 1's ordered scope-admission table.
 ///
 /// Upstream resolvers establish these facts; this reducer deliberately does
 /// not fetch, infer, or mutate anything. `identity_checkpoint` means the actor
 /// directly cited a `did:kan` genesis or recovery event, which can control
-/// later identity state but cannot itself exercise repository reach.
+/// later identity state but cannot itself exercise scope reach.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdmissionFacts {
-    pub repository_scoped: bool,
+    pub scope_scoped: bool,
     pub cryptographic_validity: CryptographicValidity,
     pub identity_standing: IdentityStateStanding,
     pub identity_checkpoint: bool,
@@ -127,67 +127,67 @@ pub struct AdmissionFacts {
     pub capability: CapabilityEvidence,
 }
 
-/// Apply RFC 1's repository-admission decision table in normative order.
-pub fn repository_admission(facts: AdmissionFacts) -> RepositoryAdmission {
-    if !facts.repository_scoped {
-        return RepositoryAdmission::NotApplicable;
+/// Apply RFC 1's scope-admission decision table in normative order.
+pub fn scope_admission(facts: AdmissionFacts) -> ScopeAdmission {
+    if !facts.scope_scoped {
+        return ScopeAdmission::NotApplicable;
     }
 
     match facts.cryptographic_validity {
-        CryptographicValidity::Invalid => return RepositoryAdmission::Unadmitted,
+        CryptographicValidity::Invalid => return ScopeAdmission::Unadmitted,
         CryptographicValidity::Unsupported | CryptographicValidity::Unknown => {
-            return RepositoryAdmission::Unknown;
+            return ScopeAdmission::Unknown;
         }
         CryptographicValidity::Valid => {}
     }
 
     match facts.identity_standing {
-        IdentityStateStanding::Unknown => return RepositoryAdmission::Unknown,
-        IdentityStateStanding::Contested => return RepositoryAdmission::Contested,
+        IdentityStateStanding::Unknown => return ScopeAdmission::Unknown,
+        IdentityStateStanding::Contested => return ScopeAdmission::Contested,
         IdentityStateStanding::Active
         | IdentityStateStanding::Superseded
         | IdentityStateStanding::Static => {}
     }
 
     if facts.identity_checkpoint || facts.identity_standing == IdentityStateStanding::Superseded {
-        return RepositoryAdmission::Unadmitted;
+        return ScopeAdmission::Unadmitted;
     }
 
     match facts.governance {
         GovernanceResolution::UnknownHistory | GovernanceResolution::Unsupported => {
-            return RepositoryAdmission::Unknown;
+            return ScopeAdmission::Unknown;
         }
-        GovernanceResolution::Contested => return RepositoryAdmission::Contested,
+        GovernanceResolution::Contested => return ScopeAdmission::Contested,
         // Invalid governance cannot confer reach. It is a negative result,
         // not missing evidence, so fail closed without calling it unknown.
-        GovernanceResolution::Invalid => return RepositoryAdmission::Unadmitted,
+        GovernanceResolution::Invalid => return ScopeAdmission::Unadmitted,
         GovernanceResolution::Active => {}
     }
 
     if facts.trusted_time == TrustedTime::Unavailable {
-        return RepositoryAdmission::Unknown;
+        return ScopeAdmission::Unknown;
     }
 
     match facts.revocation {
-        RevocationStanding::Unknown => return RepositoryAdmission::Unknown,
-        RevocationStanding::Contested => return RepositoryAdmission::Contested,
+        RevocationStanding::Unknown => return ScopeAdmission::Unknown,
+        RevocationStanding::Contested => return ScopeAdmission::Contested,
         RevocationStanding::Clear => {}
     }
 
     match facts.capability {
-        CapabilityEvidence::Missing => RepositoryAdmission::Unknown,
-        CapabilityEvidence::CompleteWithoutCoveringPath => RepositoryAdmission::Unadmitted,
-        CapabilityEvidence::CompleteWithCoveringPath => RepositoryAdmission::Admitted,
+        CapabilityEvidence::Missing => ScopeAdmission::Unknown,
+        CapabilityEvidence::CompleteWithoutCoveringPath => ScopeAdmission::Unadmitted,
+        CapabilityEvidence::CompleteWithCoveringPath => ScopeAdmission::Admitted,
     }
 }
 
-/// Evaluate a preserved pre-RFC1 claim without inventing modern identity or
+/// Evaluate a preserved pre-RFC1 claim without inventing current identity or
 /// governance evidence.
 ///
 /// Legacy claims sign their content CID with the `AuthorId.did` key and cite
 /// no identity version. A supported `did:key` therefore has static standing.
-/// The legacy workspace anchor is repository-scoped, but it is not RFC 1
-/// repository inception or governance evidence, so a valid legacy claim's
+/// The legacy workspace anchor is scope-bound, but it is not RFC 1 scope
+/// inception or governance evidence, so a valid legacy claim's
 /// admission is honestly `unknown`. This classification does not alter the
 /// existing fold; it makes the compatibility state available to later typed
 /// read surfaces.
@@ -235,8 +235,8 @@ pub fn evaluate_legacy_claim(claim: &Claim, trust: &TrustBase) -> ClaimJudgments
         )
     };
 
-    let repository_admission = repository_admission(AdmissionFacts {
-        repository_scoped: true,
+    let scope_admission = scope_admission(AdmissionFacts {
+        scope_scoped: true,
         cryptographic_validity,
         identity_standing: identity_state_standing,
         identity_checkpoint: false,
@@ -263,7 +263,7 @@ pub fn evaluate_legacy_claim(claim: &Claim, trust: &TrustBase) -> ClaimJudgments
     ClaimJudgments {
         cryptographic_validity,
         identity_state_standing,
-        repository_admission,
+        scope_admission,
         view_trust,
     }
 }
