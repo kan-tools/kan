@@ -29,6 +29,23 @@ pub struct InstalledScope {
     pub event: ControlEvent,
 }
 
+/// A stored inception whose governance proof has been checked against the
+/// exact identity state it names. Possessing an `InstalledScope` alone is not
+/// enough to activate current claims: canonical bytes establish identity,
+/// while this type additionally establishes authority.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VerifiedScope(InstalledScope);
+
+impl VerifiedScope {
+    pub fn scope(&self) -> ScopeId {
+        self.0.scope
+    }
+
+    pub fn installed(&self) -> &InstalledScope {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ScopeIdentityStore {
     directory: PathBuf,
@@ -53,6 +70,40 @@ impl ScopeIdentityStore {
             return Ok(None);
         }
         decode_installed(&std::fs::read(path)?).map(Some)
+    }
+
+    /// Read and verify a `did:kan`-governed inception against the exact
+    /// resolved controller state. Reads create and modify nothing.
+    pub fn read_verified_did_kan(
+        &self,
+        state: &super::did_kan_update::ResolvedDidKanState,
+    ) -> Result<Option<VerifiedScope>, Error> {
+        let Some(installed) = self.read()? else {
+            return Ok(None);
+        };
+        let verified = installed
+            .inception
+            .proved_event_with_did_kan_state(state, installed.event.proofs.clone())?;
+        if verified != installed.event {
+            return Err(Error::InceptionProofMismatch);
+        }
+        Ok(Some(VerifiedScope(installed)))
+    }
+
+    /// Verify an inception governed directly by a self-certifying static
+    /// `did:key`. This keeps fixtures and imported scopes on the same closed
+    /// activation-token boundary as `did:kan` scopes.
+    pub fn read_verified_static(&self) -> Result<Option<VerifiedScope>, Error> {
+        let Some(installed) = self.read()? else {
+            return Ok(None);
+        };
+        let verified = installed
+            .inception
+            .proved_event(installed.event.proofs.clone())?;
+        if verified != installed.event {
+            return Err(Error::InceptionProofMismatch);
+        }
+        Ok(Some(VerifiedScope(installed)))
     }
 
     /// Return the once-generated scope inception nonce. Persisting it
@@ -216,6 +267,8 @@ pub enum Error {
     WrongEvent,
     #[error("stored scope inception uses unsupported control fields")]
     UnsupportedInception,
+    #[error("stored scope inception proof does not reproduce its canonical event")]
+    InceptionProofMismatch,
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

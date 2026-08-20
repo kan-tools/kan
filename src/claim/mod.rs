@@ -902,6 +902,10 @@ impl ClaimContent {
         &self.subject
     }
 
+    pub fn recorded_at(&self) -> RecordedAt {
+        self.recorded_at
+    }
+
     pub fn canonical_bytes(&self) -> Result<Vec<u8>, Error> {
         Ok(atproto_dasl::to_vec(self)?)
     }

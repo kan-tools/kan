@@ -50,6 +50,9 @@ fn proved_inception_installs_immutably_and_reopens() {
     assert_eq!(store.read().unwrap(), Some(installed.clone()));
     assert_eq!(installed.inception.nonce, vec![0x11; 32]);
     assert!(installed.scope.to_string().starts_with("bciq"));
+    let verified = store.read_verified_static().unwrap().unwrap();
+    assert_eq!(verified.scope(), installed.scope);
+    assert_eq!(verified.installed(), &installed);
 }
 
 #[test]

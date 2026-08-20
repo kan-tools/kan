@@ -91,9 +91,16 @@ unversioned under `claim`, released historical types are isolated under
 supported v1, preserved future, and invalid records. It pins the v2 signing
 input, rejects codec/content-arm contradictions and non-canonical DAG-CBOR,
 preserves an unknown codec plus unknown arm byte-exactly, and retains v1's
-raw-CID signature rule. The existing log writer deliberately remains v1 until
-verified scope activation and mixed-codec storage integration land; no
-historical block is rewritten by this slice.
+raw-CID signature rule. Mixed-codec storage now keeps v1 and current records
+in the same `tools.kan.claim` collection without rewriting historical blocks.
+A typed mixed reader makes supported-current, supported-v1, and preserved
+unsupported records an explicit branch; the compatibility fold sees only v1
+until `ClaimView` lands. Current append is gated by an opaque `VerifiedScope`
+token that can only be constructed by rechecking the stored inception proof
+against its exact controller state, and the claim's cryptographic scope must
+match that token. The production workspace still defaults to v1: selecting
+the system actor for repository commits, compiling actions into current claim
+types, and cutting reads over to `ClaimView` are the next activation slice.
 `src/identity/governance.rs` now produces canonical update and reconciliation
 events and resolves unordered evidence deterministically: proof variants share
 one logical event, sibling leaves are contested, reconciliation requires

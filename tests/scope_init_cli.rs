@@ -75,10 +75,14 @@ async fn init_uses_the_system_actor_without_creating_a_legacy_workspace_identity
         .read()
         .unwrap()
         .unwrap();
-    let actor = SystemIdentityStore::at(&config)
-        .default_profile()
+    let system = SystemIdentityStore::at(&config);
+    let actor = system.default_profile().unwrap().unwrap();
+    let (state, _) = system.resolve_profile_method(&actor).unwrap();
+    let verified = ScopeIdentityStore::at(repo.join(".kan/scope"))
+        .read_verified_did_kan(&state)
         .unwrap()
         .unwrap();
+    assert_eq!(verified.scope(), installed.scope);
     assert_eq!(
         installed.inception.governance_roots,
         vec![actor.principal().to_string()]
@@ -93,6 +97,31 @@ async fn init_uses_the_system_actor_without_creating_a_legacy_workspace_identity
     for legacy in ["seed", "seed-id", "identity", "identity-id", "log"] {
         assert!(!repo.join(".kan").join(legacy).exists());
     }
+}
+
+#[tokio::test]
+async fn installed_scope_does_not_activate_against_an_unrelated_identity_state() {
+    let temp = tempfile::tempdir().unwrap();
+    let repo = temp.path().join("project");
+    let config = temp.path().join("system-config");
+    let unrelated_config = temp.path().join("unrelated-system-config");
+    committed_repo(&repo);
+    run(Cli::parse_from(system_init_args(&config)))
+        .await
+        .unwrap();
+    run(Cli::parse_from(system_init_args(&unrelated_config)))
+        .await
+        .unwrap();
+    run(Cli::parse_from(scope_init_args(&repo, &config)))
+        .await
+        .unwrap();
+
+    let unrelated = SystemIdentityStore::at(&unrelated_config);
+    let profile = unrelated.default_profile().unwrap().unwrap();
+    let (state, _) = unrelated.resolve_profile_method(&profile).unwrap();
+    assert!(ScopeIdentityStore::at(repo.join(".kan/scope"))
+        .read_verified_did_kan(&state)
+        .is_err());
 }
 
 #[tokio::test]

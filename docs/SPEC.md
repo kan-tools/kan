@@ -351,7 +351,13 @@ domain names are simply `Claim`, `ClaimContent`, and `ClaimBody`. Unknown
 future codec/arm pairs are retained as unsupported canonical bytes. A known
 codec with the wrong arm, malformed known content, or non-canonical input is
 invalid and never enters the fold. Released v1 and current claims therefore
-coexist without rewriting either signed representation.
+coexist in the `tools.kan.claim` collection without rewriting either signed
+representation. Writing a current claim additionally requires a verified
+scope-activation token derived by checking the installed inception proof
+against its exact identity state; stored inception bytes alone cannot
+authorize a write. Until the current `ClaimView` fold is installed, the
+compatibility fold reads only v1 and explicitly skips current and preserved
+unsupported records.
 
 ## 8. Retraction (RECOMMENDED default, flagged OPEN in §9)
 

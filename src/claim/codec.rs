@@ -56,9 +56,16 @@ impl PreservedClaim {
 }
 
 /// The identity evidence available while decoding a current claim.
+#[derive(Clone, Copy)]
 pub enum VerificationContext<'a> {
     StaticDidKey,
     ActiveDidKan(&'a crate::identity::did_kan_update::ResolvedDidKanState),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecodedRecord {
+    pub claim: DecodedClaim,
+    pub rev: String,
 }
 
 /// Encode a verified current claim into the common mixed-codec envelope.
@@ -90,6 +97,13 @@ pub fn decode(
     bytes: &[u8],
     verification: VerificationContext<'_>,
 ) -> Result<DecodedClaim, DecodeError> {
+    Ok(decode_record(bytes, verification)?.claim)
+}
+
+pub fn decode_record(
+    bytes: &[u8],
+    verification: VerificationContext<'_>,
+) -> Result<DecodedRecord, DecodeError> {
     if bytes.len() > MAX_RECORD_BYTES {
         return Err(DecodeError::RecordTooLarge(bytes.len()));
     }
@@ -150,12 +164,15 @@ pub fn decode(
         });
     }
     if !known_codec {
-        return Ok(DecodedClaim::Unsupported(PreservedClaim {
-            claim_id,
-            codec: codec.to_string(),
-            content_type: content_type.to_string(),
-            canonical_bytes: bytes.to_vec(),
-        }));
+        return Ok(DecodedRecord {
+            claim: DecodedClaim::Unsupported(PreservedClaim {
+                claim_id,
+                codec: codec.to_string(),
+                content_type: content_type.to_string(),
+                canonical_bytes: bytes.to_vec(),
+            }),
+            rev: rev.to_string(),
+        });
     }
 
     let mut domain_fields = content_fields.clone();
@@ -171,9 +188,10 @@ pub fn decode(
                 signature: signature.clone(),
                 rev: rev.to_string(),
             };
-            Ok(DecodedClaim::Supported(SupportedClaim::V1(
-                record.verify()?,
-            )))
+            Ok(DecodedRecord {
+                claim: DecodedClaim::Supported(SupportedClaim::V1(record.verify()?)),
+                rev: rev.to_string(),
+            })
         }
         V2_CODEC => {
             let content: ClaimContent = atproto_dasl::from_reader(&domain_bytes[..])?;
@@ -191,7 +209,10 @@ pub fn decode(
                     Claim::verify_active_did_kan(content, signature.clone(), state)?
                 }
             };
-            Ok(DecodedClaim::Supported(SupportedClaim::Claim(claim)))
+            Ok(DecodedRecord {
+                claim: DecodedClaim::Supported(SupportedClaim::Claim(claim)),
+                rev: rev.to_string(),
+            })
         }
         _ => unreachable!("known codec dispatch is closed above"),
     }
