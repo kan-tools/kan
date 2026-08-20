@@ -7,7 +7,7 @@
 //! whole log."
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, StatusValue, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, StatusValue, SubjectRef},
     context::{self, TokenEstimator},
     fold::{self, TrustBase},
 };
@@ -28,7 +28,7 @@ fn author() -> AuthorId {
     }
 }
 
-fn claim(subject: &str, body: ClaimBody) -> (atproto_dasl::Cid, kan::claim::Claim) {
+fn claim(subject: &str, body: ClaimBody) -> (atproto_dasl::Cid, kan::claim::v1::Claim) {
     let content = ClaimContent {
         author: author(),
         workspace: Anchor::Workspace("g".to_string()),
@@ -41,7 +41,7 @@ fn claim(subject: &str, body: ClaimBody) -> (atproto_dasl::Cid, kan::claim::Clai
     let cid = kan::cid::content_cid(&content).unwrap();
     (
         cid,
-        kan::claim::Claim {
+        kan::claim::v1::Claim {
             content,
             sig: vec![],
         },
@@ -56,7 +56,7 @@ fn observation(text: &str) -> ClaimBody {
 
 /// Build a `FoldedView` directly, so these tests exercise the read surfaces
 /// rather than the log.
-fn view_of(claims: Vec<(atproto_dasl::Cid, kan::claim::Claim)>) -> fold::FoldedView {
+fn view_of(claims: Vec<(atproto_dasl::Cid, kan::claim::v1::Claim)>) -> fold::FoldedView {
     let stored: Vec<(atproto_dasl::Cid, kan::store::log::StoredClaim)> = claims
         .into_iter()
         .enumerate()

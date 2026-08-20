@@ -19,7 +19,7 @@
 //! hold today.
 
 use kan::{
-    claim::{
+    claim::v1::{
         Anchor, AuthorId, ClaimBody, ClaimContent, Layer, RelationKind, Rkey, StatusValue,
         SubjectKind, SubjectRef,
     },
@@ -33,7 +33,7 @@ fn author() -> AuthorId {
     }
 }
 
-fn claim(subject: &str, body: ClaimBody) -> (atproto_dasl::Cid, kan::claim::Claim) {
+fn claim(subject: &str, body: ClaimBody) -> (atproto_dasl::Cid, kan::claim::v1::Claim) {
     let content = ClaimContent {
         author: author(),
         workspace: Anchor::Workspace("g".to_string()),
@@ -46,7 +46,7 @@ fn claim(subject: &str, body: ClaimBody) -> (atproto_dasl::Cid, kan::claim::Clai
     let cid = kan::cid::content_cid(&content).unwrap();
     (
         cid,
-        kan::claim::Claim {
+        kan::claim::v1::Claim {
             content,
             sig: vec![],
         },
@@ -105,7 +105,7 @@ fn claim_json_per_kind_fields_are_pinned() {
         &["title"],
         &claim_json_keys(ClaimBody::Subject {
             title: "T".to_string(),
-            subject_kind: kan::claim::SubjectKind::Issue,
+            subject_kind: kan::claim::v1::SubjectKind::Issue,
         }),
         "ClaimJson (Subject)",
     );

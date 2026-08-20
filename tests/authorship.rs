@@ -1,6 +1,10 @@
 use atproto_dasl::Ipld;
 use kan::{
-    cid::content_cid,
+    claim::{
+        codec::{self, DecodedClaim, SupportedClaim, VerificationContext},
+        CanonicalSet, ClaimBody, ClaimContent, ClaimSigningInput, NarrativeText, RecordedAt,
+        SubjectPath, UniqueSequence,
+    },
     identity::{
         authorship::Author,
         control::IdentityVersion,
@@ -11,6 +15,25 @@ use kan::{
     },
     sign::Identity,
 };
+
+fn current_content(author: Author, text: &str) -> ClaimContent {
+    let mut scope = [0_u8; 34];
+    scope[..2].copy_from_slice(&[0x12, 0x20]);
+    ClaimContent::new(
+        author,
+        kan::identity::scope_inception::ScopeId::from_bytes(scope).unwrap(),
+        None,
+        SubjectPath::new("identity/authorship".to_string()).unwrap(),
+        CanonicalSet::new(vec![]).unwrap(),
+        ClaimBody::Observation {
+            text: NarrativeText::new(text.to_string()).unwrap(),
+        },
+        CanonicalSet::new(vec![]).unwrap(),
+        UniqueSequence::new(vec![]).unwrap(),
+        RecordedAt::new(1).unwrap(),
+    )
+    .unwrap()
+}
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -106,19 +129,38 @@ fn system_profile_signs_a_current_claim_as_its_exact_active_method() {
         profile.actor().controller_state().clone(),
     )
     .unwrap();
-    let claim = content_cid(&"current claim signing vector").unwrap();
-    let signature = store.sign_claim_cid(&profile, &method, &claim).unwrap();
+    let claim = store
+        .sign_claim(
+            &profile,
+            &method,
+            current_content(author.clone(), "current claim signing vector"),
+        )
+        .unwrap();
+    let id = claim.id().unwrap();
+    let input = ClaimSigningInput::new(&id).canonical_bytes().unwrap();
 
-    let verified = author.verify_active_did_kan_claim(&claim, &signature, &state);
+    let verified =
+        author.verify_active_did_kan_message(&input, claim.signature().as_bytes(), &state);
     assert_eq!(
         verified.cryptographic_validity,
         CryptographicValidity::Valid
     );
     assert!(verified.scope_invocation);
-    let changed = content_cid(&"different claim").unwrap();
+    assert!(matches!(
+        codec::decode(
+            &codec::encode_claim(&claim, "3jzfcijpj2z2a").unwrap(),
+            VerificationContext::ActiveDidKan(&state),
+        )
+        .unwrap(),
+        DecodedClaim::Supported(SupportedClaim::Claim(decoded)) if decoded == claim
+    ));
+    let changed = current_content(author.clone(), "different claim")
+        .id()
+        .unwrap();
+    let changed_input = ClaimSigningInput::new(&changed).canonical_bytes().unwrap();
     assert_eq!(
         author
-            .verify_active_did_kan_claim(&changed, &signature, &state)
+            .verify_active_did_kan_message(&changed_input, claim.signature().as_bytes(), &state,)
             .cryptographic_validity,
         CryptographicValidity::Invalid
     );
@@ -134,14 +176,23 @@ fn assertion_and_scope_invocation_remain_separate_purpose_checks() {
         profile.actor().controller_state().clone(),
     )
     .unwrap();
-    let claim = content_cid(&"purpose separation").unwrap();
-    let signature = store.sign_claim_cid(&profile, &method, &claim).unwrap();
+    let claim = store
+        .sign_claim(
+            &profile,
+            &method,
+            current_content(author.clone(), "purpose separation"),
+        )
+        .unwrap();
+    let input = ClaimSigningInput::new(&claim.id().unwrap())
+        .canonical_bytes()
+        .unwrap();
 
     let mut no_invocation = state.clone();
     no_invocation.verification_methods[0]
         .purposes
         .retain(|purpose| *purpose != VerificationPurpose::CapabilityInvocation);
-    let verified = author.verify_active_did_kan_claim(&claim, &signature, &no_invocation);
+    let verified =
+        author.verify_active_did_kan_message(&input, claim.signature().as_bytes(), &no_invocation);
     assert_eq!(
         verified.cryptographic_validity,
         CryptographicValidity::Valid
@@ -154,7 +205,7 @@ fn assertion_and_scope_invocation_remain_separate_purpose_checks() {
         .retain(|purpose| *purpose != VerificationPurpose::Assertion);
     assert_eq!(
         author
-            .verify_active_did_kan_claim(&claim, &signature, &no_assertion)
+            .verify_active_did_kan_message(&input, claim.signature().as_bytes(), &no_assertion,)
             .cryptographic_validity,
         CryptographicValidity::Invalid
     );
@@ -163,7 +214,11 @@ fn assertion_and_scope_invocation_remain_separate_purpose_checks() {
         .purposes
         .retain(|purpose| *purpose != VerificationPurpose::Assertion);
     assert!(store
-        .sign_claim_cid(&profile, &signing_method, &claim)
+        .sign_claim(
+            &profile,
+            &signing_method,
+            current_content(author, "purpose separation")
+        )
         .is_err());
 }
 

@@ -14,12 +14,12 @@
 //! what the writer will not yet.
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, Span, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, Span, SubjectRef},
     sign::Identity,
     transport::git_tree,
 };
 
-fn signed_subject(identity: &Identity, subject: SubjectRef, text: &str) -> kan::claim::Claim {
+fn signed_subject(identity: &Identity, subject: SubjectRef, text: &str) -> kan::claim::v1::Claim {
     let content = ClaimContent {
         author: AuthorId {
             did: identity.did(),
@@ -36,10 +36,10 @@ fn signed_subject(identity: &Identity, subject: SubjectRef, text: &str) -> kan::
     };
     let cid = kan::cid::content_cid(&content).unwrap();
     let sig = identity.sign(&cid.to_bytes()).unwrap();
-    kan::claim::Claim { content, sig }
+    kan::claim::v1::Claim { content, sig }
 }
 
-fn signed(identity: &Identity, text: &str) -> kan::claim::Claim {
+fn signed(identity: &Identity, text: &str) -> kan::claim::v1::Claim {
     signed_subject(identity, SubjectRef::Local(Rkey::from("bug-42")), text)
 }
 

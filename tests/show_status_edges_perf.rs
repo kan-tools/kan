@@ -18,7 +18,7 @@ use std::time::Instant;
 
 use kan::{
     actions,
-    claim::{
+    claim::v1::{
         Anchor, ArtifactRef, AuthorId, ClaimBody, ClaimContent, Rkey, StatusValue, SubjectRef,
     },
     git::GitSubstrate,

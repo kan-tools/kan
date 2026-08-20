@@ -9,7 +9,7 @@ use atproto_dasl::Cid;
 use rusqlite::OptionalExtension;
 use sha2::Digest;
 
-use crate::claim::AuthorId;
+use crate::claim::v1::AuthorId;
 use crate::store::log::StoredClaim;
 
 /// The projection's table, **named by schema version**, and the meta key

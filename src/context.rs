@@ -17,7 +17,7 @@
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{Claim, ClaimBody, ClaimKind},
+    claim::v1::{Claim, ClaimBody, ClaimKind},
     fold::FoldedView,
 };
 

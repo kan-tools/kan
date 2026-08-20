@@ -226,7 +226,7 @@ fn reject_duplicate_keys<'a>(
     Ok(())
 }
 
-pub(super) fn validate_did(did: &str) -> Result<(), Error> {
+pub(crate) fn validate_did(did: &str) -> Result<(), Error> {
     let Some(rest) = did.strip_prefix("did:") else {
         return Err(Error::Did(did.to_string()));
     };

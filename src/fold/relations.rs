@@ -20,7 +20,7 @@ use std::collections::BTreeSet;
 
 use atproto_dasl::Cid;
 
-use crate::claim::{Claim, ClaimBody, RelationKind, SubjectRef};
+use crate::claim::v1::{Claim, ClaimBody, RelationKind, SubjectRef};
 
 /// One asserted relation, kept in the direction it was written.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,7 +183,7 @@ fn unique_targets(edges: Vec<Edge>) -> Vec<SubjectRef> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::claim::{Anchor, AuthorId, ClaimContent};
+    use crate::claim::v1::{Anchor, AuthorId, ClaimContent};
 
     pub(super) fn subject(name: &str) -> SubjectRef {
         SubjectRef::Local(name.to_string())

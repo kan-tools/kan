@@ -16,7 +16,7 @@ pub mod trust;
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{Claim, SubjectRef},
+    claim::v1::{Claim, SubjectRef},
     store::log::StoredClaim,
 };
 pub use identity::SameAsWitness;

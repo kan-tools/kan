@@ -17,11 +17,31 @@ use super::{
 
 /// Stable principal plus the exact method and identity state used to speak.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, try_from = "AuthorWire")]
 pub struct Author {
     principal: String,
     verification_method: String,
     identity_version: IdentityVersion,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AuthorWire {
+    principal: String,
+    verification_method: String,
+    identity_version: IdentityVersion,
+}
+
+impl TryFrom<AuthorWire> for Author {
+    type Error = Error;
+
+    fn try_from(value: AuthorWire) -> Result<Self, Self::Error> {
+        Self::new(
+            value.principal,
+            value.verification_method,
+            value.identity_version,
+        )
+    }
 }
 
 impl Author {
@@ -110,6 +130,17 @@ impl Author {
         signature: &[u8],
         state: &ResolvedDidKanState,
     ) -> AuthorshipVerification {
+        self.verify_active_did_kan_message(&claim_cid.to_bytes(), signature, state)
+    }
+
+    /// Verify domain-separated current-claim bytes against the exact identity
+    /// event and method named by this author.
+    pub fn verify_active_did_kan_message(
+        &self,
+        message: &[u8],
+        signature: &[u8],
+        state: &ResolvedDidKanState,
+    ) -> AuthorshipVerification {
         if self.validate().is_err() || self.principal != state.did {
             return AuthorshipVerification::invalid();
         }
@@ -131,8 +162,7 @@ impl Author {
         {
             return AuthorshipVerification::invalid();
         }
-        let cryptographic_validity =
-            verify_resolved_method_signature(&claim_cid.to_bytes(), signature, method);
+        let cryptographic_validity = verify_resolved_method_signature(message, signature, method);
         AuthorshipVerification {
             scope_invocation: cryptographic_validity == CryptographicValidity::Valid
                 && method

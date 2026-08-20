@@ -12,7 +12,7 @@
 //! A cold review found both of these ACs naming witnesses that did not exist;
 //! these are those witnesses.
 
-use kan::claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef};
+use kan::claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef};
 use kan::roles::{declared, Declared};
 use kan::sign::Identity;
 use kan::store::log::StoredClaim;
@@ -38,7 +38,7 @@ fn stored(identity: &Identity, subject: &str, body: ClaimBody) -> (Cid, StoredCl
     (
         cid,
         StoredClaim {
-            claim: kan::claim::Claim { content, sig },
+            claim: kan::claim::v1::Claim { content, sig },
             rev: "r".to_string(),
         },
     )

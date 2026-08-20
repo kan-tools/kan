@@ -11,7 +11,7 @@
 use std::process::Command;
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     fold::{self, TrustBase},
     sign::Identity,
     store::{index::Index, log::Log},
@@ -214,7 +214,7 @@ fn ac6_a_stranger_in_claims_is_excluded_disclosed_and_admissible() {
         "arrived as a file",
     );
     let cid = kan::cid::content_cid(&content).unwrap();
-    let claim = kan::claim::Claim {
+    let claim = kan::claim::v1::Claim {
         content,
         sig: stranger.sign(&cid.to_bytes()).unwrap(),
     };

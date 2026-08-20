@@ -20,7 +20,7 @@ pub const SURFACE_VALUES: &[crate::surface::SurfaceValue] = &[
 
 use sha2::Digest;
 
-use crate::claim::{GenesisCid, Sha};
+use crate::claim::v1::{GenesisCid, Sha};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use kan::surface::SurfaceValue;
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     sign::Identity,
     store::{index::Index, log::Log},
 };

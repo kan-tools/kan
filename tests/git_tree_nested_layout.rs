@@ -16,12 +16,12 @@
 use std::path::Path;
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     sign::Identity,
     transport::git_tree::{self, GitTree},
 };
 
-fn signed(identity: &Identity, subject: &str, text: &str) -> kan::claim::Claim {
+fn signed(identity: &Identity, subject: &str, text: &str) -> kan::claim::v1::Claim {
     let content = ClaimContent {
         author: AuthorId {
             did: identity.did(),
@@ -38,7 +38,7 @@ fn signed(identity: &Identity, subject: &str, text: &str) -> kan::claim::Claim {
     };
     let cid = kan::cid::content_cid(&content).unwrap();
     let sig = identity.sign(&cid.to_bytes()).unwrap();
-    kan::claim::Claim { content, sig }
+    kan::claim::v1::Claim { content, sig }
 }
 
 fn leaf(identity: &Identity) -> String {
@@ -51,7 +51,7 @@ fn leaf(identity: &Identity) -> String {
 
 /// Place a record at an explicit path under `.claims/`, which is what the
 /// writer will eventually do and does not do yet.
-fn place(root: &Path, relative: &str, claim: &kan::claim::Claim) {
+fn place(root: &Path, relative: &str, claim: &kan::claim::v1::Claim) {
     let path = root.join(".claims").join(relative);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let record = git_tree::to_record_at(claim, None, Some((0, 1))).unwrap();

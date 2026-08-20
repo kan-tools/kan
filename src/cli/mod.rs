@@ -573,7 +573,7 @@ pub enum StatusValueArg {
     Closed,
 }
 
-impl From<StatusValueArg> for crate::claim::StatusValue {
+impl From<StatusValueArg> for crate::claim::v1::StatusValue {
     fn from(value: StatusValueArg) -> Self {
         match value {
             StatusValueArg::Open => Self::Open,
@@ -601,7 +601,7 @@ pub enum RelationKindArg {
     Refutes,
 }
 
-impl From<RelationKindArg> for crate::claim::RelationKind {
+impl From<RelationKindArg> for crate::claim::v1::RelationKind {
     fn from(value: RelationKindArg) -> Self {
         match value {
             RelationKindArg::Blocks => Self::Blocks,
@@ -625,7 +625,7 @@ pub enum SubjectKindArg {
     Question,
 }
 
-impl From<SubjectKindArg> for crate::claim::SubjectKind {
+impl From<SubjectKindArg> for crate::claim::v1::SubjectKind {
     fn from(value: SubjectKindArg) -> Self {
         match value {
             SubjectKindArg::Issue => Self::Issue,

@@ -2,7 +2,7 @@
 //! smell-test fixture), AC-6 (index is a disposable projection).
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     fold::{self, TrustBase},
     sign::Identity,
     store::{index::Index, log::Log},

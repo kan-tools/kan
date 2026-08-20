@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, RelationKind, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, RelationKind, Rkey, SubjectRef},
     fold::{self, TrustBase},
     sign::Identity,
     store::log::Log,

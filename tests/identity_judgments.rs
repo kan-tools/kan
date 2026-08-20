@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use kan::{
     cid,
-    claim::{Anchor, AuthorId, Claim, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, Claim, ClaimBody, ClaimContent, Rkey, SubjectRef},
     fold::TrustBase,
     identity::{
         evaluate_legacy_claim, scope_admission, AdmissionFacts, CapabilityEvidence,

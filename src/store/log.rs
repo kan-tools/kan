@@ -37,7 +37,7 @@
 //! asymmetry isn't a kan design choice; it's the crate's actual shape, found
 //! via compiler error rather than assumed from its docs (see ADR-11/12's
 //! whole point: verify, don't trust the shape). Kan's own types
-//! (`crate::claim::*`) standardize on the wrapper.
+//! (`crate::claim::v1::*`) standardize on the wrapper.
 
 use std::{collections::HashSet, path::Path};
 
@@ -54,7 +54,7 @@ use tokio::{fs, io::AsyncWriteExt};
 
 use crate::{
     cid::content_cid,
-    claim::{Claim, ClaimContent},
+    claim::v1::{Claim, ClaimContent},
     sign::Identity,
     store::tid::TidGenerator,
 };
@@ -1486,7 +1486,7 @@ async fn write_commit(mst: &mut Mst<MemoryStorage>, commit: &Commit) -> Result<C
 #[cfg(test)]
 mod claim_collection_migration_tests {
     use super::*;
-    use crate::claim::{Anchor, AuthorId, ClaimBody, Rkey, SubjectRef};
+    use crate::claim::v1::{Anchor, AuthorId, ClaimBody, Rkey, SubjectRef};
 
     fn signed(identity: &Identity, text: &str, rev: &str) -> (Cid, StoredClaim) {
         let content = ClaimContent {

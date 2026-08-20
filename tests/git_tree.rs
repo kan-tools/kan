@@ -7,7 +7,7 @@
 
 use kan::{
     cid::content_cid,
-    claim::{Anchor, AuthorId, Claim, ClaimBody, ClaimContent, Layer, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, Claim, ClaimBody, ClaimContent, Layer, Rkey, SubjectRef},
     sign::Identity,
     store::log::Log,
     transport::{git_tree, Transport},
@@ -141,14 +141,14 @@ fn textless_bodies_round_trip() {
     let id = identity();
     for body in [
         ClaimBody::Status {
-            value: kan::claim::StatusValue::Resolved,
+            value: kan::claim::v1::StatusValue::Resolved,
         },
         ClaimBody::Publication {
             layer: Layer::GitTree,
         },
         ClaimBody::Subject {
             title: "a title".to_string(),
-            subject_kind: kan::claim::SubjectKind::Issue,
+            subject_kind: kan::claim::v1::SubjectKind::Issue,
         },
     ] {
         let claim = signed(content("bug-42", body.clone(), &id), &id);

@@ -8,7 +8,7 @@
 //! comes from a fresh process, not just fresh within one long-lived object.
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     sign::Identity,
     store::log::Log,
 };

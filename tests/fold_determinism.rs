@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, RelationKind, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, RelationKind, Rkey, SubjectRef},
     fold::{self, TrustBase},
     sign::Identity,
     store::log::Log,
@@ -116,7 +116,7 @@ fn fold_is_independent_of_claim_input_order() {
         did: "did:key:zTestSameRev".to_string(),
         agent: None,
     };
-    let mk = |value: kan::claim::StatusValue| {
+    let mk = |value: kan::claim::v1::StatusValue| {
         let content = ClaimContent {
             author: who.clone(),
             workspace: Anchor::Workspace("test-workspace".to_string()),
@@ -131,7 +131,7 @@ fn fold_is_independent_of_claim_input_order() {
         (
             cid,
             StoredClaim {
-                claim: kan::claim::Claim {
+                claim: kan::claim::v1::Claim {
                     content,
                     sig: vec![],
                 },
@@ -139,8 +139,8 @@ fn fold_is_independent_of_claim_input_order() {
             },
         )
     };
-    let open = mk(kan::claim::StatusValue::Open);
-    let resolved = mk(kan::claim::StatusValue::Resolved);
+    let open = mk(kan::claim::v1::StatusValue::Open);
+    let resolved = mk(kan::claim::v1::StatusValue::Resolved);
     let trust = TrustBase::solo(who.clone());
 
     let forward = fold::fold(vec![open.clone(), resolved.clone()], &trust);

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{
+    claim::v1::{
         ArtifactRef, ClaimBody, ClaimContent, ClaimKind, RelationKind, Rkey, Span, StatusValue,
         SubjectKind, SubjectRef,
     },
@@ -224,7 +224,7 @@ fn parse_cids(raw: Vec<String>) -> Result<Vec<Cid>, Error> {
 /// `head_sha` is the same commit `append`'s automatic `ArtifactRef::Commit`
 /// uses — a `FileAt`/`LineRangeAt` anchor is "this file, as of that commit,"
 /// not a separately-anchored artifact.
-fn parse_file_artifact(raw: &str, head_sha: &crate::claim::Sha) -> ArtifactRef {
+fn parse_file_artifact(raw: &str, head_sha: &crate::claim::v1::Sha) -> ArtifactRef {
     if let Some(idx) = raw.rfind(':') {
         let (path, range) = (&raw[..idx], &raw[idx + 1..]);
         if let Some((start, end)) = range.split_once('-') {
@@ -632,7 +632,7 @@ pub async fn block(
 /// kan writes files and never runs git. Staging and committing stay the
 /// user's — kan is git's sibling, not its driver.
 pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error> {
-    use crate::claim::Layer;
+    use crate::claim::v1::Layer;
 
     // Refuse a subject with nothing to publish. The Publication claim below
     // would otherwise mint the subject into being, so `kan publish <typo>`
@@ -728,7 +728,7 @@ fn live_claims_for(
     view: &FoldedView,
     subject: &SubjectRef,
     rev_of: &std::collections::HashMap<Cid, String>,
-) -> Vec<(crate::claim::Claim, Option<String>)> {
+) -> Vec<(crate::claim::v1::Claim, Option<String>)> {
     view.subject(subject)
         .map(|class| {
             class
@@ -1075,7 +1075,7 @@ pub async fn import_roles(ws: &mut Workspace) -> Result<ImportSummary, Error> {
 /// operation, so `primary_role_name` can route around it.
 async fn ensure_workspace_declared(
     ws: &mut Workspace,
-    workspace_did: Option<crate::claim::Did>,
+    workspace_did: Option<crate::claim::v1::Did>,
     declared: &crate::roles::Declared,
     also_taken: &[String],
 ) -> Result<Option<crate::roles::DeclaredRole>, Error> {
@@ -1625,7 +1625,7 @@ pub async fn publish_all(ws: &mut Workspace) -> Result<String, Error> {
         .collect();
 
     let view = crate::fold::fold(stored, &ws.local_trust()?);
-    let all_live: Vec<(atproto_dasl::Cid, crate::claim::Claim)> = view
+    let all_live: Vec<(atproto_dasl::Cid, crate::claim::v1::Claim)> = view
         .classes
         .iter()
         .flat_map(|c| c.claims.iter().cloned())
@@ -1806,7 +1806,7 @@ pub fn subject_exists(ws: &Workspace, name: &str) -> Result<bool, Error> {
 /// stated purpose is provenance was holding provenance edges that no reader
 /// could see -- `CLAUDE.md`'s "provenance is sacred: never fabricate or drop
 /// `cites` edges" was satisfied in the store and invisible at the boundary.
-fn claim_detail_lines(claim: &crate::claim::Claim, indent: &str) -> String {
+fn claim_detail_lines(claim: &crate::claim::v1::Claim, indent: &str) -> String {
     let mut out = String::new();
     if let Some(micros) = claim.content.recorded_at {
         out.push_str(&format!("{indent}recorded: {}\n", format_micros(micros)));
@@ -1858,7 +1858,7 @@ fn format_micros(micros: u64) -> String {
 /// failure where `compute_default` ran `GitSameFile` beside it for no reader.
 fn status_classification_edges(
     ws: &Workspace,
-    live_disagreement: &[(Cid, crate::claim::Claim)],
+    live_disagreement: &[(Cid, crate::claim::v1::Claim)],
 ) -> Vec<crate::relations::ComputedEdge> {
     relations::GitAncestry.relations(live_disagreement, &ws.git)
 }
@@ -1869,7 +1869,7 @@ fn status_classification_edges(
 /// that is a `Status` and not in it has been superseded.
 fn superseded_status_cids(
     ws: &Workspace,
-    claims: &[(Cid, crate::claim::Claim)],
+    claims: &[(Cid, crate::claim::v1::Claim)],
 ) -> std::collections::HashSet<Cid> {
     // Classify under the SAME computed edges `status`/`issues` use, not the
     // empty set this passed before. A status settled only by a computable
@@ -1886,7 +1886,7 @@ fn superseded_status_cids(
     claims
         .iter()
         .filter(|(cid, claim)| {
-            claim.content.body.kind() == crate::claim::ClaimKind::Status && !live.contains(cid)
+            claim.content.body.kind() == crate::claim::v1::ClaimKind::Status && !live.contains(cid)
         })
         .map(|(cid, _)| cid.clone())
         .collect()
@@ -2098,7 +2098,7 @@ fn related_subjects_by_file(
     subject_view: &SubjectView,
     git: &crate::git::GitSubstrate,
 ) -> std::collections::BTreeSet<String> {
-    let all_claims: Vec<(Cid, crate::claim::Claim)> = view
+    let all_claims: Vec<(Cid, crate::claim::v1::Claim)> = view
         .classes
         .iter()
         .flat_map(|c| c.claims.iter().cloned())
@@ -2263,14 +2263,14 @@ fn inbound_relation_claims(
     view: &FoldedView,
     targets: &[SubjectRef],
     own_class: Option<&[SubjectRef]>,
-) -> Vec<(Cid, crate::claim::Claim)> {
+) -> Vec<(Cid, crate::claim::v1::Claim)> {
     let mut out = Vec::new();
     for class in &view.classes {
         if own_class == Some(class.subjects.as_slice()) {
             continue;
         }
         for (cid, claim) in &class.claims {
-            if let crate::claim::ClaimBody::Relation { target, .. } = &claim.content.body {
+            if let crate::claim::v1::ClaimBody::Relation { target, .. } = &claim.content.body {
                 if targets.contains(target) {
                     out.push((cid.clone(), claim.clone()));
                 }
@@ -2281,8 +2281,8 @@ fn inbound_relation_claims(
 }
 
 /// The rendered `"<from> <Kind> this"` line for one inbound relation claim.
-fn inbound_edge_line(claim: &crate::claim::Claim) -> Option<String> {
-    let crate::claim::ClaimBody::Relation { kind, .. } = &claim.content.body else {
+fn inbound_edge_line(claim: &crate::claim::v1::Claim) -> Option<String> {
+    let crate::claim::v1::ClaimBody::Relation { kind, .. } = &claim.content.body else {
         return None;
     };
     let from = crate::json::subject_name(&claim.content.subject);

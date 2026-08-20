@@ -79,7 +79,7 @@ use atrium_crypto::{
     verify::verify_signature,
 };
 
-use crate::claim::Did;
+use crate::claim::v1::Did;
 
 /// The file recording which keychain account this workspace's key is under.
 /// Its presence is also the cheap, keychain-free signal that this workspace
@@ -1838,6 +1838,6 @@ pub fn candidate_identities(phrase: &str) -> Result<Vec<(Root, Identity)>, Error
     Ok(out)
 }
 
-pub fn verify(did: &Did, msg: &[u8], sig: &[u8]) -> bool {
+pub fn verify(did: &str, msg: &[u8], sig: &[u8]) -> bool {
     verify_signature(did, msg, sig).is_ok()
 }

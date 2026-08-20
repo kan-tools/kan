@@ -303,7 +303,7 @@ Only the disposable SQLite index is ever rebuilt. A log-rewriting migration
 tool is not a deferred feature but a rejected one: history you can alter is
 not what this is.
 
-**Frozen.** `ClaimContent`'s existing fields — their names, order, types, and
+**Frozen v1.** `claim::v1::ClaimContent`'s existing fields — their names, order, types, and
 encoding — may never change. Each is an input to every CID kan has ever
 computed, so changing one silently invalidates all of history.
 
@@ -341,6 +341,17 @@ silently discarding it and then reporting a CID mismatch. The second
 behavior — measured, and the reason this section exists — accuses a
 legitimate claim of having been *altered since it was signed*. A tool one
 version behind must say so, not impugn the record.
+
+The current unversioned Rust model is a separate immutable codec rather than
+an additive mutation of that historical type. `kan-claim-v2` uses a closed
+typed body inventory, a cryptographic `ScopeId`, structured subject paths and
+referents, canonical set/sequence wrappers, and the codec-bound signing input
+`{ codec: "kan-claim-v2", claim: CID }`. Its transport arm is versioned; its
+domain names are simply `Claim`, `ClaimContent`, and `ClaimBody`. Unknown
+future codec/arm pairs are retained as unsupported canonical bytes. A known
+codec with the wrong arm, malformed known content, or non-canonical input is
+invalid and never enters the fold. Released v1 and current claims therefore
+coexist without rewriting either signed representation.
 
 ## 8. Retraction (RECOMMENDED default, flagged OPEN in §9)
 

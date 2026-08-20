@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     cid::content_cid,
-    claim::{
+    claim::v1::{
         Anchor, ArtifactRef, AuthorId, Claim, ClaimBody, ClaimContent, Layer, RelationKind,
         StatusValue, SubjectKind, SubjectRef,
     },
@@ -222,7 +222,7 @@ impl TryFrom<AnchorValue> for Anchor {
             AnchorValue::LineRangeAt { path, sha, span } => Self::LineRangeAt(
                 path.into(),
                 sha,
-                crate::claim::Span {
+                crate::claim::v1::Span {
                     start: span.start,
                     end: span.end,
                 },
@@ -280,7 +280,7 @@ impl TryFrom<ArtifactValue> for ArtifactRef {
             ArtifactValue::LineRangeAt { path, sha, span } => Self::LineRangeAt(
                 path.into(),
                 sha,
-                crate::claim::Span {
+                crate::claim::v1::Span {
                     start: span.start,
                     end: span.end,
                 },

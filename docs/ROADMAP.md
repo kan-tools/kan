@@ -77,14 +77,23 @@ consults the legacy workspace signing identity.
 `src/identity/authorship.rs` now implements the non-ambiguous current
 authorship boundary: the exact typed `Author { principal,
 verificationMethod, identityVersion }` map is canonically encoded and pinned,
-cannot represent a role or legacy agent, and verifies a claim CID only against
-the cited active `did:kan` event and resolved assertion method. System profiles
-can sign claim-CID bytes through the same provider/key-match gate used for
-control events, while `assertion` validity remains independent from
-`capabilityInvocation` scope reach. The complete current claim-content
-map, legacy/current storage discriminator, historical-state verification, and
-default writer cutover remain pending; the accepted RFC fixes the nested
-author value but does not yet fix those complete signed-envelope bytes.
+cannot represent a role or legacy agent, and verifies domain-separated claim
+bytes only against the cited active `did:kan` event and resolved assertion
+method. System profiles now construct a closed current `Claim` only after its
+actor reference exactly matches the content author and sign the canonical
+`{ codec: "kan-claim-v2", claim: CID }` input through the same provider/key
+gate used for control events. `assertion` validity remains independent from
+`capabilityInvocation` scope reach.
+
+The first claim-v2 codec slice is also implemented. Current domain types are
+unversioned under `claim`, released historical types are isolated under
+`claim::v1`, and the common codec boundary distinguishes supported current,
+supported v1, preserved future, and invalid records. It pins the v2 signing
+input, rejects codec/content-arm contradictions and non-canonical DAG-CBOR,
+preserves an unknown codec plus unknown arm byte-exactly, and retains v1's
+raw-CID signature rule. The existing log writer deliberately remains v1 until
+verified scope activation and mixed-codec storage integration land; no
+historical block is rewritten by this slice.
 `src/identity/governance.rs` now produces canonical update and reconciliation
 events and resolves unordered evidence deterministically: proof variants share
 one logical event, sibling leaves are contested, reconciliation requires

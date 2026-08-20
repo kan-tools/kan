@@ -33,7 +33,7 @@ use common::{capture, compare_or_update, first_difference, git_repo, kan_as, nor
 use std::path::{Path, PathBuf};
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     sign::Identity,
 };
 
@@ -170,7 +170,7 @@ impl Fixture {
             recorded_at: None,
         };
         let cid = kan::cid::content_cid(&content).unwrap();
-        let claim = kan::claim::Claim {
+        let claim = kan::claim::v1::Claim {
             content,
             sig: identity.sign(&cid.to_bytes()).unwrap(),
         };

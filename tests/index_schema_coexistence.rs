@@ -24,7 +24,7 @@
 //! one's leftovers do not change what this version reads.
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     sign::Identity,
     store::{index::Index, log::Log},
 };

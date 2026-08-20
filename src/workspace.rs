@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{Anchor, AuthorId},
+    claim::v1::{Anchor, AuthorId},
     fold::TrustBase,
     git::GitSubstrate,
     sign::Identity,
@@ -140,7 +140,8 @@ pub struct Workspace {
 /// `.kan/` disappeared right now, what would come back?
 #[derive(Default)]
 pub struct PublishedIndex {
-    by_subject: std::collections::HashMap<crate::claim::SubjectRef, std::collections::HashSet<Cid>>,
+    by_subject:
+        std::collections::HashMap<crate::claim::v1::SubjectRef, std::collections::HashSet<Cid>>,
     /// A hash over every published file's bytes, or `None` when there is no
     /// `.claims/` tree — the freshness key for foreign claims.
     ///
@@ -214,16 +215,16 @@ impl ClaimsDigest {
 }
 
 impl PublishedIndex {
-    fn record(&mut self, subject: crate::claim::SubjectRef, cid: Cid) {
+    fn record(&mut self, subject: crate::claim::v1::SubjectRef, cid: Cid) {
         self.by_subject.entry(subject).or_default().insert(cid);
     }
 
     /// Whether anything at all has been published for this subject.
-    pub fn is_published(&self, subject: &crate::claim::SubjectRef) -> bool {
+    pub fn is_published(&self, subject: &crate::claim::v1::SubjectRef) -> bool {
         self.by_subject.contains_key(subject)
     }
 
-    pub fn contains(&self, subject: &crate::claim::SubjectRef, cid: &Cid) -> bool {
+    pub fn contains(&self, subject: &crate::claim::v1::SubjectRef, cid: &Cid) -> bool {
         self.by_subject
             .get(subject)
             .is_some_and(|cids| cids.contains(cid))

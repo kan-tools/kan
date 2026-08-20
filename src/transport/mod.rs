@@ -25,7 +25,7 @@ use atproto_dasl::Cid;
 use tokio_stream::Stream;
 
 use crate::{
-    claim::{Claim, ClaimContent, Did},
+    claim::v1::{Claim, ClaimContent, Did},
     sign::Identity,
     store::log::Log,
 };

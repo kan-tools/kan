@@ -7,7 +7,7 @@
 //! append, at exit 0. Every test here fails against the pre-v0.7 shape.
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     fold::{self, TrustBase},
     sign::Identity,
     store::log::Log,
@@ -155,7 +155,7 @@ async fn repeating_the_same_status_three_times_records_three_claims() {
                 &identity,
                 "task",
                 ClaimBody::Status {
-                    value: kan::claim::StatusValue::Open,
+                    value: kan::claim::v1::StatusValue::Open,
                 },
             ),
             &identity,
@@ -259,7 +259,7 @@ fn an_out_of_date_reader_is_told_to_upgrade_rather_than_suspect_corruption() {
         subject: SubjectRef,
         body: ClaimBody,
         cites: Vec<atproto_dasl::Cid>,
-        artifacts: Vec<kan::claim::ArtifactRef>,
+        artifacts: Vec<kan::claim::v1::ArtifactRef>,
         /// A field no released kan knows about.
         invented_by_a_newer_kan: u64,
     }

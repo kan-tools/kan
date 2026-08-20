@@ -2,7 +2,7 @@ use atproto_dasl::Cid;
 use kan::{
     at_claim::{Error, Record, RelationKindValue, StatusValueWire, SubjectKindValue},
     cid::content_cid,
-    claim::*,
+    claim::v1::*,
     sign::Identity,
 };
 

@@ -592,15 +592,16 @@ impl SystemIdentityStore {
         })
     }
 
-    /// Sign one current claim CID using the profile's exact resolved method.
-    /// Claim signing remains structurally separate from control-event signing:
-    /// the message is the claim CID bytes, never a control `SigningInput`.
-    pub fn sign_claim_cid(
+    /// Construct a current claim using the profile's exact resolved method.
+    /// The author map, content CID, codec-bound signing input, and selected
+    /// credential are checked together; callers cannot obtain a raw signature
+    /// and accidentally apply v1's CID-only rule.
+    pub fn sign_claim(
         &self,
         profile: &IdentityProfile,
         method: &VerificationMethod,
-        claim: &atproto_dasl::Cid,
-    ) -> Result<Vec<u8>, Error> {
+        content: crate::claim::ClaimContent,
+    ) -> Result<crate::claim::Claim, Error> {
         if !method
             .purposes
             .contains(&super::did_kan::VerificationPurpose::Assertion)
@@ -610,7 +611,21 @@ impl SystemIdentityStore {
                 purpose: "assertion",
             });
         }
-        self.sign_bytes(profile, method, &claim.to_bytes())
+        let author = content.author();
+        if author.principal() != profile.actor.principal()
+            || author.verification_method() != profile.actor.verification_method()
+            || author.identity_version() != profile.actor.controller_state()
+        {
+            return Err(Error::ClaimAuthorMismatch {
+                profile: profile.alias().to_string(),
+            });
+        }
+        let claim_id = content.id()?;
+        let input = crate::claim::ClaimSigningInput::new(&claim_id).canonical_bytes()?;
+        let signature = self.sign_bytes(profile, method, &input)?;
+        Ok(crate::claim::Claim::from_verified_parts(
+            content, signature,
+        )?)
     }
 
     fn sign_bytes(
@@ -841,6 +856,8 @@ pub enum Error {
         method: String,
         purpose: &'static str,
     },
+    #[error("current claim author does not exactly match identity profile `{profile}`")]
+    ClaimAuthorMismatch { profile: String },
     #[error("identity profile path is a symlink or has the wrong file type: {0}")]
     UnsafeEntry(PathBuf),
     #[error("system identity I/O failed: {0}")]
@@ -851,6 +868,8 @@ pub enum Error {
     Did(#[from] super::did_kan::Error),
     #[error("system identity credential failed: {0}")]
     Sign(#[from] crate::sign::Error),
+    #[error("system identity current claim failed: {0}")]
+    Claim(#[from] crate::claim::Error),
     #[error("system identity control event failed: {0}")]
     Control(#[from] super::control::Error),
     #[error("system identity credential key is invalid: {0}")]

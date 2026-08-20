@@ -77,7 +77,7 @@ fn tamper_with_stored_text(index_path: &std::path::Path, content_cid: &str, new_
         .unwrap();
     let mut stored: kan::store::log::StoredClaim = atproto_dasl::from_slice(&raw).unwrap();
     match &mut stored.claim.content.body {
-        kan::claim::ClaimBody::Observation { text } => *text = new_text.to_string(),
+        kan::claim::v1::ClaimBody::Observation { text } => *text = new_text.to_string(),
         other => panic!("expected an Observation claim, got {other:?}"),
     }
     let tampered_raw = atproto_dasl::to_vec(&stored).unwrap();

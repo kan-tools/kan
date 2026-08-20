@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{claim::Claim, fold::TrustBase};
+use crate::{claim::v1::Claim, fold::TrustBase};
 
 pub mod authorship;
 pub mod capability;

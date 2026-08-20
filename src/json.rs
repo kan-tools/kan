@@ -34,7 +34,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    claim::{Claim, ClaimBody, SubjectRef},
+    claim::v1::{Claim, ClaimBody, SubjectRef},
     fold::{state::StateView, FoldedView, SubjectView},
 };
 

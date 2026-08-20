@@ -4,7 +4,9 @@
 
 use kan::{
     cid,
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, ClaimKind, Rkey, SubjectKind, SubjectRef},
+    claim::v1::{
+        Anchor, AuthorId, ClaimBody, ClaimContent, ClaimKind, Rkey, SubjectKind, SubjectRef,
+    },
     sign,
     sign::Identity,
     store::log::Log,

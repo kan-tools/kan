@@ -10,7 +10,7 @@ use std::{path::PathBuf, process::Command};
 
 use kan::{
     actions,
-    claim::{Anchor, ArtifactRef, Span},
+    claim::v1::{Anchor, ArtifactRef, Span},
     git::GitSubstrate,
     sign::Identity,
     store::{index::Index, log::Log},
