@@ -368,6 +368,15 @@ not an implicit ownership migration. An ATProto principal may later be
 explicitly admitted as a kan author, but kan authority never implies ATProto
 publication authority.
 
+Workspace writer selection has four closed outcomes: `Uninitialized`, `V1`
+with verified historical evidence, `Claim` with a cryptographically verified
+scope, and `Incomplete` with structured diagnostics. Scope inception is the
+only activation fact; no mutable format marker exists. Any scope directory
+that is partial, unsafe, unverifiable, or missing its enrolled system actor is
+incomplete and cannot fall back to v1. In the absence of scope state, a
+verified v1 claim or resolvable historical workspace principal selects v1;
+absence of both is uninitialized. Classification is read-only.
+
 ## 8. Retraction (RECOMMENDED default, flagged OPEN in §9)
 
 **Option B — retraction-as-claim (palimpsest):**

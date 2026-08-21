@@ -106,6 +106,13 @@ system-actor value keeps the kan author profile, exact identity state, method,
 and credential provider together, while an explicit repository-transport
 signer approves ATProto commits without acquiring kan authorship or scope
 authority. Existing reachable commits must retain one transport DID.
+Workspace write-policy classification is now also explicit and read-only:
+absence is `Uninitialized`, verified historical evidence is `V1`, a scope
+whose inception proof verifies against the supplied exact actor state is
+`Claim`, and partial, pre-release, inaccessible, or contradictory evidence is
+`Incomplete`. Partial scope state never falls back to the v1 writer, and a
+verified scope wins over retained v1 history. Production actions do not select
+this classifier yet; that wiring and `ClaimView` remain the cutover boundary.
 `src/identity/governance.rs` now produces canonical update and reconciliation
 events and resolves unordered evidence deterministically: proof variants share
 one logical event, sibling leaves are contested, reconciliation requires
