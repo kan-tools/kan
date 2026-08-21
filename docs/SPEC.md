@@ -374,8 +374,12 @@ legacy agent component is neither erased nor invented for current authors.
 Mapping a v1 local subject path into a current scope requires the verified
 scope as an explicit compatibility-projection input. Current claims may
 retract a v1 claim when the current principal equals its legacy DID component;
-v1 claims can never retract current claims. Kan authorship and ATProto repository approval are
-separate signatures by separate principals. The claim's `Author` and exact
+v1 claims can never retract current claims. Mixed state reduction keeps the
+latest status per exact source-author key, maps released and current status
+values into one display domain, and honors attested citation ordering across
+the codec boundary without collapsing those author keys. Kan authorship and
+ATProto repository approval are separate signatures by separate principals.
+The claim's `Author` and exact
 identity version authenticate kan speech; the repository transport signer
 only approves a CAR/MST transition and gains no scope authority from doing so.
 A current local repository therefore keeps one transport DID across every

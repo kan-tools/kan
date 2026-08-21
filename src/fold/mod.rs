@@ -9,6 +9,7 @@
 //! those assert something that can conflict.
 
 pub mod claim_view;
+pub mod claim_view_state;
 pub mod identity;
 pub mod relations;
 pub mod state;

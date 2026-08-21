@@ -110,8 +110,12 @@ and implement the RFC 1 asymmetric migration rule: a matching current
 principal may retract its v1 DID history, while v1 can never retract current
 claims. Historical local paths enter a current scope only through an explicit
 verified-scope projection input. Production render/state consumers still need
-to move from the released v1 `FoldedView` to this mixed view. Current append is gated by an opaque `VerifiedScope`
-token that can only be constructed by rechecking the stored inception proof
+to move from the released v1 `FoldedView` to this mixed view. The mixed status
+reducer is now available: it preserves exact v1/current author keys, computes
+latest-per-author positions, honors citations across the codec boundary, and
+produces the same settled/confirmed/contested display lattice. Production
+renderers still need to consume it. Current append is gated by an opaque
+`VerifiedScope` token that can only be constructed by rechecking the stored inception proof
 against its exact controller state, and the claim's cryptographic scope must
 match that token. The production workspace still defaults to v1: selecting
 the system actor in `Workspace`, compiling actions into current claim types,

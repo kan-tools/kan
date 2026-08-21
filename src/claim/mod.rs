@@ -907,6 +907,10 @@ impl ClaimContent {
         &self.body
     }
 
+    pub fn cites(&self) -> &CanonicalSet<ClaimId> {
+        &self.cites
+    }
+
     pub fn recorded_at(&self) -> RecordedAt {
         self.recorded_at
     }
