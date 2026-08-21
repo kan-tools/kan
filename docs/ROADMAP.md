@@ -123,6 +123,10 @@ also disclose all four RFC 1 judgments without combining admission and trust.
 The fold now retains valid trusted but unadmitted current claims as inspectable
 evidence while excluding them from SameAs, state, relation, and correction
 effects; v1 participation remains compatibility-stable.
+Explicit `--trust me` reads now select the configured kan system actor in a
+current scope from profile and public identity-state metadata, without
+credential access; the independent repository transport DID cannot enter that
+frame. Scope-less v1 workspaces retain the released signer-based behavior.
 Current append is gated by an
 opaque `VerifiedScope` token that can only
 be constructed by rechecking the stored inception proof

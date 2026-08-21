@@ -1392,6 +1392,52 @@ impl Workspace {
         &self,
         specs: &[String],
     ) -> Result<(TrustBase, Option<String>), Error> {
+        self.trust_from_detailed_as(specs, None)
+    }
+
+    /// Resolve a read trust frame with access to the installed system actor.
+    ///
+    /// A current scope separates its kan author principal from the repository
+    /// transport principal. Therefore `me` must name the selected system
+    /// actor there, while a v1 workspace retains the released workspace-key
+    /// meaning. Resolving the actor reads profile and public identity-state
+    /// metadata only; credential access remains confined to signing.
+    pub fn trust_from_detailed_with_system(
+        &self,
+        specs: &[String],
+        system: &SystemIdentityStore,
+    ) -> Result<(TrustBase, Option<String>), Error> {
+        let asks_for_me = specs.iter().any(|spec| {
+            spec.split_once('=')
+                .map_or(spec.as_str(), |(name, _)| name)
+                .trim()
+                == crate::fold::trust::SELF_ALIAS
+        });
+        let current_principal = if asks_for_me
+            && crate::identity::scope_store::ScopeIdentityStore::at(
+                self.root.join(".kan").join("scope"),
+            )
+            .read()?
+            .is_some()
+        {
+            Some(
+                system
+                    .resolve_default_actor()?
+                    .ok_or(crate::identity::system::Error::NoDefaultProfile)?
+                    .principal()
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+        self.trust_from_detailed_as(specs, current_principal.as_deref())
+    }
+
+    fn trust_from_detailed_as(
+        &self,
+        specs: &[String],
+        current_principal: Option<&str>,
+    ) -> Result<(TrustBase, Option<String>), Error> {
         if specs.is_empty() {
             return Ok((self.local_trust()?, None));
         }
@@ -1408,7 +1454,9 @@ impl Workspace {
         if specs.len() == 1 && specs[0] == crate::fold::trust::SELF_ALIAS {
             return Ok((
                 TrustBase::solo(AuthorId {
-                    did: self.active_did()?,
+                    did: current_principal
+                        .map(str::to_string)
+                        .map_or_else(|| self.active_did(), Ok)?,
                     agent: None,
                 }),
                 None,
@@ -1493,7 +1541,9 @@ impl Workspace {
                 // Erroring is the honest answer: the question "what did I
                 // write here" has no answer without an identity, and
                 // resolving one to answer it would mint on a read.
-                self.active_did()?
+                current_principal
+                    .map(str::to_string)
+                    .map_or_else(|| self.active_did(), Ok)?
             } else {
                 entry.did
             };

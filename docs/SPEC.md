@@ -442,7 +442,11 @@ every mixed claim also exposes cryptographic validity, exact identity-state
 standing, scope admission, and view trust as four separate fields. The response
 trust envelope names the effective mixed author frame. A v1-only
 projection continues through the released renderer unchanged. Budgeted
-`context` uses the same mixed claim ranking and omission disclosure. Specialized
+`context` uses the same mixed claim ranking and omission disclosure. Explicit
+`me` trust selection names the configured kan author principal in a current
+scope, using profile and public identity-state metadata without credential
+access; it must not resolve to the independent repository transport DID. In a
+v1-only workspace it retains the released workspace-signer meaning. Specialized
 correction resolves its target through the mixed codec before writer selection
 and uses the fold's asymmetric authorship rule: current principals can retract
 their own current claims or matching v1-DID history, while v1 authors can never

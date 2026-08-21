@@ -460,6 +460,35 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     assert_eq!(cli["claims"].as_array().unwrap().len(), 2);
     assert_eq!(cli["claims"][0]["codec"], "kan-claim-v2");
 
+    // An explicit self-frame may select public profile/state metadata, but a
+    // read must not execute the selected credential provider.
+    let daily_credential = config.join("credentials/daily.key");
+    let parked_credential = config.join("credentials/daily.key.parked");
+    std::fs::rename(&daily_credential, &parked_credential).unwrap();
+    let trust_me = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args([
+            "show",
+            "identity/production-writer",
+            "--json",
+            "--trust",
+            "me",
+        ])
+        .env("KAN_CONFIG_DIR", &config)
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    std::fs::rename(&parked_credential, &daily_credential).unwrap();
+    assert!(
+        trust_me.status.success(),
+        "{}",
+        String::from_utf8_lossy(&trust_me.stderr)
+    );
+    let trust_me: serde_json::Value = serde_json::from_slice(&trust_me.stdout).unwrap();
+    assert_eq!(trust_me["claims"].as_array().unwrap().len(), 2);
+    assert_eq!(trust_me["trust"]["base"], "Solo");
+    assert_eq!(trust_me["trust"]["authors"][0]["did"], actor.principal());
+    assert_ne!(trust_me["trust"]["authors"][0]["did"], released_owner.did());
+
     let context = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(["context", "--budget", "10000", "--json"])
         .env("KAN_CONFIG_DIR", &config)

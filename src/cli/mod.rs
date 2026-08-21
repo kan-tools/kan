@@ -1601,11 +1601,11 @@ async fn run_read(command: Command, ws: &mut Workspace) -> Result<(), Error> {
             json,
             trust,
         } => {
-            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
-            let empty_reason = empty_reason.as_deref();
             let system = crate::identity::system::SystemIdentityStore::at(
                 crate::identity::system::SystemIdentityStore::platform_config_root()?,
             );
+            let (trust, empty_reason) = ws.trust_from_detailed_with_system(&trust, &system)?;
+            let empty_reason = empty_reason.as_deref();
             let projection = ws.mixed_projection_with_system(&system, &trust).await?;
             let mixed = crate::mixed_render::is_needed(&projection);
             match (
@@ -1685,10 +1685,10 @@ async fn run_read(command: Command, ws: &mut Workspace) -> Result<(), Error> {
             json,
             trust,
         } => {
-            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
             let system = crate::identity::system::SystemIdentityStore::at(
                 crate::identity::system::SystemIdentityStore::platform_config_root()?,
             );
+            let (trust, empty_reason) = ws.trust_from_detailed_with_system(&trust, &system)?;
             let projection = ws.mixed_projection_with_system(&system, &trust).await?;
             let mixed = crate::mixed_render::is_needed(&projection);
             print!(
@@ -1717,10 +1717,10 @@ async fn run_read(command: Command, ws: &mut Workspace) -> Result<(), Error> {
             )
         }
         Command::Issues { json, trust } => {
-            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
             let system = crate::identity::system::SystemIdentityStore::at(
                 crate::identity::system::SystemIdentityStore::platform_config_root()?,
             );
+            let (trust, empty_reason) = ws.trust_from_detailed_with_system(&trust, &system)?;
             let projection = ws.mixed_projection_with_system(&system, &trust).await?;
             let mixed = crate::mixed_render::is_needed(&projection);
             print!(
@@ -1747,10 +1747,10 @@ async fn run_read(command: Command, ws: &mut Workspace) -> Result<(), Error> {
             trust,
         } => {
             let budget = budget.unwrap_or(DEFAULT_BUDGET);
-            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
             let system = crate::identity::system::SystemIdentityStore::at(
                 crate::identity::system::SystemIdentityStore::platform_config_root()?,
             );
+            let (trust, empty_reason) = ws.trust_from_detailed_with_system(&trust, &system)?;
             let projection = ws.mixed_projection_with_system(&system, &trust).await?;
             let mixed = crate::mixed_render::is_needed(&projection);
             print!(

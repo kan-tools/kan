@@ -198,11 +198,16 @@ role's claims, and a read resolves, derives and persists no signing key.
 Narrow it when you want a specific frame:
 
 ```sh
-kan show finding --trust me               # the active identity alone
+kan show finding --trust me               # this installation's kan author alone
 kan show finding --trust roles            # only the identities declared in .kan/roles
 kan show finding --trust role:prover      # one declared role, by name
 kan show finding --trust did:key:zA --trust did:key:zB   # two explicit authors
 ```
+
+In a current scope, `me` resolves the selected system profile and its public
+`did:kan` state; it never names the repository transport DID. In a v1
+workspace it retains the compatibility meaning of the active workspace
+signer. This resolution is read-only and does not access a signing credential.
 
 A `did:key:...=<weight>` form is accepted, but note that **weights are not
 yet folded**: an author is either in the view or not, so `did=0.5` currently
