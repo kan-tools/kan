@@ -574,6 +574,49 @@ impl Workspace {
             .map(|writer| writer.scope.scope())
     }
 
+    /// Resolve one authoritative local record under public identity state.
+    /// This is intentionally independent from writer preparation so a bad or
+    /// missing correction target cannot create or select credentials.
+    pub async fn decoded_local_claim(
+        &mut self,
+        cid: Cid,
+    ) -> Result<Option<crate::claim::codec::DecodedRecord>, Error> {
+        let system = SystemIdentityStore::at(SystemIdentityStore::platform_config_root()?);
+        let resolutions = system.resolve_public_identities()?;
+        let states = resolutions
+            .iter()
+            .filter_map(|resolution| match resolution {
+                crate::identity::did_kan_update::DidKanResolution::Active(state) => {
+                    Some((**state).clone())
+                }
+                crate::identity::did_kan_update::DidKanResolution::NonActive(_) => None,
+            })
+            .collect::<Vec<_>>();
+        self.log
+            .get_decoded(
+                cid,
+                crate::claim::codec::VerificationContext::ResolvedIdentities { did_kan: &states },
+            )
+            .await
+            .map_err(Error::from)
+    }
+
+    /// Select the durable writer and return only its kan authorship key.
+    /// Repository transport identity is deliberately not representable here.
+    pub async fn prepare_claim_author(&mut self) -> Result<crate::claim::view::ClaimAuthor, Error> {
+        match self.prepare_writer().await? {
+            WorkspaceWriterKind::V1 => Ok(crate::claim::view::ClaimAuthor::V1(self.my_author()?)),
+            WorkspaceWriterKind::Claim => Ok(crate::claim::view::ClaimAuthor::Principal(
+                self.current_writer
+                    .as_ref()
+                    .ok_or(Error::CurrentWriterUnavailable)?
+                    .actor
+                    .principal()
+                    .to_string(),
+            )),
+        }
+    }
+
     /// Resolve and project the local mixed-codec view without selecting a
     /// profile or accessing a credential provider. Local trust is derived
     /// from authors present in the authoritative log; overlay and published

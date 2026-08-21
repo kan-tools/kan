@@ -80,6 +80,7 @@ fn to_error(e: actions::Error) -> ErrorData {
         actions::Error::Usage(_)
         | actions::Error::InvalidCid(_, _)
         | actions::Error::UnknownClaim(_)
+        | actions::Error::UnsupportedCorrectionTarget(_, _)
         | actions::Error::NotYourClaim(_)
         | actions::Error::CantRejectOwnClaim(_)
         | actions::Error::TitleKindRequireEachOther => {

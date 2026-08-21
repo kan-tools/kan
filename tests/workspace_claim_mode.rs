@@ -269,7 +269,7 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     let mut released_log = Log::open_or_create(&log_dir, &released_owner)
         .await
         .unwrap();
-    released_log
+    let legacy_cid = released_log
         .append(legacy_content(&released_owner), &released_owner)
         .await
         .unwrap();
@@ -351,7 +351,7 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     let decoded = workspace
         .log
         .get_decoded(
-            cid,
+            cid.clone(),
             kan::claim::codec::VerificationContext::ActiveDidKan(actor.state()),
         )
         .await
@@ -488,6 +488,65 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     let empty_context: serde_json::Value = serde_json::from_slice(&empty_context.stdout).unwrap();
     assert!(empty_context["claims"].as_array().unwrap().is_empty());
     assert_eq!(empty_context["omitted_claims"], 3);
+
+    let reject_own = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(["reject", &cid.to_string()])
+        .env("KAN_CONFIG_DIR", &config)
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(!reject_own.status.success());
+    assert!(String::from_utf8_lossy(&reject_own.stderr).contains("kan retract"));
+
+    let retract_foreign = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(["retract", &legacy_cid.to_string()])
+        .env("KAN_CONFIG_DIR", &config)
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(!retract_foreign.status.success());
+    assert!(String::from_utf8_lossy(&retract_foreign.stderr).contains("kan reject"));
+
+    let retract = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(["retract", &cid.to_string()])
+        .env("KAN_CONFIG_DIR", &config)
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(
+        retract.status.success(),
+        "{}",
+        String::from_utf8_lossy(&retract.stderr)
+    );
+
+    let reject = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(["reject", &legacy_cid.to_string()])
+        .env("KAN_CONFIG_DIR", &config)
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(
+        reject.status.success(),
+        "{}",
+        String::from_utf8_lossy(&reject.stderr)
+    );
+
+    let corrected = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(["show", "identity/production-writer", "--json"])
+        .env("KAN_CONFIG_DIR", &config)
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(corrected.status.success());
+    let corrected: serde_json::Value = serde_json::from_slice(&corrected.stdout).unwrap();
+    let kinds = corrected["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|claim| claim["kind"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert!(!kinds.contains(&"Observation"));
+    assert!(kinds.contains(&"Retraction"));
 }
 
 #[tokio::test]

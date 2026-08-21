@@ -132,8 +132,9 @@ repository DID. Supported narrative, subject, status, relation, correction,
 role-naming, citation, and Git-artifact intents compile without a stringly
 intermediate, and successful current appends refresh the mixed cache. URI-
 dependent publication and legacy anchor/unknown intents remain explicit
-unsupported compiler arms. Specialized correction/publication actions still
-need the mixed cutover. The production
+unsupported compiler arms. Correction now resolves typed mixed-codec targets
+before writer selection and shares the fold's asymmetric current/v1 authorship
+rule. Publication still needs the URI-native cutover. The production
 read substrate now resolves every public `did:kan` ledger outcome without a
 profile or credential lookup, opens mixed logs without asking the v1 decoder
 to reinterpret current records, and constructs a source-preserving local
@@ -157,8 +158,8 @@ whose inception proof verifies against the supplied exact actor state is
 verified scope wins over retained v1 history. An explicit resolvable
 `KAN_IDENTITY_FILE` on an otherwise empty scope-less workspace remains a v1
 compatibility selection; implicit first-write identity creation stays
-forbidden. The remaining cutover boundary is the specialized
-correction/publication actions.
+forbidden. The remaining identity cutover boundary is publication, which is
+intentionally coupled to the next URI-native milestone.
 `src/identity/governance.rs` now produces canonical update and reconciliation
 events and resolves unordered evidence deterministically: proof variants share
 one logical event, sibling leaves are contested, reconciliation requires

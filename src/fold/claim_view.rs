@@ -167,7 +167,7 @@ fn excluded_by_retraction(claims: &[ClaimView]) -> HashSet<Cid> {
     excluded
 }
 
-fn may_retract(retractor: &ClaimAuthor, target: &ClaimAuthor) -> bool {
+pub(crate) fn may_retract(retractor: &ClaimAuthor, target: &ClaimAuthor) -> bool {
     match (retractor, target) {
         (ClaimAuthor::V1(left), ClaimAuthor::V1(right)) => left == right,
         (ClaimAuthor::Principal(left), ClaimAuthor::Principal(right)) => left == right,

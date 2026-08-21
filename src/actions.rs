@@ -54,6 +54,8 @@ pub enum Error {
     NotYourClaim(Cid),
     #[error("you can't reject your own claim ({0}) -- use `kan retract` instead")]
     CantRejectOwnClaim(Cid),
+    #[error("claim {0} uses unsupported codec `{1}` and cannot be a correction target")]
+    UnsupportedCorrectionTarget(Cid, Box<str>),
     #[error("--title and --kind must be given together (ClaimBody::Subject needs both)")]
     TitleKindRequireEachOther,
 }
@@ -1695,16 +1697,12 @@ pub async fn retract(
     let target_cid: Cid = cid
         .parse()
         .map_err(|e| Error::InvalidCid(cid.to_string(), e))?;
-    let target = ws
-        .log
-        .get_stored(target_cid.clone())
-        .await?
-        .ok_or_else(|| Error::UnknownClaim(target_cid.clone()))?;
-    ws.commit_identity().await?;
-    if target.claim.content.author != ws.my_author()? {
+    let target = correction_target(ws, target_cid.clone()).await?;
+    let author = ws.prepare_claim_author().await?;
+    if !crate::fold::claim_view::may_retract(&author, &target.author) {
         return Err(Error::NotYourClaim(target_cid));
     }
-    let subject = target.claim.content.subject.clone();
+    let subject = target.subject;
     let body = ClaimBody::Retraction {
         supersedes: target_cid,
     };
@@ -1727,18 +1725,44 @@ pub async fn reject(
     let target_cid: Cid = cid
         .parse()
         .map_err(|e| Error::InvalidCid(cid.to_string(), e))?;
-    let target = ws
-        .log
-        .get_stored(target_cid.clone())
-        .await?
-        .ok_or_else(|| Error::UnknownClaim(target_cid.clone()))?;
-    ws.commit_identity().await?;
-    if target.claim.content.author == ws.my_author()? {
+    let target = correction_target(ws, target_cid.clone()).await?;
+    let author = ws.prepare_claim_author().await?;
+    if crate::fold::claim_view::may_retract(&author, &target.author) {
         return Err(Error::CantRejectOwnClaim(target_cid));
     }
-    let subject = target.claim.content.subject.clone();
+    let subject = target.subject;
     let body = ClaimBody::Rejects { claim: target_cid };
     append(ws, subject, body, vec![], file).await
+}
+
+struct CorrectionTarget {
+    subject: SubjectRef,
+    author: crate::claim::view::ClaimAuthor,
+}
+
+async fn correction_target(ws: &mut Workspace, cid: Cid) -> Result<CorrectionTarget, Error> {
+    use crate::claim::codec::{DecodedClaim, SupportedClaim};
+
+    let decoded = ws
+        .decoded_local_claim(cid.clone())
+        .await?
+        .ok_or_else(|| Error::UnknownClaim(cid.clone()))?;
+    match decoded.claim {
+        DecodedClaim::Supported(SupportedClaim::V1(claim)) => Ok(CorrectionTarget {
+            subject: claim.content.subject,
+            author: crate::claim::view::ClaimAuthor::V1(claim.content.author),
+        }),
+        DecodedClaim::Supported(SupportedClaim::Claim(claim)) => Ok(CorrectionTarget {
+            subject: SubjectRef::Local(Rkey::from(claim.content().subject().as_str())),
+            author: crate::claim::view::ClaimAuthor::Principal(
+                claim.content().author().principal().to_string(),
+            ),
+        }),
+        DecodedClaim::Unsupported(claim) => Err(Error::UnsupportedCorrectionTarget(
+            cid,
+            claim.codec().to_string().into_boxed_str(),
+        )),
+    }
 }
 
 /// Case/separator-normalized comparison key for a subject rkey (issue #47,

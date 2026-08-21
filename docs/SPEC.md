@@ -441,8 +441,12 @@ record. Current JSON claims add their signed codec and cryptographic scope;
 the response trust envelope names the effective mixed author frame. A v1-only
 projection continues through the released renderer unchanged. Budgeted
 `context` uses the same mixed claim ranking and omission disclosure. Specialized
-correction and publication paths remain compatibility consumers until their
-current target and transport semantics are implemented.
+correction resolves its target through the mixed codec before writer selection
+and uses the fold's asymmetric authorship rule: current principals can retract
+their own current claims or matching v1-DID history, while v1 authors can never
+retract current claims. Rejection is the inverse local-trust operation.
+Publication remains a compatibility consumer until its URI and transport
+semantics are implemented.
 
 ## 8. Retraction (RECOMMENDED default, flagged OPEN in §9)
 
