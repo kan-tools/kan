@@ -19,21 +19,29 @@ routes filesystem mutations through typed persistence capabilities. That work
 landed in [PR #233](https://github.com/kan-tools/kan/pull/233) and closed
 [issue #216](https://github.com/kan-tools/kan/issues/216).
 
-## Active product track: identity first
+## Active product track: URI-native local application
 
 The active sequence is identity → URI-native local application → kan-native
 hosted service → ATProto interoperability. Later milestones may prototype
 against an earlier contract, but they do not become authorities for identity,
 governed scope, admission, or URI semantics.
 
-| Milestone | Outcome | Governing design |
-|---|---|---|
-| 1 — Identity | Stable principals, governed scopes, governance, delegated admission, and four separately reported read judgments | [RFC 1](../rfcs/1-identity-system.md) |
-| 2 — Local URI application | Existing CLI and MCP reads compile to one RFC 2 resolution request and canonical `kan://local/...` URI | [RFC 2](../rfcs/2-kan-uri-scheme.md) |
-| 3 — Hosted kan | A Railway-deployable kan-native authority resolves the same typed resources while keeping authenticated ingest separate | [identity-first roadmap](../.design/identity-first-uri-native-roadmap.md) |
-| 4 — ATProto | RFC 3 codecs, publication, and AppView adapt the proven identity and URI model | [RFC 3](../rfcs/3-authoritative-lexicon-publication.md) |
+| Milestone | Status | Outcome | Governing design |
+|---|---|---|---|
+| 1 — Identity | Shipped in [#246](https://github.com/kan-tools/kan/pull/246) | Stable principals, governed scopes, governance, delegated admission, and four separately reported read judgments | [RFC 1](../rfcs/1-identity-system.md) |
+| 2 — Local URI application | Active under [#248](https://github.com/kan-tools/kan/issues/248) | Existing CLI and MCP reads compile to one RFC 2 resolution request and canonical `kan://local/...` URI | [RFC 2](../rfcs/2-kan-uri-scheme.md) |
+| 3 — Hosted kan | Next | A Railway-deployable kan-native authority resolves the same typed resources while keeping authenticated ingest separate | [identity-first roadmap](../.design/identity-first-uri-native-roadmap.md) |
+| 4 — ATProto | Deferred behind 1–3 | RFC 3 codecs, publication, and AppView adapt the proven identity and URI model | [RFC 3](../rfcs/3-authoritative-lexicon-publication.md) |
 
-Milestone 1 began in commit `4ad239a`. The implemented first slice is deliberately
+Milestone 2 has shipped its parser/canonicalizer checkpoint (#250) and its
+first production local-resolver checkpoint (#253). Explicit local resolution
+uses an in-memory disposable projection, preserves source provenance and all
+four RFC 1 claim judgments, and returns an immutable replay URI without
+touching authoritative or derived workspace bytes. The active slice is #251:
+compile the existing CLI and MCP reads through that request/result boundary.
+
+Milestone 1 began in commit `4ad239a` and completed in merge commit `78bbc10`.
+The following record describes the shipped boundary. The first slice was deliberately
 compatibility-only: `src/identity.rs` defines RFC 1's cryptographic validity,
 identity standing, scope admission, and view-trust results; applies the
 ordered admission table; and evaluates preserved legacy claims without changing

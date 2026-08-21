@@ -176,6 +176,12 @@ pub enum WorkspaceWriterKind {
     Claim,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReadProjection {
+    WorkspaceDerived,
+    MemoryOnly,
+}
+
 /// Source-preserving production read substrate. Identity-resolution outcomes
 /// remain available beside the projected claims, including non-active arms;
 /// callers never have to infer "unknown" from a missing signing profile.
@@ -336,6 +342,10 @@ impl ClaimsDigest {
 }
 
 impl PublishedIndex {
+    pub(crate) fn content_hash(&self) -> Option<&str> {
+        self.content_hash.as_deref()
+    }
+
     fn record(&mut self, subject: crate::claim::v1::SubjectRef, cid: Cid) {
         self.by_subject.entry(subject).or_default().insert(cid);
     }
@@ -724,14 +734,32 @@ impl Workspace {
                         .any(|root| root == &state.did)
                 });
                 match matching {
-                    Some(state) => scope_store.read_verified_did_kan(state)?,
+                    Some(state) => match scope_store.read_verified_did_kan(state) {
+                        Ok(verified) => verified,
+                        Err(
+                            crate::identity::scope_store::Error::Inception(
+                                crate::identity::scope_inception::Error::NoGovernanceProof,
+                            )
+                            | crate::identity::scope_store::Error::InceptionProofMismatch,
+                        ) => None,
+                        Err(error) => return Err(error.into()),
+                    },
                     None if installed
                         .inception
                         .governance_roots
                         .iter()
                         .any(|root| root.starts_with("did:key:")) =>
                     {
-                        scope_store.read_verified_static()?
+                        match scope_store.read_verified_static() {
+                            Ok(verified) => verified,
+                            Err(
+                                crate::identity::scope_store::Error::Inception(
+                                    crate::identity::scope_inception::Error::NoGovernanceProof,
+                                )
+                                | crate::identity::scope_store::Error::InceptionProofMismatch,
+                            ) => None,
+                            Err(error) => return Err(error.into()),
+                        }
                     }
                     None => None,
                 }
@@ -978,6 +1006,24 @@ impl Workspace {
         cwd: &Path,
         system: &SystemIdentityStore,
     ) -> Result<Self, Error> {
+        Self::open_read_only_mode(cwd, system, ReadProjection::WorkspaceDerived).await
+    }
+
+    /// Stronger RFC 2 read boundary: authoritative inputs may be read, but
+    /// even an existing disposable SQLite projection is neither opened nor
+    /// refreshed. A stale or absent projection is recomputed in memory.
+    pub async fn open_resolution_read_only_with_system(
+        cwd: &Path,
+        system: &SystemIdentityStore,
+    ) -> Result<Self, Error> {
+        Self::open_read_only_mode(cwd, system, ReadProjection::MemoryOnly).await
+    }
+
+    async fn open_read_only_mode(
+        cwd: &Path,
+        system: &SystemIdentityStore,
+        projection: ReadProjection,
+    ) -> Result<Self, Error> {
         let root = find_repo_root(cwd);
         let kan_dir = root.join(".kan");
 
@@ -994,7 +1040,7 @@ impl Workspace {
         // touch disk. Where `.kan/` *is* present, the index file is fair game
         // — it is disposable derived data inside a workspace that already
         // exists, which is the same rule `Workspace::open` has always used.
-        let mut index = if kan_dir.exists() {
+        let mut index = if kan_dir.exists() && projection == ReadProjection::WorkspaceDerived {
             Index::open(&kan_dir.join("index.sqlite"))?
         } else {
             Index::open_in_memory()?
@@ -1024,7 +1070,8 @@ impl Workspace {
         // path below and recomputes from the signed log/published records.
         // The common path stays an index read instead of signature-verifying
         // the entire log on every one-process CLI invocation.
-        let projection_fresh = matches!(index.built_from_root(), Ok(root) if root == fingerprint)
+        let projection_fresh = projection == ReadProjection::WorkspaceDerived
+            && matches!(index.built_from_root(), Ok(root) if root == fingerprint)
             && matches!(index.projection_is_consistent(), Ok(true));
         if !projection_fresh {
             let resolutions = system.resolve_public_identities()?;
