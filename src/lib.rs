@@ -24,4 +24,5 @@ pub mod sign;
 pub mod store;
 pub mod surface;
 pub mod transport;
+pub mod uri;
 pub mod workspace;

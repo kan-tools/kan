@@ -1092,12 +1092,14 @@ placeholder.
 ## Implementation status
 
 Draft schemas, local claim-collection migration, and an
-implementation-independent executable reference harness are implemented; the
-production URI parser, resolver, PDS, and AppView are not.
+implementation-independent executable reference harness are implemented. The
+production Rust request types, strict parser, and access-free syntactic
+canonicalizer now execute every checked parse vector; local resolution,
+CLI/MCP routing, PDS, and AppView remain.
 The governing design is `.design/rfc-2-kan-uri-scheme.md`. The five
 `.design/rfc-2-lexicons/*.json` files parse with the independent Go ATProto
 toolchain and fix the record/XRPC contract. The finite conformance manifest has
-55 URI vectors and 9 hostile/positive service-discovery vectors. Its gate
+60 URI vectors and 9 hostile/positive service-discovery vectors. Its gate
 executes parsing, resolution, exact XRPC request construction, discovery, and
 read-only checks, and its four mutation controls prove that corrupted canonical
 output, requests, coverage, and discovery expectations are rejected. Local
