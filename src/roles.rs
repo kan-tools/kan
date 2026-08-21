@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{ClaimBody, Did},
+    claim::v1::{ClaimBody, Did},
     store::log::StoredClaim,
 };
 

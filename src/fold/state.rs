@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{AuthorId, Claim, ClaimBody, ClaimKind, StatusValue},
+    claim::v1::{AuthorId, Claim, ClaimBody, ClaimKind, StatusValue},
     relations::{ComputedEdge, ComputedEdgeKind},
 };
 

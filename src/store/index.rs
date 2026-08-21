@@ -9,7 +9,7 @@ use atproto_dasl::Cid;
 use rusqlite::OptionalExtension;
 use sha2::Digest;
 
-use crate::claim::AuthorId;
+use crate::claim::v1::AuthorId;
 use crate::store::log::StoredClaim;
 
 /// The projection's table, **named by schema version**, and the meta key
@@ -38,6 +38,8 @@ use crate::store::log::StoredClaim;
 const CLAIMS_TABLE: &str = "claims_v2";
 const BUILT_FROM_ROOT_KEY: &str = "built_from_root_v2";
 const PROJECTION_DIGEST_KEY: &str = "projection_digest_v2";
+const CLAIM_VIEWS_TABLE: &str = "claim_views_v1";
+const CLAIM_VIEWS_BUILT_FROM_ROOT_KEY: &str = "claim_views_built_from_root_v1";
 
 /// Which store a projected claim came from.
 ///
@@ -80,6 +82,18 @@ impl Origin {
     }
 }
 
+fn decoded_claim_id(claim: &crate::claim::codec::DecodedClaim) -> Result<Cid, Error> {
+    match claim {
+        crate::claim::codec::DecodedClaim::Supported(crate::claim::codec::SupportedClaim::V1(
+            claim,
+        )) => Ok(crate::cid::content_cid(&claim.content)?),
+        crate::claim::codec::DecodedClaim::Supported(
+            crate::claim::codec::SupportedClaim::Claim(claim),
+        ) => Ok(claim.id()?.cid().clone()),
+        crate::claim::codec::DecodedClaim::Unsupported(claim) => Ok(claim.claim_id().clone()),
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("sqlite error: {0}")]
@@ -108,6 +122,16 @@ pub enum Error {
     InvalidCid(#[from] atproto_dasl::DaslCidError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    ClaimCodecEncode(#[from] crate::claim::codec::EncodeError),
+    #[error(transparent)]
+    ClaimCodecDecode(#[from] crate::claim::codec::DecodeError),
+    #[error(transparent)]
+    Claim(#[from] crate::claim::Error),
+    #[error(transparent)]
+    ContentCid(#[from] crate::cid::Error),
+    #[error("cached claim view CID mismatch: expected {expected}, decoded {actual}")]
+    ClaimViewCidMismatch { expected: String, actual: String },
 }
 
 /// Turns a decode failure into something an operator can act on.
@@ -214,6 +238,21 @@ impl Index {
              CREATE INDEX IF NOT EXISTS {CLAIMS_TABLE}_by_origin
                 ON {CLAIMS_TABLE}(origin);"
         ))?;
+        conn.execute_batch(&format!(
+            "CREATE TABLE IF NOT EXISTS {CLAIM_VIEWS_TABLE} (
+                content_cid      TEXT PRIMARY KEY,
+                rev              TEXT NOT NULL,
+                codec            TEXT NOT NULL,
+                author_principal TEXT,
+                origin           TEXT NOT NULL,
+                subject_key      TEXT,
+                envelope         BLOB NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS {CLAIM_VIEWS_TABLE}_by_rev
+                ON {CLAIM_VIEWS_TABLE}(rev);
+             CREATE INDEX IF NOT EXISTS {CLAIM_VIEWS_TABLE}_by_origin
+                ON {CLAIM_VIEWS_TABLE}(origin);"
+        ))?;
         Ok(Self { conn, path })
     }
 
@@ -244,6 +283,7 @@ impl Index {
         }
         self.conn.execute_batch(&format!(
             "DROP TABLE IF EXISTS {CLAIMS_TABLE};
+             DROP TABLE IF EXISTS {CLAIM_VIEWS_TABLE};
              DROP TABLE IF EXISTS meta;"
         ))?;
         self.conn.execute_batch(
@@ -267,7 +307,137 @@ impl Index {
              CREATE INDEX {CLAIMS_TABLE}_by_subject ON {CLAIMS_TABLE}(subject_key);
              CREATE INDEX {CLAIMS_TABLE}_by_origin ON {CLAIMS_TABLE}(origin);"
         ))?;
+        self.conn.execute_batch(&format!(
+            "CREATE TABLE {CLAIM_VIEWS_TABLE} (
+                content_cid      TEXT PRIMARY KEY,
+                rev              TEXT NOT NULL,
+                codec            TEXT NOT NULL,
+                author_principal TEXT,
+                origin           TEXT NOT NULL,
+                subject_key      TEXT,
+                envelope         BLOB NOT NULL
+             );
+             CREATE INDEX {CLAIM_VIEWS_TABLE}_by_rev ON {CLAIM_VIEWS_TABLE}(rev);
+             CREATE INDEX {CLAIM_VIEWS_TABLE}_by_origin ON {CLAIM_VIEWS_TABLE}(origin);"
+        ))?;
         Ok(())
+    }
+
+    /// Rebuild the source-preserving mixed-codec cache. This stores canonical
+    /// envelopes and provenance only: admission, identity standing, and view
+    /// trust are evaluation results and therefore never persisted here.
+    pub fn rebuild_claim_views(
+        &mut self,
+        log_claims: &[(Cid, crate::claim::codec::DecodedRecord)],
+        foreign_claims: &[(Cid, crate::claim::codec::DecodedRecord)],
+        built_from_root: Option<&Cid>,
+    ) -> Result<(), Error> {
+        let tx = self.conn.transaction()?;
+        tx.execute(&format!("DELETE FROM {CLAIM_VIEWS_TABLE}"), [])?;
+        for (origin, claims) in [(Origin::Log, log_claims), (Origin::GitTree, foreign_claims)] {
+            for (cid, record) in claims {
+                let actual = decoded_claim_id(&record.claim)?;
+                if &actual != cid {
+                    return Err(Error::ClaimViewCidMismatch {
+                        expected: cid.to_string(),
+                        actual: actual.to_string(),
+                    });
+                }
+                let envelope = crate::claim::codec::encode_decoded(record)?;
+                let (codec, author, subject) = match &record.claim {
+                    crate::claim::codec::DecodedClaim::Supported(
+                        crate::claim::codec::SupportedClaim::V1(claim),
+                    ) => (
+                        crate::claim::codec::V1_CODEC,
+                        Some(claim.content.author.did.as_str()),
+                        Some(format!("{:?}", claim.content.subject)),
+                    ),
+                    crate::claim::codec::DecodedClaim::Supported(
+                        crate::claim::codec::SupportedClaim::Claim(claim),
+                    ) => (
+                        crate::claim::codec::V2_CODEC,
+                        Some(claim.content().author().principal()),
+                        Some(claim.content().subject().as_str().to_string()),
+                    ),
+                    crate::claim::codec::DecodedClaim::Unsupported(claim) => {
+                        (claim.codec(), None, None)
+                    }
+                };
+                tx.execute(
+                    &format!(
+                        "INSERT INTO {CLAIM_VIEWS_TABLE}
+                            (content_cid, rev, codec, author_principal, origin, subject_key,
+                             envelope)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"
+                    ),
+                    rusqlite::params![
+                        cid.to_string(),
+                        record.rev,
+                        codec,
+                        author,
+                        origin.as_str(),
+                        subject,
+                        envelope,
+                    ],
+                )?;
+            }
+        }
+        tx.execute(
+            &format!(
+                "INSERT INTO meta (key, value) VALUES ('{CLAIM_VIEWS_BUILT_FROM_ROOT_KEY}', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+            ),
+            rusqlite::params![built_from_root.map(|cid| cid.to_string())],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn claim_views_built_from_root(&self) -> Result<Option<Cid>, Error> {
+        let value: Option<String> = self
+            .conn
+            .query_row(
+                &format!("SELECT value FROM meta WHERE key = '{CLAIM_VIEWS_BUILT_FROM_ROOT_KEY}'"),
+                [],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten();
+        value
+            .map(|value| value.parse())
+            .transpose()
+            .map_err(Error::from)
+    }
+
+    /// Restore and reverify every cached source envelope under the supplied
+    /// identity-resolution context. The cache can skip media traversal, but
+    /// never turns SQLite into signature authority.
+    pub fn all_decoded_claims(
+        &self,
+        verification: crate::claim::codec::VerificationContext<'_>,
+    ) -> Result<Vec<(Cid, crate::claim::codec::DecodedRecord)>, Error> {
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT content_cid, envelope FROM {CLAIM_VIEWS_TABLE}
+             ORDER BY rev ASC, content_cid ASC"
+        ))?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (expected, envelope) = row?;
+            let expected: Cid = expected.parse()?;
+            let decoded = crate::claim::codec::decode_record(&envelope, verification)?;
+            let actual = decoded_claim_id(&decoded.claim)?;
+            if actual != expected {
+                return Err(Error::ClaimViewCidMismatch {
+                    expected: expected.to_string(),
+                    actual: actual.to_string(),
+                });
+            }
+            out.push((expected, decoded));
+        }
+        Ok(out)
     }
 
     /// Wipe and repopulate the index from `claims` (the full contents of a

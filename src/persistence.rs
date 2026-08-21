@@ -7,7 +7,7 @@
 #![allow(clippy::disallowed_methods)]
 #![allow(clippy::disallowed_types)]
 
-use std::path::Path;
+use std::{io::Write, path::Path};
 
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
@@ -17,6 +17,11 @@ pub enum SurfaceWrite {
     IdentityPointer,
     IdentitySeed,
     IdentityBackup,
+    IdentityLedger,
+    IdentityProfiles,
+    ScopeIdentity,
+    RepositoryTransportIdentity,
+    SystemCredentials,
     LocalLogCar,
     LocalLogDamaged,
     LocalLogRepair,
@@ -36,6 +41,11 @@ impl SurfaceWrite {
         Self::IdentityPointer,
         Self::IdentitySeed,
         Self::IdentityBackup,
+        Self::IdentityLedger,
+        Self::IdentityProfiles,
+        Self::ScopeIdentity,
+        Self::RepositoryTransportIdentity,
+        Self::SystemCredentials,
         Self::LocalLogCar,
         Self::LocalLogDamaged,
         Self::LocalLogRepair,
@@ -66,6 +76,25 @@ impl SurfaceWrite {
                 "identity:seed.protected-*",
                 "identity:identity.protected-*",
             ],
+            Self::IdentityLedger => &[
+                "identity-ledger:events/*.cbor",
+                "identity-ledger:events/.tmp-*",
+            ],
+            Self::IdentityProfiles => &[
+                "identity-profiles:profiles/*.json",
+                "identity-profiles:default",
+                "identity-profiles:.tmp-*",
+                "identity-profiles:LOCK",
+                "identity-profiles:enrollment-nonce",
+            ],
+            Self::ScopeIdentity => &[
+                "scope-identity:inception.cbor",
+                "scope-identity:initialization-nonce",
+                "scope-identity:LOCK",
+                "scope-identity:.tmp-*",
+            ],
+            Self::RepositoryTransportIdentity => &["repository-transport:identity"],
+            Self::SystemCredentials => &["credentials:owner-only-file"],
             Self::LocalLogCar => &["local-log:repo.car"],
             Self::LocalLogDamaged => &["local-log:repo.car.damaged-*"],
             Self::LocalLogRepair => &["local-log:repo.repair"],
@@ -122,6 +151,23 @@ pub fn open_lock_file(_surface: SurfaceWrite, path: &Path) -> std::io::Result<st
         .write(true)
         .truncate(false)
         .open(path)
+}
+
+pub fn write_new_owner_only(
+    _surface: SurfaceWrite,
+    path: &Path,
+    bytes: &[u8],
+) -> std::io::Result<()> {
+    let mut options = std::fs::OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
 }
 
 pub async fn create_dir_all_async(_surface: SurfaceWrite, path: &Path) -> std::io::Result<()> {

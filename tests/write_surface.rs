@@ -10,7 +10,7 @@ use std::process::Command;
 
 use kan::{
     actions,
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     git::GitSubstrate,
     sign::Identity,
     store::{index::Index, log::Log},
@@ -186,7 +186,7 @@ async fn reject_writes_a_rejects_claim_against_another_authors_claim() {
     let result = actions::reject(&mut ws, &other_cid.to_string(), None)
         .await
         .unwrap();
-    assert_eq!(result.kind, kan::claim::ClaimKind::Rejects);
+    assert_eq!(result.kind, kan::claim::v1::ClaimKind::Rejects);
 }
 
 /// AC-3 (second half, library-level counterpart to the CLI test): rejecting

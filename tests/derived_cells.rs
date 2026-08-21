@@ -284,6 +284,12 @@ fn write_outcome(built: &Built) -> String {
         if stderr.contains("which does not exist") {
             return "refused:selection-missing".to_string();
         }
+        if stderr.contains("has not selected a claim format yet") {
+            return "refused:init-required".to_string();
+        }
+        if stderr.contains("cannot select a claim writer") {
+            return "refused:incomplete".to_string();
+        }
         return "refused:other".to_string();
     }
     let (out, _, ok) = kan_as(

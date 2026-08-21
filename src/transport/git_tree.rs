@@ -30,7 +30,7 @@ use tokio_stream::Stream;
 use super::{ClaimStream, Transport};
 use crate::{
     cid::content_cid,
-    claim::{Claim, ClaimContent, Did},
+    claim::v1::{Claim, ClaimContent, Did},
     sign::{self, Identity},
     store::log::Log,
 };
@@ -693,8 +693,8 @@ pub fn split_records(text: &str) -> Vec<&str> {
 /// absolute-looking root would let a subject name decide where a write lands.
 /// The writer does not use this yet — the reader ships first — but the guard
 /// belongs here rather than at the call site that eventually needs it.
-pub fn subject_path(subject: &crate::claim::SubjectRef) -> Option<PathBuf> {
-    use crate::claim::SubjectRef;
+pub fn subject_path(subject: &crate::claim::v1::SubjectRef) -> Option<PathBuf> {
+    use crate::claim::v1::SubjectRef;
     let raw = match subject {
         SubjectRef::Local(rkey) => rkey.clone(),
         // Anchors get a declared prefix rather than `format!("{anchor:?}")`,
@@ -909,8 +909,8 @@ enum WireSubject {
 }
 
 impl WireSubject {
-    fn of(subject: &crate::claim::SubjectRef) -> Self {
-        use crate::claim::{Anchor, SubjectRef};
+    fn of(subject: &crate::claim::v1::SubjectRef) -> Self {
+        use crate::claim::v1::{Anchor, SubjectRef};
         // `to_string_lossy` is safe here in the sense that matters: this value
         // is compared against the same projection of the same claim, never
         // used to reconstruct the path. A non-UTF-8 path yields a stable
@@ -945,8 +945,8 @@ impl WireSubject {
 /// whose header says `unknown` would be asserting that the publisher could not
 /// identify their own claim, and on read the comparison would pass for any
 /// unrecognised kind at all, which is the opposite of authenticating it.
-fn wire_kind(kind: crate::claim::ClaimKind) -> Option<&'static str> {
-    use crate::claim::ClaimKind as K;
+fn wire_kind(kind: crate::claim::v1::ClaimKind) -> Option<&'static str> {
+    use crate::claim::v1::ClaimKind as K;
     Some(match kind {
         K::Subject => "subject",
         K::Observation => "observation",
@@ -1080,10 +1080,10 @@ fn hex_decode(text: &str) -> Option<Vec<u8>> {
 /// Filename for a subject's claims. Subject rkeys may contain `/` (day's
 /// `telos/legible-process`, for instance), which would otherwise create
 /// directories.
-pub fn file_name(subject: &crate::claim::SubjectRef) -> String {
+pub fn file_name(subject: &crate::claim::v1::SubjectRef) -> String {
     let raw = match subject {
-        crate::claim::SubjectRef::Local(rkey) => rkey.clone(),
-        crate::claim::SubjectRef::Anchor(anchor) => format!("{anchor:?}"),
+        crate::claim::v1::SubjectRef::Local(rkey) => rkey.clone(),
+        crate::claim::v1::SubjectRef::Anchor(anchor) => format!("{anchor:?}"),
     };
     let safe: String = raw
         .chars()
@@ -1126,10 +1126,10 @@ pub fn file_name(subject: &crate::claim::SubjectRef) -> String {
 /// Lossy, which is exactly why it was replaced: `telos/x` and `telos_x` both
 /// land here, and publishing the second destroyed the first. That is why it
 /// is accepted on **read** and never written.
-pub fn legacy_file_name(subject: &crate::claim::SubjectRef) -> String {
+pub fn legacy_file_name(subject: &crate::claim::v1::SubjectRef) -> String {
     let raw = match subject {
-        crate::claim::SubjectRef::Local(rkey) => rkey.clone(),
-        crate::claim::SubjectRef::Anchor(anchor) => format!("{anchor:?}"),
+        crate::claim::v1::SubjectRef::Local(rkey) => rkey.clone(),
+        crate::claim::v1::SubjectRef::Anchor(anchor) => format!("{anchor:?}"),
     };
     let safe: String = raw
         .chars()
@@ -1198,7 +1198,7 @@ fn subject_digest(raw: &str) -> String {
 /// content-addressed, rewriting cannot lose one that is still live.
 pub fn write_subject(
     root: &Path,
-    subject: &crate::claim::SubjectRef,
+    subject: &crate::claim::v1::SubjectRef,
     claims: &[(Claim, Option<String>)],
 ) -> Result<Written, Error> {
     let dir = root.join(CLAIMS_DIR);
@@ -1351,7 +1351,7 @@ fn refuse_symlinked_components(dir: &Path, rel: &Path) -> Result<(), Error> {
 ///
 /// The subject half is [`retirable`]'s check. The author half is what keeps a
 /// migration from deleting a peer's published claims out of a shared flat file.
-fn retirable_by(path: &Path, subject: &crate::claim::SubjectRef, authors: &[&str]) -> bool {
+fn retirable_by(path: &Path, subject: &crate::claim::v1::SubjectRef, authors: &[&str]) -> bool {
     let Ok(text) = std::fs::read_to_string(path) else {
         return false;
     };
@@ -1380,7 +1380,7 @@ fn retirable_by(path: &Path, subject: &crate::claim::SubjectRef, authors: &[&str
 /// non-uniform, which is the safe direction: it falls back to strict
 /// current-name checking rather than being waved through under a legacy name.
 fn file_is_uniform_legacy(records: &[&str], filename: &str) -> bool {
-    let mut subject: Option<crate::claim::SubjectRef> = None;
+    let mut subject: Option<crate::claim::v1::SubjectRef> = None;
     for record in records {
         let Ok((_, claim)) = from_record(filename, record) else {
             return false;
@@ -1402,7 +1402,7 @@ fn file_is_uniform_legacy(records: &[&str], filename: &str) -> bool {
 /// holding anything that does not verify or belongs to another subject is
 /// left in place. Deleting the wrong file here destroys another subject's
 /// published claims, which is the invariant this guards.
-fn retirable(legacy: &Path, subject: &crate::claim::SubjectRef) -> bool {
+fn retirable(legacy: &Path, subject: &crate::claim::v1::SubjectRef) -> bool {
     let Ok(text) = std::fs::read_to_string(legacy) else {
         return false;
     };
@@ -1693,12 +1693,14 @@ pub fn gitignore_guidance() -> String {
 }
 
 /// Subjects that have been published, from the fold's live claims.
-pub fn published_subjects(claims: &[(Cid, Claim)]) -> BTreeMap<String, crate::claim::SubjectRef> {
+pub fn published_subjects(
+    claims: &[(Cid, Claim)],
+) -> BTreeMap<String, crate::claim::v1::SubjectRef> {
     let mut out = BTreeMap::new();
     for (_, claim) in claims {
         if matches!(
             claim.content.body,
-            crate::claim::ClaimBody::Publication { .. }
+            crate::claim::v1::ClaimBody::Publication { .. }
         ) {
             out.insert(
                 format!("{:?}", claim.content.subject),

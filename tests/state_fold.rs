@@ -9,7 +9,7 @@ use std::{collections::HashMap, process::Command};
 
 use atproto_dasl::Cid;
 use kan::{
-    claim::{
+    claim::v1::{
         Anchor, ArtifactRef, AuthorId, Claim, ClaimBody, ClaimContent, Rkey, StatusValue,
         SubjectRef,
     },

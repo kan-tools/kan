@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{
+    claim::v1::{
         ArtifactRef, ClaimBody, ClaimContent, ClaimKind, RelationKind, Rkey, Span, StatusValue,
         SubjectKind, SubjectRef,
     },
@@ -54,6 +54,8 @@ pub enum Error {
     NotYourClaim(Cid),
     #[error("you can't reject your own claim ({0}) -- use `kan retract` instead")]
     CantRejectOwnClaim(Cid),
+    #[error("claim {0} uses unsupported codec `{1}` and cannot be a correction target")]
+    UnsupportedCorrectionTarget(Cid, Box<str>),
     #[error("--title and --kind must be given together (ClaimBody::Subject needs both)")]
     TitleKindRequireEachOther,
 }
@@ -224,7 +226,7 @@ fn parse_cids(raw: Vec<String>) -> Result<Vec<Cid>, Error> {
 /// `head_sha` is the same commit `append`'s automatic `ArtifactRef::Commit`
 /// uses — a `FileAt`/`LineRangeAt` anchor is "this file, as of that commit,"
 /// not a separately-anchored artifact.
-fn parse_file_artifact(raw: &str, head_sha: &crate::claim::Sha) -> ArtifactRef {
+fn parse_file_artifact(raw: &str, head_sha: &crate::claim::v1::Sha) -> ArtifactRef {
     if let Some(idx) = raw.rfind(':') {
         let (path, range) = (&raw[..idx], &raw[idx + 1..]);
         if let Some((start, end)) = range.split_once('-') {
@@ -324,10 +326,18 @@ async fn append(
         artifacts.push(parse_file_artifact(&raw, &head));
     }
     // Every precondition has now passed -- the subject name, the anchor, the
-    // HEAD commit, the artifact spec. THIS is the moment the workspace comes
-    // into existence: a command refused above leaves no key, no `seed-id`,
-    // no `identity-id` and no `.kan/` (REQ-3).
-    ws.commit_identity().await?;
+    // HEAD commit, the artifact spec. THIS is the moment the workspace may
+    // select its durable writer. Empty workspaces refuse with the explicit
+    // identity-init -> scope-init sequence; released workspaces retain v1;
+    // verified scopes compile this same typed intent into current content.
+    let writer = ws.prepare_writer().await?;
+
+    if writer == crate::workspace::WorkspaceWriterKind::Claim {
+        let cid = ws
+            .append_current_intent(subject.clone(), body, cites, artifacts)
+            .await?;
+        return Ok(AppendResult { cid, subject, kind });
+    }
 
     let content = ClaimContent {
         author: ws.my_author()?,
@@ -632,7 +642,7 @@ pub async fn block(
 /// kan writes files and never runs git. Staging and committing stay the
 /// user's — kan is git's sibling, not its driver.
 pub async fn publish(ws: &mut Workspace, subject: &str) -> Result<String, Error> {
-    use crate::claim::Layer;
+    use crate::claim::v1::Layer;
 
     // Refuse a subject with nothing to publish. The Publication claim below
     // would otherwise mint the subject into being, so `kan publish <typo>`
@@ -728,7 +738,7 @@ fn live_claims_for(
     view: &FoldedView,
     subject: &SubjectRef,
     rev_of: &std::collections::HashMap<Cid, String>,
-) -> Vec<(crate::claim::Claim, Option<String>)> {
+) -> Vec<(crate::claim::v1::Claim, Option<String>)> {
     view.subject(subject)
         .map(|class| {
             class
@@ -1075,7 +1085,7 @@ pub async fn import_roles(ws: &mut Workspace) -> Result<ImportSummary, Error> {
 /// operation, so `primary_role_name` can route around it.
 async fn ensure_workspace_declared(
     ws: &mut Workspace,
-    workspace_did: Option<crate::claim::Did>,
+    workspace_did: Option<crate::claim::v1::Did>,
     declared: &crate::roles::Declared,
     also_taken: &[String],
 ) -> Result<Option<crate::roles::DeclaredRole>, Error> {
@@ -1625,7 +1635,7 @@ pub async fn publish_all(ws: &mut Workspace) -> Result<String, Error> {
         .collect();
 
     let view = crate::fold::fold(stored, &ws.local_trust()?);
-    let all_live: Vec<(atproto_dasl::Cid, crate::claim::Claim)> = view
+    let all_live: Vec<(atproto_dasl::Cid, crate::claim::v1::Claim)> = view
         .classes
         .iter()
         .flat_map(|c| c.claims.iter().cloned())
@@ -1687,16 +1697,12 @@ pub async fn retract(
     let target_cid: Cid = cid
         .parse()
         .map_err(|e| Error::InvalidCid(cid.to_string(), e))?;
-    let target = ws
-        .log
-        .get_stored(target_cid.clone())
-        .await?
-        .ok_or_else(|| Error::UnknownClaim(target_cid.clone()))?;
-    ws.commit_identity().await?;
-    if target.claim.content.author != ws.my_author()? {
+    let target = correction_target(ws, target_cid.clone()).await?;
+    let author = ws.prepare_claim_author().await?;
+    if !crate::fold::claim_view::may_retract(&author, &target.author) {
         return Err(Error::NotYourClaim(target_cid));
     }
-    let subject = target.claim.content.subject.clone();
+    let subject = target.subject;
     let body = ClaimBody::Retraction {
         supersedes: target_cid,
     };
@@ -1719,18 +1725,44 @@ pub async fn reject(
     let target_cid: Cid = cid
         .parse()
         .map_err(|e| Error::InvalidCid(cid.to_string(), e))?;
-    let target = ws
-        .log
-        .get_stored(target_cid.clone())
-        .await?
-        .ok_or_else(|| Error::UnknownClaim(target_cid.clone()))?;
-    ws.commit_identity().await?;
-    if target.claim.content.author == ws.my_author()? {
+    let target = correction_target(ws, target_cid.clone()).await?;
+    let author = ws.prepare_claim_author().await?;
+    if crate::fold::claim_view::may_retract(&author, &target.author) {
         return Err(Error::CantRejectOwnClaim(target_cid));
     }
-    let subject = target.claim.content.subject.clone();
+    let subject = target.subject;
     let body = ClaimBody::Rejects { claim: target_cid };
     append(ws, subject, body, vec![], file).await
+}
+
+struct CorrectionTarget {
+    subject: SubjectRef,
+    author: crate::claim::view::ClaimAuthor,
+}
+
+async fn correction_target(ws: &mut Workspace, cid: Cid) -> Result<CorrectionTarget, Error> {
+    use crate::claim::codec::{DecodedClaim, SupportedClaim};
+
+    let decoded = ws
+        .decoded_local_claim(cid.clone())
+        .await?
+        .ok_or_else(|| Error::UnknownClaim(cid.clone()))?;
+    match decoded.claim {
+        DecodedClaim::Supported(SupportedClaim::V1(claim)) => Ok(CorrectionTarget {
+            subject: claim.content.subject,
+            author: crate::claim::view::ClaimAuthor::V1(claim.content.author),
+        }),
+        DecodedClaim::Supported(SupportedClaim::Claim(claim)) => Ok(CorrectionTarget {
+            subject: SubjectRef::Local(Rkey::from(claim.content().subject().as_str())),
+            author: crate::claim::view::ClaimAuthor::Principal(
+                claim.content().author().principal().to_string(),
+            ),
+        }),
+        DecodedClaim::Unsupported(claim) => Err(Error::UnsupportedCorrectionTarget(
+            cid,
+            claim.codec().to_string().into_boxed_str(),
+        )),
+    }
 }
 
 /// Case/separator-normalized comparison key for a subject rkey (issue #47,
@@ -1806,7 +1838,7 @@ pub fn subject_exists(ws: &Workspace, name: &str) -> Result<bool, Error> {
 /// stated purpose is provenance was holding provenance edges that no reader
 /// could see -- `CLAUDE.md`'s "provenance is sacred: never fabricate or drop
 /// `cites` edges" was satisfied in the store and invisible at the boundary.
-fn claim_detail_lines(claim: &crate::claim::Claim, indent: &str) -> String {
+fn claim_detail_lines(claim: &crate::claim::v1::Claim, indent: &str) -> String {
     let mut out = String::new();
     if let Some(micros) = claim.content.recorded_at {
         out.push_str(&format!("{indent}recorded: {}\n", format_micros(micros)));
@@ -1858,7 +1890,7 @@ fn format_micros(micros: u64) -> String {
 /// failure where `compute_default` ran `GitSameFile` beside it for no reader.
 fn status_classification_edges(
     ws: &Workspace,
-    live_disagreement: &[(Cid, crate::claim::Claim)],
+    live_disagreement: &[(Cid, crate::claim::v1::Claim)],
 ) -> Vec<crate::relations::ComputedEdge> {
     relations::GitAncestry.relations(live_disagreement, &ws.git)
 }
@@ -1869,7 +1901,7 @@ fn status_classification_edges(
 /// that is a `Status` and not in it has been superseded.
 fn superseded_status_cids(
     ws: &Workspace,
-    claims: &[(Cid, crate::claim::Claim)],
+    claims: &[(Cid, crate::claim::v1::Claim)],
 ) -> std::collections::HashSet<Cid> {
     // Classify under the SAME computed edges `status`/`issues` use, not the
     // empty set this passed before. A status settled only by a computable
@@ -1886,7 +1918,7 @@ fn superseded_status_cids(
     claims
         .iter()
         .filter(|(cid, claim)| {
-            claim.content.body.kind() == crate::claim::ClaimKind::Status && !live.contains(cid)
+            claim.content.body.kind() == crate::claim::v1::ClaimKind::Status && !live.contains(cid)
         })
         .map(|(cid, _)| cid.clone())
         .collect()
@@ -2098,7 +2130,7 @@ fn related_subjects_by_file(
     subject_view: &SubjectView,
     git: &crate::git::GitSubstrate,
 ) -> std::collections::BTreeSet<String> {
-    let all_claims: Vec<(Cid, crate::claim::Claim)> = view
+    let all_claims: Vec<(Cid, crate::claim::v1::Claim)> = view
         .classes
         .iter()
         .flat_map(|c| c.claims.iter().cloned())
@@ -2263,14 +2295,14 @@ fn inbound_relation_claims(
     view: &FoldedView,
     targets: &[SubjectRef],
     own_class: Option<&[SubjectRef]>,
-) -> Vec<(Cid, crate::claim::Claim)> {
+) -> Vec<(Cid, crate::claim::v1::Claim)> {
     let mut out = Vec::new();
     for class in &view.classes {
         if own_class == Some(class.subjects.as_slice()) {
             continue;
         }
         for (cid, claim) in &class.claims {
-            if let crate::claim::ClaimBody::Relation { target, .. } = &claim.content.body {
+            if let crate::claim::v1::ClaimBody::Relation { target, .. } = &claim.content.body {
                 if targets.contains(target) {
                     out.push((cid.clone(), claim.clone()));
                 }
@@ -2281,8 +2313,8 @@ fn inbound_relation_claims(
 }
 
 /// The rendered `"<from> <Kind> this"` line for one inbound relation claim.
-fn inbound_edge_line(claim: &crate::claim::Claim) -> Option<String> {
-    let crate::claim::ClaimBody::Relation { kind, .. } = &claim.content.body else {
+fn inbound_edge_line(claim: &crate::claim::v1::Claim) -> Option<String> {
+    let crate::claim::v1::ClaimBody::Relation { kind, .. } = &claim.content.body else {
         return None;
     };
     let from = crate::json::subject_name(&claim.content.subject);
@@ -2995,7 +3027,7 @@ pub fn authors(ws: &Workspace, json: bool) -> Result<String, Error> {
                     "did": did,
                     "declared": declared,
                     // Present only for v0.2-v0.6 claims written with
-                    // KAN_AGENT set; a modern author has none.
+                    // KAN_AGENT set; a current author has none.
                     "legacy_agent": agent.is_some(),
                 })
             })

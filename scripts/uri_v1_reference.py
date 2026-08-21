@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import base64
 from urllib.parse import quote, unquote_to_bytes, urlsplit
 
 
@@ -43,6 +44,29 @@ def canonical_segment(value: str) -> str:
 
 def canonical_query(value: str) -> str:
     return quote(value, safe=QUERY_SAFE, encoding="utf-8", errors="strict")
+
+
+def canonical_base32_bytes(value: str) -> bytes | None:
+    if not re.fullmatch(r"b[a-z2-7]+", value):
+        return None
+    encoded = value[1:]
+    padding = "=" * ((8 - len(encoded) % 8) % 8)
+    try:
+        decoded = base64.b32decode((encoded.upper() + padding), casefold=False)
+    except ValueError:
+        return None
+    canonical = base64.b32encode(decoded).decode("ascii").lower().rstrip("=")
+    return decoded if canonical == encoded else None
+
+
+def canonical_scope_id(value: str) -> bool:
+    decoded = canonical_base32_bytes(value)
+    return decoded is not None and len(decoded) == 34 and decoded[:2] == b"\x12\x20"
+
+
+def canonical_cid(value: str) -> bool:
+    decoded = canonical_base32_bytes(value)
+    return decoded is not None and len(decoded) > 4
 
 
 def parse_query(raw: str, scheme: str, resource: str) -> tuple[dict | None, dict | None, str | None, str | None]:
@@ -122,6 +146,17 @@ def parse_resource(parts: list[str]) -> tuple[str | None, str | None, str | None
     if len(parts) == 2 and parts[0] == "claim" and re.fullmatch(r"[a-z0-9]+", parts[1]):
         return "claim", parts[1], None
     if len(parts) >= 2 and parts[0] == "subject":
+        if parts[1].startswith("@"):
+            if len(parts) != 2:
+                return None, None, "invalid-selector"
+            cid = parts[1].removeprefix("@cid:")
+            if cid == parts[1]:
+                return None, None, "unsupported-selector"
+            if not canonical_cid(cid):
+                return None, None, "non-canonical-identifier"
+            return "subject", parts[1], None
+        if any(part.startswith("@") for part in parts[1:]):
+            return None, None, "invalid-selector"
         return "subject", "/".join(parts[1:]), None
     if parts == ["identity", "scope"]:
         return "scope-identity", None, None
@@ -189,10 +224,13 @@ def parse_uri(uri: str) -> dict:
         resource_parts = parts[1:]
 
     if scope_locator is not None:
-        if scope_locator.startswith("kan-repo:"):
-            if not re.fullmatch(r"kan-repo:b[a-z2-7]+", scope_locator):
+        if scope_locator.startswith("@"):
+            scope_id = scope_locator.removeprefix("@id:")
+            if scope_id == scope_locator:
+                return failure("unsupported-selector")
+            if not canonical_scope_id(scope_id):
                 return failure("non-canonical-identifier")
-            requested_scope = scope_locator
+            requested_scope = scope_id
         elif not re.fullmatch(r"[a-z0-9_~.-]+(?::[a-z0-9_~.-]+)*", scope_locator):
             return failure("non-canonical-identifier")
 

@@ -212,6 +212,7 @@ fn opening_an_existing_workspace_mints_nothing() {
 #[test]
 fn the_guard_still_refuses_an_undeclared_second_identity() {
     let dir = git_repo();
+    assert!(kan_env(dir.path(), None, &["identity", "did"]).ok);
     assert!(kan_env(dir.path(), None, &["observe", "s", "first claim"]).ok);
     assert!(
         kan::sign::Identity::is_seed_rooted(&dir.path().join(".kan")),

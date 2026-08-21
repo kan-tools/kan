@@ -171,7 +171,13 @@ fn ingesting_a_foreign_claim_leaves_the_local_log_byte_unchanged() {
 
     // Give the clone a log of its own first, so there is something to leave
     // unchanged.
-    let mine = kan_as(clone.path(), None, &["observe", "mine", "my own claim"]);
+    let local_key = clone.path().join("local-key");
+    kan::sign::Identity::generate().save(&local_key).unwrap();
+    let mine = kan_as(
+        clone.path(),
+        Some(&local_key),
+        &["observe", "mine", "my own claim"],
+    );
     assert!(mine.ok, "local write failed: {}", mine.stderr);
 
     let car = clone.path().join(".kan/log/repo.car");
@@ -585,9 +591,11 @@ fn a_read_accepts_the_projection_a_write_just_built() {
     };
 
     // A write, which maintains `.kan/overlay` and rebuilds the projection.
+    let local_key = clone.path().join("local-key");
+    kan::sign::Identity::generate().save(&local_key).unwrap();
     let wrote = kan_as(
         clone.path(),
-        None,
+        Some(&local_key),
         &["observe", "a claim of my own", "--subject", "mine"],
     );
     assert!(wrote.ok, "setup write failed: {}", wrote.stderr);

@@ -3,7 +3,7 @@
 //! `subscribe` returns an honestly-empty stream rather than a stub.
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     sign::Identity,
     store::log::Log,
     transport::{LocalOnly, Transport},

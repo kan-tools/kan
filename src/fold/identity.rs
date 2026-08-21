@@ -21,7 +21,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{AuthorId, ClaimBody, RelationKind, SubjectRef},
+    claim::v1::{AuthorId, ClaimBody, RelationKind, SubjectRef},
     fold::trust::TrustBase,
     store::log::StoredClaim,
 };

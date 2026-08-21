@@ -9,7 +9,7 @@ use std::{collections::HashMap, path::Path};
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{ArtifactRef, Claim, Sha},
+    claim::v1::{ArtifactRef, Claim, Sha},
     git::GitSubstrate,
 };
 

@@ -44,7 +44,7 @@ reachable by accident.
 
 REQ-3 reverses a decision recorded twice — ADR-66 (`adrs/66-seed-rooted-new-identities-grandfathered-old-ones-and-where-the-root-liv.md:60`,
 *"Where the root lives: the OS keychain when available, a `0600` file when
-not"*) and `Seed::create`'s own doc comment (`src/sign.rs:996`):
+not"*) and `Seed::create`'s own doc comment (`src/sign.rs:1609`):
 
 > Taking the file-always reading would have reopened issue #6 for every new
 > workspace — the root secret in plaintext where the key it replaces was
@@ -112,7 +112,7 @@ posture would have no on-ramp at all.
 ## Requirements
 
 - **REQ-3.1 — `Seed::create` stops preferring the keychain.**
-  `Seed::create` (`src/sign.rs:1002`) writes `.kan/seed` at `0600`
+  `Seed::create` (`src/sign.rs:1624`) writes `.kan/seed` at `0600`
   unconditionally and never calls `keyring::Entry`. Its "OS keychain
   unavailable" `eprintln!` is not an unavailability warning any more and must
   not read as one: it becomes a single line stating where the root secret is,
@@ -202,7 +202,7 @@ posture would have no on-ramp at all.
   *Narrowed by a cold review, and it was wrong in two ways. "No longer
   data-affecting" is too strong: the flag still changes **which DID signs** in
   a workspace holding both a keychain root and a plaintext `.kan/identity`,
-  because `Seed::load` returns `None` under it (`src/sign.rs:953`) and
+  because `Seed::load` returns `None` under it (`src/sign.rs:1576`) and
   resolution falls through to the key file. That is misattributed authorship
   rather than minting, and this project's own operating notes treat the flag
   as data-affecting for exactly that reason. The same sentence cited the
@@ -247,7 +247,7 @@ posture would have no on-ramp at all.
   *The reachability condition is not a hedge — (b) was written without it and
   was already false against a checked-in fixture. `tests/derived_cells.rs`
   runs every row under `KAN_NO_KEYCHAIN`, where `Seed::load` skips `seed-id`
-  (`src/sign.rs:953`) and `keychain_identity` skips `identity-id`, so a
+  (`src/sign.rs:1576`) and `keychain_identity` skips `identity-id`, so a
   workspace holding `identity` plus a pointer resolves to the key file while a
   pure file-existence ranking names the pointer.
   `tests/fixtures/golden/derived-cells-unset.txt` holds **6 such rows**.
@@ -325,23 +325,23 @@ posture would have no on-ramp at all.
 
 ## Architecture
 
-**Where the flip lands.** `Seed::create` (`src/sign.rs:1002`) is the entire
+**Where the flip lands.** `Seed::create` (`src/sign.rs:1624`) is the entire
 default-side change: drop the `keyring::Entry` branch and the
 `fresh_account()` call, always `seed.save(&kan_dir.join(SEED_FILE))`. Nothing
 in `workspace_identity` / `signing_identity` / `create_workspace_identity`
 moves — REQ-1's three functions already read `.kan/seed` first
-(`Seed::load`, `src/sign.rs:953`, decides from files before any keychain
+(`Seed::load`, `src/sign.rs:1576`, decides from files before any keychain
 call). REQ-3 is a change to what gets *written*, not to how anything is
 resolved, which is why AC-3.2 predicts an unchanged golden.
 
 **The precedence trap, and it is the load-bearing detail.**
-`workspace_identity` (`src/sign.rs:462`) resolves in the order: `Seed::load`
+`workspace_identity` (`src/sign.rs:524`) resolves in the order: `Seed::load`
 (`.kan/seed`, then `.kan/seed-id`) → `keychain_identity` (`.kan/identity-id`)
 → `.kan/identity`. Note that **`.kan/identity-id` outranks `.kan/identity`**,
 which is not the order anyone writes from memory. `at_rest` must reproduce
 exactly that, or `protect` picks up a secret the signer is not using — one
 actor's write mutating what another reads, which CLAUDE.md's invariant forbids
-and which is #170 wearing a new hat. `identity_evidence` (`src/sign.rs:524`)
+and which is #170 wearing a new hat. `identity_evidence` (`src/sign.rs:1059`)
 uses a *third* order; that is fine, because it only selects a message and
 answers a yes/no question, but it is exactly why AC-3.3(b) exists.
 
@@ -364,7 +364,7 @@ pure and enumerable. The executor is the only thing that calls
 
 *protect* (file → keychain):
 1. read the secret from the file;
-2. write it to a fresh account (`fresh_account()`, `src/sign.rs:1112`) under
+2. write it to a fresh account (`fresh_account()`, `src/sign.rs:1184`) under
    the right service — `SEED_KEYCHAIN_SERVICE` for a seed, `KEYCHAIN_SERVICE`
    for a grandfathered key;
 3. **read it back and compare bytes** — a store that silently truncates would

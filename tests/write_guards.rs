@@ -343,19 +343,14 @@ fn no_refused_write_leaves_an_identity_behind() {
         );
     }
 
-    // The negative control, and the one that makes the rest mean something:
-    // a write that is NOT refused still brings the workspace into existence.
-    // Re-expressed for REQ-2: a write never creates the key a SELECTION
-    // names, so the negative control has to use no selection at all. The
-    // property is unchanged -- a write that is not refused brings an identity
-    // into existence -- it just lands where kan puts one, which is the seed.
+    // The negative control: an explicitly selected v1 writer still brings the
+    // workspace into existence after validation succeeds.
     let dir = git_repo(true);
-    let (_, err, ok) = kan_no_selection(dir.path(), &["observe", "real", "--subject", "s"]);
+    let key = dir.path().join("key");
+    kan::sign::Identity::generate().save(&key).unwrap();
+    let (_, err, ok) = kan(dir.path(), &key, &["observe", "real", "--subject", "s"]);
     assert!(ok, "a legitimate write failed: {err}");
-    assert!(
-        dir.path().join(".kan/seed").exists() || dir.path().join(".kan/seed-id").exists(),
-        "a successful write did not bring an identity into existence"
-    );
+    assert!(key.exists(), "the explicitly selected identity disappeared");
     assert!(
         dir.path().join(".kan/log").exists(),
         "a successful write did not create the log"

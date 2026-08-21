@@ -375,10 +375,10 @@ over rather than describe them in prose.
 
 ## Architecture
 
-- `src/claim.rs` — `ClaimBody::RoleDeclaration`, the `KnownBody` mirror
-  (`src/claim.rs:301`, `deny_unknown_fields`), `ClaimKind::RoleDeclaration`
-  (`src/claim.rs:181`), and the two `From` arms at `src/claim.rs:342` and
-  `src/claim.rs:370`. `Publication` (`src/claim.rs:260`) is the worked example
+- `src/claim/v1.rs` — `ClaimBody::RoleDeclaration`, the `KnownBody` mirror
+  (`src/claim/v1.rs:363`, `deny_unknown_fields`), `ClaimKind::RoleDeclaration`
+  (`src/claim/v1.rs:194`), and the two `From` arms at `src/claim/v1.rs:390` and
+  `src/claim/v1.rs:418`. `Publication` (`src/claim/v1.rs:261`) is the worked example
   of an additive variant and should be followed line for line.
 - `src/context.rs` — a one-line summary at `src/context.rs:78` and a budget
   rank at `src/context.rs:103`, both of which currently enumerate `Publication`
@@ -415,10 +415,10 @@ over rather than describe them in prose.
   Two implementations of one fact, drifted, in the function this requirement
   replaces — so REQ-3 must rewrite the prose, not port it.
 - `src/store/index.rs` — no schema change: the `claims` table already carries a
-  `kind` column (`src/store/index.rs:169`) populated from
-  `body.kind()` (`src/store/index.rs:202`), and `all_stored_claims`
-  (`src/store/index.rs:259`) is the read path. The `CREATE TABLE IF NOT EXISTS`
-  note at `src/store/index.rs:25` applies unchanged.
+  `kind` column (`src/store/index.rs:231`) populated from
+  `body.kind()` (`src/store/index.rs:481`), and `all_stored_claims`
+  (`src/store/index.rs:551`) is the read path. The `CREATE TABLE IF NOT EXISTS`
+  note at `src/store/index.rs:220` applies unchanged.
 - `src/cli/mod.rs` — `RoleAction` (`src/cli/mod.rs:446`) gains `Import`;
   `Add`'s dispatch (`src/cli/mod.rs:993`) and `List`'s
   (`src/cli/mod.rs:1022`) move to the log-backed resolver.
@@ -528,7 +528,7 @@ asymmetry rather than a blocker.
 
 ### The specification argues back: what REQ-5 reverses
 
-`src/sign.rs:269` states a position REQ-5 overturns, and it was argued rather
+`src/sign.rs:406` states a position REQ-5 overturns, and it was argued rather
 than assumed:
 
 > Lives inside `.kan/` (gitignored, repo-local per ADR-3) because a role is a
@@ -545,7 +545,8 @@ a contradicted comment.
 
 ### The error this was going to degrade, and why it improves instead
 
-`src/sign.rs:905` produces `DeclaredRoleKeyMissing` — "you asked to write as
+`src/sign.rs:143` records the removal of `DeclaredRoleKeyMissing` — formerly
+"you asked to write as
 declared role `prover` and that role's key is gone" — by matching the missing
 path against the registry's third column. REQ-4 removes that column, and the
 DID cannot substitute for it, because computing a DID requires loading the key

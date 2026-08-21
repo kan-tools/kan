@@ -118,6 +118,13 @@ measure() {
       git -c user.email=perf@example.com -c user.name=perf \
         commit -q --allow-empty -m init
 
+      # The current writer requires both layers of RFC 1 initialization.
+      # Keep the system identity beside this disposable workspace and point
+      # every subsequent command at it; the outer trap removes both together.
+      export KAN_CONFIG_DIR="$work/.kan-system"
+      "$KAN_BIN" identity init >/dev/null
+      "$KAN_BIN" init >/dev/null
+
       say "== grid point: $n_claims claims x $n_subjects subjects ($work)"
 
       # Generation IS the append meter. python drives the subprocesses so the

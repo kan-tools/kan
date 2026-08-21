@@ -7,7 +7,7 @@
 //! `Log::open_or_create` over the same on-disk CAR file.
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     sign::Identity,
     store::log::Log,
 };

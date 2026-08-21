@@ -15,12 +15,12 @@
 use std::path::Path;
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     sign::Identity,
     transport::git_tree,
 };
 
-fn signed(identity: &Identity, subject: &str, text: &str) -> kan::claim::Claim {
+fn signed(identity: &Identity, subject: &str, text: &str) -> kan::claim::v1::Claim {
     let content = ClaimContent {
         author: AuthorId {
             did: identity.did(),
@@ -37,7 +37,7 @@ fn signed(identity: &Identity, subject: &str, text: &str) -> kan::claim::Claim {
     };
     let cid = kan::cid::content_cid(&content).unwrap();
     let sig = identity.sign(&cid.to_bytes()).unwrap();
-    kan::claim::Claim { content, sig }
+    kan::claim::v1::Claim { content, sig }
 }
 
 fn leaf(identity: &Identity) -> String {

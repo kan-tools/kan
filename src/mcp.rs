@@ -80,6 +80,7 @@ fn to_error(e: actions::Error) -> ErrorData {
         actions::Error::Usage(_)
         | actions::Error::InvalidCid(_, _)
         | actions::Error::UnknownClaim(_)
+        | actions::Error::UnsupportedCorrectionTarget(_, _)
         | actions::Error::NotYourClaim(_)
         | actions::Error::CantRejectOwnClaim(_)
         | actions::Error::TitleKindRequireEachOther => {
@@ -208,7 +209,7 @@ enum RelateKindParam {
     Refutes,
 }
 
-/// MCP mirror of [`crate::claim::StatusValue`], kebab-case with PascalCase
+/// MCP mirror of [`crate::claim::v1::StatusValue`], kebab-case with PascalCase
 /// aliases. The claim type keeps its own serde untouched (signed content);
 /// this exists only so the wire vocabulary matches the descriptions.
 #[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
@@ -226,7 +227,7 @@ enum StatusParam {
     Closed,
 }
 
-impl From<StatusParam> for crate::claim::StatusValue {
+impl From<StatusParam> for crate::claim::v1::StatusValue {
     fn from(value: StatusParam) -> Self {
         match value {
             StatusParam::Open => Self::Open,
@@ -238,7 +239,7 @@ impl From<StatusParam> for crate::claim::StatusValue {
     }
 }
 
-/// MCP mirror of [`crate::claim::SubjectKind`], kebab-case with PascalCase
+/// MCP mirror of [`crate::claim::v1::SubjectKind`], kebab-case with PascalCase
 /// aliases. (Every variant here is a single word, so kebab-case and the
 /// lowercased original coincide; the aliases keep the capitalized forms the
 /// old schema advertised.)
@@ -253,7 +254,7 @@ enum SubjectKindParam {
     Question,
 }
 
-impl From<SubjectKindParam> for crate::claim::SubjectKind {
+impl From<SubjectKindParam> for crate::claim::v1::SubjectKind {
     fn from(value: SubjectKindParam) -> Self {
         match value {
             SubjectKindParam::Issue => Self::Issue,
@@ -263,7 +264,7 @@ impl From<SubjectKindParam> for crate::claim::SubjectKind {
     }
 }
 
-impl From<RelateKindParam> for crate::claim::RelationKind {
+impl From<RelateKindParam> for crate::claim::v1::RelationKind {
     fn from(value: RelateKindParam) -> Self {
         match value {
             RelateKindParam::Blocks => Self::Blocks,

@@ -2,7 +2,7 @@
 //! v0.7 (ADR-49). Each reproduces the reviewer's own case.
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     sign::Identity,
     transport::git_tree,
 };
@@ -20,7 +20,7 @@ fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
     }
 }
 
-fn signed(identity: &Identity, subject: &str, text: &str) -> kan::claim::Claim {
+fn signed(identity: &Identity, subject: &str, text: &str) -> kan::claim::v1::Claim {
     let content = ClaimContent {
         author: AuthorId {
             did: identity.did(),
@@ -37,7 +37,7 @@ fn signed(identity: &Identity, subject: &str, text: &str) -> kan::claim::Claim {
     };
     let cid = kan::cid::content_cid(&content).unwrap();
     let sig = identity.sign(&cid.to_bytes()).unwrap();
-    kan::claim::Claim { content, sig }
+    kan::claim::v1::Claim { content, sig }
 }
 
 /// D6 / REQ-13 second half / AC-14: a file whose name disagrees with the
@@ -826,8 +826,11 @@ fn a_missing_key_does_not_claim_the_log_is_empty() {
 fn a_seed_rooted_workspace_is_not_re_minted_when_its_log_is_cleared() {
     let dir = repo();
     let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    kan::sign::Seed::load_or_create(&kan_dir.join("seed")).unwrap();
 
-    // A seed-rooted workspace: no key file, a seed recorded, claims written.
+    // An explicitly retained seed-rooted v1 workspace: no key file, a seed
+    // recorded, claims written.
     assert!(
         kan(
             dir.path(),
@@ -906,6 +909,8 @@ fn a_seed_rooted_workspace_is_not_re_minted_when_its_log_is_cleared() {
 fn reads_and_writes_resolve_the_same_identity() {
     let dir = repo();
     let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    kan::sign::Seed::load_or_create(&kan_dir.join("seed")).unwrap();
 
     assert!(
         kan(

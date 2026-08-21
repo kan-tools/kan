@@ -7,7 +7,7 @@
 
 use kan::{
     cid::content_cid,
-    claim::{Anchor, AuthorId, Claim, ClaimBody, ClaimContent, ClaimKind, SubjectRef},
+    claim::v1::{Anchor, AuthorId, Claim, ClaimBody, ClaimContent, ClaimKind, SubjectRef},
     sign::Identity,
 };
 use serde::Serialize;
@@ -90,7 +90,7 @@ fn ac3_an_unexpected_field_fails_by_name_not_as_a_cid_mismatch() {
         subject: SubjectRef,
         body: ClaimBody,
         cites: Vec<atproto_dasl::Cid>,
-        artifacts: Vec<kan::claim::ArtifactRef>,
+        artifacts: Vec<kan::claim::v1::ArtifactRef>,
         /// A field this build has never heard of.
         occasion: String,
     }
@@ -143,7 +143,7 @@ fn ac6_and_ac7_an_unknown_kind_is_preserved_verifiable_and_re_encodes_exactly() 
         subject: SubjectRef,
         body: FutureBody,
         cites: Vec<atproto_dasl::Cid>,
-        artifacts: Vec<kan::claim::ArtifactRef>,
+        artifacts: Vec<kan::claim::v1::ArtifactRef>,
     }
 
     let id = Identity::generate();
@@ -257,7 +257,7 @@ fn known_bodies() -> Vec<ClaimBody> {
     vec![
         ClaimBody::Subject {
             title: "t".into(),
-            subject_kind: kan::claim::SubjectKind::Issue,
+            subject_kind: kan::claim::v1::SubjectKind::Issue,
         },
         ClaimBody::Observation { text: "o".into() },
         ClaimBody::Plan { text: "p".into() },
@@ -266,10 +266,10 @@ fn known_bodies() -> Vec<ClaimBody> {
         ClaimBody::Resolution { text: "r".into() },
         ClaimBody::Result { text: "res".into() },
         ClaimBody::Status {
-            value: kan::claim::StatusValue::Resolved,
+            value: kan::claim::v1::StatusValue::Resolved,
         },
         ClaimBody::Relation {
-            kind: kan::claim::RelationKind::About,
+            kind: kan::claim::v1::RelationKind::About,
             target: SubjectRef::Local("other".into()),
         },
         ClaimBody::Retraction {
@@ -277,7 +277,7 @@ fn known_bodies() -> Vec<ClaimBody> {
         },
         ClaimBody::Rejects { claim: cid },
         ClaimBody::Publication {
-            layer: kan::claim::Layer::GitTree,
+            layer: kan::claim::v1::Layer::GitTree,
         },
         ClaimBody::RoleDeclaration {
             did: "did:key:zDnaeSezF2t8gTQrOFpVmvSMPFsxqRDzZL6JGjTxjJ2TvNqYe".into(),
@@ -398,7 +398,7 @@ fn a_known_kind_with_an_unknown_field_round_trips_through_gittree() {
         subject: SubjectRef,
         body: FutureBody,
         cites: Vec<atproto_dasl::Cid>,
-        artifacts: Vec<kan::claim::ArtifactRef>,
+        artifacts: Vec<kan::claim::v1::ArtifactRef>,
         #[serde(skip_serializing_if = "Option::is_none")]
         recorded_at: Option<u64>,
     }
@@ -410,7 +410,7 @@ fn a_known_kind_with_an_unknown_field_round_trips_through_gittree() {
             agent: None,
         },
         workspace: Anchor::Workspace("genesis".to_string()),
-        subject: SubjectRef::Local(kan::claim::Rkey::from("bug-42")),
+        subject: SubjectRef::Local(kan::claim::v1::Rkey::from("bug-42")),
         body: FutureBody::Observation {
             text: "written by a newer kan".to_string(),
             confidence: 9,
@@ -432,7 +432,7 @@ fn a_known_kind_with_an_unknown_field_round_trips_through_gittree() {
         matches!(decoded_content.body, ClaimBody::Unknown { .. }),
         "a known kind + unknown field must be preserved as Unknown"
     );
-    let claim = kan::claim::Claim {
+    let claim = kan::claim::v1::Claim {
         content: decoded_content,
         sig,
     };
@@ -514,7 +514,7 @@ fn a_role_declaration_with_an_unknown_field_is_preserved_verbatim() {
         subject: SubjectRef,
         body: FutureBody,
         cites: Vec<atproto_dasl::Cid>,
-        artifacts: Vec<kan::claim::ArtifactRef>,
+        artifacts: Vec<kan::claim::v1::ArtifactRef>,
         #[serde(skip_serializing_if = "Option::is_none")]
         recorded_at: Option<u64>,
     }
@@ -526,7 +526,7 @@ fn a_role_declaration_with_an_unknown_field_is_preserved_verbatim() {
             agent: None,
         },
         workspace: Anchor::Workspace("genesis".to_string()),
-        subject: SubjectRef::Local(kan::claim::Rkey::from("role/prover")),
+        subject: SubjectRef::Local(kan::claim::v1::Rkey::from("role/prover")),
         body: FutureBody::RoleDeclaration {
             did: "did:key:zDnaeSezF2t8gTQrOFpVmvSMPFsxqRDzZL6JGjTxjJ2TvNqYe".to_string(),
             name: "prover".to_string(),

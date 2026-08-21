@@ -79,7 +79,7 @@ use atrium_crypto::{
     verify::verify_signature,
 };
 
-use crate::claim::Did;
+use crate::claim::v1::Did;
 
 /// The file recording which keychain account this workspace's key is under.
 /// Its presence is also the cheap, keychain-free signal that this workspace
@@ -277,6 +277,55 @@ impl Identity {
         Ok(Self {
             keypair: P256Keypair::import(&bytes)?,
         })
+    }
+
+    /// Load one explicitly named system-profile credential from the OS
+    /// keychain. This is execution of a selected provider reference, never
+    /// discovery or fallback; absence and keychain opt-out are refusals.
+    pub(crate) fn load_keychain_existing(service: &str, account: &str) -> Result<Self, Error> {
+        let Some(entry) = keychain_entry(service, account)? else {
+            return Err(Error::Refused(format!(
+                "OS keychain credential `{service}/{account}` is unavailable"
+            )));
+        };
+        let _warn = SlowKeychainWarning::start("reading the selected system identity credential");
+        match entry.get_secret() {
+            Ok(bytes) => Ok(Self {
+                keypair: P256Keypair::import(&bytes)?,
+            }),
+            Err(keyring::Error::NoEntry) => Err(Error::Refused(format!(
+                "OS keychain credential `{service}/{account}` does not exist"
+            ))),
+            Err(error) => Err(Error::KeychainUnreachable {
+                detail: error.to_string(),
+            }),
+        }
+    }
+
+    /// Install this key as a new system credential without overwriting any
+    /// existing secret. The file is owner-only from its first observable
+    /// instant rather than repaired after creation.
+    pub(crate) fn save_system_credential_new(&self, path: &Path) -> Result<(), Error> {
+        // surface-write: credentials:owner-only-file
+        crate::persistence::write_new_owner_only(
+            crate::persistence::SurfaceWrite::SystemCredentials,
+            path,
+            &self.keypair.export(),
+        )?;
+        Ok(())
+    }
+
+    /// Install a new workspace-local ATProto repository credential. This key
+    /// approves local repository transitions only; the typed identity layer
+    /// never exposes it as a kan claim author.
+    pub(crate) fn save_repository_transport_new(&self, path: &Path) -> Result<(), Error> {
+        // surface-write: repository-transport:identity
+        crate::persistence::write_new_owner_only(
+            crate::persistence::SurfaceWrite::RepositoryTransportIdentity,
+            path,
+            &self.keypair.export(),
+        )?;
+        Ok(())
     }
 
     /// Write this key to `path` at `0600`, creating its parent if needed.
@@ -1802,6 +1851,6 @@ pub fn candidate_identities(phrase: &str) -> Result<Vec<(Root, Identity)>, Error
     Ok(out)
 }
 
-pub fn verify(did: &Did, msg: &[u8], sig: &[u8]) -> bool {
+pub fn verify(did: &str, msg: &[u8], sig: &[u8]) -> bool {
     verify_signature(did, msg, sig).is_ok()
 }

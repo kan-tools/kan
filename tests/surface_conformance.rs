@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use kan::surface::SurfaceValue;
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     sign::Identity,
     store::{index::Index, log::Log},
 };
@@ -26,6 +26,26 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("index-from-media", "tests/surface_conformance.rs"),
     ("car-repair-temp", "tests/log_recovery.rs"),
     ("identity-at-rest", "tests/at_rest_guards.rs"),
+    ("control-event-ledger", "tests/identity_ledger.rs"),
+    ("atomic-control-event-install", "tests/identity_ledger.rs"),
+    ("identity-profile-config", "tests/system_identity.rs"),
+    ("default-actor-profile", "tests/system_identity.rs"),
+    ("atomic-profile-install", "tests/system_identity.rs"),
+    ("profile-write-coordination", "tests/system_identity.rs"),
+    ("profile-credential-key", "tests/system_identity.rs"),
+    ("stable-enrollment-nonce", "tests/system_identity_cli.rs"),
+    ("platform-config-root", "tests/system_identity_cli.rs"),
+    ("scope-inception-store", "tests/scope_identity_store.rs"),
+    ("stable-scope-nonce", "tests/scope_identity_store.rs"),
+    ("scope-write-coordination", "tests/scope_identity_store.rs"),
+    (
+        "atomic-scope-inception-install",
+        "tests/scope_identity_store.rs",
+    ),
+    (
+        "repository-transport-identity",
+        "tests/repository_transport_identity.rs",
+    ),
     ("identity-precedence", "tests/identity_cells.rs"),
     ("role-key", "tests/role_registry_invariants.rs"),
     ("legacy-role-config", "tests/role_declarations.rs"),
@@ -71,6 +91,131 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/actions.rs", "\" = \"", "not a path"),
     ("src/actions.rs", "\"\\n\"", "not a path"),
     ("src/sign.rs", "", "thread join, not a path"),
+    (
+        "src/identity/ledger.rs",
+        "\"events\"",
+        "identity-ledger:events/*.cbor",
+    ),
+    (
+        "src/identity/scope_store.rs",
+        "\"inception.cbor\"",
+        "scope-identity:inception.cbor",
+    ),
+    (
+        "src/identity/scope_store.rs",
+        "\"initialization-nonce\"",
+        "scope-identity:initialization-nonce",
+    ),
+    (
+        "src/identity/scope_store.rs",
+        "\"LOCK\"",
+        "scope-identity:LOCK",
+    ),
+    (
+        "src/identity/scope_store.rs",
+        "format!(\".tmp-{}-{sequence}\", std::process::id())",
+        "scope-identity:.tmp-*",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"identity\"",
+        "identity profiles root",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"ledger\"",
+        "identity-ledger:events/*.cbor",
+    ),
+    (
+        "src/identity/system.rs",
+        "\", \"",
+        "diagnostic join separator, not a path",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"profiles\"",
+        "identity-profiles:profiles/*.json",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"credentials\"",
+        "credentials:owner-only-file",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"enrollment-nonce\"",
+        "identity-profiles:enrollment-nonce",
+    ),
+    (
+        "src/identity/system.rs",
+        "name",
+        "credentials:owner-only-file",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"Library\"",
+        "platform configuration directory",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"Application Support\"",
+        "platform configuration directory",
+    ),
+    (
+        "src/identity/system.rs",
+        "\".config\"",
+        "platform configuration directory",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"kan\"",
+        "platform configuration directory",
+    ),
+    (
+        "src/identity/system.rs",
+        "path",
+        "credentials:selected-owner-only-file",
+    ),
+    (
+        "src/identity/system.rs",
+        "format!(\"{}.json\", profile.alias)",
+        "identity-profiles:profiles/*.json",
+    ),
+    (
+        "src/identity/system.rs",
+        "format!(\"{alias}.json\")",
+        "identity-profiles:profiles/*.json",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"default\"",
+        "identity-profiles:default",
+    ),
+    (
+        "src/identity/system.rs",
+        "\"LOCK\"",
+        "identity-profiles:LOCK",
+    ),
+    (
+        "src/identity/system.rs",
+        "format!(\".tmp-{}-{sequence}\", std::process::id())",
+        "identity-profiles:.tmp-*",
+    ),
+    (
+        "src/identity/transport.rs",
+        "\"identity\"",
+        "repository-transport:identity",
+    ),
+    (
+        "src/identity/ledger.rs",
+        "format!(\"{proved}.cbor\")",
+        "identity-ledger:events/*.cbor",
+    ),
+    (
+        "src/identity/ledger.rs",
+        "format!(\".tmp-{}-{sequence}-{}\", std::process::id(), proved)",
+        "identity-ledger:events/.tmp-*",
+    ),
     ("src/sign.rs", "\"identity\"", "identity:identity"),
     ("src/sign.rs", "\"log\"", "local-log directory"),
     ("src/sign.rs", "\"repo.car\"", "local-log:repo.car"),
@@ -166,13 +311,28 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", "\"overlay\"", "overlay:repo.car"),
     (
         "src/workspace.rs",
+        "\"scope\"",
+        "scope-identity:inception.cbor",
+    ),
+    (
+        "src/workspace.rs",
+        "\"transport\"",
+        "repository-transport:identity",
+    ),
+    (
+        "src/workspace.rs",
         "crate::transport::git_tree::CLAIMS_DIR",
         "git-tree:.claims",
     ),
     ("src/workspace.rs", "\", \"", "not a path"),
+    ("src/workspace.rs", "\"; \"", "not a path"),
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
     "src/actions.rs",
+    "src/identity/ledger.rs",
+    "src/identity/scope_store.rs",
+    "src/identity/system.rs",
+    "src/identity/transport.rs",
     "src/sign.rs",
     "src/store/index.rs",
     "src/store/log.rs",
@@ -185,6 +345,73 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
     ("src/actions.rs", "remove_file", "IdentityKeyMaterial", 1),
     ("src/actions.rs", "remove_file", "IdentityPointer", 2),
     ("src/actions.rs", "rename", "IdentityBackup", 2),
+    (
+        "src/identity/ledger.rs",
+        "create_dir_all",
+        "IdentityLedger",
+        1,
+    ),
+    (
+        "src/identity/system.rs",
+        "create_dir_all",
+        "IdentityProfiles",
+        2,
+    ),
+    (
+        "src/identity/scope_store.rs",
+        "create_dir_all",
+        "ScopeIdentity",
+        2,
+    ),
+    (
+        "src/identity/scope_store.rs",
+        "open_lock_file",
+        "ScopeIdentity",
+        1,
+    ),
+    (
+        "src/identity/scope_store.rs",
+        "remove_file",
+        "ScopeIdentity",
+        1,
+    ),
+    ("src/identity/scope_store.rs", "rename", "ScopeIdentity", 1),
+    ("src/identity/scope_store.rs", "write", "ScopeIdentity", 1),
+    (
+        "src/identity/scope_store.rs",
+        "write_new_owner_only",
+        "ScopeIdentity",
+        1,
+    ),
+    (
+        "src/identity/system.rs",
+        "create_dir_all",
+        "SystemCredentials",
+        1,
+    ),
+    (
+        "src/identity/system.rs",
+        "open_lock_file",
+        "IdentityProfiles",
+        1,
+    ),
+    (
+        "src/identity/system.rs",
+        "remove_file",
+        "IdentityProfiles",
+        1,
+    ),
+    ("src/identity/system.rs", "rename", "IdentityProfiles", 1),
+    ("src/identity/system.rs", "write", "IdentityProfiles", 1),
+    (
+        "src/identity/system.rs",
+        "write_new_owner_only",
+        "IdentityProfiles",
+        1,
+    ),
+    ("src/identity/ledger.rs", "remove_file", "IdentityLedger", 1),
+    ("src/identity/ledger.rs", "rename", "IdentityLedger", 1),
+    ("src/identity/ledger.rs", "write", "IdentityLedger", 1),
     ("src/sign.rs", "create_dir_all", "Container", 1),
     ("src/sign.rs", "create_dir_all", "IdentityKeyMaterial", 2),
     ("src/sign.rs", "create_dir_all", "IdentitySeed", 1),
@@ -193,6 +420,24 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
     ("src/sign.rs", "write", "IdentityKeyMaterial", 1),
     ("src/sign.rs", "write", "IdentityPointer", 1),
     ("src/sign.rs", "write", "IdentitySeed", 1),
+    (
+        "src/sign.rs",
+        "write_new_owner_only",
+        "RepositoryTransportIdentity",
+        1,
+    ),
+    (
+        "src/sign.rs",
+        "write_new_owner_only",
+        "SystemCredentials",
+        1,
+    ),
+    (
+        "src/identity/transport.rs",
+        "create_dir_all",
+        "RepositoryTransportIdentity",
+        2,
+    ),
     ("src/store/index.rs", "create_dir_all", "Sqlite", 1),
     ("src/store/index.rs", "remove_file", "Sqlite", 2),
     ("src/store/log.rs", "copy_async", "LocalLogDamaged", 1),
@@ -317,6 +562,10 @@ fn implemented_values() -> BTreeSet<(String, String)> {
         .chain(kan::workspace::SURFACE_VALUES)
         .chain(kan::git::SURFACE_VALUES)
         .chain(kan::actions::SURFACE_VALUES)
+        .chain(kan::identity::ledger::SURFACE_VALUES)
+        .chain(kan::identity::scope_store::SURFACE_VALUES)
+        .chain(kan::identity::system::SURFACE_VALUES)
+        .chain(kan::identity::transport::SURFACE_VALUES)
         .map(|SurfaceValue { artifact, value }| ((*artifact).into(), (*value).into()));
     declared.chain(sqlite_values()).collect()
 }
@@ -359,6 +608,10 @@ fn catalog_is_well_formed_and_cites_real_designs() {
                 "repo-config",
                 "system-config",
                 "identity-store",
+                "identity-ledger",
+                "identity-profiles",
+                "scope-identity",
+                "repository-transport",
                 "external-git",
                 "overlay",
                 "sqlite-index"
@@ -798,7 +1051,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "06237083493464bccd87613913fca7b88bf17efce6cf1dd9382e402f76b50251",
+                "3b694ec7ccaae4bb74d2778d1e578afb59716766d5fded72c9be009f5e5a68e1",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(
@@ -1120,6 +1373,14 @@ fn init_repo(path: &std::path::Path) {
     assert!(status.success());
 }
 
+fn seed_released_workspace(path: &std::path::Path) {
+    let kan_dir = path.join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    Identity::generate()
+        .save(&kan_dir.join("identity"))
+        .unwrap();
+}
+
 fn run_kan(path: &std::path::Path, args: &[&str]) -> std::process::Output {
     std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(args)
@@ -1162,6 +1423,7 @@ fn workspace_routes_overlay_io_through_overlay_capabilities() {
 fn production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json() {
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(repo.path(), &["observe", "poison", "authoritative"]);
     assert!(
         write.status.success(),
@@ -1223,6 +1485,7 @@ fn production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json() {
 fn production_workspace_recovers_when_a_projection_column_has_the_wrong_type() {
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(repo.path(), &["observe", "typed-poison", "authoritative"]);
     assert!(
         write.status.success(),
@@ -1255,6 +1518,7 @@ fn production_workspace_recovers_when_a_projection_column_has_the_wrong_type() {
 fn production_workspace_recovers_when_projection_metadata_has_the_wrong_type() {
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(repo.path(), &["observe", "meta-poison", "authoritative"]);
     assert!(
         write.status.success(),
@@ -1286,6 +1550,7 @@ fn production_workspace_recovers_when_projection_metadata_has_the_wrong_type() {
 fn production_workspace_recreates_a_malformed_projection_schema() {
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(repo.path(), &["observe", "schema-poison", "authoritative"]);
     assert!(
         write.status.success(),
@@ -1381,6 +1646,7 @@ fn production_workspace_recreates_a_malformed_projection_schema() {
 fn production_workspace_bypasses_an_unopenable_projection_path() {
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(
         repo.path(),
         &["observe", "unopenable-index", "authoritative"],
@@ -1433,6 +1699,7 @@ fn production_workspace_bypasses_an_unremovable_corrupt_projection() {
 
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(repo.path(), &["observe", "locked-index", "authoritative"]);
     assert!(write.status.success());
     let before = run_kan(repo.path(), &["show", "locked-index", "--json"]);
@@ -1477,6 +1744,7 @@ fn production_workspace_bypasses_an_unremovable_semantically_poisoned_projection
 
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(
         repo.path(),
         &["observe", "locked-valid-index", "authoritative"],

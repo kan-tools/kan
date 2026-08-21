@@ -19,6 +19,22 @@ pub enum Error {
     Mcp(#[from] Box<crate::mcp::Error>),
     #[error(transparent)]
     Sign(#[from] crate::sign::Error),
+    #[error(transparent)]
+    SystemIdentity(#[from] crate::identity::system::Error),
+    #[error(transparent)]
+    Enrollment(#[from] crate::identity::enrollment::Error),
+    #[error(transparent)]
+    ScopeIdentity(#[from] crate::identity::scope_store::Error),
+    #[error(transparent)]
+    ScopeInception(#[from] crate::identity::scope_inception::Error),
+    #[error("pre-release repository identity state exists at {0}; kan will not reinterpret it as a scope—move it aside and run `kan init` again")]
+    PreReleaseRepositoryIdentity(std::path::PathBuf),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Git(#[from] crate::git::Error),
+    #[error(transparent)]
+    IdentityControl(#[from] crate::identity::control::Error),
 }
 
 #[derive(Debug, Parser)]
@@ -321,6 +337,26 @@ pub enum Command {
     /// restore` first.
     Restore,
 
+    /// Deliberately establish this workspace's stable scope and initial
+    /// governance using a configured system actor.
+    Init {
+        /// Immutable inception-time discovery hint. Repeat for multiple names;
+        /// defaults to the Git repository directory name.
+        #[arg(long = "name")]
+        names: Vec<String>,
+        /// System identity profile to govern and initially act in this
+        /// scope. Defaults to the configured system actor.
+        #[arg(long)]
+        actor: Option<String>,
+        /// Override the platform kan configuration directory.
+        #[arg(long)]
+        config_dir: Option<std::path::PathBuf>,
+        /// Repository path to initialize. Defaults to the current directory
+        /// and resolves upward like every other kan repository command.
+        #[arg(long)]
+        repository: Option<std::path::PathBuf>,
+    },
+
     /// Identity: recovery phrase export and restore.
     Identity {
         #[command(subcommand)]
@@ -359,7 +395,7 @@ fn read_secret_line(prompt: &str) -> Result<String, Error> {
 
 /// A yes/no confirmation, for an act that destroys something.
 ///
-/// Sibling of [`read_secret_line`], and gated the same way: this repository
+/// Sibling of [`read_secret_line`], and gated the same way: this codebase
 /// already treats an interactive terminal as the signal that a human is
 /// present to answer for a sensitive irreversible act (`kan identity phrase`).
 /// Anything other than an explicit yes is a no -- a bare Enter must not delete
@@ -380,6 +416,24 @@ pub fn confirm(question: &str) -> Result<bool, actions::Error> {
 
 #[derive(Debug, Subcommand)]
 pub enum IdentityAction {
+    /// Initialize this installation's system-level human identity and daily
+    /// device. This does not open or modify a workspace.
+    Init {
+        /// Local profile alias selected as the default actor.
+        #[arg(long, default_value = "daily")]
+        alias: String,
+        /// Override the platform kan configuration directory.
+        #[arg(long)]
+        config_dir: Option<std::path::PathBuf>,
+        /// Import an existing owner-only P-256 recovery key instead of
+        /// creating one in the system credentials directory.
+        #[arg(long)]
+        recovery_key: Option<std::path::PathBuf>,
+        /// Import an existing owner-only P-256 daily-device key instead of
+        /// creating one in the system credentials directory.
+        #[arg(long)]
+        daily_key: Option<std::path::PathBuf>,
+    },
     /// Print this repo's `did:key` identifier. Public, safe to share.
     Did,
     /// Print the 24-word recovery phrase for this repo's signing key.
@@ -519,7 +573,7 @@ pub enum StatusValueArg {
     Closed,
 }
 
-impl From<StatusValueArg> for crate::claim::StatusValue {
+impl From<StatusValueArg> for crate::claim::v1::StatusValue {
     fn from(value: StatusValueArg) -> Self {
         match value {
             StatusValueArg::Open => Self::Open,
@@ -547,7 +601,7 @@ pub enum RelationKindArg {
     Refutes,
 }
 
-impl From<RelationKindArg> for crate::claim::RelationKind {
+impl From<RelationKindArg> for crate::claim::v1::RelationKind {
     fn from(value: RelationKindArg) -> Self {
         match value {
             RelationKindArg::Blocks => Self::Blocks,
@@ -571,7 +625,7 @@ pub enum SubjectKindArg {
     Question,
 }
 
-impl From<SubjectKindArg> for crate::claim::SubjectKind {
+impl From<SubjectKindArg> for crate::claim::v1::SubjectKind {
     fn from(value: SubjectKindArg) -> Self {
         match value {
             SubjectKindArg::Issue => Self::Issue,
@@ -733,7 +787,172 @@ pub struct NarrativeArgs {
     pub verbose: bool,
 }
 
+fn run_scope_init(
+    cwd: &std::path::Path,
+    names: &[String],
+    actor: Option<&str>,
+    config_dir: Option<&std::path::Path>,
+) -> Result<(), Error> {
+    use crate::identity::{
+        scope_inception::{AnchorValue, ScopeInception, SubstrateAnchor},
+        scope_store::ScopeIdentityStore,
+        system::SystemIdentityStore,
+    };
+
+    let git = crate::git::GitSubstrate::open(cwd)?;
+    let root = crate::workspace::find_repo_root(cwd);
+    let pre_release_state = root.join(".kan").join("repository");
+    match std::fs::symlink_metadata(&pre_release_state) {
+        Ok(_) => return Err(Error::PreReleaseRepositoryIdentity(pre_release_state)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let scope_store = ScopeIdentityStore::at(root.join(".kan").join("scope"));
+    if names.is_empty() && actor.is_none() {
+        if let Some(installed) = scope_store.read()? {
+            println!("scope already initialized: {}", installed.scope);
+            return Ok(());
+        }
+    }
+    let git_genesis = git.genesis()?;
+
+    let config_root = match config_dir {
+        Some(root) => root.to_path_buf(),
+        None => SystemIdentityStore::platform_config_root()?,
+    };
+    let system = SystemIdentityStore::at(&config_root);
+    let profile = match actor {
+        Some(alias) => system
+            .profile(alias)?
+            .ok_or_else(|| crate::identity::system::Error::ProfileMissing(alias.to_string()))?,
+        None => system
+            .default_profile()?
+            .ok_or(crate::identity::system::Error::NoDefaultProfile)?,
+    };
+    let (state, method) = system.resolve_profile_method(&profile)?;
+    let names = if names.is_empty() {
+        vec![root
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .filter(|name| !name.is_empty())
+            .unwrap_or("scope")
+            .to_string()]
+    } else {
+        names.to_vec()
+    };
+    let inception = ScopeInception::new(
+        scope_store.initialization_nonce()?,
+        names,
+        vec![profile.principal().to_string()],
+        vec![SubstrateAnchor {
+            anchor_type: "gitGenesis".to_string(),
+            value: AnchorValue::Text(git_genesis),
+        }],
+    )?;
+    let input = inception.signing_input()?;
+    let proof = system.sign(&profile, &method, &input)?;
+    let event = inception.proved_event_with_did_kan_state(&state, vec![proof])?;
+    let installed = scope_store.install(&event)?;
+
+    println!("initialized scope: {}", installed.scope);
+    println!("governance root: {}", profile.principal());
+    println!("current actor: {}", profile.alias());
+    println!("inception event: {}", installed.event.proved_cid()?);
+    println!("workspace root: {}", root.display());
+    Ok(())
+}
+
+fn run_system_identity_init(
+    alias: &str,
+    config_dir: Option<&std::path::Path>,
+    recovery_key: Option<&std::path::Path>,
+    daily_key: Option<&std::path::Path>,
+) -> Result<(), Error> {
+    use crate::identity::{
+        enrollment::DailyDeviceEnrollment,
+        system::{CredentialReference, SystemIdentityStore},
+    };
+
+    crate::identity::system::validate_alias(alias)?;
+    let config_root = match config_dir {
+        Some(root) => root.to_path_buf(),
+        None => SystemIdentityStore::platform_config_root()?,
+    };
+    let store = SystemIdentityStore::at(&config_root);
+    if let Some(profile) = store.default_profile()? {
+        if profile.alias() != alias {
+            return Err(crate::identity::system::Error::AlreadyInitialized(
+                profile.alias().to_string(),
+            )
+            .into());
+        }
+    }
+
+    let recovery_name = format!("recovery-{alias}.key");
+    let daily_name = format!("device-{alias}.key");
+    let recovery = store.ensure_owner_only_credential(&recovery_name, recovery_key)?;
+    let daily = store.ensure_owner_only_credential(&daily_name, daily_key)?;
+    let enrollment = DailyDeviceEnrollment::new(
+        store.enrollment_nonce()?,
+        alias.to_string(),
+        &recovery,
+        CredentialReference::OwnerOnlyFile {
+            path: recovery_name.clone(),
+        },
+        &daily,
+        CredentialReference::OwnerOnlyFile {
+            path: daily_name.clone(),
+        },
+    )?;
+    let installed = enrollment.install(&config_root)?;
+
+    println!("initialized system identity: {}", installed.principal);
+    println!("default actor: {alias}");
+    println!(
+        "daily verification method: {}",
+        enrollment.daily_method().id
+    );
+    println!("config root: {}", config_root.display());
+    println!("recovery credential: credentials/{recovery_name}");
+    println!("daily credential: credentials/{daily_name}");
+    Ok(())
+}
+
 pub async fn run(cli: Cli) -> Result<(), Error> {
+    if let Command::Identity {
+        action:
+            IdentityAction::Init {
+                alias,
+                config_dir,
+                recovery_key,
+                daily_key,
+            },
+    } = &cli.command
+    {
+        run_system_identity_init(
+            alias,
+            config_dir.as_deref(),
+            recovery_key.as_deref(),
+            daily_key.as_deref(),
+        )?;
+        return Ok(());
+    }
+
+    if let Command::Init {
+        names,
+        actor,
+        config_dir,
+        repository,
+    } = &cli.command
+    {
+        let cwd = match repository {
+            Some(path) => path.clone(),
+            None => crate::workspace::cwd()?,
+        };
+        run_scope_init(&cwd, names, actor.as_deref(), config_dir.as_deref())?;
+        return Ok(());
+    }
+
     let cwd = crate::workspace::cwd()?;
 
     // `kan mcp` doesn't open a single `Workspace` up front — it's a
@@ -774,7 +993,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
     // rather than inside each verb means a read cannot acquire a write's
     // prerequisites by being called from the wrong place.
     if is_read_only(&cli.command) {
-        let ws = Workspace::open_read_only(&cwd).await?;
+        let mut ws = Workspace::open_read_only(&cwd).await?;
         // `adopt` is the one command routed here that WRITES afterwards
         // (REQ-9): switching the workspace's identity orphans every role
         // declaration authored by the old one, so the set is carried across.
@@ -792,7 +1011,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             );
             return Ok(());
         }
-        return run_read(cli.command, &ws);
+        return run_read(cli.command, &mut ws).await;
     }
 
     let mut ws = Workspace::open(&cwd).await?;
@@ -992,6 +1211,11 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             // something else. The read-only actions are routed away above.
             ws.commit_identity().await?;
             match action {
+                IdentityAction::Init { .. } => {
+                    unreachable!(
+                        "system identity initialization is dispatched before workspace open"
+                    )
+                }
                 IdentityAction::Did => println!("{}", ws.identity()?.did()),
                 IdentityAction::EncryptionKey => {
                     println!("{}", ws.identity()?.encryption_key().public_hex())
@@ -1185,6 +1409,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                 },
             }
         }
+        Command::Init { .. } => unreachable!("scope initialization is handled above"),
         Command::Mcp { .. } => unreachable!("handled above"),
     }
     Ok(())
@@ -1349,7 +1574,7 @@ fn is_read_only(command: &Command) -> bool {
 }
 
 /// The read verbs, against a workspace opened without an identity.
-fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
+async fn run_read(command: Command, ws: &mut Workspace) -> Result<(), Error> {
     match command {
         Command::Identity { action } => match action {
             IdentityAction::Adopt { key } => print!(
@@ -1376,8 +1601,13 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
             json,
             trust,
         } => {
-            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
+            let system = crate::identity::system::SystemIdentityStore::at(
+                crate::identity::system::SystemIdentityStore::platform_config_root()?,
+            );
+            let (trust, empty_reason) = ws.trust_from_detailed_with_system(&trust, &system)?;
             let empty_reason = empty_reason.as_deref();
+            let projection = ws.mixed_projection_with_system(&system, &trust).await?;
+            let mixed = crate::mixed_render::is_needed(&projection);
             match (
                 all,
                 subject,
@@ -1393,16 +1623,34 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
                     )
                     .into())
                 }
-                (true, _, _) => print!("{}", actions::show_all_json(ws, &trust, empty_reason)?),
+                (true, _, _) => print!(
+                    "{}",
+                    if mixed {
+                        crate::mixed_render::show_all_json(ws, &projection, &trust, empty_reason)?
+                    } else {
+                        actions::show_all_json(ws, &trust, empty_reason)?
+                    }
+                ),
                 (false, _, false) => print!(
                     "{}",
-                    actions::show_selected_json(
-                        ws,
-                        &selected_subjects,
-                        &prefixes,
-                        &trust,
-                        empty_reason,
-                    )?
+                    if mixed {
+                        crate::mixed_render::show_selected_json(
+                            ws,
+                            &projection,
+                            &selected_subjects,
+                            &prefixes,
+                            &trust,
+                            empty_reason,
+                        )?
+                    } else {
+                        actions::show_selected_json(
+                            ws,
+                            &selected_subjects,
+                            &prefixes,
+                            &trust,
+                            empty_reason,
+                        )?
+                    }
                 ),
                 (false, None, true) => {
                     return Err(actions::Error::Usage(
@@ -1414,7 +1662,17 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
                 }
                 (false, Some(subject), true) => print!(
                     "{}",
-                    if json {
+                    if mixed && json {
+                        crate::mixed_render::show_json(
+                            ws,
+                            &projection,
+                            &subject,
+                            &trust,
+                            empty_reason,
+                        )?
+                    } else if mixed {
+                        crate::mixed_render::show(ws, &projection, &subject, &trust, empty_reason)?
+                    } else if json {
                         actions::show_json(ws, &subject, &trust, empty_reason)?
                     } else {
                         actions::show(ws, &subject, &trust, empty_reason)?
@@ -1427,10 +1685,31 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
             json,
             trust,
         } => {
-            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
+            let system = crate::identity::system::SystemIdentityStore::at(
+                crate::identity::system::SystemIdentityStore::platform_config_root()?,
+            );
+            let (trust, empty_reason) = ws.trust_from_detailed_with_system(&trust, &system)?;
+            let projection = ws.mixed_projection_with_system(&system, &trust).await?;
+            let mixed = crate::mixed_render::is_needed(&projection);
             print!(
                 "{}",
-                if json {
+                if mixed && json {
+                    crate::mixed_render::status_json(
+                        ws,
+                        &projection,
+                        subject.as_deref(),
+                        &trust,
+                        empty_reason.as_deref(),
+                    )?
+                } else if mixed {
+                    crate::mixed_render::status(
+                        ws,
+                        &projection,
+                        subject.as_deref(),
+                        &trust,
+                        empty_reason.as_deref(),
+                    )
+                } else if json {
                     actions::status_json(ws, subject.as_deref(), &trust, empty_reason.as_deref())?
                 } else {
                     actions::status(ws, subject.as_deref(), &trust, empty_reason.as_deref())?
@@ -1438,10 +1717,24 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
             )
         }
         Command::Issues { json, trust } => {
-            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
+            let system = crate::identity::system::SystemIdentityStore::at(
+                crate::identity::system::SystemIdentityStore::platform_config_root()?,
+            );
+            let (trust, empty_reason) = ws.trust_from_detailed_with_system(&trust, &system)?;
+            let projection = ws.mixed_projection_with_system(&system, &trust).await?;
+            let mixed = crate::mixed_render::is_needed(&projection);
             print!(
                 "{}",
-                if json {
+                if mixed && json {
+                    crate::mixed_render::issues_json(
+                        ws,
+                        &projection,
+                        &trust,
+                        empty_reason.as_deref(),
+                    )?
+                } else if mixed {
+                    crate::mixed_render::issues(ws, &projection, &trust, empty_reason.as_deref())
+                } else if json {
                     actions::issues_json(ws, &trust, empty_reason.as_deref())?
                 } else {
                     actions::issues(ws, &trust, empty_reason.as_deref())?
@@ -1454,10 +1747,30 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
             trust,
         } => {
             let budget = budget.unwrap_or(DEFAULT_BUDGET);
-            let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
+            let system = crate::identity::system::SystemIdentityStore::at(
+                crate::identity::system::SystemIdentityStore::platform_config_root()?,
+            );
+            let (trust, empty_reason) = ws.trust_from_detailed_with_system(&trust, &system)?;
+            let projection = ws.mixed_projection_with_system(&system, &trust).await?;
+            let mixed = crate::mixed_render::is_needed(&projection);
             print!(
                 "{}",
-                if json {
+                if mixed && json {
+                    crate::mixed_render::context_json(
+                        ws,
+                        &projection,
+                        budget,
+                        &trust,
+                        empty_reason.as_deref(),
+                    )?
+                } else if mixed {
+                    crate::mixed_render::context(
+                        &projection,
+                        budget,
+                        &trust,
+                        empty_reason.as_deref(),
+                    )
+                } else if json {
                     actions::context_json(ws, budget, &trust, empty_reason.as_deref())?
                 } else {
                     actions::context(ws, budget, &trust, empty_reason.as_deref())?

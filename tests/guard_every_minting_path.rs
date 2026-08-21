@@ -223,35 +223,40 @@ fn identity_file_still_cannot_mint_against_a_non_empty_log() {
     assert_read_still_works(dir.path(), Some(&other), true);
 }
 
-/// The negative control, and the one that matters most for a guard: it must
-/// refuse *only* when there is something to lose. An empty log is the normal
-/// first-run state, and minting there is the whole point.
+/// Current first-run policy distinguishes an ordinary unselected write from
+/// an explicit v1 compatibility selection. The former must direct the user
+/// through identity and scope initialization without creating `.kan`; the
+/// latter remains a deliberate request for the released writer.
 #[test]
-fn an_empty_log_still_mints_freely_on_every_path() {
-    for (label, key_file, no_keychain) in
-        [("seed-rooting", false, true), ("identity-file", true, true)]
-    {
-        let dir = git_repo();
-        let key = dir.path().join("key");
-        {
-            std::fs::create_dir_all(key.parent().unwrap()).unwrap();
-            kan::sign::Identity::generate().save(&key).unwrap();
-        }
-        let key = key_file.then_some(key);
+fn an_empty_log_requires_initialization_or_an_explicit_v1_selection() {
+    let unselected = git_repo();
+    let run = kan(
+        unselected.path(),
+        None,
+        true,
+        &["observe", "first claim", "--subject", "s"],
+    );
+    assert!(!run.ok, "an unselected first write unexpectedly succeeded");
+    assert!(run.stderr.contains("kan identity init"), "{}", run.stderr);
+    assert!(
+        !unselected.path().join(".kan").exists(),
+        "a refused first write created workspace state"
+    );
 
-        let run = kan(
-            dir.path(),
-            key.as_deref(),
-            no_keychain,
-            &["observe", "first claim", "--subject", "s"],
-        );
-
-        assert!(
-            run.ok,
-            "{label}: guard over-fired on a fresh workspace: {}",
-            run.stderr
-        );
-    }
+    let selected = git_repo();
+    let key = selected.path().join("key");
+    kan::sign::Identity::generate().save(&key).unwrap();
+    let run = kan(
+        selected.path(),
+        Some(&key),
+        true,
+        &["observe", "first claim", "--subject", "s"],
+    );
+    assert!(
+        run.ok,
+        "explicit v1 selection was refused on a fresh workspace: {}",
+        run.stderr
+    );
 }
 
 /// `kan identity role add` is the deliberate opt-in and must still work

@@ -3,7 +3,7 @@
 //! claim set + budget.
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, StatusValue, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, StatusValue, SubjectRef},
     context::{self, TiktokenEstimator, TokenEstimator},
     fold::{self, TrustBase},
 };
@@ -15,7 +15,7 @@ fn author() -> AuthorId {
     }
 }
 
-fn claim(subject: &str, body: ClaimBody) -> (atproto_dasl::Cid, kan::claim::Claim) {
+fn claim(subject: &str, body: ClaimBody) -> (atproto_dasl::Cid, kan::claim::v1::Claim) {
     let content = ClaimContent {
         author: author(),
         workspace: Anchor::Workspace("test-workspace".to_string()),
@@ -28,7 +28,7 @@ fn claim(subject: &str, body: ClaimBody) -> (atproto_dasl::Cid, kan::claim::Clai
     let cid = kan::cid::content_cid(&content).unwrap();
     (
         cid,
-        kan::claim::Claim {
+        kan::claim::v1::Claim {
             content,
             sig: vec![],
         },

@@ -9,11 +9,11 @@
 //! These tests hold the properties that make prose-parsing unnecessary.
 
 use kan::{
-    claim::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, StatusValue, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, Rkey, StatusValue, SubjectRef},
     json,
 };
 
-fn claim(subject: &str, body: ClaimBody) -> (atproto_dasl::Cid, kan::claim::Claim) {
+fn claim(subject: &str, body: ClaimBody) -> (atproto_dasl::Cid, kan::claim::v1::Claim) {
     let content = ClaimContent {
         author: AuthorId {
             did: "did:key:zTest".to_string(),
@@ -29,7 +29,7 @@ fn claim(subject: &str, body: ClaimBody) -> (atproto_dasl::Cid, kan::claim::Clai
     let cid = kan::cid::content_cid(&content).unwrap();
     (
         cid,
-        kan::claim::Claim {
+        kan::claim::v1::Claim {
             content,
             sig: vec![],
         },
@@ -101,7 +101,7 @@ fn every_payload_is_versioned() {
         v: json::SCHEMA_VERSION,
         revision: "sha256:test".to_string(),
         subjects: vec![],
-        trust: json::TrustJson::new(&kan::fold::TrustBase::solo(kan::claim::AuthorId {
+        trust: json::TrustJson::new(&kan::fold::TrustBase::solo(kan::claim::v1::AuthorId {
             did: "did:key:zTest".to_string(),
             agent: None,
         })),
@@ -159,7 +159,7 @@ fn structural_bodies_expose_their_parts() {
     let (cid, c) = claim(
         "a",
         ClaimBody::Relation {
-            kind: kan::claim::RelationKind::Blocks,
+            kind: kan::claim::v1::RelationKind::Blocks,
             target: SubjectRef::Local(Rkey::from("b")),
         },
     );
@@ -171,7 +171,7 @@ fn structural_bodies_expose_their_parts() {
         "a",
         ClaimBody::Subject {
             title: "a real title".to_string(),
-            subject_kind: kan::claim::SubjectKind::Issue,
+            subject_kind: kan::claim::v1::SubjectKind::Issue,
         },
     );
     assert_eq!(

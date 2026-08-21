@@ -8,6 +8,8 @@
 //! on top, specifically over each class's `Status`-kind claims, since only
 //! those assert something that can conflict.
 
+pub mod claim_view;
+pub mod claim_view_state;
 pub mod identity;
 pub mod relations;
 pub mod state;
@@ -16,7 +18,7 @@ pub mod trust;
 use atproto_dasl::Cid;
 
 use crate::{
-    claim::{Claim, SubjectRef},
+    claim::v1::{Claim, SubjectRef},
     store::log::StoredClaim,
 };
 pub use identity::SameAsWitness;

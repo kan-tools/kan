@@ -38,6 +38,11 @@ fn git_repo() -> tempfile::TempDir {
         "-m",
         "init",
     ]);
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    kan::sign::Identity::generate()
+        .save(&kan_dir.join("identity"))
+        .unwrap();
     dir
 }
 
@@ -539,6 +544,7 @@ async fn naming_nudge_appends_a_warning_to_the_confirmation_text() {
 #[tokio::test]
 async fn an_mcp_write_refused_for_its_subject_name_mints_nothing() {
     let dir = git_repo();
+    std::fs::remove_dir_all(dir.path().join(".kan")).unwrap();
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
         .arg("mcp")

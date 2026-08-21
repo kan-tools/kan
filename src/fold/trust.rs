@@ -34,7 +34,7 @@
 
 use std::collections::HashMap;
 
-use crate::claim::AuthorId;
+use crate::claim::v1::AuthorId;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TrustBase {

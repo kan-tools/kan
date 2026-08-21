@@ -79,6 +79,11 @@ fn git_repo() -> tempfile::TempDir {
 /// exactly the situation of anyone who ran a released v0.9.1.
 fn poisoned_workspace() -> tempfile::TempDir {
     let dir = git_repo();
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    kan::sign::Identity::generate()
+        .save(&kan_dir.join("identity"))
+        .unwrap();
 
     let wrote = kan(
         dir.path(),
@@ -103,7 +108,6 @@ fn poisoned_workspace() -> tempfile::TempDir {
         ],
     );
 
-    let kan_dir = dir.path().join(".kan");
     let overlay = kan_dir.join("overlay");
     std::fs::create_dir_all(&overlay).unwrap();
     for f in ["repo.car", "HEAD"] {

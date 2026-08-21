@@ -303,7 +303,7 @@ Only the disposable SQLite index is ever rebuilt. A log-rewriting migration
 tool is not a deferred feature but a rejected one: history you can alter is
 not what this is.
 
-**Frozen.** `ClaimContent`'s existing fields — their names, order, types, and
+**Frozen v1.** `claim::v1::ClaimContent`'s existing fields — their names, order, types, and
 encoding — may never change. Each is an input to every CID kan has ever
 computed, so changing one silently invalidates all of history.
 
@@ -341,6 +341,124 @@ silently discarding it and then reporting a CID mismatch. The second
 behavior — measured, and the reason this section exists — accuses a
 legitimate claim of having been *altered since it was signed*. A tool one
 version behind must say so, not impugn the record.
+
+The current unversioned Rust model is a separate immutable codec rather than
+an additive mutation of that historical type. `kan-claim-v2` uses a closed
+typed body inventory, a cryptographic `ScopeId`, structured subject paths and
+referents, canonical set/sequence wrappers, and the codec-bound signing input
+`{ codec: "kan-claim-v2", claim: CID }`. Its transport arm is versioned; its
+domain names are simply `Claim`, `ClaimContent`, and `ClaimBody`. Unknown
+future codec/arm pairs are retained as unsupported canonical bytes. A known
+codec with the wrong arm, malformed known content, or non-canonical input is
+invalid and never enters the fold. Released v1 and current claims therefore
+coexist in the `tools.kan.claim` collection without rewriting either signed
+representation. Writing a current claim additionally requires a verified
+scope-activation token derived by checking the installed inception proof
+against its exact identity state; stored inception bytes alone cannot
+authorize a write. `ClaimView` is a source-preserving union of v1, current,
+and unsupported claims with cryptographic validity, identity standing, scope
+admission, and view trust kept separate. It never fabricates one signed source
+shape from another. Until the production fold consumes that view, the
+compatibility fold reads only v1 and explicitly skips current and preserved
+unsupported records. The disposable index may cache canonical source
+envelopes, codec, subject, principal, revision, and medium provenance, but it
+must not cache admission, identity standing, or view trust. Cached envelopes
+are reverified under an explicit identity-resolution context before becoming
+a `ClaimView`; SQLite is never signature authority. General mixed reads
+dispatch from each current claim's typed `Author`: static `did:key` verifies
+intrinsically, `did:kan` selects a resolved state matching both the stable DID
+and exact event, and identity-version arms without an installed resolver fail
+closed as unsupported. Mixed view trust keys are
+an explicit union of exact v1 `AuthorId` and current stable principal, so a
+legacy agent component is neither erased nor invented for current authors.
+Mapping a v1 local subject path into a current scope requires the verified
+scope as an explicit compatibility-projection input. Current claims may
+retract a v1 claim when the current principal equals its legacy DID component;
+v1 claims can never retract current claims. Mixed state reduction keeps the
+latest status per exact source-author key, maps released and current status
+values into one display domain, and honors attested citation ordering across
+the codec boundary without collapsing those author keys. Mixed folds also
+disclose per-subject counts omitted solely by view trust; retracted or
+trusted-rejected claims are not mislabeled as trust exclusions. Kan
+authorship and ATProto repository approval are separate signatures by
+separate principals.
+The claim's `Author` and exact
+identity version authenticate kan speech; the repository transport signer
+only approves a CAR/MST transition and gains no scope authority from doing so.
+A current local repository therefore keeps one transport DID across every
+reachable commit while freely carrying claims authored by other kan
+principals. Rebinding that repository to another transport DID is a refusal,
+not an implicit ownership migration. An ATProto principal may later be
+explicitly admitted as a kan author, but kan authority never implies ATProto
+publication authority.
+The local transport credential lives at `.kan/transport/identity` behind the
+closed `LocalRepositoryTransportIdentity` type. It is created owner-only and
+create-new, remains stable for the local repository, and can be converted only
+to a repository transport signer—not to a kan author. Reading the store is
+side-effect free; creation belongs to an already-authorized write path.
+When an explicitly initialized current scope overlays released repository
+history, activation copies the released repository credential into this
+transport-only store and requires the DID to remain identical. This is a
+typed credential relocation, not repository rebinding or fabricated kan
+authorship; a conflicting transport credential is a refusal.
+
+Workspace writer selection has four closed outcomes: `Uninitialized`, `V1`
+with verified historical evidence, `Claim` with a cryptographically verified
+scope, and `Incomplete` with structured diagnostics. Scope inception is the
+only activation fact; no mutable format marker exists. Any scope directory
+that is partial, unsafe, unverifiable, or missing its enrolled system actor is
+incomplete and cannot fall back to v1. In the absence of scope state, a
+verified v1 claim or resolvable historical workspace principal selects v1;
+absence of both is uninitialized. Classification is read-only.
+The production write choke point consumes this classification only after all
+action preconditions pass. `Uninitialized` directs the user through `kan
+identity init` and then `kan init` without creating state; `V1` retains the
+released writer; `Claim` compiles supported action intents into current typed
+content and refreshes the mixed-codec projection. Intent forms that require a
+URI contract or have no current typed equivalent are explicit unsupported
+compiler arms, never lossy fallback to v1.
+An explicit resolvable `KAN_IDENTITY_FILE` selection on an otherwise empty,
+scope-less workspace is a compatibility request for the v1 writer. This does
+not restore implicit first-write identity creation: without that explicit
+selection, the workspace remains `Uninitialized` and the write is refused.
+
+Production read opening resolves the authoritative public identity ledger
+without selecting a profile or touching any credential provider. Resolution
+returns the closed active/non-active `DidKanResolution` union; contested or
+incomplete history is not represented as a missing local signer. Mixed logs
+are decoded under the active public states, while the released SQLite/render
+projection receives only verified v1 records. Current and future-codec records
+remain in the authoritative log and enter the source-preserving mixed local
+projection instead of being coerced into v1. That projection derives default
+trust from authors actually present in the local log, verifies the installed
+scope against its public governance root, and maps historical local paths into
+the scope only through that verified token. Direct governance-root claims in
+the verified scope are admitted; capability-dependent or foreign-scope cases
+remain `Unknown` until their evidence resolvers are wired.
+The production `show`, `status`, and `issues` human and JSON surfaces consume
+that mixed projection whenever it contains a current or preserved-unsupported
+record. Current JSON claims add their signed codec and cryptographic scope;
+every mixed claim also exposes cryptographic validity, exact identity-state
+standing, scope admission, and view trust as four separate fields. The response
+trust envelope names the effective mixed author frame. A v1-only
+projection continues through the released renderer unchanged. Budgeted
+`context` uses the same mixed claim ranking and omission disclosure. Explicit
+`me` trust selection names the configured kan author principal in a current
+scope, using profile and public identity-state metadata without credential
+access; it must not resolve to the independent repository transport DID. In a
+v1-only workspace it retains the released workspace-signer meaning. Specialized
+correction resolves its target through the mixed codec before writer selection
+and uses the fold's asymmetric authorship rule: current principals can retract
+their own current claims or matching v1-DID history, while v1 authors can never
+retract current claims. Rejection is the inverse local-trust operation.
+Publication remains a compatibility consumer until its URI and transport
+semantics are implemented.
+Within the mixed fold, valid trusted claims remain inspectable evidence, but
+scope effects use a separate participation predicate. Released v1 claims retain
+compatibility participation. A current claim participates only when admission
+is `admitted` or `not-applicable`; otherwise it cannot merge subjects, establish
+status or issue state, project a relation, retract, or reject. Human output
+marks such claims inspectable-only and mixed JSON reports `participating`.
 
 ## 8. Retraction (RECOMMENDED default, flagged OPEN in §9)
 

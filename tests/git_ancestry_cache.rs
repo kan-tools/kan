@@ -11,7 +11,7 @@
 use std::{fs, os::unix::fs::PermissionsExt, path::Path, process::Command};
 
 use kan::{
-    claim::{Anchor, ArtifactRef, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
+    claim::v1::{Anchor, ArtifactRef, AuthorId, ClaimBody, ClaimContent, Rkey, SubjectRef},
     git::GitSubstrate,
     relations::{GitAncestry, RelationProvider},
     sign::Identity,

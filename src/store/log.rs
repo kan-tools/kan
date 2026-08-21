@@ -37,7 +37,7 @@
 //! asymmetry isn't a kan design choice; it's the crate's actual shape, found
 //! via compiler error rather than assumed from its docs (see ADR-11/12's
 //! whole point: verify, don't trust the shape). Kan's own types
-//! (`crate::claim::*`) standardize on the wrapper.
+//! (`crate::claim::v1::*`) standardize on the wrapper.
 
 use std::{collections::HashSet, path::Path};
 
@@ -54,10 +54,41 @@ use tokio::{fs, io::AsyncWriteExt};
 
 use crate::{
     cid::content_cid,
-    claim::{Claim, ClaimContent},
+    claim::v1::{Claim, ClaimContent},
     sign::Identity,
     store::tid::TidGenerator,
 };
+
+/// Closed transport signer inventory for the ATProto repository containing
+/// kan records. This approves a repository transition; it does not author a
+/// kan claim or confer scope authority. A future network-account arm can be
+/// added without making a kan principal usable here.
+pub enum RepositoryTransportSigner<'a> {
+    LocalDidKey(&'a Identity),
+}
+
+impl RepositoryTransportSigner<'_> {
+    fn did(&self) -> String {
+        match self {
+            Self::LocalDidKey(identity) => identity.did(),
+        }
+    }
+
+    fn sign(&self, unsigned: &[u8]) -> Result<Vec<u8>, Error> {
+        match self {
+            Self::LocalDidKey(identity) => Ok(identity.sign(unsigned)?),
+        }
+    }
+
+    fn verify(&self, commit: &Commit) -> Result<bool, Error> {
+        let unsigned = commit.signing_bytes()?;
+        match self {
+            Self::LocalDidKey(identity) => {
+                Ok(crate::sign::verify(&identity.did(), &unsigned, &commit.sig))
+            }
+        }
+    }
+}
 
 const LEGACY_COLLECTION: &str = "dev.kan.claim";
 const COLLECTION: &str = "tools.kan.claim";
@@ -99,6 +130,27 @@ pub enum Error {
     BadSignature,
     #[error(transparent)]
     AtClaim(#[from] crate::at_claim::Error),
+    #[error(transparent)]
+    ClaimCodecEncode(#[from] crate::claim::codec::EncodeError),
+    #[error(transparent)]
+    Claim(#[from] crate::claim::Error),
+    #[error("claim codec decode failed: {0}")]
+    ClaimCodecDecode(#[from] crate::claim::codec::DecodeError),
+    #[error("current claim scope `{claim}` does not match activated scope `{activated}`")]
+    ClaimScopeMismatch {
+        claim: crate::identity::scope_inception::ScopeId,
+        activated: crate::identity::scope_inception::ScopeId,
+    },
+    #[error("claim key already exists in the mixed-codec collection: {0}")]
+    ClaimAlreadyExists(String),
+    #[error("existing repository belongs to `{actual}`, not transport signer `{expected}`")]
+    RepositoryDidMismatch { expected: String, actual: String },
+    #[error("repository commit history contains a cycle at {0}")]
+    RepositoryCommitCycle(String),
+    #[error("repository commit {0} does not verify under its selected owner")]
+    BadRepositorySignature(String),
+    #[error("repository commit history no longer descends from the previously verified root {0}")]
+    RepositoryHistoryDiverged(String),
     #[error("legacy and current claim records conflict at key {0}")]
     ClaimMigrationConflict(String),
     #[error("claim migration cannot load {collection}/{key} record block {record_cid}")]
@@ -581,6 +633,20 @@ impl Log {
         Self::open_or_create_on(dir, identity, LogSurface::Local).await
     }
 
+    /// Open a local ATProto repository with an explicit transport signer. An
+    /// existing repository is never silently rebound to another transport
+    /// DID, regardless of who authors the kan records inside it.
+    pub async fn open_or_create_transport(
+        dir: &Path,
+        signer: &RepositoryTransportSigner<'_>,
+    ) -> Result<Self, Error> {
+        LogSurface::Local.create_dir(dir).await?;
+        let mut log = Self::open_inner(dir, Some(signer.did()), LogSurface::Local).await?;
+        log.require_repository_did(signer, None).await?;
+        log.migrate_claim_collection(signer).await?;
+        Ok(log)
+    }
+
     pub(crate) async fn open_or_create_overlay(
         dir: &Path,
         identity: &Identity,
@@ -595,8 +661,55 @@ impl Log {
     ) -> Result<Self, Error> {
         surface.create_dir(dir).await?;
         let mut log = Self::open_inner(dir, Some(identity.did()), surface).await?;
-        log.migrate_claim_collection(identity).await?;
+        let signer = RepositoryTransportSigner::LocalDidKey(identity);
+        log.migrate_claim_collection(&signer).await?;
         Ok(log)
+    }
+
+    async fn require_repository_did(
+        &self,
+        signer: &RepositoryTransportSigner<'_>,
+        trusted_ancestor: Option<&Cid>,
+    ) -> Result<(), Error> {
+        let expected = signer.did();
+        let Some(mut cursor) = self.commit_cid.clone() else {
+            return match trusted_ancestor {
+                Some(ancestor) => Err(Error::RepositoryHistoryDiverged(ancestor.to_string())),
+                None => Ok(()),
+            };
+        };
+        let mut seen = HashSet::new();
+        loop {
+            if trusted_ancestor == Some(&cursor) {
+                return Ok(());
+            }
+            if !seen.insert(cursor.clone()) {
+                return Err(Error::RepositoryCommitCycle(cursor.to_string()));
+            }
+            let bytes = self
+                .mst
+                .storage()
+                .get(&cursor)
+                .await?
+                .ok_or(Error::MissingRoot)?;
+            let commit = Commit::from_bytes(&bytes)?;
+            if commit.did != expected {
+                return Err(Error::RepositoryDidMismatch {
+                    expected,
+                    actual: commit.did,
+                });
+            }
+            if !signer.verify(&commit)? {
+                return Err(Error::BadRepositorySignature(cursor.to_string()));
+            }
+            let Some(previous) = commit.prev else {
+                return match trusted_ancestor {
+                    Some(ancestor) => Err(Error::RepositoryHistoryDiverged(ancestor.to_string())),
+                    None => Ok(()),
+                };
+            };
+            cursor = previous;
+        }
     }
 
     async fn open_inner(
@@ -1038,24 +1151,114 @@ impl Log {
         result
     }
 
+    /// Append one already-verified current claim. The activation token is
+    /// proof that the stored scope inception was cryptographically verified;
+    /// an installed but unverified scope cannot select this writer.
+    pub async fn append_current(
+        &mut self,
+        claim: crate::claim::Claim,
+        scope: &crate::identity::scope_store::VerifiedScope,
+        signer: &RepositoryTransportSigner<'_>,
+    ) -> Result<Cid, Error> {
+        let guard = self.lock_for_write().await?;
+        let result = self.append_current_locked(claim, scope, signer).await;
+        guard.release();
+        result
+    }
+
+    async fn append_current_locked(
+        &mut self,
+        claim: crate::claim::Claim,
+        scope: &crate::identity::scope_store::VerifiedScope,
+        signer: &RepositoryTransportSigner<'_>,
+    ) -> Result<Cid, Error> {
+        let trusted_root = self.commit_cid.clone();
+        self.reload_if_stale().await?;
+        let selected_did = signer.did();
+        let configured_did = self.writing_did()?;
+        if configured_did != selected_did {
+            return Err(Error::RepositoryDidMismatch {
+                expected: selected_did,
+                actual: configured_did,
+            });
+        }
+        self.require_repository_did(signer, trusted_root.as_ref())
+            .await?;
+        if self.needs_repair {
+            self.rewrite_car().await?;
+            self.needs_repair = false;
+        }
+        if self.head_stale {
+            if let Some(root) = self.commit_cid.clone() {
+                self.write_head_atomically(&root).await?;
+            }
+            self.head_stale = false;
+        }
+
+        let claim_scope = claim.content().scope();
+        if claim_scope != scope.scope() {
+            return Err(Error::ClaimScopeMismatch {
+                claim: claim_scope,
+                activated: scope.scope(),
+            });
+        }
+        let claim_id = claim.id()?;
+        let claim_cid = claim_id.cid().clone();
+        let key = RecordPath::new(COLLECTION, claim_cid.to_string()).to_mst_key();
+        if self.mst.get(&key).await?.is_some() {
+            return Err(Error::ClaimAlreadyExists(claim_cid.to_string()));
+        }
+
+        self.last_recorded_at = self
+            .last_recorded_at
+            .max(claim.content().recorded_at().micros());
+        let rev = self.tid.next();
+        let record_bytes = crate::claim::codec::encode_claim(&claim, &rev)?;
+        let record_cid = Cid::from(compute_cid(&record_bytes));
+        self.mst
+            .storage_mut()
+            .put(&record_cid, record_bytes)
+            .await?;
+        self.mst.insert(&key, record_cid).await?;
+
+        let unsigned = Commit::new_unsigned(
+            self.writing_did()?,
+            Cid::from(mst_root(&self.mst)?),
+            self.tid.next(),
+            self.commit_cid.clone(),
+        );
+        let commit_sig = signer.sign(&unsigned.to_bytes()?)?;
+        let commit = unsigned.sign(commit_sig);
+        let new_commit_cid = write_commit(&mut self.mst, &commit).await?;
+        self.commit_cid = Some(new_commit_cid.clone());
+        self.persist_new_blocks(&new_commit_cid).await?;
+        Ok(claim_cid)
+    }
+
     /// Move legacy `dev.kan.claim` entries into the typed current collection.
     ///
     /// Validation is completed before the in-memory tree changes. The new
     /// commit removes legacy keys from the live MST but the append-only CAR
     /// retains every historical block and commit that contained them.
-    async fn migrate_claim_collection(&mut self, identity: &Identity) -> Result<(), Error> {
+    async fn migrate_claim_collection(
+        &mut self,
+        signer: &RepositoryTransportSigner<'_>,
+    ) -> Result<(), Error> {
         let legacy = self.mst.list_collection(LEGACY_COLLECTION).await?;
         if legacy.is_empty() {
             return Ok(());
         }
 
         let guard = self.lock_for_write().await?;
-        let result = self.migrate_claim_collection_locked(identity).await;
+        let result = self.migrate_claim_collection_locked(signer).await;
         guard.release();
         result
     }
 
-    async fn migrate_claim_collection_locked(&mut self, identity: &Identity) -> Result<(), Error> {
+    async fn migrate_claim_collection_locked(
+        &mut self,
+        signer: &RepositoryTransportSigner<'_>,
+    ) -> Result<(), Error> {
         self.reload_if_stale().await?;
         let legacy = self.mst.list_collection(LEGACY_COLLECTION).await?;
         if legacy.is_empty() {
@@ -1134,7 +1337,7 @@ impl Log {
             self.tid.next(),
             self.commit_cid.clone(),
         );
-        let commit_sig = identity.sign(&unsigned.to_bytes()?)?;
+        let commit_sig = signer.sign(&unsigned.to_bytes()?)?;
         let commit = unsigned.sign(commit_sig);
         let new_commit_cid = write_commit(&mut self.mst, &commit).await?;
         self.commit_cid = Some(new_commit_cid.clone());
@@ -1335,6 +1538,69 @@ impl Log {
         Ok(self.get_stored(claim_cid).await?.map(|s| s.claim))
     }
 
+    /// Fetch any record in the mixed-codec collection. Callers must branch on
+    /// supported versus preserved-unsupported content before interpretation.
+    pub async fn get_decoded(
+        &mut self,
+        claim_cid: Cid,
+        verification: crate::claim::codec::VerificationContext<'_>,
+    ) -> Result<Option<crate::claim::codec::DecodedRecord>, Error> {
+        let key = RecordPath::new(COLLECTION, claim_cid.to_string()).to_mst_key();
+        if let Some(record_cid) = self.mst.get(&key).await? {
+            let Some(bytes) = self.mst.storage().get(&record_cid).await? else {
+                return Ok(None);
+            };
+            let decoded = match crate::claim::codec::decode_record(&bytes, verification) {
+                Ok(decoded) => decoded,
+                Err(codec_error) if legacy_at_claim_candidate(&bytes) => {
+                    let record: crate::at_claim::Record =
+                        atproto_dasl::from_slice(&bytes).map_err(|_| codec_error)?;
+                    let rev = record.rev.clone();
+                    crate::claim::codec::DecodedRecord {
+                        claim: crate::claim::codec::DecodedClaim::Supported(
+                            crate::claim::codec::SupportedClaim::V1(record.verify()?),
+                        ),
+                        rev,
+                    }
+                }
+                Err(codec_error) => return Err(codec_error.into()),
+            };
+            if decoded_claim_id(&decoded.claim)? != claim_cid {
+                return Err(Error::BadSignature);
+            }
+            return Ok(Some(decoded));
+        }
+
+        let legacy_key = RecordPath::new(LEGACY_COLLECTION, claim_cid.to_string()).to_mst_key();
+        let Some(record_cid) = self.mst.get(&legacy_key).await? else {
+            return Ok(None);
+        };
+        let Some(bytes) = self.mst.storage().get(&record_cid).await? else {
+            return Ok(None);
+        };
+        let stored: StoredClaim = atproto_dasl::from_slice(&bytes).map_err(|error| {
+            Error::Car(atproto_dasl::errors::CarError::Io(std::io::Error::other(
+                error,
+            )))
+        })?;
+        let actual = content_cid(&stored.claim.content)?;
+        if actual != claim_cid
+            || !crate::sign::verify(
+                &stored.claim.content.author.did,
+                &claim_cid.to_bytes(),
+                &stored.claim.sig,
+            )
+        {
+            return Err(Error::BadSignature);
+        }
+        Ok(Some(crate::claim::codec::DecodedRecord {
+            claim: crate::claim::codec::DecodedClaim::Supported(
+                crate::claim::codec::SupportedClaim::V1(stored.claim),
+            ),
+            rev: stored.rev,
+        }))
+    }
+
     /// Like `get`, but also returns the log-revision TID captured at append
     /// time.
     pub async fn get_stored(&mut self, claim_cid: Cid) -> Result<Option<StoredClaim>, Error> {
@@ -1355,6 +1621,22 @@ impl Log {
             atproto_dasl::from_slice(&bytes).map_err(|e| {
                 Error::Car(atproto_dasl::errors::CarError::Io(std::io::Error::other(e)))
             })?
+        } else if common_envelope(&bytes)? {
+            let decoded = crate::claim::codec::decode_record(
+                &bytes,
+                crate::claim::codec::VerificationContext::StaticDidKey,
+            );
+            match decoded {
+                Ok(crate::claim::codec::DecodedRecord {
+                    claim:
+                        crate::claim::codec::DecodedClaim::Supported(
+                            crate::claim::codec::SupportedClaim::V1(claim),
+                        ),
+                    rev,
+                }) => StoredClaim { claim, rev },
+                Ok(_) => return Ok(None),
+                Err(error) => return Err(error.into()),
+            }
         } else {
             let record: crate::at_claim::Record =
                 atproto_dasl::from_slice(&bytes).map_err(|e| {
@@ -1383,6 +1665,32 @@ impl Log {
             return Err(Error::BadSignature);
         }
         Ok(Some(stored))
+    }
+
+    /// Enumerate supported and preserved-unsupported records without routing
+    /// either through the legacy fold type.
+    pub async fn iter_decoded(
+        &mut self,
+        verification: crate::claim::codec::VerificationContext<'_>,
+    ) -> Result<Vec<(Cid, crate::claim::codec::DecodedRecord)>, Error> {
+        let entries = self.mst.entries().await?;
+        self.warn_once_if_claims_are_unreachable(&entries).await?;
+        let mut out = Vec::with_capacity(entries.len());
+        let mut seen = HashSet::new();
+        for (key, _) in entries {
+            let path = RecordPath::from_mst_key(&key)?;
+            if path.collection != COLLECTION && path.collection != LEGACY_COLLECTION {
+                continue;
+            }
+            let claim_cid: Cid = path.rkey.parse().map_err(Error::InvalidCid)?;
+            if !seen.insert(claim_cid.clone()) {
+                continue;
+            }
+            if let Some(record) = self.get_decoded(claim_cid.clone(), verification).await? {
+                out.push((claim_cid, record));
+            }
+        }
+        Ok(out)
     }
 
     /// The log's current root commit CID, if any claim has ever been
@@ -1472,6 +1780,38 @@ impl Log {
     }
 }
 
+fn decoded_claim_id(claim: &crate::claim::codec::DecodedClaim) -> Result<Cid, Error> {
+    match claim {
+        crate::claim::codec::DecodedClaim::Supported(
+            crate::claim::codec::SupportedClaim::Claim(claim),
+        ) => Ok(claim.id()?.cid().clone()),
+        crate::claim::codec::DecodedClaim::Supported(crate::claim::codec::SupportedClaim::V1(
+            claim,
+        )) => Ok(content_cid(&claim.content)?),
+        crate::claim::codec::DecodedClaim::Unsupported(claim) => Ok(claim.claim_id().clone()),
+    }
+}
+
+fn common_envelope(bytes: &[u8]) -> Result<bool, Error> {
+    let raw: atproto_dasl::Ipld = atproto_dasl::from_slice(bytes).map_err(|error| {
+        Error::Car(atproto_dasl::errors::CarError::Io(std::io::Error::other(
+            error,
+        )))
+    })?;
+    Ok(matches!(raw, atproto_dasl::Ipld::Map(ref fields) if fields.contains_key("$type")))
+}
+
+/// Old `tools.kan.claim` records predate the common envelope and therefore
+/// have no `$type`. Only records that canonically decode to that shape may use
+/// the compatibility decoder: malformed or typed records must retain the
+/// current codec's fail-closed classification.
+fn legacy_at_claim_candidate(bytes: &[u8]) -> bool {
+    matches!(
+        atproto_dasl::from_slice::<atproto_dasl::Ipld>(bytes),
+        Ok(atproto_dasl::Ipld::Map(fields)) if !fields.contains_key("$type")
+    )
+}
+
 fn mst_root(mst: &Mst<MemoryStorage>) -> Result<RawCid, Error> {
     mst.root().cloned().ok_or(Error::MissingRoot)
 }
@@ -1486,7 +1826,7 @@ async fn write_commit(mst: &mut Mst<MemoryStorage>, commit: &Commit) -> Result<C
 #[cfg(test)]
 mod claim_collection_migration_tests {
     use super::*;
-    use crate::claim::{Anchor, AuthorId, ClaimBody, Rkey, SubjectRef};
+    use crate::claim::v1::{Anchor, AuthorId, ClaimBody, Rkey, SubjectRef};
 
     fn signed(identity: &Identity, text: &str, rev: &str) -> (Cid, StoredClaim) {
         let content = ClaimContent {

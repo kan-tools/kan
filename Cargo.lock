@@ -1770,6 +1770,7 @@ dependencies = [
  "atrium-crypto",
  "bip39",
  "clap",
+ "ed25519-dalek",
  "fs4",
  "hkdf",
  "keyring",

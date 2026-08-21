@@ -34,7 +34,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    claim::{Claim, ClaimBody, SubjectRef},
+    claim::v1::{Claim, ClaimBody, SubjectRef},
     fold::{state::StateView, FoldedView, SubjectView},
 };
 
@@ -84,6 +84,23 @@ pub struct ClaimJson {
     /// the distinction the prose renderer used to lose.
     pub subject: String,
     pub author: String,
+    /// Signed-record codec. Omitted on the unchanged v1-only rendering path;
+    /// present once a mixed view is required so consumers can retain source
+    /// distinctions instead of guessing them from body fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codec: Option<String>,
+    /// Cryptographic scope for current claims. Historical local claims are
+    /// mapped into the enclosing view but did not sign this field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    /// RFC 1's four independent read judgments. Omitted only on the released
+    /// v1-only renderer path whose schema predates RFC 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub judgments: Option<crate::identity::ClaimJudgments>,
+    /// Whether this claim may produce fold effects. Omitted on the unchanged
+    /// v1-only path, where every displayed claim participates.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub participating: Option<bool>,
     /// Microseconds since the Unix epoch, as attested by the author. Absent
     /// on claims written before v0.7.0-beta.1.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -274,6 +291,27 @@ impl InboundEdgeJson {
     }
 }
 
+pub fn current_claim_kind_name(body: &crate::claim::ClaimBody) -> String {
+    use crate::claim::ClaimBody;
+    match body {
+        ClaimBody::Subject { .. } => "Subject",
+        ClaimBody::Observation { .. } => "Observation",
+        ClaimBody::Plan { .. } => "Plan",
+        ClaimBody::Decision { .. } => "Decision",
+        ClaimBody::Blocker { .. } => "Blocker",
+        ClaimBody::Resolution { .. } => "Resolution",
+        ClaimBody::Result { .. } => "Result",
+        ClaimBody::Status { .. } => "Status",
+        ClaimBody::Relation { .. } => "Relation",
+        ClaimBody::Retraction { .. } => "Retraction",
+        ClaimBody::Rejection { .. } => "Rejection",
+        ClaimBody::PublicationIntent { .. } => "PublicationIntent",
+        ClaimBody::Lineage { .. } => "Lineage",
+        ClaimBody::RoleNaming { .. } => "RoleNaming",
+    }
+    .to_string()
+}
+
 /// One subject's settled state.
 #[derive(Debug, Serialize)]
 pub struct StatusEntryJson {
@@ -445,6 +483,10 @@ impl ClaimJson {
             kind: claim_kind_name(body),
             subject: subject_name(&claim.content.subject),
             author: claim.content.author.did.clone(),
+            codec: None,
+            scope: None,
+            judgments: None,
+            participating: None,
             recorded_at: claim.content.recorded_at,
             text: body.text().map(str::to_string),
             title: None,
@@ -474,11 +516,189 @@ impl ClaimJson {
         }
         out
     }
+
+    pub fn from_view(claim: &crate::claim::view::ClaimView, superseded: bool) -> Self {
+        use crate::claim::{view::ClaimSource, ClaimBody};
+
+        match claim.source() {
+            ClaimSource::V1(source) => {
+                let mut out = Self::new(claim.claim_id(), source, superseded);
+                out.codec = Some(claim.codec().to_string());
+                out.judgments = Some(claim.judgments());
+                out.participating = Some(crate::fold::claim_view::participates(claim));
+                out
+            }
+            ClaimSource::Claim(source) => {
+                let content = source.content();
+                let body = content.body();
+                let mut out = Self {
+                    cid: claim.claim_id().to_string(),
+                    kind: current_claim_kind_name(body),
+                    subject: content.subject().as_str().to_string(),
+                    author: content.author().principal().to_string(),
+                    codec: Some(claim.codec().to_string()),
+                    scope: Some(content.scope().to_string()),
+                    judgments: Some(claim.judgments()),
+                    participating: Some(crate::fold::claim_view::participates(claim)),
+                    recorded_at: Some(content.recorded_at().micros()),
+                    text: match body {
+                        ClaimBody::Observation { text }
+                        | ClaimBody::Plan { text }
+                        | ClaimBody::Decision { text }
+                        | ClaimBody::Blocker { text }
+                        | ClaimBody::Resolution { text }
+                        | ClaimBody::Result { text } => Some(text.as_str().to_string()),
+                        _ => None,
+                    },
+                    title: None,
+                    status: None,
+                    relation: None,
+                    target: None,
+                    supersedes: None,
+                    cites: content
+                        .cites()
+                        .as_slice()
+                        .iter()
+                        .map(|id| id.cid().to_string())
+                        .collect(),
+                    artifacts: content
+                        .artifacts()
+                        .as_slice()
+                        .iter()
+                        .map(|artifact| format!("{artifact:?}"))
+                        .collect(),
+                    superseded,
+                };
+                match body {
+                    ClaimBody::Subject { title, .. } => {
+                        out.title = Some(title.as_str().to_string())
+                    }
+                    ClaimBody::Status { value } => out.status = Some(format!("{value:?}")),
+                    ClaimBody::Relation { relation, target } => {
+                        out.relation = Some(format!("{relation:?}"));
+                        out.target = Some(target.subject.as_str().to_string());
+                    }
+                    ClaimBody::Retraction { claim } | ClaimBody::Rejection { claim } => {
+                        out.supersedes = Some(claim.cid().to_string())
+                    }
+                    _ => {}
+                }
+                out
+            }
+            ClaimSource::Unsupported(_) => Self {
+                cid: claim.claim_id().to_string(),
+                kind: "Unknown".to_string(),
+                subject: String::new(),
+                author: String::new(),
+                codec: Some(claim.codec().to_string()),
+                scope: None,
+                judgments: Some(claim.judgments()),
+                participating: Some(false),
+                recorded_at: None,
+                text: None,
+                title: None,
+                status: None,
+                relation: None,
+                target: None,
+                supersedes: None,
+                cites: Vec::new(),
+                artifacts: Vec::new(),
+                superseded,
+            },
+        }
+    }
 }
 
 /// One stable spelling for a claim kind across full and compact JSON views.
 pub fn claim_kind_name(body: &ClaimBody) -> String {
     format!("{:?}", body.kind())
+}
+
+pub fn mixed_subject_name(subject: &crate::claim::view::ClaimSubjectId) -> String {
+    use crate::claim::view::ClaimSubjectId;
+    match subject {
+        ClaimSubjectId::V1Local(path) => path.to_string(),
+        ClaimSubjectId::V1Anchor(anchor) => format!("{anchor:?}"),
+        ClaimSubjectId::Scoped { path, .. } => path.clone(),
+    }
+}
+
+fn mixed_state_fields(
+    state: &crate::fold::claim_view_state::StateView,
+) -> (String, Option<String>, Option<String>) {
+    use crate::fold::claim_view_state::StateView;
+    match state {
+        StateView::Unclassified => ("Unclassified".to_string(), None, None),
+        StateView::Settled { value, claim } => (
+            "Settled".to_string(),
+            Some(format!("{value:?}")),
+            Some(claim.claim_id().to_string()),
+        ),
+        StateView::Confirmed { value, by } => (
+            "Confirmed".to_string(),
+            Some(format!("{value:?}")),
+            by.first().map(|claim| claim.claim_id().to_string()),
+        ),
+        StateView::Contested { open, .. } => (
+            "Contested".to_string(),
+            None,
+            open.first().map(|claim| claim.claim_id().to_string()),
+        ),
+    }
+}
+
+pub fn status_entry_mixed(
+    class: &crate::fold::claim_view::SubjectView,
+    state: &crate::fold::claim_view_state::StateView,
+    excluded_by_trust: usize,
+    durability: crate::actions::Durability,
+) -> StatusEntryJson {
+    use crate::claim::view::ClaimBodyRef;
+
+    let (state, value, cid) = mixed_state_fields(state);
+    let subjects: Vec<String> = class.subjects.iter().map(mixed_subject_name).collect();
+    let mut kind_counts = BTreeMap::new();
+    for claim in &class.claims {
+        let kind = match claim.body() {
+            Some(ClaimBodyRef::V1(body)) => claim_kind_name(body),
+            Some(ClaimBodyRef::Claim(body)) => current_claim_kind_name(body),
+            None => "Unknown".to_string(),
+        };
+        *kind_counts.entry(kind).or_insert(0) += 1;
+    }
+    let head = class
+        .claims
+        .last()
+        .expect("folded classes contain at least one live claim");
+    let head_kind = match head.body() {
+        Some(ClaimBodyRef::V1(body)) => claim_kind_name(body),
+        Some(ClaimBodyRef::Claim(body)) => current_claim_kind_name(body),
+        None => "Unknown".to_string(),
+    };
+    let recorded_at = match head.source() {
+        crate::claim::view::ClaimSource::V1(claim) => claim.content.recorded_at,
+        crate::claim::view::ClaimSource::Claim(claim) => {
+            Some(claim.content().recorded_at().micros())
+        }
+        crate::claim::view::ClaimSource::Unsupported(_) => None,
+    };
+    StatusEntryJson {
+        subject: subjects.first().cloned().unwrap_or_default(),
+        subjects,
+        state,
+        value,
+        cid,
+        claim_count: class.claims.len(),
+        kind_counts,
+        head: HeadJson {
+            cid: head.claim_id().to_string(),
+            kind: head_kind,
+            recorded_at,
+        },
+        revision: mixed_subject_revision(class),
+        excluded_by_trust,
+        durability: durability.name().to_string(),
+    }
 }
 
 const SUBJECT_REVISION_DOMAIN: &[u8] = b"kan.status.subject-revision.v1";
@@ -502,6 +722,58 @@ fn subject_revision_bytes(class: &SubjectView) -> [u8; 32] {
         hash_bytes(&mut hasher, &cid.to_bytes());
     }
     hasher.finalize().into()
+}
+
+fn mixed_subject_revision_bytes(class: &crate::fold::claim_view::SubjectView) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hash_bytes(&mut hasher, SUBJECT_REVISION_DOMAIN);
+    hasher.update((class.claims.len() as u64).to_be_bytes());
+    for claim in &class.claims {
+        hash_bytes(&mut hasher, &claim.claim_id().to_bytes());
+    }
+    hasher.finalize().into()
+}
+
+pub fn mixed_subject_revision(class: &crate::fold::claim_view::SubjectView) -> String {
+    format_revision(&mixed_subject_revision_bytes(class))
+}
+
+pub fn mixed_view_revision(
+    view: &crate::fold::claim_view::FoldedView,
+    trust: &crate::claim::view::ClaimTrustBase,
+    base: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    hash_bytes(&mut hasher, VIEW_REVISION_DOMAIN);
+    hash_bytes(&mut hasher, base.as_bytes());
+    let authors = trust.authors();
+    hasher.update((authors.len() as u64).to_be_bytes());
+    for (author, weight) in authors {
+        hash_bytes(&mut hasher, format!("{author:?}").as_bytes());
+        hasher.update(weight.to_bits().to_be_bytes());
+    }
+    hasher.update((view.classes.len() as u64).to_be_bytes());
+    for class in &view.classes {
+        let primary = class
+            .subjects
+            .first()
+            .map(mixed_subject_name)
+            .unwrap_or_default();
+        hash_bytes(&mut hasher, primary.as_bytes());
+        let mut aliases: Vec<String> = class
+            .subjects
+            .iter()
+            .skip(1)
+            .map(mixed_subject_name)
+            .collect();
+        aliases.sort();
+        hasher.update((aliases.len() as u64).to_be_bytes());
+        for alias in aliases {
+            hash_bytes(&mut hasher, alias.as_bytes());
+        }
+        hasher.update(mixed_subject_revision_bytes(class));
+    }
+    format_revision(&hasher.finalize())
 }
 
 /// Revision for one merge class, over visible CID bytes only.
