@@ -113,9 +113,10 @@ reducer is now available: it preserves exact v1/current author keys, computes
 latest-per-author positions, honors citations across the codec boundary, and
 produces the same settled/confirmed/contested display lattice. The mixed fold
 also exposes subject lookup and per-subject trust-exclusion disclosure with
-the released fold's semantics. Production `show`, `status`, and `issues`
-human/JSON renderers now consume it whenever current or preserved-unsupported
-records are present; v1-only workspaces retain their released output path.
+the released fold's semantics. Production `show`, `status`, `issues`, and
+budgeted `context` human/JSON renderers now consume it whenever current or
+preserved-unsupported records are present; v1-only workspaces retain their
+released output path.
 Mixed JSON claims expose codec and signed scope, and their trust envelope names
 the effective current and historical authors. Current append is gated by an
 opaque `VerifiedScope` token that can only
@@ -131,8 +132,8 @@ repository DID. Supported narrative, subject, status, relation, correction,
 role-naming, citation, and Git-artifact intents compile without a stringly
 intermediate, and successful current appends refresh the mixed cache. URI-
 dependent publication and legacy anchor/unknown intents remain explicit
-unsupported compiler arms. Budgeted context and specialized
-correction/publication actions still need the mixed cutover. The production
+unsupported compiler arms. Specialized correction/publication actions still
+need the mixed cutover. The production
 read substrate now resolves every public `did:kan` ledger outcome without a
 profile or credential lookup, opens mixed logs without asking the v1 decoder
 to reinterpret current records, and constructs a source-preserving local
@@ -156,8 +157,8 @@ whose inception proof verifies against the supplied exact actor state is
 verified scope wins over retained v1 history. An explicit resolvable
 `KAN_IDENTITY_FILE` on an otherwise empty scope-less workspace remains a v1
 compatibility selection; implicit first-write identity creation stays
-forbidden. The remaining cutover boundary is budgeted context and the
-specialized correction/publication actions.
+forbidden. The remaining cutover boundary is the specialized
+correction/publication actions.
 `src/identity/governance.rs` now produces canonical update and reconciliation
 events and resolves unordered evidence deterministically: proof variants share
 one logical event, sibling leaves are contested, reconciliation requires

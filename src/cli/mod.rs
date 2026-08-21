@@ -1748,9 +1748,29 @@ async fn run_read(command: Command, ws: &mut Workspace) -> Result<(), Error> {
         } => {
             let budget = budget.unwrap_or(DEFAULT_BUDGET);
             let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
+            let system = crate::identity::system::SystemIdentityStore::at(
+                crate::identity::system::SystemIdentityStore::platform_config_root()?,
+            );
+            let projection = ws.mixed_projection_with_system(&system, &trust).await?;
+            let mixed = crate::mixed_render::is_needed(&projection);
             print!(
                 "{}",
-                if json {
+                if mixed && json {
+                    crate::mixed_render::context_json(
+                        ws,
+                        &projection,
+                        budget,
+                        &trust,
+                        empty_reason.as_deref(),
+                    )?
+                } else if mixed {
+                    crate::mixed_render::context(
+                        &projection,
+                        budget,
+                        &trust,
+                        empty_reason.as_deref(),
+                    )
+                } else if json {
                     actions::context_json(ws, budget, &trust, empty_reason.as_deref())?
                 } else {
                     actions::context(ws, budget, &trust, empty_reason.as_deref())?

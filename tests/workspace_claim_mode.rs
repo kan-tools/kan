@@ -455,6 +455,39 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     let cli: serde_json::Value = serde_json::from_slice(&cli.stdout).unwrap();
     assert_eq!(cli["claims"].as_array().unwrap().len(), 2);
     assert_eq!(cli["claims"][0]["codec"], "kan-claim-v2");
+
+    let context = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(["context", "--budget", "10000", "--json"])
+        .env("KAN_CONFIG_DIR", &config)
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(
+        context.status.success(),
+        "{}",
+        String::from_utf8_lossy(&context.stderr)
+    );
+    let context: serde_json::Value = serde_json::from_slice(&context.stdout).unwrap();
+    let current = context["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|claim| claim["codec"] == "kan-claim-v2")
+        .collect::<Vec<_>>();
+    assert_eq!(current.len(), 2);
+    assert_eq!(current[0]["kind"], "Status");
+    assert!(context["tokens"].as_u64().unwrap() <= 10_000);
+
+    let empty_context = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(["context", "--budget", "0", "--json"])
+        .env("KAN_CONFIG_DIR", &config)
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(empty_context.status.success());
+    let empty_context: serde_json::Value = serde_json::from_slice(&empty_context.stdout).unwrap();
+    assert!(empty_context["claims"].as_array().unwrap().is_empty());
+    assert_eq!(empty_context["omitted_claims"], 3);
 }
 
 #[tokio::test]

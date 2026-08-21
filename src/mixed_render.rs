@@ -16,6 +16,7 @@ use crate::{
         view::{ClaimBodyRef, ClaimSource, ClaimSubjectId, ClaimView},
         ClaimBody, StatusValue, SubjectKind,
     },
+    context::{TiktokenEstimator, TokenEstimator},
     fold::{
         claim_view::{self, FoldedView, SubjectView},
         claim_view_state::{self, StateView},
@@ -841,6 +842,221 @@ pub fn issues_json(
     to_json(&json::IssuesJson {
         v: json::SCHEMA_VERSION,
         subjects,
+        trust: trust_json(projection, trust, empty_reason),
+        excluded_by_trust: excluded.values().sum(),
+        published_read_error_count: ws.published.read_errors().len(),
+        published_read_errors: ws
+            .published
+            .read_errors()
+            .iter()
+            .map(json::PublishedReadErrorJson::from)
+            .collect(),
+    })
+}
+
+fn context_kind_value(claim: &ClaimView) -> i64 {
+    match claim.body() {
+        Some(ClaimBodyRef::V1(body)) => match body.kind() {
+            crate::claim::v1::ClaimKind::Status => 5,
+            crate::claim::v1::ClaimKind::Decision
+            | crate::claim::v1::ClaimKind::Blocker
+            | crate::claim::v1::ClaimKind::Resolution => 4,
+            crate::claim::v1::ClaimKind::Plan | crate::claim::v1::ClaimKind::Result => 3,
+            crate::claim::v1::ClaimKind::Observation
+            | crate::claim::v1::ClaimKind::Subject
+            | crate::claim::v1::ClaimKind::Relation
+            | crate::claim::v1::ClaimKind::Publication
+            | crate::claim::v1::ClaimKind::RoleDeclaration => 2,
+            crate::claim::v1::ClaimKind::Retraction | crate::claim::v1::ClaimKind::Rejects => 1,
+            crate::claim::v1::ClaimKind::Unknown => 0,
+        },
+        Some(ClaimBodyRef::Claim(body)) => match body {
+            ClaimBody::Status { .. } => 5,
+            ClaimBody::Decision { .. }
+            | ClaimBody::Blocker { .. }
+            | ClaimBody::Resolution { .. } => 4,
+            ClaimBody::Plan { .. } | ClaimBody::Result { .. } => 3,
+            ClaimBody::Observation { .. }
+            | ClaimBody::Subject { .. }
+            | ClaimBody::Relation { .. }
+            | ClaimBody::PublicationIntent { .. }
+            | ClaimBody::Lineage { .. }
+            | ClaimBody::RoleNaming { .. } => 2,
+            ClaimBody::Retraction { .. } | ClaimBody::Rejection { .. } => 1,
+        },
+        None => 0,
+    }
+}
+
+#[derive(Default)]
+struct ContextAssembly {
+    selected: Vec<ClaimView>,
+    omitted_claims: usize,
+    omitted_subjects: Vec<String>,
+}
+
+fn assemble_context(
+    projection: &MixedWorkspaceProjection,
+    view: &FoldedView,
+    budget: usize,
+    estimator: &dyn TokenEstimator,
+) -> ContextAssembly {
+    let mut queues = view
+        .classes
+        .iter()
+        .map(|class| {
+            let mut queue = class
+                .claims
+                .iter()
+                .enumerate()
+                .map(|(index, claim)| {
+                    let tokens = estimator.estimate(&render_claim(claim));
+                    let score = context_kind_value(claim) * 1_000_000 + index as i64;
+                    (score, claim.clone(), tokens)
+                })
+                .collect::<Vec<_>>();
+            queue.sort_by_key(|(score, ..)| std::cmp::Reverse(*score));
+            queue
+        })
+        .collect::<Vec<_>>();
+
+    let mut remaining = budget;
+    let mut selected = Vec::new();
+    loop {
+        let mut order = (0..queues.len()).collect::<Vec<_>>();
+        order.sort_by_key(|&index| {
+            let best = queues[index]
+                .iter()
+                .find(|(_, _, tokens)| *tokens <= remaining)
+                .map(|(score, ..)| *score);
+            (std::cmp::Reverse(best), index)
+        });
+        let mut progressed = false;
+        for index in order {
+            if let Some(position) = queues[index]
+                .iter()
+                .position(|(_, _, tokens)| *tokens <= remaining)
+            {
+                let (_, claim, tokens) = queues[index].remove(position);
+                remaining -= tokens;
+                selected.push(claim);
+                progressed = true;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+
+    let mut omitted_claims = 0;
+    let mut omitted_subjects = Vec::new();
+    for queue in queues {
+        omitted_claims += queue.len();
+        for (_, claim, _) in queue {
+            if let Some(subject) = claim.subject_id(projection.legacy_scope()) {
+                let subject = json::mixed_subject_name(&subject);
+                if !omitted_subjects.contains(&subject) {
+                    omitted_subjects.push(subject);
+                }
+            }
+        }
+    }
+    omitted_subjects.sort();
+    ContextAssembly {
+        selected,
+        omitted_claims,
+        omitted_subjects,
+    }
+}
+
+fn superseded_statuses(view: &FoldedView) -> std::collections::HashSet<Cid> {
+    let mut superseded = std::collections::HashSet::new();
+    for class in &view.classes {
+        let live = classify(class).live_cids();
+        for claim in &class.claims {
+            if matches!(
+                claim.body(),
+                Some(
+                    ClaimBodyRef::V1(crate::claim::v1::ClaimBody::Status { .. })
+                        | ClaimBodyRef::Claim(ClaimBody::Status { .. })
+                )
+            ) && !live.contains(claim.claim_id())
+            {
+                superseded.insert(claim.claim_id().clone());
+            }
+        }
+    }
+    superseded
+}
+
+pub fn context(
+    projection: &MixedWorkspaceProjection,
+    budget: usize,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> String {
+    let view = projection.fold();
+    let estimator = TiktokenEstimator::cl100k();
+    let assembled = assemble_context(projection, &view, budget, &estimator);
+    let superseded = superseded_statuses(&view);
+    let mut out = String::new();
+    let mut total = 0;
+    for claim in &assembled.selected {
+        let text = render_claim(claim);
+        total += estimator.estimate(&text);
+        let mark = if superseded.contains(claim.claim_id()) {
+            "  (superseded)"
+        } else {
+            ""
+        };
+        out.push_str(&format!("{}  {text}{mark}\n", claim.claim_id()));
+    }
+    out.push_str(&format!(
+        "-- {} claim(s), ~{total}/{budget} tokens --\n",
+        assembled.selected.len()
+    ));
+    if assembled.omitted_claims > 0 {
+        out.push_str(&format!(
+            "-- {} claim(s) omitted to fit the budget, across {} subject(s): {} --\n",
+            assembled.omitted_claims,
+            assembled.omitted_subjects.len(),
+            assembled.omitted_subjects.join(", ")
+        ));
+        out.push_str("-- raise --budget to see more --\n");
+    }
+    let excluded = excluded(projection);
+    out.push_str(&excluded_note(excluded.values().sum(), trust, empty_reason));
+    out
+}
+
+pub fn context_json(
+    ws: &Workspace,
+    projection: &MixedWorkspaceProjection,
+    budget: usize,
+    trust: &TrustBase,
+    empty_reason: Option<&str>,
+) -> Result<String, Error> {
+    let view = projection.fold();
+    let estimator = TiktokenEstimator::cl100k();
+    let assembled = assemble_context(projection, &view, budget, &estimator);
+    let superseded = superseded_statuses(&view);
+    let mut tokens = 0;
+    let claims = assembled
+        .selected
+        .iter()
+        .map(|claim| {
+            tokens += estimator.estimate(&render_claim(claim));
+            json::ClaimJson::from_view(claim, superseded.contains(claim.claim_id()))
+        })
+        .collect();
+    let excluded = excluded(projection);
+    to_json(&json::ContextJson {
+        v: json::SCHEMA_VERSION,
+        claims,
+        tokens,
+        budget,
+        omitted_claims: assembled.omitted_claims,
+        omitted_subjects: assembled.omitted_subjects,
         trust: trust_json(projection, trust, empty_reason),
         excluded_by_trust: excluded.values().sum(),
         published_read_error_count: ws.published.read_errors().len(),
