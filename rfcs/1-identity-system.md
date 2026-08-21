@@ -1164,7 +1164,7 @@ This RFC amends the existing fold rule that keyed same-author supersession on
 the complete legacy `AuthorId`: for RFC-1 claims, same-author authorization keys
 on stable principal DID. The compatibility projection retains the legacy rule
 for legacy-to-legacy bytes, including the historical `agent` component. A
-modern RFC-1 claim may supersede a legacy claim exactly when its principal DID
+current RFC-1 claim may supersede a legacy claim exactly when its principal DID
 equals the DID component of the legacy `AuthorId`; the legacy `agent` component
 is disregarded for that direction. A legacy-form claim can never supersede an
 RFC-1 claim.
@@ -1250,9 +1250,9 @@ The vector set MUST cover:
    standing forms, current and archived `did:web` documents, canonical and
    nullified `did:plc` operations, and an unsupported method;
 10. active, superseded, contested, unknown, and static identity standing;
-11. legacy authorship, legacy-to-legacy composite supersession, modern-to-legacy
-    principal supersession, forbidden legacy-to-modern supersession, and
-    principal-keyed modern supersession without byte rewriting;
+11. legacy authorship, legacy-to-legacy composite supersession, current-to-legacy
+    principal supersession, forbidden legacy-to-current supersession, and
+    principal-keyed current supersession without byte rewriting;
 12. read-only resolution with no credential, governance, admission, or trust
     side effects;
 13. an administratively removed method that remains admitted at its old state,
@@ -1343,18 +1343,18 @@ refused without replacing the installed bytes. Missing or stale profiles and
 unsupported public-ledger envelopes fail closed. This establishes the system
 actor as the initial single governance root; explicit multiple-root setup and
 later governance changes remain separate work.
-`src/identity/authorship.rs` implements the exact modern `Author` value as a
+`src/identity/authorship.rs` implements the exact current `Author` value as a
 closed typed map containing only principal, verification method, and identity
 version. Its pinned canonical vector makes roles and the legacy `agent` field
-unrepresentable. The current `did:kan` verification slice binds a claim-CID
-signature to the exact active event, principal, method, algorithm, public key,
-and `assertion` purpose, while reporting `capabilityInvocation` scope
-reach independently. `SystemIdentityStore` signs claim-CID bytes only after the
-same profile/method/provider/key correspondence required for control proofs.
-This is intentionally not the default writer: the complete modern
-claim-content envelope and the legacy/modern storage discriminator require a
-normative byte shape before new interoperable CIDs can be minted, and
-historical active-ancestor verification remains to be implemented.
+unrepresentable. The current `did:kan` verification slice binds the
+codec-separated claim signing input to the exact active event, principal,
+method, algorithm, public key, and `assertion` purpose, while reporting
+`capabilityInvocation` scope reach independently. `SystemIdentityStore` signs
+those canonical input bytes only after the same profile/method/provider/key
+correspondence required for control proofs.
+The production writer now emits this current claim envelope after verified
+scope activation, while released v1 evidence retains its byte-exact codec arm.
+Historical active-ancestor verification remains to be implemented.
 `src/identity/governance.rs` implements canonical scope-governance update
 and reconciliation payloads, proof authorization against every exact parent,
 proof-set collapse by logical event identifier, and order-independent
@@ -1422,10 +1422,11 @@ fresh setup, import, identical retry, permissions, and rejection before state
 creation for an invalid alias.
 
 The complete reference-vector manifest, external/recursive DID controller
-resolution, modern authorship, hardware/agent/external-signer credential
+resolution, current authorship, hardware/agent/external-signer credential
 execution, OS-keychain provider creation/import, explicit multi-root inception,
-the complete modern claim envelope and historical-state verification,
-scope connections, and default-write cutover remain unimplemented. Issue
+historical-state verification,
+scope connections, delegated production admission, URI-native publication,
+and non-file credential-provider creation remain unimplemented. Issue
 #244's operation-wire and
 absent-removal ambiguities are closed by the normative typed schema above and
 its pinned implementation vector. This status is therefore an implementation

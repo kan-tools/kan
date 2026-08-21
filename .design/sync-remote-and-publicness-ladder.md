@@ -122,7 +122,7 @@ this remote implements, alongside `LocalOnly` and `GitTree`.
 is kan's existing **publish/curate** distinction (ADR-43), extended one notch:
 publishing already means "I decided to make this legible to others." L1→L2 is
 "legible to the relay's AppView"; L3/L4 is "legible on atproto." The
-per-subject `Publication` claim (`src/claim.rs:224`) is the natural carrier for
+per-subject `Publication` claim (`src/claim/v1.rs:261`) is the natural carrier for
 which rung a subject sits at — a rung is a property the fold can already read,
 not new enforcement. This keeps the whole model affordance-not-enforcement:
 escalation is data, and the one-way rungs (REQ-5) get a surface that says so.

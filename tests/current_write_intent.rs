@@ -97,22 +97,26 @@ fn status_values_compile_without_a_stringly_intermediate() {
 #[test]
 fn uri_dependent_and_anchor_intents_are_explicitly_unsupported() {
     let identity = Identity::generate();
+    let publication = compat::compile_write_intent(
+        author(&identity),
+        scope(),
+        v1::SubjectRef::Local("work/publish".to_string()),
+        v1::ClaimBody::Publication {
+            layer: v1::Layer::GitTree,
+        },
+        vec![],
+        vec![],
+        42,
+    )
+    .unwrap_err();
     assert!(matches!(
-        compat::compile_write_intent(
-            author(&identity),
-            scope(),
-            v1::SubjectRef::Local("work/publish".to_string()),
-            v1::ClaimBody::Publication {
-                layer: v1::Layer::GitTree,
-            },
-            vec![],
-            vec![],
-            42,
-        ),
-        Err(compat::Error::Unsupported(
-            UnsupportedIntent::PublicationNeedsUri
-        ))
+        &publication,
+        compat::Error::Unsupported(UnsupportedIntent::PublicationNeedsUri)
     ));
+    assert!(
+        publication.to_string().contains("local URI milestone"),
+        "{publication}"
+    );
     assert!(matches!(
         compat::compile_write_intent(
             author(&identity),

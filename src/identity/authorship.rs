@@ -5,7 +5,6 @@
 //! `crate::claim`; current claim content and migration can now depend on one
 //! closed author shape without making a role or legacy agent representable.
 
-use atproto_dasl::Cid;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -118,19 +117,6 @@ impl Author {
     pub fn canonical_bytes(&self) -> Result<Vec<u8>, Error> {
         self.validate()?;
         Ok(atproto_dasl::to_vec(self)?)
-    }
-
-    /// Verify a current claim against the currently active `did:kan` state.
-    /// A later historical-state resolver can supply the same checks for an
-    /// active ancestor; this boundary never substitutes the current method
-    /// for the exact event cited by the author.
-    pub fn verify_active_did_kan_claim(
-        &self,
-        claim_cid: &Cid,
-        signature: &[u8],
-        state: &ResolvedDidKanState,
-    ) -> AuthorshipVerification {
-        self.verify_active_did_kan_message(&claim_cid.to_bytes(), signature, state)
     }
 
     /// Verify domain-separated current-claim bytes against the exact identity

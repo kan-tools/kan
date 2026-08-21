@@ -52,7 +52,8 @@ listed order. `src/identity/did_kan_update.rs` now fixes the typed serde
 representation tracked by [#244](https://github.com/kan-tools/kan/issues/244),
 makes absent-target removals invalid, pins canonical update bytes and a logical
 CID, and resolves signed administration/recovery evidence without observation
-order. Current authorship and write cutover remain pending.
+order. Current authorship and write cutover are described below and now ship
+through verified scope activation.
 In parallel, the scope-inception slice now validates and canonically orders
 the unsigned payload, derives an exact 34-byte SHA-256 multihash `ScopeId`
 with canonical base32lower display, pins a deterministic vector, and

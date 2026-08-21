@@ -183,10 +183,15 @@ fn decode_hex(value: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum UnsupportedIntent {
+    #[error("anchor subject at {position} has no current path representation")]
     AnchorSubject { position: &'static str },
+    #[error(
+        "publication requires URI-native subject addressing, which is deferred to the local URI milestone"
+    )]
     PublicationNeedsUri,
+    #[error("unknown released claim body `{0}` has no current representation")]
     UnknownBody(String),
 }
 
@@ -194,7 +199,7 @@ pub enum UnsupportedIntent {
 pub enum Error {
     #[error(transparent)]
     Claim(#[from] super::Error),
-    #[error("released write intent is not representable as a current claim: {0:?}")]
+    #[error("released write intent is not representable as a current claim: {0}")]
     Unsupported(UnsupportedIntent),
     #[error("git object id is not a full SHA-1 or SHA-256 hex digest: {0}")]
     GitObjectId(String),

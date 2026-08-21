@@ -576,12 +576,13 @@ corrected before any v2 claim is emitted.
   current `Claim`; bounded signature bytes alone do not imply validity.
 - REQ-15: Legacy authorship continuity is optional, scope-local, one-way, and
   dual-proved; legacy subject binding is a separate signed inception fact.
-- REQ-16: Mixed folds consume borrowed `ClaimView` projections that always
+- REQ-16: Mixed folds consume source-preserving `ClaimView` projections that always
   retain original claim ID, codec, bytes, and compatibility diagnostics.
 - REQ-17: Publication intent uses a constrained canonical subject URI and
   asserts intended visibility without credentials or a delivery claim.
 - REQ-18: The write-policy transition is `1.0.0-beta.1`; current binaries read
-  v1 indefinitely but never expose an ordinary v1 writer.
+  v1 indefinitely, retain the explicit released v1 selection on a scope-less
+  workspace, and otherwise require deliberate current-scope initialization.
 - REQ-19: `Author` and local `ActorReference` wrap one validated
   `SigningIdentity` representation without becoming implicitly interchangeable
   or carrying operation-specific authority.
@@ -808,13 +809,16 @@ interactive terminal it may, with explicit consent, invoke the same underlying
 identity-enrollment action as `kan identity init`, verify the profile, and
 resume. It never duplicates enrollment logic. Decline leaves the workspace
 untouched. Non-interactive CLI, MCP, and automation receive a structured
-`SystemIdentityRequired` refusal containing the ordered remedies. An existing
-invalid or inaccessible identity is reported and never silently replaced.
+refusal containing the ordered `kan identity init` then `kan init` remedies.
+An existing invalid or inaccessible identity is reported and never silently
+replaced.
 
 Installation and reads create nothing. A first write in an uninitialized
-workspace returns `ScopeInitializationRequired`; it does not silently run init.
-The log/MST may be created lazily by the first post-init claim. A fresh
-workspace never emits v1.
+workspace with no explicit released identity returns
+`ClaimInitializationRequired`; it does not silently run init. The log/MST may
+be created lazily by the first post-init claim. A verified scope emits only
+`kan-claim-v2`; an explicit resolvable `KAN_IDENTITY_FILE` on an otherwise
+empty scope-less workspace remains a deliberate v1 compatibility selection.
 
 ### Legacy authorship continuity
 
@@ -1001,13 +1005,14 @@ and produces `DecodedClaim`. XRPC inputs keep the textual `scope` selector;
 current content and verified provenance use Lexicon `bytes` for `scopeId`, with
 the adapter enforcing the exact multihash algorithm and length.
 
-**Identity and signing.** `src/identity/authorship.rs` drops `modern` wording
-and owns `Author` around the shared validated `SigningIdentity`; local profiles
-in `src/identity/system.rs` wrap the same kernel as `ActorReference` rather
-than duplicating its validation. `Author` is serde-transparent over the
-canonical identity map, while profile JSON uses an explicit local DTO and
-checked conversion. The signer constructs the codec-bound claim signing input
-and returns `Claim` only after exact author/profile agreement.
+**Identity and signing.** `src/identity/authorship.rs` owns the closed `Author`
+shape, while local profiles in `src/identity/system.rs` own the distinct
+`ActorReference` configuration shape. The signer constructs the codec-bound
+claim signing input and returns `Claim` only after exact author/profile
+agreement. The specified shared `SigningIdentity` validation kernel remains a
+named follow-up: this slice preserves the wrapper separation and validation
+behavior but does not yet make duplication between the two representations
+unrepresentable.
 Identity control retains the issue-#244
 `IdentityOperation`; a separately domain-separated continuity control event
 implements dual-proof migration semantics. #245 renames current repository
@@ -1019,8 +1024,8 @@ select v2 only for verified scope mode. Reads preserve and classify every
 record, including unknown future arms and invalid pairs. Historical CAR blocks
 and `dev.kan.claim` commits remain reachable; no migration rewrites them.
 
-**Compatibility projection.** `ClaimView<'a>` borrows either a current claim or
-a `V1ClaimView<'a>` and exposes common reasoning inputs without serializing.
+**Compatibility projection.** Owned `ClaimView` values retain either a current
+or v1 source arm and expose common reasoning inputs without serializing.
 For a v1 claim bound by `kanV1Workspace`, a valid local rkey maps directly to
 the current subject path; otherwise its RFC 2 address uses
 `subject/@cid:<CID-of-canonical-v1-SubjectRef>`. This is a typed URI selector,
