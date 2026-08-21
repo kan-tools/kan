@@ -58,6 +58,32 @@ impl ClaimTrustBase {
         }
     }
 
+    /// Carry a released trust frame across the codec boundary. The v1
+    /// composite author remains one key; its DID also names the current
+    /// principal key. Several historical agent-qualified authors may share
+    /// that principal, in which case the strongest selected weight wins.
+    pub fn from_v1(trust: &TrustBase) -> Self {
+        let mut weights = HashMap::new();
+        for (author, weight) in trust.authors() {
+            weights.insert(ClaimAuthor::V1(author.clone()), weight);
+            weights
+                .entry(ClaimAuthor::Principal(author.did))
+                .and_modify(|selected| *selected = f64::max(*selected, weight))
+                .or_insert(weight);
+        }
+        Self { weights }
+    }
+
+    pub fn authors(&self) -> Vec<(ClaimAuthor, f64)> {
+        let mut authors = self
+            .weights
+            .iter()
+            .map(|(author, weight)| (author.clone(), *weight))
+            .collect::<Vec<_>>();
+        authors.sort_by_key(|(author, _)| format!("{author:?}"));
+        authors
+    }
+
     fn view_trust(&self, author: &ClaimAuthor) -> ViewTrust {
         self.weights
             .get(author)

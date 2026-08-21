@@ -96,8 +96,7 @@ in the same `tools.kan.claim` collection without rewriting historical blocks.
 A typed mixed reader makes supported-current, supported-v1, and preserved
 unsupported records an explicit branch. `ClaimView` now preserves those three
 source shapes, keeps v1 and scoped-current subjects distinct, and carries all
-four RFC 1 judgments without fabricating compatibility claims. The production
-fold still sees only v1 until it consumes that view. A parallel disposable
+four RFC 1 judgments without fabricating compatibility claims. A parallel disposable
 SQLite projection now caches canonical mixed-codec envelopes and source
 provenance, never judgments; cache reads reverify the envelope under an
 explicit identity-resolution context. General reads dispatch from each
@@ -109,14 +108,17 @@ source-preserving views, retain future-codec records, merge same-as classes,
 and implement the RFC 1 asymmetric migration rule: a matching current
 principal may retract its v1 DID history, while v1 can never retract current
 claims. Historical local paths enter a current scope only through an explicit
-verified-scope projection input. Production render/state consumers still need
-to move from the released v1 `FoldedView` to this mixed view. The mixed status
+verified-scope projection input. The mixed status
 reducer is now available: it preserves exact v1/current author keys, computes
 latest-per-author positions, honors citations across the codec boundary, and
 produces the same settled/confirmed/contested display lattice. The mixed fold
 also exposes subject lookup and per-subject trust-exclusion disclosure with
-the released fold's semantics. Production renderers still need to consume
-it. Current append is gated by an opaque `VerifiedScope` token that can only
+the released fold's semantics. Production `show`, `status`, and `issues`
+human/JSON renderers now consume it whenever current or preserved-unsupported
+records are present; v1-only workspaces retain their released output path.
+Mixed JSON claims expose codec and signed scope, and their trust envelope names
+the effective current and historical authors. Current append is gated by an
+opaque `VerifiedScope` token that can only
 be constructed by rechecking the stored inception proof
 against its exact controller state, and the claim's cryptographic scope must
 match that token. The production workspace now selects this writer policy at
@@ -129,14 +131,12 @@ repository DID. Supported narrative, subject, status, relation, correction,
 role-naming, citation, and Git-artifact intents compile without a stringly
 intermediate, and successful current appends refresh the mixed cache. URI-
 dependent publication and legacy anchor/unknown intents remain explicit
-unsupported compiler arms. Production read/render consumers and specialized
+unsupported compiler arms. Budgeted context and specialized
 correction/publication actions still need the mixed cutover. The production
 read substrate now resolves every public `did:kan` ledger outcome without a
 profile or credential lookup, opens mixed logs without asking the v1 decoder
 to reinterpret current records, and constructs a source-preserving local
-projection with verified scope admission and exact author trust. The released
-renderers still consume the v1-only compatibility projection; adapting their
-human/JSON output to `ClaimView` is the remaining read-surface cutover. The
+projection with verified scope admission and exact author trust. The
 underlying signing seams are now deliberately separate: a closed resolved
 system-actor value keeps the kan author profile, exact identity state, method,
 and credential provider together, while an explicit repository-transport
@@ -156,8 +156,8 @@ whose inception proof verifies against the supplied exact actor state is
 verified scope wins over retained v1 history. An explicit resolvable
 `KAN_IDENTITY_FILE` on an otherwise empty scope-less workspace remains a v1
 compatibility selection; implicit first-write identity creation stays
-forbidden. The remaining cutover boundary is the production read/render
-surface and the specialized correction/publication actions.
+forbidden. The remaining cutover boundary is budgeted context and the
+specialized correction/publication actions.
 `src/identity/governance.rs` now produces canonical update and reconciliation
 events and resolves unordered evidence deterministically: proof variants share
 one logical event, sibling leaves are contested, reconciliation requires

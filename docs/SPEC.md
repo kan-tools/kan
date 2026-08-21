@@ -435,6 +435,13 @@ scope against its public governance root, and maps historical local paths into
 the scope only through that verified token. Direct governance-root claims in
 the verified scope are admitted; capability-dependent or foreign-scope cases
 remain `Unknown` until their evidence resolvers are wired.
+The production `show`, `status`, and `issues` human and JSON surfaces consume
+that mixed projection whenever it contains a current or preserved-unsupported
+record. Current JSON claims add their signed codec and cryptographic scope;
+the response trust envelope names the effective mixed author frame. A v1-only
+projection continues through the released renderer unchanged. Budgeted
+`context` and specialized correction/publication reads remain compatibility
+consumers until their current semantics are implemented.
 
 ## 8. Retraction (RECOMMENDED default, flagged OPEN in §9)
 

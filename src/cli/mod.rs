@@ -993,7 +993,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
     // rather than inside each verb means a read cannot acquire a write's
     // prerequisites by being called from the wrong place.
     if is_read_only(&cli.command) {
-        let ws = Workspace::open_read_only(&cwd).await?;
+        let mut ws = Workspace::open_read_only(&cwd).await?;
         // `adopt` is the one command routed here that WRITES afterwards
         // (REQ-9): switching the workspace's identity orphans every role
         // declaration authored by the old one, so the set is carried across.
@@ -1011,7 +1011,7 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             );
             return Ok(());
         }
-        return run_read(cli.command, &ws);
+        return run_read(cli.command, &mut ws).await;
     }
 
     let mut ws = Workspace::open(&cwd).await?;
@@ -1574,7 +1574,7 @@ fn is_read_only(command: &Command) -> bool {
 }
 
 /// The read verbs, against a workspace opened without an identity.
-fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
+async fn run_read(command: Command, ws: &mut Workspace) -> Result<(), Error> {
     match command {
         Command::Identity { action } => match action {
             IdentityAction::Adopt { key } => print!(
@@ -1603,6 +1603,11 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
         } => {
             let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
             let empty_reason = empty_reason.as_deref();
+            let system = crate::identity::system::SystemIdentityStore::at(
+                crate::identity::system::SystemIdentityStore::platform_config_root()?,
+            );
+            let projection = ws.mixed_projection_with_system(&system, &trust).await?;
+            let mixed = crate::mixed_render::is_needed(&projection);
             match (
                 all,
                 subject,
@@ -1618,16 +1623,34 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
                     )
                     .into())
                 }
-                (true, _, _) => print!("{}", actions::show_all_json(ws, &trust, empty_reason)?),
+                (true, _, _) => print!(
+                    "{}",
+                    if mixed {
+                        crate::mixed_render::show_all_json(ws, &projection, &trust, empty_reason)?
+                    } else {
+                        actions::show_all_json(ws, &trust, empty_reason)?
+                    }
+                ),
                 (false, _, false) => print!(
                     "{}",
-                    actions::show_selected_json(
-                        ws,
-                        &selected_subjects,
-                        &prefixes,
-                        &trust,
-                        empty_reason,
-                    )?
+                    if mixed {
+                        crate::mixed_render::show_selected_json(
+                            ws,
+                            &projection,
+                            &selected_subjects,
+                            &prefixes,
+                            &trust,
+                            empty_reason,
+                        )?
+                    } else {
+                        actions::show_selected_json(
+                            ws,
+                            &selected_subjects,
+                            &prefixes,
+                            &trust,
+                            empty_reason,
+                        )?
+                    }
                 ),
                 (false, None, true) => {
                     return Err(actions::Error::Usage(
@@ -1639,7 +1662,17 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
                 }
                 (false, Some(subject), true) => print!(
                     "{}",
-                    if json {
+                    if mixed && json {
+                        crate::mixed_render::show_json(
+                            ws,
+                            &projection,
+                            &subject,
+                            &trust,
+                            empty_reason,
+                        )?
+                    } else if mixed {
+                        crate::mixed_render::show(ws, &projection, &subject, &trust, empty_reason)?
+                    } else if json {
                         actions::show_json(ws, &subject, &trust, empty_reason)?
                     } else {
                         actions::show(ws, &subject, &trust, empty_reason)?
@@ -1653,9 +1686,30 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
             trust,
         } => {
             let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
+            let system = crate::identity::system::SystemIdentityStore::at(
+                crate::identity::system::SystemIdentityStore::platform_config_root()?,
+            );
+            let projection = ws.mixed_projection_with_system(&system, &trust).await?;
+            let mixed = crate::mixed_render::is_needed(&projection);
             print!(
                 "{}",
-                if json {
+                if mixed && json {
+                    crate::mixed_render::status_json(
+                        ws,
+                        &projection,
+                        subject.as_deref(),
+                        &trust,
+                        empty_reason.as_deref(),
+                    )?
+                } else if mixed {
+                    crate::mixed_render::status(
+                        ws,
+                        &projection,
+                        subject.as_deref(),
+                        &trust,
+                        empty_reason.as_deref(),
+                    )
+                } else if json {
                     actions::status_json(ws, subject.as_deref(), &trust, empty_reason.as_deref())?
                 } else {
                     actions::status(ws, subject.as_deref(), &trust, empty_reason.as_deref())?
@@ -1664,9 +1718,23 @@ fn run_read(command: Command, ws: &Workspace) -> Result<(), Error> {
         }
         Command::Issues { json, trust } => {
             let (trust, empty_reason) = ws.trust_from_detailed(&trust)?;
+            let system = crate::identity::system::SystemIdentityStore::at(
+                crate::identity::system::SystemIdentityStore::platform_config_root()?,
+            );
+            let projection = ws.mixed_projection_with_system(&system, &trust).await?;
+            let mixed = crate::mixed_render::is_needed(&projection);
             print!(
                 "{}",
-                if json {
+                if mixed && json {
+                    crate::mixed_render::issues_json(
+                        ws,
+                        &projection,
+                        &trust,
+                        empty_reason.as_deref(),
+                    )?
+                } else if mixed {
+                    crate::mixed_render::issues(ws, &projection, &trust, empty_reason.as_deref())
+                } else if json {
                     actions::issues_json(ws, &trust, empty_reason.as_deref())?
                 } else {
                     actions::issues(ws, &trust, empty_reason.as_deref())?

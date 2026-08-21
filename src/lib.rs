@@ -15,6 +15,7 @@ pub mod git;
 pub mod identity;
 pub mod json;
 pub mod mcp;
+pub mod mixed_render;
 pub mod mst;
 pub mod persistence;
 pub mod relations;

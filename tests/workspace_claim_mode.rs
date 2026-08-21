@@ -1,5 +1,5 @@
 use kan::{
-    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, SubjectRef},
+    claim::v1::{Anchor, AuthorId, ClaimBody, ClaimContent, StatusValue, SubjectRef},
     identity::{
         enrollment::DailyDeviceEnrollment,
         scope_inception::ScopeInception,
@@ -325,6 +325,14 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     .await
     .unwrap();
     let cid = result.narrative.cid;
+    kan::actions::mark(
+        &mut workspace,
+        "identity/production-writer",
+        StatusValue::Open,
+        None,
+    )
+    .await
+    .unwrap();
     assert!(workspace
         .index
         .claim_views_built_from_root()
@@ -338,7 +346,7 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
             },)
             .unwrap()
             .len(),
-        2
+        3
     );
     let decoded = workspace
         .log
@@ -358,11 +366,12 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     let mut reader = Workspace::open_read_only_with_system(&root, &system)
         .await
         .unwrap();
+    let trust = reader.local_trust().unwrap();
     let projection = reader
-        .mixed_local_projection_with_system(&system)
+        .mixed_projection_with_system(&system, &trust)
         .await
         .unwrap();
-    assert_eq!(projection.claims().len(), 2);
+    assert_eq!(projection.claims().len(), 3);
     assert_eq!(projection.identity_resolutions().len(), 1);
     assert_eq!(
         projection.legacy_scope(),
@@ -382,6 +391,70 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
         kan::identity::ScopeAdmission::Admitted
     );
     assert_eq!(projection.fold().classes.len(), 2);
+    assert!(kan::mixed_render::is_needed(&projection));
+
+    let human = kan::mixed_render::show(
+        &reader,
+        &projection,
+        "identity/production-writer",
+        &trust,
+        None,
+    )
+    .unwrap();
+    assert!(human.contains("current append"), "{human}");
+    assert!(human.contains("kan-claim-v2"), "{human}");
+
+    let shown: serde_json::Value = serde_json::from_str(
+        &kan::mixed_render::show_json(
+            &reader,
+            &projection,
+            "identity/production-writer",
+            &trust,
+            None,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(shown["claims"].as_array().unwrap().len(), 2);
+    assert!(shown["claims"].as_array().unwrap().iter().all(|claim| {
+        claim["codec"] == "kan-claim-v2"
+            && claim["scope"] == inception.scope_id().unwrap().to_string()
+    }));
+    assert!(shown["trust"]["authors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|author| author["did"] == actor.principal()));
+
+    let status = kan::mixed_render::status_json(
+        &reader,
+        &projection,
+        Some("identity/production-writer"),
+        &trust,
+        None,
+    )
+    .unwrap();
+    let status: serde_json::Value = serde_json::from_str(&status).unwrap();
+    assert_eq!(status["subjects"][0]["state"], "Settled");
+    assert_eq!(status["subjects"][0]["value"], "Open");
+
+    let issues = kan::mixed_render::issues(&reader, &projection, &trust, None);
+    assert!(issues.contains("identity/production-writer: Settled(Open)"));
+
+    let cli = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+        .args(["show", "identity/production-writer", "--json"])
+        .env("KAN_CONFIG_DIR", &config)
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(
+        cli.status.success(),
+        "{}",
+        String::from_utf8_lossy(&cli.stderr)
+    );
+    let cli: serde_json::Value = serde_json::from_slice(&cli.stdout).unwrap();
+    assert_eq!(cli["claims"].as_array().unwrap().len(), 2);
+    assert_eq!(cli["claims"][0]["codec"], "kan-claim-v2");
 }
 
 #[tokio::test]

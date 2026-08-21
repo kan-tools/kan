@@ -184,6 +184,7 @@ pub struct MixedWorkspaceProjection {
     claims: Vec<crate::claim::view::ClaimView>,
     legacy_scope: Option<crate::identity::scope_inception::ScopeId>,
     identity_resolutions: Vec<crate::identity::did_kan_update::DidKanResolution>,
+    trust: crate::claim::view::ClaimTrustBase,
 }
 
 impl MixedWorkspaceProjection {
@@ -197,6 +198,10 @@ impl MixedWorkspaceProjection {
 
     pub fn legacy_scope(&self) -> Option<crate::identity::scope_inception::ScopeId> {
         self.legacy_scope
+    }
+
+    pub fn trust(&self) -> &crate::claim::view::ClaimTrustBase {
+        &self.trust
     }
 
     pub fn fold(&self) -> crate::fold::claim_view::FoldedView {
@@ -577,6 +582,26 @@ impl Workspace {
         &mut self,
         system: &SystemIdentityStore,
     ) -> Result<MixedWorkspaceProjection, Error> {
+        self.mixed_projection_with_system_frame(system, None).await
+    }
+
+    /// Resolve the mixed-codec view under a released CLI trust frame. A DID
+    /// selected by that frame admits both its exact v1 composite authorship
+    /// and the current principal of the same spelling.
+    pub async fn mixed_projection_with_system(
+        &mut self,
+        system: &SystemIdentityStore,
+        trust: &crate::fold::TrustBase,
+    ) -> Result<MixedWorkspaceProjection, Error> {
+        self.mixed_projection_with_system_frame(system, Some(trust))
+            .await
+    }
+
+    async fn mixed_projection_with_system_frame(
+        &mut self,
+        system: &SystemIdentityStore,
+        selected_trust: Option<&crate::fold::TrustBase>,
+    ) -> Result<MixedWorkspaceProjection, Error> {
         use crate::{
             claim::{
                 codec::{DecodedClaim, DecodedRecord, SupportedClaim, VerificationContext},
@@ -612,7 +637,15 @@ impl Workspace {
                 ),
                 DecodedClaim::Unsupported(_) => None,
             });
-        let trust = ClaimTrustBase::local(local_authors);
+        // The released `Local` frame is derived from v1 rows and therefore
+        // cannot name current principals. Preserve its actual meaning — all
+        // authors in this authoritative log — at the mixed boundary. An
+        // explicit Solo/PeerContested frame remains exactly selected.
+        let trust = match selected_trust {
+            None => ClaimTrustBase::local(local_authors),
+            Some(selected) if selected.name() == "Local" => ClaimTrustBase::local(local_authors),
+            Some(selected) => ClaimTrustBase::from_v1(selected),
+        };
 
         let mut seen = std::collections::HashSet::new();
         let mut records = Vec::new();
@@ -695,6 +728,7 @@ impl Workspace {
             claims,
             legacy_scope,
             identity_resolutions,
+            trust,
         })
     }
 
