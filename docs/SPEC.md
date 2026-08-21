@@ -355,7 +355,10 @@ coexist in the `tools.kan.claim` collection without rewriting either signed
 representation. Writing a current claim additionally requires a verified
 scope-activation token derived by checking the installed inception proof
 against its exact identity state; stored inception bytes alone cannot
-authorize a write. Until the current `ClaimView` fold is installed, the
+authorize a write. `ClaimView` is a source-preserving union of v1, current,
+and unsupported claims with cryptographic validity, identity standing, scope
+admission, and view trust kept separate. It never fabricates one signed source
+shape from another. Until the production fold consumes that view, the
 compatibility fold reads only v1 and explicitly skips current and preserved
 unsupported records. Kan authorship and ATProto repository approval are
 separate signatures by separate principals. The claim's `Author` and exact

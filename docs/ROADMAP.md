@@ -94,13 +94,15 @@ preserves an unknown codec plus unknown arm byte-exactly, and retains v1's
 raw-CID signature rule. Mixed-codec storage now keeps v1 and current records
 in the same `tools.kan.claim` collection without rewriting historical blocks.
 A typed mixed reader makes supported-current, supported-v1, and preserved
-unsupported records an explicit branch; the compatibility fold sees only v1
-until `ClaimView` lands. Current append is gated by an opaque `VerifiedScope`
+unsupported records an explicit branch. `ClaimView` now preserves those three
+source shapes, keeps v1 and scoped-current subjects distinct, and carries all
+four RFC 1 judgments without fabricating compatibility claims. The production
+fold still sees only v1 until it consumes that view. Current append is gated by an opaque `VerifiedScope`
 token that can only be constructed by rechecking the stored inception proof
 against its exact controller state, and the claim's cryptographic scope must
 match that token. The production workspace still defaults to v1: selecting
 the system actor in `Workspace`, compiling actions into current claim types,
-and cutting reads over to `ClaimView` are the next activation slice. The
+and cutting the index and fold over to `ClaimView` are the next activation slice. The
 underlying signing seams are now deliberately separate: a closed resolved
 system-actor value keeps the kan author profile, exact identity state, method,
 and credential provider together, while an explicit repository-transport

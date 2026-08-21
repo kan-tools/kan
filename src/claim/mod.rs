@@ -9,6 +9,7 @@ use crate::identity::{authorship::Author, scope_inception::ScopeId};
 
 pub mod codec;
 pub mod v1;
+pub mod view;
 
 pub const CODEC: &str = "kan-claim-v2";
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
@@ -900,6 +901,10 @@ impl ClaimContent {
 
     pub fn subject(&self) -> &SubjectPath {
         &self.subject
+    }
+
+    pub fn body(&self) -> &ClaimBody {
+        &self.body
     }
 
     pub fn recorded_at(&self) -> RecordedAt {
