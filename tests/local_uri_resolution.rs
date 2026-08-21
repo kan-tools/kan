@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, path::Path};
 use kan::{
     claim::view::ClaimSource,
     identity::{
+        control::ControlEvent,
         enrollment::DailyDeviceEnrollment,
         scope_inception::ScopeInception,
         scope_store::ScopeIdentityStore,
@@ -183,7 +184,9 @@ async fn named_direct_claim_subject_and_identity_routes_share_one_snapshot() {
     assert!(matches!(
         direct_scope.resource,
         ResolvedResource::ScopeIdentity(ref identity)
-            if identity.identifier == scope && identity.governance.len() == 1
+            if identity.identifier == scope
+                && identity.standing == kan::uri::local::ScopeIdentityStanding::Active
+                && identity.governance.len() == 1
     ));
 
     let principal = resolver
@@ -247,6 +250,70 @@ async fn resolution_is_byte_read_only_even_when_the_disposable_index_is_absent()
         .unwrap();
     assert_eq!(tree_bytes(root.parent().unwrap()), before);
     assert!(!root.join(".kan/index.sqlite").exists());
+}
+
+#[tokio::test]
+async fn linked_worktree_ownership_is_refused_until_issue_197_is_settled() {
+    let (_temp, root, config, _actor, _claim) = current_workspace().await;
+    let worktree = root.parent().unwrap().join("linked-worktree");
+    git(
+        &root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "uri-linked-worktree",
+            worktree.to_str().unwrap(),
+        ],
+    );
+    let before = tree_bytes(root.parent().unwrap());
+    let system = SystemIdentityStore::at(&config);
+    let resolver = LocalResolver::new(&worktree, &system);
+    let error = resolver
+        .resolve_uri("kan://local/kan-tools:kan/subject/design/local-uri")
+        .await
+        .unwrap_err();
+    assert_eq!(error.code(), "unsupported");
+    assert!(error.to_string().contains("workspace ownership"));
+    assert_eq!(tree_bytes(root.parent().unwrap()), before);
+}
+
+#[tokio::test]
+async fn scope_identity_preserves_invalid_governance_instead_of_hiding_the_scope() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("workspace");
+    let config = temp.path().join("config");
+    init_git(&root);
+    let actor = installed_actor(&config);
+    let inception = ScopeInception::new(
+        [0xb4; 32],
+        vec!["invalid:governance".to_string()],
+        vec![actor.principal().to_string()],
+        vec![],
+    )
+    .unwrap();
+    let input = inception.signing_input().unwrap();
+    let system = SystemIdentityStore::at(&config);
+    let mut invalid_proof = system
+        .sign(actor.profile(), actor.method(), &input)
+        .unwrap();
+    invalid_proof.sig[0] ^= 1;
+    let unproved = ControlEvent::new(input, vec![invalid_proof]).unwrap();
+    ScopeIdentityStore::at(root.join(".kan/scope"))
+        .install(&unproved)
+        .unwrap();
+
+    let resolver = LocalResolver::new(&root, &system);
+    let result = resolver
+        .resolve_uri("kan://local/invalid:governance/identity/scope")
+        .await
+        .unwrap();
+    assert!(matches!(
+        result.resource,
+        ResolvedResource::ScopeIdentity(ref identity)
+            if identity.standing == kan::uri::local::ScopeIdentityStanding::Invalid
+    ));
 }
 
 #[tokio::test]

@@ -13,7 +13,7 @@ use crate::{
     fold::claim_view::SubjectView,
     identity::{
         control::IdentityVersion,
-        did_kan_update::DidKanResolution,
+        did_kan_update::{DidKanResolution, NonActiveIdentityStanding},
         ledger::IdentityLedger,
         scope_inception::ScopeId,
         scope_store::{InstalledScope, ScopeIdentityStore},
@@ -63,6 +63,14 @@ impl<'a> LocalResolver<'a> {
             return Err(Error::AuthorityIdentityUnknown);
         }
         validate_local_source(request.evidence())?;
+        let discovered_root = crate::workspace::find_repo_root(self.cwd);
+        if discovered_root.join(".git").is_file() {
+            // A linked worktree or submodule has an indirect Git directory.
+            // Until #197 defines whether `.kan` follows the common repository
+            // or the checkout, selecting either would silently choose an
+            // ownership model. Explicit URI resolution refuses that guess.
+            return Err(Error::IndirectGitDirectoryUnsupported);
+        }
         let Some(selector) = request.scope() else {
             return Err(Error::ScopeNotFound);
         };
@@ -72,12 +80,15 @@ impl<'a> LocalResolver<'a> {
         let projection = self.project(&mut workspace, request).await?;
         let scope_store = ScopeIdentityStore::at(workspace.root.join(".kan").join("scope"));
         let installed = scope_store.read()?.ok_or(Error::ScopeNotFound)?;
-        let verified = projection.legacy_scope().ok_or(Error::Invalid)?;
-        if installed.scope != verified {
-            return Err(Error::Invalid);
+        let selected_scope = installed.scope;
+        if projection
+            .legacy_scope()
+            .is_some_and(|verified| verified != selected_scope)
+        {
+            return Err(Error::ScopeIdentifierMismatch);
         }
         match selector {
-            ScopeSelector::Direct(requested) if *requested != verified => {
+            ScopeSelector::Direct(requested) if *requested != selected_scope => {
                 return Err(Error::ScopeIdentifierMismatch);
             }
             ScopeSelector::Named(locator)
@@ -94,13 +105,14 @@ impl<'a> LocalResolver<'a> {
 
         let snapshot = snapshot(Some(&workspace), self.system, Some(&installed))?;
         require_snapshot(request.evidence(), &snapshot)?;
-        let resource = resolve_scoped_resource(request, &projection, verified, installed.clone())?;
+        let resource =
+            resolve_scoped_resource(request, &projection, selected_scope, installed.clone())?;
         Ok(result(
             request,
-            Some(verified),
+            Some(selected_scope),
             snapshot,
             "local-kan",
-            verified.to_string(),
+            selected_scope.to_string(),
             resource,
         ))
     }
@@ -224,7 +236,31 @@ pub struct SubjectResult {
 pub struct ScopeIdentityResult {
     pub identifier: ScopeId,
     pub installed: InstalledScope,
-    pub governance: Vec<PrincipalIdentityResult>,
+    pub standing: ScopeIdentityStanding,
+    pub governance: Vec<GovernancePrincipalResult>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeIdentityStanding {
+    Active,
+    Contested,
+    Unknown,
+    Unsupported,
+    Invalid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GovernancePrincipalResult {
+    pub principal: String,
+    pub resolution: GovernancePrincipalResolution,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GovernancePrincipalResolution {
+    Resolved(PrincipalResolution),
+    UnsupportedDidMethod,
+    UnknownHistory,
+    Invalid,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -262,22 +298,35 @@ fn resolve_scoped_resource(
                 .governance_roots
                 .iter()
                 .map(|root| {
-                    let principal = parse_principal(root)?;
-                    let resolution = resolve_principal(
-                        &principal,
-                        None,
-                        projection.identity_resolutions(),
-                        &installed.inception.governance_roots,
-                    )?;
-                    Ok(PrincipalIdentityResult {
-                        principal,
+                    let resolution = match parse_principal(root) {
+                        Ok(principal) => match resolve_principal(
+                            &principal,
+                            None,
+                            projection.identity_resolutions(),
+                            &installed.inception.governance_roots,
+                        ) {
+                            Ok(resolution) => GovernancePrincipalResolution::Resolved(resolution),
+                            Err(Error::UnsupportedDidMethod) => {
+                                GovernancePrincipalResolution::UnsupportedDidMethod
+                            }
+                            Err(Error::UnknownHistory) => {
+                                GovernancePrincipalResolution::UnknownHistory
+                            }
+                            Err(_) => GovernancePrincipalResolution::Invalid,
+                        },
+                        Err(_) => GovernancePrincipalResolution::Invalid,
+                    };
+                    GovernancePrincipalResult {
+                        principal: root.clone(),
                         resolution,
-                    })
+                    }
                 })
-                .collect::<Result<Vec<_>, Error>>()?;
+                .collect::<Vec<_>>();
+            let standing = scope_identity_standing(&installed, projection.identity_resolutions());
             Ok(ResolvedResource::ScopeIdentity(ScopeIdentityResult {
                 identifier: scope,
                 installed,
+                standing,
                 governance,
             }))
         }
@@ -297,6 +346,63 @@ fn resolve_scoped_resource(
         }
         Resource::AuthorityIdentity => Err(Error::AuthorityIdentityUnknown),
     }
+}
+
+fn scope_identity_standing(
+    installed: &InstalledScope,
+    resolutions: &[DidKanResolution],
+) -> ScopeIdentityStanding {
+    let mut standing = ScopeIdentityStanding::Unknown;
+    for root in &installed.inception.governance_roots {
+        if root.starts_with("did:key:") {
+            match installed
+                .inception
+                .proved_event(installed.event.proofs.clone())
+            {
+                Ok(event) if event == installed.event => return ScopeIdentityStanding::Active,
+                Ok(_) | Err(_) => standing = ScopeIdentityStanding::Invalid,
+            }
+            continue;
+        }
+        if !root.starts_with("did:kan:") {
+            if standing != ScopeIdentityStanding::Invalid {
+                standing = ScopeIdentityStanding::Unsupported;
+            }
+            continue;
+        }
+        let resolution = resolutions.iter().find(|resolution| match resolution {
+            DidKanResolution::Active(state) => state.did == *root,
+            DidKanResolution::NonActive(state) => state.did.as_deref() == Some(root.as_str()),
+        });
+        match resolution {
+            Some(DidKanResolution::Active(state)) => match installed
+                .inception
+                .proved_event_with_did_kan_state(state, installed.event.proofs.clone())
+            {
+                Ok(event) if event == installed.event => return ScopeIdentityStanding::Active,
+                Ok(_) | Err(_) => standing = ScopeIdentityStanding::Invalid,
+            },
+            Some(DidKanResolution::NonActive(state)) => match state.standing {
+                NonActiveIdentityStanding::Contested => standing = ScopeIdentityStanding::Contested,
+                NonActiveIdentityStanding::Invalid => {
+                    if standing != ScopeIdentityStanding::Contested {
+                        standing = ScopeIdentityStanding::Invalid;
+                    }
+                }
+                NonActiveIdentityStanding::Unsupported => {
+                    if !matches!(
+                        standing,
+                        ScopeIdentityStanding::Contested | ScopeIdentityStanding::Invalid
+                    ) {
+                        standing = ScopeIdentityStanding::Unsupported;
+                    }
+                }
+                NonActiveIdentityStanding::UnknownHistory => {}
+            },
+            None => {}
+        }
+    }
+    standing
 }
 
 fn resolve_subject(
@@ -553,6 +659,8 @@ pub enum Error {
     UnknownHistory,
     #[error("unsupported")]
     Unsupported,
+    #[error("indirect Git directory workspace ownership is not defined")]
+    IndirectGitDirectoryUnsupported,
     #[error("invalid")]
     Invalid,
     #[error(transparent)]
@@ -584,6 +692,7 @@ impl Error {
             Self::UnsupportedDidMethod => "unsupported-did-method",
             Self::UnknownHistory => "unknown-history",
             Self::Unsupported => "unsupported",
+            Self::IndirectGitDirectoryUnsupported => "unsupported",
             Self::Invalid => "invalid",
             Self::Workspace(_)
             | Self::Scope(_)

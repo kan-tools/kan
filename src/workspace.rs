@@ -734,14 +734,32 @@ impl Workspace {
                         .any(|root| root == &state.did)
                 });
                 match matching {
-                    Some(state) => scope_store.read_verified_did_kan(state)?,
+                    Some(state) => match scope_store.read_verified_did_kan(state) {
+                        Ok(verified) => verified,
+                        Err(
+                            crate::identity::scope_store::Error::Inception(
+                                crate::identity::scope_inception::Error::NoGovernanceProof,
+                            )
+                            | crate::identity::scope_store::Error::InceptionProofMismatch,
+                        ) => None,
+                        Err(error) => return Err(error.into()),
+                    },
                     None if installed
                         .inception
                         .governance_roots
                         .iter()
                         .any(|root| root.starts_with("did:key:")) =>
                     {
-                        scope_store.read_verified_static()?
+                        match scope_store.read_verified_static() {
+                            Ok(verified) => verified,
+                            Err(
+                                crate::identity::scope_store::Error::Inception(
+                                    crate::identity::scope_inception::Error::NoGovernanceProof,
+                                )
+                                | crate::identity::scope_store::Error::InceptionProofMismatch,
+                            ) => None,
+                            Err(error) => return Err(error.into()),
+                        }
                     }
                     None => None,
                 }
