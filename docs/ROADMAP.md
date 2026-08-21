@@ -33,6 +33,13 @@ governed scope, admission, or URI semantics.
 | 3 — Hosted kan | Next | A Railway-deployable kan-native authority resolves the same typed resources while keeping authenticated ingest separate | [identity-first roadmap](../.design/identity-first-uri-native-roadmap.md) |
 | 4 — ATProto | Deferred behind 1–3 | RFC 3 codecs, publication, and AppView adapt the proven identity and URI model | [RFC 3](../rfcs/3-authoritative-lexicon-publication.md) |
 
+Milestone 2 has shipped its parser/canonicalizer checkpoint (#250) and its
+first production local-resolver checkpoint (#253). Explicit local resolution
+uses an in-memory disposable projection, preserves source provenance and all
+four RFC 1 claim judgments, and returns an immutable replay URI without
+touching authoritative or derived workspace bytes. The active slice is #251:
+compile the existing CLI and MCP reads through that request/result boundary.
+
 Milestone 1 began in commit `4ad239a` and completed in merge commit `78bbc10`.
 The following record describes the shipped boundary. The first slice was deliberately
 compatibility-only: `src/identity.rs` defines RFC 1's cryptographic validity,

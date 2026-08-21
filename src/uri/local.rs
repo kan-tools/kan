@@ -87,20 +87,12 @@ impl<'a> LocalResolver<'a> {
         {
             return Err(Error::ScopeIdentifierMismatch);
         }
-        match selector {
-            ScopeSelector::Direct(requested) if *requested != selected_scope => {
-                return Err(Error::ScopeIdentifierMismatch);
-            }
-            ScopeSelector::Named(locator)
-                if !installed
-                    .inception
-                    .names
-                    .iter()
-                    .any(|name| name == locator.as_str()) =>
-            {
-                return Err(Error::ScopeNotFound);
-            }
-            ScopeSelector::Direct(_) | ScopeSelector::Named(_) => {}
+        let bindings = [ScopeBinding {
+            scope: selected_scope,
+            names: &installed.inception.names,
+        }];
+        if select_scope(selector, &bindings)? != selected_scope {
+            return Err(Error::ScopeIdentifierMismatch);
         }
 
         let snapshot = snapshot(Some(&workspace), self.system, Some(&installed))?;
@@ -165,6 +157,40 @@ impl<'a> LocalResolver<'a> {
                 Ok(workspace
                     .mixed_projection_with_system(self.system, &frame)
                     .await?)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ScopeBinding<'a> {
+    scope: ScopeId,
+    names: &'a [String],
+}
+
+fn select_scope(selector: &ScopeSelector, bindings: &[ScopeBinding<'_>]) -> Result<ScopeId, Error> {
+    match selector {
+        ScopeSelector::Direct(requested) => bindings
+            .iter()
+            .find(|binding| binding.scope == *requested)
+            .map(|binding| binding.scope)
+            .ok_or_else(|| {
+                if bindings.is_empty() {
+                    Error::ScopeNotFound
+                } else {
+                    Error::ScopeIdentifierMismatch
+                }
+            }),
+        ScopeSelector::Named(locator) => {
+            let matches = bindings
+                .iter()
+                .filter(|binding| binding.names.iter().any(|name| name == locator.as_str()))
+                .map(|binding| binding.scope)
+                .collect::<std::collections::BTreeSet<_>>();
+            match matches.len() {
+                0 => Err(Error::ScopeNotFound),
+                1 => Ok(*matches.first().expect("one matching scope")),
+                _ => Err(Error::AmbiguousScopeLocator),
             }
         }
     }
@@ -701,5 +727,67 @@ impl Error {
             | Self::Control(_)
             | Self::Cid(_) => "invalid",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::identity::scope_inception::ScopeInception;
+
+    fn scope(nonce: u8, name: &str) -> ScopeId {
+        ScopeInception::new(
+            [nonce; 32],
+            vec![name.to_string()],
+            vec!["did:key:zDnaenWDM6qp5Ra829d9wPUzBKBA3V6fm2cg4KVP3WFKqsYTv".to_string()],
+            vec![],
+        )
+        .unwrap()
+        .scope_id()
+        .unwrap()
+    }
+
+    #[test]
+    fn exact_locator_selection_distinguishes_missing_ambiguous_and_direct_mismatch() {
+        let first = scope(0xc1, "shared:scope");
+        let second = scope(0xc2, "shared:scope");
+        let first_names = vec!["shared:scope".to_string()];
+        let second_names = vec!["shared:scope".to_string()];
+        let bindings = [
+            ScopeBinding {
+                scope: first,
+                names: &first_names,
+            },
+            ScopeBinding {
+                scope: second,
+                names: &second_names,
+            },
+        ];
+
+        let ambiguous = ResolutionRequest::parse("kan://local/shared:scope/subject/x").unwrap();
+        assert_eq!(
+            select_scope(ambiguous.scope().unwrap(), &bindings)
+                .unwrap_err()
+                .code(),
+            "ambiguous-scope-locator"
+        );
+
+        let missing = ResolutionRequest::parse("kan://local/missing:scope/subject/x").unwrap();
+        assert_eq!(
+            select_scope(missing.scope().unwrap(), &bindings)
+                .unwrap_err()
+                .code(),
+            "scope-not-found"
+        );
+
+        let other = scope(0xc3, "other:scope");
+        let direct =
+            ResolutionRequest::parse(&format!("kan://local/@id:{other}/subject/x")).unwrap();
+        assert_eq!(
+            select_scope(direct.scope().unwrap(), &bindings)
+                .unwrap_err()
+                .code(),
+            "scope-identifier-mismatch"
+        );
     }
 }

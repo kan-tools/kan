@@ -1094,8 +1094,13 @@ placeholder.
 Draft schemas, local claim-collection migration, and an
 implementation-independent executable reference harness are implemented. The
 production Rust request types, strict parser, and access-free syntactic
-canonicalizer now execute every checked parse vector; local resolution,
-CLI/MCP routing, PDS, and AppView remain.
+canonicalizer execute every checked parse vector. Production `kan://local`
+resolution now selects exact named or direct scopes, returns typed claim,
+subject, scope-identity, and principal results, preserves separate RFC 1 claim
+judgments, emits immutable replay URIs, and recomputes disposable projections
+in memory so explicit resolution changes no filesystem bytes. Linked Git
+worktrees fail explicitly pending issue #197's workspace-ownership decision.
+CLI/MCP routing, hosted kan, PDS, and AppView remain.
 The governing design is `.design/rfc-2-kan-uri-scheme.md`. The five
 `.design/rfc-2-lexicons/*.json` files parse with the independent Go ATProto
 toolchain and fix the record/XRPC contract. The finite conformance manifest has
