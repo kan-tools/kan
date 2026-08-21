@@ -106,6 +106,12 @@ system-actor value keeps the kan author profile, exact identity state, method,
 and credential provider together, while an explicit repository-transport
 signer approves ATProto commits without acquiring kan authorship or scope
 authority. Existing reachable commits must retain one transport DID.
+The local side now has a typed durable home for that second principal:
+`.kan/transport/identity` is an owner-only, create-new transport credential
+whose wrapper exposes only an ATProto repository signer. It cannot be passed
+as a kan author, read access creates nothing, and concurrent first writers
+converge without overwriting a winner. Production current-claim wiring can now
+resolve the kan actor and repository transport actor independently.
 Workspace write-policy classification is now also explicit and read-only:
 absence is `Uninitialized`, verified historical evidence is `V1`, a scope
 whose inception proof verifies against the supplied exact actor state is

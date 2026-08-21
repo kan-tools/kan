@@ -42,6 +42,10 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
         "atomic-scope-inception-install",
         "tests/scope_identity_store.rs",
     ),
+    (
+        "repository-transport-identity",
+        "tests/repository_transport_identity.rs",
+    ),
     ("identity-precedence", "tests/identity_cells.rs"),
     ("role-key", "tests/role_registry_invariants.rs"),
     ("legacy-role-config", "tests/role_declarations.rs"),
@@ -198,6 +202,11 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
         "identity-profiles:.tmp-*",
     ),
     (
+        "src/identity/transport.rs",
+        "\"identity\"",
+        "repository-transport:identity",
+    ),
+    (
         "src/identity/ledger.rs",
         "format!(\"{proved}.cbor\")",
         "identity-ledger:events/*.cbor",
@@ -312,6 +321,7 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/identity/ledger.rs",
     "src/identity/scope_store.rs",
     "src/identity/system.rs",
+    "src/identity/transport.rs",
     "src/sign.rs",
     "src/store/index.rs",
     "src/store/log.rs",
@@ -402,7 +412,19 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
     (
         "src/sign.rs",
         "write_new_owner_only",
+        "RepositoryTransportIdentity",
+        1,
+    ),
+    (
+        "src/sign.rs",
+        "write_new_owner_only",
         "SystemCredentials",
+        1,
+    ),
+    (
+        "src/identity/transport.rs",
+        "create_dir_all",
+        "RepositoryTransportIdentity",
         1,
     ),
     ("src/store/index.rs", "create_dir_all", "Sqlite", 1),
@@ -532,6 +554,7 @@ fn implemented_values() -> BTreeSet<(String, String)> {
         .chain(kan::identity::ledger::SURFACE_VALUES)
         .chain(kan::identity::scope_store::SURFACE_VALUES)
         .chain(kan::identity::system::SURFACE_VALUES)
+        .chain(kan::identity::transport::SURFACE_VALUES)
         .map(|SurfaceValue { artifact, value }| ((*artifact).into(), (*value).into()));
     declared.chain(sqlite_values()).collect()
 }
@@ -577,6 +600,7 @@ fn catalog_is_well_formed_and_cites_real_designs() {
                 "identity-ledger",
                 "identity-profiles",
                 "scope-identity",
+                "repository-transport",
                 "external-git",
                 "overlay",
                 "sqlite-index"
@@ -1016,7 +1040,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "179aef6c7d23ea9a80f35c6e0b89541939e8be1936b341fa51bfd0b50fc69ddb",
+                "3b694ec7ccaae4bb74d2778d1e578afb59716766d5fded72c9be009f5e5a68e1",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

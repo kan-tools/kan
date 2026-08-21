@@ -315,6 +315,19 @@ impl Identity {
         Ok(())
     }
 
+    /// Install a new workspace-local ATProto repository credential. This key
+    /// approves local repository transitions only; the typed identity layer
+    /// never exposes it as a kan claim author.
+    pub(crate) fn save_repository_transport_new(&self, path: &Path) -> Result<(), Error> {
+        // surface-write: repository-transport:identity
+        crate::persistence::write_new_owner_only(
+            crate::persistence::SurfaceWrite::RepositoryTransportIdentity,
+            path,
+            &self.keypair.export(),
+        )?;
+        Ok(())
+    }
+
     /// Write this key to `path` at `0600`, creating its parent if needed.
     ///
     /// The `create_dir_all` matches [`Seed::save`] and is not new behaviour

@@ -367,6 +367,11 @@ principals. Rebinding that repository to another transport DID is a refusal,
 not an implicit ownership migration. An ATProto principal may later be
 explicitly admitted as a kan author, but kan authority never implies ATProto
 publication authority.
+The local transport credential lives at `.kan/transport/identity` behind the
+closed `LocalRepositoryTransportIdentity` type. It is created owner-only and
+create-new, remains stable for the local repository, and can be converted only
+to a repository transport signer—not to a kan author. Reading the store is
+side-effect free; creation belongs to an already-authorized write path.
 
 Workspace writer selection has four closed outcomes: `Uninitialized`, `V1`
 with verified historical evidence, `Claim` with a cryptographically verified

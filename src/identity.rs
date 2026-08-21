@@ -22,6 +22,7 @@ pub mod ledger;
 pub mod scope_inception;
 pub mod scope_store;
 pub mod system;
+pub mod transport;
 pub mod workspace_mode;
 
 /// Whether the claim's bytes and exact signing authority authenticate it.
