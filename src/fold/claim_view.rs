@@ -45,6 +45,31 @@ impl FoldedView {
     }
 }
 
+impl SubjectView {
+    pub fn effective_claims(&self) -> Vec<ClaimView> {
+        self.claims
+            .iter()
+            .filter(|claim| participates(claim))
+            .cloned()
+            .collect()
+    }
+}
+
+/// Whether an inspectable claim may exercise scope reach in the fold. V1
+/// retains its released compatibility behavior; current claims require an
+/// affirmative admission result (or an explicitly scope-free operation).
+pub fn participates(claim: &ClaimView) -> bool {
+    match claim.source() {
+        crate::claim::view::ClaimSource::V1(_) => true,
+        crate::claim::view::ClaimSource::Claim(_) => matches!(
+            claim.judgments().scope_admission,
+            crate::identity::ScopeAdmission::Admitted
+                | crate::identity::ScopeAdmission::NotApplicable
+        ),
+        crate::claim::view::ClaimSource::Unsupported(_) => false,
+    }
+}
+
 /// Count otherwise-live claims omitted solely by the selected view-trust
 /// frame. As in the released fold, retracted and trusted-rejected claims are
 /// excluded for their own reasons and are not misreported as trust filtering.
@@ -147,6 +172,9 @@ fn excluded_by_retraction(claims: &[ClaimView]) -> HashSet<Cid> {
     let mut excluded = HashSet::new();
     let mut targeted_by_effective = HashSet::new();
     for claim in ordered {
+        if !participates(claim) {
+            continue;
+        }
         let Some(target) = retraction_target(claim) else {
             continue;
         };
@@ -188,6 +216,7 @@ fn excluded_by_rejection(claims: &[ClaimView], retracted: &HashSet<Cid>) -> Hash
     claims
         .iter()
         .filter(|claim| !retracted.contains(claim.claim_id()))
+        .filter(|claim| participates(claim))
         .filter(|claim| !matches!(claim.judgments().view_trust, ViewTrust::Excluded))
         .filter_map(|claim| match claim.body()? {
             ClaimBodyRef::V1(v1::ClaimBody::Rejects { claim }) => Some(claim.clone()),
@@ -208,6 +237,9 @@ fn merge_classes(
             continue;
         };
         all_subjects.insert(from.clone());
+        if !participates(claim) {
+            continue;
+        }
         let Some(to) = same_as_target(claim, legacy_scope) else {
             continue;
         };

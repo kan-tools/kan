@@ -249,3 +249,57 @@ fn mixed_fold_discloses_claims_omitted_only_by_view_trust() {
     let folded = claim_view::fold(claims, Some(scope()));
     assert_eq!(folded.subject(&subject).unwrap().claims.len(), 1);
 }
+
+#[test]
+fn unadmitted_current_claims_remain_inspectable_without_fold_effects() {
+    let identity = Identity::generate();
+    let status = current_claim(
+        &identity,
+        "guarded/a",
+        ClaimBody::Status {
+            value: kan::claim::StatusValue::Blocked,
+        },
+        1,
+    );
+    let same_as = current_claim(
+        &identity,
+        "guarded/a",
+        ClaimBody::Relation {
+            relation: kan::claim::RelationKind::SameAs,
+            target: kan::claim::ScopedSubjectRef {
+                scope: scope(),
+                subject: SubjectPath::new("guarded/b".to_string()).unwrap(),
+            },
+        },
+        2,
+    );
+    let records = vec![status, same_as]
+        .into_iter()
+        .enumerate()
+        .map(|(index, claim)| DecodedRecord {
+            claim: DecodedClaim::Supported(SupportedClaim::Claim(claim)),
+            rev: format!("222222222222{index}"),
+        })
+        .collect::<Vec<_>>();
+    let author = view::ClaimAuthor::Principal(identity.did());
+    let claims = view::project(records, &view::ClaimTrustBase::local([author]), |_| {
+        view::CurrentEvaluation {
+            identity_state_standing: IdentityStateStanding::Static,
+            scope_admission: ScopeAdmission::Unadmitted,
+        }
+    })
+    .unwrap();
+
+    let folded = claim_view::fold(claims, Some(scope()));
+    assert_eq!(folded.classes.len(), 1, "SameAs must not merge guarded/b");
+    assert_eq!(
+        folded.classes[0].claims.len(),
+        2,
+        "evidence remains visible"
+    );
+    assert!(folded.classes[0].effective_claims().is_empty());
+    assert!(matches!(
+        kan::fold::claim_view_state::classify(&folded.classes[0].effective_claims(), &[]),
+        kan::fold::claim_view_state::StateView::Unclassified
+    ));
+}

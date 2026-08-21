@@ -194,7 +194,7 @@ fn classify(class: &SubjectView) -> StateView {
     // Signed citation edges are codec-independent and handled by the mixed
     // reducer itself. Git-derived ancestry remains a v1-only enrichment; a
     // class that required this adapter therefore cannot safely fabricate it.
-    claim_view_state::classify(&class.claims, &[])
+    claim_view_state::classify(&class.effective_claims(), &[])
 }
 
 fn subject_label(class: &SubjectView) -> String {
@@ -328,6 +328,9 @@ fn inbound<'a>(
             continue;
         }
         for claim in &class.claims {
+            if !claim_view::participates(claim) {
+                continue;
+            }
             if relation_target(claim, legacy_scope).is_some_and(|target| targets.contains(&target))
             {
                 claims.push(claim);
@@ -404,13 +407,19 @@ pub fn show(
                     claim.claim_id(),
                     render_claim(claim)
                 ));
+                if !claim_view::participates(claim) {
+                    out.push_str(
+                        "      (inspectable only — this claim does not participate in fold effects)\n",
+                    );
+                }
                 if matches!(
                     claim.body(),
                     Some(
                         ClaimBodyRef::V1(crate::claim::v1::ClaimBody::Status { .. })
                             | ClaimBodyRef::Claim(ClaimBody::Status { .. })
                     )
-                ) && !live_status.contains(claim.claim_id())
+                ) && claim_view::participates(claim)
+                    && !live_status.contains(claim.claim_id())
                 {
                     out.push_str("      (superseded by a later status on this subject)\n");
                 }
@@ -499,7 +508,8 @@ pub fn status(
 }
 
 fn is_open_issue(class: &SubjectView, state: &StateView) -> bool {
-    let has_status = class.claims.iter().any(|claim| {
+    let effective = class.effective_claims();
+    let has_status = effective.iter().any(|claim| {
         matches!(
             claim.body(),
             Some(
@@ -508,8 +518,7 @@ fn is_open_issue(class: &SubjectView, state: &StateView) -> bool {
             )
         )
     });
-    let declared_issue = class
-        .claims
+    let declared_issue = effective
         .iter()
         .rev()
         .find_map(|claim| match claim.body()? {
@@ -525,7 +534,7 @@ fn is_open_issue(class: &SubjectView, state: &StateView) -> bool {
     if !has_status && !declared_issue {
         return false;
     }
-    let has_resolution = class.claims.iter().any(|claim| {
+    let has_resolution = effective.iter().any(|claim| {
         matches!(
             claim.body(),
             Some(
@@ -988,7 +997,8 @@ fn superseded_statuses(view: &FoldedView) -> std::collections::HashSet<Cid> {
                     ClaimBodyRef::V1(crate::claim::v1::ClaimBody::Status { .. })
                         | ClaimBodyRef::Claim(ClaimBody::Status { .. })
                 )
-            ) && !live.contains(claim.claim_id())
+            ) && claim_view::participates(claim)
+                && !live.contains(claim.claim_id())
             {
                 superseded.insert(claim.claim_id().clone());
             }

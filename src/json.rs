@@ -97,6 +97,10 @@ pub struct ClaimJson {
     /// v1-only renderer path whose schema predates RFC 1.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub judgments: Option<crate::identity::ClaimJudgments>,
+    /// Whether this claim may produce fold effects. Omitted on the unchanged
+    /// v1-only path, where every displayed claim participates.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub participating: Option<bool>,
     /// Microseconds since the Unix epoch, as attested by the author. Absent
     /// on claims written before v0.7.0-beta.1.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -482,6 +486,7 @@ impl ClaimJson {
             codec: None,
             scope: None,
             judgments: None,
+            participating: None,
             recorded_at: claim.content.recorded_at,
             text: body.text().map(str::to_string),
             title: None,
@@ -520,6 +525,7 @@ impl ClaimJson {
                 let mut out = Self::new(claim.claim_id(), source, superseded);
                 out.codec = Some(claim.codec().to_string());
                 out.judgments = Some(claim.judgments());
+                out.participating = Some(crate::fold::claim_view::participates(claim));
                 out
             }
             ClaimSource::Claim(source) => {
@@ -533,6 +539,7 @@ impl ClaimJson {
                     codec: Some(claim.codec().to_string()),
                     scope: Some(content.scope().to_string()),
                     judgments: Some(claim.judgments()),
+                    participating: Some(crate::fold::claim_view::participates(claim)),
                     recorded_at: Some(content.recorded_at().micros()),
                     text: match body {
                         ClaimBody::Observation { text }
@@ -586,6 +593,7 @@ impl ClaimJson {
                 codec: Some(claim.codec().to_string()),
                 scope: None,
                 judgments: Some(claim.judgments()),
+                participating: Some(false),
                 recorded_at: None,
                 text: None,
                 title: None,

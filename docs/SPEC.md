@@ -449,6 +449,12 @@ their own current claims or matching v1-DID history, while v1 authors can never
 retract current claims. Rejection is the inverse local-trust operation.
 Publication remains a compatibility consumer until its URI and transport
 semantics are implemented.
+Within the mixed fold, valid trusted claims remain inspectable evidence, but
+scope effects use a separate participation predicate. Released v1 claims retain
+compatibility participation. A current claim participates only when admission
+is `admitted` or `not-applicable`; otherwise it cannot merge subjects, establish
+status or issue state, project a relation, retract, or reject. Human output
+marks such claims inspectable-only and mixed JSON reports `participating`.
 
 ## 8. Retraction (RECOMMENDED default, flagged OPEN in §9)
 
