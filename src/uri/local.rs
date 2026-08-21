@@ -75,6 +75,7 @@ impl<'a> LocalResolver<'a> {
             return Err(Error::ScopeNotFound);
         };
 
+        let before = source_guard(Some(&discovered_root), self.system)?;
         let mut workspace =
             Workspace::open_resolution_read_only_with_system(self.cwd, self.system).await?;
         let projection = self.project(&mut workspace, request).await?;
@@ -95,8 +96,18 @@ impl<'a> LocalResolver<'a> {
             return Err(Error::ScopeIdentifierMismatch);
         }
 
-        let snapshot = snapshot(Some(&workspace), self.system, Some(&installed))?;
+        let after = source_guard(Some(&workspace.root), self.system)?;
+        if before != after {
+            return Err(Error::SourceChangedDuringResolution);
+        }
+        let snapshot = snapshot(Some(&workspace), self.system, Some(&installed), after)?;
         require_snapshot(request.evidence(), &snapshot)?;
+        let diagnostics = workspace
+            .published
+            .read_errors()
+            .iter()
+            .map(|error| format!("{}:{}:{}", error.kind, error.path, error.message))
+            .collect::<Vec<_>>();
         let resource =
             resolve_scoped_resource(request, &projection, selected_scope, installed.clone())?;
         Ok(result(
@@ -105,6 +116,7 @@ impl<'a> LocalResolver<'a> {
             snapshot,
             "local-kan",
             selected_scope.to_string(),
+            diagnostics,
             resource,
         ))
     }
@@ -120,6 +132,7 @@ impl<'a> LocalResolver<'a> {
         {
             return Err(Error::AuthorityNotFound);
         }
+        let before = source_guard(None, self.system)?;
         let resolutions = self.system.resolve_public_identities()?;
         let resolution = resolve_principal(
             principal,
@@ -127,7 +140,11 @@ impl<'a> LocalResolver<'a> {
             &resolutions,
             &[],
         )?;
-        let snapshot = snapshot(None, self.system, None)?;
+        let after = source_guard(None, self.system)?;
+        if before != after {
+            return Err(Error::SourceChangedDuringResolution);
+        }
+        let snapshot = snapshot(None, self.system, None, after)?;
         require_snapshot(request.evidence(), &snapshot)?;
         Ok(result(
             request,
@@ -135,6 +152,7 @@ impl<'a> LocalResolver<'a> {
             snapshot,
             "system-identity-ledger",
             principal.to_string(),
+            Vec::new(),
             ResolvedResource::PrincipalIdentity(PrincipalIdentityResult {
                 principal: principal.clone(),
                 resolution,
@@ -584,25 +602,28 @@ fn snapshot(
     workspace: Option<&Workspace>,
     system: &SystemIdentityStore,
     scope: Option<&InstalledScope>,
+    mut components: Vec<(String, Vec<u8>)>,
 ) -> Result<Cid, Error> {
-    let mut components = Vec::new();
     if let Some(workspace) = workspace {
         if let Some(root) = workspace.log.current_root() {
-            components.push(("log", root.to_bytes()));
+            components.push(("log-root".to_string(), root.to_bytes()));
         }
         if let Some(root) = workspace.overlay.current_root() {
-            components.push(("overlay", root.to_bytes()));
+            components.push(("overlay-root".to_string(), root.to_bytes()));
         }
         if let Some(hash) = workspace.published.content_hash() {
-            components.push(("git-tree", hash.as_bytes().to_vec()));
+            components.push(("accepted-git-tree".to_string(), hash.as_bytes().to_vec()));
         }
     }
     if let Some(scope) = scope {
-        components.push(("scope", scope.event.proved_cid()?.to_bytes()));
+        components.push((
+            "scope-event".to_string(),
+            scope.event.proved_cid()?.to_bytes(),
+        ));
     }
     let ledger = IdentityLedger::at(system.config_root().join("identity").join("ledger"));
     for event in ledger.read_all()? {
-        components.push(("identity", event.proved_cid()?.to_bytes()));
+        components.push(("identity-event".to_string(), event.proved_cid()?.to_bytes()));
     }
     components.sort();
     let mut bytes = b"tools.kan.local-source-snapshot.v1".to_vec();
@@ -615,12 +636,80 @@ fn snapshot(
     Ok(Cid::from(atproto_repo::compute_cid(&bytes)))
 }
 
+fn source_guard(
+    workspace_root: Option<&Path>,
+    system: &SystemIdentityStore,
+) -> Result<Vec<(String, Vec<u8>)>, Error> {
+    let mut components = Vec::new();
+    if let Some(root) = workspace_root {
+        raw_tree_components("scope", &root.join(".kan/scope"), &mut components)?;
+        raw_tree_components("claims", &root.join(".claims"), &mut components)?;
+    }
+    raw_tree_components(
+        "identity-ledger",
+        &system.config_root().join("identity").join("ledger"),
+        &mut components,
+    )?;
+    components.sort();
+    Ok(components)
+}
+
+fn raw_tree_components(
+    label: &str,
+    root: &Path,
+    components: &mut Vec<(String, Vec<u8>)>,
+) -> Result<(), Error> {
+    fn walk(
+        label: &str,
+        root: &Path,
+        path: &Path,
+        components: &mut Vec<(String, Vec<u8>)>,
+    ) -> Result<(), Error> {
+        let mut entries = std::fs::read_dir(path)?.collect::<Result<Vec<_>, _>>()?;
+        entries.sort_by_key(std::fs::DirEntry::file_name);
+        for entry in entries {
+            let path = entry.path();
+            let relative = path.strip_prefix(root).map_err(|_| Error::Invalid)?;
+            let relative = relative.to_string_lossy();
+            let kind = entry.file_type()?;
+            if kind.is_dir() {
+                components.push((format!("raw:{label}:dir:{relative}"), Vec::new()));
+                walk(label, root, &path, components)?;
+            } else if kind.is_file() {
+                components.push((format!("raw:{label}:file:{relative}"), std::fs::read(path)?));
+            } else if kind.is_symlink() {
+                components.push((
+                    format!("raw:{label}:symlink:{relative}"),
+                    std::fs::read_link(path)?
+                        .to_string_lossy()
+                        .as_bytes()
+                        .to_vec(),
+                ));
+            } else {
+                components.push((format!("raw:{label}:other:{relative}"), Vec::new()));
+            }
+        }
+        Ok(())
+    }
+
+    match std::fs::symlink_metadata(root) {
+        Ok(metadata) if metadata.is_dir() => walk(label, root, root, components),
+        Ok(_) => {
+            components.push((format!("raw:{label}:non-directory"), Vec::new()));
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
 fn result(
     request: &ResolutionRequest,
     scope: Option<ScopeId>,
     snapshot: Cid,
     substrate: &str,
     source_identity: String,
+    diagnostics: Vec<String>,
     resource: ResolvedResource,
 ) -> ResolutionResult {
     let claim_evaluations = match &resource {
@@ -644,11 +733,11 @@ fn result(
             access: SourceAccess::Available,
             snapshot,
             completeness: SourceCompleteness::Committed,
-            diagnostics: Vec::new(),
+            diagnostics: diagnostics.clone(),
         }],
         claim_evaluations,
         resource,
-        diagnostics: Vec::new(),
+        diagnostics,
     }
 }
 
@@ -687,6 +776,8 @@ pub enum Error {
     Unsupported,
     #[error("indirect Git directory workspace ownership is not defined")]
     IndirectGitDirectoryUnsupported,
+    #[error("source changed during resolution")]
+    SourceChangedDuringResolution,
     #[error("invalid")]
     Invalid,
     #[error(transparent)]
@@ -701,6 +792,8 @@ pub enum Error {
     Control(#[from] crate::identity::control::Error),
     #[error(transparent)]
     Cid(#[from] crate::cid::Error),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
 impl Error {
@@ -719,13 +812,15 @@ impl Error {
             Self::UnknownHistory => "unknown-history",
             Self::Unsupported => "unsupported",
             Self::IndirectGitDirectoryUnsupported => "unsupported",
+            Self::SourceChangedDuringResolution => "snapshot-unavailable",
             Self::Invalid => "invalid",
             Self::Workspace(_)
             | Self::Scope(_)
             | Self::System(_)
             | Self::Ledger(_)
             | Self::Control(_)
-            | Self::Cid(_) => "invalid",
+            | Self::Cid(_)
+            | Self::Io(_) => "invalid",
         }
     }
 }

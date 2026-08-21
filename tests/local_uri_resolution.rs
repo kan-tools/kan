@@ -253,6 +253,36 @@ async fn resolution_is_byte_read_only_even_when_the_disposable_index_is_absent()
 }
 
 #[tokio::test]
+async fn immutable_snapshot_commits_rejected_raw_public_evidence_and_its_diagnostics() {
+    let (_temp, root, config, _actor, _claim) = current_workspace().await;
+    let system = SystemIdentityStore::at(&config);
+    let resolver = LocalResolver::new(&root, &system);
+    let first = resolver
+        .resolve_uri("kan://local/kan-tools:kan/subject/design/local-uri")
+        .await
+        .unwrap();
+
+    std::fs::create_dir_all(root.join(".claims")).unwrap();
+    std::fs::write(root.join(".claims/rejected.md"), [0xff]).unwrap();
+    let second = resolver
+        .resolve_uri("kan://local/kan-tools:kan/subject/design/local-uri")
+        .await
+        .unwrap();
+
+    assert_ne!(first.sources[0].snapshot, second.sources[0].snapshot);
+    assert!(!second.sources[0].diagnostics.is_empty());
+    assert_eq!(second.sources[0].diagnostics, second.diagnostics);
+    assert_eq!(
+        resolver
+            .resolve_uri(&first.immutable_replay)
+            .await
+            .unwrap_err()
+            .code(),
+        "snapshot-unavailable"
+    );
+}
+
+#[tokio::test]
 async fn linked_worktree_ownership_is_refused_until_issue_197_is_settled() {
     let (_temp, root, config, _actor, _claim) = current_workspace().await;
     let worktree = root.parent().unwrap().join("linked-worktree");
