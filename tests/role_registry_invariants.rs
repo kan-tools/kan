@@ -114,6 +114,11 @@ fn workspace_with_two_roles() -> (
     std::path::PathBuf,
 ) {
     let dir = git_repo();
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    kan::sign::Identity::generate()
+        .save(&kan_dir.join("identity"))
+        .unwrap();
     let first = kan_as(
         dir.path(),
         None,

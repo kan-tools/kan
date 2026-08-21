@@ -95,9 +95,55 @@ impl LocalRepositoryTransportStore {
         }
     }
 
+    /// Install the credential that already owns a released workspace's
+    /// reachable repository history as the separately typed transport
+    /// credential. This copies key material at the explicit current-writer
+    /// activation boundary; it does not rebind the repository DID or make
+    /// the transport value usable as a kan author.
+    pub fn continue_from_released_repository(
+        &self,
+        previous: &Identity,
+    ) -> Result<LocalRepositoryTransportIdentity, Error> {
+        if let Some(identity) = self.read()? {
+            return ensure_continuity(identity, previous);
+        }
+        // surface-write: repository-transport:identity
+        crate::persistence::create_dir_all(
+            crate::persistence::SurfaceWrite::RepositoryTransportIdentity,
+            &self.directory,
+        )?;
+        let path = self.identity_path();
+        match previous.save_repository_transport_new(&path) {
+            Ok(()) => self
+                .read()?
+                .ok_or_else(|| Error::ConcurrentCreationLost(path))
+                .and_then(|identity| ensure_continuity(identity, previous)),
+            Err(crate::sign::Error::Io(error))
+                if error.kind() == std::io::ErrorKind::AlreadyExists =>
+            {
+                self.read()?
+                    .ok_or_else(|| Error::ConcurrentCreationLost(path))
+                    .and_then(|identity| ensure_continuity(identity, previous))
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
     fn identity_path(&self) -> PathBuf {
         self.directory.join("identity")
     }
+}
+
+fn ensure_continuity(
+    identity: LocalRepositoryTransportIdentity,
+    previous: &Identity,
+) -> Result<LocalRepositoryTransportIdentity, Error> {
+    let expected = previous.did();
+    let actual = identity.did();
+    if actual != expected {
+        return Err(Error::ContinuityMismatch { expected, actual });
+    }
+    Ok(identity)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -114,4 +160,6 @@ pub enum Error {
     IdentityPermissions(PathBuf),
     #[error("another writer created {0}, but its identity could not be loaded")]
     ConcurrentCreationLost(PathBuf),
+    #[error("repository transport continuity requires `{expected}`, but the installed credential is `{actual}`")]
+    ContinuityMismatch { expected: String, actual: String },
 }

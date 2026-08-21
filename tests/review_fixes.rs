@@ -826,8 +826,11 @@ fn a_missing_key_does_not_claim_the_log_is_empty() {
 fn a_seed_rooted_workspace_is_not_re_minted_when_its_log_is_cleared() {
     let dir = repo();
     let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    kan::sign::Seed::load_or_create(&kan_dir.join("seed")).unwrap();
 
-    // A seed-rooted workspace: no key file, a seed recorded, claims written.
+    // An explicitly retained seed-rooted v1 workspace: no key file, a seed
+    // recorded, claims written.
     assert!(
         kan(
             dir.path(),
@@ -906,6 +909,8 @@ fn a_seed_rooted_workspace_is_not_re_minted_when_its_log_is_cleared() {
 fn reads_and_writes_resolve_the_same_identity() {
     let dir = repo();
     let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    kan::sign::Seed::load_or_create(&kan_dir.join("seed")).unwrap();
 
     assert!(
         kan(

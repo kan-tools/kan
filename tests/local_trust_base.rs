@@ -161,6 +161,11 @@ fn git_repo() -> tempfile::TempDir {
         "-m",
         "init",
     ]);
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    Identity::generate()
+        .save(&kan_dir.join("identity"))
+        .unwrap();
     dir
 }
 

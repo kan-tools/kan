@@ -40,9 +40,18 @@
 mod common;
 
 use common::{capture, compare_or_update, first_difference, git_repo, kan, normalize};
+use kan::sign::Identity;
 use std::path::Path;
 
 const GOLDEN: &str = "tests/fixtures/golden/single-author-reads.txt";
+
+fn seed_released_identity(dir: &Path) {
+    let kan_dir = dir.join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    Identity::generate()
+        .save(&kan_dir.join("identity"))
+        .unwrap();
+}
 
 /// The writes that build the fixture workspace.
 ///
@@ -130,6 +139,7 @@ fn capture_reads(dir: &Path) -> String {
 #[test]
 fn single_author_reads_match_the_golden() {
     let dir = git_repo();
+    seed_released_identity(dir.path());
     build_workspace(dir.path());
     let doc = normalize(&capture_reads(dir.path()), dir.path());
 
@@ -152,10 +162,12 @@ fn single_author_reads_match_the_golden() {
 #[test]
 fn normalization_is_reproducible_across_workspaces() {
     let a = git_repo();
+    seed_released_identity(a.path());
     build_workspace(a.path());
     let doc_a = normalize(&capture_reads(a.path()), a.path());
 
     let b = git_repo();
+    seed_released_identity(b.path());
     build_workspace(b.path());
     let doc_b = normalize(&capture_reads(b.path()), b.path());
 

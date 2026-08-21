@@ -311,10 +311,16 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", "\"overlay\"", "overlay:repo.car"),
     (
         "src/workspace.rs",
+        "\"transport\"",
+        "repository-transport:identity",
+    ),
+    (
+        "src/workspace.rs",
         "crate::transport::git_tree::CLAIMS_DIR",
         "git-tree:.claims",
     ),
     ("src/workspace.rs", "\", \"", "not a path"),
+    ("src/workspace.rs", "\"; \"", "not a path"),
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
     "src/actions.rs",
@@ -425,7 +431,7 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         "src/identity/transport.rs",
         "create_dir_all",
         "RepositoryTransportIdentity",
-        1,
+        2,
     ),
     ("src/store/index.rs", "create_dir_all", "Sqlite", 1),
     ("src/store/index.rs", "remove_file", "Sqlite", 2),
@@ -1362,6 +1368,14 @@ fn init_repo(path: &std::path::Path) {
     assert!(status.success());
 }
 
+fn seed_released_workspace(path: &std::path::Path) {
+    let kan_dir = path.join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    Identity::generate()
+        .save(&kan_dir.join("identity"))
+        .unwrap();
+}
+
 fn run_kan(path: &std::path::Path, args: &[&str]) -> std::process::Output {
     std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(args)
@@ -1404,6 +1418,7 @@ fn workspace_routes_overlay_io_through_overlay_capabilities() {
 fn production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json() {
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(repo.path(), &["observe", "poison", "authoritative"]);
     assert!(
         write.status.success(),
@@ -1465,6 +1480,7 @@ fn production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json() {
 fn production_workspace_recovers_when_a_projection_column_has_the_wrong_type() {
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(repo.path(), &["observe", "typed-poison", "authoritative"]);
     assert!(
         write.status.success(),
@@ -1497,6 +1513,7 @@ fn production_workspace_recovers_when_a_projection_column_has_the_wrong_type() {
 fn production_workspace_recovers_when_projection_metadata_has_the_wrong_type() {
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(repo.path(), &["observe", "meta-poison", "authoritative"]);
     assert!(
         write.status.success(),
@@ -1528,6 +1545,7 @@ fn production_workspace_recovers_when_projection_metadata_has_the_wrong_type() {
 fn production_workspace_recreates_a_malformed_projection_schema() {
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(repo.path(), &["observe", "schema-poison", "authoritative"]);
     assert!(
         write.status.success(),
@@ -1623,6 +1641,7 @@ fn production_workspace_recreates_a_malformed_projection_schema() {
 fn production_workspace_bypasses_an_unopenable_projection_path() {
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(
         repo.path(),
         &["observe", "unopenable-index", "authoritative"],
@@ -1675,6 +1694,7 @@ fn production_workspace_bypasses_an_unremovable_corrupt_projection() {
 
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(repo.path(), &["observe", "locked-index", "authoritative"]);
     assert!(write.status.success());
     let before = run_kan(repo.path(), &["show", "locked-index", "--json"]);
@@ -1719,6 +1739,7 @@ fn production_workspace_bypasses_an_unremovable_semantically_poisoned_projection
 
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
+    seed_released_workspace(repo.path());
     let write = run_kan(
         repo.path(),
         &["observe", "locked-valid-index", "authoritative"],

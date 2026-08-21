@@ -66,6 +66,11 @@ fn git_repo() -> tempfile::TempDir {
 /// state in which the opt-in means anything.
 fn workspace_with_claims() -> tempfile::TempDir {
     let dir = git_repo();
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    kan::sign::Identity::generate()
+        .save(&kan_dir.join("identity"))
+        .unwrap();
     let run = kan_as(
         dir.path(),
         None,

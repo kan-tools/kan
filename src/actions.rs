@@ -324,10 +324,18 @@ async fn append(
         artifacts.push(parse_file_artifact(&raw, &head));
     }
     // Every precondition has now passed -- the subject name, the anchor, the
-    // HEAD commit, the artifact spec. THIS is the moment the workspace comes
-    // into existence: a command refused above leaves no key, no `seed-id`,
-    // no `identity-id` and no `.kan/` (REQ-3).
-    ws.commit_identity().await?;
+    // HEAD commit, the artifact spec. THIS is the moment the workspace may
+    // select its durable writer. Empty workspaces refuse with the explicit
+    // identity-init -> scope-init sequence; released workspaces retain v1;
+    // verified scopes compile this same typed intent into current content.
+    let writer = ws.prepare_writer().await?;
+
+    if writer == crate::workspace::WorkspaceWriterKind::Claim {
+        let cid = ws
+            .append_current_intent(subject.clone(), body, cites, artifacts)
+            .await?;
+        return Ok(AppendResult { cid, subject, kind });
+    }
 
     let content = ClaimContent {
         author: ws.my_author()?,

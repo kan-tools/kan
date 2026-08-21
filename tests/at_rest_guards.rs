@@ -255,6 +255,11 @@ fn workspace() -> (tempfile::TempDir, String) {
             .unwrap()
             .success());
     }
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    Identity::generate()
+        .save(&kan_dir.join("identity"))
+        .unwrap();
     let kan = env!("CARGO_BIN_EXE_kan").to_string();
     assert!(std::process::Command::new(&kan)
         .args(["observe", "x", "--subject", "s"])

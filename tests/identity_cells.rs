@@ -10,9 +10,8 @@
 //!
 //! - the **read** probe is `kan show <subject> --trust me --json`, which
 //!   calls `sign::workspace_identity` (via `Selection::Primary`);
-//! - the **write** probe is `kan observe`, which calls
-//!   `Workspace::commit_identity` → `sign::signing_identity`, falling through
-//!   to `sign::create_workspace_identity` only when the workspace has none.
+//! - the **write** probe is `kan observe`, which first classifies the workspace
+//!   writer and resolves signing material only for an explicit v1 selection.
 //!
 //! Both probes therefore share **one** precedence order (REQ-1/REQ-4), which
 //! is the property #170 existed for. Before v0.12 they were
@@ -172,8 +171,6 @@ enum Expect {
     Override,
     /// The guard fired: `WouldMintSecondIdentity`.
     Refuses,
-    /// Seed-rooted the workspace, and signed with the seed it created.
-    MintsSeed,
     // `MintsKeyFile` and `MintsAtOverride` used to live here. REQ-1 gave
     // creation a single implementation (`create_workspace_identity`, which
     // seed-roots) and REQ-2 stopped a selection from ever creating its own
@@ -184,6 +181,10 @@ enum Expect {
     /// REQ-2: the selection names a path that does not exist. On BOTH paths --
     /// `--trust me` no longer answers with somebody else's identity either.
     SelectionMissing,
+    /// No historical writer or current scope has been selected.
+    InitRequired,
+    /// Partial historical artifacts cannot select either writer generation.
+    Incomplete,
 }
 
 struct Cell {
@@ -203,17 +204,14 @@ fn cells() -> Vec<Cell> {
     use Env::*;
     use Expect::*;
     vec![
-        Cell { row: 1,  env: Unset, layout: NOTHING, log_has_claims: false, read: None_, write: MintsSeed },
+        Cell { row: 1,  env: Unset, layout: NOTHING, log_has_claims: false, read: None_, write: InitRequired },
         Cell { row: 2,  env: Unset, layout: NOTHING, log_has_claims: true,  read: None_, write: Refuses },
         Cell { row: 3,  env: Unset, layout: KEY,     log_has_claims: false, read: Key,   write: Key },
         Cell { row: 4,  env: Unset, layout: KEY,     log_has_claims: true,  read: Key,   write: Key },
-        // `identity-id` alone makes `fresh` false (`src/sign.rs:508`), so the
-        // write falls to the plaintext branch and mints a KEY FILE rather
-        // than seed-rooting.
-        Cell { row: 5,  env: Unset, layout: ID,      log_has_claims: false, read: None_, write: Refuses },
+        Cell { row: 5,  env: Unset, layout: ID,      log_has_claims: false, read: None_, write: Incomplete },
         Cell { row: 6,  env: Unset, layout: ID,      log_has_claims: true,  read: None_, write: Refuses },
         Cell { row: 7,  env: Unset, layout: SEED,    log_has_claims: false, read: SeedDerived, write: SeedDerived },
-        Cell { row: 8,  env: Unset, layout: SEED_ID, log_has_claims: false, read: None_, write: Refuses },
+        Cell { row: 8,  env: Unset, layout: SEED_ID, log_has_claims: false, read: None_, write: Incomplete },
         Cell { row: 9,  env: Unset, layout: SEED_ID, log_has_claims: true,  read: None_, write: Refuses },
         Cell { row: 10, env: Unset, layout: SEED_AND_KEY,    log_has_claims: true, read: SeedDerived, write: SeedDerived },
         Cell { row: 11, env: Unset, layout: SEED_ID_AND_KEY, log_has_claims: true, read: Key, write: Key },
@@ -230,8 +228,8 @@ fn cells() -> Vec<Cell> {
         // denied: `identity-id` is the one artifact
         // the retired `existing_identity_evidence` deliberately ignored, so a workspace
         // that demonstrably HAS had an identity mints a second one here.
-        Cell { row: 18, env: Missing, layout: SEED_ID, log_has_claims: false, read: SelectionMissing, write: SelectionMissing },
-        Cell { row: 19, env: Missing, layout: ID,      log_has_claims: false, read: SelectionMissing, write: SelectionMissing },
+        Cell { row: 18, env: Missing, layout: SEED_ID, log_has_claims: false, read: SelectionMissing, write: Incomplete },
+        Cell { row: 19, env: Missing, layout: ID,      log_has_claims: false, read: SelectionMissing, write: Incomplete },
         // v0.12/REQ-4: was `RoleKeyMissing`. A legacy `.kan/roles` no longer
         // participates in resolution, so this now asserts it is ignored.
         Cell { row: 20, env: MissingDeclared, layout: NOTHING, log_has_claims: false, read: SelectionMissing, write: SelectionMissing },
@@ -480,27 +478,21 @@ fn run_write(row: u32) {
                 "row {row}: a refused selection created the key file anyway"
             );
         }
-        // The three minting outcomes all assert the same two things: the
-        // artifact appeared, AND the claim was signed by the key inside it.
-        // Asserting only that a file appeared -- which the first draft did --
-        // would pass a write that created the file and then signed as somebody
-        // else, which is the misattribution this project exists to prevent.
-        Expect::MintsSeed => {
-            assert!(ok, "row {row}: the write failed: {stderr}");
-            let seed_path = kan_dir.join("seed");
+        Expect::InitRequired => {
+            assert!(!ok, "row {row}: an uninitialized write succeeded: {stdout}");
+            assert!(stderr.contains("kan identity init"), "row {row}: {stderr}");
+            for name in ["identity", "seed", "log", "scope", "transport"] {
+                assert!(
+                    !kan_dir.join(name).exists(),
+                    "row {row}: refusal created `.kan/{name}`"
+                );
+            }
+        }
+        Expect::Incomplete => {
+            assert!(!ok, "row {row}: an incomplete workspace wrote: {stdout}");
             assert!(
-                seed_path.exists(),
-                "row {row}: the write succeeded without seed-rooting the workspace"
-            );
-            let derived = Seed::load_or_create(&seed_path)
-                .unwrap()
-                .signing_identity()
-                .unwrap()
-                .did();
-            assert_eq!(
-                built.claim_author(row),
-                derived,
-                "row {row}: the write seed-rooted the workspace but signed with a different key"
+                stderr.contains("cannot select a claim writer"),
+                "row {row}: expected incomplete-writer refusal.\nstderr: {stderr}"
             );
         }
         Expect::None_ => panic!("row {row}: a write cannot resolve to nothing"),
@@ -574,14 +566,12 @@ fn the_two_resolvers_disagree_in_exactly_these_cells() {
     let rows: Vec<u32> = disagreements.iter().map(|(r, _)| *r).collect();
     assert_eq!(
         rows,
-        vec![1],
+        Vec::<u32>::new(),
         "the measured set of cells where the read reports no identity while the write \
          resolves one has changed.\n\n\
-         Row 1 is expected and is now the ONLY minting cell: the write creates the \
-         write creates the identity it then signs with, so the read could not have found \
-         it beforehand. (Rows 1 and 5 belong here for the same reason 14 and 19 do -- the \
-         literal expectation this test shipped with named only the two override mints, and \
-         measuring corrected it on the first run.) A cell where the read finds nothing and \
+         There are no expected divergences on the testable plane: an ordinary first write \
+         no longer mints an identity, and an explicit existing selection is visible to both \
+         paths. A cell where the read finds nothing and \
          the write resolves an identity it did NOT create requires a reachable keychain -- \
          #170 is that shape -- which is why the suite could not have caught it.\n\n\
          A new row here means a divergence has been introduced on the testable plane. A \

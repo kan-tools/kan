@@ -9,10 +9,24 @@
 
 use std::process::Command;
 
+const LEGACY_TEST_IDENTITY: &str = ".legacy-test-identity";
+
+fn legacy_test_identity(dir: &std::path::Path) -> std::path::PathBuf {
+    dir.ancestors()
+        .find(|candidate| candidate.join(".git").is_dir())
+        .unwrap_or(dir)
+        .join(LEGACY_TEST_IDENTITY)
+}
+
 fn kan(dir: &std::path::Path, args: &[&str]) -> (String, String, bool) {
     let output = Command::new(env!("CARGO_BIN_EXE_kan"))
         .args(args)
         .current_dir(dir)
+        // This suite exercises the released CLI behavior rather than first-run
+        // initialization. Select v1 explicitly now that an ordinary write is
+        // no longer allowed to mint a workspace identity as a side effect.
+        .env("KAN_NO_KEYCHAIN", "1")
+        .env("KAN_IDENTITY_FILE", legacy_test_identity(dir))
         .output()
         .expect("failed to run kan binary");
     (
@@ -44,6 +58,9 @@ fn git_repo() -> tempfile::TempDir {
         "-m",
         "init",
     ]);
+    kan::sign::Identity::generate()
+        .save(&dir.path().join(LEGACY_TEST_IDENTITY))
+        .unwrap();
     dir
 }
 

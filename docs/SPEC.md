@@ -396,6 +396,11 @@ closed `LocalRepositoryTransportIdentity` type. It is created owner-only and
 create-new, remains stable for the local repository, and can be converted only
 to a repository transport signer—not to a kan author. Reading the store is
 side-effect free; creation belongs to an already-authorized write path.
+When an explicitly initialized current scope overlays released repository
+history, activation copies the released repository credential into this
+transport-only store and requires the DID to remain identical. This is a
+typed credential relocation, not repository rebinding or fabricated kan
+authorship; a conflicting transport credential is a refusal.
 
 Workspace writer selection has four closed outcomes: `Uninitialized`, `V1`
 with verified historical evidence, `Claim` with a cryptographically verified
@@ -405,6 +410,17 @@ that is partial, unsafe, unverifiable, or missing its enrolled system actor is
 incomplete and cannot fall back to v1. In the absence of scope state, a
 verified v1 claim or resolvable historical workspace principal selects v1;
 absence of both is uninitialized. Classification is read-only.
+The production write choke point consumes this classification only after all
+action preconditions pass. `Uninitialized` directs the user through `kan
+identity init` and then `kan init` without creating state; `V1` retains the
+released writer; `Claim` compiles supported action intents into current typed
+content and refreshes the mixed-codec projection. Intent forms that require a
+URI contract or have no current typed equivalent are explicit unsupported
+compiler arms, never lossy fallback to v1.
+An explicit resolvable `KAN_IDENTITY_FILE` selection on an otherwise empty,
+scope-less workspace is a compatibility request for the v1 writer. This does
+not restore implicit first-write identity creation: without that explicit
+selection, the workspace remains `Uninitialized` and the write is refused.
 
 ## 8. Retraction (RECOMMENDED default, flagged OPEN in §9)
 

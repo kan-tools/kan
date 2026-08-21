@@ -17,6 +17,12 @@ use crate::{
     claim::v1::{Anchor, AuthorId},
     fold::TrustBase,
     git::GitSubstrate,
+    identity::{
+        scope_store::VerifiedScope,
+        system::{ResolvedSystemActor, SystemIdentityStore},
+        transport::{LocalRepositoryTransportIdentity, LocalRepositoryTransportStore},
+        workspace_mode::{InitializationDiagnostic, WorkspaceClaimMode},
+    },
     sign::Identity,
     store::{index::Index, log::Log},
 };
@@ -47,6 +53,31 @@ pub enum Error {
     TrustSpec(#[from] crate::fold::trust::SpecError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    SystemIdentity(#[from] crate::identity::system::Error),
+    #[error(transparent)]
+    WorkspaceMode(#[from] crate::identity::workspace_mode::Error),
+    #[error(transparent)]
+    RepositoryTransport(#[from] crate::identity::transport::Error),
+    #[error(transparent)]
+    CurrentIntent(#[from] crate::claim::compat::Error),
+    #[error(transparent)]
+    CurrentAuthor(#[from] crate::identity::authorship::Error),
+    #[error(
+        "this workspace has not selected a claim format yet. Initialize the system actor with \
+         `kan identity init`, then initialize this scope with `kan init`; nothing was written"
+    )]
+    ClaimInitializationRequired,
+    #[error("this workspace cannot select a claim writer: {0}")]
+    ClaimInitializationIncomplete(String),
+    #[error(
+        "the existing repository has commit history, but its released transport credential \
+         cannot be resolved. Restore or adopt the legacy workspace identity before activating \
+         current claims; nothing was rebound or written"
+    )]
+    ExistingRepositoryTransportUnavailable,
+    #[error("a current claim append was requested from a released v1 workspace")]
+    CurrentWriterUnavailable,
     #[error(
         "{count} claim(s) are in both this workspace's log and its overlay, which should be \
          unreachable: `ingest_published` skips any published record that is already in the \
@@ -99,6 +130,7 @@ pub struct Workspace {
     /// read came to resolve one (#149): nothing in the type ever asked
     /// whether it should.
     identity: Option<Identity>,
+    current_writer: Option<CurrentWorkspaceWriter>,
     pub log: Log,
     /// Claims by **other** authors, read out of the tracked `.claims/` tree
     /// and kept beside `log/` rather than inside it.
@@ -126,6 +158,58 @@ pub struct Workspace {
     /// during the same read `ingest_published` already does, so the
     /// durability column costs no additional I/O.
     pub published: PublishedIndex,
+}
+
+struct CurrentWorkspaceWriter {
+    actor: ResolvedSystemActor,
+    scope: VerifiedScope,
+    transport: LocalRepositoryTransportIdentity,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceWriterKind {
+    V1,
+    Claim,
+}
+
+fn needs_system_actor(mode: &WorkspaceClaimMode) -> bool {
+    matches!(
+        mode,
+        WorkspaceClaimMode::Incomplete { diagnostics }
+            if matches!(
+                diagnostics.as_slice(),
+                [InitializationDiagnostic::SystemIdentityUnavailable { .. }]
+            )
+    )
+}
+
+fn format_initialization_diagnostics(diagnostics: &[InitializationDiagnostic]) -> String {
+    diagnostics
+        .iter()
+        .map(|diagnostic| match diagnostic {
+            InitializationDiagnostic::PreReleaseRepositoryState { path } => format!(
+                "pre-release repository identity state remains at {}",
+                path.display()
+            ),
+            InitializationDiagnostic::PartialScopeState { path } => {
+                format!("scope state at {} is partial or unsafe", path.display())
+            }
+            InitializationDiagnostic::SystemIdentityUnavailable { governance_roots } => format!(
+                "no resolved system actor is available for governance roots {}",
+                governance_roots.join(", ")
+            ),
+            InitializationDiagnostic::ScopeVerificationFailed { message } => {
+                format!("scope verification failed: {message}")
+            }
+            InitializationDiagnostic::LegacyIdentityUnavailable { evidence } => {
+                format!("released identity is unavailable: {evidence}")
+            }
+            InitializationDiagnostic::LogWithoutSupportedV1Claims => {
+                "the log contains no supported released claims".to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// The content CIDs present in the published tree, per subject.
@@ -280,6 +364,197 @@ impl Workspace {
         let mut ws = Self::open_read_only(cwd).await?;
         ws.anchor = Some(Anchor::Workspace(ws.git.genesis()?));
         Ok(ws)
+    }
+
+    /// Select and prepare the writer implied by durable workspace evidence.
+    /// Reads never call this. A verified scope activates current claims; a
+    /// released workspace with no scope retains its v1 writer; an empty
+    /// workspace must be initialized explicitly instead of minting v1 state.
+    pub async fn prepare_writer(&mut self) -> Result<WorkspaceWriterKind, Error> {
+        if self.current_writer.is_some() {
+            return Ok(WorkspaceWriterKind::Claim);
+        }
+        if self.identity.is_some() {
+            return Ok(WorkspaceWriterKind::V1);
+        }
+        let initial =
+            crate::identity::workspace_mode::classify(&self.root, &mut self.log, None).await?;
+        if needs_system_actor(&initial) {
+            let root = SystemIdentityStore::platform_config_root()?;
+            return self
+                .prepare_writer_from_mode(initial, Some(&SystemIdentityStore::at(root)))
+                .await;
+        }
+        self.prepare_writer_from_mode(initial, None).await
+    }
+
+    /// Test/integration seam for an explicitly located system installation.
+    #[doc(hidden)]
+    pub async fn prepare_writer_with_system(
+        &mut self,
+        system: &SystemIdentityStore,
+    ) -> Result<WorkspaceWriterKind, Error> {
+        if self.current_writer.is_some() {
+            return Ok(WorkspaceWriterKind::Claim);
+        }
+        if self.identity.is_some() {
+            return Ok(WorkspaceWriterKind::V1);
+        }
+        let initial =
+            crate::identity::workspace_mode::classify(&self.root, &mut self.log, None).await?;
+        self.prepare_writer_from_mode(initial, Some(system)).await
+    }
+
+    async fn prepare_writer_from_mode(
+        &mut self,
+        initial: WorkspaceClaimMode,
+        system: Option<&SystemIdentityStore>,
+    ) -> Result<WorkspaceWriterKind, Error> {
+        let mut actor = None;
+        let mode = if needs_system_actor(&initial) {
+            actor = system
+                .ok_or(Error::ClaimInitializationRequired)?
+                .resolve_default_actor()?;
+            crate::identity::workspace_mode::classify(&self.root, &mut self.log, actor.as_ref())
+                .await?
+        } else {
+            initial
+        };
+
+        match mode {
+            WorkspaceClaimMode::Uninitialized => {
+                let kan_dir = self.root.join(".kan");
+                let selection = crate::sign::Selection::from_env();
+                if crate::sign::signing_identity(&kan_dir, &selection)?.is_some() {
+                    self.commit_identity().await?;
+                    Ok(WorkspaceWriterKind::V1)
+                } else {
+                    Err(Error::ClaimInitializationRequired)
+                }
+            }
+            WorkspaceClaimMode::Incomplete { diagnostics } => {
+                Err(Error::ClaimInitializationIncomplete(
+                    format_initialization_diagnostics(&diagnostics),
+                ))
+            }
+            WorkspaceClaimMode::V1 { .. } => {
+                self.commit_identity().await?;
+                Ok(WorkspaceWriterKind::V1)
+            }
+            WorkspaceClaimMode::Claim { scope } => {
+                let actor = actor.ok_or_else(|| {
+                    Error::ClaimInitializationIncomplete(
+                        "scope verification did not retain its resolved system actor".to_string(),
+                    )
+                })?;
+                let kan_dir = self.root.join(".kan");
+                let transport_store = LocalRepositoryTransportStore::at(kan_dir.join("transport"));
+                let transport = match transport_store.read()? {
+                    Some(transport) => transport,
+                    None if self.log.current_root().is_some() => {
+                        let released = crate::sign::workspace_identity(&kan_dir)?
+                            .ok_or(Error::ExistingRepositoryTransportUnavailable)?;
+                        transport_store.continue_from_released_repository(&released)?
+                    }
+                    None => transport_store.load_or_create()?,
+                };
+                let signer = transport.signer();
+                self.log = Log::open_or_create_transport(&kan_dir.join("log"), &signer).await?;
+                self.current_writer = Some(CurrentWorkspaceWriter {
+                    actor,
+                    scope: *scope,
+                    transport,
+                });
+                Ok(WorkspaceWriterKind::Claim)
+            }
+        }
+    }
+
+    /// Sign and append one fully typed current claim through the independently
+    /// selected kan actor, verified scope, and repository transport signer.
+    pub async fn append_current_content(
+        &mut self,
+        content: crate::claim::ClaimContent,
+    ) -> Result<Cid, Error> {
+        if self.prepare_writer().await? != WorkspaceWriterKind::Claim {
+            return Err(Error::CurrentWriterUnavailable);
+        }
+        let writer = self
+            .current_writer
+            .as_ref()
+            .ok_or(Error::CurrentWriterUnavailable)?;
+        let claim = writer.actor.sign_claim(content)?;
+        let signer = writer.transport.signer();
+        let cid = self
+            .log
+            .append_current(claim, &writer.scope, &signer)
+            .await?;
+        self.reproject_current_claim_views().await?;
+        Ok(cid)
+    }
+
+    /// Compile the released action layer's typed intent into the current
+    /// domain model, then sign and append it through the selected writer.
+    pub async fn append_current_intent(
+        &mut self,
+        subject: crate::claim::v1::SubjectRef,
+        body: crate::claim::v1::ClaimBody,
+        cites: Vec<Cid>,
+        artifacts: Vec<crate::claim::v1::ArtifactRef>,
+    ) -> Result<Cid, Error> {
+        if self.prepare_writer().await? != WorkspaceWriterKind::Claim {
+            return Err(Error::CurrentWriterUnavailable);
+        }
+        let writer = self
+            .current_writer
+            .as_ref()
+            .ok_or(Error::CurrentWriterUnavailable)?;
+        let profile_actor = writer.actor.profile().actor();
+        let author = crate::identity::authorship::Author::new(
+            writer.actor.principal().to_string(),
+            profile_actor.verification_method().to_string(),
+            profile_actor.controller_state().clone(),
+        )?;
+        let recorded_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock before 1970")
+            .as_micros() as u64;
+        let content = crate::claim::compat::compile_write_intent(
+            author,
+            writer.scope.scope(),
+            subject,
+            body,
+            cites,
+            artifacts,
+            recorded_at,
+        )?;
+        self.append_current_content(content).await
+    }
+
+    pub fn current_scope(&self) -> Option<crate::identity::scope_inception::ScopeId> {
+        self.current_writer
+            .as_ref()
+            .map(|writer| writer.scope.scope())
+    }
+
+    async fn reproject_current_claim_views(&mut self) -> Result<(), Error> {
+        let writer = self
+            .current_writer
+            .as_ref()
+            .ok_or(Error::CurrentWriterUnavailable)?;
+        let states = [writer.actor.state().clone()];
+        let verification =
+            crate::claim::codec::VerificationContext::ResolvedIdentities { did_kan: &states };
+        let log_claims = self.log.iter_decoded(verification).await?;
+        let foreign = self.overlay.iter_decoded(verification).await?;
+        let fingerprint = index_fingerprint(
+            self.log.current_root(),
+            self.overlay.current_root(),
+            self.published.content_hash.as_deref(),
+        );
+        self.index
+            .rebuild_claim_views(&log_claims, &foreign, fingerprint.as_ref())?;
+        Ok(())
     }
 
     /// Bring this workspace's identity into existence, if it does not have
@@ -520,6 +795,7 @@ impl Workspace {
         Ok(Self {
             root,
             identity: None,
+            current_writer: None,
             log,
             overlay,
             index,
@@ -551,6 +827,7 @@ impl Workspace {
         Self {
             root,
             identity: Some(identity),
+            current_writer: None,
             log,
             overlay,
             index,

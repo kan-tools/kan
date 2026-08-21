@@ -8,6 +8,7 @@ use serde::{de, de::DeserializeOwned, Deserialize, Deserializer, Serialize, Seri
 use crate::identity::{authorship::Author, scope_inception::ScopeId};
 
 pub mod codec;
+pub mod compat;
 pub mod v1;
 pub mod view;
 
@@ -909,6 +910,10 @@ impl ClaimContent {
 
     pub fn cites(&self) -> &CanonicalSet<ClaimId> {
         &self.cites
+    }
+
+    pub fn artifacts(&self) -> &UniqueSequence<ArtifactRef> {
+        &self.artifacts
     }
 
     pub fn recorded_at(&self) -> RecordedAt {

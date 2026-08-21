@@ -67,6 +67,11 @@ fn git_repo() -> tempfile::TempDir {
 /// can legitimately be declared.
 fn workspace_with_own_identity() -> tempfile::TempDir {
     let dir = git_repo();
+    let kan_dir = dir.path().join(".kan");
+    std::fs::create_dir_all(&kan_dir).unwrap();
+    kan::sign::Identity::generate()
+        .save(&kan_dir.join("identity"))
+        .unwrap();
     let run = kan_as(
         dir.path(),
         None,

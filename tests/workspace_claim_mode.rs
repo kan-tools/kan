@@ -9,7 +9,37 @@ use kan::{
     },
     sign::Identity,
     store::log::Log,
+    workspace::{Workspace, WorkspaceWriterKind},
 };
+
+fn git(root: &std::path::Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .current_dir(root)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+fn init_git(root: &std::path::Path) {
+    std::fs::create_dir_all(root).unwrap();
+    git(root, &["init", "-q"]);
+    git(
+        root,
+        &[
+            "-c",
+            "user.email=kan-test@example.com",
+            "-c",
+            "user.name=kan-test",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "init",
+        ],
+    );
+}
 
 fn installed_actor(root: &std::path::Path) -> ResolvedSystemActor {
     let recovery = Identity::generate();
@@ -225,4 +255,119 @@ async fn installed_scope_without_system_actor_names_the_identity_that_must_be_re
         [InitializationDiagnostic::SystemIdentityUnavailable { governance_roots }]
             if governance_roots == &[actor.principal().to_string()]
     ));
+}
+
+#[tokio::test]
+async fn production_writer_preserves_released_transport_and_appends_current_claims() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("workspace");
+    let config = temp.path().join("config");
+    init_git(&root);
+    let actor = installed_actor(&config);
+    let released_owner = Identity::generate();
+    let log_dir = root.join(".kan/log");
+    let mut released_log = Log::open_or_create(&log_dir, &released_owner)
+        .await
+        .unwrap();
+    released_log
+        .append(legacy_content(&released_owner), &released_owner)
+        .await
+        .unwrap();
+    released_owner.save(&root.join(".kan/identity")).unwrap();
+    drop(released_log);
+
+    let inception = ScopeInception::new(
+        [0xa4; 32],
+        vec!["activated".to_string()],
+        vec![actor.principal().to_string()],
+        vec![],
+    )
+    .unwrap();
+    let system = SystemIdentityStore::at(&config);
+    let proof = system
+        .sign(
+            actor.profile(),
+            actor.method(),
+            &inception.signing_input().unwrap(),
+        )
+        .unwrap();
+    let event = inception
+        .proved_event_with_did_kan_state(actor.state(), vec![proof])
+        .unwrap();
+    ScopeIdentityStore::at(root.join(".kan/scope"))
+        .install(&event)
+        .unwrap();
+
+    let mut workspace = Workspace::open(&root).await.unwrap();
+    assert_eq!(
+        workspace.prepare_writer_with_system(&system).await.unwrap(),
+        WorkspaceWriterKind::Claim
+    );
+    assert_eq!(
+        kan::identity::transport::LocalRepositoryTransportStore::at(root.join(".kan/transport"))
+            .read()
+            .unwrap()
+            .unwrap()
+            .did(),
+        released_owner.did()
+    );
+
+    let result = kan::actions::observe(
+        &mut workspace,
+        "current append".to_string(),
+        Some("identity/production-writer".to_string()),
+        vec![],
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let cid = result.narrative.cid;
+    assert!(workspace
+        .index
+        .claim_views_built_from_root()
+        .unwrap()
+        .is_some());
+    assert_eq!(
+        workspace
+            .index
+            .all_decoded_claims(kan::claim::codec::VerificationContext::ResolvedIdentities {
+                did_kan: std::slice::from_ref(actor.state()),
+            },)
+            .unwrap()
+            .len(),
+        2
+    );
+    let decoded = workspace
+        .log
+        .get_decoded(
+            cid,
+            kan::claim::codec::VerificationContext::ActiveDidKan(actor.state()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        decoded.claim,
+        kan::claim::codec::DecodedClaim::Supported(kan::claim::codec::SupportedClaim::Claim(_))
+    ));
+}
+
+#[tokio::test]
+async fn production_writer_refuses_an_uninitialized_workspace_without_creating_kan_state() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("workspace");
+    let config = temp.path().join("config");
+    init_git(&root);
+    let mut workspace = Workspace::open(&root).await.unwrap();
+
+    assert!(matches!(
+        workspace
+            .prepare_writer_with_system(&SystemIdentityStore::at(&config))
+            .await,
+        Err(kan::workspace::Error::ClaimInitializationRequired)
+    ));
+    assert!(!root.join(".kan").exists());
 }

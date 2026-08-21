@@ -119,9 +119,18 @@ the released fold's semantics. Production renderers still need to consume
 it. Current append is gated by an opaque `VerifiedScope` token that can only
 be constructed by rechecking the stored inception proof
 against its exact controller state, and the claim's cryptographic scope must
-match that token. The production workspace still defaults to v1: selecting
-the system actor in `Workspace`, compiling actions into current claim types,
-and cutting the index and fold over to `ClaimView` are the next activation slice. The
+match that token. The production workspace now selects this writer policy at
+the shared append choke point: empty workspaces refuse with the explicit
+identity-init then scope-init sequence, released workspaces retain v1, and a
+verified scope selects the resolved system actor, typed current content, and
+independent repository transport signer. Existing repository history adopts
+its exact released owner into the transport-only store without changing the
+repository DID. Supported narrative, subject, status, relation, correction,
+role-naming, citation, and Git-artifact intents compile without a stringly
+intermediate, and successful current appends refresh the mixed cache. URI-
+dependent publication and legacy anchor/unknown intents remain explicit
+unsupported compiler arms. Production read/render consumers and specialized
+correction/publication actions still need the mixed cutover. The
 underlying signing seams are now deliberately separate: a closed resolved
 system-actor value keeps the kan author profile, exact identity state, method,
 and credential provider together, while an explicit repository-transport
@@ -138,8 +147,11 @@ absence is `Uninitialized`, verified historical evidence is `V1`, a scope
 whose inception proof verifies against the supplied exact actor state is
 `Claim`, and partial, pre-release, inaccessible, or contradictory evidence is
 `Incomplete`. Partial scope state never falls back to the v1 writer, and a
-verified scope wins over retained v1 history. Production actions do not select
-this classifier yet; that wiring and `ClaimView` remain the cutover boundary.
+verified scope wins over retained v1 history. An explicit resolvable
+`KAN_IDENTITY_FILE` on an otherwise empty scope-less workspace remains a v1
+compatibility selection; implicit first-write identity creation stays
+forbidden. The remaining cutover boundary is the production read/render
+surface and the specialized correction/publication actions.
 `src/identity/governance.rs` now produces canonical update and reconciliation
 events and resolves unordered evidence deterministically: proof variants share
 one logical event, sibling leaves are contested, reconciliation requires
