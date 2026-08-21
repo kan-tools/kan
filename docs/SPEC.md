@@ -438,7 +438,9 @@ remain `Unknown` until their evidence resolvers are wired.
 The production `show`, `status`, and `issues` human and JSON surfaces consume
 that mixed projection whenever it contains a current or preserved-unsupported
 record. Current JSON claims add their signed codec and cryptographic scope;
-the response trust envelope names the effective mixed author frame. A v1-only
+every mixed claim also exposes cryptographic validity, exact identity-state
+standing, scope admission, and view trust as four separate fields. The response
+trust envelope names the effective mixed author frame. A v1-only
 projection continues through the released renderer unchanged. Budgeted
 `context` uses the same mixed claim ranking and omission disclosure. Specialized
 correction resolves its target through the mixed codec before writer selection

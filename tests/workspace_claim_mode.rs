@@ -419,6 +419,10 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     assert!(shown["claims"].as_array().unwrap().iter().all(|claim| {
         claim["codec"] == "kan-claim-v2"
             && claim["scope"] == inception.scope_id().unwrap().to_string()
+            && claim["judgments"]["cryptographicValidity"] == "valid"
+            && claim["judgments"]["identityStateStanding"] == "active"
+            && claim["judgments"]["scopeAdmission"] == "admitted"
+            && claim["judgments"]["viewTrust"] == "included"
     }));
     assert!(shown["trust"]["authors"]
         .as_array()

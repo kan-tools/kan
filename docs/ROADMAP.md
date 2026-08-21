@@ -118,7 +118,9 @@ budgeted `context` human/JSON renderers now consume it whenever current or
 preserved-unsupported records are present; v1-only workspaces retain their
 released output path.
 Mixed JSON claims expose codec and signed scope, and their trust envelope names
-the effective current and historical authors. Current append is gated by an
+the effective current and historical authors. Mixed human and JSON claim reads
+also disclose all four RFC 1 judgments without combining admission and trust.
+Current append is gated by an
 opaque `VerifiedScope` token that can only
 be constructed by rechecking the stored inception proof
 against its exact controller state, and the claim's cryptographic scope must

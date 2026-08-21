@@ -93,6 +93,10 @@ pub struct ClaimJson {
     /// mapped into the enclosing view but did not sign this field.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope: Option<String>,
+    /// RFC 1's four independent read judgments. Omitted only on the released
+    /// v1-only renderer path whose schema predates RFC 1.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub judgments: Option<crate::identity::ClaimJudgments>,
     /// Microseconds since the Unix epoch, as attested by the author. Absent
     /// on claims written before v0.7.0-beta.1.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -477,6 +481,7 @@ impl ClaimJson {
             author: claim.content.author.did.clone(),
             codec: None,
             scope: None,
+            judgments: None,
             recorded_at: claim.content.recorded_at,
             text: body.text().map(str::to_string),
             title: None,
@@ -514,6 +519,7 @@ impl ClaimJson {
             ClaimSource::V1(source) => {
                 let mut out = Self::new(claim.claim_id(), source, superseded);
                 out.codec = Some(claim.codec().to_string());
+                out.judgments = Some(claim.judgments());
                 out
             }
             ClaimSource::Claim(source) => {
@@ -526,6 +532,7 @@ impl ClaimJson {
                     author: content.author().principal().to_string(),
                     codec: Some(claim.codec().to_string()),
                     scope: Some(content.scope().to_string()),
+                    judgments: Some(claim.judgments()),
                     recorded_at: Some(content.recorded_at().micros()),
                     text: match body {
                         ClaimBody::Observation { text }
@@ -578,6 +585,7 @@ impl ClaimJson {
                 author: String::new(),
                 codec: Some(claim.codec().to_string()),
                 scope: None,
+                judgments: Some(claim.judgments()),
                 recorded_at: None,
                 text: None,
                 title: None,

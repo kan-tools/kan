@@ -179,6 +179,14 @@ fn detail_lines(claim: &ClaimView, indent: &str) -> String {
         ClaimSource::Unsupported(_) => {}
     }
     out.push_str(&format!("{indent}codec:    {}\n", claim.codec()));
+    let judgments = claim.judgments();
+    out.push_str(&format!(
+        "{indent}validity: {:?}\n{indent}standing: {:?}\n{indent}admission: {:?}\n{indent}trust:     {:?}\n",
+        judgments.cryptographic_validity,
+        judgments.identity_state_standing,
+        judgments.scope_admission,
+        judgments.view_trust,
+    ));
     out
 }
 
