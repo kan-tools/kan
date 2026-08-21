@@ -11,7 +11,7 @@ use kan::{
         scope_store::{ScopeIdentityStore, VerifiedScope},
     },
     sign::Identity,
-    store::log::Log,
+    store::log::{Log, RepositoryTransportSigner},
 };
 
 fn activation(root: &std::path::Path, identity: &Identity, nonce: u8) -> VerifiedScope {
@@ -92,7 +92,11 @@ async fn one_collection_reads_v1_and_v2_without_rewriting_v1() {
     let scope = activation(temp.path(), &identity, 0x41);
     let current = current(&identity, &scope, "design/current");
     let current_id = log
-        .append_current(current.clone(), &scope, &identity)
+        .append_current(
+            current.clone(),
+            &scope,
+            &RepositoryTransportSigner::LocalDidKey(&identity),
+        )
         .await
         .unwrap();
     let after = std::fs::read(temp.path().join("log/repo.car")).unwrap();
@@ -145,7 +149,12 @@ async fn activated_scope_token_cannot_authorize_a_different_scope() {
     let claim = current(&identity, &different, "design/current");
 
     assert!(matches!(
-        log.append_current(claim, &activated, &identity).await,
+        log.append_current(
+            claim,
+            &activated,
+            &RepositoryTransportSigner::LocalDidKey(&identity),
+        )
+        .await,
         Err(kan::store::log::Error::ClaimScopeMismatch { .. })
     ));
     assert!(log.current_root().is_none());

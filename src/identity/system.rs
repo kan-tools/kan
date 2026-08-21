@@ -287,6 +287,44 @@ pub struct SystemIdentityStore {
     config_root: PathBuf,
 }
 
+/// One fully resolved local actor: profile selection, exact active identity
+/// state, verification method, and the credential provider able to execute
+/// that method. Keeping this bundle closed prevents current claim signing
+/// from selecting those facts independently. Repository transport signing is
+/// deliberately a separate principal and type.
+#[derive(Debug, Clone)]
+pub struct ResolvedSystemActor {
+    store: SystemIdentityStore,
+    profile: IdentityProfile,
+    state: super::did_kan_update::ResolvedDidKanState,
+    method: VerificationMethod,
+}
+
+impl ResolvedSystemActor {
+    pub fn profile(&self) -> &IdentityProfile {
+        &self.profile
+    }
+
+    pub fn state(&self) -> &super::did_kan_update::ResolvedDidKanState {
+        &self.state
+    }
+
+    pub fn method(&self) -> &VerificationMethod {
+        &self.method
+    }
+
+    pub fn principal(&self) -> &str {
+        self.profile.principal()
+    }
+
+    pub fn sign_claim(
+        &self,
+        content: crate::claim::ClaimContent,
+    ) -> Result<crate::claim::Claim, Error> {
+        self.store.sign_claim(&self.profile, &self.method, content)
+    }
+}
+
 impl SystemIdentityStore {
     /// Point at the platform configuration root containing `identity/`,
     /// `credentials/`, and `repositories/`. Construction and reads create
@@ -486,6 +524,22 @@ impl SystemIdentityStore {
         self.profile(alias)?
             .map(Some)
             .ok_or_else(|| Error::DefaultProfileMissing(alias.to_string()))
+    }
+
+    /// Resolve the default profile into the one closed actor value accepted
+    /// by current kan claim signing paths. This remains read-only; credential
+    /// access occurs only when a claim is actually signed.
+    pub fn resolve_default_actor(&self) -> Result<Option<ResolvedSystemActor>, Error> {
+        let Some(profile) = self.default_profile()? else {
+            return Ok(None);
+        };
+        let (state, method) = self.resolve_profile_method(&profile)?;
+        Ok(Some(ResolvedSystemActor {
+            store: self.clone(),
+            profile,
+            state,
+            method,
+        }))
     }
 
     /// Resolve the exact active `did:kan` state and method selected by a

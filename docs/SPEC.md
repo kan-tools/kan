@@ -357,7 +357,16 @@ scope-activation token derived by checking the installed inception proof
 against its exact identity state; stored inception bytes alone cannot
 authorize a write. Until the current `ClaimView` fold is installed, the
 compatibility fold reads only v1 and explicitly skips current and preserved
-unsupported records.
+unsupported records. Kan authorship and ATProto repository approval are
+separate signatures by separate principals. The claim's `Author` and exact
+identity version authenticate kan speech; the repository transport signer
+only approves a CAR/MST transition and gains no scope authority from doing so.
+A current local repository therefore keeps one transport DID across every
+reachable commit while freely carrying claims authored by other kan
+principals. Rebinding that repository to another transport DID is a refusal,
+not an implicit ownership migration. An ATProto principal may later be
+explicitly admitted as a kan author, but kan authority never implies ATProto
+publication authority.
 
 ## 8. Retraction (RECOMMENDED default, flagged OPEN in §9)
 

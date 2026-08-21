@@ -99,8 +99,13 @@ until `ClaimView` lands. Current append is gated by an opaque `VerifiedScope`
 token that can only be constructed by rechecking the stored inception proof
 against its exact controller state, and the claim's cryptographic scope must
 match that token. The production workspace still defaults to v1: selecting
-the system actor for repository commits, compiling actions into current claim
-types, and cutting reads over to `ClaimView` are the next activation slice.
+the system actor in `Workspace`, compiling actions into current claim types,
+and cutting reads over to `ClaimView` are the next activation slice. The
+underlying signing seams are now deliberately separate: a closed resolved
+system-actor value keeps the kan author profile, exact identity state, method,
+and credential provider together, while an explicit repository-transport
+signer approves ATProto commits without acquiring kan authorship or scope
+authority. Existing reachable commits must retain one transport DID.
 `src/identity/governance.rs` now produces canonical update and reconciliation
 events and resolves unordered evidence deterministically: proof variants share
 one logical event, sibling leaves are contested, reconciliation requires
