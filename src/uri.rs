@@ -262,6 +262,26 @@ impl ResolutionRequest {
         Parser::new(input)?.parse()
     }
 
+    /// Compile local application shorthand without giving CLI or MCP layers
+    /// a second path grammar or query encoder.
+    pub fn local_subject(
+        scope: ScopeId,
+        subject: &str,
+        trust: Option<&str>,
+    ) -> Result<Self, ParseError> {
+        let encoded_subject = subject
+            .split('/')
+            .map(encode_segment)
+            .collect::<Vec<_>>()
+            .join("/");
+        let mut uri = format!("kan://local/@id:{scope}/subject/{encoded_subject}");
+        if let Some(trust) = trust {
+            uri.push_str("?trust=");
+            uri.push_str(&encode_query(trust));
+        }
+        Self::parse(&uri)
+    }
+
     pub fn canonical_uri(&self) -> String {
         let mut output = self.canonical_base();
         let query = self.canonical_query();
