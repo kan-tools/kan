@@ -311,6 +311,11 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", "\"overlay\"", "overlay:repo.car"),
     (
         "src/workspace.rs",
+        "\"scope\"",
+        "scope-identity:inception.cbor",
+    ),
+    (
+        "src/workspace.rs",
         "\"transport\"",
         "repository-transport:identity",
     ),

@@ -1,7 +1,9 @@
 use clap::Parser;
 use kan::{
     cli::{run, Cli},
-    identity::{ledger::IdentityLedger, system::SystemIdentityStore},
+    identity::{
+        did_kan_update::DidKanResolution, ledger::IdentityLedger, system::SystemIdentityStore,
+    },
     sign::Identity,
 };
 
@@ -59,6 +61,33 @@ async fn init_runs_without_a_repository_and_identical_retry_is_idempotent() {
             );
         }
     }
+}
+
+#[tokio::test]
+async fn public_identity_resolution_needs_neither_a_profile_nor_credentials() {
+    let temp = tempfile::tempdir().unwrap();
+    let config = temp.path().join("system-config");
+    run(Cli::parse_from(init_args(&config))).await.unwrap();
+    let store = SystemIdentityStore::at(&config);
+    let principal = store
+        .default_profile()
+        .unwrap()
+        .unwrap()
+        .principal()
+        .to_string();
+
+    std::fs::remove_dir_all(config.join("identity/profiles")).unwrap();
+    std::fs::remove_dir_all(config.join("credentials")).unwrap();
+    assert!(store.default_profile().unwrap().is_none());
+
+    let resolutions = store.resolve_public_identities().unwrap();
+    assert_eq!(resolutions.len(), 1);
+    let DidKanResolution::Active(state) = &resolutions[0] else {
+        panic!("freshly initialized public identity did not resolve active");
+    };
+    assert_eq!(state.did, principal);
+    assert!(!config.join("identity/profiles").exists());
+    assert!(!config.join("credentials").exists());
 }
 
 #[tokio::test]

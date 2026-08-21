@@ -353,6 +353,35 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
         decoded.claim,
         kan::claim::codec::DecodedClaim::Supported(kan::claim::codec::SupportedClaim::Claim(_))
     ));
+    drop(workspace);
+
+    let mut reader = Workspace::open_read_only_with_system(&root, &system)
+        .await
+        .unwrap();
+    let projection = reader
+        .mixed_local_projection_with_system(&system)
+        .await
+        .unwrap();
+    assert_eq!(projection.claims().len(), 2);
+    assert_eq!(projection.identity_resolutions().len(), 1);
+    assert_eq!(
+        projection.legacy_scope(),
+        Some(inception.scope_id().unwrap())
+    );
+    let current = projection
+        .claims()
+        .iter()
+        .find(|claim| matches!(claim.source(), kan::claim::view::ClaimSource::Claim(_)))
+        .unwrap();
+    assert_eq!(
+        current.judgments().identity_state_standing,
+        kan::identity::IdentityStateStanding::Active
+    );
+    assert_eq!(
+        current.judgments().scope_admission,
+        kan::identity::ScopeAdmission::Admitted
+    );
+    assert_eq!(projection.fold().classes.len(), 2);
 }
 
 #[tokio::test]

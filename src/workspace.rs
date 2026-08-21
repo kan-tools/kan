@@ -63,6 +63,10 @@ pub enum Error {
     CurrentIntent(#[from] crate::claim::compat::Error),
     #[error(transparent)]
     CurrentAuthor(#[from] crate::identity::authorship::Error),
+    #[error(transparent)]
+    ClaimView(#[from] crate::claim::view::Error),
+    #[error(transparent)]
+    ScopeIdentity(#[from] crate::identity::scope_store::Error),
     #[error(
         "this workspace has not selected a claim format yet. Initialize the system actor with \
          `kan identity init`, then initialize this scope with `kan init`; nothing was written"
@@ -170,6 +174,34 @@ struct CurrentWorkspaceWriter {
 pub enum WorkspaceWriterKind {
     V1,
     Claim,
+}
+
+/// Source-preserving production read substrate. Identity-resolution outcomes
+/// remain available beside the projected claims, including non-active arms;
+/// callers never have to infer "unknown" from a missing signing profile.
+#[derive(Debug, Clone)]
+pub struct MixedWorkspaceProjection {
+    claims: Vec<crate::claim::view::ClaimView>,
+    legacy_scope: Option<crate::identity::scope_inception::ScopeId>,
+    identity_resolutions: Vec<crate::identity::did_kan_update::DidKanResolution>,
+}
+
+impl MixedWorkspaceProjection {
+    pub fn claims(&self) -> &[crate::claim::view::ClaimView] {
+        &self.claims
+    }
+
+    pub fn identity_resolutions(&self) -> &[crate::identity::did_kan_update::DidKanResolution] {
+        &self.identity_resolutions
+    }
+
+    pub fn legacy_scope(&self) -> Option<crate::identity::scope_inception::ScopeId> {
+        self.legacy_scope
+    }
+
+    pub fn fold(&self) -> crate::fold::claim_view::FoldedView {
+        crate::fold::claim_view::fold(self.claims.clone(), self.legacy_scope)
+    }
 }
 
 fn needs_system_actor(mode: &WorkspaceClaimMode) -> bool {
@@ -537,6 +569,135 @@ impl Workspace {
             .map(|writer| writer.scope.scope())
     }
 
+    /// Resolve and project the local mixed-codec view without selecting a
+    /// profile or accessing a credential provider. Local trust is derived
+    /// from authors present in the authoritative log; overlay and published
+    /// v1 authors do not become trusted merely by arriving on disk.
+    pub async fn mixed_local_projection_with_system(
+        &mut self,
+        system: &SystemIdentityStore,
+    ) -> Result<MixedWorkspaceProjection, Error> {
+        use crate::{
+            claim::{
+                codec::{DecodedClaim, DecodedRecord, SupportedClaim, VerificationContext},
+                view::{ClaimAuthor, ClaimTrustBase, CurrentEvaluation},
+            },
+            identity::{control::IdentityVersion, IdentityStateStanding, ScopeAdmission},
+        };
+
+        let identity_resolutions = system.resolve_public_identities()?;
+        let active_states = identity_resolutions
+            .iter()
+            .filter_map(|resolution| match resolution {
+                crate::identity::did_kan_update::DidKanResolution::Active(state) => {
+                    Some((**state).clone())
+                }
+                crate::identity::did_kan_update::DidKanResolution::NonActive(_) => None,
+            })
+            .collect::<Vec<_>>();
+        let verification = VerificationContext::ResolvedIdentities {
+            did_kan: &active_states,
+        };
+        let log_records = self.log.iter_decoded(verification).await?;
+        let overlay_records = self.overlay.iter_decoded(verification).await?;
+
+        let local_authors = log_records
+            .iter()
+            .filter_map(|(_, record)| match &record.claim {
+                DecodedClaim::Supported(SupportedClaim::V1(claim)) => {
+                    Some(ClaimAuthor::V1(claim.content.author.clone()))
+                }
+                DecodedClaim::Supported(SupportedClaim::Claim(claim)) => Some(
+                    ClaimAuthor::Principal(claim.content().author().principal().to_string()),
+                ),
+                DecodedClaim::Unsupported(_) => None,
+            });
+        let trust = ClaimTrustBase::local(local_authors);
+
+        let mut seen = std::collections::HashSet::new();
+        let mut records = Vec::new();
+        for (cid, record) in log_records.into_iter().chain(overlay_records) {
+            if seen.insert(cid) {
+                records.push(record);
+            }
+        }
+        // `open_read_only` projects newly arrived v1 `.claims/` records
+        // directly into SQLite instead of mutating the overlay. Preserve
+        // those verified records in the mixed view until the Git-tree codec
+        // itself carries current envelopes.
+        for (cid, stored) in self.index.all_stored_claims()? {
+            if seen.insert(cid) {
+                records.push(DecodedRecord {
+                    claim: DecodedClaim::Supported(SupportedClaim::V1(stored.claim)),
+                    rev: stored.rev,
+                });
+            }
+        }
+
+        let scope_store = crate::identity::scope_store::ScopeIdentityStore::at(
+            self.root.join(".kan").join("scope"),
+        );
+        let installed = scope_store.read()?;
+        let verified_scope = match installed.as_ref() {
+            Some(installed) => {
+                let matching = active_states.iter().find(|state| {
+                    installed
+                        .inception
+                        .governance_roots
+                        .iter()
+                        .any(|root| root == &state.did)
+                });
+                match matching {
+                    Some(state) => scope_store.read_verified_did_kan(state)?,
+                    None if installed
+                        .inception
+                        .governance_roots
+                        .iter()
+                        .any(|root| root.starts_with("did:key:")) =>
+                    {
+                        scope_store.read_verified_static()?
+                    }
+                    None => None,
+                }
+            }
+            None => None,
+        };
+        let legacy_scope = verified_scope.as_ref().map(|scope| scope.scope());
+        let governance_roots = verified_scope
+            .as_ref()
+            .map(|scope| scope.installed().inception.governance_roots.clone())
+            .unwrap_or_default();
+        let claims = crate::claim::view::project(records, &trust, |claim| {
+            let standing = match claim.content().author().identity_version() {
+                IdentityVersion::Static => IdentityStateStanding::Static,
+                IdentityVersion::Event(_) => IdentityStateStanding::Active,
+                IdentityVersion::VersionId(_) | IdentityVersion::DocumentCid(_) => {
+                    IdentityStateStanding::Unknown
+                }
+            };
+            let scope_admission = match legacy_scope {
+                Some(scope)
+                    if scope == claim.content().scope()
+                        && governance_roots
+                            .iter()
+                            .any(|root| root == claim.content().author().principal()) =>
+                {
+                    ScopeAdmission::Admitted
+                }
+                _ => ScopeAdmission::Unknown,
+            };
+            CurrentEvaluation {
+                identity_state_standing: standing,
+                scope_admission,
+            }
+        })?;
+        Ok(MixedWorkspaceProjection {
+            claims,
+            legacy_scope,
+            identity_resolutions,
+        })
+    }
+
     async fn reproject_current_claim_views(&mut self) -> Result<(), Error> {
         let writer = self
             .current_writer
@@ -728,6 +889,18 @@ impl Workspace {
     /// write-time concern exactly as identity is, and [`Self::anchor`]
     /// computes it on demand for the one caller that needs it.
     pub async fn open_read_only(cwd: &Path) -> Result<Self, Error> {
+        let config_root = SystemIdentityStore::platform_config_root()?;
+        let system = SystemIdentityStore::at(config_root);
+        Self::open_read_only_with_system(cwd, &system).await
+    }
+
+    /// System-store-injected form of [`Self::open_read_only`]. The store is
+    /// consulted only for public identity history; no profile is selected and
+    /// no credential provider is accessed.
+    pub async fn open_read_only_with_system(
+        cwd: &Path,
+        system: &SystemIdentityStore,
+    ) -> Result<Self, Error> {
         let root = find_repo_root(cwd);
         let kan_dir = root.join(".kan");
 
@@ -777,8 +950,21 @@ impl Workspace {
         let projection_fresh = matches!(index.built_from_root(), Ok(root) if root == fingerprint)
             && matches!(index.projection_is_consistent(), Ok(true));
         if !projection_fresh {
-            let log_claims = log.iter_all().await?;
-            let mut foreign = overlay.iter_all().await?;
+            let resolutions = system.resolve_public_identities()?;
+            let active_states = resolutions
+                .iter()
+                .filter_map(|resolution| match resolution {
+                    crate::identity::did_kan_update::DidKanResolution::Active(state) => {
+                        Some((**state).clone())
+                    }
+                    crate::identity::did_kan_update::DidKanResolution::NonActive(_) => None,
+                })
+                .collect::<Vec<_>>();
+            let verification = crate::claim::codec::VerificationContext::ResolvedIdentities {
+                did_kan: &active_states,
+            };
+            let log_claims = v1_projection_claims(&mut log, verification).await?;
+            let mut foreign = v1_projection_claims(&mut overlay, verification).await?;
             foreign.extend(arrived);
 
             // #150's poisoned state, handled by *not projecting* duplicates.
@@ -1268,6 +1454,35 @@ fn overlapping<'a>(
         .iter()
         .map(|(c, _)| c)
         .find(|c| in_log.contains(*c))
+}
+
+/// Decode a mixed collection under public identity evidence and retain only
+/// the released records consumed by the legacy renderer/index. Current and
+/// future-codec records stay in the authoritative log for the mixed adapter;
+/// they are never coerced into v1 merely to keep old reads operational.
+async fn v1_projection_claims(
+    log: &mut Log,
+    verification: crate::claim::codec::VerificationContext<'_>,
+) -> Result<Vec<(Cid, crate::store::log::StoredClaim)>, Error> {
+    let decoded = log.iter_decoded(verification).await?;
+    Ok(decoded
+        .into_iter()
+        .filter_map(|(cid, record)| match record.claim {
+            crate::claim::codec::DecodedClaim::Supported(
+                crate::claim::codec::SupportedClaim::V1(claim),
+            ) => Some((
+                cid,
+                crate::store::log::StoredClaim {
+                    claim,
+                    rev: record.rev,
+                },
+            )),
+            crate::claim::codec::DecodedClaim::Supported(
+                crate::claim::codec::SupportedClaim::Claim(_),
+            )
+            | crate::claim::codec::DecodedClaim::Unsupported(_) => None,
+        })
+        .collect())
 }
 
 /// The value the index records as "what I was built from", now that it is

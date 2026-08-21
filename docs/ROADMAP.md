@@ -130,7 +130,13 @@ role-naming, citation, and Git-artifact intents compile without a stringly
 intermediate, and successful current appends refresh the mixed cache. URI-
 dependent publication and legacy anchor/unknown intents remain explicit
 unsupported compiler arms. Production read/render consumers and specialized
-correction/publication actions still need the mixed cutover. The
+correction/publication actions still need the mixed cutover. The production
+read substrate now resolves every public `did:kan` ledger outcome without a
+profile or credential lookup, opens mixed logs without asking the v1 decoder
+to reinterpret current records, and constructs a source-preserving local
+projection with verified scope admission and exact author trust. The released
+renderers still consume the v1-only compatibility projection; adapting their
+human/JSON output to `ClaimView` is the remaining read-surface cutover. The
 underlying signing seams are now deliberately separate: a closed resolved
 system-actor value keeps the kan author profile, exact identity state, method,
 and credential provider together, while an explicit repository-transport

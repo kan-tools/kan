@@ -422,6 +422,20 @@ scope-less workspace is a compatibility request for the v1 writer. This does
 not restore implicit first-write identity creation: without that explicit
 selection, the workspace remains `Uninitialized` and the write is refused.
 
+Production read opening resolves the authoritative public identity ledger
+without selecting a profile or touching any credential provider. Resolution
+returns the closed active/non-active `DidKanResolution` union; contested or
+incomplete history is not represented as a missing local signer. Mixed logs
+are decoded under the active public states, while the released SQLite/render
+projection receives only verified v1 records. Current and future-codec records
+remain in the authoritative log and enter the source-preserving mixed local
+projection instead of being coerced into v1. That projection derives default
+trust from authors actually present in the local log, verifies the installed
+scope against its public governance root, and maps historical local paths into
+the scope only through that verified token. Direct governance-root claims in
+the verified scope are admitted; capability-dependent or foreign-scope cases
+remain `Unknown` until their evidence resolvers are wired.
+
 ## 8. Retraction (RECOMMENDED default, flagged OPEN in §9)
 
 **Option B — retraction-as-claim (palimpsest):**

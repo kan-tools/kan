@@ -542,6 +542,69 @@ impl SystemIdentityStore {
         }))
     }
 
+    /// Resolve every `did:kan` genesis represented in the authoritative
+    /// public ledger without consulting profiles or credential providers.
+    /// Active and non-active outcomes remain an explicit union so read paths
+    /// cannot silently turn contested or incomplete history into absence.
+    pub fn resolve_public_identities(
+        &self,
+    ) -> Result<Vec<super::did_kan_update::DidKanResolution>, Error> {
+        let evidence =
+            super::ledger::IdentityLedger::at(self.config_root.join("identity").join("ledger"))
+                .read_all()?;
+        if let Some(event) = evidence.iter().find(|event| !event.is_supported()) {
+            return Err(Error::ProfileResolution(format!(
+                "public identity ledger contains unsupported control fields: {}",
+                event.unsupported_fields().join(", ")
+            )));
+        }
+        let typed = evidence
+            .iter()
+            .filter_map(super::control::PreservedControlEvent::typed)
+            .collect::<Vec<_>>();
+        let mut resolutions = Vec::new();
+        for event in typed.iter().filter(|event| {
+            event.domain == super::did_kan::GENESIS_DOMAIN
+                && event.event_type == super::did_kan::GENESIS_EVENT_TYPE
+        }) {
+            let payload = atproto_dasl::to_vec(&event.payload)?;
+            let genesis: super::did_kan::DidKanGenesis = atproto_dasl::from_reader(&payload[..])?;
+            let did = genesis.did()?;
+            let candidates = typed
+                .iter()
+                .filter(|candidate| {
+                    candidate.domain == super::did_kan_update::UPDATE_DOMAIN
+                        && candidate.event_type == super::did_kan_update::UPDATE_EVENT_TYPE
+                        && matches!(
+                            &candidate.payload,
+                            atproto_dasl::Ipld::Map(fields)
+                                if fields.get("did")
+                                    == Some(&atproto_dasl::Ipld::String(did.clone()))
+                        )
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            let resolution = super::did_kan_update::resolve(&genesis, event, &candidates);
+            if !resolutions.contains(&resolution) {
+                resolutions.push(resolution);
+            }
+        }
+        resolutions.sort_by_key(|resolution| match resolution {
+            super::did_kan_update::DidKanResolution::Active(state) => {
+                (state.did.clone(), state.active_event.to_string())
+            }
+            super::did_kan_update::DidKanResolution::NonActive(state) => (
+                state.did.clone().unwrap_or_default(),
+                state
+                    .active_leaves
+                    .first()
+                    .map(ToString::to_string)
+                    .unwrap_or_default(),
+            ),
+        });
+        Ok(resolutions)
+    }
+
     /// Resolve the exact active `did:kan` state and method selected by a
     /// profile from this installation's authoritative public ledger. This is
     /// read-only and never accesses the credential provider.
@@ -562,52 +625,13 @@ impl SystemIdentityStore {
                 "profile does not cite a did:kan event state".to_string(),
             ));
         };
-        let evidence =
-            super::ledger::IdentityLedger::at(self.config_root.join("identity").join("ledger"))
-                .read_all()?;
-        if let Some(event) = evidence.iter().find(|event| !event.is_supported()) {
-            return Err(Error::ProfileResolution(format!(
-                "public identity ledger contains unsupported control fields: {}",
-                event.unsupported_fields().join(", ")
-            )));
-        }
-        let typed = evidence
-            .iter()
-            .filter_map(super::control::PreservedControlEvent::typed)
-            .collect::<Vec<_>>();
-        let candidates = typed
-            .iter()
-            .filter(|event| {
-                event.domain == super::did_kan_update::UPDATE_DOMAIN
-                    && event.event_type == super::did_kan_update::UPDATE_EVENT_TYPE
-                    && matches!(
-                        &event.payload,
-                        atproto_dasl::Ipld::Map(fields)
-                            if fields.get("did")
-                                == Some(&atproto_dasl::Ipld::String(profile.principal().to_string()))
-                    )
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-
-        for event in typed.iter().filter(|event| {
-            event.domain == super::did_kan::GENESIS_DOMAIN
-                && event.event_type == super::did_kan::GENESIS_EVENT_TYPE
-        }) {
-            let payload = atproto_dasl::to_vec(&event.payload)?;
-            let genesis: super::did_kan::DidKanGenesis =
-                match atproto_dasl::from_reader(&payload[..]) {
-                    Ok(genesis) => genesis,
-                    Err(_) => continue,
-                };
-            if genesis.did()? != profile.principal() {
-                continue;
-            }
-            let super::did_kan_update::DidKanResolution::Active(state) =
-                super::did_kan_update::resolve(&genesis, event, &candidates)
-            else {
+        for resolution in self.resolve_public_identities()? {
+            let super::did_kan_update::DidKanResolution::Active(state) = resolution else {
                 continue;
             };
+            if state.did != profile.principal() {
+                continue;
+            }
             if &state.active_event != expected_event {
                 continue;
             }
