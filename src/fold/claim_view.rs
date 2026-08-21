@@ -37,6 +37,39 @@ pub struct FoldedView {
     pub unsupported: Vec<ClaimView>,
 }
 
+impl FoldedView {
+    pub fn subject(&self, subject: &ClaimSubjectId) -> Option<&SubjectView> {
+        self.classes
+            .iter()
+            .find(|class| class.subjects.contains(subject))
+    }
+}
+
+/// Count otherwise-live claims omitted solely by the selected view-trust
+/// frame. As in the released fold, retracted and trusted-rejected claims are
+/// excluded for their own reasons and are not misreported as trust filtering.
+pub fn excluded_by_trust(
+    claims: &[ClaimView],
+    legacy_scope: Option<ScopeId>,
+) -> HashMap<ClaimSubjectId, usize> {
+    let retracted = excluded_by_retraction(claims);
+    let rejected = excluded_by_rejection(claims, &retracted);
+    let mut out = HashMap::new();
+    for claim in claims {
+        if retracted.contains(claim.claim_id())
+            || rejected.contains(claim.claim_id())
+            || claim.judgments().cryptographic_validity != CryptographicValidity::Valid
+            || !matches!(claim.judgments().view_trust, ViewTrust::Excluded)
+        {
+            continue;
+        }
+        if let Some(subject) = claim.subject_id(legacy_scope) {
+            *out.entry(subject).or_insert(0) += 1;
+        }
+    }
+    out
+}
+
 pub fn fold(mut claims: Vec<ClaimView>, legacy_scope: Option<ScopeId>) -> FoldedView {
     claims.sort_by(|left, right| {
         left.rev().cmp(right.rev()).then_with(|| {

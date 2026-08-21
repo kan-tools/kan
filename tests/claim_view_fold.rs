@@ -85,6 +85,19 @@ fn views(records: Vec<DecodedRecord>) -> Vec<view::ClaimView> {
     .unwrap()
 }
 
+fn views_trusting(
+    records: Vec<DecodedRecord>,
+    authors: impl IntoIterator<Item = view::ClaimAuthor>,
+) -> Vec<view::ClaimView> {
+    view::project(records, &view::ClaimTrustBase::local(authors), |_| {
+        view::CurrentEvaluation {
+            identity_state_standing: IdentityStateStanding::Static,
+            scope_admission: ScopeAdmission::Admitted,
+        }
+    })
+    .unwrap()
+}
+
 #[test]
 fn legacy_local_path_joins_current_scope_only_with_explicit_scope_projection() {
     let identity = Identity::generate();
@@ -191,4 +204,48 @@ fn current_principal_may_retract_matching_legacy_did_but_not_the_reverse() {
         Some(scope()),
     );
     assert_eq!(reverse.classes[0].claims.len(), 2);
+}
+
+#[test]
+fn mixed_fold_discloses_claims_omitted_only_by_view_trust() {
+    let trusted = Identity::generate();
+    let stranger = Identity::generate();
+    let trusted_claim = current_claim(
+        &trusted,
+        "trust/disclosure",
+        ClaimBody::Observation {
+            text: NarrativeText::new("visible".to_string()).unwrap(),
+        },
+        1,
+    );
+    let stranger_claim = current_claim(
+        &stranger,
+        "trust/disclosure",
+        ClaimBody::Observation {
+            text: NarrativeText::new("filtered".to_string()).unwrap(),
+        },
+        2,
+    );
+    let records = vec![
+        DecodedRecord {
+            claim: DecodedClaim::Supported(SupportedClaim::Claim(trusted_claim)),
+            rev: "2222222222222".to_string(),
+        },
+        DecodedRecord {
+            claim: DecodedClaim::Supported(SupportedClaim::Claim(stranger_claim)),
+            rev: "2222222222223".to_string(),
+        },
+    ];
+    let claims = views_trusting(records, [view::ClaimAuthor::Principal(trusted.did())]);
+    let subject = view::ClaimSubjectId::Scoped {
+        scope: scope(),
+        path: "trust/disclosure".to_string(),
+    };
+
+    assert_eq!(
+        claim_view::excluded_by_trust(&claims, Some(scope())).get(&subject),
+        Some(&1)
+    );
+    let folded = claim_view::fold(claims, Some(scope()));
+    assert_eq!(folded.subject(&subject).unwrap().claims.len(), 1);
 }

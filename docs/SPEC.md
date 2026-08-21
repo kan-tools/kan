@@ -377,8 +377,11 @@ retract a v1 claim when the current principal equals its legacy DID component;
 v1 claims can never retract current claims. Mixed state reduction keeps the
 latest status per exact source-author key, maps released and current status
 values into one display domain, and honors attested citation ordering across
-the codec boundary without collapsing those author keys. Kan authorship and
-ATProto repository approval are separate signatures by separate principals.
+the codec boundary without collapsing those author keys. Mixed folds also
+disclose per-subject counts omitted solely by view trust; retracted or
+trusted-rejected claims are not mislabeled as trust exclusions. Kan
+authorship and ATProto repository approval are separate signatures by
+separate principals.
 The claim's `Author` and exact
 identity version authenticate kan speech; the repository transport signer
 only approves a CAR/MST transition and gains no scope authority from doing so.
