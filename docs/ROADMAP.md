@@ -97,7 +97,17 @@ A typed mixed reader makes supported-current, supported-v1, and preserved
 unsupported records an explicit branch. `ClaimView` now preserves those three
 source shapes, keeps v1 and scoped-current subjects distinct, and carries all
 four RFC 1 judgments without fabricating compatibility claims. The production
-fold still sees only v1 until it consumes that view. Current append is gated by an opaque `VerifiedScope`
+fold still sees only v1 until it consumes that view. A parallel disposable
+SQLite projection now caches canonical mixed-codec envelopes and source
+provenance, never judgments; cache reads reverify the envelope under an
+explicit identity-resolution context. The released v1 table and APIs remain
+unchanged for cross-version coexistence. Mixed fold primitives now group
+source-preserving views, retain future-codec records, merge same-as classes,
+and implement the RFC 1 asymmetric migration rule: a matching current
+principal may retract its v1 DID history, while v1 can never retract current
+claims. Historical local paths enter a current scope only through an explicit
+verified-scope projection input. Production render/state consumers still need
+to move from the released v1 `FoldedView` to this mixed view. Current append is gated by an opaque `VerifiedScope`
 token that can only be constructed by rechecking the stored inception proof
 against its exact controller state, and the claim's cryptographic scope must
 match that token. The production workspace still defaults to v1: selecting

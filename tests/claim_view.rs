@@ -4,7 +4,6 @@ use kan::{
         v1, view, CanonicalSet, Claim, ClaimBody, ClaimContent, NarrativeText, RecordedAt,
         SubjectPath, UniqueSequence,
     },
-    fold::TrustBase,
     identity::{
         authorship::Author, control::IdentityVersion, ClaimJudgments, CryptographicValidity,
         IdentityStateStanding, ScopeAdmission, ViewTrust,
@@ -108,12 +107,10 @@ fn current(identity: &Identity) -> Claim {
     Claim::sign_static(content, identity).unwrap()
 }
 
-fn admitted() -> ClaimJudgments {
-    ClaimJudgments {
-        cryptographic_validity: CryptographicValidity::Valid,
+fn admitted() -> view::CurrentEvaluation {
+    view::CurrentEvaluation {
         identity_state_standing: IdentityStateStanding::Static,
         scope_admission: ScopeAdmission::Admitted,
-        view_trust: ViewTrust::Included,
     }
 }
 
@@ -122,7 +119,10 @@ fn mixed_projection_preserves_each_source_ontology_and_judgments() {
     let identity = Identity::generate();
     let legacy = legacy(&identity);
     let current = current(&identity);
-    let trust = TrustBase::local([legacy.content.author.clone()]);
+    let trust = view::ClaimTrustBase::local([
+        view::ClaimAuthor::V1(legacy.content.author.clone()),
+        view::ClaimAuthor::Principal(identity.did()),
+    ]);
     let views = view::project(
         vec![
             DecodedRecord {
@@ -164,37 +164,46 @@ fn mixed_projection_preserves_each_source_ontology_and_judgments() {
         Some(view::ClaimSubject::Claim { subject, .. })
             if subject.as_str() == "identity/current"
     ));
-    assert_eq!(views[1].judgments(), admitted());
+    assert_eq!(
+        views[1].judgments(),
+        ClaimJudgments {
+            cryptographic_validity: CryptographicValidity::Valid,
+            identity_state_standing: IdentityStateStanding::Static,
+            scope_admission: ScopeAdmission::Admitted,
+            view_trust: ViewTrust::Included,
+        }
+    );
 }
 
 #[test]
-fn verified_current_source_cannot_be_reclassified_as_cryptographically_invalid() {
+fn current_principal_trust_does_not_collapse_legacy_composite_authorship() {
     let identity = Identity::generate();
+    let legacy = legacy(&identity);
     let current = current(&identity);
-    let trust = TrustBase::local([]);
-    let result = view::project(
-        [DecodedRecord {
-            claim: DecodedClaim::Supported(SupportedClaim::Claim(current)),
-            rev: "2222222222222".to_string(),
-        }],
+    let trust = view::ClaimTrustBase::local([view::ClaimAuthor::Principal(identity.did())]);
+    let views = view::project(
+        [
+            DecodedRecord {
+                claim: DecodedClaim::Supported(SupportedClaim::V1(legacy)),
+                rev: "2222222222222".to_string(),
+            },
+            DecodedRecord {
+                claim: DecodedClaim::Supported(SupportedClaim::Claim(current)),
+                rev: "2222222222223".to_string(),
+            },
+        ],
         &trust,
-        |_| ClaimJudgments {
-            cryptographic_validity: CryptographicValidity::Invalid,
-            ..admitted()
-        },
-    );
+        |_| admitted(),
+    )
+    .unwrap();
 
-    assert!(matches!(
-        result,
-        Err(view::Error::ContradictoryCurrentValidity(
-            CryptographicValidity::Invalid
-        ))
-    ));
+    assert_eq!(views[0].judgments().view_trust, ViewTrust::Excluded);
+    assert_eq!(views[1].judgments().view_trust, ViewTrust::Included);
 }
 
 #[test]
 fn unsupported_codec_remains_visible_without_inventing_an_author_or_subject() {
-    let trust = TrustBase::local(Vec::<v1::AuthorId>::new());
+    let trust = view::ClaimTrustBase::local(Vec::<view::ClaimAuthor>::new());
     let views = view::project([unsupported_record()], &trust, |_| admitted()).unwrap();
 
     assert_eq!(views[0].codec(), "kan-claim-v3");
@@ -213,4 +222,83 @@ fn unsupported_codec_remains_visible_without_inventing_an_author_or_subject() {
             view_trust: ViewTrust::Excluded,
         }
     );
+}
+
+#[test]
+fn disposable_index_round_trips_mixed_sources_without_persisting_judgments() {
+    let identity = Identity::generate();
+    let legacy = legacy(&identity);
+    let current = current(&identity);
+    let unsupported = unsupported_record();
+    let legacy_id = kan::cid::content_cid(&legacy.content).unwrap();
+    let current_id = current.id().unwrap().cid().clone();
+    let unsupported_id = match &unsupported.claim {
+        DecodedClaim::Unsupported(claim) => claim.claim_id().clone(),
+        _ => unreachable!(),
+    };
+    let records = vec![
+        (
+            legacy_id,
+            DecodedRecord {
+                claim: DecodedClaim::Supported(SupportedClaim::V1(legacy.clone())),
+                rev: "2222222222222".to_string(),
+            },
+        ),
+        (
+            current_id,
+            DecodedRecord {
+                claim: DecodedClaim::Supported(SupportedClaim::Claim(current.clone())),
+                rev: "2222222222223".to_string(),
+            },
+        ),
+        (unsupported_id, unsupported),
+    ];
+    let root = kan::cid::content_cid(&"mixed root").unwrap();
+    let mut index = kan::store::index::Index::open_in_memory().unwrap();
+    index
+        .rebuild_claim_views(&records, &[], Some(&root))
+        .unwrap();
+
+    assert_eq!(index.claim_views_built_from_root().unwrap(), Some(root));
+    let decoded = index
+        .all_decoded_claims(kan::claim::codec::VerificationContext::StaticDidKey)
+        .unwrap();
+    assert_eq!(decoded.len(), 3);
+
+    let trust = view::ClaimTrustBase::local([
+        view::ClaimAuthor::V1(legacy.content.author.clone()),
+        view::ClaimAuthor::Principal(identity.did()),
+    ]);
+    let views = view::project(
+        decoded.into_iter().map(|(_, record)| record),
+        &trust,
+        |_| admitted(),
+    )
+    .unwrap();
+    assert!(views
+        .iter()
+        .any(|claim| matches!(claim.source(), view::ClaimSource::V1(_))));
+    assert!(views
+        .iter()
+        .any(|claim| matches!(claim.source(), view::ClaimSource::Claim(_))));
+    assert!(views
+        .iter()
+        .any(|claim| matches!(claim.source(), view::ClaimSource::Unsupported(_))));
+}
+
+#[test]
+fn disposable_index_refuses_a_key_that_disagrees_with_the_verified_source() {
+    let identity = Identity::generate();
+    let claim = current(&identity);
+    let record = DecodedRecord {
+        claim: DecodedClaim::Supported(SupportedClaim::Claim(claim)),
+        rev: "2222222222222".to_string(),
+    };
+    let wrong = kan::cid::content_cid(&"not this claim").unwrap();
+    let mut index = kan::store::index::Index::open_in_memory().unwrap();
+
+    assert!(matches!(
+        index.rebuild_claim_views(&[(wrong, record)], &[], None),
+        Err(kan::store::index::Error::ClaimViewCidMismatch { .. })
+    ));
 }

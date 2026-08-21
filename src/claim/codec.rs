@@ -90,6 +90,19 @@ pub fn encode_v1(claim: v1::Claim, rev: String) -> Result<Vec<u8>, EncodeError> 
     encode_envelope(&claim_id, V1_CODEC, content, &record.signature, &record.rev)
 }
 
+/// Re-encode one already-decoded record without changing its codec arm or
+/// signed content. Preserved future records return their original canonical
+/// envelope byte-for-byte.
+pub fn encode_decoded(record: &DecodedRecord) -> Result<Vec<u8>, EncodeError> {
+    match &record.claim {
+        DecodedClaim::Supported(SupportedClaim::V1(claim)) => {
+            encode_v1(claim.clone(), record.rev.clone())
+        }
+        DecodedClaim::Supported(SupportedClaim::Claim(claim)) => encode_claim(claim, &record.rev),
+        DecodedClaim::Unsupported(claim) => Ok(claim.canonical_bytes().to_vec()),
+    }
+}
+
 /// Decode canonical common-envelope bytes. Unknown codec/arm pairs are
 /// preserved only when both sides are unknown; every contradictory pair is
 /// invalid.

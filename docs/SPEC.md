@@ -360,7 +360,17 @@ and unsupported claims with cryptographic validity, identity standing, scope
 admission, and view trust kept separate. It never fabricates one signed source
 shape from another. Until the production fold consumes that view, the
 compatibility fold reads only v1 and explicitly skips current and preserved
-unsupported records. Kan authorship and ATProto repository approval are
+unsupported records. The disposable index may cache canonical source
+envelopes, codec, subject, principal, revision, and medium provenance, but it
+must not cache admission, identity standing, or view trust. Cached envelopes
+are reverified under an explicit identity-resolution context before becoming
+a `ClaimView`; SQLite is never signature authority. Mixed view trust keys are
+an explicit union of exact v1 `AuthorId` and current stable principal, so a
+legacy agent component is neither erased nor invented for current authors.
+Mapping a v1 local subject path into a current scope requires the verified
+scope as an explicit compatibility-projection input. Current claims may
+retract a v1 claim when the current principal equals its legacy DID component;
+v1 claims can never retract current claims. Kan authorship and ATProto repository approval are
 separate signatures by separate principals. The claim's `Author` and exact
 identity version authenticate kan speech; the repository transport signer
 only approves a CAR/MST transition and gains no scope authority from doing so.
