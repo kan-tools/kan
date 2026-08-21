@@ -11,6 +11,8 @@ use atproto_dasl::Cid;
 
 use crate::identity::{control::IdentityVersion, scope_inception::ScopeId};
 
+pub mod local;
+
 /// A scheme and authority pair whose invalid cross-scheme combinations cannot
 /// be represented.
 #[derive(Debug, Clone, PartialEq, Eq)]
