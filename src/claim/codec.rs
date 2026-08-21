@@ -60,6 +60,13 @@ impl PreservedClaim {
 pub enum VerificationContext<'a> {
     StaticDidKey,
     ActiveDidKan(&'a crate::identity::did_kan_update::ResolvedDidKanState),
+    /// Resolve each current claim from its own typed author. Static
+    /// `did:key` authors verify intrinsically; `did:kan` authors select the
+    /// state whose DID and exact event both match. Other identity-version
+    /// arms remain explicitly unsupported until their resolvers exist.
+    ResolvedIdentities {
+        did_kan: &'a [crate::identity::did_kan_update::ResolvedDidKanState],
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -221,6 +228,9 @@ pub fn decode_record(
                 VerificationContext::ActiveDidKan(state) => {
                     Claim::verify_active_did_kan(content, signature.clone(), state)?
                 }
+                VerificationContext::ResolvedIdentities { did_kan } => {
+                    verify_with_resolved_identities(content, signature.clone(), did_kan)?
+                }
             };
             Ok(DecodedRecord {
                 claim: DecodedClaim::Supported(SupportedClaim::Claim(claim)),
@@ -228,6 +238,33 @@ pub fn decode_record(
             })
         }
         _ => unreachable!("known codec dispatch is closed above"),
+    }
+}
+
+fn verify_with_resolved_identities(
+    content: ClaimContent,
+    signature: Vec<u8>,
+    did_kan: &[crate::identity::did_kan_update::ResolvedDidKanState],
+) -> Result<Claim, super::Error> {
+    use crate::identity::control::IdentityVersion;
+
+    let author = content.author();
+    match author.identity_version() {
+        IdentityVersion::Static => Claim::verify_static(content, signature),
+        IdentityVersion::Event(event) => {
+            let state = did_kan
+                .iter()
+                .find(|state| state.did == author.principal() && &state.active_event == event);
+            match state {
+                Some(state) => Claim::verify_active_did_kan(content, signature, state),
+                None => Err(super::Error::UnsupportedIdentityResolver(
+                    author.principal().to_string(),
+                )),
+            }
+        }
+        IdentityVersion::VersionId(_) | IdentityVersion::DocumentCid(_) => Err(
+            super::Error::UnsupportedIdentityResolver(author.principal().to_string()),
+        ),
     }
 }
 

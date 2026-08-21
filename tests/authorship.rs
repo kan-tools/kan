@@ -2,7 +2,7 @@ use atproto_dasl::Ipld;
 use kan::{
     claim::{
         codec::{self, DecodedClaim, SupportedClaim, VerificationContext},
-        CanonicalSet, ClaimBody, ClaimContent, ClaimSigningInput, NarrativeText, RecordedAt,
+        CanonicalSet, Claim, ClaimBody, ClaimContent, ClaimSigningInput, NarrativeText, RecordedAt,
         SubjectPath, UniqueSequence,
     },
     identity::{
@@ -164,6 +164,102 @@ fn system_profile_signs_a_current_claim_as_its_exact_active_method() {
             .cryptographic_validity,
         CryptographicValidity::Invalid
     );
+}
+
+#[test]
+fn resolved_identity_context_selects_each_claims_exact_author_state() {
+    let first_temp = tempfile::tempdir().unwrap();
+    let second_temp = tempfile::tempdir().unwrap();
+    let (first_store, first_profile, first_state, first_method) =
+        installed_actor(first_temp.path());
+    let (second_store, second_profile, second_state, second_method) =
+        installed_actor(second_temp.path());
+    let first_author = Author::new(
+        first_profile.principal().to_string(),
+        first_profile.actor().verification_method().to_string(),
+        first_profile.actor().controller_state().clone(),
+    )
+    .unwrap();
+    let second_author = Author::new(
+        second_profile.principal().to_string(),
+        second_profile.actor().verification_method().to_string(),
+        second_profile.actor().controller_state().clone(),
+    )
+    .unwrap();
+    let first = first_store
+        .sign_claim(
+            &first_profile,
+            &first_method,
+            current_content(first_author, "first resolved author"),
+        )
+        .unwrap();
+    let second = second_store
+        .sign_claim(
+            &second_profile,
+            &second_method,
+            current_content(second_author, "second resolved author"),
+        )
+        .unwrap();
+    let static_identity = Identity::generate();
+    let static_principal = static_identity.did();
+    let static_fingerprint = static_principal.strip_prefix("did:key:").unwrap();
+    let static_claim = Claim::sign_static(
+        current_content(
+            Author::new(
+                static_principal.clone(),
+                format!("{static_principal}#{static_fingerprint}"),
+                IdentityVersion::Static,
+            )
+            .unwrap(),
+            "intrinsically resolved static author",
+        ),
+        &static_identity,
+    )
+    .unwrap();
+    let states = [first_state, second_state];
+    let verification = VerificationContext::ResolvedIdentities { did_kan: &states };
+
+    for claim in [first, second, static_claim] {
+        let decoded = codec::decode(
+            &codec::encode_claim(&claim, "3jzfcijpj2z2a").unwrap(),
+            verification,
+        )
+        .unwrap();
+        assert!(matches!(
+            decoded,
+            DecodedClaim::Supported(SupportedClaim::Claim(decoded)) if decoded == claim
+        ));
+    }
+}
+
+#[test]
+fn resolved_identity_context_fails_closed_when_exact_state_is_absent() {
+    let temp = tempfile::tempdir().unwrap();
+    let (store, profile, _state, method) = installed_actor(temp.path());
+    let author = Author::new(
+        profile.principal().to_string(),
+        profile.actor().verification_method().to_string(),
+        profile.actor().controller_state().clone(),
+    )
+    .unwrap();
+    let claim = store
+        .sign_claim(
+            &profile,
+            &method,
+            current_content(author, "missing exact state"),
+        )
+        .unwrap();
+
+    let error = codec::decode(
+        &codec::encode_claim(&claim, "3jzfcijpj2z2a").unwrap(),
+        VerificationContext::ResolvedIdentities { did_kan: &[] },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        codec::DecodeError::Claim(kan::claim::Error::UnsupportedIdentityResolver(principal))
+            if principal == profile.principal()
+    ));
 }
 
 #[test]

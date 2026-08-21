@@ -100,7 +100,10 @@ four RFC 1 judgments without fabricating compatibility claims. The production
 fold still sees only v1 until it consumes that view. A parallel disposable
 SQLite projection now caches canonical mixed-codec envelopes and source
 provenance, never judgments; cache reads reverify the envelope under an
-explicit identity-resolution context. The released v1 table and APIs remain
+explicit identity-resolution context. General reads dispatch from each
+claim's typed author, verify static identities intrinsically, and select
+`did:kan` state by both principal and exact event; unresolved identity-version
+arms fail closed. The released v1 table and APIs remain
 unchanged for cross-version coexistence. Mixed fold primitives now group
 source-preserving views, retain future-codec records, merge same-as classes,
 and implement the RFC 1 asymmetric migration rule: a matching current

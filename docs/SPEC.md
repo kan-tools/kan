@@ -364,7 +364,11 @@ unsupported records. The disposable index may cache canonical source
 envelopes, codec, subject, principal, revision, and medium provenance, but it
 must not cache admission, identity standing, or view trust. Cached envelopes
 are reverified under an explicit identity-resolution context before becoming
-a `ClaimView`; SQLite is never signature authority. Mixed view trust keys are
+a `ClaimView`; SQLite is never signature authority. General mixed reads
+dispatch from each current claim's typed `Author`: static `did:key` verifies
+intrinsically, `did:kan` selects a resolved state matching both the stable DID
+and exact event, and identity-version arms without an installed resolver fail
+closed as unsupported. Mixed view trust keys are
 an explicit union of exact v1 `AuthorId` and current stable principal, so a
 legacy agent component is neither erased nor invented for current authors.
 Mapping a v1 local subject path into a current scope requires the verified
