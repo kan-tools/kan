@@ -29,16 +29,20 @@ governed scope, admission, or URI semantics.
 | Milestone | Status | Outcome | Governing design |
 |---|---|---|---|
 | 1 — Identity | Shipped in [#246](https://github.com/kan-tools/kan/pull/246) | Stable principals, governed scopes, governance, delegated admission, and four separately reported read judgments | [RFC 1](../rfcs/1-identity-system.md) |
-| 2 — Local URI application | Active under [#248](https://github.com/kan-tools/kan/issues/248) | Existing CLI and MCP reads compile to one RFC 2 resolution request and canonical `kan://local/...` URI | [RFC 2](../rfcs/2-kan-uri-scheme.md) |
+| 2 — Local URI application | Qualification under [#252](https://github.com/kan-tools/kan/issues/252) | Existing CLI and MCP reads compile to one RFC 2 resolution request and canonical `kan://local/...` URI | [RFC 2](../rfcs/2-kan-uri-scheme.md) |
 | 3 — Hosted kan | Next | A Railway-deployable kan-native authority resolves the same typed resources while keeping authenticated ingest separate | [identity-first roadmap](../.design/identity-first-uri-native-roadmap.md) |
 | 4 — ATProto | Deferred behind 1–3 | RFC 3 codecs, publication, and AppView adapt the proven identity and URI model | [RFC 3](../rfcs/3-authoritative-lexicon-publication.md) |
 
-Milestone 2 has shipped its parser/canonicalizer checkpoint (#250) and its
-first production local-resolver checkpoint (#253). Explicit local resolution
-uses an in-memory disposable projection, preserves source provenance and all
-four RFC 1 claim judgments, and returns an immutable replay URI without
-touching authoritative or derived workspace bytes. The active slice is #251:
-compile the existing CLI and MCP reads through that request/result boundary.
+Milestone 2 has shipped its parser/canonicalizer (#250), production local
+resolver (#253), and CLI/MCP compilation (#251) checkpoints. Explicit local
+resolution uses an in-memory disposable projection, preserves source
+provenance and all four RFC 1 claim judgments, and returns an immutable replay
+URI without touching authoritative or derived workspace bytes. Current CLI
+recalling verbs and MCP tools/resources now render from that exact retained
+workspace, projection, and trust frame; released-v1 compatibility remains
+scope-less without inventing a `ScopeId`. The active slice is #252: execute the
+complete production equivalence/mutation matrix, reconcile deferred issues,
+and perform the milestone's cold adversarial review before release.
 
 Milestone 1 began in commit `4ad239a` and completed in merge commit `78bbc10`.
 The following record describes the shipped boundary. The first slice was deliberately
