@@ -8,6 +8,22 @@
     "snapshots": ".design/rfc-2-lexicons"
   },
   "sources": "tests/fixtures/uri-v1/sources.json",
+  "productionResolverCoverage": [
+    {"vector":"locator-no-prefix-fallback","status":"production","milestone":"local","test":"local_uri_resolution::shipped_local_manifest_vectors_execute_the_production_resolver"},
+    {"vector":"ambiguous-locator","status":"production","milestone":"local","test":"uri::local::tests::manifest_ambiguous_locator_executes_production_selection"},
+    {"vector":"local-authority-unknown","status":"production","milestone":"local","test":"local_uri_resolution::shipped_local_manifest_vectors_execute_the_production_resolver"},
+    {"vector":"read-only-negative-control","status":"production","milestone":"local","test":"local_uri_resolution::shipped_local_manifest_vectors_execute_the_production_resolver"},
+    {"vector":"time-required","status":"deferred","milestone":"hosted-evaluation","reason":"RFC 2 evaluation-time policy requires a source contract that can declare time-dependent admission"},
+    {"vector":"source-denied","status":"deferred","milestone":"hosted","reason":"requires a permissioned non-local authority"},
+    {"vector":"source-absent","status":"deferred","milestone":"hosted","reason":"requires a permissioned non-local authority"},
+    {"vector":"resource-absent","status":"deferred","milestone":"hosted","reason":"requires a permissioned non-local authority"},
+    {"vector":"git-authority-unsupported","status":"deferred","milestone":"git","reason":"requires the kan+git resolver"},
+    {"vector":"at-handle-appview-current","status":"deferred","milestone":"atproto","reason":"requires the kan+at AppView resolver"},
+    {"vector":"at-did-pds-commit","status":"deferred","milestone":"atproto","reason":"requires the kan+at PDS resolver"},
+    {"vector":"at-both-sources","status":"deferred","milestone":"atproto","reason":"requires AppView and PDS source comparison"},
+    {"vector":"at-historical-unavailable","status":"deferred","milestone":"atproto","reason":"requires ATProto historical snapshot access"},
+    {"vector":"handle-bidirectional-failure","status":"deferred","milestone":"atproto","reason":"requires live ATProto handle resolution"}
+  ],
   "lexicons": [
     ".design/rfc-2-lexicons/tools.kan.claim.json",
     ".design/rfc-2-lexicons/tools.kan.defs.json",

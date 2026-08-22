@@ -5,6 +5,62 @@ use kan::uri::{AtAuthority, KanAuthority, ResolutionRequest, Route, ScopeSelecto
 use serde_json::Value;
 
 #[test]
+fn every_non_parse_vector_has_an_explicit_production_disposition() {
+    let manifest: Value = serde_json::from_str(include_str!("fixtures/uri-v1/manifest.json"))
+        .expect("URI-v1 manifest must be JSON");
+    let expected = manifest["vectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|vector| vector["phase"] != "parse")
+        .map(|vector| vector["id"].as_str().unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    let coverage = manifest["productionResolverCoverage"]
+        .as_array()
+        .expect("non-parse vectors require production coverage metadata");
+    let actual = coverage
+        .iter()
+        .map(|entry| entry["vector"].as_str().unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        actual.len(),
+        coverage.len(),
+        "duplicate coverage disposition"
+    );
+    assert_eq!(
+        actual, expected,
+        "every resolution/safety vector is classified"
+    );
+
+    let production = coverage
+        .iter()
+        .filter(|entry| entry["status"] == "production")
+        .map(|entry| entry["vector"].as_str().unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        production,
+        [
+            "ambiguous-locator",
+            "local-authority-unknown",
+            "locator-no-prefix-fallback",
+            "read-only-negative-control",
+        ]
+        .into_iter()
+        .collect()
+    );
+    for entry in coverage {
+        match entry["status"].as_str() {
+            Some("production") => assert!(entry["test"].is_string()),
+            Some("deferred") => {
+                assert!(entry["milestone"].is_string());
+                assert!(entry["reason"].is_string());
+            }
+            status => panic!("unknown production coverage status {status:?}"),
+        }
+    }
+}
+
+#[test]
 fn every_parse_vector_matches_the_production_parser() {
     let manifest: Value = serde_json::from_str(include_str!("fixtures/uri-v1/manifest.json"))
         .expect("URI-v1 manifest must be JSON");

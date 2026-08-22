@@ -38,11 +38,35 @@ resolver (#253), and CLI/MCP compilation (#251) checkpoints. Explicit local
 resolution uses an in-memory disposable projection, preserves source
 provenance and all four RFC 1 claim judgments, and returns an immutable replay
 URI without touching authoritative or derived workspace bytes. Current CLI
-recalling verbs and MCP tools/resources now render from that exact retained
-workspace, projection, and trust frame; released-v1 compatibility remains
+recalling verbs and MCP tools/resources now pass their already-open application
+reader into that same resolution implementation, so a scoped shorthand read
+does not verify and project the log twice. Those shorthand surfaces may refresh
+the disposable SQLite index before resolution; explicit URI resolution remains
+byte-clean. Both render from the exact retained workspace, projection, and
+trust frame; released-v1 compatibility remains
 scope-less without inventing a `ScopeId`. The active slice is #252: execute the
 complete production equivalence/mutation matrix, reconcile deferred issues,
 and perform the milestone's cold adversarial review before release.
+
+The #252 maintenance inventory is explicitly reconciled below. “Deferred” is
+not an implicit scope drop: the issue remains open, its reason is named, and no
+URI syntax or resolver result pretends the missing feature exists.
+
+| Issue | Milestone 2 disposition | Reason / retained boundary |
+|---|---|---|
+| [#72](https://github.com/kan-tools/kan/issues/72) | Deferred | Enriching domain relations needs a consuming fold design; RFC 2 preserves raw claims and `cites` witnesses without inventing derived weights. |
+| [#117](https://github.com/kan-tools/kan/issues/117) | Partly absorbed; remainder deferred | RFC 2 now provides typed per-read trust selection. Persisted, signed enrichment records remain a separate fold/data-model design. |
+| [#186](https://github.com/kan-tools/kan/issues/186) | Deferred | Subject visibility is presentation/evaluation policy. Reserved URI segments do not silently acquire hidden-subject semantics. |
+| [#194](https://github.com/kan-tools/kan/issues/194) | Deferred | The path-resolved keychain lint is tooling hardening independent of URI parsing or resolution. The existing narrowed check remains honest about its limit. |
+| [#197](https://github.com/kan-tools/kan/issues/197) | Deferred behind workspace-ownership design | Explicit local URI resolution fails closed on linked Git worktrees. The broader CLI discovery problem remains open; kan does not guess whether `.kan` follows the common repository or checkout. |
+| [#198](https://github.com/kan-tools/kan/issues/198) | Deferred | Short CIDs are human-rendering and input ergonomics; canonical URIs and structured results retain full identifiers. |
+| [#199](https://github.com/kan-tools/kan/issues/199) | Deferred | The human readability pass must not alter the versioned JSON or typed resolver contract. |
+| [#210](https://github.com/kan-tools/kan/issues/210) | Deferred | Inbound citation traversal is a future indexed read surface; RFC 2 retains outbound `cites` evidence and does not reconstruct graph edges from prose. |
+
+The conformance manifest likewise classifies every non-parse vector. The four
+vectors supported by the local milestone execute against production Rust; the
+remaining hosted, Git, ATProto, and source-declared evaluation-time vectors
+name the resolver milestone that must turn them from deferred into production.
 
 Milestone 1 began in commit `4ad239a` and completed in merge commit `78bbc10`.
 The following record describes the shipped boundary. The first slice was deliberately

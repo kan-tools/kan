@@ -538,7 +538,7 @@ impl KanServer {
                 }
                 .map_err(resolution_error)?;
                 resolver
-                    .resolve_scoped_application(&request)
+                    .resolve_scoped_application_with_workspace(&request, workspace)
                     .await
                     .map(Box::new)
                     .map(ApplicationReader::Scoped)

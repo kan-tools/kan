@@ -81,6 +81,19 @@ async fn current_workspace() -> (
     ResolvedSystemActor,
     atproto_dasl::Cid,
 ) {
+    current_workspace_with("kan-tools:kan", "design/local-uri").await
+}
+
+async fn current_workspace_with(
+    scope_name: &str,
+    subject: &str,
+) -> (
+    tempfile::TempDir,
+    std::path::PathBuf,
+    std::path::PathBuf,
+    ResolvedSystemActor,
+    atproto_dasl::Cid,
+) {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("workspace");
     let config = temp.path().join("config");
@@ -89,7 +102,7 @@ async fn current_workspace() -> (
     let system = SystemIdentityStore::at(&config);
     let inception = ScopeInception::new(
         [0xb2; 32],
-        vec!["kan-tools:kan".to_string()],
+        vec![scope_name.to_string()],
         vec![actor.principal().to_string()],
         vec![],
     )
@@ -113,7 +126,7 @@ async fn current_workspace() -> (
     let claim = kan::actions::observe(
         &mut workspace,
         "URI-native evidence".to_string(),
-        Some("design/local-uri".to_string()),
+        Some(subject.to_string()),
         vec![],
         None,
         None,
@@ -130,6 +143,46 @@ async fn current_workspace() -> (
         std::fs::remove_file(index).unwrap();
     }
     (temp, root, config, actor, claim)
+}
+
+fn manifest_vector(id: &str) -> serde_json::Value {
+    let manifest: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/uri-v1/manifest.json")).unwrap();
+    manifest["vectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|vector| vector["id"] == id)
+        .unwrap_or_else(|| panic!("missing URI-v1 vector {id}"))
+        .clone()
+}
+
+#[tokio::test]
+async fn shipped_local_manifest_vectors_execute_the_production_resolver() {
+    let (_temp, root, config, _actor, _claim) = current_workspace_with("kan-tools:day", "x").await;
+    let system = SystemIdentityStore::at(&config);
+    let resolver = LocalResolver::new(&root, &system);
+
+    for id in ["locator-no-prefix-fallback", "local-authority-unknown"] {
+        let vector = manifest_vector(id);
+        let error = resolver
+            .resolve_uri(vector["input"].as_str().unwrap())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.code(),
+            vector["expect"]["failure"].as_str().unwrap(),
+            "{id}"
+        );
+    }
+
+    let safety = manifest_vector("read-only-negative-control");
+    let before = tree_bytes(root.parent().unwrap());
+    resolver
+        .resolve_uri(safety["input"].as_str().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(tree_bytes(root.parent().unwrap()), before);
 }
 
 #[tokio::test]
@@ -157,6 +210,23 @@ async fn named_direct_claim_subject_and_identity_routes_share_one_snapshot() {
     assert!(application.empty_reason.is_none());
     assert_eq!(application.workspace.root, root);
     assert_eq!(application.projection.claims().len(), 1);
+
+    let mut application_workspace = Workspace::open_read_only_with_system(&root, &system)
+        .await
+        .unwrap();
+    assert_eq!(
+        application_workspace
+            .application_read_route_with_system(&system)
+            .await
+            .unwrap(),
+        kan::workspace::ApplicationReadRoute::Scoped
+    );
+    let supplied = resolver
+        .resolve_scoped_application_with_workspace(&shorthand, application_workspace)
+        .await
+        .unwrap();
+    assert_eq!(supplied.result, application.result);
+
     let composite_specs = vec!["local".to_string(), format!("{}=0.5", actor.principal())];
     let composite_request = resolver
         .subject_request("design/local-uri", &composite_specs)

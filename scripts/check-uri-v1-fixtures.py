@@ -199,6 +199,30 @@ for index, vector in enumerate(vectors):
     if source_fixture is not None and source_fixture not in sources:
         fail(f"{vector_id} names unknown source fixture {source_fixture}")
 
+non_parse_ids = {vector["id"] for vector in vectors if vector["phase"] != "parse"}
+coverage = manifest.get("productionResolverCoverage")
+if not isinstance(coverage, list):
+    fail("productionResolverCoverage must classify every resolution/safety vector")
+coverage_ids: set[str] = set()
+for entry in coverage:
+    if not isinstance(entry, dict) or not isinstance(entry.get("vector"), str):
+        fail("production resolver coverage entries must name a vector")
+    vector_id = entry["vector"]
+    if vector_id in coverage_ids:
+        fail(f"duplicate production resolver coverage for {vector_id}")
+    coverage_ids.add(vector_id)
+    status = entry.get("status")
+    if status == "production":
+        if not isinstance(entry.get("test"), str) or not entry["test"]:
+            fail(f"production vector {vector_id} must name its Rust test")
+    elif status == "deferred":
+        if not isinstance(entry.get("milestone"), str) or not isinstance(entry.get("reason"), str):
+            fail(f"deferred vector {vector_id} must name its milestone and reason")
+    else:
+        fail(f"{vector_id} has invalid production resolver status {status!r}")
+if coverage_ids != non_parse_ids:
+    fail(f"production resolver coverage differs: {sorted(coverage_ids ^ non_parse_ids)}")
+
 missing_families = set(families) - covered
 if missing_families:
     fail(f"mandatory families uncovered: {sorted(missing_families)}")
@@ -286,6 +310,10 @@ if "--self-test" in sys.argv:
     changed = json.loads(json.dumps(manifest))
     changed["serviceDiscoveryVectors"][0]["expect"]["endpoint"] = "https://attacker.example"
     mutations.append(("service discovery", changed))
+
+    changed = json.loads(json.dumps(manifest))
+    changed["productionResolverCoverage"].pop()
+    mutations.append(("production resolver coverage", changed))
 
     with tempfile.TemporaryDirectory() as directory:
         for name, changed in mutations:

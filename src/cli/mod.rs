@@ -1024,7 +1024,9 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
                         Some(subject) => resolver.subject_request(subject, trust_specs)?,
                         None => resolver.scope_request(trust_specs)?,
                     };
-                    let resolved = resolver.resolve_scoped_application(&request).await?;
+                    let resolved = resolver
+                        .resolve_scoped_application_with_workspace(&request, ws)
+                        .await?;
                     let mut exact_workspace = resolved.workspace;
                     return run_read(
                         cli.command,
