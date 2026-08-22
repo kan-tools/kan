@@ -1,12 +1,13 @@
 # Migrating to identity-first, URI-native kan
 
 This guide is for moving an existing local kan installation and its repositories
-onto the RFC 1 identity and RFC 2 local-URI architecture. It targets builds that
-contain PRs [#246](https://github.com/kan-tools/kan/pull/246),
+onto the RFC 1 identity and RFC 2 local-URI architecture. It targets
+`v1.0.0-beta.1`, the first release that contains PRs
+[#246](https://github.com/kan-tools/kan/pull/246),
 [#258](https://github.com/kan-tools/kan/pull/258), and
-[#260](https://github.com/kan-tools/kan/pull/260). Until that work has a unique
-release tag, record the exact Git commit you build: `kan --version` alone may
-not distinguish two development builds with the same manifest version.
+[#260](https://github.com/kan-tools/kan/pull/260). If you build a later
+development revision instead, record the exact Git commit as well as the
+output of `kan --version`.
 
 The safe order is:
 
@@ -77,7 +78,7 @@ OLD_KAN="$(command -v kan)"
 
 git clone https://github.com/kan-tools/kan.git kan-upgrade
 cd kan-upgrade
-git checkout <reviewed-tag-or-commit>
+git checkout v1.0.0-beta.1
 git rev-parse HEAD
 cargo build --release --locked
 
