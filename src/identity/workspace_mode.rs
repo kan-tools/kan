@@ -55,6 +55,28 @@ pub async fn classify(
     log: &mut Log,
     actor: Option<&ResolvedSystemActor>,
 ) -> Result<WorkspaceClaimMode, Error> {
+    classify_with_legacy_identity(root, log, actor, true).await
+}
+
+/// Classify the application read route without resolving a repository signing
+/// credential. Public scope and claim evidence are sufficient to choose the
+/// renderer; a private key is needed only when a caller later prepares a
+/// writer. In particular, this path must not cross a macOS keychain ACL and
+/// turn `kan show` into an authorization prompt from another binary.
+pub async fn classify_for_read(
+    root: &Path,
+    log: &mut Log,
+    actor: Option<&ResolvedSystemActor>,
+) -> Result<WorkspaceClaimMode, Error> {
+    classify_with_legacy_identity(root, log, actor, false).await
+}
+
+async fn classify_with_legacy_identity(
+    root: &Path,
+    log: &mut Log,
+    actor: Option<&ResolvedSystemActor>,
+    resolve_legacy_identity: bool,
+) -> Result<WorkspaceClaimMode, Error> {
     let kan_dir = root.join(".kan");
     let pre_release = kan_dir.join("repository");
     if exists(&pre_release)? {
@@ -116,6 +138,22 @@ pub async fn classify(
     let claims = log.iter_all().await?;
     let claim_count = claims.len();
     let identity_evidence = crate::sign::identity_evidence(&kan_dir);
+    if !resolve_legacy_identity {
+        if claim_count > 0 || identity_evidence.is_some() {
+            return Ok(WorkspaceClaimMode::V1 {
+                evidence: LegacyWorkspaceEvidence {
+                    claim_count,
+                    principal: None,
+                },
+            });
+        }
+        if log.current_root().is_some() {
+            return Ok(WorkspaceClaimMode::Incomplete {
+                diagnostics: vec![InitializationDiagnostic::LogWithoutSupportedV1Claims],
+            });
+        }
+        return Ok(WorkspaceClaimMode::Uninitialized);
+    }
     let principal = match crate::sign::workspace_identity(&kan_dir) {
         Ok(identity) => identity.map(|identity| identity.did().to_string()),
         Err(error) if identity_evidence.is_some() => {

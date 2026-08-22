@@ -2,11 +2,12 @@
 
 All notable changes to kan are recorded here.
 
-Every release so far is a **beta prerelease** (`-beta.1`) published to
-crates.io. kan is pre-1.0: the log format carries a stated compatibility
-contract (`docs/SPEC.md` §7.1 — existing claim fields are frozen, new ones are
-additive and optional, unknown claim kinds are preserved as verifiable opaque
-claims), but the CLI surface is still moving.
+Every release so far is a **beta prerelease** published to crates.io. The
+`v1.0.0-beta.1` cut begins the 1.x identity and URI architecture without
+declaring stable 1.0: the log format carries a stated compatibility contract
+(`docs/SPEC.md` §7.1 — existing claim fields are frozen, new ones are additive
+and optional, unknown claim kinds are preserved as verifiable opaque claims),
+but the CLI and onboarding surfaces are still moving.
 
 This file was reconstructed from the git history, the release tags, and the
 issues closed in each release window. The authoritative record of *why* each
@@ -16,8 +17,36 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [v1.0.0-beta.1] — 2026-08-22
+
+**Identity-first, URI-native kan.**
+
+This is the deliberate write-policy and migration boundary settled in the
+claim-v2 cutover design. Existing v1 claims remain byte-for-byte preserved and
+readable, while explicitly initialized scopes write typed `kan-claim-v2`
+claims authored by an installation-level `did:kan`. Product semver and claim
+codec versions are independent: this is the first kan 1.x beta, not a claim
+codec numbered 1.
+
 ### Added
 
+- `kan identity init` creates an installation-level system identity with typed
+  profiles, P-256 recovery and daily-device credentials, a signed control
+  ledger, and fail-closed identity-state resolution.
+- `kan init` deliberately establishes a stable cryptographic `ScopeId`, signed
+  inception event, immutable discovery names, Git-genesis anchor, governance
+  root, and current actor for one repository. It refuses partial or conflicting
+  state rather than guessing how to repair it.
+- `kan-claim-v2` provides a closed, typed claim codec with exact scope,
+  authorship, subject, body, referent, citation, artifact, and recording-time
+  semantics. Mixed-codec reads preserve original v1 bytes, CIDs, signatures,
+  and compatibility meaning without lossy reserialization.
+- Current reads disclose four independent judgments for every claim:
+  cryptographic validity, identity-state standing, scope admission, and view
+  trust. Unsupported future codecs remain visible and non-participating rather
+  than disappearing or acquiring invented semantics.
 - RFC 2 production request parsing and canonicalization, read-only
   `kan://local` resolution, typed provenance and immutable replay results, and
   URI-native CLI/MCP read routing. Released-v1 workspaces retain an explicit
@@ -30,16 +59,49 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com).
 
 ### Changed
 
+- In an initialized scope, new claims are authored by the configured system
+  `did:kan`; the repository's `did:key` is retained as a separately typed
+  transport principal and cannot accidentally authorize kan claims.
+- The first current write migrates the live ATProto collection to
+  `tools.kan.claim` and appends a v2 record. Scope-less repositories retain the
+  released v1 writer for compatibility until the user explicitly runs
+  `kan init`.
+- Local trust, fold, status, correction, CLI, and MCP surfaces now consume one
+  source-preserving mixed view. A claim may be inspectable without being
+  admitted to fold effects, and every exclusion remains observable.
+- Persistence authority is cataloged and compiler-checked across authoritative
+  kan state, external inputs, and derived projections. Poisoned disposable
+  projections can be recomputed without overriding authoritative evidence.
 - Scoped CLI and MCP shorthand pass their already-open application workspace
   into the shared resolver, avoiding a second full log verification and
   projection. Explicit URI resolution remains in-memory and byte-clean;
   shorthand may maintain only the disposable SQLite projection before entering
   resolution.
+- Application read routing classifies released-v1 workspaces from public claim
+  and identity evidence without resolving their repository signing credential.
+  A keychain-protected identity can therefore neither prompt nor hang `kan
+  show`; credential access remains confined to writer preparation.
 - The local resolution mutation guard now covers raw log and overlay bytes in
   addition to scope, published claims, and the public identity ledger.
 - The Milestone 2 maintenance inventory explicitly classifies #72, #117, #186,
   #194, #197, #198, #199, and #210; deferred issues remain open with their
   retained boundary and reason documented.
+
+### Compatibility and limits
+
+- Follow `docs/IDENTITY-URI-MIGRATION.md` before replacing an existing binary.
+  Back up every `.kan/` directory and the installation config root; initialize
+  and verify repositories one at a time.
+- Do not use an older binary on a live repository after its first v2 write.
+  Rollback means preserving the new state and restoring the verified
+  pre-migration archive, not attempting an in-place down-migration.
+- Linked worktrees and submodules remain fail-closed while workspace ownership
+  is unresolved in #197.
+- Publication of current scoped claims remains intentionally unavailable until
+  the URI transport/publication boundary lands. Existing v1 `.claims/`
+  projections remain readable and preserved.
+- `v1.0.0-beta.1` is still a prerelease. Stable 1.0 follows further migration
+  qualification and GUI/TUI onboarding; it is not implied by this tag.
 
 ## [v0.13.0-beta.1] — 2026-08-12
 
