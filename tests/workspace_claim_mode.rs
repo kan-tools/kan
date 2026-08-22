@@ -5,7 +5,9 @@ use kan::{
         scope_inception::ScopeInception,
         scope_store::ScopeIdentityStore,
         system::{CredentialReference, ResolvedSystemActor, SystemIdentityStore},
-        workspace_mode::{classify, InitializationDiagnostic, WorkspaceClaimMode},
+        workspace_mode::{
+            classify, classify_for_read, InitializationDiagnostic, WorkspaceClaimMode,
+        },
     },
     sign::Identity,
     store::log::Log,
@@ -186,6 +188,7 @@ async fn partial_scope_state_never_falls_back_to_v1() {
 async fn inaccessible_legacy_identity_is_incomplete_not_uninitialized() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("workspace");
+    init_git(&root);
     std::fs::create_dir_all(root.join(".kan")).unwrap();
     std::fs::write(root.join(".kan/identity"), b"not a p256 private key").unwrap();
     let mut log = Log::open_read_only(&root.join(".kan/log")).await.unwrap();
@@ -195,6 +198,24 @@ async fn inaccessible_legacy_identity_is_incomplete_not_uninitialized() {
         WorkspaceClaimMode::Incomplete { diagnostics }
             if matches!(diagnostics.as_slice(), [InitializationDiagnostic::LegacyIdentityUnavailable { .. }])
     ));
+
+    assert!(matches!(
+        classify_for_read(&root, &mut log, None).await.unwrap(),
+        WorkspaceClaimMode::V1 { evidence }
+            if evidence.claim_count() == 0 && evidence.principal().is_none()
+    ));
+
+    let system = SystemIdentityStore::at(temp.path().join("system"));
+    let mut reader = Workspace::open_read_only_with_system(&root, &system)
+        .await
+        .unwrap();
+    assert_eq!(
+        reader
+            .application_read_route_with_system(&system)
+            .await
+            .unwrap(),
+        ApplicationReadRoute::V1Compatibility
+    );
 }
 
 #[tokio::test]

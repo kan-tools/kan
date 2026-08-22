@@ -77,6 +77,10 @@ codec numbered 1.
   projection. Explicit URI resolution remains in-memory and byte-clean;
   shorthand may maintain only the disposable SQLite projection before entering
   resolution.
+- Application read routing classifies released-v1 workspaces from public claim
+  and identity evidence without resolving their repository signing credential.
+  A keychain-protected identity can therefore neither prompt nor hang `kan
+  show`; credential access remains confined to writer preparation.
 - The local resolution mutation guard now covers raw log and overlay bytes in
   addition to scope, published claims, and the public identity ledger.
 - The Milestone 2 maintenance inventory explicitly classifies #72, #117, #186,
