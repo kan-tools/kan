@@ -160,19 +160,23 @@ fn assert_success(id: &str, request: &ResolutionRequest, expected: &Value) {
         ("commit", request.evidence().commit.as_deref()),
         ("ref", request.evidence().git_ref.as_deref()),
         ("snapshot", request.evidence().snapshot.as_deref()),
-        ("trust", request.evaluation().trust.as_deref()),
     ] {
-        let container = if name == "trust" {
-            &expected["evaluation"]
-        } else {
-            &expected["evidence"]
-        };
         assert_eq!(
             actual,
-            container.get(name).and_then(Value::as_str),
+            expected["evidence"].get(name).and_then(Value::as_str),
             "vector {id}: {name}"
         );
     }
+    assert_eq!(
+        request
+            .evaluation()
+            .trust
+            .as_ref()
+            .map(|trust| trust.canonical_text())
+            .as_deref(),
+        expected["evaluation"].get("trust").and_then(Value::as_str),
+        "vector {id}: trust"
+    );
     assert_eq!(
         request.evaluation().at,
         expected["evaluation"].get("at").and_then(Value::as_u64),
@@ -211,5 +215,41 @@ fn assert_success(id: &str, request: &ResolutionRequest, expected: &Value) {
     }
     if expected.get("requestedScope").is_some() {
         assert!(matches!(request.scope(), Some(ScopeSelector::Direct(_))));
+    }
+}
+
+#[test]
+fn composite_trust_is_typed_ordered_and_duplicate_free() {
+    let specs = vec![
+        "roles".to_string(),
+        "did:key:zExample=0.50".to_string(),
+        "did:key:zExample=0.25".to_string(),
+    ];
+    let trust = kan::uri::TrustSelection::from_specs(&specs)
+        .unwrap()
+        .unwrap();
+    let request = ResolutionRequest::local_subject(
+        "bciqlonzrmcwluircewwu7evclx6tdwnc7aupnf6kb5no6nzlegmsiei"
+            .parse()
+            .unwrap(),
+        "x",
+        Some(&trust),
+    )
+    .unwrap();
+    assert_eq!(
+        request.evaluation().trust.as_ref().unwrap().specs(),
+        ["roles", "did:key:zExample=0.5", "did:key:zExample=0.25"]
+    );
+    assert_eq!(
+        request.canonical_uri(),
+        "kan://local/@id:bciqlonzrmcwluircewwu7evclx6tdwnc7aupnf6kb5no6nzlegmsiei/subject/x?trust=@set:%5B%22roles%22,%22did:key:zExample=0.5%22,%22did:key:zExample=0.25%22%5D"
+    );
+
+    for invalid in [
+        "kan://local/kan-tools:day/subject/x?trust=@set:%5B%22roles%22%5D",
+        "kan://local/kan-tools:day/subject/x?trust=@set:%5B%22roles%22,%22roles%22%5D",
+        "kan://local/kan-tools:day/subject/x?trust=@future:value",
+    ] {
+        assert!(ResolutionRequest::parse(invalid).is_err(), "{invalid}");
     }
 }

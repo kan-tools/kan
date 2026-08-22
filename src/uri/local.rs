@@ -41,7 +41,7 @@ impl<'a> LocalResolver<'a> {
     pub async fn resolve(&self, request: &ResolutionRequest) -> Result<ResolutionResult, Error> {
         match request.route() {
             Route::Kan(KanAuthority::Local { port: None }) => {
-                self.resolve_scoped_local(request).await
+                Ok(self.resolve_scoped_application(request).await?.result)
             }
             Route::Kan(KanAuthority::Did(principal)) => {
                 self.resolve_freestanding(request, principal).await
@@ -55,22 +55,58 @@ impl<'a> LocalResolver<'a> {
         }
     }
 
-    async fn resolve_scoped_local(
+    /// Compile released local subject shorthand into the exact request used
+    /// by explicit URI and MCP-resource reads.
+    pub fn subject_request(
+        &self,
+        subject: &str,
+        trust_specs: &[String],
+    ) -> Result<ResolutionRequest, Error> {
+        let root = local_workspace_root(self.cwd)?;
+        let installed = ScopeIdentityStore::at(root.join(".kan/scope"))
+            .read()?
+            .ok_or(Error::ScopeNotFound)?;
+        let trust = crate::uri::TrustSelection::from_specs(trust_specs)?;
+        Ok(ResolutionRequest::local_subject(
+            installed.scope,
+            subject,
+            trust.as_ref(),
+        )?)
+    }
+
+    /// Compile an aggregate application read through the scope-identity
+    /// resource. The result's retained workspace and projection are consumed
+    /// by status/issues/context; no invented subject is needed for routing.
+    pub fn scope_request(&self, trust_specs: &[String]) -> Result<ResolutionRequest, Error> {
+        let root = local_workspace_root(self.cwd)?;
+        let installed = ScopeIdentityStore::at(root.join(".kan/scope"))
+            .read()?
+            .ok_or(Error::ScopeNotFound)?;
+        let trust = crate::uri::TrustSelection::from_specs(trust_specs)?;
+        Ok(ResolutionRequest::local_scope_identity(
+            installed.scope,
+            trust.as_ref(),
+        )?)
+    }
+
+    /// Resolve a scoped request while retaining the already-selected
+    /// projection needed by legacy human/JSON renderers. Presentation layers
+    /// consume this value instead of opening and folding a second workspace.
+    pub async fn resolve_scoped_application(
         &self,
         request: &ResolutionRequest,
-    ) -> Result<ResolutionResult, Error> {
+    ) -> Result<ScopedApplicationResolution, Error> {
+        if !matches!(
+            request.route(),
+            Route::Kan(KanAuthority::Local { port: None })
+        ) {
+            return Err(Error::AuthorityNotFound);
+        }
         if matches!(request.resource(), Resource::AuthorityIdentity) && request.scope().is_none() {
             return Err(Error::AuthorityIdentityUnknown);
         }
         validate_local_source(request.evidence())?;
-        let discovered_root = crate::workspace::find_repo_root(self.cwd);
-        if discovered_root.join(".git").is_file() {
-            // A linked worktree or submodule has an indirect Git directory.
-            // Until #197 defines whether `.kan` follows the common repository
-            // or the checkout, selecting either would silently choose an
-            // ownership model. Explicit URI resolution refuses that guess.
-            return Err(Error::IndirectGitDirectoryUnsupported);
-        }
+        let discovered_root = local_workspace_root(self.cwd)?;
         let Some(selector) = request.scope() else {
             return Err(Error::ScopeNotFound);
         };
@@ -78,7 +114,7 @@ impl<'a> LocalResolver<'a> {
         let before = source_guard(Some(&discovered_root), self.system)?;
         let mut workspace =
             Workspace::open_resolution_read_only_with_system(self.cwd, self.system).await?;
-        let projection = self.project(&mut workspace, request).await?;
+        let (projection, trust, empty_reason) = self.project(&mut workspace, request).await?;
         let scope_store = ScopeIdentityStore::at(workspace.root.join(".kan").join("scope"));
         let installed = scope_store.read()?.ok_or(Error::ScopeNotFound)?;
         let selected_scope = installed.scope;
@@ -110,7 +146,7 @@ impl<'a> LocalResolver<'a> {
             .collect::<Vec<_>>();
         let resource =
             resolve_scoped_resource(request, &projection, selected_scope, installed.clone())?;
-        Ok(result(
+        let result = result(
             request,
             Some(selected_scope),
             snapshot,
@@ -118,7 +154,14 @@ impl<'a> LocalResolver<'a> {
             selected_scope.to_string(),
             diagnostics,
             resource,
-        ))
+        );
+        Ok(ScopedApplicationResolution {
+            result,
+            workspace,
+            projection,
+            trust,
+            empty_reason,
+        })
     }
 
     async fn resolve_freestanding(
@@ -164,20 +207,52 @@ impl<'a> LocalResolver<'a> {
         &self,
         workspace: &mut Workspace,
         request: &ResolutionRequest,
-    ) -> Result<MixedWorkspaceProjection, Error> {
+    ) -> Result<
+        (
+            MixedWorkspaceProjection,
+            crate::fold::TrustBase,
+            Option<String>,
+        ),
+        Error,
+    > {
         match request.evaluation().trust.as_ref() {
-            None => Ok(workspace
-                .mixed_local_projection_with_system(self.system)
-                .await?),
+            None => {
+                let trust = workspace.local_trust()?;
+                let projection = workspace
+                    .mixed_projection_with_system(self.system, &trust)
+                    .await?;
+                Ok((projection, trust, None))
+            }
             Some(trust) => {
-                let specs = vec![trust.clone()];
-                let (frame, _) = workspace.trust_from_detailed_with_system(&specs, self.system)?;
-                Ok(workspace
+                let specs = trust.specs();
+                let (frame, empty_reason) =
+                    workspace.trust_from_detailed_with_system(&specs, self.system)?;
+                let projection = workspace
                     .mixed_projection_with_system(self.system, &frame)
-                    .await?)
+                    .await?;
+                Ok((projection, frame, empty_reason))
             }
         }
     }
+}
+
+fn local_workspace_root(cwd: &Path) -> Result<std::path::PathBuf, Error> {
+    let root = crate::workspace::find_repo_root(cwd);
+    if root.join(".git").is_file() {
+        // A linked worktree or submodule has an indirect Git directory.
+        // Until #197 defines whether `.kan` follows the common repository or
+        // the checkout, selecting either would silently choose ownership.
+        return Err(Error::IndirectGitDirectoryUnsupported);
+    }
+    Ok(root)
+}
+
+pub struct ScopedApplicationResolution {
+    pub result: ResolutionResult,
+    pub workspace: Workspace,
+    pub projection: MixedWorkspaceProjection,
+    pub trust: crate::fold::TrustBase,
+    pub empty_reason: Option<String>,
 }
 
 #[derive(Clone, Copy)]

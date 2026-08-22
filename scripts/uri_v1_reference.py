@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import re
 import base64
+import json
+import math
 from urllib.parse import quote, unquote_to_bytes, urlsplit
 
 
@@ -44,6 +46,57 @@ def canonical_segment(value: str) -> str:
 
 def canonical_query(value: str) -> str:
     return quote(value, safe=QUERY_SAFE, encoding="utf-8", errors="strict")
+
+
+def canonical_trust_selector(value: str) -> tuple[str | None, str | None]:
+    value = value.strip()
+    if not value or value.startswith("@") or any(ord(char) < 32 or ord(char) == 127 for char in value):
+        return None, "invalid-selector"
+    name, separator, raw_weight = value.partition("=")
+    name = name.strip()
+    if separator:
+        try:
+            weight = float(raw_weight.strip())
+        except ValueError:
+            return None, "invalid-selector"
+        if not math.isfinite(weight) or not 0 <= weight <= 1:
+            return None, "invalid-selector"
+        canonical_weight = "0" if weight == 0 else "1" if weight == 1 else repr(weight)
+    else:
+        canonical_weight = "1"
+
+    weighted = name == "me" or name.startswith("role:") or name.startswith("did:")
+    if name.startswith("role:") and not name.removeprefix("role:"):
+        return None, "invalid-selector"
+    if name.startswith("did:"):
+        parts = name.split(":", 2)
+        if len(parts) != 3 or not re.fullmatch(r"[a-z]+", parts[1]) or not parts[2]:
+            return None, "non-canonical-identifier"
+    if not weighted and separator:
+        return None, "invalid-selector"
+    if canonical_weight == "1":
+        return name, None
+    return f"{name}={canonical_weight}", None
+
+
+def canonical_trust(value: str) -> tuple[str | None, str | None]:
+    if not value.startswith("@set:"):
+        return canonical_trust_selector(value)
+    try:
+        members = json.loads(value.removeprefix("@set:"))
+    except json.JSONDecodeError:
+        return None, "invalid-selector"
+    if not isinstance(members, list) or len(members) < 2 or not all(isinstance(member, str) for member in members):
+        return None, "invalid-selector"
+    canonical: list[str] = []
+    for member in members:
+        selector, error = canonical_trust_selector(member)
+        if error:
+            return None, error
+        if selector in canonical:
+            return None, "duplicate-parameter"
+        canonical.append(selector or "")
+    return "@set:" + json.dumps(canonical, ensure_ascii=False, separators=(",", ":")), None
 
 
 def canonical_base32_bytes(value: str) -> bytes | None:
@@ -119,6 +172,11 @@ def parse_query(raw: str, scheme: str, resource: str) -> tuple[dict | None, dict
         value = seen["at"][0]
         if not re.fullmatch(r"0|[1-9][0-9]*", value):
             return None, None, None, "non-canonical-identifier"
+    if "trust" in seen:
+        value, error = canonical_trust(seen["trust"][0])
+        if error:
+            return None, None, None, error
+        seen["trust"] = [value or ""]
 
     evidence: dict = {}
     evaluation: dict = {}

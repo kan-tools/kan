@@ -176,6 +176,19 @@ pub enum WorkspaceWriterKind {
     Claim,
 }
 
+/// The only two application-read routes. A workspace without a verified
+/// scope may bypass RFC 2 only when durable released-v1 evidence proves that
+/// compatibility is actually required.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApplicationReadRoute {
+    Scoped,
+    V1Compatibility,
+    /// No scope and no readable v1 claim evidence. This preserves harmless
+    /// empty reads without turning an uninitialized repository into a
+    /// compatibility workspace.
+    Empty,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReadProjection {
     WorkspaceDerived,
@@ -392,6 +405,52 @@ fn published_read_error(
 }
 
 impl Workspace {
+    pub async fn application_read_route_with_system(
+        &mut self,
+        system: &SystemIdentityStore,
+    ) -> Result<ApplicationReadRoute, Error> {
+        let initial =
+            crate::identity::workspace_mode::classify(&self.root, &mut self.log, None).await?;
+        let mode = if needs_system_actor(&initial) {
+            let actor = system.resolve_default_actor()?;
+            crate::identity::workspace_mode::classify(&self.root, &mut self.log, actor.as_ref())
+                .await?
+        } else {
+            initial
+        };
+        match mode {
+            WorkspaceClaimMode::Claim { .. } => Ok(ApplicationReadRoute::Scoped),
+            WorkspaceClaimMode::V1 { .. } => Ok(ApplicationReadRoute::V1Compatibility),
+            WorkspaceClaimMode::Uninitialized if self.index.all_stored_claims()?.is_empty() => {
+                Ok(ApplicationReadRoute::Empty)
+            }
+            // A clone can have published released-v1 claims without a local
+            // log or identity. Those claims are positive compatibility
+            // evidence even though writer classification is uninitialized.
+            WorkspaceClaimMode::Uninitialized => Ok(ApplicationReadRoute::V1Compatibility),
+            WorkspaceClaimMode::Incomplete { diagnostics }
+                if diagnostics.iter().all(|diagnostic| {
+                    matches!(
+                        diagnostic,
+                        InitializationDiagnostic::LegacyIdentityUnavailable { .. }
+                            | InitializationDiagnostic::LogWithoutSupportedV1Claims
+                    )
+                }) =>
+            {
+                // A v1 transport credential may be missing while a read uses
+                // an explicitly selected principal. Writer classification
+                // must refuse that state; compatibility reads do not need the
+                // damaged credential and retain the released behavior.
+                Ok(ApplicationReadRoute::V1Compatibility)
+            }
+            WorkspaceClaimMode::Incomplete { diagnostics } => {
+                Err(Error::ClaimInitializationIncomplete(
+                    format_initialization_diagnostics(&diagnostics),
+                ))
+            }
+        }
+    }
+
     /// Reopens from disk every call, by design: the CLI is one process per
     /// invocation, and `kan mcp` (one long-lived process) mirrors that by
     /// calling `open` fresh per tool call rather than holding one `Workspace`

@@ -19,11 +19,8 @@ use serde::Deserialize;
 
 use crate::{actions, context::DEFAULT_BUDGET, workspace::Workspace};
 
-/// The one MCP resource kan exposes (REQ-17, issue #28, minimal scope): a
-/// subject's live claims, addressable as `kan://claims/<subject>` — the
-/// same data `show` returns, via URI instead of a tool call. No resource
-/// enumeration (`resources/list` stays empty/default) and no prompts —
-/// deliberately the smallest real slice, per issue #28's own framing.
+/// Released-v1 compatibility resource prefix. Scoped workspaces advertise and
+/// consume RFC 2 `kan://local/@id:.../subject/...` resources instead.
 const CLAIMS_URI_PREFIX: &str = "kan://claims/";
 
 fn claims_uri(subject: &str) -> String {
@@ -105,6 +102,13 @@ fn open_error(e: crate::workspace::Error) -> ErrorData {
 /// (`.design/kan-read-contract.md` REQ-4).
 fn trust_error(e: crate::workspace::Error) -> ErrorData {
     ErrorData::invalid_params(e.to_string(), None)
+}
+
+fn resolution_error(e: crate::uri::local::Error) -> ErrorData {
+    match e {
+        crate::uri::local::Error::Parse(_) => ErrorData::invalid_params(e.to_string(), None),
+        _ => ErrorData::internal_error(e.to_string(), None),
+    }
 }
 
 /// `actions::warn_similar_subjects` for a single candidate (issue #47,
@@ -454,6 +458,20 @@ pub struct KanServer {
     tool_router: ToolRouter<Self>,
 }
 
+enum ApplicationReader {
+    Scoped(Box<crate::uri::local::ScopedApplicationResolution>),
+    V1Compatibility {
+        workspace: Workspace,
+        trust: crate::fold::TrustBase,
+        empty_reason: Option<String>,
+    },
+    Empty {
+        workspace: Workspace,
+        trust: crate::fold::TrustBase,
+        empty_reason: Option<String>,
+    },
+}
+
 impl KanServer {
     pub fn new(cwd: PathBuf) -> Self {
         Self {
@@ -496,6 +514,57 @@ impl KanServer {
         Workspace::open_read_only(&self.cwd)
             .await
             .map_err(open_error)
+    }
+
+    async fn application_reader(
+        &self,
+        subject: Option<&str>,
+        trust_specs: &[String],
+    ) -> Result<ApplicationReader, ErrorData> {
+        let mut workspace = self.reader().await?;
+        let config = crate::identity::system::SystemIdentityStore::platform_config_root()
+            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+        let system = crate::identity::system::SystemIdentityStore::at(config);
+        match workspace
+            .application_read_route_with_system(&system)
+            .await
+            .map_err(open_error)?
+        {
+            crate::workspace::ApplicationReadRoute::Scoped => {
+                let resolver = crate::uri::local::LocalResolver::new(&self.cwd, &system);
+                let request = match subject {
+                    Some(subject) => resolver.subject_request(subject, trust_specs),
+                    None => resolver.scope_request(trust_specs),
+                }
+                .map_err(resolution_error)?;
+                resolver
+                    .resolve_scoped_application(&request)
+                    .await
+                    .map(Box::new)
+                    .map(ApplicationReader::Scoped)
+                    .map_err(resolution_error)
+            }
+            crate::workspace::ApplicationReadRoute::V1Compatibility => {
+                let (trust, empty_reason) = workspace
+                    .trust_from_detailed(trust_specs)
+                    .map_err(trust_error)?;
+                Ok(ApplicationReader::V1Compatibility {
+                    workspace,
+                    trust,
+                    empty_reason,
+                })
+            }
+            crate::workspace::ApplicationReadRoute::Empty => {
+                let (trust, empty_reason) = workspace
+                    .trust_from_detailed(trust_specs)
+                    .map_err(trust_error)?;
+                Ok(ApplicationReader::Empty {
+                    workspace,
+                    trust,
+                    empty_reason,
+                })
+            }
+        }
     }
 }
 
@@ -694,11 +763,31 @@ impl KanServer {
 
     #[tool(description = "Show a subject's live claims.")]
     async fn show(&self, params: Parameters<SubjectParams>) -> Result<String, ErrorData> {
-        let ws = self.reader().await?;
-        let (trust, empty_reason) = ws
-            .trust_from_detailed(&params.0.trust)
-            .map_err(trust_error)?;
-        actions::show(&ws, &params.0.subject, &trust, empty_reason.as_deref()).map_err(to_error)
+        let params = params.0;
+        match self
+            .application_reader(Some(&params.subject), &params.trust)
+            .await?
+        {
+            ApplicationReader::Scoped(read) => crate::mixed_render::show(
+                &read.workspace,
+                &read.projection,
+                &params.subject,
+                &read.trust,
+                read.empty_reason.as_deref(),
+            )
+            .map_err(to_error),
+            ApplicationReader::V1Compatibility {
+                workspace,
+                trust,
+                empty_reason,
+            }
+            | ApplicationReader::Empty {
+                workspace,
+                trust,
+                empty_reason,
+            } => actions::show(&workspace, &params.subject, &trust, empty_reason.as_deref())
+                .map_err(to_error),
+        }
     }
 
     #[tool(
@@ -706,41 +795,83 @@ impl KanServer {
                        subject if omitted."
     )]
     async fn status(&self, params: Parameters<StatusParams>) -> Result<String, ErrorData> {
-        let ws = self.reader().await?;
-        let (trust, empty_reason) = ws
-            .trust_from_detailed(&params.0.trust)
-            .map_err(trust_error)?;
-        actions::status(
-            &ws,
-            params.0.subject.as_deref(),
-            &trust,
-            empty_reason.as_deref(),
-        )
-        .map_err(to_error)
+        let params = params.0;
+        match self
+            .application_reader(params.subject.as_deref(), &params.trust)
+            .await?
+        {
+            ApplicationReader::Scoped(read) => Ok(crate::mixed_render::status(
+                &read.workspace,
+                &read.projection,
+                params.subject.as_deref(),
+                &read.trust,
+                read.empty_reason.as_deref(),
+            )),
+            ApplicationReader::V1Compatibility {
+                workspace,
+                trust,
+                empty_reason,
+            }
+            | ApplicationReader::Empty {
+                workspace,
+                trust,
+                empty_reason,
+            } => actions::status(
+                &workspace,
+                params.subject.as_deref(),
+                &trust,
+                empty_reason.as_deref(),
+            )
+            .map_err(to_error),
+        }
     }
 
     #[tool(description = "List open (not-yet-resolved) subjects.")]
     async fn issues(&self, params: Parameters<TrustParams>) -> Result<String, ErrorData> {
-        let ws = self.reader().await?;
-        let (trust, empty_reason) = ws
-            .trust_from_detailed(&params.0.trust)
-            .map_err(trust_error)?;
-        actions::issues(&ws, &trust, empty_reason.as_deref()).map_err(to_error)
+        let params = params.0;
+        match self.application_reader(None, &params.trust).await? {
+            ApplicationReader::Scoped(read) => Ok(crate::mixed_render::issues(
+                &read.workspace,
+                &read.projection,
+                &read.trust,
+                read.empty_reason.as_deref(),
+            )),
+            ApplicationReader::V1Compatibility {
+                workspace,
+                trust,
+                empty_reason,
+            }
+            | ApplicationReader::Empty {
+                workspace,
+                trust,
+                empty_reason,
+            } => actions::issues(&workspace, &trust, empty_reason.as_deref()).map_err(to_error),
+        }
     }
 
     #[tool(description = "Assemble the maximal-value claim set that fits under a token budget.")]
     async fn context(&self, params: Parameters<ContextParams>) -> Result<String, ErrorData> {
-        let ws = self.reader().await?;
-        let (trust, empty_reason) = ws
-            .trust_from_detailed(&params.0.trust)
-            .map_err(trust_error)?;
-        actions::context(
-            &ws,
-            params.0.budget.unwrap_or(DEFAULT_BUDGET),
-            &trust,
-            empty_reason.as_deref(),
-        )
-        .map_err(to_error)
+        let params = params.0;
+        let budget = params.budget.unwrap_or(DEFAULT_BUDGET);
+        match self.application_reader(None, &params.trust).await? {
+            ApplicationReader::Scoped(read) => Ok(crate::mixed_render::context(
+                &read.projection,
+                budget,
+                &read.trust,
+                read.empty_reason.as_deref(),
+            )),
+            ApplicationReader::V1Compatibility {
+                workspace,
+                trust,
+                empty_reason,
+            }
+            | ApplicationReader::Empty {
+                workspace,
+                trust,
+                empty_reason,
+            } => actions::context(&workspace, budget, &trust, empty_reason.as_deref())
+                .map_err(to_error),
+        }
     }
 }
 
@@ -788,22 +919,31 @@ impl ServerHandler for KanServer {
              one-line summary for every subject if none is given; issues lists \
              subjects that aren't resolved yet; context returns the highest-value \
              claims that fit under a token budget. A subject's live claims are also \
-             readable as a resource at kan://claims/<subject>, the same data the show \
-             tool returns.",
+             readable through the advertised kan URI resource template, the same data \
+             the show tool returns.",
         )
     }
 
-    /// Advertises `kan://claims/{subject}` (REQ-17) — no fixed enumeration
-    /// of every subject as a `resources/list` entry, since subjects are
-    /// open-ended; a client constructs a URI from a subject name it already
-    /// knows (e.g. from `show`/`issues`/`status`).
+    /// Advertise an exact direct-scope RFC 2 template for current workspaces.
+    /// Only a workspace proven to contain released-v1 claims retains the old
+    /// `kan://claims/{subject}` compatibility template.
     async fn list_resource_templates(
         &self,
         _request: Option<rmcp::model::PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListResourceTemplatesResult, ErrorData> {
+        let template = match self.application_reader(None, &[]).await? {
+            ApplicationReader::Scoped(read) => format!(
+                "kan://local/@id:{}/subject/{{subject}}",
+                read.result.target.scope.expect("scoped application result")
+            ),
+            ApplicationReader::V1Compatibility { .. } => "kan://claims/{subject}".to_string(),
+            ApplicationReader::Empty { .. } => {
+                return Ok(ListResourceTemplatesResult::with_all_items(Vec::new()))
+            }
+        };
         Ok(ListResourceTemplatesResult::with_all_items(vec![
-            ResourceTemplate::new("kan://claims/{subject}", "subject-claims")
+            ResourceTemplate::new(template, "subject-claims")
                 .with_description("A subject's live claims — the same data the show tool returns.")
                 .with_mime_type("text/plain"),
         ]))
@@ -814,25 +954,64 @@ impl ServerHandler for KanServer {
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResult, ErrorData> {
-        let Some(subject) = request.uri.strip_prefix(CLAIMS_URI_PREFIX) else {
-            return Err(ErrorData::resource_not_found(
-                format!("no such resource: {}", request.uri),
-                None,
-            ));
+        if let Some(subject) = request.uri.strip_prefix(CLAIMS_URI_PREFIX) {
+            return match self.application_reader(Some(subject), &[]).await? {
+                ApplicationReader::V1Compatibility {
+                    workspace,
+                    trust,
+                    empty_reason,
+                } => {
+                    let text = actions::show(&workspace, subject, &trust, empty_reason.as_deref())
+                        .map_err(to_error)?;
+                    Ok(ReadResourceResult::new(vec![ResourceContents::text(
+                        text,
+                        claims_uri(subject),
+                    )]))
+                }
+                ApplicationReader::Scoped(read) => Err(ErrorData::resource_not_found(
+                    format!(
+                        "legacy resource URI is unavailable for this scoped workspace; use {}",
+                        read.result.canonical_request
+                    ),
+                    None,
+                )),
+                ApplicationReader::Empty { .. } => Err(ErrorData::resource_not_found(
+                    "an uninitialized empty workspace has no subject resources",
+                    None,
+                )),
+            };
+        }
+
+        let parsed = crate::uri::ResolutionRequest::parse(&request.uri)
+            .map_err(|error| ErrorData::invalid_params(error.to_string(), None))?;
+        let subject = match parsed.resource() {
+            crate::uri::Resource::Subject(subject) => subject.to_string(),
+            _ => {
+                return Err(ErrorData::resource_not_found(
+                    format!("not a subject resource: {}", request.uri),
+                    None,
+                ))
+            }
         };
-        let ws = self.reader().await?;
-        // The resource URI carries a subject and nothing else, so this is
-        // the default view — the same thing `show` with no `trust` returns,
-        // which is what the resource template advertises. A trust-selected
-        // read is a tool call, where the selection has somewhere to live.
-        let trust = ws.local_trust().map_err(open_error)?;
-        // `local` needs no explanation: it is every author in this log, so an
-        // empty one means an empty log rather than a frame that excluded
-        // something.
-        let text = actions::show(&ws, subject, &trust, None).map_err(to_error)?;
+        let config = crate::identity::system::SystemIdentityStore::platform_config_root()
+            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+        let system = crate::identity::system::SystemIdentityStore::at(config);
+        let resolver = crate::uri::local::LocalResolver::new(&self.cwd, &system);
+        let read = resolver
+            .resolve_scoped_application(&parsed)
+            .await
+            .map_err(resolution_error)?;
+        let text = crate::mixed_render::show(
+            &read.workspace,
+            &read.projection,
+            &subject,
+            &read.trust,
+            read.empty_reason.as_deref(),
+        )
+        .map_err(to_error)?;
         Ok(ReadResourceResult::new(vec![ResourceContents::text(
             text,
-            claims_uri(subject),
+            read.result.canonical_request,
         )]))
     }
 }

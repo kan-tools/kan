@@ -46,6 +46,64 @@ fn git_repo() -> tempfile::TempDir {
     dir
 }
 
+fn scoped_repo() -> (tempfile::TempDir, std::path::PathBuf, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("project");
+    let config = dir.path().join("config");
+    std::fs::create_dir(&repo).unwrap();
+    let git = |args: &[&str]| {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?} failed");
+    };
+    git(&["init", "-q"]);
+    git(&[
+        "-c",
+        "user.email=kan-test@example.com",
+        "-c",
+        "user.name=kan-test",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "init",
+    ]);
+    for args in [
+        vec![
+            "identity".to_string(),
+            "init".to_string(),
+            "--config-dir".to_string(),
+            config.display().to_string(),
+        ],
+        vec![
+            "init".to_string(),
+            "--repository".to_string(),
+            repo.display().to_string(),
+            "--config-dir".to_string(),
+            config.display().to_string(),
+        ],
+    ] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_kan"))
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let system = kan::identity::system::SystemIdentityStore::at(&config);
+    let actor = system.default_profile().unwrap().unwrap();
+    let principal = actor.principal().to_string();
+    (dir, config, principal)
+}
+
 #[tokio::test]
 async fn ac8_lists_tools_and_calls_the_observe_tool() {
     let dir = git_repo();
@@ -413,6 +471,119 @@ async fn ac10_resource_template_lists_and_reads_a_subjects_claims() {
         .expect("resources/read should return text contents");
     assert!(text.contains("resource test claim"));
     assert!(text.contains("Observation"));
+
+    drop(stdin);
+    let _ = child.kill().await;
+}
+
+#[tokio::test]
+async fn scoped_mcp_tools_and_resources_use_one_rfc2_request_boundary() {
+    let (dir, config, principal) = scoped_repo();
+    let repo = dir.path().join("project");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kan"))
+        .arg("mcp")
+        .env("KAN_CONFIG_DIR", &config)
+        .current_dir(&repo)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let send = |value: Value| serde_json::to_string(&value).unwrap() + "\n";
+    let mut line = String::new();
+    macro_rules! recv {
+        () => {{
+            line.clear();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                stdout.read_line(&mut line),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            serde_json::from_str::<Value>(&line).unwrap()
+        }};
+    }
+
+    stdin
+        .write_all(
+            send(json!({
+                "jsonrpc":"2.0", "id":1, "method":"initialize",
+                "params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"scoped","version":"0"}}
+            }))
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(recv!()["id"], 1);
+    stdin
+        .write_all(send(json!({"jsonrpc":"2.0","method":"notifications/initialized"})).as_bytes())
+        .await
+        .unwrap();
+    stdin
+        .write_all(
+            send(json!({
+                "jsonrpc":"2.0", "id":2, "method":"tools/call",
+                "params":{"name":"observe","arguments":{"text":"current resource claim","subject":"current-subject"}}
+            }))
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(recv!()["result"]["isError"], false);
+
+    stdin
+        .write_all(
+            send(json!({
+                "jsonrpc":"2.0", "id":3, "method":"tools/call",
+                "params":{"name":"show","arguments":{"subject":"current-subject","trust":["local",principal]}}
+            }))
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let shown = recv!();
+    assert_eq!(shown["result"]["isError"], false);
+    assert!(shown["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("current resource claim"));
+
+    stdin
+        .write_all(
+            send(json!({"jsonrpc":"2.0","id":4,"method":"resources/templates/list"})).as_bytes(),
+        )
+        .await
+        .unwrap();
+    let templates = recv!();
+    let template = templates["result"]["resourceTemplates"][0]["uriTemplate"]
+        .as_str()
+        .unwrap();
+    assert!(template.starts_with("kan://local/@id:"), "{template}");
+    assert!(template.ends_with("/subject/{subject}"), "{template}");
+    let uri = template.replace("{subject}", "current-subject");
+
+    stdin
+        .write_all(
+            send(json!({
+                "jsonrpc":"2.0", "id":5, "method":"resources/read", "params":{"uri":uri}
+            }))
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let resource = recv!();
+    assert!(resource["result"]["contents"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("current resource claim"));
+    assert!(resource["result"]["contents"][0]["uri"]
+        .as_str()
+        .unwrap()
+        .starts_with("kan://local/@id:"));
 
     drop(stdin);
     let _ = child.kill().await;

@@ -27,6 +27,8 @@ pub enum Error {
     ScopeIdentity(#[from] crate::identity::scope_store::Error),
     #[error(transparent)]
     ScopeInception(#[from] crate::identity::scope_inception::Error),
+    #[error(transparent)]
+    LocalResolution(#[from] crate::uri::local::Error),
     #[error("pre-release repository identity state exists at {0}; kan will not reinterpret it as a scope—move it aside and run `kan init` again")]
     PreReleaseRepositoryIdentity(std::path::PathBuf),
     #[error(transparent)]
@@ -1011,7 +1013,35 @@ pub async fn run(cli: Cli) -> Result<(), Error> {
             );
             return Ok(());
         }
-        return run_read(cli.command, &mut ws).await;
+        if let Some((subject, trust_specs)) = application_resolution_input(&cli.command) {
+            let system = crate::identity::system::SystemIdentityStore::at(
+                crate::identity::system::SystemIdentityStore::platform_config_root()?,
+            );
+            match ws.application_read_route_with_system(&system).await? {
+                crate::workspace::ApplicationReadRoute::Scoped => {
+                    let resolver = crate::uri::local::LocalResolver::new(&cwd, &system);
+                    let request = match subject {
+                        Some(subject) => resolver.subject_request(subject, trust_specs)?,
+                        None => resolver.scope_request(trust_specs)?,
+                    };
+                    let resolved = resolver.resolve_scoped_application(&request).await?;
+                    let mut exact_workspace = resolved.workspace;
+                    return run_read(
+                        cli.command,
+                        &mut exact_workspace,
+                        Some(PreResolvedRead {
+                            projection: resolved.projection,
+                            trust: resolved.trust,
+                            empty_reason: resolved.empty_reason,
+                        }),
+                    )
+                    .await;
+                }
+                crate::workspace::ApplicationReadRoute::V1Compatibility
+                | crate::workspace::ApplicationReadRoute::Empty => {}
+            }
+        }
+        return run_read(cli.command, &mut ws, None).await;
     }
 
     let mut ws = Workspace::open(&cwd).await?;
@@ -1574,7 +1604,56 @@ fn is_read_only(command: &Command) -> bool {
 }
 
 /// The read verbs, against a workspace opened without an identity.
-async fn run_read(command: Command, ws: &mut Workspace) -> Result<(), Error> {
+struct PreResolvedRead {
+    projection: crate::workspace::MixedWorkspaceProjection,
+    trust: crate::fold::TrustBase,
+    empty_reason: Option<String>,
+}
+
+fn application_resolution_input(command: &Command) -> Option<(Option<&str>, &[String])> {
+    match command {
+        Command::Show {
+            subject,
+            selected_subjects,
+            prefixes,
+            all,
+            trust,
+            ..
+        } => Some((
+            (!*all && selected_subjects.is_empty() && prefixes.is_empty())
+                .then_some(subject.as_deref())
+                .flatten(),
+            trust,
+        )),
+        Command::Status { subject, trust, .. } => Some((subject.as_deref(), trust)),
+        Command::Issues { trust, .. } | Command::Context { trust, .. } => Some((None, trust)),
+        _ => None,
+    }
+}
+
+async fn application_projection(
+    ws: &mut Workspace,
+    system: &crate::identity::system::SystemIdentityStore,
+    trust_specs: &[String],
+    pre_resolved: &mut Option<PreResolvedRead>,
+) -> Result<PreResolvedRead, Error> {
+    if let Some(resolved) = pre_resolved.take() {
+        return Ok(resolved);
+    }
+    let (trust, empty_reason) = ws.trust_from_detailed_with_system(trust_specs, system)?;
+    let projection = ws.mixed_projection_with_system(system, &trust).await?;
+    Ok(PreResolvedRead {
+        projection,
+        trust,
+        empty_reason,
+    })
+}
+
+async fn run_read(
+    command: Command,
+    ws: &mut Workspace,
+    mut pre_resolved: Option<PreResolvedRead>,
+) -> Result<(), Error> {
     match command {
         Command::Identity { action } => match action {
             IdentityAction::Adopt { key } => print!(
@@ -1604,9 +1683,11 @@ async fn run_read(command: Command, ws: &mut Workspace) -> Result<(), Error> {
             let system = crate::identity::system::SystemIdentityStore::at(
                 crate::identity::system::SystemIdentityStore::platform_config_root()?,
             );
-            let (trust, empty_reason) = ws.trust_from_detailed_with_system(&trust, &system)?;
+            let resolved = application_projection(ws, &system, &trust, &mut pre_resolved).await?;
+            let trust = resolved.trust;
+            let empty_reason = resolved.empty_reason;
             let empty_reason = empty_reason.as_deref();
-            let projection = ws.mixed_projection_with_system(&system, &trust).await?;
+            let projection = resolved.projection;
             let mixed = crate::mixed_render::is_needed(&projection);
             match (
                 all,
@@ -1688,8 +1769,10 @@ async fn run_read(command: Command, ws: &mut Workspace) -> Result<(), Error> {
             let system = crate::identity::system::SystemIdentityStore::at(
                 crate::identity::system::SystemIdentityStore::platform_config_root()?,
             );
-            let (trust, empty_reason) = ws.trust_from_detailed_with_system(&trust, &system)?;
-            let projection = ws.mixed_projection_with_system(&system, &trust).await?;
+            let resolved = application_projection(ws, &system, &trust, &mut pre_resolved).await?;
+            let trust = resolved.trust;
+            let empty_reason = resolved.empty_reason;
+            let projection = resolved.projection;
             let mixed = crate::mixed_render::is_needed(&projection);
             print!(
                 "{}",
@@ -1720,8 +1803,10 @@ async fn run_read(command: Command, ws: &mut Workspace) -> Result<(), Error> {
             let system = crate::identity::system::SystemIdentityStore::at(
                 crate::identity::system::SystemIdentityStore::platform_config_root()?,
             );
-            let (trust, empty_reason) = ws.trust_from_detailed_with_system(&trust, &system)?;
-            let projection = ws.mixed_projection_with_system(&system, &trust).await?;
+            let resolved = application_projection(ws, &system, &trust, &mut pre_resolved).await?;
+            let trust = resolved.trust;
+            let empty_reason = resolved.empty_reason;
+            let projection = resolved.projection;
             let mixed = crate::mixed_render::is_needed(&projection);
             print!(
                 "{}",
@@ -1750,8 +1835,10 @@ async fn run_read(command: Command, ws: &mut Workspace) -> Result<(), Error> {
             let system = crate::identity::system::SystemIdentityStore::at(
                 crate::identity::system::SystemIdentityStore::platform_config_root()?,
             );
-            let (trust, empty_reason) = ws.trust_from_detailed_with_system(&trust, &system)?;
-            let projection = ws.mixed_projection_with_system(&system, &trust).await?;
+            let resolved = application_projection(ws, &system, &trust, &mut pre_resolved).await?;
+            let trust = resolved.trust;
+            let empty_reason = resolved.empty_reason;
+            let projection = resolved.projection;
             let mixed = crate::mixed_render::is_needed(&projection);
             print!(
                 "{}",
