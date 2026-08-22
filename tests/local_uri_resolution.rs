@@ -142,7 +142,7 @@ async fn named_direct_claim_subject_and_identity_routes_share_one_snapshot() {
         .resolve_uri("kan://local/kan-tools:kan/subject/design/local-uri")
         .await
         .unwrap();
-    let shorthand = resolver.subject_request("design/local-uri", None).unwrap();
+    let shorthand = resolver.subject_request("design/local-uri", &[]).unwrap();
     let application = resolver
         .resolve_scoped_application(&shorthand)
         .await
@@ -157,6 +157,27 @@ async fn named_direct_claim_subject_and_identity_routes_share_one_snapshot() {
     assert!(application.empty_reason.is_none());
     assert_eq!(application.workspace.root, root);
     assert_eq!(application.projection.claims().len(), 1);
+    let composite_specs = vec!["local".to_string(), format!("{}=0.5", actor.principal())];
+    let composite_request = resolver
+        .subject_request("design/local-uri", &composite_specs)
+        .unwrap();
+    assert!(composite_request.canonical_uri().contains("trust=@set:"));
+    assert_eq!(
+        composite_request
+            .evaluation()
+            .trust
+            .as_ref()
+            .unwrap()
+            .specs(),
+        composite_specs
+    );
+    let composite = resolver
+        .resolve_scoped_application(&composite_request)
+        .await
+        .unwrap();
+    assert_eq!(composite.result.target, application.result.target);
+    assert_eq!(composite.result.sources, application.result.sources);
+    assert_eq!(composite.trust.name(), "PeerContested");
     let scope = subject.target.scope.unwrap();
     assert!(matches!(
         subject.resource,

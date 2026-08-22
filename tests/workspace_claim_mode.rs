@@ -9,7 +9,7 @@ use kan::{
     },
     sign::Identity,
     store::log::Log,
-    workspace::{Workspace, WorkspaceWriterKind},
+    workspace::{ApplicationReadRoute, Workspace, WorkspaceWriterKind},
 };
 
 fn git(root: &std::path::Path, args: &[&str]) {
@@ -118,6 +118,47 @@ async fn verified_v1_claims_select_only_v1_compatibility() {
         panic!("verified legacy claim did not select v1 mode");
     };
     assert_eq!(evidence.claim_count(), 1);
+}
+
+#[tokio::test]
+async fn application_reads_distinguish_v1_compatibility_from_data_free_empty() {
+    let temp = tempfile::tempdir().unwrap();
+    let empty_root = temp.path().join("empty");
+    init_git(&empty_root);
+    let system = SystemIdentityStore::at(temp.path().join("system"));
+    let mut empty = Workspace::open_read_only_with_system(&empty_root, &system)
+        .await
+        .unwrap();
+    assert_eq!(
+        empty
+            .application_read_route_with_system(&system)
+            .await
+            .unwrap(),
+        ApplicationReadRoute::Empty
+    );
+    assert!(!empty_root.join(".kan").exists());
+
+    let v1_root = temp.path().join("v1");
+    init_git(&v1_root);
+    let identity = Identity::generate();
+    std::fs::create_dir_all(v1_root.join(".kan")).unwrap();
+    identity.save(&v1_root.join(".kan/identity")).unwrap();
+    let mut log = Log::open_or_create(&v1_root.join(".kan/log"), &identity)
+        .await
+        .unwrap();
+    log.append(legacy_content(&identity), &identity)
+        .await
+        .unwrap();
+    drop(log);
+    let mut v1 = Workspace::open_read_only_with_system(&v1_root, &system)
+        .await
+        .unwrap();
+    assert_eq!(
+        v1.application_read_route_with_system(&system)
+            .await
+            .unwrap(),
+        ApplicationReadRoute::V1Compatibility
+    );
 }
 
 #[tokio::test]
@@ -366,6 +407,13 @@ async fn production_writer_preserves_released_transport_and_appends_current_clai
     let mut reader = Workspace::open_read_only_with_system(&root, &system)
         .await
         .unwrap();
+    assert_eq!(
+        reader
+            .application_read_route_with_system(&system)
+            .await
+            .unwrap(),
+        ApplicationReadRoute::Scoped
+    );
     let trust = reader.local_trust().unwrap();
     let projection = reader
         .mixed_projection_with_system(&system, &trust)

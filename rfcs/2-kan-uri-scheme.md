@@ -139,9 +139,20 @@ EvidenceSelection {
 }
 
 EvaluationInputs {
-  trust: text or null,
+  trust: TrustSelection or null,
   at:    unsigned integer or null
 }
+
+TrustSelection =
+  ConfiguredFrame { name }
+  | PrincipalSelector { principal, weight }
+  | InlineComposite { selectors: [TrustSelector, TrustSelector, ...] }
+
+TrustSelector =
+  ConfiguredFrame { name }
+  | PrincipalSelector { principal, weight }
+
+principal = DID | CurrentActor | NamedRole { name }
 ```
 
 The target key is `(scopeIdentifier, resource)` for a scoped request and
@@ -399,10 +410,41 @@ URI fragment. `service` without a compatible `source` is
 `commit` and `ref` are mutually exclusive. An immutable selector that is
 unavailable returns `snapshot-unavailable`; it never falls forward to current.
 
-`trust` selects a configured trust frame or canonical principal selector. An
-omitted value uses the resolver's configured default only when the result
-discloses the exact frame applied. Trust does not change source access or
-scope admission.
+`trust` selects a configured trust frame, a canonical weighted principal
+selector, or an inline composite. It is a closed typed value after parsing,
+never an opaque string. An omitted value uses the resolver's configured default
+only when the result discloses the exact frame applied. Trust does not change
+source access or scope admission.
+
+The direct selector spellings are:
+
+- a configured-frame name, including the local `local` and `roles` frames;
+- a DID, optionally followed by `=` and a weight;
+- the machine-relative current-actor selector `me`, optionally weighted;
+- the machine-relative named-role selector `role:<name>`, optionally weighted.
+
+A weight is a finite IEEE 754 binary64 value in `[0,1]`. Canonical output uses
+its shortest round-tripping decimal spelling, writes zero and one as `0` and
+`1`, and omits `=1`. A configured frame is set-valued and cannot carry a
+weight. A selector beginning with `@` is reserved and is not a configured-frame
+name.
+
+An inline composite has decoded query value `@set:<members>`, where `<members>`
+is a compact JSON array containing at least two canonical direct-selector
+strings. It has no insignificant whitespace. JSON string escaping is the only
+inner escaping; the complete decoded value is then percent-encoded once as an
+ordinary query value. For example, the decoded value
+`@set:["roles","did:key:zExample=0.5"]` canonicalizes in the outer URI as
+`trust=@set:%5B%22roles%22,%22did:key:zExample=0.5%22%5D`.
+
+Composite order is semantic and MUST be preserved. A later selector can replace
+an earlier weight when both resolve to the same principal. Exact duplicate
+typed selectors are `duplicate-parameter`; a composite with fewer than two
+members or malformed member is `invalid-selector`. Current-actor, named-role,
+and local configured-frame selectors are machine-relative. A resolver without
+that local configuration MUST reject them as `unsupported-selector`; it MUST
+NOT reinterpret them as portable principals. Principal-only composites are
+portable.
 
 `at` is an unsigned, shortest-form base-10 Unix timestamp in microseconds. Zero
 is `0`; leading zeroes and signs are forbidden. It supplies RFC 1's trusted
@@ -1094,13 +1136,24 @@ placeholder.
 Draft schemas, local claim-collection migration, and an
 implementation-independent executable reference harness are implemented. The
 production Rust request types, strict parser, and access-free syntactic
-canonicalizer execute every checked parse vector. Production `kan://local`
+canonicalizer execute every checked parse vector. Trust selection is a closed
+Rust union, including an ordered, duplicate-free inline composite that compiles
+the released repeatable CLI/MCP selector surface into one `trust` parameter.
+Production `kan://local`
 resolution now selects exact named or direct scopes, returns typed claim,
 subject, scope-identity, and principal results, preserves separate RFC 1 claim
 judgments, emits immutable replay URIs, and recomputes disposable projections
 in memory so explicit resolution changes no filesystem bytes. Linked Git
 worktrees fail explicitly pending issue #197's workspace-ownership decision.
-CLI/MCP routing, hosted kan, PDS, and AppView remain.
+Current/scoped CLI recalling verbs and MCP tools compile their trust vector
+through `ResolutionRequest` and render from the exact workspace, projection,
+and trust frame retained by local resolution. MCP advertises direct-scope RFC 2
+subject resources for those workspaces. Only a workspace positively classified
+from released-v1 evidence retains the `kan://claims/{subject}` and direct action
+compatibility route. A repository with neither a scope nor readable claim
+evidence has a distinct data-free state that can answer an empty tool/CLI read
+but advertises no MCP resource. No synthetic scope identifier is minted. Hosted
+kan, PDS, and AppView remain.
 The governing design is `.design/rfc-2-kan-uri-scheme.md`. The five
 `.design/rfc-2-lexicons/*.json` files parse with the independent Go ATProto
 toolchain and fix the record/XRPC contract. The finite conformance manifest has

@@ -243,8 +243,196 @@ pub struct EvidenceSelection {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct EvaluationInputs {
-    pub trust: Option<String>,
+    pub trust: Option<TrustSelection>,
     pub at: Option<u64>,
+}
+
+/// A closed trust input carried by one resolution request.
+///
+/// Composite order is intentional. Two local selectors can resolve to the
+/// same principal, and the later selector supplies that principal's weight;
+/// sorting here would therefore change the requested fold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrustSelection {
+    One(TrustSelector),
+    Composite(Vec<TrustSelector>),
+}
+
+impl TrustSelection {
+    /// Compile the released repeatable CLI/MCP surface into one request value.
+    pub fn from_specs(specs: &[String]) -> Result<Option<Self>, ParseError> {
+        if specs.is_empty() {
+            return Ok(None);
+        }
+        let selectors = specs
+            .iter()
+            .map(|spec| parse_trust_selector(spec))
+            .collect::<Result<Vec<_>, _>>()?;
+        unique_trust_selectors(&selectors)?;
+        Ok(Some(if selectors.len() == 1 {
+            Self::One(selectors.into_iter().next().expect("one selector"))
+        } else {
+            Self::Composite(selectors)
+        }))
+    }
+
+    pub fn selectors(&self) -> &[TrustSelector] {
+        match self {
+            Self::One(selector) => std::slice::from_ref(selector),
+            Self::Composite(selectors) => selectors,
+        }
+    }
+
+    /// Legacy local spellings consumed by `Workspace` after request parsing.
+    pub fn specs(&self) -> Vec<String> {
+        self.selectors().iter().map(ToString::to_string).collect()
+    }
+
+    fn parse(value: &str) -> Result<Self, ParseError> {
+        let Some(json) = value.strip_prefix("@set:") else {
+            return Ok(Self::One(parse_trust_selector(value)?));
+        };
+        let members: Vec<String> =
+            serde_json::from_str(json).map_err(|_| ParseError::InvalidSelector)?;
+        if members.len() < 2 {
+            return Err(ParseError::InvalidSelector);
+        }
+        let selectors = members
+            .iter()
+            .map(|member| parse_trust_selector(member))
+            .collect::<Result<Vec<_>, _>>()?;
+        unique_trust_selectors(&selectors)?;
+        Ok(Self::Composite(selectors))
+    }
+
+    pub fn canonical_text(&self) -> String {
+        match self {
+            Self::One(selector) => selector.to_string(),
+            Self::Composite(selectors) => {
+                let members: Vec<String> = selectors.iter().map(ToString::to_string).collect();
+                format!(
+                    "@set:{}",
+                    serde_json::to_string(&members).expect("trust selector strings serialize")
+                )
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TrustSelector {
+    ConfiguredFrame(String),
+    CurrentActor(TrustWeight),
+    NamedRole { name: String, weight: TrustWeight },
+    Principal { did: String, weight: TrustWeight },
+}
+
+impl fmt::Display for TrustSelector {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ConfiguredFrame(name) => formatter.write_str(name),
+            Self::CurrentActor(weight) => write_weighted(formatter, "me", weight),
+            Self::NamedRole { name, weight } => {
+                write_weighted(formatter, &format!("role:{name}"), weight)
+            }
+            Self::Principal { did, weight } => write_weighted(formatter, did, weight),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TrustWeight(String);
+
+impl TrustWeight {
+    fn parse(value: Option<&str>) -> Result<Self, ParseError> {
+        let Some(value) = value else {
+            return Ok(Self("1".to_string()));
+        };
+        let parsed: f64 = value
+            .trim()
+            .parse()
+            .map_err(|_| ParseError::InvalidSelector)?;
+        if !parsed.is_finite() || !(0.0..=1.0).contains(&parsed) {
+            return Err(ParseError::InvalidSelector);
+        }
+        let canonical = if parsed == 0.0 {
+            "0".to_string()
+        } else if parsed == 1.0 {
+            "1".to_string()
+        } else {
+            parsed.to_string()
+        };
+        Ok(Self(canonical))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+fn write_weighted(
+    formatter: &mut fmt::Formatter<'_>,
+    principal: &str,
+    weight: &TrustWeight,
+) -> fmt::Result {
+    formatter.write_str(principal)?;
+    if weight.as_str() != "1" {
+        write!(formatter, "={}", weight.as_str())?;
+    }
+    Ok(())
+}
+
+fn parse_trust_selector(value: &str) -> Result<TrustSelector, ParseError> {
+    let value = value.trim();
+    if value.is_empty() || value.starts_with('@') || value.chars().any(char::is_control) {
+        return Err(ParseError::InvalidSelector);
+    }
+    let (name, raw_weight) = value
+        .split_once('=')
+        .map_or((value, None), |(name, weight)| (name.trim(), Some(weight)));
+    if name == "me" {
+        return Ok(TrustSelector::CurrentActor(TrustWeight::parse(raw_weight)?));
+    }
+    if let Some(role) = name.strip_prefix("role:") {
+        if role.is_empty() {
+            return Err(ParseError::InvalidSelector);
+        }
+        return Ok(TrustSelector::NamedRole {
+            name: role.to_string(),
+            weight: TrustWeight::parse(raw_weight)?,
+        });
+    }
+    if let Some(did) = name.strip_prefix("did:") {
+        let Some((method, identifier)) = did.split_once(':') else {
+            return Err(ParseError::NonCanonicalIdentifier);
+        };
+        if method.is_empty()
+            || !method.bytes().all(|byte| byte.is_ascii_lowercase())
+            || identifier.is_empty()
+        {
+            return Err(ParseError::NonCanonicalIdentifier);
+        }
+        return Ok(TrustSelector::Principal {
+            did: name.to_string(),
+            weight: TrustWeight::parse(raw_weight)?,
+        });
+    }
+    if raw_weight.is_some() {
+        return Err(ParseError::InvalidSelector);
+    }
+    Ok(TrustSelector::ConfiguredFrame(name.to_string()))
+}
+
+fn unique_trust_selectors(selectors: &[TrustSelector]) -> Result<(), ParseError> {
+    let mut seen = std::collections::HashSet::new();
+    if selectors
+        .iter()
+        .all(|selector| seen.insert(selector.clone()))
+    {
+        Ok(())
+    } else {
+        Err(ParseError::DuplicateParameter)
+    }
 }
 
 /// The complete typed identity of one resolution operation.
@@ -267,7 +455,7 @@ impl ResolutionRequest {
     pub fn local_subject(
         scope: ScopeId,
         subject: &str,
-        trust: Option<&str>,
+        trust: Option<&TrustSelection>,
     ) -> Result<Self, ParseError> {
         let encoded_subject = subject
             .split('/')
@@ -277,7 +465,19 @@ impl ResolutionRequest {
         let mut uri = format!("kan://local/@id:{scope}/subject/{encoded_subject}");
         if let Some(trust) = trust {
             uri.push_str("?trust=");
-            uri.push_str(&encode_query(trust));
+            uri.push_str(&encode_query(&trust.canonical_text()));
+        }
+        Self::parse(&uri)
+    }
+
+    pub fn local_scope_identity(
+        scope: ScopeId,
+        trust: Option<&TrustSelection>,
+    ) -> Result<Self, ParseError> {
+        let mut uri = format!("kan://local/@id:{scope}/identity/scope");
+        if let Some(trust) = trust {
+            uri.push_str("?trust=");
+            uri.push_str(&encode_query(&trust.canonical_text()));
         }
         Self::parse(&uri)
     }
@@ -437,7 +637,7 @@ impl ResolutionRequest {
             pairs.push(format!("version={}", encode_query(&version_text(version))));
         }
         if let Some(trust) = &self.evaluation.trust {
-            pairs.push(format!("trust={}", encode_query(trust)));
+            pairs.push(format!("trust={}", encode_query(&trust.canonical_text())));
         }
         if let Some(at) = self.evaluation.at {
             pairs.push(format!("at={at}"));
@@ -946,7 +1146,9 @@ fn parse_query(
             version,
         },
         EvaluationInputs {
-            trust: one("trust"),
+            trust: one("trust")
+                .map(|value| TrustSelection::parse(&value))
+                .transpose()?,
             at,
         },
     ))

@@ -60,16 +60,32 @@ impl<'a> LocalResolver<'a> {
     pub fn subject_request(
         &self,
         subject: &str,
-        trust: Option<&str>,
+        trust_specs: &[String],
     ) -> Result<ResolutionRequest, Error> {
         let root = local_workspace_root(self.cwd)?;
         let installed = ScopeIdentityStore::at(root.join(".kan/scope"))
             .read()?
             .ok_or(Error::ScopeNotFound)?;
+        let trust = crate::uri::TrustSelection::from_specs(trust_specs)?;
         Ok(ResolutionRequest::local_subject(
             installed.scope,
             subject,
-            trust,
+            trust.as_ref(),
+        )?)
+    }
+
+    /// Compile an aggregate application read through the scope-identity
+    /// resource. The result's retained workspace and projection are consumed
+    /// by status/issues/context; no invented subject is needed for routing.
+    pub fn scope_request(&self, trust_specs: &[String]) -> Result<ResolutionRequest, Error> {
+        let root = local_workspace_root(self.cwd)?;
+        let installed = ScopeIdentityStore::at(root.join(".kan/scope"))
+            .read()?
+            .ok_or(Error::ScopeNotFound)?;
+        let trust = crate::uri::TrustSelection::from_specs(trust_specs)?;
+        Ok(ResolutionRequest::local_scope_identity(
+            installed.scope,
+            trust.as_ref(),
         )?)
     }
 
@@ -80,6 +96,12 @@ impl<'a> LocalResolver<'a> {
         &self,
         request: &ResolutionRequest,
     ) -> Result<ScopedApplicationResolution, Error> {
+        if !matches!(
+            request.route(),
+            Route::Kan(KanAuthority::Local { port: None })
+        ) {
+            return Err(Error::AuthorityNotFound);
+        }
         if matches!(request.resource(), Resource::AuthorityIdentity) && request.scope().is_none() {
             return Err(Error::AuthorityIdentityUnknown);
         }
@@ -202,7 +224,7 @@ impl<'a> LocalResolver<'a> {
                 Ok((projection, trust, None))
             }
             Some(trust) => {
-                let specs = vec![trust.clone()];
+                let specs = trust.specs();
                 let (frame, empty_reason) =
                     workspace.trust_from_detailed_with_system(&specs, self.system)?;
                 let projection = workspace
