@@ -104,6 +104,15 @@ the phrase in a command argument, shell history, redirected plaintext file,
 issue, chat, or ordinary cloud storage. If the repository was never protected,
 `unprotect` is unnecessary.
 
+The new binary's read commands (`show`, `status`, and URI resolution) classify
+released-v1 repositories from public claim and identity evidence; they do not
+open the old repository signing credential. They therefore remain safe to use
+for the before/after checks below even if the credential is still protected.
+That does not make the credential recoverable headlessly: `identity unprotect`
+and any compatibility write must access it and may require an interactive
+keychain authorization. Using the old binary to unprotect before replacement
+remains the least surprising migration path.
+
 ## 2. Back up one repository under the old binary
 
 Run these steps from the repository's ordinary primary checkout. Choose a
