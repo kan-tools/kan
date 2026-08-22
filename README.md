@@ -129,13 +129,25 @@ tracked as a dependency graph under
 sequence in `.design/sync-layer-architecture-and-staging.md` and ADR-35 remains
 historical context, not the current public publication checklist.
 
+Upgrading an existing installation to the identity-first, URI-native build is
+a deliberate one-time sequence. Back up the old repository identity and signed
+log, initialize the installation identity once, and then migrate and verify one
+repository at a time using the
+[`identity/URI migration guide`](docs/IDENTITY-URI-MIGRATION.md).
+
 ## Identity
 
-kan signs every claim with a per-repo `did:key`. **As of v0.12 the signing
-key is rooted by default in a `0600` file at `.kan/seed`** — not the OS
-keychain — and `.kan/` is gitignored, so the secret stays on your machine
-and out of the repo. The first write tells you exactly where the key lives
-and how to back it up:
+Current governed scopes sign new claims with the installation's configured
+`did:kan` actor. Historical v1 claims keep their original per-repository
+`did:key`, and scope-less workspaces retain the released v1 identity behavior
+for compatibility. See the
+[`identity/URI migration guide`](docs/IDENTITY-URI-MIGRATION.md) before moving
+an existing repository onto a governed scope.
+
+For that released v1 identity model, **as of v0.12 the signing key is rooted by
+default in a `0600` file at `.kan/seed`** — not the OS keychain — and `.kan/`
+is gitignored, so the secret stays on your machine and out of the repo. The
+first v1 write tells you exactly where the key lives and how to back it up:
 
 ```
 kan: this repo's identity is rooted in .kan/seed, a 0600 file readable by anything running as you.
