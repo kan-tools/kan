@@ -16,7 +16,30 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com).
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- RFC 2 production request parsing and canonicalization, read-only
+  `kan://local` resolution, typed provenance and immutable replay results, and
+  URI-native CLI/MCP read routing. Released-v1 workspaces retain an explicit
+  scope-less compatibility route; current workspaces never synthesize a scope
+  identifier.
+- Production coverage metadata for every RFC 2 resolution and safety vector.
+  The local milestone's applicable vectors run against Rust production code;
+  hosted, Git, ATProto, and source-declared evaluation-time vectors remain
+  explicit future resolver gates rather than fixture-only implied support.
+
+### Changed
+
+- Scoped CLI and MCP shorthand pass their already-open application workspace
+  into the shared resolver, avoiding a second full log verification and
+  projection. Explicit URI resolution remains in-memory and byte-clean;
+  shorthand may maintain only the disposable SQLite projection before entering
+  resolution.
+- The local resolution mutation guard now covers raw log and overlay bytes in
+  addition to scope, published claims, and the public identity ledger.
+- The Milestone 2 maintenance inventory explicitly classifies #72, #117, #186,
+  #194, #197, #198, #199, and #210; deferred issues remain open with their
+  retained boundary and reason documented.
 
 ## [v0.13.0-beta.1] — 2026-08-12
 

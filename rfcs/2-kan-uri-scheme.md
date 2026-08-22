@@ -1146,8 +1146,11 @@ judgments, emits immutable replay URIs, and recomputes disposable projections
 in memory so explicit resolution changes no filesystem bytes. Linked Git
 worktrees fail explicitly pending issue #197's workspace-ownership decision.
 Current/scoped CLI recalling verbs and MCP tools compile their trust vector
-through `ResolutionRequest` and render from the exact workspace, projection,
-and trust frame retained by local resolution. MCP advertises direct-scope RFC 2
+through `ResolutionRequest`, pass their already-open application reader into
+the same resolver so the signed log is not projected twice, and render from the
+exact retained workspace, projection, and trust frame. Application shorthand
+may refresh its disposable SQLite index before entering resolution; the
+explicit URI resolver does not. MCP advertises direct-scope RFC 2
 subject resources for those workspaces. Only a workspace positively classified
 from released-v1 evidence retains the `kan://claims/{subject}` and direct action
 compatibility route. A repository with neither a scope nor readable claim
@@ -1157,10 +1160,15 @@ kan, PDS, and AppView remain.
 The governing design is `.design/rfc-2-kan-uri-scheme.md`. The five
 `.design/rfc-2-lexicons/*.json` files parse with the independent Go ATProto
 toolchain and fix the record/XRPC contract. The finite conformance manifest has
-60 URI vectors and 9 hostile/positive service-discovery vectors. Its gate
+60 URI vectors and 9 hostile/positive service-discovery vectors. Every
+resolution/safety vector has an explicit production or deferred-resolver
+disposition; the local milestone's four applicable vectors execute against
+the Rust resolver/selector and the remainder name their hosted, Git, ATProto,
+or source-evaluation milestone. Its gate
 executes parsing, resolution, exact XRPC request construction, discovery, and
-read-only checks, and its four mutation controls prove that corrupted canonical
-output, requests, coverage, and discovery expectations are rejected. Local
+read-only checks, and its five mutation controls prove that corrupted canonical
+output, requests, family coverage, production-resolver coverage, and discovery
+expectations are rejected. Local
 writers now write only typed `tools.kan.claim` records. Writable open verifies
 and migrates `dev.kan.claim`, coalesces identical mixed collections, rejects
 conflicts and unverifiable or unsupported history, removes legacy keys from the

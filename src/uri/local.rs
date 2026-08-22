@@ -96,6 +96,32 @@ impl<'a> LocalResolver<'a> {
         &self,
         request: &ResolutionRequest,
     ) -> Result<ScopedApplicationResolution, Error> {
+        let discovered_root = self.validate_scoped_request(request)?;
+        let workspace =
+            Workspace::open_resolution_read_only_with_system(self.cwd, self.system).await?;
+        self.resolve_scoped_application_in_workspace(request, discovered_root, workspace)
+            .await
+    }
+
+    /// Resolve through an application reader that has already been opened for
+    /// route classification. CLI and MCP shorthand use this entry point so a
+    /// scoped read does not verify and project the same log a second time.
+    /// Explicit URI resolution continues to use [`Self::resolve_scoped_application`]
+    /// and its stricter in-memory-only projection.
+    pub async fn resolve_scoped_application_with_workspace(
+        &self,
+        request: &ResolutionRequest,
+        workspace: Workspace,
+    ) -> Result<ScopedApplicationResolution, Error> {
+        let discovered_root = self.validate_scoped_request(request)?;
+        self.resolve_scoped_application_in_workspace(request, discovered_root, workspace)
+            .await
+    }
+
+    fn validate_scoped_request(
+        &self,
+        request: &ResolutionRequest,
+    ) -> Result<std::path::PathBuf, Error> {
         if !matches!(
             request.route(),
             Route::Kan(KanAuthority::Local { port: None })
@@ -106,14 +132,24 @@ impl<'a> LocalResolver<'a> {
             return Err(Error::AuthorityIdentityUnknown);
         }
         validate_local_source(request.evidence())?;
-        let discovered_root = local_workspace_root(self.cwd)?;
-        let Some(selector) = request.scope() else {
+        let root = local_workspace_root(self.cwd)?;
+        if request.scope().is_none() {
             return Err(Error::ScopeNotFound);
-        };
+        }
+        Ok(root)
+    }
 
+    async fn resolve_scoped_application_in_workspace(
+        &self,
+        request: &ResolutionRequest,
+        discovered_root: std::path::PathBuf,
+        mut workspace: Workspace,
+    ) -> Result<ScopedApplicationResolution, Error> {
+        if workspace.root != discovered_root {
+            return Err(Error::Invalid);
+        }
+        let selector = request.scope().ok_or(Error::ScopeNotFound)?;
         let before = source_guard(Some(&discovered_root), self.system)?;
-        let mut workspace =
-            Workspace::open_resolution_read_only_with_system(self.cwd, self.system).await?;
         let (projection, trust, empty_reason) = self.project(&mut workspace, request).await?;
         let scope_store = ScopeIdentityStore::at(workspace.root.join(".kan").join("scope"));
         let installed = scope_store.read()?.ok_or(Error::ScopeNotFound)?;
@@ -136,7 +172,14 @@ impl<'a> LocalResolver<'a> {
         if before != after {
             return Err(Error::SourceChangedDuringResolution);
         }
-        let snapshot = snapshot(Some(&workspace), self.system, Some(&installed), after)?;
+        // Keep the v1 snapshot input stable: the expanded mutation guard below
+        // is defense in depth, not a change to immutable replay identity.
+        let snapshot = snapshot(
+            Some(&workspace),
+            self.system,
+            Some(&installed),
+            after.snapshot_components,
+        )?;
         require_snapshot(request.evidence(), &snapshot)?;
         let diagnostics = workspace
             .published
@@ -187,7 +230,7 @@ impl<'a> LocalResolver<'a> {
         if before != after {
             return Err(Error::SourceChangedDuringResolution);
         }
-        let snapshot = snapshot(None, self.system, None, after)?;
+        let snapshot = snapshot(None, self.system, None, after.snapshot_components)?;
         require_snapshot(request.evidence(), &snapshot)?;
         Ok(result(
             request,
@@ -711,7 +754,39 @@ fn snapshot(
     Ok(Cid::from(atproto_repo::compute_cid(&bytes)))
 }
 
+#[derive(PartialEq, Eq)]
+struct SourceGuard {
+    snapshot_components: Vec<(String, Vec<u8>)>,
+    guarded_components: Vec<(String, Vec<u8>)>,
+}
+
 fn source_guard(
+    workspace_root: Option<&Path>,
+    system: &SystemIdentityStore,
+) -> Result<SourceGuard, Error> {
+    let snapshot_components = snapshot_source_components(workspace_root, system)?;
+    let mut guarded_components = snapshot_components.clone();
+    if let Some(root) = workspace_root {
+        // The log and overlay are signed evidence stores. Guard their raw
+        // bytes as defense in depth even though the snapshot also commits to
+        // their logical roots. The disposable SQLite projection is excluded
+        // deliberately: application shorthand may refresh it before entering
+        // this resolver, and it is never authoritative evidence.
+        raw_tree_components("log", &root.join(".kan/log"), &mut guarded_components)?;
+        raw_tree_components(
+            "overlay",
+            &root.join(".kan/overlay"),
+            &mut guarded_components,
+        )?;
+    }
+    guarded_components.sort();
+    Ok(SourceGuard {
+        snapshot_components,
+        guarded_components,
+    })
+}
+
+fn snapshot_source_components(
     workspace_root: Option<&Path>,
     system: &SystemIdentityStore,
 ) -> Result<Vec<(String, Vec<u8>)>, Error> {
@@ -958,6 +1033,39 @@ mod tests {
                 .unwrap_err()
                 .code(),
             "scope-identifier-mismatch"
+        );
+    }
+
+    #[test]
+    fn manifest_ambiguous_locator_executes_production_selection() {
+        let manifest: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/uri-v1/manifest.json"))
+                .unwrap();
+        let vector = manifest["vectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|vector| vector["id"] == "ambiguous-locator")
+            .unwrap();
+        let request = ResolutionRequest::parse(vector["input"].as_str().unwrap()).unwrap();
+        let first = scope(0xd1, "kan-tools:day");
+        let second = scope(0xd2, "kan-tools:day");
+        let names = vec!["kan-tools:day".to_string()];
+        let bindings = [
+            ScopeBinding {
+                scope: first,
+                names: &names,
+            },
+            ScopeBinding {
+                scope: second,
+                names: &names,
+            },
+        ];
+        assert_eq!(
+            select_scope(request.scope().unwrap(), &bindings)
+                .unwrap_err()
+                .code(),
+            vector["expect"]["failure"].as_str().unwrap()
         );
     }
 }

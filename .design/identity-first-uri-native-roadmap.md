@@ -275,7 +275,7 @@ bounded lanes rather than converted into one stabilization season:
 | Lane | Issues | Disposition |
 |---|---|---|
 | Identity release gate | #30, #90, #173, #177, #188, #190, #205 | implement, verify stale, or absorb into Milestone 1 |
-| Local URI application | #72, #117, #186, #194, #197, #198, #199, #210 | classify against resolver/evaluation boundaries; fix only milestone-coupled work |
+| Local URI application | #72, #117, #186, #194, #197, #198, #199, #210 | reconciled in `docs/ROADMAP.md`; keep deferred issues open and turn their named boundary into a future gate |
 | Hosted kan service | #29, #92, #158, #164, #212, #221, #226 | re-home hosted-native scope without weakening append-only or blind-backup contracts |
 | ATProto | #209, #220, #235–#243 | execute in Milestone 4; retain upstream and release-security work |
 | Performance | #25, #151, #165 | measure continuously; promote when a milestone regresses the declared scaling shape |
