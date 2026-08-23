@@ -31,9 +31,10 @@ on:
 jobs:
   perf:
     runs-on: ubuntu-latest
-    # Generation (~2.7k signed appends) plus reads; the smoke run measured
-    # status-all superlinear, so the budget carries headroom for a slow op
-    # at the grid's large end. Metered READ ops are individually capped at
+    # Generation (1,650 signed appends) plus reads. The two ungated midpoint
+    # workspaces were removed after a tag run used all 30 minutes; the gated
+    # endpoints, ratios, density, anchors, and sampling remain unchanged.
+    # Metered READ ops are individually capped at
     # 240s inside the script (recorded AT the cap, as a floor), so one
     # pathological read degrades to a gate-tripping measurement rather than
     # killing the job with no table. The append meter has no per-call cap

@@ -25,30 +25,33 @@ the contract; changing it is a reviewed edit, not a knob):
 | claims | subjects | axis role |
 |-------:|---------:|-----------|
 |     50 |        4 | claims axis, small |
-|    200 |        4 | claims axis, mid |
 |    800 |        4 | claims axis, large / subjects axis, small |
-|    800 |       40 | subjects axis, mid |
 |    800 |      400 | subjects axis, large |
 
-Absolute sizes are the smallest at which the shapes are already visible —
-the first smoke run saw `status-all`'s superlinearity by 200 claims — and
-the gate consumes only the 16×/100× *ratios*, which hold regardless of the
-absolutes. Going higher costs minutes of generation per point and buys no
-discrimination; the first full run (which used a 2,000-claim large end)
-also showed that a big grid starts to *measure* the append defect instead
-of bounding it, averaging ~750 ms/append by claim 1,400 and then dying on
-an `observe` failure at claim 1,431 before the table completed.
+The original grid also measured `(200,4)` and `(800,40)` midpoints, but no gate
+consumed them. Removing those two fresh workspaces preserves the 16×/100×
+ratios, every endpoint's absolute size and density, heterogeneous anchors, and
+append sampling while reducing generation from 2,650 to 1,650 signed appends.
+
+This follows the `v1.0.0-beta.1` tag run 32607152291, which completed four
+points but hit the 30-minute workflow circuit breaker six minutes into the
+fifth. The identical PR tree passed in 28m43s, leaving too little runner
+headroom. Halving every coordinate was rejected by a historical negative
+control: the smaller grid still caught kan#202's quadratic status read, but
+kan#204's defective writer grew only 3.5× there while the healthy writer grew
+4.7×. No bound could distinguish them. Keeping the calibrated endpoints and
+removing only ungated work preserves the instrument's actual discrimination.
 
 Claims axis: 16× claims at fixed subjects. Subjects axis: 100× subjects at
 fixed claims. Each workspace is generated fresh by driving the release
 binary (`observe`, subjects cycled round-robin), with a new empty git commit
-every 100 claims so commit anchors are heterogeneous — a single-commit log
+every 10 claims so commit anchors are heterogeneous — a single-commit log
 would make ancestry trivially cheap and hide exactly the #181 plane.
 
 Key ops metered per grid point, wall-clock ms:
 
-- `append` — mean per-`observe` latency over the final 50 appends of
-  generation (the write path at that log size; no separate pass)
+- `append` — mean per-`observe` latency over the final max(10, claims/8)
+  appends of generation (the write path at that log size; no separate pass)
 - `show-subject` — `kan show s0` (the #181 op; s0 holds ~claims/subjects
   of the log)
 - `show-all` — `kan show --all --json` (the bulk read every session opens
