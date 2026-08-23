@@ -410,11 +410,16 @@ impl Workspace {
         system: &SystemIdentityStore,
     ) -> Result<ApplicationReadRoute, Error> {
         let initial =
-            crate::identity::workspace_mode::classify(&self.root, &mut self.log, None).await?;
+            crate::identity::workspace_mode::classify_for_read(&self.root, &mut self.log, None)
+                .await?;
         let mode = if needs_system_actor(&initial) {
             let actor = system.resolve_default_actor()?;
-            crate::identity::workspace_mode::classify(&self.root, &mut self.log, actor.as_ref())
-                .await?
+            crate::identity::workspace_mode::classify_for_read(
+                &self.root,
+                &mut self.log,
+                actor.as_ref(),
+            )
+            .await?
         } else {
             initial
         };

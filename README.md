@@ -85,8 +85,8 @@ from many local logs into a coherent view, parameterized by whom you trust.
 
 ## Status
 
-Pre-1.0 (`v0.13.0-beta.1`). The local-only spine — one human,
-one-or-more agents, one repo — is built and hardening.
+1.0 beta (`v1.0.0-beta.1`; stable 1.0 is not yet declared). The local-only
+spine — one human, one-or-more agents, one repo — is built and hardening.
 
 Sharing works in both directions as of v0.8. `kan publish <subject>` writes
 a subject's signed claims into a tracked `.claims/` directory, so they
