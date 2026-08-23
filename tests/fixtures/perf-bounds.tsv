@@ -16,6 +16,11 @@
 #   subjects  (800,4) -> (800,400): 100x subjects, claims fixed.
 #                                   linear ~= 100, quadratic ~= 10000.
 #
+# The former (200,4) and (800,40) midpoint workspaces were removed after the
+# v1.0.0-beta.1 tag run 32607152291 exhausted the 30-minute job limit. They
+# consumed 1,000 signed appends but participated in no gate ratio. All endpoint
+# sizes and historical MEASURED evidence below remain exact.
+#
 # THE BOUND IS A SHAPE CLAIM, NOT A SPEED CLAIM. Absolute times are reported
 # in the run and never judged here: hosted-runner wall-clock varies enough
 # that gating on it teaches people to re-run until green. The decade between

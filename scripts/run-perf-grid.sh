@@ -24,37 +24,58 @@ say() { echo "$@" >&2; }
 # reviewed edit to this list, not a workflow input somebody quietly lowers to
 # make a slow run finish. Ratios below are computed from named entries in
 # this list; the gate resolves them by (claims, subjects) pair, so editing
-# the list without editing the axes in `gate_axes` is an error, not a skew.
+# the list without editing the axis endpoints is an error, not a skew.
 GRID=(
   "50 4"
-  "200 4"
   "800 4"
-  "800 40"
   "800 400"
 )
 
 # Claims axis: 16x claims, subjects fixed. Subjects axis: 100x subjects,
-# claims fixed. Small end first, large end second. Absolute sizes are the
-# SMALLEST at which the shapes are already visible (the first smoke run saw
-# status-all's superlinearity by 200 claims) -- the RATIOS are what the gate
-# consumes, and 16x/100x hold regardless of the absolutes. Going higher
-# costs minutes of generation per point and buys no discrimination; it also
-# starts to MEASURE the append defect instead of bounding it (the first full
-# run averaged ~750ms/append by claim 1400).
+# claims fixed. The gate consumes only these endpoints. The former (200,4)
+# and (800,40) midpoints contributed 1,000 signed appends but no judgment;
+# removing them preserves both ratios and the absolute sizes that distinguish
+# the historical kan#202 and kan#204 defects. This reduces the production grid
+# from 2,650 to 1,650 appends after tag run 32607152291 exhausted the workflow's
+# 30-minute circuit breaker.
 CLAIMS_AXIS_SMALL="50 4"
 CLAIMS_AXIS_LARGE="800 4"
 SUBJECTS_AXIS_SMALL="800 4"
 SUBJECTS_AXIS_LARGE="800 400"
 
+# Fail before generating anything if a reviewed grid edit changes the shape
+# while leaving prose that still claims the old experiment. The gate also
+# refuses missing endpoints, but only after an expensive measure; this checks
+# the 16x claims and 100x subjects axes up front and binds their named
+# endpoints to the actual list.
+validate_production_grid() {
+  local c0 s0 c1 s1 c2 s2
+  read -r c0 s0 <<<"${GRID[0]}"
+  read -r c1 s1 <<<"${GRID[1]}"
+  read -r c2 s2 <<<"${GRID[2]}"
+  if [ "${#GRID[@]}" -eq 3 ] \
+      && (( c1 == c0 * 16 && s1 == s0
+        && c2 == c1 && s2 == s1 * 100 )) \
+      && [ "${GRID[0]}" = "$CLAIMS_AXIS_SMALL" ] \
+      && [ "${GRID[1]}" = "$CLAIMS_AXIS_LARGE" ] \
+      && [ "${GRID[1]}" = "$SUBJECTS_AXIS_SMALL" ] \
+      && [ "${GRID[2]}" = "$SUBJECTS_AXIS_LARGE" ]; then
+    return
+  fi
+  say "perf grid contract violated: expected exactly three named endpoints with 16x claims and 100x subjects"
+  exit 1
+}
+validate_production_grid
+
 # A new empty commit every this-many claims, so commit anchors are
 # heterogeneous. A single-commit log makes every ancestry question trivially
 # cheap, which hides exactly the plane #181 lived on. Small enough that the
-# SMALLEST grid point gets several anchors: at 100 the (50,4) point got
-# zero, so the claims axis compared a trivial-ancestry log against a real
-# one and conflated 16x claims with 8x commits (cold review of PR #201,
-# finding 9). At 10, commit count grows in proportion to claims across the
-# axis, so a commit-pair-quadratic cost reads as the claims-quadratic ratio
-# it is.
+# SMALLEST grid point gets several anchors. Historical calibration at an
+# interval of 100 gave the old (50,4) point zero, so the claims axis compared
+# a trivial-ancestry log against a real one and conflated 16x claims with 8x
+# commits (cold review of PR #201, finding 9). At 10, commit count grows in
+# proportion to claims across the axis, so a commit-pair-quadratic cost reads
+# as the claims-quadratic ratio it is.
 COMMIT_EVERY=10
 
 # Appends timed in passing: the mean of the final n/8 appends (floor 10) at
