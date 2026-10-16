@@ -1,0 +1,202 @@
+# Feature: kan v2 buildout contracts and sequenced delivery
+
+## Summary
+
+Turn the service architecture in `.design/kan-v2-server-first.md` into a bounded implementation sequence: establish evidence and access contracts, build the durable storage core, then add encrypted service access, migration, capture, and operational recovery. Keep the architecture and this buildout plan as separate stacked documentation PRs, followed by small implementation slices whose merge conditions name observable evidence. Work proceeds from versioned files even when the current day recorder cannot establish subject absence.
+
+Status: proposed buildout contract, 2026-10-16. The parent architecture is draft [PR #264](https://github.com/kan-tools/kan/pull/264), branch `design/kan-v2-server-first`. This document starts on `design/kan-v2-buildout`, forked at `fde036b86469f8b1d245bce2a1d8f0c39399ba94`, in the permanent worktree `/Users/m/code/kan-tools/kan/.worktrees/kan-v2-buildout`. No implementation, deployment, or merge is claimed by this document.
+
+## Requirements
+
+- REQ-1: Maintain an explicit PR dependency order with separately reviewable architecture, contract, storage, service, migration, capture, and operational slices. A descendant is reviewed against its parent while stacked and is merged to main only after the parent lands.
+- REQ-2: Preserve the parent design's accepted product decisions and identify unresolved decisions by the first slice that needs them. Open key custody or provider choices must not prevent unrelated contract and fixture work.
+- REQ-3: Define evidence inventory independently of interpretation: authorized source existence, signature validity, scope admission, and consumer trust cannot collapse into one filtered result. An unrelated excluded claim cannot make every new subject impossible to append.
+- REQ-4: Give every logical API operation typed preconditions, visibility boundaries, idempotency rules, and stable failure semantics before exposing it as a service endpoint. Fix exact wire bytes and protocol versions in a separate reviewed contract before production interoperability is claimed.
+- REQ-5: Map every authoritative artifact, cache, credential, and operational checkpoint to a persistence owner. No service writer may bypass the surface catalog and the admission/idempotency commit boundary.
+- REQ-6: Build the crash-safe ledger with synthetic opaque ciphertext fixtures before coupling it to a real gateway or model provider. Remote durability must be testable without inference traffic or a working query index.
+- REQ-7: Separate access capabilities for ingest, raw evidence inventory, plaintext reading, provider forwarding, backup, and administration. Choosing a trust frame never grants content access or append authority.
+- REQ-8: Deliver local legacy discovery and preview before bulk upload, then resumable encrypted import through the same service ingest path. Preserve raw source identities and verify imports independently of old display filters or memory limits.
+- REQ-9: Pin the first harness/provider integration before claiming capture coverage, while developing generic spooling and forwarding behavior against a fake provider. Exhausted capture continues inference with a visible gap, as selected in the parent design.
+- REQ-10: Define backup completion, restore verification, final migration cutover, and erasure behavior before recommending the service as the user's primary archive. Successful append alone is not operational readiness.
+- REQ-11: Keep unknown input shapes, failed inspections, pending imports, read exclusions, missing keys, and incomplete capture as explicit states. Preserve these states through CLI/MCP and future query clients rather than translating them into empty success.
+- REQ-12: Every implementation slice supplies executable witnesses tied to parent acceptance criteria and checks compatibility at its own boundary. Documentation checks do not substitute for runtime, cryptographic, or recovery evidence; external review and actual CI status must be reported honestly.
+
+## Acceptance Criteria
+
+These criteria are **implementation intent**. The named witnesses are proposed tests or review artifacts, not existing passing checks. They complement the parent design's AC-1 through AC-24.
+
+- [ ] AC-1: Intent; witness `stack_scope_review`: compare each PR to its declared base; only its own slice appears, the dependency links resolve, and no child merges into an unmerged ancestor. (REQ-1)
+- [ ] AC-2: Intent; witness `decision_dependency_review`: every open decision has an earliest dependent slice; storage-only fixtures run with no chosen provider and no production encryption profile. (REQ-2, REQ-6)
+- [ ] AC-3: Intent; witness `unrelated_exclusion_does_not_block_append`: place two view-excluded claims on another subject, prove an authorized exact existence query for a new subject returns absent at a pinned snapshot, and append to it without changing consumer trust. A genuinely withheld scope returns access-limited rather than absent. (REQ-3)
+- [ ] AC-4: Intent; witness `operation_contract_vectors`: each operation in the contract table has successful, duplicate, unauthorized, conflicting, unsupported, and interrupted fixtures where applicable; supported independent decoders agree on canonical identifiers and error classes. (REQ-4, REQ-11)
+- [ ] AC-5: Intent; witness `service_writer_inventory`: compare declared persistence owners against actual mutation sites; fail when a new column/file or alternate ingest path lacks a catalog row and capability. (REQ-5)
+- [ ] AC-6: Intent; witness `opaque_ledger_fault_matrix`: kill the synthetic ingest service at each staging, manifest, index, and receipt boundary; all acknowledged events remain retrievable, retries are idempotent, and missing cache files trigger bounded recovery or explicit rebuild state. (REQ-6)
+- [ ] AC-7: Intent; witness `capability_separation`: an ingest-only principal can submit valid bounded evidence but cannot read history, a backup principal cannot decrypt, and a trusted-but-unadmitted writer cannot mutate the ledger. The gateway cannot unwrap arbitrary historical objects. (REQ-7)
+- [ ] AC-8: Intent; witness `migration_stages_end_to_end`: preview performs no network upload or source write; interrupted upload resumes from receipts; byte/CID reconciliation and old subject namespaces survive import and clean-host restore. (REQ-8, REQ-10)
+- [ ] AC-9: Intent; witness `capture_profile_qualification`: run the supported adapter coverage matrix, unknown-outcome scenario, and spool-exhaustion case against a fake provider and the selected real integration. A live integration is not called complete on synthetic fixtures alone. (REQ-9)
+- [ ] AC-10: Intent; witness `primary_archive_readiness`: restore on a clean host from independent backup, report the uncovered interval, verify selected erasure semantics, and reconcile the final import frontier before client cutover. (REQ-10)
+- [ ] AC-11: Intent; witness `state_disclosure_contract`: CLI and MCP expose the same typed absence, withholding, unknown-version, gap, corruption, and pending states; no adapter reduces any of them to an empty collection without disclosure. (REQ-11)
+- [ ] AC-12: Intent; witness `slice_release_evidence`: every completed slice names real executable witnesses, their results and supported versions, the exact diff reviewed, and outstanding limitations; no future witness name is marked passed without execution. (REQ-12)
+
+## Architecture
+
+### 1. Continuity and what is already decided
+
+The parent design supplies the product architecture, including centralized cross-project storage, the same local/remote service implementation, blind payload storage, a separately trusted forwarding kernel, indefinite retention until explicit erasure, rich personal-instance operational metadata by default, optional obfuscation, gap-visible inference continuity, a local migration tool, and the later day merger. This plan does not reopen those choices.
+
+The code reference is the same baseline as the parent. `src/claim/codec.rs`, `src/claim/view.rs`, `src/identity.rs`, and `src/uri.rs` supply compatibility and identity semantics to preserve. `src/store/log.rs` is a legacy source/export implementation, not the template for the new all-history-independent hot path. `src/persistence.rs`, `src/surface.rs`, and `tests/fixtures/read-write-surface.tsv` establish the mutation ownership discipline.
+
+Existing normative documents still govern the shipped system: `docs/SPEC.md`, `rfcs/1-identity-system.md`, and `rfcs/2-kan-uri-scheme.md`. Before implementing a changed public contract, the appropriate slice must explicitly amend or extend those documents through the established RFC process. An architecture draft does not silently authorize incompatible identifiers or reinterpret existing signed bytes.
+
+### 2. The PR stack and merge sequence
+
+```text
+main
+  └─ P0: design/kan-v2-server-first — architecture and migration direction (#264)
+       └─ P1: design/kan-v2-buildout — this contract and delivery plan
+            └─ later requirement-scoped implementation branches
+```
+
+The user explicitly requested a dependent branch/worktree and sequenced merges. That governs this stack instead of the ordinary process atom's default of branching every slice directly from main. P0 targets main; P1 targets P0 while P0 is open. Parent and child PR descriptions identify the dependency and their own validation. Draft status does not mean an architecture or wire format has been accepted.
+
+Merge P0 first after review and relevant checks. Prefer the project's regular merge strategy so its commits remain ancestors of P1. Retarget P1 to main, verify its diff contains only the child delta, and rerun checks against the updated base before merging it. Do not merge P1 into P0 simply to clear the stack. Keep the parent remote branch until child retargeting is complete. If the parent is squash-merged or rewritten, replay only the child's commits onto the accepted base and re-review the resulting diff; do not merge duplicate architecture commits by accident.
+
+Future implementation PRs use this same ordering. Keep the active stack short: only branch from an unmerged predecessor when the dependency is concrete; otherwise branch from the latest accepted main. Creation of this plan does not authorize automatic future merges, cleanup of active worktrees, or release publication.
+
+| Slice | Depends on | Reviewable change | Exit evidence / parent coverage |
+|---|---|---|---|
+| P0 architecture | Existing main | Product direction and migration requirements | Parent design check and architecture review; open questions remain visible |
+| P1 buildout contracts | P0 | This plan, logical operations, authority boundary, failure semantics, merge order | Contract/readiness review and design check; no runtime claims |
+| P2 evidence contract and fixtures | P1 | Exact event/manifest/receipt formats, canonical identifiers, inventory/absence contract, exhaustive state tables, independent vectors | This AC-3/4/11; parent AC-4/10/11/18; explicit protocol/RFC amendments |
+| P3 opaque storage core | P2 | Chunk staging, append/commit, durable receipts, bounded indexes, recovery and fault harness | This AC-5/6; parent AC-7/8/9/20 |
+| P4 encrypted service and clients | P3 and key-profile decision | Admission/capabilities, key wrapping, local/remote API, exact retrieval, explicit annotation client, health | This AC-7; parent AC-1/2/5/10/12/18 |
+| P5 local migration | P4 | Discovery/preview, streaming source reader, import mapping, batching, resume, verification; cutover remains disabled pending P7 | This AC-8; parent AC-17/21/22/23 |
+| P6 capture and spooling | P4 and integration-profile decision | Fake provider first, then chosen harness/provider, request/stream evidence, bounded queues, visible gaps | This AC-9; parent AC-3/6/20 |
+| P7 operational qualification | P5 and P6 | Independent backup, clean-host restore, selected erasure protocol, final delta/cutover, measured capacity | This AC-10/12; parent AC-16/19/24 and full MVP regression |
+| P8 extraction and process | P7 plus separate extraction design | Versioned classification/segmentation/summaries, then background day assessment | Parent AC-13/14/15; deferred from storage MVP |
+
+P5 and P6 are independent after P4. They may be implemented separately; merging them in that order keeps release accounting simple. This table is a sequence of reviewable outcomes, not a requirement to produce a large PR for each row: split further when a row cannot be reviewed coherently, preserving the named dependency and evidence.
+
+### 3. Evidence inventory must not be a trust-filtered fold
+
+The observed v1/day failure supplies a concrete negative fixture. The default bulk read returns two excluded claims without a subject entry. Day therefore cannot distinguish absent from fully excluded subjects and refuses to record an otherwise unrelated new design. A one-off read including both observed authors showed both claims belong to design/rfc-2 and none to the new v2 design subject. No persistent trust policy was changed. This diagnosis explains a contract defect; it does not claim that the current code is fixed.
+
+Separate these questions:
+
+| Question | Authority and result |
+|---|---|
+| May this caller access the scope's inventory? | Access grant; denied or access-limited is not absence |
+| Is this opaque event/object committed? | Blind ledger manifest membership at a named snapshot |
+| Does this semantic subject have evidence? | Authorized reader over a complete subject index for the declared scope and frontier |
+| Is this record authentic and admitted? | Signature/identity/admission judgments, reported separately |
+| Should it influence this user's view? | Explicit consumer trust frame, evaluated after inventory |
+
+The blind store cannot search encrypted subject names. An authorized reader may answer semantic existence after decrypting and indexing the permitted scope. Its index pins both the ledger frontier and processing frontier. If it lags, has unsupported records that may contain the subject, or cannot inspect part of the authorized evidence, it returns incomplete/unknown rather than absent. It need not include excluded content in a user's preferred view to establish inventory within the user's access grant.
+
+Proposed semantic existence results are `present`, `absent-at-snapshot`, `incomplete`, and `access-limited`. Invalid or unsupported inputs retain separate diagnostics. For callers without inventory access, use a non-disclosing access-limited response rather than revealing existence through distinct missing/forbidden errors. Scope-wide absence is only meaningful when coverage and snapshot are explicit. Network-wide absence is not offered.
+
+Appending an authenticated event is unconditional with respect to semantic subject absence: validate its capability, framing, occurrence identity, and quota at the commit owner. Day-style declaration deduplication can use complete inventory, immutable operation IDs, or an explicit conditional operation; it must not block ordinary append merely because a trust-filtered display omitted unrelated evidence. A `create-if-absent` operation, if later offered, must name its serialization and comparison rules; a separate read followed by append is not atomic.
+
+### 4. Logical operation contract
+
+These names describe typed operations. They are neither existing CLI commands nor finalized HTTP paths. P2 fixes transport encodings and versions; P4 exposes them through one shared API consumed by local and remote clients.
+
+| Operation | Preconditions and input | Result and visibility boundary |
+|---|---|---|
+| Stage encrypted chunk | Scoped ingest capability, ciphertext digest, declared length, bounded stream | Immutable stored-object commitment; no event visibility or durable-event receipt yet |
+| Commit event batch | Exact event envelopes, installed object references, occurrence keys and digests, batch operation ID | All-or-nothing batch manifest visibility and signed remote-durable receipt; same operation+content returns prior result; changed content conflicts |
+| Read encrypted evidence | Exact opaque ID/snapshot and authorized access | Original ciphertext plus commitment and coverage/error state; never an interpreted summary |
+| Enumerate evidence | Authorized routing scope, snapshot, cursor, bounded page limit | Pinned committed members, continuation and completion state; no consumer-trust filter |
+| Resolve subject/view | Authorized reader, exact scope set/frontiers, parser version, trust and admission policies | Attributed interpretation with underlying evidence references, exclusions and source coverage |
+| Append annotation | Admitted author, encrypted signed annotation, occurrence/operation identity | Ordinary commit receipt; no synchronous analysis or workflow execution |
+| Inspect ingest operation | Caller-authorized operation ID | Unknown, staged, committed with receipt, or explicit conflict; lost acknowledgment is not inferred failure |
+| Inspect backup checkpoint | Authorized control reader, checkpoint ID | Object closure and verified frontier; distinguishes local durability from backup completion |
+| Import snapshot | Import manifest/mapping, pinned source commitment and ordinary scoped batches | Job progress built from durable receipts and exact reconciliation; no source rewrite |
+
+A batch is bounded; a multi-batch import is not one transaction. Its final completion manifest states the verified union of accepted batches and omissions. Retry keys bind destination scope, operation ID, and content commitment. Never use payload content alone to identify an occurrence or silently deduplicate separate inference attempts.
+
+The envelope contract must specify version, signed origin and identity state, occurrence key, encrypted payload commitments, causal/predecessor references, coverage, and authenticated outer routing fields. The receipt contract must specify issuer, committed batch/event identifiers, service position/frontier, durable boundary, and signature domain. P2 must choose canonical bytes, hash/signature domains, supported version behavior, maximum frame lengths, and valid/invalid vectors. No public protocol is considered frozen by this field inventory alone.
+
+Error families include invalid framing, invalid signature, unsupported version, denied capability, conflicting occurrence, missing staged object, quota exhausted, corrupt committed evidence, unavailable medium, and incomplete history. Admission failures are not retries; transient medium failures may be retried with the same operation ID. An unsupported envelope can be retained only through an explicit opaque-evidence path; retention does not mean semantic acceptance. Detailed internal diagnostics must not leak protected content through unauthorized responses.
+
+### 5. Persistence ownership and recovery cuts
+
+| Artifact family | Authority | Writer / validator | Recovery rule |
+|---|---|---|---|
+| Encrypted chunk | Immutable source bytes | Ingest staging writer / digest and framing validator | Referenced chunks survive; unreferenced staging objects are not committed evidence |
+| Ledger frame and commit manifest | Authoritative event membership and ordering of arrival | Single commit owner / signature, capability and object-closure checks | Valid committed prefix is retained; torn tail is isolated; acknowledged entries cannot be discarded |
+| Receipt | Service durability assertion | Commit owner / receipt signature verifier | Can be reissued from committed membership without executing provider traffic |
+| Scope and grant control history | Authoritative policy evidence | Explicit administration boundary / RFC 1 capability rules | Restore original signed history and report unresolved/contested state |
+| Offset and idempotency tables | Rebuildable projections | Indexer from manifests | Recover from checkpoint plus suffix; unavailable index never justifies accepting a conflicting occurrence |
+| Semantic subject index | Derived, plaintext-capable reader state | Authorized reader / parser and membership frontier | Recompute from authorized evidence; incomplete rebuild cannot answer absence |
+| Encrypted pending spool | Authoritative local pending evidence until receipt | Collector/gateway spool owner | Drain original occurrences; retain or disclose unacknowledged items; never replay inference |
+| Import manifest and completion | Authoritative importer observations | Import principal / source commitments and receipt reconciliation | Resume and verify against pinned source; claims preserve original signatures |
+| Backup checkpoint | Authoritative backup observation | Backup worker / independent object-closure verification | Restore only claims warranted by verified coverage; expose newer uncovered interval |
+| Keys and credential references | Sensitive authoritative configuration | Separate credential/control boundary | Recover from independent package; never rebuild from a disposable index |
+
+All paths into mutation—collector, gateway, annotation client, importer, future worker, restore, administration—must be enumerated. Event writers converge on the same commit boundary. Restored historical artifacts retain their source IDs and signatures and are imported through a verified restoration path; a second convenient writer is not allowed to skip occurrence/admission checks. New capabilities and catalog entries extend `src/persistence.rs` and the surface-conformance tests together.
+
+P3's crash matrix names every cut: before chunk flush, after chunk install, during manifest write, after manifest durability but before index update, after index update but before receipt, and after receipt but before the client persists it. Faults in a cache must not alter the committed history. Verify these with real process termination and restart, not only return-value mocks. Test the persistent format against an independent decoder as required by the storage-conformance precedent.
+
+### 6. Migration and capture contracts
+
+P5 imports evidence, not a trust-filtered view. Its manifest inventories source medium, snapshot commitment, source lineage, record IDs/bytes, public verification history, selected destination mapping, and explicit omissions. Repositories with the same name or Git remote remain distinct until lineage is evidenced. Two local subjects named spine cannot collide across independent legacy stores. Invalid or unsupported records are retained as such; private keys and unrelated files are outside the upload allowlist.
+
+P5 can ship local discovery/preview before the remote writer is complete, provided it advertises that only those operations exist. Resumable upload and verification depend on P4. Cutover depends on P7. Rollback restores client routing but does not magically copy v2-only writes into a legacy store; the report must disclose that remaining history and where to read it.
+
+P6 begins with a deterministic fake provider covering stream chunks, disconnects, non-2xx responses, cancellation, slow reads, and ambiguous final outcomes. Local collector and remote gateway are separate observers. The gateway records its actual route; direct local fallback exists only when credentials and policy explicitly permit it. Captured prompt content cannot choose a new destination or turn an archive retry into a new provider request.
+
+The supported harness/provider profile must enumerate configuration mechanism, hook/API coverage, source event IDs, attachment behavior, and limits. The generic fixture may establish correct transport behavior, but only the selected real profile can support a claim of end-to-end harness coverage. Provider implementation details will be researched against current primary documentation when that profile is selected.
+
+### 7. Open decisions and their first dependent slice
+
+| Decision | Current state | First dependency | Work that can proceed now |
+|---|---|---|---|
+| Archive key custody, wrapping, recovery and erasure unit | Parent Q4 remains open; separate keys, encryption-only gateway and independent recovery package are proposed | P2 must fix encryption-independent envelope boundaries; production crypto profile is required before P4 | Event/receipt semantics, opaque storage, synthetic crash/retry fixtures |
+| First harness/provider and representative corpus | Parent Q5 remains open | Real integration in P6 | Fake provider, generic spool/stream state machine, coverage schema |
+| Default trust for extracted decisions/status | Parent Q5 remains open | P8 | All storage, import, and capture work |
+| Exact event/receipt wire encoding and URI extensions | Deliberate P2 design work, not yet frozen | P2 completion | Logical operation/state tables and independent-vector planning |
+| Optional metadata obfuscation implementation | Non-default future profile | Only a release claiming that profile | Personal-instance MVP with explicit metadata inventory |
+
+Do not expand these into a general platform rewrite before proving the first store. P2 is the next concrete engineering-design slice: choose exact formats and furnish independent vectors, including the trust/inventory negative fixture. It can be developed on a branch from P1 while these documentation PRs are reviewed, but is not evidence that production key handling or capture is already settled.
+
+### 8. Review and completion discipline
+
+Standing operator instruction (2026-10-16): every v2 implementation build point receives a fresh independent review through Claude Code using Opus 5.5, pinned as `claude-opus-5-5`. This includes the contract, storage, migration and subsequent service/capture/operations slices. The operator has authorized these reviews as the standard workflow; do not ask again at each slice. This instruction is scoped to the v2 build, not a global model preference.
+
+Start a new reviewer session with no resumed/forked implementation conversation or author memory. Give it the relevant designs, recorded teloi with read limitations, repository rules and exact base/head commits. The reviewer inspects the implementation and runs its own checks, following the day adversarial-review protocol; it does not implement its findings. Record the actual model, commit range, commands/results, requirement coverage, findings and one hard verdict. Retain the raw report separately from the author's response. A failed or unavailable review, a different-model fallback, or an unverified model identity leaves this gate pending; never silently substitute another model or label an author's self-review independent.
+
+Fixes after BLOCK or REDIRECT receive a new cold review of the corrected commits, with regression evidence and negative controls where applicable. A previous verdict does not cover later material code changes. Reviews gate milestone completion and merge recommendation; drafting a PR and independent work on other slices can continue. This is a development review convention, not a runtime enforcement hook or authorization to merge, deploy, change global Claude settings, or upload private source archives.
+
+Give each worktree its own `CARGO_TARGET_DIR`, including for parallel reviews. Sharing a target directory across these same-name/version branches caused Cargo/Clippy to reuse another worktree's library metadata during the first review round; a passing or failing command under that setup can describe the wrong branch. Recheck affected evidence in isolation, retain the environment limitation in the report, and budget disk space before starting duplicate full builds. A report's verdict and the author's disposition of its findings are separate records; approval of a bounded slice does not mark its broader parent acceptance criteria complete.
+
+The existing `.github/workflows/ci.yml` runs citation checks, Rust build/test/lint, an MSRV build, and other repository checks. For the documentation stack, run the design linter, whitespace checks, and existing citation checker, and report remote CI separately. Do not claim the local Rust suite was run for documentation-only edits.
+
+For implementation slices, preserve and extend `tests/surface_conformance.rs`, the migration fixtures, and URI/identity fixtures. Bind the parent AC's named intent witnesses to actual test symbols when implemented. Include fault cases and independent oracles; a test that only round-trips through the same implementation cannot establish wire conformance. A defect fix includes a negative-control result demonstrating that its test detects the defect.
+
+The current day record failure remains a documentation-tool limitation, not a reason to invent successful claim CIDs or modify the user's trust configuration. The tracked design, its commits, and linked PRs are the current continuation artifacts. Back-fill through day after its read context or inventory contract is corrected; do not assemble a substitute claim chain by hand. The v2 system must make raw inventory and interpretation separate so the same failure does not become a dependency of the new workflow engine.
+
+The work targets the existing raw-data-and-projections, performance-at-scale, and identity/URI continuity goals. No new telos witnesses are declared by this document. The existing day graph nominates generative-build after design; this plan refines what the next build must establish without claiming that an unwitnessed maintenance telos is reached.
+
+## Resolved Questions
+
+- RQ-1: The user requested a draft architecture PR followed by a new permanent worktree/branch based on the design branch, with merges planned in sequence. P0 and P1 form that stack; neither is merged by this pass.
+- RQ-2: Continue documentation toward implementation on the child branch while preserving the architecture proposal as its own reviewable parent. The local-repository migration tool remains part of MVP completion.
+- RQ-3: The two claims underlying the current partial-trust refusal were identified by a read including their authors: both concern design/rfc-2 and neither is an existing v2-design record. This diagnosis does not change default trust settings or claim a repair to day.
+- RQ-4: Fresh independent Claude Code reviews with Opus 5.5 are standard for v2 build points and subsequent blocking-fix rounds, under standing user authorization.
+
+## Open Questions
+
+<!-- OPEN: Q1 -->
+### Q1: Inherited key and integration choices
+
+Parent Q4 (key custody/recovery and exact crypto profile) and Q5 (first real harness/provider and later extractor default trust) remain unanswered. They are allocated to their first dependent slices above. Continue contract, synthetic fixture, and opaque storage work without guessing that the operator approved one concrete profile. No new user decision is required to review this delivery sequence.
+<!-- /OPEN -->
+
+## Out of Scope
+
+- Implementing the service, importing live repositories, calling inference providers, or deploying infrastructure in this documentation pass.
+- Merging PRs, enabling auto-merge, or deleting permanent worktrees as part of setting up the stack.
+- Automatically creating GitHub issues or changing day/kan trust settings to unblock recording.
+- A second database or local implementation with different evidence semantics.
+- Production encryption or complete capture claims based only on synthetic fixtures.
