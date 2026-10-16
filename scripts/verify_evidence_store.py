@@ -42,8 +42,9 @@ def verify(path):
         prior = db.execute('select cid from commits where scope=? and writer=? and position=? and sequence<?', (scope, writer, position-1, sequence)).fetchone()
         assert prior == (None if position == 0 else (previous,))
         for e in m['entries']:
-            binding = db.execute('select ciphertext,length from bindings where scope=? and writer=? and slot=?', (scope, writer, bytes.fromhex(e['slot']['$bytes']))).fetchone()
-            assert binding == (e['ciphertext']['$link'], e['length'])
+            binding = db.execute('select b.ciphertext,b.length,c.sequence from bindings b join commits c on c.cid=b.first_manifest where b.scope=? and b.writer=? and b.slot=?', (scope, writer, bytes.fromhex(e['slot']['$bytes']))).fetchone()
+            assert binding is not None and binding[:2] == (e['ciphertext']['$link'], e['length'])
+            assert binding[2] <= sequence
             obj = db.execute('select bytes from objects where cid=?', (binding[0],)).fetchone()
             assert obj is not None and len(obj[0]) == e['length'] and cid(obj[0],0x55) == binding[0]
         commits += 1

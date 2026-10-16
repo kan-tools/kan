@@ -142,6 +142,12 @@ fn entries(record: &Record) -> impl Iterator<Item = &BTreeMap<String, Ipld>> {
     })
 }
 
+fn parent_directory(path: &Path) -> &Path {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+}
+
 fn private_file(path: &Path) -> Result<()> {
     let meta = std::fs::symlink_metadata(path)?;
     if !meta.is_file() || meta.file_type().is_symlink() {
@@ -170,7 +176,7 @@ fn configure(conn: &Connection) -> Result<()> {
 impl Ledger {
     pub fn create(root: &Path) -> Result<Self> {
         if !root.exists() {
-            if !root.parent().is_some_and(Path::is_dir) {
+            if !parent_directory(root).is_dir() {
                 return Err(Error::Invalid("archive parent must already exist"));
             }
             // surface-write: evidence-db:archive.sqlite
@@ -206,9 +212,7 @@ impl Ledger {
         tx.execute_batch(SCHEMA)?;
         tx.commit()?;
         std::fs::File::open(root)?.sync_all()?;
-        if let Some(parent) = root.parent().filter(|p| !p.as_os_str().is_empty()) {
-            std::fs::File::open(parent)?.sync_all()?;
-        }
+        std::fs::File::open(parent_directory(root))?.sync_all()?;
         let ledger = Self { conn };
         ledger.check_schema()?;
         Ok(ledger)
@@ -519,9 +523,13 @@ impl Ledger {
                 return Err(Error::Corrupt("predecessor".into()));
             }
             for e in entries(&m) {
-                let actual: Option<(String,i64)> = tx.query_row("SELECT ciphertext,length FROM bindings WHERE scope=? AND writer=? AND slot=?",
-                    params![blob(&b["scopeToken"]),writer(&m),blob(&e["slot"])], |r| Ok((r.get(0)?,r.get(1)?))).optional()?;
-                if actual != Some((cid(&e["ciphertext"]), number(&e["length"]))) {
+                let actual: Option<(String, i64, i64)> = tx.query_row("SELECT b.ciphertext,b.length,c.sequence FROM bindings b JOIN commits c ON c.cid=b.first_manifest WHERE b.scope=? AND b.writer=? AND b.slot=?",
+                    params![blob(&b["scopeToken"]),writer(&m),blob(&e["slot"])], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+                if !actual.is_some_and(|(object, length, first_sequence)| {
+                    object == cid(&e["ciphertext"])
+                        && length == number(&e["length"])
+                        && first_sequence <= seq
+                }) {
                     return Err(Error::Corrupt("binding".into()));
                 }
                 let payload = self.read_object(
@@ -590,12 +598,7 @@ impl Ledger {
         target.execute_batch("PRAGMA journal_mode=DELETE;")?;
         drop(target);
         std::fs::File::open(destination)?.sync_all()?;
-        std::fs::File::open(
-            destination
-                .parent()
-                .ok_or(Error::Invalid("backup parent"))?,
-        )?
-        .sync_all()?;
+        std::fs::File::open(parent_directory(destination))?.sync_all()?;
         Self::verify_file(destination)
     }
 
