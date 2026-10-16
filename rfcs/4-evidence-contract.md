@@ -3,7 +3,7 @@
 - Status: Draft
 - Authors: kan contributors
 - Created: 2026-10-16
-- Discussion: The draft PR introducing this file; review has not started.
+- Discussion: https://github.com/kan-tools/kan/pull/266 (Draft; review has not started)
 - Review-period-ends: Not started (Draft)
 - Review-override: None
 - Supersedes: None
