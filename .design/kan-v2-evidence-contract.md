@@ -15,7 +15,7 @@ Implement the bounded P2 format slice of `.design/kan-v2-buildout.md`: a draft R
 
 ## Review status
 
-The first cold review returned BLOCK: the original byte/link decoder and oracle were not conformant despite passing their initial vectors. The historical checks below are retained as execution records, not approval. `.design/kan-v2-contract-review-fixes.md` defines the correction round and its new evidence.
+The first cold review returned BLOCK: the original byte/link decoder and oracle were not conformant despite passing their initial vectors. The historical checks below are retained as execution records, not approval. `.design/kan-v2-contract-review-fixes.md` records the corrections and their fresh round-3 APPROVE WITH FOLLOW-UPS at bc24e2b, including remaining conformance/identity-profile work.
 
 ## Acceptance Criteria
 
