@@ -350,6 +350,12 @@ const PERSISTENCE_MODULES: &[&str] = &[
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
     (
         "src/evidence_store.rs",
+        "write_new_owner_only",
+        "EvidenceRecovery",
+        1,
+    ),
+    (
+        "src/evidence_store.rs",
         "create_dir_all",
         "EvidenceArchive",
         1,
@@ -1084,7 +1090,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "8696793aecb2ab156881bff5c4dbe94eecec1b4611c5e328ea17ceed3e9d972d",
+                "4853d8378a21ff25ff6dd8a0f6e541c10a6333ad137e5ee8962a43378efcb40d",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

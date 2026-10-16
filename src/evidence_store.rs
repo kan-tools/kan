@@ -41,6 +41,8 @@ pub enum Error {
     Conflict(&'static str),
     #[error("missing object: {0}")]
     Missing(String),
+    #[error("missing commit: {0}")]
+    MissingCommit(u64),
     #[error("corrupt evidence: {0}")]
     Corrupt(String),
 }
@@ -83,6 +85,190 @@ pub struct Verification {
 /// `tests/evidence_store.rs` exercises commit, crash recovery and independent reads.
 pub struct Ledger {
     conn: Connection,
+}
+
+/// Read-only, pinned raw evidence view. Does not certify archive completeness or
+/// derived indexes. Drop promptly: a live source may retain WAL history meanwhile.
+pub struct RecoveryReader {
+    ledger: Ledger,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoveryBoundary {
+    ObjectCopied,
+    CommitCopied,
+    Verified,
+    Committed,
+}
+
+// Explicit bounds apply before returning BLOB data to Rust, including damaged
+// rows that were written with SQLite CHECK constraints disabled.
+const RAW_COMMITS: &str = "SELECT sequence,length(manifest),substr(manifest,1,65536),length(receipt),substr(receipt,1,65536) FROM commits NOT INDEXED";
+
+fn raw_commit(row: &rusqlite::Row<'_>) -> Result<Committed> {
+    let sequence = u64::try_from(row.get::<_, i64>(0)?)
+        .ok()
+        .filter(|n| *n > 0)
+        .ok_or_else(|| Error::Corrupt("sequence".into()))?;
+    for column in [1, 3] {
+        if !(1..=65536).contains(&row.get::<_, i64>(column)?) {
+            return Err(Error::Corrupt(format!(
+                "record length at sequence {sequence}"
+            )));
+        }
+    }
+    let manifest = known(&row.get::<_, Vec<u8>>(2)?, Kind::Manifest)?;
+    let receipt = known(&row.get::<_, Vec<u8>>(4)?, Kind::Receipt)?;
+    if !evidence::binds(&receipt, &manifest) {
+        return Err(Error::Corrupt(format!("receipt at sequence {sequence}")));
+    }
+    Ok(Committed {
+        sequence,
+        manifest,
+        receipt,
+        duplicate: false,
+    })
+}
+
+impl RecoveryReader {
+    /// Open a database FILE, including a standalone backup, without consulting
+    /// derived fields. SQLite must still be able to read its schema/raw tables.
+    pub fn open(path: &Path) -> Result<Self> {
+        private_file(path)?;
+        let ledger = Ledger {
+            conn: Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?,
+        };
+        ledger.conn.busy_timeout(Duration::from_secs(5))?;
+        ledger.conn.execute_batch("PRAGMA query_only=ON; BEGIN;")?;
+        // Reading the profile pins the transaction before the handle escapes.
+        ledger.check_schema()?;
+        Ok(Self { ledger })
+    }
+
+    pub fn record(&self, sequence: u64) -> Result<Committed> {
+        let n = i64::try_from(sequence).map_err(|_| Error::Invalid("sequence overflow"))?;
+        if n == 0 {
+            return Err(Error::Invalid("sequence starts at one"));
+        }
+        let mut stmt = self
+            .ledger
+            .conn
+            .prepare(&format!("{RAW_COMMITS} WHERE sequence=?"))?;
+        let mut rows = stmt.query([n])?;
+        raw_commit(rows.next()?.ok_or(Error::MissingCommit(sequence))?)
+    }
+
+    pub fn read_object(&self, id: &Cid) -> Result<Vec<u8>> {
+        let row: Option<(i64, Vec<u8>)> = self
+            .ledger
+            .conn
+            .query_row(
+                "SELECT length(bytes),substr(bytes,1,4194304) FROM objects WHERE cid=?",
+                [id.to_string()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let (length, bytes) = row.ok_or_else(|| Error::Missing(id.to_string()))?;
+        if !(1..=MAX_CHUNK as i64).contains(&length) || ciphertext_cid(&bytes) != *id {
+            return Err(Error::Corrupt(id.to_string()));
+        }
+        Ok(bytes)
+    }
+
+    /// Build a NEW standalone SQLite file. A failure retains an incomplete file;
+    /// retry with a fresh destination. Never modifies or promotes the source.
+    pub fn rebuild(&self, destination: &Path) -> Result<Verification> {
+        self.rebuild_observed(destination, &mut |_| {})
+    }
+
+    /// Fault-injection hooks do not certify durability.
+    pub fn rebuild_observed(
+        &self,
+        destination: &Path,
+        observe: &mut dyn FnMut(RecoveryBoundary),
+    ) -> Result<Verification> {
+        // surface-write: evidence-recovery:archive.sqlite
+        crate::persistence::write_new_owner_only(
+            crate::persistence::SurfaceWrite::EvidenceRecovery,
+            destination,
+            &[],
+        )?;
+        let target = Ledger {
+            conn: Connection::open_with_flags(destination, OpenFlags::SQLITE_OPEN_READ_WRITE)?,
+        };
+        target.conn.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA fullfsync=ON;")?;
+        let tx = target.conn.unchecked_transaction()?;
+        tx.execute_batch(SCHEMA)?;
+        {
+            let mut stmt = self.ledger.conn.prepare(
+                "SELECT cid,length(bytes),substr(bytes,1,4194304) FROM objects ORDER BY cid",
+            )?;
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
+                let id: String = row.get(0)?;
+                let length: i64 = row.get(1)?;
+                let bytes: Vec<u8> = row.get(2)?;
+                if !(1..=MAX_CHUNK as i64).contains(&length)
+                    || ciphertext_cid(&bytes).to_string() != id
+                {
+                    return Err(Error::Corrupt(id));
+                }
+                tx.execute("INSERT INTO objects VALUES(?,?)", params![id, bytes])?;
+                observe(RecoveryBoundary::ObjectCopied);
+            }
+        }
+        {
+            let mut stmt = self
+                .ledger
+                .conn
+                .prepare(&format!("{RAW_COMMITS} ORDER BY sequence"))?;
+            let mut rows = stmt.query([])?;
+            let mut expected = 1;
+            while let Some(row) = rows.next()? {
+                let raw = raw_commit(row)?;
+                if raw.sequence != expected {
+                    return Err(Error::Corrupt("sequence gap".into()));
+                }
+                expected += 1;
+                let m = &raw.manifest;
+                let b = m.body();
+                let id = m.cid().to_string();
+                tx.execute(
+                    "INSERT INTO commits VALUES(?,?,?,?,?,?,?,?,?)",
+                    params![
+                        raw.sequence as i64,
+                        id,
+                        blob(&b["scopeToken"]),
+                        writer(m),
+                        blob(&b["operation"]),
+                        number(&b["position"]),
+                        optional_cid(&b["previous"]),
+                        m.bytes(),
+                        raw.receipt.bytes()
+                    ],
+                )?;
+                for e in entries(m) {
+                    tx.execute("INSERT INTO bindings VALUES(?,?,?,?,?,?) ON CONFLICT(scope,writer,slot) DO NOTHING",
+                        params![blob(&b["scopeToken"]), writer(m), blob(&e["slot"]), cid(&e["ciphertext"]), number(&e["length"]), id])?;
+                }
+                observe(RecoveryBoundary::CommitCopied);
+            }
+        }
+        // Verify before publishing even the profile marker. This also rejects
+        // raw histories with missing predecessors or conflicting slot reuse.
+        let expected = target.verify_contents()?;
+        observe(RecoveryBoundary::Verified);
+        tx.commit()?;
+        observe(RecoveryBoundary::Committed);
+        drop(target);
+        std::fs::File::open(destination)?.sync_all()?;
+        std::fs::File::open(parent_directory(destination))?.sync_all()?;
+        let actual = Ledger::verify_file(destination)?;
+        if actual != expected {
+            return Err(Error::Corrupt("rebuild verification changed".into()));
+        }
+        Ok(actual)
+    }
 }
 
 pub fn ciphertext_cid(bytes: &[u8]) -> Cid {
@@ -467,6 +653,14 @@ impl Ledger {
     pub fn verify(&self) -> Result<Verification> {
         // A read transaction pins all scans even while another process appends.
         let tx = self.conn.unchecked_transaction()?;
+        let verified = self.verify_contents()?;
+        tx.commit()?;
+        Ok(verified)
+    }
+
+    // Caller owns a transaction (read-only audit or unpublished recovery output).
+    fn verify_contents(&self) -> Result<Verification> {
+        let tx = &self.conn;
         let integrity: String = tx.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
         if integrity != "ok" {
             return Err(Error::Corrupt(integrity));
@@ -566,7 +760,6 @@ impl Ledger {
         }
         drop(rows);
         drop(stmt);
-        tx.commit()?;
         Ok(Verification {
             objects,
             commits,

@@ -63,3 +63,10 @@ Owner-held archive-key custody, initial deployment and the independent backup de
 - Inference integration, semantic extraction, automatic erasure, production network admission and private-key migration.
 - Claims that local backups alone establish independent disaster recovery.
 - Fixing day or changing v1 trust policy.
+
+## Recovery extension
+
+See `.design/kan-v2-derived-recovery.md` for read-only raw access and reconstruction
+of derived fields into a new database. Normal writer open still audits the archive;
+its full-scan startup limitation remains open. Recovery never certifies authentication
+or historical completeness beyond the structurally consistent source snapshot.
