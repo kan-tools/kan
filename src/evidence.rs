@@ -3,19 +3,36 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use atproto_dasl::{drisl, Cid, Ipld};
+use atproto_dasl::{Cid, Ipld};
 
-use crate::identity::{authorship::Author, scope_inception::ScopeId};
+use crate::identity::{authorship::Author, control::IdentityVersion, scope_inception::ScopeId};
 
 pub const MAX_RECORD_BYTES: usize = 65_536;
 pub const MAX_SAFE_INTEGER: i128 = 9_007_199_254_740_991;
 
 #[derive(Debug, thiserror::Error)]
-#[error("invalid evidence record: {0}")]
-pub struct Error(pub String);
+pub enum Error {
+    #[error("invalid canonical evidence: {0}")]
+    Canonical(String),
+    #[error("invalid evidence schema: {0}")]
+    Schema(String),
+}
+
+impl Error {
+    pub fn class(&self) -> &'static str {
+        match self {
+            Self::Canonical(_) => "canonical",
+            Self::Schema(_) => "schema",
+        }
+    }
+}
+
+fn canonical(message: &str) -> Error {
+    Error::Canonical(message.into())
+}
 
 fn fail(message: &str) -> Error {
-    Error(message.into())
+    Error::Schema(message.into())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,27 +102,22 @@ pub enum Decoded {
 /// Encode through the same validation path as decoding. Input is never repaired.
 pub fn encode(value: &Ipld) -> Result<Decoded, Error> {
     scalars(value, 0)?;
-    let bytes = atproto_dasl::to_vec(value).map_err(|e| Error(e.to_string()))?;
+    let bytes = atproto_dasl::to_vec(value).map_err(|e| Error::Schema(e.to_string()))?;
     decode(&bytes)
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Decoded, Error> {
     if bytes.len() > MAX_RECORD_BYTES {
-        return Err(fail("record exceeds 65536 bytes"));
+        return Err(canonical("record exceeds 65536 bytes"));
     }
-    let config = drisl::DecodeConfig {
-        max_depth: 32,
-        max_alloc: MAX_RECORD_BYTES,
-        max_array_elements: MAX_RECORD_BYTES,
-        max_map_entries: MAX_RECORD_BYTES,
-        no_floats: true,
-        ..Default::default()
-    };
-    let value: Ipld =
-        drisl::from_slice_with_config(bytes, config).map_err(|e| Error(e.to_string()))?;
+    let mut parser = Parser { bytes, offset: 0 };
+    let value = parser.item(0)?;
+    if parser.offset != bytes.len() {
+        return Err(canonical("trailing bytes"));
+    }
     scalars(&value, 0)?;
-    if atproto_dasl::to_vec(&value).map_err(|e| Error(e.to_string()))? != bytes {
-        return Err(fail("noncanonical bytes"));
+    if atproto_dasl::to_vec(&value).map_err(|e| Error::Schema(e.to_string()))? != bytes {
+        return Err(canonical("noncanonical bytes"));
     }
     let envelope = closed(&value, &["v", "kind", "body"])?;
     let version = uint(&envelope["v"])?;
@@ -114,7 +126,7 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, Error> {
     }
     let name = token(&envelope["kind"])?;
     let body = map(&envelope["body"])?;
-    let cid = crate::cid::content_cid(&value).map_err(|e| Error(e.to_string()))?;
+    let cid = crate::cid::content_cid(&value).map_err(|e| Error::Schema(e.to_string()))?;
     let kind = match (version, name) {
         (1, "capture") => Kind::Capture,
         (1, "manifest") => Kind::Manifest,
@@ -139,15 +151,133 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, Error> {
     }))
 }
 
+/// Byte types are determined by CBOR headers, never by payload heuristics.
+struct Parser<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> Parser<'a> {
+    fn take(&mut self, length: usize) -> Result<&'a [u8], Error> {
+        if length > self.bytes.len() - self.offset {
+            return Err(canonical("truncated value"));
+        }
+        let start = self.offset;
+        self.offset += length;
+        Ok(&self.bytes[start..self.offset])
+    }
+
+    fn header(&mut self) -> Result<(u8, u64), Error> {
+        let byte = self.take(1)?[0];
+        let major = byte >> 5;
+        let ai = byte & 31;
+        let value = match ai {
+            0..=23 => u64::from(ai),
+            24..=27 => {
+                let width = 1 << (ai - 24);
+                let value = self
+                    .take(width)?
+                    .iter()
+                    .fold(0u64, |v, b| (v << 8) | u64::from(*b));
+                let minimum = [24, 256, 65_536, 4_294_967_296][usize::from(ai - 24)];
+                if value < minimum {
+                    return Err(canonical("nonminimal header"));
+                }
+                value
+            }
+            _ => return Err(canonical("indefinite or reserved header")),
+        };
+        Ok((major, value))
+    }
+
+    fn length(&self, value: u64) -> Result<usize, Error> {
+        let n = usize::try_from(value).map_err(|_| canonical("length overflow"))?;
+        if n > self.bytes.len() - self.offset {
+            return Err(canonical("declared length exceeds remaining input"));
+        }
+        Ok(n)
+    }
+
+    fn item(&mut self, depth: usize) -> Result<Ipld, Error> {
+        if depth > 32 {
+            return Err(canonical("nesting exceeds 32"));
+        }
+        let (major, n) = self.header()?;
+        match major {
+            0 => Ok(Ipld::Integer(i128::from(n))),
+            2 => {
+                let length = self.length(n)?;
+                Ok(Ipld::Bytes(self.take(length)?.to_vec()))
+            }
+            3 => {
+                let length = self.length(n)?;
+                let text = std::str::from_utf8(self.take(length)?)
+                    .map_err(|_| canonical("invalid UTF-8"))?;
+                Ok(Ipld::String(text.into()))
+            }
+            4 | 5 => {
+                if depth == 32 {
+                    return Err(canonical("nesting exceeds 32"));
+                }
+                let count = self.length(n)?;
+                if major == 4 {
+                    let mut values = Vec::new();
+                    for _ in 0..count {
+                        values.push(self.item(depth + 1)?);
+                    }
+                    Ok(Ipld::List(values))
+                } else {
+                    let mut values = BTreeMap::new();
+                    let mut previous: Option<&[u8]> = None;
+                    for _ in 0..count {
+                        let start = self.offset;
+                        let Ipld::String(key) = self.item(depth + 1)? else {
+                            return Err(canonical("map key must be text"));
+                        };
+                        let encoded = &self.bytes[start..self.offset];
+                        if previous.is_some_and(|p| p >= encoded) {
+                            return Err(canonical("duplicate or unordered map key"));
+                        }
+                        previous = Some(encoded);
+                        values.insert(key, self.item(depth + 1)?);
+                    }
+                    Ok(Ipld::Map(values))
+                }
+            }
+            6 if n == 42 => {
+                // Read the immediate header: maps and nested tags cannot stand in for bytes.
+                let (major, length) = self.header()?;
+                if major != 2 {
+                    return Err(canonical("CID tag requires bytes"));
+                }
+                let length = self.length(length)?;
+                let raw = self.take(length)?;
+                if raw.first() != Some(&0) {
+                    return Err(canonical("CID requires identity prefix"));
+                }
+                let cid = Cid::from_bytes(&raw[1..]).map_err(|_| canonical("invalid CID"))?;
+                if cid.to_bytes() != raw[1..] {
+                    return Err(canonical("noncanonical or trailing CID bytes"));
+                }
+                Ok(Ipld::Link(cid))
+            }
+            7 if n == 20 => Ok(Ipld::Bool(false)),
+            7 if n == 21 => Ok(Ipld::Bool(true)),
+            7 if n == 22 => Ok(Ipld::Null),
+            _ => Err(canonical("unsupported scalar or tag")),
+        }
+    }
+}
+
 fn scalars(value: &Ipld, depth: usize) -> Result<(), Error> {
     if depth > 32 || (depth == 32 && matches!(value, Ipld::List(_) | Ipld::Map(_))) {
-        return Err(fail("nesting exceeds 32"));
+        return Err(canonical("nesting exceeds 32"));
     }
     match value {
         Ipld::Integer(_) => {
-            uint(value)?;
+            uint(value).map_err(|_| canonical("integer outside safe unsigned range"))?;
         }
-        Ipld::Float(_) => return Err(fail("floats forbidden")),
+        Ipld::Float(_) => return Err(canonical("floats forbidden")),
         Ipld::List(values) => {
             for value in values {
                 scalars(value, depth + 1)?;
@@ -230,8 +360,32 @@ fn link(value: &Ipld, codec: u8) -> Result<&Cid, Error> {
 }
 
 fn author(value: &Ipld) -> Result<(), Error> {
-    let encoded = atproto_dasl::to_vec(value).map_err(|e| Error(e.to_string()))?;
-    let _: Author = drisl::from_slice(&encoded).map_err(|e| Error(e.to_string()))?;
+    // Preserve the strict parser's types through the identity boundary. Generic
+    // drisl IPLD deserialization can reinterpret untagged bytes as a CID.
+    let fields = closed(
+        value,
+        &["principal", "verificationMethod", "identityVersion"],
+    )?;
+    let version = closed(&fields["identityVersion"], &["kind", "value"])?;
+    let identity = match (&version["kind"], &version["value"]) {
+        (Ipld::String(kind), Ipld::Null) if kind == "static" => IdentityVersion::Static,
+        (Ipld::String(kind), Ipld::Link(cid)) if kind == "event" => {
+            IdentityVersion::Event(cid.clone())
+        }
+        (Ipld::String(kind), Ipld::Link(cid)) if kind == "documentCid" => {
+            IdentityVersion::DocumentCid(cid.clone())
+        }
+        (Ipld::String(kind), Ipld::String(id)) if kind == "versionId" && !id.is_empty() => {
+            IdentityVersion::VersionId(id.clone())
+        }
+        _ => return Err(fail("invalid identity version shape")),
+    };
+    Author::new(
+        string(&fields["principal"], MAX_RECORD_BYTES)?.into(),
+        string(&fields["verificationMethod"], MAX_RECORD_BYTES)?.into(),
+        identity,
+    )
+    .map_err(|e| Error::Schema(e.to_string()))?;
     Ok(())
 }
 
@@ -264,7 +418,7 @@ fn capture(value: &Ipld) -> Result<(), Error> {
     )?;
     author(&b["observer"])?;
     let scope: [u8; 34] = bytes(&b["scope"], 34)?.try_into().expect("checked length");
-    ScopeId::from_bytes(scope).map_err(|e| Error(e.to_string()))?;
+    ScopeId::from_bytes(scope).map_err(|e| Error::Schema(e.to_string()))?;
     bytes(&b["stream"], 16)?;
     chain(&b["sequence"], &b["previous"])?;
     uint(&b["occurredAt"])?;

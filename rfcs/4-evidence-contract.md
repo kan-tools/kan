@@ -23,7 +23,7 @@ Raw interaction evidence must survive independently of later interpretation. Bli
 - **Manifest**: a writer's ordered batch of opaque slots and ciphertext objects for one storage scope token.
 - **Receipt**: a service's statement that one manifest was committed remotely; parsing it does not prove this statement.
 - **Slot**: random 32-byte transport identity allocated and durably saved by the client before upload. Retry preserves it; re-encryption uses a new slot and operation.
-- **Snapshot**: the exact manifest CID identifying the requested inventory frontier for one authorized scope. A later service may aggregate frontiers in another versioned record.
+- **Snapshot**: a commitment identifying the complete requested journal frontier and its archive/scope context across all writers. A single per-writer manifest CID is insufficient. The pure model treats its CID argument as an opaque snapshot commitment; it does not construct or authenticate one. P3 supplies a global journal sequence and tip bound to an archive instance; P4 must bind that frontier and authorized scope to a portable snapshot before exposing semantic absence.
 - **Complete index**: all evidence through that frontier was inspected by an authorized reader under a supported interpretation. A blind storage index alone cannot establish semantic subject absence.
 
 ## Detailed design
@@ -32,7 +32,7 @@ Raw interaction evidence must survive independently of later interpretation. Bli
 
 Every record is exactly `{v, kind, body}`: `v` is a positive safe integer, `kind` is a lowercase ASCII token of 1–64 bytes, and `body` is a map. Version 1 recognizes `capture`, `manifest`, `receipt`. All maps below are closed; every named field is required, including explicit nulls. Maximum encoded record size is 65,536 bytes; maximum container nesting is 32. Within the envelope, only null, booleans, safe integers, byte strings, UTF-8 strings, lists, string-key maps and CID links are allowed. Floats are forbidden even for unsupported records. Safe integers range from zero to 9,007,199,254,740,991. Protocol tokens match `[a-z][a-z0-9.-]*`.
 
-`record-link` is CIDv1, DAG-CBOR codec 0x71, SHA2-256 multihash 0x12 with a 32-byte digest. `ciphertext-link` differs only in raw codec 0x55. CID links use DAG-CBOR tag 42 and its leading zero byte. Text spelling uses base32lower when displayed. The protocol imposes no Unicode normalization; differing strings are differing bytes. `Author` is exactly RFC 1's validated principal, verificationMethod and identityVersion value. `ScopeId` is exactly RFC 1's 34-byte SHA2-256 multihash. Identity-state links inside Author follow RFC 1, not the evidence link constraint.
+`record-link` is CIDv1, DAG-CBOR codec 0x71, SHA2-256 multihash 0x12 with a 32-byte digest. `ciphertext-link` differs only in raw codec 0x55. CID links use DAG-CBOR tag 42 and its leading zero byte. Text spelling uses base32lower when displayed. The protocol imposes no Unicode normalization; differing strings are differing bytes. `Author` is exactly RFC 1's validated principal, verificationMethod and identityVersion value. `ScopeId` is exactly RFC 1's 34-byte SHA2-256 multihash. Identity-state links inside Author follow RFC 1, not the evidence link constraint. General links (including in unsupported records) permit canonical CIDv0 SHA2-256 or CIDv1 with minimal unsigned 64-bit varints and multihash digests of at most 64 bytes. No trailing bytes are permitted inside a CID. Accepting a general link conveys no support for its codec or hash algorithm. Ordinary CBOR byte strings remain bytes regardless of their contents.
 
 ### Private capture body
 
@@ -146,6 +146,8 @@ RFCs 1–3, existing signed claims, published history and URI resolution remain 
 - One identifier for occurrence, content and retries: rejected because repeated identical events and retransmission have different semantics.
 - Prove format correctness only by Rust round trips: rejected because both directions can share an error.
 - Issue signed receipts in this slice: deferred until identity purpose, admission and crash durability are executable.
+
+Invalid input exposes two stable codec error classes: `canonical` for framing, resource bounds, scalar restrictions or malformed CID encoding; `schema` for envelope and supported-kind field constraints. These do not stand in for later admission, authorization, storage or transport errors. Python independently checks the canonical class; supported-kind schema validation is Rust-only in this slice.
 
 ## Reference test vectors
 
