@@ -33,6 +33,7 @@ pub enum SurfaceWrite {
     Sqlite,
     EvidenceArchive,
     EvidenceBackup,
+    EvidenceRecovery,
     Count,
 }
 
@@ -59,6 +60,7 @@ impl SurfaceWrite {
         Self::Sqlite,
         Self::EvidenceArchive,
         Self::EvidenceBackup,
+        Self::EvidenceRecovery,
     ];
 
     /// Catalog artifacts a capability is permitted to mutate. This match is
@@ -124,6 +126,10 @@ impl SurfaceWrite {
             Self::EvidenceBackup => &[
                 "evidence-backup:archive.sqlite",
                 "evidence-backup:archive.sqlite-journal",
+            ],
+            Self::EvidenceRecovery => &[
+                "evidence-recovery:archive.sqlite",
+                "evidence-recovery:archive.sqlite-journal",
             ],
             Self::Count => &[],
         }

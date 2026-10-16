@@ -419,7 +419,7 @@ fn first_manifest_must_name_earliest_slot_use() {
     )
     .unwrap();
     drop(db);
-    assert!(Ledger::verify_file(&backup).is_err());
+    assert!(matches!(Ledger::verify_file(&backup), Err(Error::Corrupt(s)) if s == "binding"));
     let result = python(&backup);
     assert!(!result.status.success(), "Python accepted later first use");
     assert!(String::from_utf8_lossy(&result.stderr).contains("binding[2] <= sequence"));
@@ -492,4 +492,300 @@ fn cid_shaped_tokens_survive_storage_and_independent_backup_verification() {
     );
     let restored = ledger.page(&ledger.snapshot().unwrap(), 0, 1).unwrap();
     assert_eq!(restored[0].manifest.bytes(), manifest.bytes());
+}
+
+// Four commits: three uses of one slot, then the same slot in another scope.
+fn recovery_fixture(root: &Path) -> (Ledger, Vec<(Record, Record)>) {
+    let mut ledger = Ledger::create(root).unwrap();
+    ledger.stage(b"recovery payload").unwrap();
+    ledger.stage(b"retained staged orphan").unwrap();
+    let mut records: Vec<(Record, Record)> = Vec::new();
+    for i in 0..4 {
+        let cross_scope = i == 3;
+        let (m, _) = pair(
+            b"recovery payload",
+            if cross_scope { 0 } else { i },
+            if i == 0 || cross_scope {
+                None
+            } else {
+                Some(&records[(i - 1) as usize].0)
+            },
+            i as u8,
+        );
+        let mut body = m.body().clone();
+        if i > 0 {
+            body.insert("entries".into(), records[0].0.body()["entries"].clone());
+        }
+        if cross_scope {
+            body.insert("scopeToken".into(), Ipld::Bytes(vec![99; 32]));
+        }
+        let Decoded::Known(m) = evidence::encode(&Ipld::Map(std::collections::BTreeMap::from([
+            ("v".into(), Ipld::Integer(1)),
+            ("kind".into(), Ipld::String("manifest".into())),
+            ("body".into(), Ipld::Map(body)),
+        ])))
+        .unwrap() else {
+            panic!()
+        };
+        let mut receipt = golden("receipt");
+        receipt["body"]["manifest"] = json!({"$link": m.cid().to_string()});
+        receipt["body"]["position"] = json!(if cross_scope { 0 } else { i });
+        receipt["body"]["operation"] = json!({"$bytes":format!("{i:02x}").repeat(16)});
+        if cross_scope {
+            receipt["body"]["scopeToken"] = json!({"$bytes":"63".repeat(32)});
+        }
+        let r = record(&receipt);
+        ledger.commit(m.bytes(), r.bytes()).unwrap();
+        records.push((m, r));
+    }
+    (ledger, records)
+}
+
+#[test]
+fn recovery_ignores_derived_damage_and_preserves_exact_evidence() {
+    use kan::evidence_store::RecoveryReader;
+    for mutation in [
+        "DELETE FROM bindings",
+        "DROP TABLE bindings",
+        "UPDATE bindings SET length=99, ciphertext='poison', first_manifest='missing'",
+        "UPDATE bindings SET first_manifest=(SELECT cid FROM commits WHERE sequence=3) WHERE first_manifest=(SELECT cid FROM commits WHERE sequence=1)",
+        "UPDATE bindings SET first_manifest=(SELECT cid FROM commits WHERE sequence=4) WHERE first_manifest=(SELECT cid FROM commits WHERE sequence=1)",
+        "UPDATE commits SET cid='wrong-' || sequence, scope=x'01', writer='wrong', operation=CAST(sequence AS BLOB), position=sequence+100, previous='wrong'",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let (ledger, records) = recovery_fixture(&temp.path().join("source"));
+        let source = temp.path().join("damaged.sqlite");
+        let expected = ledger.backup(&source).unwrap();
+        let db = rusqlite::Connection::open(&source).unwrap();
+        db.execute_batch("PRAGMA foreign_keys=OFF").unwrap();
+        db.execute_batch(mutation).unwrap();
+        drop(db);
+        let original = std::fs::read(&source).unwrap();
+        assert!(Ledger::verify_file(&source).is_err(), "{mutation}");
+        let reader = RecoveryReader::open(&source).unwrap();
+        assert!(matches!(reader.record(5), Err(Error::MissingCommit(5))));
+        assert!(reader.record(0).is_err());
+        assert!(reader.record(u64::MAX).is_err());
+        for (i, (m,r)) in records.iter().enumerate() {
+            let raw = reader.record(i as u64+1).unwrap();
+            assert_eq!(raw.manifest.bytes(), m.bytes());
+            assert_eq!(raw.receipt.bytes(), r.bytes());
+        }
+        let id = kan::evidence_store::ciphertext_cid(b"recovery payload");
+        assert_eq!(reader.read_object(&id).unwrap(), b"recovery payload");
+        let destination = temp.path().join("rebuilt.sqlite");
+        assert_eq!(reader.rebuild(&destination).unwrap(), expected);
+        let complete = std::fs::read(&destination).unwrap();
+        assert!(reader.rebuild(&destination).is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(), complete);
+        assert!(reader.rebuild(&source).is_err());
+        let rebuilt = RecoveryReader::open(&destination).unwrap();
+        for (i, (m,r)) in records.iter().enumerate() {
+            let raw = rebuilt.record(i as u64+1).unwrap();
+            assert_eq!(raw.manifest.bytes(), m.bytes());
+            assert_eq!(raw.receipt.bytes(), r.bytes());
+        }
+        let orphan = kan::evidence_store::ciphertext_cid(b"retained staged orphan");
+        assert_eq!(rebuilt.read_object(&orphan).unwrap(), b"retained staged orphan");
+        let output = Command::new("python3").arg("scripts/verify_evidence_store.py").arg(&destination).output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        let measured: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(measured["commits"], 4);
+        assert_eq!(measured["objects"], 2);
+        assert_eq!(measured["bytes"], expected.bytes);
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+        assert!(Ledger::verify_file(&source).is_err());
+    }
+}
+
+#[test]
+fn recovery_rejects_raw_damage_without_hiding_intact_records() {
+    use kan::evidence_store::RecoveryReader;
+    for mutation in [
+        "UPDATE commits SET manifest=x'00' WHERE sequence=1",
+        "UPDATE commits SET receipt=(SELECT receipt FROM commits WHERE sequence=3) WHERE sequence=1",
+        "DELETE FROM commits WHERE sequence=1",
+        "UPDATE objects SET bytes=x'0001'",
+        "DELETE FROM objects",
+        "DROP TABLE objects",
+        "PRAGMA ignore_check_constraints=ON; UPDATE commits SET manifest=zeroblob(65537) WHERE sequence=1",
+        "PRAGMA ignore_check_constraints=ON; UPDATE objects SET bytes=zeroblob(4194305)",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let (ledger, records) = recovery_fixture(&temp.path().join("source"));
+        let source = temp.path().join("damaged.sqlite");
+        ledger.backup(&source).unwrap();
+        let db = rusqlite::Connection::open(&source).unwrap();
+        db.execute_batch("PRAGMA foreign_keys=OFF").unwrap();
+        db.execute_batch(mutation).unwrap();
+        drop(db);
+        let original = std::fs::read(&source).unwrap();
+        let reader = RecoveryReader::open(&source).unwrap();
+        let raw = reader.record(2).unwrap();
+        assert_eq!(raw.manifest.bytes(), records[1].0.bytes());
+        assert_eq!(raw.receipt.bytes(), records[1].1.bytes());
+        let destination = temp.path().join("incomplete.sqlite");
+        assert!(reader.rebuild(&destination).is_err(), "accepted {mutation}");
+        assert!(Ledger::verify_file(&destination).is_err(), "published prefix: {mutation}");
+        assert!(RecoveryReader::open(&destination).is_err());
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+    }
+}
+
+#[test]
+fn recovery_snapshot_is_pinned_before_concurrent_appends() {
+    use kan::evidence_store::RecoveryReader;
+    let temp = tempfile::tempdir().unwrap();
+    let (mut ledger, records) = recovery_fixture(&temp.path().join("source"));
+    let expected = ledger.verify().unwrap();
+    let reader = RecoveryReader::open(&temp.path().join("source/archive.sqlite")).unwrap();
+    ledger.stage(b"after pinned snapshot").unwrap();
+    let (m, r) = pair(b"after pinned snapshot", 3, Some(&records[2].0), 5);
+    ledger.commit(m.bytes(), r.bytes()).unwrap();
+    assert!(matches!(reader.record(5), Err(Error::MissingCommit(5))));
+    assert_eq!(
+        reader.rebuild(&temp.path().join("pinned.sqlite")).unwrap(),
+        expected
+    );
+    let fresh = RecoveryReader::open(&temp.path().join("source/archive.sqlite")).unwrap();
+    assert_eq!(fresh.record(5).unwrap().manifest.bytes(), m.bytes());
+    assert_eq!(
+        fresh.rebuild(&temp.path().join("fresh.sqlite")).unwrap(),
+        ledger.verify().unwrap()
+    );
+}
+
+#[test]
+fn recovery_crash_worker() {
+    use kan::evidence_store::RecoveryReader;
+    let Ok(root) = std::env::var("KAN_V2_RECOVERY_CRASH_ROOT") else {
+        return;
+    };
+    let phase = std::env::var("KAN_V2_RECOVERY_CRASH_PHASE").unwrap();
+    let reader = RecoveryReader::open(&Path::new(&root).join("source.sqlite")).unwrap();
+    reader
+        .rebuild_observed(&Path::new(&root).join("output.sqlite"), &mut |boundary| {
+            if format!("{boundary:?}") == phase {
+                std::process::exit(92);
+            }
+        })
+        .unwrap();
+    panic!("fault boundary was not reached");
+}
+
+#[test]
+fn recovery_process_crashes_never_publish_a_partial_archive() {
+    use kan::evidence_store::RecoveryReader;
+    for phase in ["ObjectCopied", "CommitCopied", "Verified", "Committed"] {
+        let temp = tempfile::tempdir().unwrap();
+        let (mut ledger, _) = recovery_fixture(&temp.path().join("source"));
+        // Force page spill beyond SQLite's cache before the injected exit.
+        ledger.stage(&vec![41; 3 * 1024 * 1024]).unwrap();
+        let source = temp.path().join("source.sqlite");
+        let expected = ledger.backup(&source).unwrap();
+        let original = std::fs::read(&source).unwrap();
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "recovery_crash_worker", "--nocapture"])
+            .env("KAN_V2_RECOVERY_CRASH_ROOT", temp.path())
+            .env("KAN_V2_RECOVERY_CRASH_PHASE", phase)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(92),
+            "{phase}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let destination = temp.path().join("output.sqlite");
+        if phase == "Committed" {
+            assert_eq!(Ledger::verify_file(&destination).unwrap(), expected);
+        } else {
+            assert!(
+                Ledger::verify_file(&destination).is_err(),
+                "published partial at {phase}"
+            );
+        }
+        let reader = RecoveryReader::open(&source).unwrap();
+        assert!(reader.rebuild(&destination).is_err());
+        assert_eq!(
+            reader.rebuild(&temp.path().join("retry.sqlite")).unwrap(),
+            expected
+        );
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+    }
+}
+
+#[test]
+fn recovery_rejects_structurally_valid_but_inconsistent_raw_history() {
+    use kan::evidence_store::RecoveryReader;
+    fn changed(r: &Record, key: &str, value: Ipld) -> Record {
+        let mut body = r.body().clone();
+        body.insert(key.into(), value);
+        let Decoded::Known(r) = evidence::encode(&Ipld::Map(std::collections::BTreeMap::from([
+            ("v".into(), Ipld::Integer(1)),
+            (
+                "kind".into(),
+                Ipld::String(
+                    if r.kind() == evidence::Kind::Manifest {
+                        "manifest"
+                    } else {
+                        "receipt"
+                    }
+                    .into(),
+                ),
+            ),
+            ("body".into(), Ipld::Map(body)),
+        ])))
+        .unwrap() else {
+            panic!()
+        };
+        r
+    }
+    for rebound in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let (ledger, records) = recovery_fixture(&temp.path().join("source"));
+        let source = temp.path().join("damaged.sqlite");
+        ledger.backup(&source).unwrap();
+        let m = if rebound {
+            let Ipld::List(mut entries) = records[1].0.body()["entries"].clone() else {
+                panic!()
+            };
+            let Ipld::Map(e) = &mut entries[0] else {
+                panic!()
+            };
+            e.insert(
+                "ciphertext".into(),
+                Ipld::Link(kan::evidence_store::ciphertext_cid(
+                    b"retained staged orphan",
+                )),
+            );
+            e.insert(
+                "length".into(),
+                Ipld::Integer(b"retained staged orphan".len() as i128),
+            );
+            changed(&records[1].0, "entries", Ipld::List(entries))
+        } else {
+            changed(
+                &records[1].0,
+                "previous",
+                Ipld::Link(records[2].0.cid().clone()),
+            )
+        };
+        let r = changed(&records[1].1, "manifest", Ipld::Link(m.cid().clone()));
+        let db = rusqlite::Connection::open(&source).unwrap();
+        db.execute(
+            "UPDATE commits SET manifest=?,receipt=? WHERE sequence=2",
+            rusqlite::params![m.bytes(), r.bytes()],
+        )
+        .unwrap();
+        drop(db);
+        let reader = RecoveryReader::open(&source).unwrap();
+        assert_eq!(reader.record(2).unwrap().manifest.bytes(), m.bytes());
+        let output = temp.path().join("incomplete.sqlite");
+        assert!(reader.rebuild(&output).is_err());
+        assert!(
+            RecoveryReader::open(&output).is_err(),
+            "published unverified history"
+        );
+    }
 }
