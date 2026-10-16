@@ -10,6 +10,8 @@ pub mod cid;
 pub mod claim;
 pub mod cli;
 pub mod context;
+#[cfg(feature = "evidence-contract")]
+pub mod evidence;
 pub mod fold;
 pub mod git;
 pub mod identity;

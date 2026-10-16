@@ -1,0 +1,1397 @@
+{
+  "profile": "experimental-rfc4-v1",
+  "positive": [
+    {
+      "name": "capture",
+      "value": {
+        "v": 1,
+        "kind": "capture",
+        "body": {
+          "observer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "scope": {
+            "$bytes": "12200101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "stream": {
+            "$bytes": "02020202020202020202020202020202"
+          },
+          "sequence": 0,
+          "previous": null,
+          "occurredAt": 1792108800000,
+          "eventType": "provider.request",
+          "payloads": [
+            {
+              "sha256": {
+                "$bytes": "940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b"
+              },
+              "length": 9,
+              "mediaType": "application/octet-stream"
+            }
+          ],
+          "parents": [],
+          "coverage": {
+            "complete": true,
+            "missing": []
+          }
+        }
+      },
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "cid": "bafyreia4gv4zs5d5xyotbf3sl4ymjrjfvcdfsjb7sccwaqipy6mv62zjku",
+      "supported": true,
+      "signingHex": "a3646b696e64676361707475726566646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a582500017112201c357999747dbe1d3097725f30c4c525a88659243f908560410fc7995f6b2955"
+    },
+    {
+      "name": "manifest",
+      "value": {
+        "v": 1,
+        "kind": "manifest",
+        "body": {
+          "writer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "04040404040404040404040404040404"
+          },
+          "position": 0,
+          "previous": null,
+          "entries": [
+            {
+              "slot": {
+                "$bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+              },
+              "ciphertext": {
+                "$link": "bafkreiao2yfbldzmb73a2bjoemjndtbdoaoqmpzwo4ajmapgv5ju5zy64m"
+              },
+              "length": 28
+            }
+          ]
+        }
+      },
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a466367656e747269657381a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "cid": "bafyreibpieeo5gpeqzh6wqu65blyrlzob2xfxix7udj42stkcabemrn3ri",
+      "supported": true,
+      "signingHex": "a3646b696e64686d616e696665737466646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a"
+    },
+    {
+      "name": "receipt",
+      "value": {
+        "v": 1,
+        "kind": "receipt",
+        "body": {
+          "issuer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "manifest": {
+            "$link": "bafyreibpieeo5gpeqzh6wqu65blyrlzob2xfxix7udj42stkcabemrn3ri"
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "04040404040404040404040404040404"
+          },
+          "position": 0,
+          "durability": "remote-durable",
+          "issuedAt": 1792108800020
+        }
+      },
+      "hex": "a361760164626f6479a766697373756572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636869737375656441741b000001a142022814686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a68706f736974696f6e00696f7065726174696f6e50040404040404040404040404040404046a6475726162696c6974796e72656d6f74652d64757261626c656a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e646772656365697074",
+      "cid": "bafyreiden2dsds3jlqq4h7ub4b42h57t6kdnn2xxdf2woni5usk6qfa4sy",
+      "supported": true,
+      "signingHex": "a3646b696e64677265636569707466646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a58250001711220646e8721cb695c21c3fe81e079a3f7f3f286d6eaf7197567351da495e8141c96"
+    },
+    {
+      "name": "partial-large-payload",
+      "value": {
+        "v": 1,
+        "kind": "capture",
+        "body": {
+          "observer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "scope": {
+            "$bytes": "12200101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "stream": {
+            "$bytes": "02020202020202020202020202020202"
+          },
+          "sequence": 1,
+          "previous": {
+            "$link": "bafyreia4gv4zs5d5xyotbf3sl4ymjrjfvcdfsjb7sccwaqipy6mv62zjku"
+          },
+          "occurredAt": 1792108800000,
+          "eventType": "provider.request",
+          "payloads": [
+            {
+              "sha256": {
+                "$bytes": "940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b"
+              },
+              "length": 11534336,
+              "mediaType": "application/octet-stream"
+            }
+          ],
+          "parents": [
+            {
+              "$link": "bafyreia4gv4zs5d5xyotbf3sl4ymjrjfvcdfsjb7sccwaqipy6mv62zjku"
+            }
+          ],
+          "coverage": {
+            "complete": false,
+            "missing": [
+              "harness.unobserved",
+              "tool.unobserved"
+            ]
+          }
+        }
+      },
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e747381d82a582500017112201c357999747dbe1d3097725f30c4c525a88659243f908560410fc7995f6b295568636f766572616765a2676d697373696e6782726861726e6573732e756e6f627365727665646f746f6f6c2e756e6f6273657276656468636f6d706c657465f4686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e6774681a00b00000667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573d82a582500017112201c357999747dbe1d3097725f30c4c525a88659243f908560410fc7995f6b29556873657175656e636501696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "cid": "bafyreibmbwfqvturj2yizzh7vhzxuuwtjsrb5wmdhq52vrqi7lqlt643ma",
+      "supported": true,
+      "signingHex": "a3646b696e64676361707475726566646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a582500017112202c0d8b0ace914eb08ce4ffa9f37a52d34ca21ed9833c3baac608fae0b9fb9b60"
+    },
+    {
+      "name": "second-batch",
+      "value": {
+        "v": 1,
+        "kind": "manifest",
+        "body": {
+          "writer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "06060606060606060606060606060606"
+          },
+          "position": 1,
+          "previous": {
+            "$link": "bafyreibpieeo5gpeqzh6wqu65blyrlzob2xfxix7udj42stkcabemrn3ri"
+          },
+          "entries": [
+            {
+              "slot": {
+                "$bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+              },
+              "ciphertext": {
+                "$link": "bafkreiao2yfbldzmb73a2bjoemjndtbdoaoqmpzwo4ajmapgv5ju5zy64m"
+              },
+              "length": 28
+            },
+            {
+              "slot": {
+                "$bytes": "0707070707070707070707070707070707070707070707070707070707070707"
+              },
+              "ciphertext": {
+                "$link": "bafkreiav4tc2xccayfsimb4nn56e3nf6tmbpyzh6jlzzvpgguqul3jy7ki"
+              },
+              "length": 16
+            }
+          ]
+        }
+      },
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a466367656e747269657382a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee3a364736c6f7458200707070707070707070707070707070707070707070707070707070707070707666c656e677468106a63697068657274657874d82a5825000155122015e4c5ab8840c16486078d6f7c4db4be9b02fc64fe4af39abcc6a428bda71f5268706f736974696f6e016870726576696f7573d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a696f7065726174696f6e50060606060606060606060606060606066a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "cid": "bafyreihmqqxhxzsex2kb64ala5dqqlululnftdjooo4o5cofmr42uk6yki",
+      "supported": true,
+      "signingHex": "a3646b696e64686d616e696665737466646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a58250001711220ec842e7be644be941f700b0747082e8ba2da598d2e73b8ee89c56479aa2bd852"
+    },
+    {
+      "name": "unknown-version",
+      "value": {
+        "v": 2,
+        "kind": "capture",
+        "body": {
+          "future": true
+        }
+      },
+      "hex": "a361760264626f6479a166667574757265f5646b696e646763617074757265",
+      "cid": "bafyreihccedljdafj32djy3nd6rutvqjxj7cp5f2jdqnlmva47efapdz6m",
+      "supported": false
+    },
+    {
+      "name": "unknown-kind",
+      "value": {
+        "v": 1,
+        "kind": "future",
+        "body": {}
+      },
+      "hex": "a361760164626f6479a0646b696e6466667574757265",
+      "cid": "bafyreigkjnh6yyvjoacbjom6ufa3loayo22ykhukhelwuxmugiuamaf3fu",
+      "supported": false
+    },
+    {
+      "name": "unknown-at-depth-boundary",
+      "value": {
+        "v": 1,
+        "kind": "future",
+        "body": {
+          "nested": [
+            [
+              [
+                [
+                  [
+                    [
+                      [
+                        [
+                          [
+                            [
+                              [
+                                [
+                                  [
+                                    [
+                                      [
+                                        [
+                                          [
+                                            [
+                                              [
+                                                [
+                                                  [
+                                                    [
+                                                      [
+                                                        [
+                                                          [
+                                                            [
+                                                              [
+                                                                [
+                                                                  [
+                                                                    [
+                                                                      null
+                                                                    ]
+                                                                  ]
+                                                                ]
+                                                              ]
+                                                            ]
+                                                          ]
+                                                        ]
+                                                      ]
+                                                    ]
+                                                  ]
+                                                ]
+                                              ]
+                                            ]
+                                          ]
+                                        ]
+                                      ]
+                                    ]
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ],
+          "maximum": 9007199254740991
+        }
+      },
+      "hex": "a361760164626f6479a2666e6573746564818181818181818181818181818181818181818181818181818181818181f6676d6178696d756d1b001fffffffffffff646b696e6466667574757265",
+      "cid": "bafyreigaodyb7ctxxmjtz6srrhexj4ytanqew2ylmfipbcg74gr5wdix4e",
+      "supported": false
+    },
+    {
+      "name": "cid-shaped-stream",
+      "value": {
+        "v": 1,
+        "kind": "capture",
+        "body": {
+          "observer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "scope": {
+            "$bytes": "12200101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "stream": {
+            "$bytes": "00015512000404040404040404040404"
+          },
+          "sequence": 0,
+          "previous": null,
+          "occurredAt": 1792108800000,
+          "eventType": "provider.request",
+          "payloads": [
+            {
+              "sha256": {
+                "$bytes": "940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b"
+              },
+              "length": 9,
+              "mediaType": "application/octet-stream"
+            }
+          ],
+          "parents": [],
+          "coverage": {
+            "complete": true,
+            "missing": []
+          }
+        }
+      },
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500001551200040404040404040404040467706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "cid": "bafyreigu3mawudgafmjksky3il5olud3sr6ib6t554cnb3chksm7pf7zza",
+      "supported": true,
+      "signingHex": "a3646b696e64676361707475726566646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a58250001711220d4db016a0cc02b12a92b1b42fae5d07b947c80fa7def04d0ec475499f797f9c8"
+    },
+    {
+      "name": "cid-shaped-operation",
+      "value": {
+        "v": 1,
+        "kind": "manifest",
+        "body": {
+          "writer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "00015512000404040404040404040404"
+          },
+          "position": 0,
+          "previous": null,
+          "entries": [
+            {
+              "slot": {
+                "$bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+              },
+              "ciphertext": {
+                "$link": "bafkreiao2yfbldzmb73a2bjoemjndtbdoaoqmpzwo4ajmapgv5ju5zy64m"
+              },
+              "length": 28
+            }
+          ]
+        }
+      },
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a466367656e747269657381a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50000155120004040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "cid": "bafyreidunitu6z5oguon3uaoqrrxloiqqac7lccz76v7ryomcv7jkzshri",
+      "supported": true,
+      "signingHex": "a3646b696e64686d616e696665737466646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a58250001711220746a274f67ae351cddd00e846375b9108005f58859ffabf8e1cc157e9566478a"
+    },
+    {
+      "name": "cid-shaped-scope-token",
+      "value": {
+        "v": 1,
+        "kind": "manifest",
+        "body": {
+          "writer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "scopeToken": {
+            "$bytes": "0001551200040404040404040404040404040404040404040404040404040404"
+          },
+          "operation": {
+            "$bytes": "04040404040404040404040404040404"
+          },
+          "position": 0,
+          "previous": null,
+          "entries": [
+            {
+              "slot": {
+                "$bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+              },
+              "ciphertext": {
+                "$link": "bafkreiao2yfbldzmb73a2bjoemjndtbdoaoqmpzwo4ajmapgv5ju5zy64m"
+              },
+              "length": 28
+            }
+          ]
+        }
+      },
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a466367656e747269657381a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200001551200040404040404040404040404040404040404040404040404040404646b696e64686d616e6966657374",
+      "cid": "bafyreihu3na23luffldt3rwirqq4lv3s2vvbb5aw3ughaozvmdeezjdr54",
+      "supported": true,
+      "signingHex": "a3646b696e64686d616e696665737466646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a58250001711220f4db41adae852ac73dc6c88c21c5d772d56a10f416dd0c703b3560c84ca471ef"
+    },
+    {
+      "name": "cid-shaped-receipt-scope",
+      "value": {
+        "v": 1,
+        "kind": "receipt",
+        "body": {
+          "issuer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "manifest": {
+            "$link": "bafyreibpieeo5gpeqzh6wqu65blyrlzob2xfxix7udj42stkcabemrn3ri"
+          },
+          "scopeToken": {
+            "$bytes": "0001551200040404040404040404040404040404040404040404040404040404"
+          },
+          "operation": {
+            "$bytes": "04040404040404040404040404040404"
+          },
+          "position": 0,
+          "durability": "remote-durable",
+          "issuedAt": 1792108800020
+        }
+      },
+      "hex": "a361760164626f6479a766697373756572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636869737375656441741b000001a142022814686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a68706f736974696f6e00696f7065726174696f6e50040404040404040404040404040404046a6475726162696c6974796e72656d6f74652d64757261626c656a73636f7065546f6b656e58200001551200040404040404040404040404040404040404040404040404040404646b696e646772656365697074",
+      "cid": "bafyreigcytfbd2ieinav62hat3ygopfllhlcmf6iqzrzka4csf3f5tehfe",
+      "supported": true,
+      "signingHex": "a3646b696e64677265636569707466646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a58250001711220c2c4ca11e90443415f68e09ef0673cab59d62617c8866395038291765ecc8729"
+    },
+    {
+      "name": "cid-shaped-receipt-operation",
+      "value": {
+        "v": 1,
+        "kind": "receipt",
+        "body": {
+          "issuer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "manifest": {
+            "$link": "bafyreibpieeo5gpeqzh6wqu65blyrlzob2xfxix7udj42stkcabemrn3ri"
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "00015512000404040404040404040404"
+          },
+          "position": 0,
+          "durability": "remote-durable",
+          "issuedAt": 1792108800020
+        }
+      },
+      "hex": "a361760164626f6479a766697373756572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636869737375656441741b000001a142022814686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a68706f736974696f6e00696f7065726174696f6e50000155120004040404040404040404046a6475726162696c6974796e72656d6f74652d64757261626c656a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e646772656365697074",
+      "cid": "bafyreidh6qpailwbsmgvw4z43p2qiutnydjwagqnavu6rl5ilfb74e5etm",
+      "supported": true,
+      "signingHex": "a3646b696e64677265636569707466646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a5825000171122067f41e042ec1930d5b733cdbf504526dc0d3601a0d0569e8afa85943fe13a49b"
+    },
+    {
+      "name": "cid-shaped-slot",
+      "value": {
+        "v": 1,
+        "kind": "manifest",
+        "body": {
+          "writer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "04040404040404040404040404040404"
+          },
+          "position": 0,
+          "previous": null,
+          "entries": [
+            {
+              "slot": {
+                "$bytes": "0001551200050505050505050505050505050505050505050505050505050505"
+              },
+              "ciphertext": {
+                "$link": "bafkreiao2yfbldzmb73a2bjoemjndtbdoaoqmpzwo4ajmapgv5ju5zy64m"
+              },
+              "length": 28
+            }
+          ]
+        }
+      },
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a466367656e747269657381a364736c6f7458200001551200050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "cid": "bafyreiaddp4g5equjfebkkbpwd4cgyarzz3kzcja6ir7x6adu4mooymvn4",
+      "supported": true,
+      "signingHex": "a3646b696e64686d616e696665737466646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a58250001711220031bf86e9214494815282fb0f8236011ce76ac8920f223fbf803a718e761956f"
+    },
+    {
+      "name": "cid-shaped-payload-hash",
+      "value": {
+        "v": 1,
+        "kind": "capture",
+        "body": {
+          "observer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "scope": {
+            "$bytes": "12200101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "stream": {
+            "$bytes": "02020202020202020202020202020202"
+          },
+          "sequence": 0,
+          "previous": null,
+          "occurredAt": 1792108800000,
+          "eventType": "provider.request",
+          "payloads": [
+            {
+              "sha256": {
+                "$bytes": "0001551200090909090909090909090909090909090909090909090909090909"
+              },
+              "length": 9,
+              "mediaType": "application/octet-stream"
+            }
+          ],
+          "parents": [],
+          "coverage": {
+            "complete": true,
+            "missing": []
+          }
+        }
+      },
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e677468096673686132353658200001551200090909090909090909090909090909090909090909090909090909696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "cid": "bafyreig253xl5genriqhorkxuk3tfp34xd2rztyta4u6vo34vmzk77hic4",
+      "supported": true,
+      "signingHex": "a3646b696e64676361707475726566646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a58250001711220daeeeebe988d8a20774557a2b732bf7cb8f51ccf130729eabb7cab32affce817"
+    },
+    {
+      "name": "unknown-cidv0",
+      "value": {
+        "v": 2,
+        "kind": "future",
+        "body": {
+          "link": {
+            "$link": "bciqacaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcai"
+          }
+        }
+      },
+      "hex": "a361760264626f6479a1646c696e6bd82a58230012200101010101010101010101010101010101010101010101010101010101010101646b696e6466667574757265",
+      "cid": "bafyreidnmcf6sx5oaj7oyvvat6bn6zkuwa4vsycorzawvkglimqmpidxqu",
+      "supported": false
+    },
+    {
+      "name": "unknown-dag-pb",
+      "value": {
+        "v": 2,
+        "kind": "future",
+        "body": {
+          "link": {
+            "$link": "bafybeiacaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcai"
+          }
+        }
+      },
+      "hex": "a361760264626f6479a1646c696e6bd82a582500017012200202020202020202020202020202020202020202020202020202020202020202646b696e6466667574757265",
+      "cid": "bafyreicbgeyajfq5akzhfgaoisin4b5atk3vmenohnoqzmwgrfltitwfle",
+      "supported": false
+    },
+    {
+      "name": "unknown-sha512",
+      "value": {
+        "v": 2,
+        "kind": "future",
+        "body": {
+          "link": {
+            "$link": "bafyrgqadambqgaydambqgaydambqgaydambqgaydambqgaydambqgaydambqgaydambqgaydambqgaydambqgaydambqgaydambqgaydambqg"
+          }
+        }
+      },
+      "hex": "a361760264626f6479a1646c696e6bd82a5845000171134003030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303646b696e6466667574757265",
+      "cid": "bafyreih5ocb6bigy67wa7lk36x62a4sjyxqvy3zqnyszx7wmmy7himcphe",
+      "supported": false
+    },
+    {
+      "name": "unknown-blake3",
+      "value": {
+        "v": 2,
+        "kind": "future",
+        "body": {
+          "link": {
+            "$link": "bafkr4iaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaqcaibaeaq"
+          }
+        }
+      },
+      "hex": "a361760264626f6479a1646c696e6bd82a58250001551e200404040404040404040404040404040404040404040404040404040404040404646b696e6466667574757265",
+      "cid": "bafyreicvtpad3hxj6zmgwje7y3pipajh5l5yevmtpfojnobwyqb43qmlsa",
+      "supported": false
+    },
+    {
+      "name": "literal-sentinel-maps",
+      "value": {
+        "v": 2,
+        "kind": "future",
+        "body": {
+          "bytes-map": {
+            "$map": {
+              "$bytes": "0001"
+            }
+          },
+          "link-map": {
+            "$map": {
+              "$link": "bafyreicq3bmobgc6zr7waqmkv4gmlk2yp5bmevykrbajlkpizswnb5sulq"
+            }
+          }
+        }
+      },
+      "hex": "a361760264626f6479a2686c696e6b2d6d6170a165246c696e6b783b62616679726569637133626d6f626763367a72377761716d6b7634676d6c6b32797035626d6576796b7262616a6c6b70697a73776e623573756c716962797465732d6d6170a1662462797465736430303031646b696e6466667574757265",
+      "cid": "bafyreiehlgmfgnahvyjq2orc7xhpehswgt53dqjhpmu2pwwurjme4ftycm",
+      "supported": false
+    },
+    {
+      "name": "unknown-nested-cid-shaped-bytes",
+      "value": {
+        "v": 2,
+        "kind": "future",
+        "body": {
+          "nested": [
+            {
+              "$bytes": "00015512000101010101010101010101010101010101010101010101010101010101010101"
+            }
+          ]
+        }
+      },
+      "hex": "a361760264626f6479a1666e657374656481582500015512000101010101010101010101010101010101010101010101010101010101010101646b696e6466667574757265",
+      "cid": "bafyreih4ne3bl4wpwps2qf4i2cefwiefqiisv6v6nm3ayubxyutyc2ekwe",
+      "supported": false
+    },
+    {
+      "name": "web-observer-linked-state",
+      "value": {
+        "v": 1,
+        "kind": "capture",
+        "body": {
+          "observer": {
+            "principal": "did:web:example.com",
+            "verificationMethod": "did:web:example.com#k",
+            "identityVersion": {
+              "kind": "documentCid",
+              "value": {
+                "$link": "bafkreicdzqr7uuvypngmdubllmiucvavdvvn3wyxzh65ybvqe75jtysaba"
+              }
+            }
+          },
+          "scope": {
+            "$bytes": "12200101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "stream": {
+            "$bytes": "02020202020202020202020202020202"
+          },
+          "sequence": 0,
+          "previous": null,
+          "occurredAt": 1792108800000,
+          "eventType": "provider.request",
+          "payloads": [
+            {
+              "sha256": {
+                "$bytes": "940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b"
+              },
+              "length": 9,
+              "mediaType": "application/octet-stream"
+            }
+          ],
+          "parents": [],
+          "coverage": {
+            "complete": true,
+            "missing": []
+          }
+        }
+      },
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c736469643a7765623a6578616d706c652e636f6d6f6964656e7469747956657273696f6ea2646b696e646b646f63756d656e744369646576616c7565d82a5825000155122043cc23fa52b87b4cc1d02b5b114154151d6adddb17c9fddc06b027fa99e2400872766572696669636174696f6e4d6574686f64756469643a7765623a6578616d706c652e636f6d236b687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "cid": "bafyreib5uv6rixdazddqurftetfnurwk2der4oi2r3q6hejozls7azuw7u",
+      "supported": true,
+      "signingHex": "a3646b696e64676361707475726566646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a582500017112203da57d145c60c8c70a44b324cada46cad0c91e391a8ee1e3912ecae5f06696fd"
+    },
+    {
+      "name": "web-writer-linked-state",
+      "value": {
+        "v": 1,
+        "kind": "manifest",
+        "body": {
+          "writer": {
+            "principal": "did:web:example.com",
+            "verificationMethod": "did:web:example.com#k",
+            "identityVersion": {
+              "kind": "documentCid",
+              "value": {
+                "$link": "bafkreicdzqr7uuvypngmdubllmiucvavdvvn3wyxzh65ybvqe75jtysaba"
+              }
+            }
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "04040404040404040404040404040404"
+          },
+          "position": 0,
+          "previous": null,
+          "entries": [
+            {
+              "slot": {
+                "$bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+              },
+              "ciphertext": {
+                "$link": "bafkreiao2yfbldzmb73a2bjoemjndtbdoaoqmpzwo4ajmapgv5ju5zy64m"
+              },
+              "length": 28
+            }
+          ]
+        }
+      },
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c736469643a7765623a6578616d706c652e636f6d6f6964656e7469747956657273696f6ea2646b696e646b646f63756d656e744369646576616c7565d82a5825000155122043cc23fa52b87b4cc1d02b5b114154151d6adddb17c9fddc06b027fa99e2400872766572696669636174696f6e4d6574686f64756469643a7765623a6578616d706c652e636f6d236b67656e747269657381a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "cid": "bafyreidbrufasitho66bknnfwxqxa5u4cd3kwrbxlitceetlvlgfrxtyue",
+      "supported": true,
+      "signingHex": "a3646b696e64686d616e696665737466646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a58250001711220618d0a09226777bc1535a5b5e170769c10f6ab44375a2622126baacc58de78a1"
+    },
+    {
+      "name": "web-issuer-linked-state",
+      "value": {
+        "v": 1,
+        "kind": "receipt",
+        "body": {
+          "issuer": {
+            "principal": "did:web:example.com",
+            "verificationMethod": "did:web:example.com#k",
+            "identityVersion": {
+              "kind": "documentCid",
+              "value": {
+                "$link": "bafkreicdzqr7uuvypngmdubllmiucvavdvvn3wyxzh65ybvqe75jtysaba"
+              }
+            }
+          },
+          "manifest": {
+            "$link": "bafyreibpieeo5gpeqzh6wqu65blyrlzob2xfxix7udj42stkcabemrn3ri"
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "04040404040404040404040404040404"
+          },
+          "position": 0,
+          "durability": "remote-durable",
+          "issuedAt": 1792108800020
+        }
+      },
+      "hex": "a361760164626f6479a766697373756572a3697072696e636970616c736469643a7765623a6578616d706c652e636f6d6f6964656e7469747956657273696f6ea2646b696e646b646f63756d656e744369646576616c7565d82a5825000155122043cc23fa52b87b4cc1d02b5b114154151d6adddb17c9fddc06b027fa99e2400872766572696669636174696f6e4d6574686f64756469643a7765623a6578616d706c652e636f6d236b6869737375656441741b000001a142022814686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a68706f736974696f6e00696f7065726174696f6e50040404040404040404040404040404046a6475726162696c6974796e72656d6f74652d64757261626c656a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e646772656365697074",
+      "cid": "bafyreihfdvzo3lfn6ga5uu3asvcjqdbazpnngwwps37tqdsxy5dim3babq",
+      "supported": true,
+      "signingHex": "a3646b696e64677265636569707466646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a58250001711220e51d72edacadf181da53609544980c20cbdad35acf96ff380e57c746866c200c"
+    },
+    {
+      "name": "kan-observer-linked-state",
+      "value": {
+        "v": 1,
+        "kind": "capture",
+        "body": {
+          "observer": {
+            "principal": "did:kan:zExample",
+            "verificationMethod": "did:kan:zExample#k",
+            "identityVersion": {
+              "kind": "event",
+              "value": {
+                "$link": "bafyreihjyd3ln4l33utordgzgvbo6emhi4xu47wn744kolgesy2f4ikz5i"
+              }
+            }
+          },
+          "scope": {
+            "$bytes": "12200101010101010101010101010101010101010101010101010101010101010101"
+          },
+          "stream": {
+            "$bytes": "02020202020202020202020202020202"
+          },
+          "sequence": 0,
+          "previous": null,
+          "occurredAt": 1792108800000,
+          "eventType": "provider.request",
+          "payloads": [
+            {
+              "sha256": {
+                "$bytes": "940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b"
+              },
+              "length": 9,
+              "mediaType": "application/octet-stream"
+            }
+          ],
+          "parents": [],
+          "coverage": {
+            "complete": true,
+            "missing": []
+          }
+        }
+      },
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c706469643a6b616e3a7a4578616d706c656f6964656e7469747956657273696f6ea2646b696e64656576656e746576616c7565d82a58250001711220e9c0f6b6f17bdd26e88cd93542ef1187472f4e7ecdff38a72cc496345e2159ea72766572696669636174696f6e4d6574686f64726469643a6b616e3a7a4578616d706c65236b687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "cid": "bafyreidfesyst6okcolma7t4a5e2wybhqlwuxwil2wfvy7tbfikmd2bvce",
+      "supported": true,
+      "signingHex": "a3646b696e64676361707475726566646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a582500017112206524b129f9ca1396c07e7c0749ab602782ed4bd90bd58b5c7e612a14c1e83511"
+    },
+    {
+      "name": "kan-writer-linked-state",
+      "value": {
+        "v": 1,
+        "kind": "manifest",
+        "body": {
+          "writer": {
+            "principal": "did:kan:zExample",
+            "verificationMethod": "did:kan:zExample#k",
+            "identityVersion": {
+              "kind": "event",
+              "value": {
+                "$link": "bafyreihjyd3ln4l33utordgzgvbo6emhi4xu47wn744kolgesy2f4ikz5i"
+              }
+            }
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "04040404040404040404040404040404"
+          },
+          "position": 0,
+          "previous": null,
+          "entries": [
+            {
+              "slot": {
+                "$bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+              },
+              "ciphertext": {
+                "$link": "bafkreiao2yfbldzmb73a2bjoemjndtbdoaoqmpzwo4ajmapgv5ju5zy64m"
+              },
+              "length": 28
+            }
+          ]
+        }
+      },
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c706469643a6b616e3a7a4578616d706c656f6964656e7469747956657273696f6ea2646b696e64656576656e746576616c7565d82a58250001711220e9c0f6b6f17bdd26e88cd93542ef1187472f4e7ecdff38a72cc496345e2159ea72766572696669636174696f6e4d6574686f64726469643a6b616e3a7a4578616d706c65236b67656e747269657381a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "cid": "bafyreieafswnr76zu3l3qud7h6tgdujbudkvwoih26bajw5waqomcbiv2i",
+      "supported": true,
+      "signingHex": "a3646b696e64686d616e696665737466646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a58250001711220802cacd8ffd9a6d7b8507f3fa661d121a0d55b3907d78204dbb6041cc10515d2"
+    },
+    {
+      "name": "kan-issuer-linked-state",
+      "value": {
+        "v": 1,
+        "kind": "receipt",
+        "body": {
+          "issuer": {
+            "principal": "did:kan:zExample",
+            "verificationMethod": "did:kan:zExample#k",
+            "identityVersion": {
+              "kind": "event",
+              "value": {
+                "$link": "bafyreihjyd3ln4l33utordgzgvbo6emhi4xu47wn744kolgesy2f4ikz5i"
+              }
+            }
+          },
+          "manifest": {
+            "$link": "bafyreibpieeo5gpeqzh6wqu65blyrlzob2xfxix7udj42stkcabemrn3ri"
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "04040404040404040404040404040404"
+          },
+          "position": 0,
+          "durability": "remote-durable",
+          "issuedAt": 1792108800020
+        }
+      },
+      "hex": "a361760164626f6479a766697373756572a3697072696e636970616c706469643a6b616e3a7a4578616d706c656f6964656e7469747956657273696f6ea2646b696e64656576656e746576616c7565d82a58250001711220e9c0f6b6f17bdd26e88cd93542ef1187472f4e7ecdff38a72cc496345e2159ea72766572696669636174696f6e4d6574686f64726469643a6b616e3a7a4578616d706c65236b6869737375656441741b000001a142022814686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a68706f736974696f6e00696f7065726174696f6e50040404040404040404040404040404046a6475726162696c6974796e72656d6f74652d64757261626c656a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e646772656365697074",
+      "cid": "bafyreibf3mhg2h2piayfh6sic2stmup7dobexo7isyrlja26szx2s6zune",
+      "supported": true,
+      "signingHex": "a3646b696e64677265636569707466646f6d61696e75746f6f6c732e6b616e2e65766964656e63652e7631667265636f7264d82a5825000171122025db0e6d1f4f403053fa4816a53651ff1b824bbbe89622b4835e966fa97b3469"
+    }
+  ],
+  "negative": [
+    {
+      "name": "web-observer-bytes-state-exact",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c736469643a7765623a6578616d706c652e636f6d6f6964656e7469747956657273696f6ea2646b696e646b646f63756d656e744369646576616c75655825000155122043cc23fa52b87b4cc1d02b5b114154151d6adddb17c9fddc06b027fa99e2400872766572696669636174696f6e4d6574686f64756469643a7765623a6578616d706c652e636f6d236b687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "web-observer-bytes-state-trailing",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c736469643a7765623a6578616d706c652e636f6d6f6964656e7469747956657273696f6ea2646b696e646b646f63756d656e744369646576616c75655826000155122043cc23fa52b87b4cc1d02b5b114154151d6adddb17c9fddc06b027fa99e240080072766572696669636174696f6e4d6574686f64756469643a7765623a6578616d706c652e636f6d236b687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "web-writer-bytes-state-exact",
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c736469643a7765623a6578616d706c652e636f6d6f6964656e7469747956657273696f6ea2646b696e646b646f63756d656e744369646576616c75655825000155122043cc23fa52b87b4cc1d02b5b114154151d6adddb17c9fddc06b027fa99e2400872766572696669636174696f6e4d6574686f64756469643a7765623a6578616d706c652e636f6d236b67656e747269657381a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "class": "schema"
+    },
+    {
+      "name": "web-writer-bytes-state-trailing",
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c736469643a7765623a6578616d706c652e636f6d6f6964656e7469747956657273696f6ea2646b696e646b646f63756d656e744369646576616c75655826000155122043cc23fa52b87b4cc1d02b5b114154151d6adddb17c9fddc06b027fa99e240080072766572696669636174696f6e4d6574686f64756469643a7765623a6578616d706c652e636f6d236b67656e747269657381a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "class": "schema"
+    },
+    {
+      "name": "web-issuer-bytes-state-exact",
+      "hex": "a361760164626f6479a766697373756572a3697072696e636970616c736469643a7765623a6578616d706c652e636f6d6f6964656e7469747956657273696f6ea2646b696e646b646f63756d656e744369646576616c75655825000155122043cc23fa52b87b4cc1d02b5b114154151d6adddb17c9fddc06b027fa99e2400872766572696669636174696f6e4d6574686f64756469643a7765623a6578616d706c652e636f6d236b6869737375656441741b000001a142022814686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a68706f736974696f6e00696f7065726174696f6e50040404040404040404040404040404046a6475726162696c6974796e72656d6f74652d64757261626c656a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e646772656365697074",
+      "class": "schema"
+    },
+    {
+      "name": "web-issuer-bytes-state-trailing",
+      "hex": "a361760164626f6479a766697373756572a3697072696e636970616c736469643a7765623a6578616d706c652e636f6d6f6964656e7469747956657273696f6ea2646b696e646b646f63756d656e744369646576616c75655826000155122043cc23fa52b87b4cc1d02b5b114154151d6adddb17c9fddc06b027fa99e240080072766572696669636174696f6e4d6574686f64756469643a7765623a6578616d706c652e636f6d236b6869737375656441741b000001a142022814686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a68706f736974696f6e00696f7065726174696f6e50040404040404040404040404040404046a6475726162696c6974796e72656d6f74652d64757261626c656a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e646772656365697074",
+      "class": "schema"
+    },
+    {
+      "name": "kan-observer-bytes-state-exact",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c706469643a6b616e3a7a4578616d706c656f6964656e7469747956657273696f6ea2646b696e64656576656e746576616c756558250001711220e9c0f6b6f17bdd26e88cd93542ef1187472f4e7ecdff38a72cc496345e2159ea72766572696669636174696f6e4d6574686f64726469643a6b616e3a7a4578616d706c65236b687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "kan-observer-bytes-state-trailing",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c706469643a6b616e3a7a4578616d706c656f6964656e7469747956657273696f6ea2646b696e64656576656e746576616c756558260001711220e9c0f6b6f17bdd26e88cd93542ef1187472f4e7ecdff38a72cc496345e2159ea0072766572696669636174696f6e4d6574686f64726469643a6b616e3a7a4578616d706c65236b687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "kan-writer-bytes-state-exact",
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c706469643a6b616e3a7a4578616d706c656f6964656e7469747956657273696f6ea2646b696e64656576656e746576616c756558250001711220e9c0f6b6f17bdd26e88cd93542ef1187472f4e7ecdff38a72cc496345e2159ea72766572696669636174696f6e4d6574686f64726469643a6b616e3a7a4578616d706c65236b67656e747269657381a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "class": "schema"
+    },
+    {
+      "name": "kan-writer-bytes-state-trailing",
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c706469643a6b616e3a7a4578616d706c656f6964656e7469747956657273696f6ea2646b696e64656576656e746576616c756558260001711220e9c0f6b6f17bdd26e88cd93542ef1187472f4e7ecdff38a72cc496345e2159ea0072766572696669636174696f6e4d6574686f64726469643a6b616e3a7a4578616d706c65236b67656e747269657381a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "class": "schema"
+    },
+    {
+      "name": "kan-issuer-bytes-state-exact",
+      "hex": "a361760164626f6479a766697373756572a3697072696e636970616c706469643a6b616e3a7a4578616d706c656f6964656e7469747956657273696f6ea2646b696e64656576656e746576616c756558250001711220e9c0f6b6f17bdd26e88cd93542ef1187472f4e7ecdff38a72cc496345e2159ea72766572696669636174696f6e4d6574686f64726469643a6b616e3a7a4578616d706c65236b6869737375656441741b000001a142022814686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a68706f736974696f6e00696f7065726174696f6e50040404040404040404040404040404046a6475726162696c6974796e72656d6f74652d64757261626c656a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e646772656365697074",
+      "class": "schema"
+    },
+    {
+      "name": "kan-issuer-bytes-state-trailing",
+      "hex": "a361760164626f6479a766697373756572a3697072696e636970616c706469643a6b616e3a7a4578616d706c656f6964656e7469747956657273696f6ea2646b696e64656576656e746576616c756558260001711220e9c0f6b6f17bdd26e88cd93542ef1187472f4e7ecdff38a72cc496345e2159ea0072766572696669636174696f6e4d6574686f64726469643a6b616e3a7a4578616d706c65236b6869737375656441741b000001a142022814686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a68706f736974696f6e00696f7065726174696f6e50040404040404040404040404040404046a6475726162696c6974796e72656d6f74652d64757261626c656a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e646772656365697074",
+      "class": "schema"
+    },
+    {
+      "name": "unknown-negative",
+      "hex": "a361760264626f6479a1616e20646b696e6466667574757265",
+      "class": "canonical"
+    },
+    {
+      "name": "unknown-unsafe",
+      "hex": "a361760264626f6479a1616e1b0020000000000000646b696e6466667574757265",
+      "class": "canonical"
+    },
+    {
+      "name": "bad-writer",
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64736469643a6b65793a6f74686572236f7468657267656e747269657381a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "class": "schema"
+    },
+    {
+      "name": "bad-issuer",
+      "hex": "a361760164626f6479a766697373756572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64736469643a6b65793a6f74686572236f746865726869737375656441741b000001a142022814686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a68706f736974696f6e00696f7065726174696f6e50040404040404040404040404040404046a6475726162696c6974796e72656d6f74652d64757261626c656a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e646772656365697074",
+      "class": "schema"
+    },
+    {
+      "name": "version-zero",
+      "hex": "a361760064626f6479a0646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "unknown-envelope-field",
+      "hex": "a461760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265656578747261f5",
+      "class": "schema"
+    },
+    {
+      "name": "invalid-kind-token",
+      "hex": "a361760264626f6479a0646b696e6466467574757265",
+      "class": "schema"
+    },
+    {
+      "name": "unknown-body-not-map",
+      "hex": "a361760264626f647980646b696e6466667574757265",
+      "class": "schema"
+    },
+    {
+      "name": "negative-sequence",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636520696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "canonical"
+    },
+    {
+      "name": "unsafe-integer",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b0020000000000000646b696e646763617074757265",
+      "class": "canonical"
+    },
+    {
+      "name": "genesis-predecessor",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573d82a582500017112201c357999747dbe1d3097725f30c4c525a88659243f908560410fc7995f6b29556873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "missing-predecessor",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636501696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "bad-scope",
+      "hex": "a361760164626f6479aa6573636f70655822000000000000000000000000000000000000000000000000000000000000000000006673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "bad-stream",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d4f02020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "duplicate-parents",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e747382d82a582500017112201c357999747dbe1d3097725f30c4c525a88659243f908560410fc7995f6b2955d82a582500017112201c357999747dbe1d3097725f30c4c525a88659243f908560410fc7995f6b295568636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "too-many-payloads",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f6164739881a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616da3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "coverage-inconsistent",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e67816367617068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "coverage-unsorted",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e6782617a616168636f6d706c657465f4686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "coverage-duplicate",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e6782636761706367617068636f6d706c657465f4686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "empty-media-type",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d6564696154797065606870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "bad-author",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64736469643a6b65793a6f74686572236f74686572687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "unknown-author-field",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a4656578747261f5697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "private-field-in-manifest",
+      "hex": "a361760164626f6479a766777269746572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a466367656e747269657381a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee3687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d68706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "class": "schema"
+    },
+    {
+      "name": "empty-manifest",
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a466367656e74726965738068706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "class": "schema"
+    },
+    {
+      "name": "duplicate-slots",
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a466367656e747269657382a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee3a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "class": "schema"
+    },
+    {
+      "name": "unsorted-slots",
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a466367656e747269657382a364736c6f7458200707070707070707070707070707070707070707070707070707070707070707666c656e677468106a63697068657274657874d82a5825000155122015e4c5ab8840c16486078d6f7c4db4be9b02fc64fe4af39abcc6a428bda71f52a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e016870726576696f7573d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a696f7065726174696f6e50060606060606060606060606060606066a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "class": "schema"
+    },
+    {
+      "name": "wrong-ciphertext-codec",
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a466367656e747269657381a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468181c6a63697068657274657874d82a582500017112200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "class": "schema"
+    },
+    {
+      "name": "zero-ciphertext-length",
+      "hex": "a361760164626f6479a666777269746572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a466367656e747269657381a364736c6f7458200505050505050505050505050505050505050505050505050505050505050505666c656e677468006a63697068657274657874d82a582500015512200ed60a158f2c0ff60d052e2312d1cc23701d063f3677009601e6af534ee71ee368706f736974696f6e006870726576696f7573f6696f7065726174696f6e50040404040404040404040404040404046a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e64686d616e6966657374",
+      "class": "schema"
+    },
+    {
+      "name": "unknown-durability",
+      "hex": "a361760164626f6479a766697373756572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636869737375656441741b000001a142022814686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a68706f736974696f6e00696f7065726174696f6e50040404040404040404040404040404046a6475726162696c697479696261636b65642d75706a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e646772656365697074",
+      "class": "schema"
+    },
+    {
+      "name": "short-operation",
+      "hex": "a361760164626f6479a766697373756572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636869737375656441741b000001a142022814686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a68706f736974696f6e00696f7065726174696f6e4f0404040404040404040404040404046a6475726162696c6974796e72656d6f74652d64757261626c656a73636f7065546f6b656e58200303030303030303030303030303030303030303030303030303030303030303646b696e646772656365697074",
+      "class": "schema"
+    },
+    {
+      "name": "missing-null-field",
+      "hex": "a361760164626f6479a96573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "schema"
+    },
+    {
+      "name": "nonminimal-version",
+      "hex": "a36176180164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e646763617074757265",
+      "class": "canonical"
+    },
+    {
+      "name": "trailing-byte",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e64676361707475726500",
+      "class": "canonical"
+    },
+    {
+      "name": "truncated",
+      "hex": "a361760164626f6479aa6573636f70655822122001010101010101010101010101010101010101010101010101010101010101016673747265616d500202020202020202020202020202020267706172656e74738068636f766572616765a2676d697373696e678068636f6d706c657465f5686f62736572766572a3697072696e636970616c78396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a46636f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663237a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663687061796c6f61647381a3666c656e67746809667368613235365820940fd2109f15e7575513bd236bbf0a736752a6726cc9059a83c9a5f6b113be3b696d656469615479706578186170706c69636174696f6e2f6f637465742d73747265616d6870726576696f7573f66873657175656e636500696576656e74547970657070726f76696465722e726571756573746a6f6363757272656441741b000001a142022800646b696e6467636170747572",
+      "class": "canonical"
+    },
+    {
+      "name": "duplicate-key",
+      "hex": "a2617601617601",
+      "class": "canonical"
+    },
+    {
+      "name": "unordered-keys",
+      "hex": "a2616201616101",
+      "class": "canonical"
+    },
+    {
+      "name": "indefinite-map",
+      "hex": "bf616101ff",
+      "class": "canonical"
+    },
+    {
+      "name": "float",
+      "hex": "fb3ff0000000000000",
+      "class": "canonical"
+    },
+    {
+      "name": "unknown-tag",
+      "hex": "c100",
+      "class": "canonical"
+    },
+    {
+      "name": "oversized-declared-bytes",
+      "hex": "5bffffffffffffffff",
+      "class": "canonical"
+    },
+    {
+      "name": "invalid-utf8",
+      "hex": "61ff",
+      "class": "canonical"
+    },
+    {
+      "name": "too-many-containers",
+      "hex": "a361760264626f6479a1666e657374656481818181818181818181818181818181818181818181818181818181818181f6646b696e6466667574757265",
+      "class": "canonical"
+    },
+    {
+      "name": "tagged-literal-bytes-map",
+      "hex": "d82aa166246279746573784a3030303137313132323034623164396437383664656237643538656666663265616462613234336331376466613136316539376363316166306436363963643831356331383564353837",
+      "class": "canonical"
+    },
+    {
+      "name": "trailing-cid",
+      "hex": "d82a582600017112204b1d9d786deb7d58efff2eadba243c17dfa161e97cc1af0d669cd815c185d58700",
+      "class": "canonical"
+    },
+    {
+      "name": "nonminimal-cid",
+      "hex": "d82a58260081007112204b1d9d786deb7d58efff2eadba243c17dfa161e97cc1af0d669cd815c185d587",
+      "class": "canonical"
+    },
+    {
+      "name": "missing-cid-prefix",
+      "hex": "d82a5824017112204b1d9d786deb7d58efff2eadba243c17dfa161e97cc1af0d669cd815c185d587",
+      "class": "canonical"
+    }
+  ],
+  "inventoryColumns": [
+    "authorized",
+    "covered",
+    "fullyIndexed",
+    "unsupported",
+    "hasMatch",
+    "displayExcluded",
+    "result"
+  ],
+  "inventory": [
+    [
+      false,
+      "same",
+      true,
+      0,
+      true,
+      0,
+      "access-limited"
+    ],
+    [
+      false,
+      null,
+      false,
+      2,
+      false,
+      2,
+      "access-limited"
+    ],
+    [
+      true,
+      null,
+      true,
+      0,
+      true,
+      0,
+      "incomplete"
+    ],
+    [
+      true,
+      "other",
+      true,
+      0,
+      true,
+      0,
+      "incomplete"
+    ],
+    [
+      true,
+      "same",
+      false,
+      0,
+      false,
+      0,
+      "incomplete"
+    ],
+    [
+      true,
+      "same",
+      true,
+      2,
+      false,
+      0,
+      "incomplete"
+    ],
+    [
+      true,
+      "same",
+      false,
+      0,
+      true,
+      0,
+      "present-incomplete"
+    ],
+    [
+      true,
+      "same",
+      true,
+      2,
+      true,
+      0,
+      "present-incomplete"
+    ],
+    [
+      true,
+      "same",
+      true,
+      0,
+      true,
+      0,
+      "present-complete"
+    ],
+    [
+      true,
+      "same",
+      true,
+      0,
+      true,
+      2,
+      "present-complete"
+    ],
+    [
+      true,
+      "same",
+      true,
+      0,
+      false,
+      0,
+      "absent-at-snapshot"
+    ],
+    [
+      true,
+      "same",
+      true,
+      0,
+      false,
+      2,
+      "absent-at-snapshot"
+    ]
+  ],
+  "operationColumns": [
+    "admitted",
+    "existing",
+    "result"
+  ],
+  "operations": [
+    [
+      false,
+      null,
+      "unauthorized"
+    ],
+    [
+      false,
+      "same",
+      "unauthorized"
+    ],
+    [
+      false,
+      "other",
+      "unauthorized"
+    ],
+    [
+      true,
+      null,
+      "new"
+    ],
+    [
+      true,
+      "same",
+      "duplicate"
+    ],
+    [
+      true,
+      "other",
+      "conflict"
+    ]
+  ]
+}
