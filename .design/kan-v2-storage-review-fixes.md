@@ -29,3 +29,7 @@ Storage F1 (full scan on normal open), F2 (raw access/rebuild despite damaged de
 ## Validation before integration
 
 On the pre-integration parent, all 12 storage tests pass. A private source-revert probe restored the pre-fix Rust implementation: both new regression tests execute and fail. Restoring only the old Python verifier also makes the first-use test fail. Restoring both fixes makes both tests pass. The exact probe and output are retained under `.local-state/reviews/storage-fix-controls.py` and `storage-fix-controls.log`; no live archive was opened. Codec integration and a fresh review are still pending.
+
+## Integrated validation
+
+The dependent branch now includes P2 commit bc24e2b, whose round-3 independent review is pending separately. The verifier consumes typed bytes and Link values directly. All 13 storage, seven evidence-contract and 19 surface tests pass. A new storage/backup fixture uses CID-shaped scope/operation/slot tokens and dynamic Author links. After integration, restoring the old Rust first-use/path behavior still fails both regressions; removing only the Python first-use-order assertion also fails its regression, avoiding a false failure from the changed Python value API. Restored tests pass. Feature Clippy, formatting and whitespace checks pass. This correction's fresh storage review remains pending; the remaining P3 readiness findings above are unchanged.

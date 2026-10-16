@@ -460,3 +460,36 @@ fn bare_relative_create_and_backup_succeed_without_overwrite() {
     );
     assert!(temp.path().join("backup.sqlite").is_file());
 }
+
+#[test]
+fn cid_shaped_tokens_survive_storage_and_independent_backup_verification() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut ledger = Ledger::create(temp.path()).unwrap();
+    let payload = b"opaque token test";
+    let object = ledger.stage(payload).unwrap();
+    let token = |size: usize| format!("0001551200{}", "05".repeat(size - 5));
+    let mut m = golden("web-writer-linked-state");
+    m["body"]["scopeToken"] = json!({"$bytes": token(32)});
+    m["body"]["operation"] = json!({"$bytes": token(16)});
+    m["body"]["entries"][0] = json!({"slot":{"$bytes":token(32)}, "ciphertext":{"$link":object.to_string()}, "length":payload.len()});
+    let manifest = record(&m);
+    let mut r = golden("web-issuer-linked-state");
+    r["body"]["manifest"] = json!({"$link":manifest.cid().to_string()});
+    r["body"]["scopeToken"] = m["body"]["scopeToken"].clone();
+    r["body"]["operation"] = m["body"]["operation"].clone();
+    ledger.commit(manifest.bytes(), record(&r).bytes()).unwrap();
+    let backup = temp.path().join("tokens.sqlite");
+    ledger.backup(&backup).unwrap();
+    let output = Command::new("python3")
+        .arg("scripts/verify_evidence_store.py")
+        .arg(&backup)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let restored = ledger.page(&ledger.snapshot().unwrap(), 0, 1).unwrap();
+    assert_eq!(restored[0].manifest.bytes(), manifest.bytes());
+}
