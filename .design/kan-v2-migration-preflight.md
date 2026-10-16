@@ -51,3 +51,10 @@ The operator's answers on owner-held archive keys, first deployment and independ
 - Claim graph reconstruction, signature/admission decisions, lineage mapping, actual encrypted upload, resume receipts, day replacement and live cutover.
 - Private-key export or automatic trust changes.
 - A claim that an inspected source or locally copied database is an independently recoverable backup.
+
+## Derived-data recovery extension
+
+See `.design/kan-v2-recovery-cli.md` for `read-record`, `read-object` and `recover`.
+All take database files; `recover` requires a new destination file, leaves the
+source intact and does not promote the result. Failed outputs remain for inspection.
+These commands do not change preflight into a live encrypted importer.

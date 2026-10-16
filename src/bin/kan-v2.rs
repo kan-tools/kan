@@ -1,6 +1,9 @@
 //! Experimental archive maintenance and migration preflight; no live cutover.
 use clap::{Parser, Subcommand};
-use kan::{evidence_store::Ledger, migration_preflight};
+use kan::{
+    evidence_store::{Ledger, RecoveryReader},
+    migration_preflight,
+};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -27,6 +30,19 @@ enum Command {
         archive: PathBuf,
         destination: PathBuf,
     },
+    /// Read exact canonical record bytes despite damaged derived lookups.
+    ReadRecord { database: PathBuf, sequence: u64 },
+    /// Read and hash-check one opaque object despite damaged derived lookups.
+    ReadObject { database: PathBuf, cid: String },
+    /// Rebuild derived data into a NEW file; retain the source and any failed output.
+    Recover {
+        database: PathBuf,
+        destination: PathBuf,
+    },
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     match Cli::parse().command {
@@ -60,6 +76,47 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             println!(
                 "{}",
                 serde_json::json!({"backup":destination,"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"independent_backup":false})
+            );
+        }
+        Command::ReadRecord { database, sequence } => {
+            let record = RecoveryReader::open(&database)?.record(sequence)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "sequence":record.sequence, "encoding":"hex", "record_format":"dag-cbor",
+                    "manifest_cid":record.manifest.cid().to_string(), "manifest":hex(record.manifest.bytes()),
+                    "receipt_cid":record.receipt.cid().to_string(), "receipt":hex(record.receipt.bytes()),
+                    "verification":"canonical-records-and-receipt-binding",
+                    "cryptographic_admission":"not-verified", "historical_completeness":"not-verified"
+                })
+            );
+        }
+        Command::ReadObject { database, cid } => {
+            let id = cid.parse()?;
+            let bytes = RecoveryReader::open(&database)?.read_object(&id)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "cid":id.to_string(), "encoding":"hex", "bytes":hex(&bytes), "length":bytes.len(),
+                    "verification":"length-and-content-hash", "content":"opaque-ciphertext",
+                    "cryptographic_admission":"not-verified", "historical_completeness":"not-verified"
+                })
+            );
+        }
+        Command::Recover {
+            database,
+            destination,
+        } => {
+            let report = RecoveryReader::open(&database)?.rebuild(&destination)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "source":database, "recovered":destination, "objects":report.objects,
+                    "commits":report.commits, "bytes":report.bytes, "through":report.snapshot.through,
+                    "tip":report.snapshot.tip.map(|c|c.to_string()), "verification":"structural-closure",
+                    "cryptographic_admission":"not-verified", "historical_completeness":"not-verified",
+                    "independent_backup":false, "promoted":false
+                })
             );
         }
     }
