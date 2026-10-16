@@ -13,6 +13,9 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+if not __debug__:
+    raise RuntimeError('evidence verification requires Python assertions enabled')
+
 FIXTURE = Path(__file__).resolve().parents[1] / 'tests/fixtures/evidence-v1/vectors.json'
 
 
@@ -207,7 +210,7 @@ def fixtures():
 
     def add(name, value, supported=True):
         raw = encode(value)
-        assert decode(raw) == from_fixture(value)
+        assert same_value(decode(raw), from_fixture(value))
         c = cid(raw)
         row = {'name': name, 'value': value, 'hex': raw.hex(), 'cid': c, 'supported': supported}
         if supported:
@@ -236,6 +239,8 @@ def fixtures():
         ('cid-shaped-stream', capture, 'stream', 16),
         ('cid-shaped-operation', manifest, 'operation', 16),
         ('cid-shaped-scope-token', manifest, 'scopeToken', 32),
+        ('cid-shaped-receipt-scope', receipt, 'scopeToken', 32),
+        ('cid-shaped-receipt-operation', receipt, 'operation', 16),
     ]:
         v = copy.deepcopy(source)
         v['body'][field] = blob(prefix + b'\x04'*(size-len(prefix)))
@@ -257,6 +262,16 @@ def fixtures():
     add('literal-sentinel-maps', {'v': 2, 'kind': 'future', 'body': {
         'bytes-map': {'$map': {'$bytes': '0001'}},
         'link-map': {'$map': {'$link': cid(b'example')}}}}, False)
+    add('unknown-nested-cid-shaped-bytes', {'v': 2, 'kind': 'future', 'body': {'nested': [blob(prefix+b'\x01'*32)]}}, False)
+    dynamic_authors = []
+    for method, kind, state in [('web', 'documentCid', cid(b'document', 0x55)), ('kan', 'event', cid(b'identity-event'))]:
+        principal = 'did:web:example.com' if method == 'web' else 'did:kan:zExample'
+        dynamic = {'principal': principal, 'verificationMethod': principal+'#k', 'identityVersion': {'kind': kind, 'value': link(state)}}
+        dynamic_authors.append((method, dynamic, state))
+        for role, source in [('observer', capture), ('writer', manifest), ('issuer', receipt)]:
+            v = copy.deepcopy(source)
+            v['body'][role] = dynamic
+            add(method+'-'+role+'-linked-state', v)
     negatives = []
 
     def bad(name, value):
@@ -267,7 +282,13 @@ def fixtures():
         v['body'][field] = value
         bad(name, v)
 
-    bad('unknown-negative', {'v': 2, 'kind': 'future', 'body': {'n': -1}})
+    for method, dynamic, state in dynamic_authors:
+        for role, source in [('observer', capture), ('writer', manifest), ('issuer', receipt)]:
+            for suffix, tail in [('exact', b''), ('trailing', b'\x00')]:
+                bad_author = copy.deepcopy(dynamic)
+                bad_author['identityVersion']['value'] = blob(b'\x00'+cid_bytes(state)+tail)
+                changed(method+'-'+role+'-bytes-state-'+suffix, source, role, bad_author)
+    bad('unknown-negative' , {'v': 2, 'kind': 'future', 'body': {'n': -1}})
     bad('unknown-unsafe', {'v': 2, 'kind': 'future', 'body': {'n': 2**53}})
     changed('bad-writer', manifest, 'writer', dict(author, verificationMethod='did:key:other#other'))
     changed('bad-issuer', receipt, 'issuer', dict(author, verificationMethod='did:key:other#other'))
@@ -350,13 +371,24 @@ def fixtures():
             'inventory': inventory, 'operationColumns': ['admitted', 'existing', 'result'], 'operations': operations}
 
 
+def same_value(left, right):
+    """IPLD/fixture equality must not equate Python bool, int and float."""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(same_value(left[k], right[k]) for k in left)
+    if isinstance(left, list):
+        return len(left) == len(right) and all(same_value(a, b) for a, b in zip(left, right))
+    return left == right
+
+
 def check(data):
     expected = fixtures()
-    if data != expected:
+    if not same_value(data, expected):
         raise ValueError('pinned vectors differ from independent oracle')
     for vector in data['positive']:
         raw = bytes.fromhex(vector['hex'])
-        if decode(raw) != from_fixture(vector['value']) or cid(raw) != vector['cid']:
+        if not same_value(decode(raw), from_fixture(vector['value'])) or cid(raw) != vector['cid']:
             raise ValueError('byte/CID mismatch')
     for vector in data['negative']:
         if vector['class'] == 'canonical':
@@ -365,9 +397,21 @@ def check(data):
             except (ValueError, UnicodeError):
                 continue
             raise ValueError('decoder accepted ' + vector['name'])
+        else:
+            decode(bytes.fromhex(vector['hex']))  # schema-invalid must still be canonical
 
 
 def self_test():
+    assert not same_value(True, 1) and not same_value(1.0, 1)
+    assert not same_value({'x': [True]}, {'x': [1]})
+    altered = fixtures()
+    altered['positive'][0]['value']['body']['coverage']['complete'] = 1
+    try:
+        check(altered)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('oracle missed bool/integer fixture substitution')
     probe = {'v': 2, 'kind': 'future', 'body': {'bytes': b'x'*65000}}
     overhead = len(encode_value(probe))-65000
     for size in (65536, 65537):

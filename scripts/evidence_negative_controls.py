@@ -10,6 +10,9 @@ from pathlib import Path
 import subprocess
 import tempfile
 
+if not __debug__:
+    raise RuntimeError('negative controls require Python assertions enabled')
+
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / 'src/evidence.rs'
 TEST = ['cargo', 'test', '--features', 'evidence-contract', '--test', 'evidence_contract']
@@ -33,15 +36,24 @@ def main():
     print('Recovery copy:', name, flush=True)
     a = original.index('    let mut parser = Parser { bytes, offset: 0 };')
     b = original.index('    scalars(&value, 0)?;', a)
-    old_decoder = '''    let config = drisl::DecodeConfig {
+    old_decoder = '''    let config = atproto_dasl::drisl::DecodeConfig {
         max_depth: 32, max_alloc: MAX_RECORD_BYTES,
         max_array_elements: MAX_RECORD_BYTES, max_map_entries: MAX_RECORD_BYTES,
         no_floats: true, ..Default::default()
     };
-    let value: Ipld = drisl::from_slice_with_config(bytes, config)
+    let value: Ipld = atproto_dasl::drisl::from_slice_with_config(bytes, config)
         .map_err(|e| Error::Canonical(e.to_string()))?;
 '''
+    author_start = original.index('fn author(value:')
+    author_end = original.index('\nfn chain(', author_start)
+    old_author = """fn author(value: &Ipld) -> Result<(), Error> {
+    let encoded = atproto_dasl::to_vec(value).map_err(|e| Error::Schema(e.to_string()))?;
+    let _: Author = atproto_dasl::drisl::from_slice(&encoded).map_err(|e| Error::Schema(e.to_string()))?;
+    Ok(())
+}
+"""
     controls = {
+        'old-identity-guessing-decoder': original[:author_start] + old_author + original[author_end:],
         'old-byte-guessing-decoder': original[:a] + old_decoder + original[b:],
         'no-decode-scalar-validation': original.replace('    scalars(&value, 0)?;', '', 1),
         'no-writer-or-issuer-validation': original.replace('    author(&b["writer"])?;', '').replace('    author(&b["issuer"])?;', ''),
@@ -57,7 +69,7 @@ def main():
     finally:
         SOURCE.write_text(original)
     assert run('restored fix') == 0
-    print('All four negative controls failed as expected; restored fix passes.')
+    print('All five negative controls failed as expected; restored fix passes.')
 
 
 if __name__ == '__main__':

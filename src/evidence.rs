@@ -3,9 +3,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use atproto_dasl::{drisl, Cid, Ipld};
+use atproto_dasl::{Cid, Ipld};
 
-use crate::identity::{authorship::Author, scope_inception::ScopeId};
+use crate::identity::{authorship::Author, control::IdentityVersion, scope_inception::ScopeId};
 
 pub const MAX_RECORD_BYTES: usize = 65_536;
 pub const MAX_SAFE_INTEGER: i128 = 9_007_199_254_740_991;
@@ -360,8 +360,32 @@ fn link(value: &Ipld, codec: u8) -> Result<&Cid, Error> {
 }
 
 fn author(value: &Ipld) -> Result<(), Error> {
-    let encoded = atproto_dasl::to_vec(value).map_err(|e| Error::Schema(e.to_string()))?;
-    let _: Author = drisl::from_slice(&encoded).map_err(|e| Error::Schema(e.to_string()))?;
+    // Preserve the strict parser's types through the identity boundary. Generic
+    // drisl IPLD deserialization can reinterpret untagged bytes as a CID.
+    let fields = closed(
+        value,
+        &["principal", "verificationMethod", "identityVersion"],
+    )?;
+    let version = closed(&fields["identityVersion"], &["kind", "value"])?;
+    let identity = match (&version["kind"], &version["value"]) {
+        (Ipld::String(kind), Ipld::Null) if kind == "static" => IdentityVersion::Static,
+        (Ipld::String(kind), Ipld::Link(cid)) if kind == "event" => {
+            IdentityVersion::Event(cid.clone())
+        }
+        (Ipld::String(kind), Ipld::Link(cid)) if kind == "documentCid" => {
+            IdentityVersion::DocumentCid(cid.clone())
+        }
+        (Ipld::String(kind), Ipld::String(id)) if kind == "versionId" && !id.is_empty() => {
+            IdentityVersion::VersionId(id.clone())
+        }
+        _ => return Err(fail("invalid identity version shape")),
+    };
+    Author::new(
+        string(&fields["principal"], MAX_RECORD_BYTES)?.into(),
+        string(&fields["verificationMethod"], MAX_RECORD_BYTES)?.into(),
+        identity,
+    )
+    .map_err(|e| Error::Schema(e.to_string()))?;
     Ok(())
 }
 
