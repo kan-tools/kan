@@ -77,6 +77,8 @@ Future implementation PRs use this same ordering. Keep the active stack short: o
 
 P5 and P6 are independent after P4. They may be implemented separately; merging them in that order keeps release accounting simple. This table is a sequence of reviewable outcomes, not a requirement to produce a large PR for each row: split further when a row cannot be reviewed coherently, preserving the named dependency and evidence.
 
+P2 now has an experimental format slice in `.design/kan-v2-evidence-contract.md` and draft `rfcs/4-evidence-contract.md`, on `feat/kan-v2-evidence-contract`. It supplies a feature-gated pure codec, independent byte/CID vectors and inventory/retry decision tests. It does not complete this document's end-to-end AC-3/4/11: authenticated inventory, durable append and CLI/MCP disclosure require P3/P4. Before issuing real receipts, P3 must extend the draft with the concrete durability and genesis/frontier profile; P4 must settle signature/admission and encryption profiles. These extensions remain reviewed contracts, not undocumented runtime choices.
+
 ### 3. Evidence inventory must not be a trust-filtered fold
 
 The observed v1/day failure supplies a concrete negative fixture. The default bulk read returns two excluded claims without a subject entry. Day therefore cannot distinguish absent from fully excluded subjects and refuses to record an otherwise unrelated new design. A one-off read including both observed authors showed both claims belong to design/rfc-2 and none to the new v2 design subject. No persistent trust policy was changed. This diagnosis explains a contract defect; it does not claim that the current code is fixed.
