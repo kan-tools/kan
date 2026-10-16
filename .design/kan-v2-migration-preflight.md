@@ -32,6 +32,10 @@ Symlink checks and metadata comparison detect ordinary local races. They do not 
 
 The preview records a file-level observation rather than claiming an atomic multi-medium snapshot. The actual importer must acquire/pin immutable source snapshots, build a disk-backed reachability/claim inventory, encrypt selected bytes, and reconcile receipts. It must not treat this preflight as its verified completion manifest. Git history is explicitly not inventoried by this slice; working-tree publication bytes are retained as observations. Private recovery credentials belong in the separate encrypted backup procedure, not evidence ingestion.
 
+Build the experimental executable with `cargo build --features v2-storage --bin kan-v2`. Its read-only entry points are `kan-v2 discover <search-root>...` and `kan-v2 preview <workspace-root>`. JSON goes to stdout; errors go to stderr. Keep these inventories private: filenames and source associations are sensitive metadata. The `.local-state/` directory is ignored for private development reports. This executable is separate from the installed `kan`; `cargo run` still defaults to the original command.
+
+`kan-v2 init <archive-directory>`, `kan-v2 verify <database-file>`, and `kan-v2 backup <archive-directory> <new-destination-file>` expose the lower-level ledger's maintenance operations. They do not supply encryption, service admission or a live importer. Use synthetic archives for these operations until the encrypted service profile is implemented. A local backup is not independent backup certification.
+
 ## Resolved Questions
 
 - Continue toward v2 and preserve original evidence instead of repairing day.
