@@ -375,3 +375,121 @@ fn database_columns_match_independent_surface_catalog() {
         .collect();
     assert_eq!(actual, expected);
 }
+
+#[test]
+fn first_manifest_must_name_earliest_slot_use() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut ledger = Ledger::create(temp.path()).unwrap();
+    ledger.stage(b"repeated").unwrap();
+    let (first, receipt) = pair(b"repeated", 0, None, 1);
+    ledger.commit(first.bytes(), receipt.bytes()).unwrap();
+    let (second, _) = pair(b"repeated", 1, Some(&first), 2);
+    let mut body = second.body().clone();
+    body.insert("entries".into(), first.body()["entries"].clone());
+    let value = Ipld::Map(std::collections::BTreeMap::from([
+        ("v".into(), Ipld::Integer(1)),
+        ("kind".into(), Ipld::String("manifest".into())),
+        ("body".into(), Ipld::Map(body)),
+    ]));
+    let Decoded::Known(second) = evidence::encode(&value).unwrap() else {
+        panic!()
+    };
+    let mut receipt = golden("receipt");
+    receipt["body"]["manifest"] = json!({"$link": second.cid().to_string()});
+    receipt["body"]["operation"] = json!({"$bytes": "02".repeat(16)});
+    receipt["body"]["position"] = json!(1);
+    ledger
+        .commit(second.bytes(), record(&receipt).bytes())
+        .unwrap();
+    ledger.verify().unwrap();
+    let backup = temp.path().join("valid.sqlite");
+    ledger.backup(&backup).unwrap();
+    let python = |path: &Path| {
+        Command::new("python3")
+            .arg("scripts/verify_evidence_store.py")
+            .arg(path)
+            .output()
+            .unwrap()
+    };
+    assert!(python(&backup).status.success());
+    let db = rusqlite::Connection::open(&backup).unwrap();
+    db.execute(
+        "UPDATE bindings SET first_manifest=?",
+        [second.cid().to_string()],
+    )
+    .unwrap();
+    drop(db);
+    assert!(Ledger::verify_file(&backup).is_err());
+    let result = python(&backup);
+    assert!(!result.status.success(), "Python accepted later first use");
+    assert!(String::from_utf8_lossy(&result.stderr).contains("binding[2] <= sequence"));
+}
+
+#[test]
+fn relative_path_worker() {
+    if std::env::var_os("KAN_V2_RELATIVE_PATH_WORKER").is_none() {
+        return;
+    }
+    let mut ledger = Ledger::create(Path::new("relative-store")).unwrap();
+    ledger.stage(b"relative evidence").unwrap();
+    let (m, r) = pair(b"relative evidence", 0, None, 1);
+    ledger.commit(m.bytes(), r.bytes()).unwrap();
+    let expected = ledger.verify().unwrap();
+    assert_eq!(ledger.backup(Path::new("backup.sqlite")).unwrap(), expected);
+    assert!(ledger.backup(Path::new("backup.sqlite")).is_err());
+    assert_eq!(
+        Ledger::verify_file(Path::new("backup.sqlite")).unwrap(),
+        expected
+    );
+}
+
+#[test]
+fn bare_relative_create_and_backup_succeed_without_overwrite() {
+    let temp = tempfile::tempdir().unwrap();
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "relative_path_worker", "--nocapture"])
+        .current_dir(temp.path())
+        .env("KAN_V2_RELATIVE_PATH_WORKER", "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(temp.path().join("backup.sqlite").is_file());
+}
+
+#[test]
+fn cid_shaped_tokens_survive_storage_and_independent_backup_verification() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut ledger = Ledger::create(temp.path()).unwrap();
+    let payload = b"opaque token test";
+    let object = ledger.stage(payload).unwrap();
+    let token = |size: usize| format!("0001551200{}", "05".repeat(size - 5));
+    let mut m = golden("web-writer-linked-state");
+    m["body"]["scopeToken"] = json!({"$bytes": token(32)});
+    m["body"]["operation"] = json!({"$bytes": token(16)});
+    m["body"]["entries"][0] = json!({"slot":{"$bytes":token(32)}, "ciphertext":{"$link":object.to_string()}, "length":payload.len()});
+    let manifest = record(&m);
+    let mut r = golden("web-issuer-linked-state");
+    r["body"]["manifest"] = json!({"$link":manifest.cid().to_string()});
+    r["body"]["scopeToken"] = m["body"]["scopeToken"].clone();
+    r["body"]["operation"] = m["body"]["operation"].clone();
+    ledger.commit(manifest.bytes(), record(&r).bytes()).unwrap();
+    let backup = temp.path().join("tokens.sqlite");
+    ledger.backup(&backup).unwrap();
+    let output = Command::new("python3")
+        .arg("scripts/verify_evidence_store.py")
+        .arg(&backup)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let restored = ledger.page(&ledger.snapshot().unwrap(), 0, 1).unwrap();
+    assert_eq!(restored[0].manifest.bytes(), manifest.bytes());
+}

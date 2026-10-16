@@ -28,6 +28,14 @@ fn ipld(value: &Value) -> Ipld {
         Value::Number(v) => Ipld::Integer(v.as_i64().unwrap() as i128),
         Value::String(v) => Ipld::String(v.clone()),
         Value::Array(v) => Ipld::List(v.iter().map(ipld).collect()),
+        Value::Object(v) if v.len() == 1 && v.contains_key("$map") => Ipld::Map(
+            v["$map"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k.clone(), ipld(v)))
+                .collect(),
+        ),
         Value::Object(v) if v.len() == 1 && v.contains_key("$bytes") => {
             Ipld::Bytes(unhex(v["$bytes"].as_str().unwrap()))
         }
@@ -87,9 +95,11 @@ fn independent_canonical_cid_and_signing_vectors() {
 #[test]
 fn malformed_known_records_never_fall_back_to_unsupported() {
     for vector in fixtures()["negative"].as_array().unwrap() {
-        assert!(
-            evidence::decode(&unhex(vector["hex"].as_str().unwrap())).is_err(),
-            "accepted {}",
+        let error = evidence::decode(&unhex(vector["hex"].as_str().unwrap())).unwrap_err();
+        assert_eq!(
+            error.class(),
+            vector["class"].as_str().unwrap(),
+            "{}: {error}",
             vector["name"]
         );
     }
@@ -163,38 +173,42 @@ fn inventory_distinguishes_absence_withholding_and_incomplete_coverage() {
     let snapshot = record(&value("manifest")).cid().clone();
     let other = record(&value("second-batch")).cid().clone();
     let matched = record(&value("capture")).cid().clone();
-    for authorized in [false, true] {
-        for covered in [None, Some(&snapshot), Some(&other)] {
-            for fully_indexed in [false, true] {
-                for unsupported in [0, 2] {
-                    for matches in [vec![], vec![matched.clone()]] {
-                        let result = evidence::inventory(
-                            authorized,
-                            &snapshot,
-                            covered,
-                            fully_indexed,
-                            unsupported,
-                            matches.clone(),
-                        );
-                        let complete = fully_indexed && unsupported == 0;
-                        let expected = if !authorized {
-                            Inventory::AccessLimited
-                        } else if covered != Some(&snapshot) {
-                            Inventory::Incomplete
-                        } else if !matches.is_empty() {
-                            Inventory::Present { matches, complete }
-                        } else if complete {
-                            Inventory::AbsentAtSnapshot {
-                                snapshot: snapshot.clone(),
-                            }
-                        } else {
-                            Inventory::Incomplete
-                        };
-                        assert_eq!(result, expected);
-                    }
+    for row in fixtures()["inventory"].as_array().unwrap() {
+        let covered = match row[1].as_str() {
+            Some("same") => Some(&snapshot),
+            Some("other") => Some(&other),
+            _ => None,
+        };
+        let result = evidence::inventory(
+            row[0].as_bool().unwrap(),
+            &snapshot,
+            covered,
+            row[2].as_bool().unwrap(),
+            row[3].as_u64().unwrap() as usize,
+            if row[4].as_bool().unwrap() {
+                vec![matched.clone()]
+            } else {
+                vec![]
+            },
+        );
+        let label = match &result {
+            Inventory::AccessLimited => "access-limited",
+            Inventory::Incomplete => "incomplete",
+            Inventory::Present { matches, complete } => {
+                assert_eq!(matches, &vec![matched.clone()]);
+                if *complete {
+                    "present-complete"
+                } else {
+                    "present-incomplete"
                 }
             }
-        }
+            Inventory::AbsentAtSnapshot { snapshot: actual } => {
+                assert_eq!(actual, &snapshot);
+                "absent-at-snapshot"
+            }
+        };
+        assert_eq!(label, row[6].as_str().unwrap(), "{row}");
+        // row[5] is displayExcluded: intentionally not input to source inventory.
     }
 }
 
@@ -202,24 +216,21 @@ fn inventory_distinguishes_absence_withholding_and_incomplete_coverage() {
 fn retry_decisions_do_not_depend_on_view_trust_or_subject_existence() {
     let candidate = record(&value("manifest")).cid().clone();
     let conflict = record(&value("second-batch")).cid().clone();
-    for prior in [None, Some(&candidate), Some(&conflict)] {
-        assert_eq!(
-            evidence::operation(false, prior, &candidate),
-            Operation::Unauthorized
-        );
+    for row in fixtures()["operations"].as_array().unwrap() {
+        let prior = match row[1].as_str() {
+            Some("same") => Some(&candidate),
+            Some("other") => Some(&conflict),
+            _ => None,
+        };
+        let result = evidence::operation(row[0].as_bool().unwrap(), prior, &candidate);
+        let label = match result {
+            Operation::Unauthorized => "unauthorized",
+            Operation::Duplicate => "duplicate",
+            Operation::Conflict => "conflict",
+            Operation::NewOperation => "new",
+        };
+        assert_eq!(label, row[2].as_str().unwrap());
     }
-    assert_eq!(
-        evidence::operation(true, None, &candidate),
-        Operation::NewOperation
-    );
-    assert_eq!(
-        evidence::operation(true, Some(&candidate), &candidate),
-        Operation::Duplicate
-    );
-    assert_eq!(
-        evidence::operation(true, Some(&conflict), &candidate),
-        Operation::Conflict
-    );
     // These APIs have no display-exclusion parameter. This demonstrates the
     // pure boundary, not an end-to-end append regression against a real store.
     assert_eq!(
@@ -228,4 +239,33 @@ fn retry_decisions_do_not_depend_on_view_trust_or_subject_existence() {
             snapshot: candidate
         }
     );
+}
+
+#[test]
+fn exact_encoded_size_boundary() {
+    let mut envelope = ipld(&value("unknown-version"));
+    let Ipld::Map(ref mut root) = envelope else {
+        unreachable!()
+    };
+    let Ipld::Map(body) = root.get_mut("body").unwrap() else {
+        unreachable!()
+    };
+    body.insert("future".into(), Ipld::Bytes(vec![0; 65_000]));
+    let overhead = atproto_dasl::to_vec(&envelope).unwrap().len() - 65_000;
+    for extra in [0, 1] {
+        let Ipld::Map(ref mut root) = envelope else {
+            unreachable!()
+        };
+        let Ipld::Map(body) = root.get_mut("body").unwrap() else {
+            unreachable!()
+        };
+        body.insert(
+            "future".into(),
+            Ipld::Bytes(vec![0; evidence::MAX_RECORD_BYTES - overhead + extra]),
+        );
+        let raw = atproto_dasl::to_vec(&envelope).unwrap();
+        assert_eq!(raw.len(), evidence::MAX_RECORD_BYTES + extra);
+        assert_eq!(evidence::decode(&raw).is_ok(), extra == 0);
+        assert_eq!(evidence::encode(&envelope).is_ok(), extra == 0);
+    }
 }

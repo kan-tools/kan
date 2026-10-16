@@ -13,6 +13,10 @@ Implement the bounded P2 format slice of `.design/kan-v2-buildout.md`: a draft R
 - REQ-5: Bind receipt statements to their exact manifest and distinguish structural conformance from signature verification, admission, durable commit, backup and decryption.
 - REQ-6: Preserve a bounded implementation and review sequence: no production persistence until P3 and no production cryptographic profile until P4 resolves key custody.
 
+## Review status
+
+The first cold review returned BLOCK: the original byte/link decoder and oracle were not conformant despite passing their initial vectors. The historical checks below are retained as execution records, not approval. `.design/kan-v2-contract-review-fixes.md` records the corrections and their fresh round-3 APPROVE WITH FOLLOW-UPS at bc24e2b, including remaining conformance/identity-profile work.
+
 ## Acceptance Criteria
 
 The checked criteria below have local executable evidence listed after the criteria. They prove only the pure contract boundary; CI and independent review remain separate.

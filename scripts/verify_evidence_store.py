@@ -5,10 +5,16 @@ No Rust invocation, trust-filtered CLI inventory, or database writes. Operate on
 an online-backup snapshot, not a live WAL file copied without its WAL.
 """
 import json
+import base64
 import sqlite3
 import sys
 from pathlib import Path
-from evidence_reference import cid, decode
+from evidence_reference import cid, cid_bytes, decode, Link
+
+
+def link_text(value):
+    assert isinstance(value, Link)
+    return 'b' + base64.b32encode(value.raw).decode().lower().rstrip('=')
 
 
 def verify(path):
@@ -31,27 +37,28 @@ def verify(path):
         m, r = decode(raw), decode(receipt)
         assert (m['v'], m['kind'], r['v'], r['kind']) == (1, 'manifest', 1, 'receipt')
         m, r = m['body'], r['body']
-        assert r['manifest'] == {'$link': identity}
+        assert r['manifest'] == Link(cid_bytes(identity))
         assert all(r[k] == m[k] for k in ('scopeToken', 'operation', 'position'))
         assert r['durability'] == 'remote-durable'
-        assert bytes.fromhex(m['scopeToken']['$bytes']) == scope
+        assert m['scopeToken'] == scope
         assert m['writer']['principal'] == writer
-        assert bytes.fromhex(m['operation']['$bytes']) == operation
+        assert m['operation'] == operation
         assert m['position'] == position
-        assert m['previous'] == (None if previous is None else {'$link': previous})
+        assert m['previous'] == (None if previous is None else Link(cid_bytes(previous)))
         prior = db.execute('select cid from commits where scope=? and writer=? and position=? and sequence<?', (scope, writer, position-1, sequence)).fetchone()
         assert prior == (None if position == 0 else (previous,))
         for e in m['entries']:
-            binding = db.execute('select ciphertext,length from bindings where scope=? and writer=? and slot=?', (scope, writer, bytes.fromhex(e['slot']['$bytes']))).fetchone()
-            assert binding == (e['ciphertext']['$link'], e['length'])
+            binding = db.execute('select b.ciphertext,b.length,c.sequence from bindings b join commits c on c.cid=b.first_manifest where b.scope=? and b.writer=? and b.slot=?', (scope, writer, e['slot'])).fetchone()
+            assert binding is not None and binding[:2] == (link_text(e['ciphertext']), e['length'])
+            assert binding[2] <= sequence
             obj = db.execute('select bytes from objects where cid=?', (binding[0],)).fetchone()
             assert obj is not None and len(obj[0]) == e['length'] and cid(obj[0],0x55) == binding[0]
         commits += 1
     for scope, writer, slot, obj, length, first in db.execute('select * from bindings'):
         raw, = db.execute('select manifest from commits where cid=?', (first,)).fetchone()
         m = decode(raw)['body']
-        assert bytes.fromhex(m['scopeToken']['$bytes']) == scope and m['writer']['principal'] == writer
-        assert any(bytes.fromhex(e['slot']['$bytes']) == slot and e['ciphertext']['$link'] == obj and e['length'] == length for e in m['entries'])
+        assert m['scopeToken'] == scope and m['writer']['principal'] == writer
+        assert any(e['slot'] == slot and link_text(e['ciphertext']) == obj and e['length'] == length for e in m['entries'])
     db.close()
     return {'objects': objects, 'commits': commits, 'bytes': total}
 

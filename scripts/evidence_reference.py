@@ -10,7 +10,11 @@ import base64
 import copy
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
+
+if not __debug__:
+    raise RuntimeError('evidence verification requires Python assertions enabled')
 
 FIXTURE = Path(__file__).resolve().parents[1] / 'tests/fixtures/evidence-v1/vectors.json'
 
@@ -38,7 +42,31 @@ def head(major, n):
     raise ValueError('integer too large')
 
 
+@dataclass(frozen=True)
+class Link:
+    raw: bytes
+
+
+def from_fixture(value):
+    if isinstance(value, list):
+        return [from_fixture(v) for v in value]
+    if isinstance(value, dict):
+        if set(value) == {'$bytes'}:
+            return bytes.fromhex(value['$bytes'])
+        if set(value) == {'$link'}:
+            return Link(cid_bytes(value['$link']))
+        if set(value) == {'$map'}:
+            return {k: from_fixture(v) for k, v in value['$map'].items()}
+        return {k: from_fixture(v) for k, v in value.items()}
+    return value
+
+
 def encode(value):
+    """Encode explicit JSON fixture notation, not decoded values."""
+    return encode_value(from_fixture(value))
+
+
+def encode_value(value):
     if value is None:
         return b'\xf6'
     if isinstance(value, bool):
@@ -48,21 +76,52 @@ def encode(value):
     if isinstance(value, str):
         raw = value.encode()
         return head(3, len(raw)) + raw
+    if isinstance(value, bytes):
+        return head(2, len(value)) + value
+    if isinstance(value, Link):
+        raw = b'\x00' + value.raw
+        return b'\xd8\x2a' + head(2, len(raw)) + raw
     if isinstance(value, list):
-        return head(4, len(value)) + b''.join(map(encode, value))
+        return head(4, len(value)) + b''.join(map(encode_value, value))
     if isinstance(value, dict):
-        if set(value) == {'$bytes'}:
-            raw = bytes.fromhex(value['$bytes'])
-            return head(2, len(raw)) + raw
-        if set(value) == {'$link'}:
-            raw = b'\x00' + cid_bytes(value['$link'])
-            return b'\xd8\x2a' + head(2, len(raw)) + raw
-        pairs = sorted((encode(k), encode(v)) for k, v in value.items())
+        pairs = sorted((encode_value(k), encode_value(v)) for k, v in value.items())
         return head(5, len(pairs)) + b''.join(k + v for k, v in pairs)
     raise ValueError('unsupported value')
 
 
+def validate_cid(raw):
+    """Canonical CIDv0 or CIDv1, u64 varints, multihash digest <= 64 bytes."""
+    if len(raw) == 34 and raw[:2] == b'\x12\x20':
+        return
+    pos = 0
+
+    def varint():
+        nonlocal pos
+        value = 0
+        for i in range(10):
+            if pos == len(raw):
+                raise ValueError('truncated CID varint')
+            b = raw[pos]
+            pos += 1
+            value |= (b & 127) << (7*i)
+            if b < 128:
+                if (i and b == 0) or value >= 2**64:
+                    raise ValueError('nonminimal/overflow CID varint')
+                return value
+        raise ValueError('CID varint overflow')
+
+    if varint() != 1:
+        raise ValueError('CID version')
+    varint()  # codec
+    varint()  # multihash code
+    size = varint()
+    if size > 64 or len(raw)-pos != size:
+        raise ValueError('CID digest length/trailing bytes')
+
+
 def decode(raw):
+    if len(raw) > 65536:
+        raise ValueError("record too large")
     pos = 0
 
     def take(n):
@@ -92,12 +151,10 @@ def decode(raw):
                 raise ValueError('nonminimal')
         else:
             raise ValueError('indefinite/reserved')
-        if major == 0:
+        if major == 0 and n <= 2**53-1:
             return n
-        if major == 1:
-            return -1-n
         if major == 2:
-            return blob(take(n))
+            return take(n)
         if major == 3:
             return take(n).decode('utf8')
         if major == 4:
@@ -118,13 +175,13 @@ def decode(raw):
                 result[k] = item(depth+1)
             return result
         if major == 6 and n == 42:
+            if pos == len(raw) or raw[pos] >> 5 != 2:
+                raise ValueError("CID tag requires immediate byte string")
             b = item(depth)
-            if not isinstance(b, dict) or set(b) != {'$bytes'}:
+            if not isinstance(b, bytes) or not b or b[0] != 0:
                 raise ValueError('invalid CID tag payload')
-            b = bytes.fromhex(b['$bytes'])
-            if len(b) != 37 or b[0] != 0 or b[1] != 1 or b[2] not in (0x55, 0x71) or b[3:5] != b'\x12\x20':
-                raise ValueError('CID outside vector profile')
-            return link('b' + base64.b32encode(b[1:]).decode().lower().rstrip('='))
+            validate_cid(b[1:])
+            return Link(b[1:])
         raise ValueError('unsupported tag/type')
 
     value = item()
@@ -153,7 +210,7 @@ def fixtures():
 
     def add(name, value, supported=True):
         raw = encode(value)
-        assert decode(raw) == value
+        assert same_value(decode(raw), from_fixture(value))
         c = cid(raw)
         row = {'name': name, 'value': value, 'hex': raw.hex(), 'cid': c, 'supported': supported}
         if supported:
@@ -177,16 +234,64 @@ def fixtures():
     for _ in range(30):
         nested = [nested]
     add('unknown-at-depth-boundary', {'v': 1, 'kind': 'future', 'body': {'nested': nested, 'maximum': 2**53-1}}, False)
+    prefix = b'\x00\x01\x55\x12\x00'
+    for name, source, field, size in [
+        ('cid-shaped-stream', capture, 'stream', 16),
+        ('cid-shaped-operation', manifest, 'operation', 16),
+        ('cid-shaped-scope-token', manifest, 'scopeToken', 32),
+        ('cid-shaped-receipt-scope', receipt, 'scopeToken', 32),
+        ('cid-shaped-receipt-operation', receipt, 'operation', 16),
+    ]:
+        v = copy.deepcopy(source)
+        v['body'][field] = blob(prefix + b'\x04'*(size-len(prefix)))
+        add(name, v)
+    v = copy.deepcopy(manifest)
+    v['body']['entries'][0]['slot'] = blob(prefix + b'\x05'*27)
+    add('cid-shaped-slot', v)
+    v = copy.deepcopy(capture)
+    v['body']['payloads'][0]['sha256'] = blob(prefix + b'\x09'*27)
+    add('cid-shaped-payload-hash', v)
+    for name, raw_cid in [
+        ('cidv0', b'\x12\x20' + b'\x01'*32),
+        ('dag-pb', b'\x01\x70\x12\x20' + b'\x02'*32),
+        ('sha512', b'\x01\x71\x13\x40' + b'\x03'*64),
+        ('blake3', b'\x01\x55\x1e\x20' + b'\x04'*32),
+    ]:
+        spelling = 'b' + base64.b32encode(raw_cid).decode().lower().rstrip('=')
+        add('unknown-' + name, {'v': 2, 'kind': 'future', 'body': {'link': link(spelling)}}, False)
+    add('literal-sentinel-maps', {'v': 2, 'kind': 'future', 'body': {
+        'bytes-map': {'$map': {'$bytes': '0001'}},
+        'link-map': {'$map': {'$link': cid(b'example')}}}}, False)
+    add('unknown-nested-cid-shaped-bytes', {'v': 2, 'kind': 'future', 'body': {'nested': [blob(prefix+b'\x01'*32)]}}, False)
+    dynamic_authors = []
+    for method, kind, state in [('web', 'documentCid', cid(b'document', 0x55)), ('kan', 'event', cid(b'identity-event'))]:
+        principal = 'did:web:example.com' if method == 'web' else 'did:kan:zExample'
+        dynamic = {'principal': principal, 'verificationMethod': principal+'#k', 'identityVersion': {'kind': kind, 'value': link(state)}}
+        dynamic_authors.append((method, dynamic, state))
+        for role, source in [('observer', capture), ('writer', manifest), ('issuer', receipt)]:
+            v = copy.deepcopy(source)
+            v['body'][role] = dynamic
+            add(method+'-'+role+'-linked-state', v)
     negatives = []
 
     def bad(name, value):
-        negatives.append({'name': name, 'hex': encode(value).hex(), 'class': 'schema'})
+        negatives.append({'name': name, 'hex': encode(value).hex(), 'class': 'canonical' if name in ('negative-sequence', 'unsafe-integer', 'unknown-negative', 'unknown-unsafe') else 'schema'})
 
     def changed(name, source, field, value):
         v = copy.deepcopy(source)
         v['body'][field] = value
         bad(name, v)
 
+    for method, dynamic, state in dynamic_authors:
+        for role, source in [('observer', capture), ('writer', manifest), ('issuer', receipt)]:
+            for suffix, tail in [('exact', b''), ('trailing', b'\x00')]:
+                bad_author = copy.deepcopy(dynamic)
+                bad_author['identityVersion']['value'] = blob(b'\x00'+cid_bytes(state)+tail)
+                changed(method+'-'+role+'-bytes-state-'+suffix, source, role, bad_author)
+    bad('unknown-negative' , {'v': 2, 'kind': 'future', 'body': {'n': -1}})
+    bad('unknown-unsafe', {'v': 2, 'kind': 'future', 'body': {'n': 2**53}})
+    changed('bad-writer', manifest, 'writer', dict(author, verificationMethod='did:key:other#other'))
+    changed('bad-issuer', receipt, 'issuer', dict(author, verificationMethod='did:key:other#other'))
     bad('version-zero', {'v': 0, 'kind': 'capture', 'body': {}})
     bad('unknown-envelope-field', dict(capture, extra=True))
     bad('invalid-kind-token', {'v': 2, 'kind': 'Future', 'body': {}})
@@ -231,18 +336,59 @@ def fixtures():
         'invalid-utf8': bytes.fromhex('61ff'),
         'too-many-containers': encode({'v': 2, 'kind': 'future', 'body': {'nested': [nested]}}),
     }
+    cid_payload = b'\x00' + cid_bytes(cid(b'tag probe'))
+    literal = encode_value({'$bytes': cid_payload.hex()})
+    malformed['tagged-literal-bytes-map'] = b'\xd8\x2a' + literal
+    for name, payload in [
+        ('trailing-cid', cid_payload+b'\x00'),
+        ('nonminimal-cid', b'\x00\x81\x00'+cid_payload[2:]),
+        ('missing-cid-prefix', cid_payload[1:]),
+    ]:
+        malformed[name] = b'\xd8\x2a' + head(2, len(payload)) + payload
     for name, raw in malformed.items():
         negatives.append({'name': name, 'hex': raw.hex(), 'class': 'canonical'})
-    return {'profile': 'experimental-rfc4-v1', 'positive': positive, 'negative': negatives}
+    # Independently pinned examples from the RFC decision table. Trust exclusions
+    # describe a downstream display; they do not change source inventory.
+    inventory = [
+        [False, 'same', True, 0, True, 0, 'access-limited'],
+        [False, None, False, 2, False, 2, 'access-limited'],
+        [True, None, True, 0, True, 0, 'incomplete'],
+        [True, 'other', True, 0, True, 0, 'incomplete'],
+        [True, 'same', False, 0, False, 0, 'incomplete'],
+        [True, 'same', True, 2, False, 0, 'incomplete'],
+        [True, 'same', False, 0, True, 0, 'present-incomplete'],
+        [True, 'same', True, 2, True, 0, 'present-incomplete'],
+        [True, 'same', True, 0, True, 0, 'present-complete'],
+        [True, 'same', True, 0, True, 2, 'present-complete'],
+        [True, 'same', True, 0, False, 0, 'absent-at-snapshot'],
+        [True, 'same', True, 0, False, 2, 'absent-at-snapshot'],
+    ]
+    operations = [[False, None, 'unauthorized'], [False, 'same', 'unauthorized'],
+                  [False, 'other', 'unauthorized'], [True, None, 'new'],
+                  [True, 'same', 'duplicate'], [True, 'other', 'conflict']]
+    return {'profile': 'experimental-rfc4-v1', 'positive': positive, 'negative': negatives,
+            'inventoryColumns': ['authorized', 'covered', 'fullyIndexed', 'unsupported', 'hasMatch', 'displayExcluded', 'result'],
+            'inventory': inventory, 'operationColumns': ['admitted', 'existing', 'result'], 'operations': operations}
+
+
+def same_value(left, right):
+    """IPLD/fixture equality must not equate Python bool, int and float."""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(same_value(left[k], right[k]) for k in left)
+    if isinstance(left, list):
+        return len(left) == len(right) and all(same_value(a, b) for a, b in zip(left, right))
+    return left == right
 
 
 def check(data):
     expected = fixtures()
-    if data != expected:
+    if not same_value(data, expected):
         raise ValueError('pinned vectors differ from independent oracle')
     for vector in data['positive']:
         raw = bytes.fromhex(vector['hex'])
-        if decode(raw) != vector['value'] or cid(raw) != vector['cid']:
+        if not same_value(decode(raw), from_fixture(vector['value'])) or cid(raw) != vector['cid']:
             raise ValueError('byte/CID mismatch')
     for vector in data['negative']:
         if vector['class'] == 'canonical':
@@ -251,9 +397,38 @@ def check(data):
             except (ValueError, UnicodeError):
                 continue
             raise ValueError('decoder accepted ' + vector['name'])
+        else:
+            decode(bytes.fromhex(vector['hex']))  # schema-invalid must still be canonical
 
 
 def self_test():
+    assert not same_value(True, 1) and not same_value(1.0, 1)
+    assert not same_value({'x': [True]}, {'x': [1]})
+    altered = fixtures()
+    altered['positive'][0]['value']['body']['coverage']['complete'] = 1
+    try:
+        check(altered)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('oracle missed bool/integer fixture substitution')
+    probe = {'v': 2, 'kind': 'future', 'body': {'bytes': b'x'*65000}}
+    overhead = len(encode_value(probe))-65000
+    for size in (65536, 65537):
+        probe['body']['bytes'] = b'x'*(size-overhead)
+        raw = encode_value(probe)
+        assert len(raw) == size
+        try:
+            decode(raw)
+        except ValueError:
+            assert size == 65537
+        else:
+            assert size == 65536
+    actual_link = Link(cid_bytes(cid(b'type control')))
+    for value in (b'\x00\x01\x55\x12\x00', actual_link,
+                  {'$bytes': '0001551200'}, {'$link': cid(b'type control')}):
+        assert decode(encode_value(value)) == value
+    assert decode(encode_value(actual_link)) != decode(encode_value({'$link': cid(b'type control')}))
     data = fixtures()
     data['positive'][0]['cid'] = cid(b'wrong')
     try:
