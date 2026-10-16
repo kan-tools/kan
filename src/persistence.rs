@@ -31,6 +31,8 @@ pub enum SurfaceWrite {
     GitTree,
     Overlay,
     Sqlite,
+    EvidenceArchive,
+    EvidenceBackup,
     Count,
 }
 
@@ -55,6 +57,8 @@ impl SurfaceWrite {
         Self::GitTree,
         Self::Overlay,
         Self::Sqlite,
+        Self::EvidenceArchive,
+        Self::EvidenceBackup,
     ];
 
     /// Catalog artifacts a capability is permitted to mutate. This match is
@@ -111,6 +115,16 @@ impl SurfaceWrite {
                 "overlay:LOCK",
             ],
             Self::Sqlite => &["sqlite:meta"],
+            Self::EvidenceArchive => &[
+                "evidence-db:archive.sqlite",
+                "evidence-db:archive.sqlite-wal",
+                "evidence-db:archive.sqlite-journal",
+                "evidence-db:archive.sqlite-shm",
+            ],
+            Self::EvidenceBackup => &[
+                "evidence-backup:archive.sqlite",
+                "evidence-backup:archive.sqlite-journal",
+            ],
             Self::Count => &[],
         }
     }

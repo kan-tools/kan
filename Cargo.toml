@@ -21,6 +21,7 @@ categories = ["command-line-utilities", "development-tools"]
 [features]
 # Draft RFC 4 reference API. No production caller or stable wire promise.
 evidence-contract = []
+v2-storage = ["evidence-contract", "rusqlite/backup"]
 
 [dependencies]
 atproto-dasl = "0.14.5"

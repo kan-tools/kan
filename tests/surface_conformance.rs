@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    ("opaque-evidence-store", "tests/evidence_store.rs"),
     ("claim-log", "tests/claim_substrate.rs"),
     ("current-root", "tests/log_recovery.rs"),
     ("atomic-head-replacement", "tests/log_concurrency.rs"),
@@ -54,6 +55,11 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("connection-config", ".design/medium-architecture.md"),
 ];
 const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
+    (
+        "src/evidence_store.rs",
+        "\"archive.sqlite\"",
+        "evidence-db:archive.sqlite",
+    ),
     ("src/actions.rs", "\".kan\"", "workspace persistence root"),
     ("src/actions.rs", "\"identity\"", "identity:identity"),
     (
@@ -328,6 +334,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", "\"; \"", "not a path"),
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
+    "src/evidence_store.rs",
     "src/actions.rs",
     "src/identity/ledger.rs",
     "src/identity/scope_store.rs",
@@ -341,6 +348,30 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_store.rs",
+        "create_dir_all",
+        "EvidenceArchive",
+        1,
+    ),
+    (
+        "src/evidence_store.rs",
+        "set_permissions",
+        "EvidenceArchive",
+        1,
+    ),
+    (
+        "src/evidence_store.rs",
+        "write_new_owner_only",
+        "EvidenceArchive",
+        1,
+    ),
+    (
+        "src/evidence_store.rs",
+        "write_new_owner_only",
+        "EvidenceBackup",
+        1,
+    ),
     ("src/actions.rs", "create_dir_all", "Container", 1),
     ("src/actions.rs", "remove_file", "IdentityKeyMaterial", 1),
     ("src/actions.rs", "remove_file", "IdentityPointer", 2),
@@ -566,6 +597,7 @@ fn implemented_values() -> BTreeSet<(String, String)> {
         .chain(kan::identity::scope_store::SURFACE_VALUES)
         .chain(kan::identity::system::SURFACE_VALUES)
         .chain(kan::identity::transport::SURFACE_VALUES)
+        .chain(kan::surface::EVIDENCE_VALUES)
         .map(|SurfaceValue { artifact, value }| ((*artifact).into(), (*value).into()));
     declared.chain(sqlite_values()).collect()
 }
@@ -614,7 +646,8 @@ fn catalog_is_well_formed_and_cites_real_designs() {
                 "repository-transport",
                 "external-git",
                 "overlay",
-                "sqlite-index"
+                "sqlite-index",
+                "evidence-store"
             ]
             .contains(&row.source),
             "{row:?}"
@@ -1051,7 +1084,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "3b694ec7ccaae4bb74d2778d1e578afb59716766d5fded72c9be009f5e5a68e1",
+                "8696793aecb2ab156881bff5c4dbe94eecec1b4611c5e328ea17ceed3e9d972d",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(
