@@ -164,6 +164,14 @@ Do not expand these into a general platform rewrite before proving the first sto
 
 ### 8. Review and completion discipline
 
+Standing operator instruction (2026-10-16): every v2 implementation build point receives a fresh independent review through Claude Code using Opus 5.5, pinned as `claude-opus-5-5`. This includes the contract, storage, migration and subsequent service/capture/operations slices. The operator has authorized these reviews as the standard workflow; do not ask again at each slice. This instruction is scoped to the v2 build, not a global model preference.
+
+Start a new reviewer session with no resumed/forked implementation conversation or author memory. Give it the relevant designs, recorded teloi with read limitations, repository rules and exact base/head commits. The reviewer inspects the implementation and runs its own checks, following the day adversarial-review protocol; it does not implement its findings. Record the actual model, commit range, commands/results, requirement coverage, findings and one hard verdict. Retain the raw report separately from the author's response. A failed or unavailable review, a different-model fallback, or an unverified model identity leaves this gate pending; never silently substitute another model or label an author's self-review independent.
+
+Fixes after BLOCK or REDIRECT receive a new cold review of the corrected commits, with regression evidence and negative controls where applicable. A previous verdict does not cover later material code changes. Reviews gate milestone completion and merge recommendation; drafting a PR and independent work on other slices can continue. This is a development review convention, not a runtime enforcement hook or authorization to merge, deploy, change global Claude settings, or upload private source archives.
+
+Give each worktree its own `CARGO_TARGET_DIR`, including for parallel reviews. Sharing a target directory across these same-name/version branches caused Cargo/Clippy to reuse another worktree's library metadata during the first review round; a passing or failing command under that setup can describe the wrong branch. Recheck affected evidence in isolation, retain the environment limitation in the report, and budget disk space before starting duplicate full builds. A report's verdict and the author's disposition of its findings are separate records; approval of a bounded slice does not mark its broader parent acceptance criteria complete.
+
 The existing `.github/workflows/ci.yml` runs citation checks, Rust build/test/lint, an MSRV build, and other repository checks. For the documentation stack, run the design linter, whitespace checks, and existing citation checker, and report remote CI separately. Do not claim the local Rust suite was run for documentation-only edits.
 
 For implementation slices, preserve and extend `tests/surface_conformance.rs`, the migration fixtures, and URI/identity fixtures. Bind the parent AC's named intent witnesses to actual test symbols when implemented. Include fault cases and independent oracles; a test that only round-trips through the same implementation cannot establish wire conformance. A defect fix includes a negative-control result demonstrating that its test detects the defect.
@@ -177,6 +185,7 @@ The work targets the existing raw-data-and-projections, performance-at-scale, an
 - RQ-1: The user requested a draft architecture PR followed by a new permanent worktree/branch based on the design branch, with merges planned in sequence. P0 and P1 form that stack; neither is merged by this pass.
 - RQ-2: Continue documentation toward implementation on the child branch while preserving the architecture proposal as its own reviewable parent. The local-repository migration tool remains part of MVP completion.
 - RQ-3: The two claims underlying the current partial-trust refusal were identified by a read including their authors: both concern design/rfc-2 and neither is an existing v2-design record. This diagnosis does not change default trust settings or claim a repair to day.
+- RQ-4: Fresh independent Claude Code reviews with Opus 5.5 are standard for v2 build points and subsequent blocking-fix rounds, under standing user authorization.
 
 ## Open Questions
 
