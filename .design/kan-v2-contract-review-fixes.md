@@ -13,10 +13,10 @@ Close the first P2 cold review's blocking byte/link confusion before extending s
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Python and Rust accept CID-shaped byte strings in every opaque field and retain exact bytes, while malformed tagged values and trailing/nonminimal CID bytes fail. Reverting the Rust decoding fix fails a new regression test. (REQ-1, REQ-2)
-- [ ] AC-2: Both independently reject canonical-invalid fixtures with the same class; schema validation remains Rust's explicit responsibility. Invalid observer/writer/issuer, unknown-record unsafe scalars, and valid records at and beyond 65536 bytes are covered. (REQ-3)
-- [ ] AC-3: Pinned inventory/operation vectors exercise withholding, mismatched/unknown coverage, unsupported evidence and conflicts independently of display trust; these remain pure models. (REQ-3)
-- [ ] AC-4: RFC distinguishes a scope snapshot from a single writer manifest; parent dependencies and first review disposition are recorded. Fresh Claude Code claude-opus-5-5 review judges this exact round. (REQ-4)
+- [x] AC-1: Python and Rust accept CID-shaped byte strings in every opaque field and retain exact bytes, while malformed tagged values and trailing/nonminimal CID bytes fail. Reverting the Rust decoding fix fails a new regression test. (REQ-1, REQ-2)
+- [x] AC-2: Both independently reject canonical-invalid fixtures with the same class; schema validation remains Rust's explicit responsibility. Invalid observer/writer/issuer, unknown-record unsafe scalars, and valid records at and beyond 65536 bytes are covered. (REQ-3)
+- [x] AC-3: Pinned inventory/operation vectors exercise withholding, mismatched/unknown coverage, unsupported evidence and conflicts independently of display trust; these remain pure models. (REQ-3)
+- [x] AC-4: RFC distinguishes a scope snapshot from a single writer manifest; parent dependencies and first review disposition are recorded. Fresh Claude Code claude-opus-5-5 review judges this exact round. (REQ-4)
 
 ## Architecture
 
@@ -45,3 +45,11 @@ AC-1 additionally requires did:web and did:kan identity-state byte-vs-link negat
 The round-2 reviewer independently ran both builds, seven feature tests, the full default suite, both lints, format and citation checks successfully. Ad-hoc probes were denied by its tool policy, so M1 was explicitly inferred. Private teloi and previous reports were excluded after automatic approval review rejected sending those private inputs; the successful review used published repository source only and disclosed that limitation.
 
 Round-3 local evidence: the new did:web observer byte-state fixture was accepted by the old Author path, reproducing M1 (test exit 101). After typed construction, 27 positive and 58 negative vectors and all seven tests pass. All five negative controls fail under the broken behavior and pass after restoration, including restoration of the old Author decoder. Both scripts explicitly refuse `python3 -O` before mutation or success output. Type-sensitive comparison rejects a pinned bool-to-integer substitution. Python now also confirms schema-invalid vectors remain canonical. Feature Clippy, formatting and whitespace checks pass; the fresh round-3 verdict remains pending.
+
+## Current review outcome
+
+Fresh Claude Code `claude-opus-5-5` round 3 returned **APPROVE WITH FOLLOW-UPS** for 5559796..bc24e2b. Session: `83cc0d29-0542-4af0-b0c0-bd8e02ff822e`. The unedited local report is `.local-state/reviews/contract-round-3-report.md`, SHA-256 `6a4586669484e7b22e16f99f4c5fc943738289f7d28be96b112d6c47df5ad521`. Model identity is confirmed by the CLI init and final model-usage metadata. This documentation update changes no reviewed implementation.
+
+The reviewer independently passed feature/default builds, the seven feature tests, 27/58 Python vectors, the full default suite, both lints, formatting and whitespace checks. It executed the oracle's optimized-mode refusal. Scratch probes and environment-prefixed shell commands were denied by its tool policy; negative-control execution was excluded because that runner mutates tracked source. The author's five negative controls and both optimized-mode refusals are separately recorded above, not misrepresented as independent execution. Private teloi were excluded; the review measured the published design and disclosed the limitation.
+
+Nonblocking follow-ups: add complete-CID (no trailing padding) opaque-field fixtures in the next conformance round; enforce RFC 1's method-specific identity-state CID/text profiles at P4 admission, with explicit negative fixtures before production use. Current Author validation is syntactic and does not establish those resolver profiles, signature validity or authority. This does not waive the RFC 1 requirement or change v1 behavior. The storage branch has now made the typed Python API adaptation and is under its own fresh review. Broader P2 parent requirements remain partial as documented in the buildout plan.
