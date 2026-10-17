@@ -51,7 +51,7 @@ def main():
          'evidence_store', 'recovery_large_rows_hit_sqlite_limit_before_materialization'),
         ('unsafe-object-index-seek', original.replace('FROM objects NOT INDEXED WHERE +cid=?', 'FROM objects WHERE cid=?'),
          'evidence_store', 'recovery_large_rows_hit_sqlite_limit_before_materialization'),
-        ('no-sidecar-namespace-guard', original.replace('let destination = recovery_destination(&self.source, destination)?;', 'let destination = destination.to_path_buf();'),
+        ('no-sidecar-namespace-guard', original.replace('let destination = sqlite_destination(&self.source, destination)?;', 'let destination = destination.to_path_buf();'),
          'evidence_store', 'recovery_rejects_overlapping_sqlite_namespaces_and_existing_sidecars'),
     ]
     try:

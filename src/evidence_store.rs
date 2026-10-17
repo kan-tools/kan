@@ -106,6 +106,21 @@ pub enum RecoveryBoundary {
     Committed,
 }
 
+/// Fault harness boundaries; observers do not establish durability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InitializationBoundary {
+    FileCreated,
+    SchemaWritten,
+    SchemaCommitted,
+    Ready,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackupBoundary {
+    Copied,
+    Normalized,
+}
+
 // Bound SQLite's own value/row materialization, not just returned Rust buffers.
 // Legitimate objects need 4 MiB plus their key; manifest rows are much smaller.
 const RECOVERY_SQLITE_LENGTH_LIMIT: i32 = (MAX_CHUNK * 2) as i32;
@@ -214,7 +229,7 @@ impl RecoveryReader {
         destination: &Path,
         observe: &mut dyn FnMut(RecoveryBoundary),
     ) -> Result<Verification> {
-        let destination = recovery_destination(&self.source, destination)?;
+        let destination = sqlite_destination(&self.source, destination)?;
         // surface-write: evidence-recovery:archive.sqlite
         crate::persistence::write_new_owner_only(
             crate::persistence::SurfaceWrite::EvidenceRecovery,
@@ -321,7 +336,7 @@ fn same_existing_file(a: &Path, b: &Path) -> bool {
     }
 }
 
-fn recovery_destination(source: &Path, destination: &Path) -> Result<PathBuf> {
+fn sqlite_destination(source: &Path, destination: &Path) -> Result<PathBuf> {
     let parent = std::fs::canonicalize(parent_directory(destination))?;
     let name = destination
         .file_name()
@@ -338,9 +353,7 @@ fn recovery_destination(source: &Path, destination: &Path) -> Result<PathBuf> {
                 .eq_ignore_ascii_case(source.as_os_str().as_encoded_bytes())
         })
     }) {
-        return Err(Error::Invalid(
-            "recovery destination overlaps source SQLite files",
-        ));
+        return Err(Error::Invalid("destination overlaps source SQLite files"));
     }
     // Resolve an existing base through filesystem aliases (including Unicode
     // spelling/case aliases on macOS and hard links on Unix), before a sidecar
@@ -353,26 +366,25 @@ fn recovery_destination(source: &Path, destination: &Path) -> Result<PathBuf> {
             {
                 let base = parent.join(&name[..name.len() - suffix.len()]);
                 if same_existing_file(&base, source) {
-                    return Err(Error::Invalid(
-                        "recovery destination aliases source SQLite sidecar",
-                    ));
+                    return Err(Error::Invalid("destination aliases source SQLite sidecar"));
                 }
             }
         }
     }
+    unused_sqlite_sidecars(&destination)?;
+    Ok(destination)
+}
+
+fn unused_sqlite_sidecars(destination: &Path) -> Result<()> {
     // A new main filename alone is insufficient: SQLite owns these sibling names.
-    for path in target_paths.iter().skip(1) {
+    for path in sqlite_paths(destination).iter().skip(1) {
         match std::fs::symlink_metadata(path) {
-            Ok(_) => {
-                return Err(Error::Invalid(
-                    "recovery destination SQLite sidecar already exists",
-                ))
-            }
+            Ok(_) => return Err(Error::Invalid("destination SQLite sidecar already exists")),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.into()),
         }
     }
-    Ok(destination)
+    Ok(())
 }
 
 pub fn ciphertext_cid(bytes: &[u8]) -> Cid {
@@ -465,6 +477,13 @@ fn configure(conn: &Connection) -> Result<()> {
 
 impl Ledger {
     pub fn create(root: &Path) -> Result<Self> {
+        Self::create_observed(root, &mut |_| {})
+    }
+
+    pub fn create_observed(
+        root: &Path,
+        observe: &mut dyn FnMut(InitializationBoundary),
+    ) -> Result<Self> {
         if !root.exists() {
             if !parent_directory(root).is_dir() {
                 return Err(Error::Invalid("archive parent must already exist"));
@@ -490,21 +509,69 @@ impl Ledger {
             return Err(Error::Invalid("expected archive directory"));
         }
         let path = root.join("archive.sqlite");
+        unused_sqlite_sidecars(&path)?;
         // surface-write: evidence-db:archive.sqlite
         crate::persistence::write_new_owner_only(
             crate::persistence::SurfaceWrite::EvidenceArchive,
             &path,
             &[],
         )?;
-        let mut conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
-        configure(&conn)?;
+        observe(InitializationBoundary::FileCreated);
+        Self::initialize_empty(root, &path, observe)
+    }
+
+    /// Explicitly adopt an empty interrupted SQLite initialization, or reopen a
+    /// recognized archive after a lost initialization acknowledgment. SQLite may
+    /// recover its journal/WAL; this is not a forensic read-only operation.
+    /// Empty foreign SQLite files are indistinguishable and require this opt-in.
+    pub fn resume_initialization(root: &Path) -> Result<Self> {
+        let path = root.join("archive.sqlite");
+        private_file(&path)?;
+        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        let app: i64 = conn.query_row("PRAGMA application_id", [], |r| r.get(0))?;
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        drop(conn);
+        if app == APPLICATION_ID && version == 1 {
+            let ledger = Self::open(root)?;
+            // A lost acknowledgment may precede the original directory syncs.
+            std::fs::File::open(root)?.sync_all()?;
+            std::fs::File::open(parent_directory(root))?.sync_all()?;
+            return Ok(ledger);
+        }
+        Self::initialize_empty(root, &path, &mut |_| {})
+    }
+
+    fn initialize_empty(
+        root: &Path,
+        path: &Path,
+        observe: &mut dyn FnMut(InitializationBoundary),
+    ) -> Result<Self> {
+        let mut conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        conn.busy_timeout(Duration::from_secs(5))?;
+        conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA fullfsync=ON;")?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let app: i64 = tx.query_row("PRAGMA application_id", [], |r| r.get(0))?;
+        let version: i64 = tx.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        let tables: i64 = tx.query_row("SELECT count(*) FROM sqlite_schema", [], |r| r.get(0))?;
+        if app != 0 || version != 0 || tables != 0 {
+            return Err(Error::Invalid(
+                "resume requires an empty unversioned database or a recognized archive",
+            ));
+        }
+        let integrity: String = tx.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
+        if integrity != "ok" {
+            return Err(Error::Corrupt(integrity));
+        }
         tx.execute_batch(SCHEMA)?;
+        observe(InitializationBoundary::SchemaWritten);
         tx.commit()?;
+        observe(InitializationBoundary::SchemaCommitted);
+        configure(&conn)?;
         std::fs::File::open(root)?.sync_all()?;
         std::fs::File::open(parent_directory(root))?.sync_all()?;
         let ledger = Self { conn };
         ledger.check_schema()?;
+        observe(InitializationBoundary::Ready);
         Ok(ledger)
     }
 
@@ -873,14 +940,28 @@ impl Ledger {
     }
 
     pub fn backup(&self, destination: &Path) -> Result<Verification> {
-        // surface-write: evidence-backup:archive.sqlite
+        self.backup_observed(destination, &mut |_| {})
+    }
+
+    pub fn backup_observed(
+        &self,
+        destination: &Path,
+        observe: &mut dyn FnMut(BackupBoundary),
+    ) -> Result<Verification> {
+        let source = std::fs::canonicalize(
+            self.conn
+                .path()
+                .ok_or(Error::Invalid("backup source filename unavailable"))?,
+        )?;
+        let destination = sqlite_destination(&source, destination)?;
+        // surface-write: evidence-backup:archive.sqlite,evidence-backup:archive.sqlite-journal,evidence-backup:archive.sqlite-wal,evidence-backup:archive.sqlite-shm
         crate::persistence::write_new_owner_only(
             crate::persistence::SurfaceWrite::EvidenceBackup,
-            destination,
+            &destination,
             &[],
         )?;
         let mut target =
-            Connection::open_with_flags(destination, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+            Connection::open_with_flags(&destination, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         target.execute_batch("PRAGMA synchronous=FULL; PRAGMA fullfsync=ON;")?;
         {
             let backup = rusqlite::backup::Backup::new(&self.conn, &mut target)?;
@@ -892,11 +973,13 @@ impl Ledger {
                 }
             }
         }
+        observe(BackupBoundary::Copied);
         target.execute_batch("PRAGMA journal_mode=DELETE;")?;
+        observe(BackupBoundary::Normalized);
         drop(target);
-        std::fs::File::open(destination)?.sync_all()?;
-        std::fs::File::open(parent_directory(destination))?.sync_all()?;
-        Self::verify_file(destination)
+        std::fs::File::open(&destination)?.sync_all()?;
+        std::fs::File::open(parent_directory(&destination))?.sync_all()?;
+        Self::verify_file(&destination)
     }
 
     pub fn verify_file(path: &Path) -> Result<Verification> {
