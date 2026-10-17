@@ -303,3 +303,21 @@ original checkout's uncommitted work remains separate. Two old completed-review
 build targets (about 1.5 GiB of generated artifacts) were removed; each new
 reviewer also cleaned its own generated target. Reports and ground-truth fixtures
 were retained, with about 18 GiB free at the final local check.
+
+## Offline import restore build point — 2026-10-17
+
+The permanent `.worktrees/kan-v2-restore`, branch `feat/kan-v2-restore`, starts
+from reviewed service-hardening head `9ae0622fd8791007981e1958abe564a43f12aadf`.
+Its `.design/kan-v2-import-restore.md` and `docs/V2-RESTORE.md` define offline
+selected-byte recovery into a new private directory. It reconciles the original
+externally pinned import plan with authenticated retained requests and raw
+manifest/structural receipt bindings; damaged derived lookup fields are ignored.
+Unsigned receipts are not presented as service attestation. The selected-byte
+report preserves omissions and does not certify all archive history, independent
+backup, legacy semantic trust or cutover. Fresh review is required for this slice.
+
+Next software remains collector/gateway/provider streaming with visible recording
+gaps, production key/grant/configuration and erasure operations, and final delta
+reconciliation. P7 still requires independent-host backup/restore drills and
+capacity qualification. The offline tool is a recovery witness, not completion
+of those operational gates. No live user-data migration or main merge occurred.

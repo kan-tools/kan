@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    ("verified-import-restore", "tests/evidence_restore.rs"),
     ("encrypted-import-frame", "tests/evidence_import.rs"),
     ("delivery-configuration", "tests/evidence_delivery.rs"),
     ("durable-exact-request-spool", "tests/evidence_spool.rs"),
@@ -61,6 +62,26 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("connection-config", ".design/medium-architecture.md"),
 ];
 const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
+    (
+        "src/evidence_restore.rs",
+        "\"files\"",
+        "evidence-restore:files",
+    ),
+    (
+        "src/evidence_restore.rs",
+        "&source.path",
+        "evidence-restore:files",
+    ),
+    (
+        "src/evidence_restore.rs",
+        "\"plan.json\"",
+        "evidence-restore:plan.json",
+    ),
+    (
+        "src/evidence_restore.rs",
+        "\"report.json\"",
+        "evidence-restore:report.json",
+    ),
     (
         "src/evidence_spool.rs",
         "\"spool.sqlite\"",
@@ -360,6 +381,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", "\"; \"", "not a path"),
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
+    "src/evidence_restore.rs",
     "src/evidence_spool.rs",
     "src/evidence_store.rs",
     "src/actions.rs",
@@ -375,6 +397,24 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_restore.rs",
+        "create_dir_owner_only",
+        "EvidenceRestore",
+        1,
+    ),
+    (
+        "src/evidence_restore.rs",
+        "open_new_owner_only",
+        "EvidenceRestore",
+        1,
+    ),
+    (
+        "src/evidence_restore.rs",
+        "write_new_owner_only",
+        "EvidenceRestore",
+        2,
+    ),
     (
         "src/evidence_spool.rs",
         "write_new_owner_only",
@@ -1129,7 +1169,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "a66798353b9899634d14a605b004232a05cd24f8f15d87d7946ba29150f63a67",
+                "f041a957e402dfa4ca00b1de4201b097c9f918b3f2ce6833514c141501ea1d7e",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

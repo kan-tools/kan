@@ -331,6 +331,23 @@ pub fn append_manifest(bytes: &[u8]) -> Result<Record> {
     manifest(&SignedRequest::decode(bytes)?, bytes)
 }
 
+/// Authenticate exact retained request/manifest and structural unsigned receipt binding.
+/// This does not authenticate service admission, archive completeness or sequence placement.
+pub fn verify_retained_request(record: &Committed, bytes: &[u8]) -> Result<SignedRequest> {
+    let request = SignedRequest::decode(bytes).map_err(|_| Failure::Corrupt)?;
+    if !evidence::binds(&record.receipt, &record.manifest)
+        || record.receipt.body()["issuer"]
+            != author(&request.request.audience).map_err(|_| Failure::Corrupt)?
+        || manifest(&request, bytes)
+            .map_err(|_| Failure::Corrupt)?
+            .bytes()
+            != record.manifest.bytes()
+    {
+        return Err(Failure::Corrupt);
+    }
+    Ok(request)
+}
+
 /// Validate destination admission evidence before a sender releases its spool bytes.
 pub fn admitted_manifest(request: &[u8], reply: &SignedReply, issuer: &str) -> Result<Record> {
     if SignedRequest::decode(request)?.request.audience != issuer {
@@ -656,15 +673,8 @@ impl Service {
             evidence_store::Error::Missing(_) => Failure::Corrupt,
             other => other.into(),
         })?;
-        let request = SignedRequest::decode(&bytes).map_err(|_| Failure::Corrupt)?;
-        if record.receipt.body()["issuer"]
-            != author(&request.request.audience).map_err(|_| Failure::Corrupt)?
-            || request.request.scope != self.scope
-            || manifest(&request, &bytes)
-                .map_err(|_| Failure::Corrupt)?
-                .bytes()
-                != record.manifest.bytes()
-        {
+        let request = verify_retained_request(record, &bytes)?;
+        if request.request.scope != self.scope {
             return Err(Failure::Corrupt);
         }
         Ok(bytes)

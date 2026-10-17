@@ -184,6 +184,22 @@ impl RecoveryReader {
         Ok(Self { ledger, source })
     }
 
+    /// Observed raw frontier in this pinned transaction, not a history certificate.
+    pub fn snapshot(&self) -> Result<Snapshot> {
+        let through: i64 = self.ledger.conn.query_row(
+            "SELECT COALESCE(MAX(sequence),0) FROM commits NOT INDEXED",
+            [],
+            |r| r.get(0),
+        )?;
+        let through = u64::try_from(through).map_err(|_| Error::Invalid("negative sequence"))?;
+        let tip = if through == 0 {
+            None
+        } else {
+            Some(self.record(through)?.manifest.cid().clone())
+        };
+        Ok(Snapshot { through, tip })
+    }
+
     pub fn record(&self, sequence: u64) -> Result<Committed> {
         let n = i64::try_from(sequence).map_err(|_| Error::Invalid("sequence overflow"))?;
         if n == 0 {
