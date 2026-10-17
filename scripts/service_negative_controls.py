@@ -11,6 +11,7 @@ env=dict(os.environ,CARGO_PROFILE_DEV_DEBUG='0',CARGO_PROFILE_TEST_DEBUG='0',CAR
 mutations=[
  ('signature verification', 'if !sign::verify(\n            &value.request.principal,', 'if false && !sign::verify(\n            &value.request.principal,', 'signatures_canonical_bounds_expiry_and_reply_binding'),
  ('capability separation', 'if (append && !grant.append) || (!append && !grant.inventory)', 'if false && ((append && !grant.append) || (!append && !grant.inventory))', 'independent_capabilities_deny_other_scopes_and_unadmitted_writers'),
+ ('retained issuer binding', 'if record.receipt.body()["issuer"]', 'if false && record.receipt.body()["issuer"]', 'retained_signature_and_receipt_issuer_are_verified_independently_of_structure'),
  ('audience binding', 'request.scope != self.scope || request.audience != self.issuer()', 'request.scope != self.scope', 'signatures_canonical_bounds_expiry_and_reply_binding'),
 ]
 for name,old,new,test in mutations:

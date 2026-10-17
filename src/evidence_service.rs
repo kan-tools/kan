@@ -367,6 +367,8 @@ fn manifest(request: &SignedRequest, bytes: &[u8]) -> Result<Record> {
     )
 }
 fn receipt(manifest: &Record, issuer: &str, now: u64) -> Result<Record> {
+    // dispatch accepts Unix seconds for request expiry; RFC 4 stores milliseconds.
+    let now = now.checked_mul(1000).ok_or(Failure::Invalid)?;
     if now > evidence::MAX_SAFE_INTEGER as u64 {
         return Err(Failure::Invalid);
     }
@@ -435,6 +437,7 @@ impl Service {
     pub fn issuer(&self) -> String {
         self.signer.did().to_string()
     }
+    /// `now` is Unix seconds; stored receipt timestamps use Unix milliseconds.
     pub fn dispatch(&mut self, bytes: &[u8], now: u64) -> Result<SignedReply> {
         // Transport adapters must enforce this before buffering; the library also
         // refuses oversized input before hashing it or parsing JSON.
@@ -483,7 +486,9 @@ impl Service {
                 let manifest = manifest(&signed, bytes)?;
                 let receipt = receipt(&manifest, self.issuer().as_str(), now)?;
                 self.ledger.stage(bytes)?;
-                let record = self.ledger.commit(manifest.bytes(), receipt.bytes())?;
+                let record = self
+                    .ledger
+                    .commit_partition(manifest.bytes(), receipt.bytes())?;
                 Ok(Output::Committed {
                     record: view(&record),
                     duplicate: record.duplicate,
@@ -491,6 +496,14 @@ impl Service {
             }
             Command::Snapshot => {
                 let snapshot = self.ledger.snapshot()?;
+                if snapshot.through > 0 {
+                    let tip = self
+                        .ledger
+                        .page(&snapshot, snapshot.through - 1, 1)?
+                        .pop()
+                        .ok_or(Failure::Corrupt)?;
+                    self.read_signed(&tip)?;
+                }
                 Ok(Output::Snapshot {
                     through: snapshot.through,
                     tip: snapshot.tip.map(|c| c.to_string()),
@@ -507,6 +520,11 @@ impl Service {
                     tip: tip.as_ref().map(|c| link(c)).transpose()?,
                 };
                 let page = self.ledger.page(&snapshot, *after, *limit)?;
+                // A privileged raw-ledger writer may have changed the partition
+                // after startup. Never return foreign or unauthenticated records.
+                for record in &page {
+                    self.read_signed(record)?;
+                }
                 let last = page.last().map_or(*after, |r| r.sequence);
                 if last < *through && page.is_empty() {
                     return Err(Failure::Corrupt);
@@ -547,7 +565,10 @@ impl Service {
         let Ipld::Link(id) = &entry["ciphertext"] else {
             return Err(Failure::Corrupt);
         };
-        let bytes = self.ledger.read_object(id)?;
+        let bytes = self.ledger.read_object(id).map_err(|e| match e {
+            evidence_store::Error::Missing(_) => Failure::Corrupt,
+            other => other.into(),
+        })?;
         let request = SignedRequest::decode(&bytes).map_err(|_| Failure::Corrupt)?;
         if record.receipt.body()["issuer"]
             != author(&request.request.audience).map_err(|_| Failure::Corrupt)?
