@@ -70,3 +70,7 @@ See `.design/kan-v2-derived-recovery.md` for read-only raw access and reconstruc
 of derived fields into a new database. Normal writer open still audits the archive;
 its full-scan startup limitation remains open. Recovery never certifies authentication
 or historical completeness beyond the structurally consistent source snapshot.
+
+## Lifecycle and writer admission extensions
+
+`.design/kan-v2-storage-lifecycle.md` adds explicit initialization resume, backup namespace isolation and complete backup sidecar inventory. `.design/kan-v2-schema-admission.md` requires canonical schema admission before the content audit and journal-mode configuration. Extra triggers, tables/views/indexes and missing constraints cannot enter through ordinary writer open or initialized-archive resume. Raw recovery remains available when derived tables are damaged. These extensions do not close the normal-startup full-scan or capacity qualification work.
