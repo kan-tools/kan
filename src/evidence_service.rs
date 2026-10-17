@@ -147,7 +147,9 @@ pub fn unhex(value: &str, maximum: usize) -> Result<Vec<u8>> {
     }
     value
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| {
             let digit = |v| match v {
                 b'0'..=b'9' => Ok(v - b'0'),
