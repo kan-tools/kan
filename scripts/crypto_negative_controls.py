@@ -7,6 +7,7 @@ source = Path("src/evidence_crypto.rs")
 original = source.read_bytes()
 env = dict(os.environ, CARGO_PROFILE_DEV_DEBUG="0", CARGO_PROFILE_TEST_DEBUG="0", CARGO_INCREMENTAL="0")
 for name, changes, test in [
+    ("canonical recipient", [("if recipient.iter().rev().cmp(prime.iter().rev()) != std::cmp::Ordering::Less", "if false && recipient.iter().rev().cmp(prime.iter().rev()) != std::cmp::Ordering::Less")], "noncanonical_recipients_are_rejected_before_sealing"),
     ("scope binding", [("info.extend_from_slice(scope);", "let _ = scope; info.extend_from_slice(&[0;32]);")], "authenticated_boundaries_and_fresh_encapsulation"),
     ("header authentication", [("context.seal(plaintext, &frame)", "context.seal(plaintext, &[])"), (".open(&frame[HEADER..], &frame[..HEADER])", ".open(&frame[HEADER..], &[])")], "independent_receiver_accepts_and_rejects_authenticated_data"),
 ]:

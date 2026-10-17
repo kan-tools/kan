@@ -28,6 +28,14 @@ pub fn seal(recipient: &[u8; 32], scope: &[u8; 32], plaintext: &[u8]) -> Result<
     if plaintext.len() > MAX_PLAINTEXT {
         return Err(Error::Invalid);
     }
+    // RFC 7748 accepts equivalent encodings, but HPKE binds the encoded pkR.
+    // Only canonical field elements can match the receiver's re-derived key.
+    let mut prime = [0xff; 32];
+    prime[0] = 0xed;
+    prime[31] = 0x7f;
+    if recipient.iter().rev().cmp(prime.iter().rev()) != std::cmp::Ordering::Less {
+        return Err(Error::Seal);
+    }
     let recipient_key = <K as Kem>::PublicKey::from_bytes(recipient).map_err(|_| Error::Seal)?;
     let (enc, mut context) = hpke::setup_sender::<ChaCha20Poly1305, HkdfSha256, K>(
         &OpModeS::Base,

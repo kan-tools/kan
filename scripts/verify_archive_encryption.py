@@ -39,6 +39,10 @@ def schedule(private, enc, info):
     key = X25519PrivateKey.from_private_bytes(private)
     public = key.public_key().public_bytes_raw()
     dh = key.exchange(X25519PublicKey.from_public_bytes(enc))
+    return key_schedule(dh, enc, public, info)
+
+
+def key_schedule(dh, enc, public, info):
     kem = b"KEM\x00\x20"
     eae = labeled_extract(kem, b"", b"eae_prk", dh)
     shared = labeled_expand(kem, eae, b"shared_secret", enc + public, 32)
@@ -81,10 +85,27 @@ def check(value):
     require(plaintext == expected, "archive plaintext mismatch")
 
 
+def seal(value):
+    public, scope, plaintext = (bytes.fromhex(value[n]) for n in ["recipient", "scope", "plaintext"])
+    require(len(public) == 32 and int.from_bytes(public, "little") < 2**255 - 19, "noncanonical recipient")
+    require(len(scope) == 32 and len(plaintext) <= 1048576 - 95, "invalid bounds")
+    ephemeral = X25519PrivateKey.generate()
+    enc = ephemeral.public_key().public_bytes_raw()
+    dh = ephemeral.exchange(X25519PublicKey.from_public_bytes(public))
+    header = (b"KANE\x01\x00\x20\x00\x01\x00\x03" + hashlib.sha256(public).digest()
+              + enc + (len(plaintext) + 16).to_bytes(4, "big"))
+    key, nonce = key_schedule(dh, enc, public, b"tools.kan.archive.hpke.v1\x00" + scope)
+    return header + ChaCha20Poly1305(key).encrypt(nonce, plaintext, header)
+
+
 if __name__ == "__main__":
     try:
         vectors()
-        check(json.load(sys.stdin))
+        value = json.load(sys.stdin)
+        if sys.argv[1:] == ["--seal"]:
+            print(seal(value).hex())
+            sys.exit(0)
+        check(value)
     except Exception as error:
         # Never echo input, plaintext or key material.
         print("encryption oracle rejected: " + type(error).__name__, file=sys.stderr)
