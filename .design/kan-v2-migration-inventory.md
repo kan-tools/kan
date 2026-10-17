@@ -13,9 +13,9 @@ Extend `src/migration_preflight.rs` beyond workspaces containing `.kan`: find pu
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Publication-only discovery/preview returns the original published bytes' digests with no `.kan` creation. (REQ-1, REQ-4)
-- [ ] AC-2: Explicit-store preview includes CAR/HEAD/damaged files and excludes a synthetic secret; identity-history preview includes only public CBOR events and never credentials/profiles. Missing selected history reports incomplete. (REQ-2, REQ-3, REQ-4)
-- [ ] AC-3: Symlinks, malformed CAR, unreadable files and policy exclusions have typed notices and appropriate selected-inventory status; CLI fixtures agree with the library. (REQ-3, REQ-4)
+- [x] AC-1: Publication-only discovery/preview returns the original published bytes' digests with no `.kan` creation. (REQ-1, REQ-4)
+- [x] AC-2: Explicit-store preview includes CAR/HEAD/damaged files and excludes a synthetic secret; identity-history preview includes only public CBOR events and never credentials/profiles. Missing selected history reports incomplete. (REQ-2, REQ-3, REQ-4)
+- [x] AC-3: Symlinks, malformed CAR, unreadable files and policy exclusions have typed notices and appropriate selected-inventory status; CLI fixtures agree with the library. (REQ-3, REQ-4)
 
 ## Architecture
 
@@ -33,3 +33,7 @@ None for the local read-only inventory contract.
 
 - Upload, decryption, source rewriting, cutover, or automatic selection of global identity files.
 - Claim verification, Git-history completeness, or certifying a live directory as an atomic snapshot.
+
+## Review corrections and validation
+
+Cold Opus 5.5 review found that unknown identity-ledger entries were labeled exclusions even though the production reader rejects them. Only .tmp-* entries are now excluded; other unselected entries make coverage incomplete. Empty explicit selections also report incomplete. Tests preserve unknown public CBOR bytes without claiming signature verification, and assert the structural verification disclosures in CLI JSON. Notice paths use absolute source paths consistently; selected-directory failures use plain diagnostics.

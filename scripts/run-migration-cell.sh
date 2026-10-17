@@ -293,6 +293,11 @@ initialized_scope=false
 if [ "$MODE" != identity-file ] \
    && "$OLD_BIN" identity init --help >/dev/null 2>&1 \
    && "$OLD_BIN" init --help >/dev/null 2>&1; then
+  if [ "$MODE" = keychain ] || [ "$MODE" = keychain-recovery ]; then
+    say "writer requires RFC 1 scope initialization, whose system credential is a file; this fixture cannot exercise the legacy keychain plane"
+    echo "keychain-unused"
+    exit 0
+  fi
   if ! "$OLD_BIN" identity init >/dev/null 2>>"$work/writer.log" \
      || ! "$OLD_BIN" init >/dev/null 2>>"$work/writer.log"; then
     say "explicit writer initialization failed:"
@@ -674,25 +679,6 @@ after="$("$NEW_BIN" show migration-subject --json 2>/dev/null)"
 after_cids="$(printf '%s' "$after" \
   | python3 -c 'import json,sys; print("\n".join(sorted(c["cid"] for c in json.load(sys.stdin)["claims"])))' \
   2>/dev/null)"
-if [ "$initialized_scope" = true ]; then
-  # An actual signed write exercises actor resolution. Compare the complete
-  # author value (including identity state), never a trust-filtered author list.
-  if ! python3 - "$read_out" "$work/upgrade-cid.txt" "$after" <<'CHECK_AUTHOR'
-import json, sys
-before = json.load(open(sys.argv[1]))["claims"]
-cid = open(sys.argv[2]).read().strip()
-after = json.loads(sys.argv[3])["claims"]
-written = [c for c in after if c["cid"] == cid]
-if not before or len(written) != 1 or any(c["author"] != written[0]["author"] for c in before):
-    sys.exit(1)
-CHECK_AUTHOR
-  then
-    say "upgrade write changed the RFC 1 author or did not identify exactly one new claim"
-    echo "identity-changed"
-    exit 0
-  fi
-  say "RFC 1 upgrade-write author matches all original claims"
-fi
 after_n="$(printf '%s' "$after_cids" | grep -c . || true)"
 
 if [ "$after_n" -lt $((wrote + 1)) ]; then
@@ -709,6 +695,26 @@ if [ -n "${read_cids:-}" ]; then
     exit 0
   fi
   say "upgrade write: all $wrote pre-existing claims survived, plus the new one"
+fi
+
+if [ "$initialized_scope" = true ]; then
+  # An actual signed write exercises actor resolution. Compare the complete
+  # author value (including identity state), never a trust-filtered author list.
+  if ! python3 -I - "$read_out" "$work/upgrade-cid.txt" "$after" <<'CHECK_AUTHOR'
+import json, sys
+before = json.load(open(sys.argv[1]))["claims"]
+cid = open(sys.argv[2]).read().strip()
+after = json.loads(sys.argv[3])["claims"]
+written = [c for c in after if c["cid"] == cid]
+if not before or len(written) != 1 or any(c["author"] != written[0]["author"] for c in before):
+    sys.exit(1)
+CHECK_AUTHOR
+  then
+    say "upgrade write changed the RFC 1 author or did not identify exactly one new claim"
+    echo "identity-changed"
+    exit 0
+  fi
+  say "RFC 1 upgrade-write author matches all original claims"
 fi
 
 echo "ok"
