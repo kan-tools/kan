@@ -21,7 +21,7 @@ archive maintenance, not v1 migration, deployment or automatic cutover.
   output identifies encoding and structural-only checks. (REQ-1)
 - [x] AC-2: Real executable rebuild produces a separately verified file with exact
   evidence and original bytes unchanged; existing output cannot be overwritten. (REQ-2)
-- [ ] AC-3: Missing sequence/object, invalid CID, raw corruption, and incomplete
+- [x] AC-3: Missing sequence/object, invalid CID, raw corruption, and incomplete
   rebuild return nonzero with no success JSON. Surface checks and fresh Opus 5.5
   review cover the CLI integration. (REQ-3)
 
@@ -98,3 +98,19 @@ Integrated correction validation: all 59 targeted tests pass (23 storage, seven
 codec, six preflight, four recovery CLI and 19 surface tests), as do all-target
 feature Clippy, formatting and whitespace checks. The parent independently passed
 all eight causal negative controls. Fresh combined correction review is pending.
+
+
+## Final correction outcome
+
+Fresh `claude-opus-5-5` review of 1d89ec5..f2419ad returned **APPROVE WITH FOLLOW-UPS**,
+with 59 independently passing tests and executed hostile memory, alias, WAL and hot-
+journal probes. See `.design/reviews/kan-v2-recovery-2026-10-16.md` for exact hashes,
+model/session evidence, test limits and dispositions. A later regression adds one
+passing witness for the documented raw-key scan limitation; runtime code is unchanged.
+
+An unrelated corrupt raw-object page or oversized raw key can stop `read-object`
+before it reaches an intact requested object. This limitation is additional to its
+linear scan cost. It fails explicitly; use preserved backups/specialist recovery for
+raw table damage. Damaged derived bindings and cached commit coordinates are the
+supported repair case. More specific hot-journal diagnostics, old init/backup JSON
+path behavior and non-UTF-8 aliases for direct library callers remain follow-ups.
