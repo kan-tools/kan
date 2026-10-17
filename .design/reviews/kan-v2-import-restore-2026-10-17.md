@@ -54,8 +54,8 @@ there are no recorded teloi.
    probe and its mutation control.
 3. **Multipart coordinates coverage:** the original suite used one-part inventory.
    Retain the three-part positive/oracle case and coordinate/body tampering cases,
-   plus the coordinate-check mutation. These close coverage gaps without changing
-   production behavior.
+   plus the coordinate-check mutation. These cover the shared predicate through inventory frames without changing
+   production behavior. Separate data/completion call-site coverage remains open.
 4. **Remaining nonblocking ergonomics:** filesystem aliases fail closed with a
    generic I/O error and partial plaintext output; errors lack operation context;
    the library-only observation hook could be hidden from generated API docs.
@@ -69,9 +69,9 @@ The coverage follow-up retains all 11 reviewer probes as
 `scripts/verify_restored_archive.py`. The oracle is explicitly test-only: it does
 not authenticate commits/receipts or bound arbitrary inputs. The same pinned
 cryptography interpreter convention used by existing crypto tests is used here.
-The isolated mutation script gains the three missing controls. A fresh focused
-review must validate this test-only addition; the initial verdict applies to the
-initial implementation head, not unreviewed later edits.
+The isolated mutation script gains the three missing controls. The fresh focused
+review below validates this test-only addition; the initial verdict applies to
+the initial implementation head.
 
 Author validation of the coverage addition: 9 original restore tests and 11
 retained adversarial probes pass; all-target v2 Clippy and formatting pass. In a
@@ -81,3 +81,55 @@ runtime and pass after restoration. The export target was removed. The earlier
 six controls remain independently demonstrated on unchanged production source.
 No production fix was made, so there is no production-fix reversion trailer to
 claim; the evidence here is the newly enforced runtime mutant rejection.
+
+
+## Fresh focused follow-up review
+
+A second fresh actual Claude Code `claude-opus-5-5` session,
+launcher-confirmed `3baee7fe-1cb3-4213-af0b-fbb2ca046966`, reviewed
+`c07cacc8abea3621119100f9bdc382ddcfc9ee6b..602148285114c26f9ad643511ceee6cd74aa9dca`.
+Final report SHA-256 (UTF-8, no added newline):
+`6a1d4b4b8125872c2c30a042c7891d305bc58366c34f4074c1abf6532bf1d66e`.
+Verdict: **APPROVE WITH FOLLOW-UPS**, no correctness blocker. The review confirmed
+that production source and Cargo files are unchanged from the first approved head.
+
+It independently passed 9 original restore tests, 11 retained probes, formatting
+and all-target v2 Clippy. Its independent runner reproduced all three new named
+runtime failures and exact restored passes. The archive oracle independently
+compared four files, ten operations and 1,572,965 bytes, and rejected a flipped
+restored byte. The broader 134-check suite was not repeated because production
+code was unchanged. Local fallback to system python3 was not run; the existing CI
+step installs cryptography 46.0.3 before running both crypto and restore tests.
+
+Remaining findings, all nonblocking:
+
+- **Coordinate coverage is partial:** removing the individual data coordinate
+  call (`src/evidence_restore.rs:420`) or completion call (`:443`) survived all
+  20 restore tests. The shared-predicate mutant is killed by an inventory-frame
+  parts mismatch. Add correctly signed, correct-body data frames with wrong
+  file/part/parts coordinates and completion frames with wrong kind in a later
+  test-only change. The production checks exist; ordinal, operation and content
+  hashes still protect selected bytes. The design wording now names the narrower
+  inventory-coordinate witness rather than implying every call site is tested.
+- **Error specificity:** the probes assert rejection but not its exact reason.
+  The mutation evidence proves sensitivity now; pinning relevant error reasons
+  would prevent unrelated early failures masking later regressions.
+- **Oracle scope:** this synthetic checker reads raw objects by request prefix,
+  ignores audience and does not authenticate commits/receipts. Its multipart
+  fixture framing is independently authored rather than emitted by the real
+  importer; the original large CLI round trip and exact-chunk importer probe
+  provide complementary real-importer evidence. This is not a production reader.
+- **Mutation harness limitations:** exports include non-ignored working-tree and
+  untracked files rather than exclusively committed HEAD; baseline count checks
+  use substrings. Runs here used the stated source/test changes and final reviews
+  used exact committed exports. A clean-tree/exact-count mode is a useful tooling
+  follow-up. APFS `cp -c` is intentionally macOS-only; CI does not run this script.
+
+The reviewer kept its export, runner and 20 logs in
+`/tmp/kan-restore-fu-review-75XkXS` (about 6.3 MiB), removed its generated target,
+verified source restoration and the clean permanent checkout, and left no started
+processes running. The final documentation checkpoint changes no reviewed source,
+test, script, workflow or Cargo bytes. No live user-data migration or cutover was
+performed. The next substantive build point is collector/gateway capture and
+visible recording gaps, with production operations and final cutover still gated
+by the parent roadmap's evidence requirements.

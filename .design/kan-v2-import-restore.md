@@ -14,10 +14,10 @@ Recover a pinned v1 import from an explicit local archive or standalone backup i
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Round-trip a synthetic malformed source above 10 MiB from a standalone archive and compare complete bytes and hashes with the original and independent Python decoder. Original data remains unchanged. (REQ-1, REQ-2, REQ-5)
-- [ ] AC-2: Wrong plan/key/writer/scope, missing or duplicate operations, corrupted signed objects, malformed frame/plan, unsafe paths and occupied destination fail without a successful report. Derived lookup damage does not prevent restoration. (REQ-1, REQ-2, REQ-3, REQ-5)
-- [ ] AC-3: Files are streamed with bounded chunks; record-count admission and protocol limits fail explicitly. Output files/directories are private; crash/fault injection leaves no final report before all verification and syncs. Retrying an occupied directory is refused. (REQ-3, REQ-4, REQ-5)
-- [ ] AC-4: Report includes the externally pinned plan, source lineage, route, selected-file hashes, operation sequence/manifest provenance, notices and pinned archive frontier; claims of server attestation, independent backup, semantic trust and cutover remain false/unverified. (REQ-2, REQ-4)
+- [x] AC-1: Round-trip a synthetic malformed source above 10 MiB from a standalone archive and compare complete bytes and hashes with the original and independent Python decoder. Original data remains unchanged. (REQ-1, REQ-2, REQ-5)
+- [x] AC-2: Wrong plan/key/writer/scope, missing or duplicate operations, corrupted signed objects, malformed frame/plan, unsafe paths and occupied destination fail without a successful report. Derived lookup damage does not prevent restoration. (REQ-1, REQ-2, REQ-3, REQ-5)
+- [x] AC-3: Files are streamed with bounded chunks; record-count admission and protocol limits fail explicitly. Output files/directories are private; crash/fault injection leaves no final report before all verification and syncs. Retrying an occupied directory is refused. (REQ-3, REQ-4, REQ-5)
+- [x] AC-4: Report includes the externally pinned plan, source lineage, route, selected-file hashes, operation sequence/manifest provenance, notices and pinned archive frontier; claims of server attestation, independent backup, semantic trust and cutover remain false/unverified. (REQ-2, REQ-4)
 
 ## Architecture
 
@@ -52,6 +52,6 @@ The initial implementation received fresh Opus 5.5 APPROVE WITH FOLLOW-UPS with
 no correctness blocker. Eleven independent probes, including a separate archive
 signature/HPKE/selected-byte oracle and multipart inventories, are retained in
 `tests/evidence_restore_adversarial.rs`. Three targeted mutation controls cover
-receipt binding, canonical plans and frame coordinates. Production source is
+receipt binding, canonical plans and inventory-frame coordinates. Individual data and completion coordinate call sites remain a nonblocking coverage follow-up. Production source is
 unchanged by this coverage follow-up. Review identities and evidence are recorded
 in `.design/reviews/kan-v2-import-restore-2026-10-17.md`.

@@ -321,3 +321,16 @@ gaps, production key/grant/configuration and erasure operations, and final delta
 reconciliation. P7 still requires independent-host backup/restore drills and
 capacity qualification. The offline tool is a recovery witness, not completion
 of those operational gates. No live user-data migration or main merge occurred.
+
+
+The restore implementation `c07cacc8abea3621119100f9bdc382ddcfc9ee6b` passed all
+GitHub CI workflows, including performance. It received fresh Opus 5.5 APPROVE
+WITH FOLLOW-UPS. Test-only follow-up `602148285114c26f9ad643511ceee6cd74aa9dca`
+retains eleven independent adversarial/oracle probes and adds three regression
+mutation controls; a second fresh Opus 5.5 review also approved with nonblocking
+follow-ups. The covered suite now totals 140 targeted integration tests plus five
+focused units. Source, tests and evidence are in draft PR #275, stacked on #274.
+The remaining coordinate-call-site/error-specificity coverage limits and tooling
+limits are explicit in `.design/reviews/kan-v2-import-restore-2026-10-17.md`.
+No production source changed after the first review. This completes the offline
+selected-byte recovery build point, not P7 operational qualification.
