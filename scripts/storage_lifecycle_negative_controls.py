@@ -35,6 +35,8 @@ def main():
         f.write(original)
     print('Recovery copy:', name, flush=True)
     cases = [
+        ('no-writer-schema-admission', original.replace('ledger.check_write_schema()?;', ''),
+         'evidence_store', 'writer_admission_rejects_foreign_schema_without_mutating_evidence'),
         ('configure-before-verification', original.replace('ledger.verify()?;\n        configure(&ledger.conn)?;',
          'configure(&ledger.conn)?;\n        ledger.verify()?;'), 'evidence_store',
          'initialization_rejects_foreign_media_without_replacing_it'),

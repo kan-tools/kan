@@ -1050,8 +1050,15 @@ fn initialization_rejects_foreign_media_without_replacing_it() {
         conn.execute_batch(sql).unwrap();
         drop(conn);
         let before = std::fs::read(&path).unwrap();
+        assert!(Ledger::open(temp.path()).is_err(), "{sql}");
         assert!(Ledger::resume_initialization(temp.path()).is_err(), "{sql}");
         assert_eq!(std::fs::read(&path).unwrap(), before);
+        for suffix in ["-journal", "-wal", "-shm"] {
+            assert!(
+                !temp.path().join(format!("archive.sqlite{suffix}")).exists(),
+                "{sql}"
+            );
+        }
     }
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("archive.sqlite");
@@ -1179,4 +1186,69 @@ fn backup_normalizes_and_catalogs_transient_sidecars() {
         .status()
         .unwrap()
         .success());
+}
+
+#[test]
+fn writer_admission_rejects_foreign_schema_without_mutating_evidence() {
+    for mutation in [
+        "CREATE TABLE foreign_data(value TEXT)",
+        "CREATE TRIGGER wipe AFTER INSERT ON objects BEGIN DELETE FROM objects; END",
+        "CREATE VIEW foreign_view AS SELECT * FROM objects",
+        "CREATE INDEX unexpected_index ON bindings(length)",
+        "DROP TABLE objects; CREATE TABLE objects(cid TEXT, bytes BLOB)",
+        "DROP TABLE commits; CREATE TABLE commits(sequence INTEGER PRIMARY KEY, cid TEXT, scope BLOB, writer TEXT, operation BLOB, position INTEGER, previous TEXT, manifest BLOB, receipt BLOB)",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let mut ledger = Ledger::create(temp.path()).unwrap();
+        ledger.stage(b"original bytes must survive admission").unwrap();
+        drop(ledger);
+        let path = temp.path().join("archive.sqlite");
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch("PRAGMA journal_mode=DELETE").unwrap();
+        conn.execute_batch(mutation).unwrap();
+        drop(conn);
+        let before = std::fs::read(&path).unwrap();
+        assert!(matches!(Ledger::open(temp.path()), Err(Error::Invalid("unsupported writable archive schema"))), "{mutation}");
+        assert!(matches!(Ledger::resume_initialization(temp.path()), Err(Error::Invalid("unsupported writable archive schema"))), "{mutation}");
+        assert_eq!(std::fs::read(&path).unwrap(), before, "{mutation}");
+        for suffix in ["-journal", "-wal", "-shm"] {
+            assert!(!temp.path().join(format!("archive.sqlite{suffix}")).exists(), "{mutation}");
+        }
+    }
+}
+
+#[test]
+fn canonical_backup_and_rebuild_pass_writer_schema_admission() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("source");
+    let mut ledger = Ledger::create(&source).unwrap();
+    ledger.stage(b"first").unwrap();
+    let (m, r) = pair(b"first", 0, None, 1);
+    ledger.commit(m.bytes(), r.bytes()).unwrap();
+    let backup_root = temp.path().join("backup");
+    let rebuilt_root = temp.path().join("rebuilt");
+    std::fs::create_dir(&backup_root).unwrap();
+    std::fs::create_dir(&rebuilt_root).unwrap();
+    ledger.backup(&backup_root.join("archive.sqlite")).unwrap();
+    kan::evidence_store::RecoveryReader::open(&source.join("archive.sqlite"))
+        .unwrap()
+        .rebuild(&rebuilt_root.join("archive.sqlite"))
+        .unwrap();
+    for root in [&backup_root, &rebuilt_root] {
+        let mut opened = Ledger::open(root).unwrap();
+        opened.stage(b"second").unwrap();
+        let (m2, r2) = pair(b"second", 1, Some(&m), 2);
+        opened.commit(m2.bytes(), r2.bytes()).unwrap();
+        assert_eq!(opened.verify().unwrap().commits, 2);
+        let records = opened.page(&opened.snapshot().unwrap(), 0, 2).unwrap();
+        assert_eq!(records[0].manifest.bytes(), m.bytes());
+        assert_eq!(records[0].receipt.bytes(), r.bytes());
+        drop(opened);
+        assert!(Command::new("python3")
+            .arg("scripts/verify_evidence_store.py")
+            .arg(root.join("archive.sqlite"))
+            .status()
+            .unwrap()
+            .success());
+    }
 }
