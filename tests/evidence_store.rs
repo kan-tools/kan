@@ -1243,10 +1243,14 @@ fn canonical_backup_and_rebuild_pass_writer_schema_admission() {
         let records = opened.page(&opened.snapshot().unwrap(), 0, 2).unwrap();
         assert_eq!(records[0].manifest.bytes(), m.bytes());
         assert_eq!(records[0].receipt.bytes(), r.bytes());
+        // The independent oracle accepts isolated DELETE-mode snapshots, not a
+        // WAL-mode archive after writers close and its sidecars disappear.
+        let snapshot = root.join("verified.sqlite");
+        opened.backup(&snapshot).unwrap();
         drop(opened);
         assert!(Command::new("python3")
             .arg("scripts/verify_evidence_store.py")
-            .arg(root.join("archive.sqlite"))
+            .arg(&snapshot)
             .status()
             .unwrap()
             .success());
