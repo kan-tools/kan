@@ -628,9 +628,20 @@ fn preview_selected(root: &Path, selection: &'static str, relative: &str) -> io:
             selected.push(entry.path());
         } else {
             output.notices.push(Notice {
-                kind: if selection == "public-identity-history" && !name.to_str().is_some_and(|n| n.starts_with(".tmp-")) { NoticeKind::Unsupported } else { NoticeKind::Excluded },
+                kind: if selection == "public-identity-history"
+                    && !name.to_str().is_some_and(|n| n.starts_with(".tmp-"))
+                {
+                    NoticeKind::Unsupported
+                } else {
+                    NoticeKind::Excluded
+                },
                 path: entry.path(),
-                reason: "unselected entry; public identity history permits only temporary-file exclusions".into(),
+                reason: if selection == "public-identity-history" {
+                    "unselected public identity entry; only temporary files are excluded"
+                } else {
+                    "outside selected log evidence allowlist"
+                }
+                .into(),
             });
         }
         if selected.len() + output.notices.len() > MAX_FILES {
