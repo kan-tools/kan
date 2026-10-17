@@ -26,6 +26,14 @@ fn current_writer_seed_and_identity_file_reach_reader_and_preserve_authorship() 
         assert!(
             String::from_utf8_lossy(&output.stderr).contains("all 3 pre-existing claims survived")
         );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if mode == "seed" {
+            assert!(stderr.contains("RFC 1 upgrade-write author matches"));
+            assert!(!stderr.contains("identity resolves to did:key:"));
+        } else {
+            assert!(stderr.contains("identity resolves to did:key:"));
+            assert!(!stderr.contains("RFC 1 upgrade-write author matches"));
+        }
     }
     assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 1);
     assert_eq!(
@@ -40,9 +48,10 @@ fn scoped_writer_keychain_cells_are_excluded_before_any_credential_action() {
     use std::os::unix::fs::PermissionsExt;
     let t = tempfile::tempdir().unwrap();
     let fake = t.path().join("writer");
-    std::fs::write(&fake,b"#!/bin/sh\ncase \"$*\" in\n 'identity init --help'|'init --help') exit 0;;\n *) echo FORBIDDEN-CREDENTIAL-ACTION >&2; exit 99;;\nesac\n").unwrap();
+    std::fs::write(&fake,b"#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$MIGRATION_PROBE_CALLS\"\ncase \"$*\" in\n 'identity init --help'|'init --help') exit 0;;\n *) echo FORBIDDEN-CREDENTIAL-ACTION >&2; exit 99;;\nesac\n").unwrap();
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o700)).unwrap();
     for mode in ["keychain", "keychain-recovery"] {
+        let calls = t.path().join(format!("{mode}.calls"));
         // Fake binary can only answer help probes; no real keychain API exists.
         let output = Command::new("bash")
             .arg("scripts/run-migration-cell.sh")
@@ -50,6 +59,7 @@ fn scoped_writer_keychain_cells_are_excluded_before_any_credential_action() {
             .arg(&fake)
             .arg(mode)
             .env("CI", "true")
+            .env("MIGRATION_PROBE_CALLS", &calls)
             .env("GIT_CONFIG_COUNT", "1")
             .env("GIT_CONFIG_KEY_0", "commit.gpgsign")
             .env("GIT_CONFIG_VALUE_0", "false")
@@ -61,6 +71,9 @@ fn scoped_writer_keychain_cells_are_excluded_before_any_credential_action() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(!String::from_utf8_lossy(&output.stderr).contains("FORBIDDEN-CREDENTIAL-ACTION"));
+        assert_eq!(
+            std::fs::read_to_string(calls).unwrap(),
+            "identity init --help\ninit --help\n"
+        );
     }
 }

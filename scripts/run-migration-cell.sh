@@ -43,7 +43,9 @@
 #                     writer predates keychain support, the runner's keychain
 #                     was unreachable, or the cell's own `identity protect`
 #                     opt-in failed. The workspace is plaintext, so
-#                     this cell did NOT exercise the keychain plane. Recorded
+#                     this cell did NOT exercise the keychain plane. RFC 1
+#                     writers whose fixture requires system file credentials
+#                     are also excluded before credential initialization. Recorded
 #                     rather than scored `ok`, so the table shows exactly which
 #                     versions that plane actually covers.
 #   write-refused     the workspace reads correctly but this build cannot WRITE
@@ -698,8 +700,8 @@ if [ -n "${read_cids:-}" ]; then
 fi
 
 if [ "$initialized_scope" = true ]; then
-  # An actual signed write exercises actor resolution. Compare the complete
-  # author value (including identity state), never a trust-filtered author list.
+  # An actual signed write exercises actor resolution. Compare the principal
+  # exposed by show --json; that projection omits method and identity state.
   if ! python3 -I - "$read_out" "$work/upgrade-cid.txt" "$after" <<'CHECK_AUTHOR'
 import json, sys
 before = json.load(open(sys.argv[1]))["claims"]

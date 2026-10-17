@@ -165,6 +165,22 @@ fn retained_signed_bytes_retry_conflict_restart_and_revoked_writer() {
     else {
         panic!()
     };
+    let Decoded::Known(receipt) = evidence::decode(&unhex(&first.receipt, 65536).unwrap()).unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(
+        receipt.body()["issuedAt"],
+        atproto_dasl::Ipld::Integer(1_000_000)
+    );
+    drop(service);
+    let mut service = Service::new(
+        Ledger::open(&root).unwrap(),
+        [1; 32],
+        service_identity(),
+        vec![grant(&writer, true, true)],
+    )
+    .unwrap();
     let Output::Committed {
         record: retry,
         duplicate: true,
@@ -262,6 +278,25 @@ fn retained_signed_bytes_retry_conflict_restart_and_revoked_writer() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    let db = rusqlite::Connection::open(t.path().join("backup.sqlite")).unwrap();
+    let mut statement = db.prepare("SELECT bytes FROM objects").unwrap();
+    let rows = statement.query_map([], |r| r.get::<_, Vec<u8>>(0)).unwrap();
+    let mut verified = 0;
+    for row in rows {
+        std::fs::write(&oracle_input, row.unwrap()).unwrap();
+        let oracle = std::process::Command::new("python3")
+            .arg("scripts/verify_service_request.py")
+            .arg(&oracle_input)
+            .output()
+            .unwrap();
+        assert!(
+            oracle.status.success(),
+            "{}",
+            String::from_utf8_lossy(&oracle.stderr)
+        );
+        verified += 1;
+    }
+    assert!(verified >= 2);
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["commits"], 2);
 }
@@ -412,4 +447,187 @@ fn startup_rejects_wrong_scope_and_foreign_payload_preserves_source() {
         .unwrap();
     assert!(Service::new(ledger, [1; 32], Identity::generate(), vec![]).is_err());
     assert_eq!(Ledger::open(&rawroot).unwrap().verify().unwrap().commits, 1);
+}
+
+#[test]
+fn competing_service_scopes_cannot_mix_or_disclose_records() {
+    let t = tempfile::tempdir().unwrap();
+    let root = t.path().join("archive");
+    let writer = Identity::generate();
+    let mut first = Service::new(
+        Ledger::create(&root).unwrap(),
+        [1; 32],
+        service_identity(),
+        vec![grant(&writer, true, true)],
+    )
+    .unwrap();
+    let mut second = Service::new(
+        Ledger::open(&root).unwrap(),
+        [2; 32],
+        service_identity(),
+        vec![grant(&writer, true, true)],
+    )
+    .unwrap();
+    result(&mut first, &append(&writer, 1, 0, None)).unwrap();
+    let second_append = request(
+        &writer,
+        2,
+        Command::Append {
+            id: hex(&[2; 16]),
+            position: 0,
+            previous: None,
+            ciphertext: hex(b"opaque"),
+        },
+        None,
+    );
+    assert_eq!(result(&mut second, &second_append), Err(Failure::Conflict));
+    assert_eq!(
+        result(
+            &mut second,
+            &request(&writer, 2, Command::Snapshot, Some(1100))
+        ),
+        Err(Failure::Corrupt)
+    );
+    let Output::Snapshot { through, tip } = result(
+        &mut first,
+        &request(&writer, 1, Command::Snapshot, Some(1100)),
+    )
+    .unwrap() else {
+        panic!()
+    };
+    assert_eq!(
+        result(
+            &mut second,
+            &request(
+                &writer,
+                2,
+                Command::Page {
+                    through,
+                    tip,
+                    after: 0,
+                    limit: 128
+                },
+                Some(1100)
+            )
+        ),
+        Err(Failure::Corrupt)
+    );
+    assert_eq!(Ledger::open(&root).unwrap().verify().unwrap().commits, 1);
+}
+
+#[test]
+fn high_s_signature_cannot_change_retry_identity() {
+    // P-256 group order minus low S gives the alternative valid ECDSA signature.
+    let writer = Identity::generate();
+    let mut signed = SignedRequest::decode(&append(&writer, 1, 0, None)).unwrap();
+    let mut sig = unhex(&signed.signature, 64).unwrap();
+    let order = unhex(
+        "ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551",
+        32,
+    )
+    .unwrap();
+    let mut borrow = 0i16;
+    for i in (0..32).rev() {
+        let value = i16::from(order[i]) - i16::from(sig[32 + i]) - borrow;
+        sig[32 + i] = value as u8;
+        borrow = i16::from(value < 0);
+    }
+    signed.signature = hex(&sig);
+    assert!(matches!(
+        SignedRequest::decode(&signed.bytes().unwrap()),
+        Err(Failure::AccessLimited)
+    ));
+}
+
+#[test]
+fn retained_signature_and_receipt_issuer_are_verified_independently_of_structure() {
+    use atproto_dasl::Ipld;
+    use sha2::{Digest, Sha256};
+    fn record(kind: &str, body: std::collections::BTreeMap<String, Ipld>) -> evidence::Record {
+        let envelope = Ipld::Map(
+            [
+                ("v".into(), Ipld::Integer(1)),
+                ("kind".into(), Ipld::String(kind.into())),
+                ("body".into(), Ipld::Map(body)),
+            ]
+            .into(),
+        );
+        let Decoded::Known(record) = evidence::encode(&envelope).unwrap() else {
+            panic!()
+        };
+        record
+    }
+    let t = tempfile::tempdir().unwrap();
+    let writer = Identity::generate();
+    let original = append(&writer, 1, 0, None);
+    let mut service = Service::new(
+        Ledger::create(&t.path().join("valid")).unwrap(),
+        [1; 32],
+        service_identity(),
+        vec![grant(&writer, true, true)],
+    )
+    .unwrap();
+    let Output::Committed { record: view, .. } = result(&mut service, &original).unwrap() else {
+        panic!()
+    };
+    let Decoded::Known(manifest) =
+        evidence::decode(&unhex(&view.manifest, 65536).unwrap()).unwrap()
+    else {
+        panic!()
+    };
+    let Decoded::Known(receipt) = evidence::decode(&unhex(&view.receipt, 65536).unwrap()).unwrap()
+    else {
+        panic!()
+    };
+    for flaw in ["signature", "issuer", "manifest"] {
+        let root = t.path().join(flaw);
+        let mut bytes = original.clone();
+        let mut mb = manifest.body().clone();
+        let mut rb = receipt.body().clone();
+        if flaw == "signature" {
+            let mut signed: SignedRequest = serde_json::from_slice(&bytes).unwrap();
+            signed.signature = hex(&[0; 64]);
+            bytes = signed.bytes().unwrap();
+            let Ipld::List(entries) = mb.get_mut("entries").unwrap() else {
+                panic!()
+            };
+            let Ipld::Map(entry) = &mut entries[0] else {
+                panic!()
+            };
+            entry.insert(
+                "ciphertext".into(),
+                Ipld::Link(kan::evidence_store::ciphertext_cid(&bytes)),
+            );
+            entry.insert("length".into(), Ipld::Integer(bytes.len() as i128));
+        } else if flaw == "issuer" {
+            rb.insert("issuer".into(), mb["writer"].clone());
+        } else {
+            let Ipld::List(entries) = mb.get_mut("entries").unwrap() else {
+                panic!()
+            };
+            let Ipld::Map(entry) = &mut entries[0] else {
+                panic!()
+            };
+            entry.insert("slot".into(), Ipld::Bytes(vec![99; 32]));
+        }
+        let manifest = record("manifest", mb);
+        rb.insert("manifest".into(), Ipld::Link(manifest.cid().clone()));
+        let receipt = record("receipt", rb);
+        let mut ledger = Ledger::create(&root).unwrap();
+        ledger.stage(&bytes).unwrap();
+        ledger.commit(manifest.bytes(), receipt.bytes()).unwrap();
+        assert_eq!(ledger.verify().unwrap().commits, 1);
+        let before = t.path().join(format!("{flaw}-before.sqlite"));
+        ledger.backup(&before).unwrap();
+        assert!(matches!(
+            Service::new(ledger, [1; 32], service_identity(), vec![]),
+            Err(Failure::Corrupt)
+        ));
+        let after = t.path().join(format!("{flaw}-after.sqlite"));
+        Ledger::open(&root).unwrap().backup(&after).unwrap();
+        assert_eq!(
+            Sha256::digest(std::fs::read(before).unwrap()),
+            Sha256::digest(std::fs::read(after).unwrap())
+        );
+    }
 }
