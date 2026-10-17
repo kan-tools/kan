@@ -581,10 +581,12 @@ impl Ledger {
         let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         let ledger = Self { conn };
         ledger.check_schema()?;
-        configure(&ledger.conn)?;
+        // Reject malformed profile-marked files before changing journal mode.
+        // SQLite may still recover/checkpoint preexisting journal/WAL media.
         // Audit once on opening; keep this connection for bounded hot-path writes.
         // Corrupt derived bindings cannot silently become a new empty namespace.
         ledger.verify()?;
+        configure(&ledger.conn)?;
         Ok(ledger)
     }
 

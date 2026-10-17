@@ -35,6 +35,11 @@ def main():
         f.write(original)
     print('Recovery copy:', name, flush=True)
     cases = [
+        ('configure-before-verification', original.replace('ledger.verify()?;\n        configure(&ledger.conn)?;',
+         'configure(&ledger.conn)?;\n        ledger.verify()?;'), 'evidence_store',
+         'initialization_rejects_foreign_media_without_replacing_it'),
+        ('no-create-sidecar-guard', original.replace('unused_sqlite_sidecars(&path)?;', ''),
+         'evidence_store', 'lifecycle_destinations_preserve_existing_sqlite_namespaces'),
         ('no-initialization-resume', original.replace('Self::initialize_empty(root, &path, &mut |_| {})',
          'Self::open(root)'), 'evidence_store',
          'initialization_resumes_each_publication_boundary_without_resetting_evidence'),
