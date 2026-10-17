@@ -14,6 +14,60 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Create a new queue for one explicit scope, writer and destination.
+    SpoolInit {
+        spool: PathBuf,
+        #[arg(long)]
+        scope: String,
+        #[arg(long)]
+        writer: String,
+        #[arg(long)]
+        audience: String,
+        #[arg(long)]
+        budget: u64,
+    },
+    /// Audit and inspect a queue; lookup an operation after uncertain admission.
+    SpoolStatus {
+        spool: PathBuf,
+        #[arg(long)]
+        operation: Option<String>,
+    },
+    /// Emit the exact oldest signed request to stdout; does not dequeue it.
+    SpoolHead { spool: PathBuf },
+    /// Encrypt bounded raw stdin and durably queue it; performs no network request.
+    #[cfg(feature = "v2-crypto")]
+    QueueInput {
+        spool: PathBuf,
+        #[arg(long)]
+        key: PathBuf,
+        /// Canonical hex X25519 public recipient (32 bytes).
+        #[arg(long)]
+        recipient: String,
+        /// Stable caller-selected 16-byte hex ID; reuse is refused, never resealed.
+        #[arg(long)]
+        operation: String,
+    },
+    /// Deliver retained bytes; stop on any failure without skipping the head.
+    #[cfg(feature = "v2-crypto")]
+    SpoolDrain {
+        spool: PathBuf,
+        #[arg(long)]
+        endpoint: String,
+        #[arg(long, default_value_t = 128, value_parser = clap::value_parser!(u16).range(1..=1024))]
+        limit: u16,
+    },
+    /// Authenticate a signed encrypted request and emit raw plaintext to stdout.
+    #[cfg(feature = "v2-crypto")]
+    DecryptRequest {
+        request: PathBuf,
+        /// Explicit owner-only file containing exactly 32 raw private-key bytes.
+        #[arg(long)]
+        recipient_key: PathBuf,
+        #[arg(long)]
+        scope: String,
+        #[arg(long)]
+        writer: String,
+    },
     /// Serve an existing opaque partition on loopback; payload encryption is external.
     #[cfg(feature = "v2-service")]
     Serve {
@@ -86,6 +140,93 @@ fn hex(bytes: &[u8]) -> String {
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     match Cli::parse().command {
+        Command::SpoolInit {
+            spool,
+            scope,
+            writer,
+            audience,
+            budget,
+        } => {
+            let mut queue =
+                kan::evidence_spool::Spool::create(&spool, &scope, &writer, &audience, budget)?;
+            print_json(&serde_json::json!({"status": queue.status()?, "experimental": true}))?;
+        }
+        Command::SpoolStatus { spool, operation } => {
+            let mut queue = kan::evidence_spool::Spool::open(&spool)?;
+            let found = operation
+                .as_deref()
+                .map(|id| queue.operation(id))
+                .transpose()?;
+            print_json(
+                &serde_json::json!({"status": queue.status()?, "operation_id": operation,
+                "operation": found, "experimental": true, "durability": "local-spool"}),
+            )?;
+        }
+        Command::SpoolHead { spool } => {
+            let bytes = kan::evidence_spool::Spool::open(&spool)?
+                .head()?
+                .ok_or("queue is empty")?;
+            use std::io::Write;
+            std::io::stdout().lock().write_all(&bytes)?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::QueueInput {
+            spool,
+            key,
+            recipient,
+            operation,
+        } => {
+            let recipient = fixed_hex::<32>(&recipient)?;
+            let operation = fixed_hex::<16>(&operation)?;
+            let signer = service_identity(&key)?;
+            let mut queue = kan::evidence_spool::Spool::open(&spool)?;
+            let plaintext =
+                bounded_read(std::io::stdin().lock(), kan::evidence_crypto::MAX_PLAINTEXT)?;
+            let queued = kan::evidence_delivery::queue(
+                &mut queue, &signer, &recipient, &operation, &plaintext,
+            )?;
+            print_json(
+                &serde_json::json!({"queued": queued, "durability": "local-spool", "remote_acknowledged": false}),
+            )?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::SpoolDrain {
+            spool,
+            endpoint,
+            limit,
+        } => {
+            let mut queue = kan::evidence_spool::Spool::open(&spool)?;
+            tokio::runtime::Runtime::new()?.block_on(async {
+                for _ in 0..limit {
+                    let Some(delivered) =
+                        kan::evidence_delivery::deliver_one(&mut queue, &endpoint).await?
+                    else {
+                        break;
+                    };
+                    print_json(&serde_json::json!({"acknowledged": delivered}))?;
+                }
+                print_json(&serde_json::json!({"status": queue.status()?, "experimental": true}))?;
+                Ok::<_, Box<dyn std::error::Error>>(())
+            })?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::DecryptRequest {
+            request,
+            recipient_key,
+            scope,
+            writer,
+        } => {
+            let scope = fixed_hex::<32>(&scope)?;
+            let private: [u8; 32] = recipient_private(&recipient_key)?;
+            let request = bounded_read(
+                std::fs::File::open(request)?,
+                kan::evidence_service::MAX_REQUEST,
+            )?;
+            let plaintext =
+                kan::evidence_delivery::decrypt_request(&request, &private, &scope, &writer)?;
+            use std::io::Write;
+            std::io::stdout().lock().write_all(&plaintext)?;
+        }
         #[cfg(feature = "v2-service")]
         Command::Serve {
             archive,
@@ -266,6 +407,47 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn print_json(value: &serde_json::Value) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    serde_json::to_writer(&mut out, value)?;
+    out.write_all(b"\n")?;
+    out.flush()
+}
+
+#[cfg(feature = "v2-crypto")]
+fn fixed_hex<const N: usize>(value: &str) -> Result<[u8; N], Box<dyn std::error::Error>> {
+    kan::evidence_service::unhex(value, N)?
+        .try_into()
+        .map_err(|_| "incorrect hex length".into())
+}
+
+#[cfg(feature = "v2-crypto")]
+fn recipient_private(path: &std::path::Path) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+    let before = std::fs::symlink_metadata(path)?;
+    if !before.is_file() || before.file_type().is_symlink() || before.len() != 32 {
+        return Err("recipient key must be a regular file of exactly 32 raw bytes".into());
+    }
+    #[cfg(not(unix))]
+    return Err("recipient key permission validation is currently Unix-only".into());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let file = std::fs::File::open(path)?;
+        let actual = file.metadata()?;
+        if !actual.is_file()
+            || actual.permissions().mode() & 0o077 != 0
+            || actual.dev() != before.dev()
+            || actual.ino() != before.ino()
+        {
+            return Err("recipient key must be an unchanged owner-only regular file".into());
+        }
+        bounded_read(file, 32)?
+            .try_into()
+            .map_err(|_| "recipient key must be exactly 32 bytes".into())
+    }
 }
 
 #[cfg(feature = "v2-service")]
