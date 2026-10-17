@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    ("durable-exact-request-spool", "tests/evidence_spool.rs"),
     ("recipient-encrypted-chunk", "tests/evidence_crypto.rs"),
     ("signed-service-request", "tests/evidence_service.rs"),
     ("service-configuration", "tests/evidence_http.rs"),
@@ -58,6 +59,11 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("connection-config", ".design/medium-architecture.md"),
 ];
 const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
+    (
+        "src/evidence_spool.rs",
+        "format!(\"{name}{suffix}\")",
+        "spool caller-selected namespace and SQLite sidecars",
+    ),
     (
         "src/evidence_store.rs",
         "name",
@@ -347,6 +353,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", "\"; \"", "not a path"),
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
+    "src/evidence_spool.rs",
     "src/evidence_store.rs",
     "src/actions.rs",
     "src/identity/ledger.rs",
@@ -361,6 +368,12 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_spool.rs",
+        "write_new_owner_only",
+        "EvidenceSpool",
+        1,
+    ),
     (
         "src/evidence_store.rs",
         "open_sqlite_recovery_source",
@@ -1109,7 +1122,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "6d215eca3284cdf3c810d77e9bcd6f59060354c3ae6bc3178423d0fe8b910d33",
+                "a66798353b9899634d14a605b004232a05cd24f8f15d87d7946ba29150f63a67",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

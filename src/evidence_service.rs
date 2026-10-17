@@ -254,7 +254,7 @@ impl SignedRequest {
         Ok(value)
     }
 }
-fn validate_shape(request: &Request) -> Result<()> {
+pub(crate) fn validate_shape(request: &Request) -> Result<()> {
     if request.version != 1 {
         return Err(Failure::Invalid);
     }
@@ -324,6 +324,39 @@ impl SignedReply {
         Ok(&self.reply)
     }
 }
+/// Canonical append commitment for exact signed bytes; useful to durable senders.
+pub fn append_manifest(bytes: &[u8]) -> Result<Record> {
+    manifest(&SignedRequest::decode(bytes)?, bytes)
+}
+
+/// Validate destination admission evidence before a sender releases its spool bytes.
+pub fn admitted_manifest(request: &[u8], reply: &SignedReply, issuer: &str) -> Result<Record> {
+    if SignedRequest::decode(request)?.request.audience != issuer {
+        return Err(Failure::AccessLimited);
+    }
+    let verified = reply.verify(request, issuer)?;
+    let Output::Committed { record, .. } = verified.result.as_ref().map_err(Clone::clone)? else {
+        return Err(Failure::Invalid);
+    };
+    if record.sequence == 0 || record.sequence > evidence::MAX_SAFE_INTEGER as u64 {
+        return Err(Failure::Corrupt);
+    }
+    let expected = append_manifest(request)?;
+    if unhex(&record.manifest, evidence::MAX_RECORD_BYTES)? != expected.bytes() {
+        return Err(Failure::Corrupt);
+    }
+    let Decoded::Known(receipt) =
+        evidence::decode(&unhex(&record.receipt, evidence::MAX_RECORD_BYTES)?)
+            .map_err(|_| Failure::Corrupt)?
+    else {
+        return Err(Failure::Corrupt);
+    };
+    if !evidence::binds(&receipt, &expected) || receipt.body()["issuer"] != author(issuer)? {
+        return Err(Failure::Corrupt);
+    }
+    Ok(expected)
+}
+
 fn manifest(request: &SignedRequest, bytes: &[u8]) -> Result<Record> {
     let Command::Append {
         id,
