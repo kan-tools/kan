@@ -351,3 +351,47 @@ fn real_cli_initialization_verification_and_backup_are_explicit() {
     );
     assert_eq!(fs::read(&backup).unwrap(), before);
 }
+
+#[test]
+fn unknown_identity_entries_and_empty_selections_are_incomplete() {
+    let t = tempfile::tempdir().unwrap();
+    assert!(!preview_store(t.path()).unwrap().selected_inventory_complete);
+    let events = t.path().join("identity/ledger/events");
+    fs::create_dir_all(&events).unwrap();
+    assert!(
+        !preview_identity(t.path())
+            .unwrap()
+            .selected_inventory_complete
+    );
+    fs::write(events.join("event.cbor"), b"original public bytes").unwrap();
+    fs::write(events.join(".tmp-event.cbor"), b"temporary bytes").unwrap();
+    let report = preview_identity(t.path()).unwrap();
+    assert!(report.selected_inventory_complete);
+    assert_eq!(report.files.len(), 1);
+    fs::write(events.join("notes.txt"), b"unknown evidence").unwrap();
+    fs::create_dir(events.join("nested")).unwrap();
+    let report = preview_identity(t.path()).unwrap();
+    assert!(!report.selected_inventory_complete);
+    assert_eq!(
+        report
+            .notices
+            .iter()
+            .filter(|n| n.kind == NoticeKind::Unsupported)
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn verification_discloses_structural_scope_without_admission_claim() {
+    let t = tempfile::tempdir().unwrap();
+    let root = t.path().join("archive");
+    drop(kan::evidence_store::Ledger::create(&root).unwrap());
+    let result = run(&["verify", root.join("archive.sqlite").to_str().unwrap()]);
+    assert!(result.status.success());
+    let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(json["verification"], "structural-closure");
+    assert_eq!(json["writable_admission"], "not-checked");
+    assert_eq!(json["cryptographic_admission"], "not-verified");
+    assert_eq!(json["historical_completeness"], "not-verified");
+}

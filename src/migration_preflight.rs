@@ -596,10 +596,17 @@ fn preview_selected(root: &Path, selection: &'static str, relative: &str) -> io:
         match fs::symlink_metadata(&directory) {
             Ok(m) if m.is_dir() && !m.file_type().is_symlink() => {}
             other => {
+                let (kind, reason) = match other {
+                    Ok(_) => (
+                        NoticeKind::Unsupported,
+                        "selected evidence ancestor is not a real directory".to_string(),
+                    ),
+                    Err(e) => (NoticeKind::Unavailable, e.to_string()),
+                };
                 output.notices.push(Notice {
-                    kind: NoticeKind::Unavailable,
+                    kind,
                     path: directory,
-                    reason: format!("selected evidence directory unavailable: {other:?}"),
+                    reason,
                 });
                 return Ok(output);
             }
@@ -615,19 +622,27 @@ fn preview_selected(root: &Path, selection: &'static str, relative: &str) -> io:
                 .to_str()
                 .is_some_and(|n| n.starts_with("repo.car.damaged-"));
         let public = selection == "public-identity-history"
+            && !name.to_str().is_some_and(|n| n.starts_with(".tmp-"))
             && entry.path().extension().is_some_and(|e| e == "cbor");
         if public || (selection == "log-directory" && log) {
             selected.push(entry.path());
         } else {
             output.notices.push(Notice {
-                kind: NoticeKind::Excluded,
+                kind: if selection == "public-identity-history" && !name.to_str().is_some_and(|n| n.starts_with(".tmp-")) { NoticeKind::Unsupported } else { NoticeKind::Excluded },
                 path: entry.path(),
-                reason: "outside selected evidence allowlist".into(),
+                reason: "unselected entry; public identity history permits only temporary-file exclusions".into(),
             });
         }
         if selected.len() + output.notices.len() > MAX_FILES {
             return Err(io::Error::other("file inventory limit; preview incomplete"));
         }
+    }
+    if selected.is_empty() {
+        output.notices.push(Notice {
+            kind: NoticeKind::Unavailable,
+            path: directory.clone(),
+            reason: "no evidence files found in selected directory".into(),
+        });
     }
     selected.sort();
     for path in selected {
@@ -663,7 +678,7 @@ fn record_file(output: &mut Preview, file: SourceFile) {
         if scan.error.is_some() || scan.unsupported_blocks > 0 {
             output.notices.push(Notice {
                 kind: NoticeKind::Unsupported,
-                path: file.path.clone(),
+                path: output.root.join(&file.path),
                 reason: format!(
                     "CAR inspection incomplete: error={:?}, unsupported_blocks={}",
                     scan.error, scan.unsupported_blocks
