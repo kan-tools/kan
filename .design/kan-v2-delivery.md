@@ -28,7 +28,7 @@ Signing uses the existing explicit-file identity in `src/sign.rs`. `src/bin/kan-
 
 Delivery has no credential beyond the retained signed append, and derives its issuer pin from the owner-trusted spool. A canceled process or failed stdout write may leave the remote committed or local acknowledgment published; status and exact retry reconcile these cases. Concurrent drainers can both send the same head; a stale acknowledger fails without deleting the subsequent head. No network lock is held in SQLite. The existing 30-second request timeout and HTTPS/literal-loopback restrictions apply. A permanent remote rejection stops draining and requires explicit recovery; no records are skipped.
 
-All spool mutations remain within `src/evidence_spool.rs` and its existing typed persistence capability. The schema/profile remains 2. Status is a consistent snapshot, not a reservation. Startup still audits lifetime history; physical disk usage and operational scale are not bounded by the payload budget. Small raw chunks are the unit here; multi-chunk migration metadata, capture streaming and gateway forwarding are subsequent build points.
+All spool mutations remain within `src/evidence_spool.rs` and its existing typed persistence capability. The schema/profile remains 2. Queue totals are a consistent snapshot, not a reservation; the CLI operation lookup is a separate observation and can reflect a different instant during concurrent draining. Startup still audits lifetime history; physical disk usage and operational scale are not bounded by the payload budget. Small raw chunks are the unit here; multi-chunk migration metadata, capture streaming and gateway forwarding are subsequent build points.
 
 ## Open Questions
 
