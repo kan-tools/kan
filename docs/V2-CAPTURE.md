@@ -20,7 +20,9 @@ The paths and public-key variable are examples, not selected deployment values.
 The request is `application/octet-stream`; arbitrary headers and authentication
 are not supported. The endpoint must be HTTPS or literal-loopback HTTP, without
 URL credentials, query or fragment. Captured content cannot change that endpoint.
-Redirects, ambient proxies, automatic decompression and HTTP retries are disabled.
+Redirects, ambient proxies, automatic decompression and reqwest retries are disabled.
+Connection pooling is disabled too, preventing hyper-util's pre-wire resend on
+a canceled pooled connection when a library caller reuses a Route.
 One invocation means one attempt. **Re-running this command is a new inference
 attempt**, even when the previous outcome was unknown. To retry only storage,
 use `spool-drain`; it sends existing archive events, never provider requests.
@@ -36,7 +38,9 @@ if stderr is closed or the host dies, no monitor can infer missing signals.
 A blocked stderr can delay forwarding; callbacks and SQLite admission are
 synchronous in this experimental path.
 
-Missing/unopenable/full spools do **not** stop the provider call. An enqueue error
+A readable spool whose writer differs from the signing key is a configuration
+error and fails before the provider call. Missing/unopenable/full spools do
+**not** stop the provider call. An enqueue error
 is marked unconfirmed, not definitely lost: an error may follow a durable commit.
 The next retained event includes the cumulative preceding unconfirmed count,
 and ordinal discontinuities expose missing observations. There is no reserved
@@ -60,15 +64,22 @@ Disconnect, I/O deadline, output failure or dropping the future gives unknown
 provider outcome. Drop attempts a final event; abrupt process termination cannot.
 Captured response chunks may include bytes the consumer never received.
 
-KANC1 v1 consists of five magic bytes, a four-byte big-endian JSON header length,
+KANC2 v2 consists of five magic bytes, a four-byte big-endian JSON header length,
 the typed compact JSON header and zero to 65536 exact body bytes. Header fields:
 version, attempt (random 32-byte lowercase hex), observer (collector or gateway),
-ordinal, unconfirmed_before and event. Body offsets count observed entity-body
+ordinal, observed_at_unix_micros, elapsed_micros, unconfirmed_before and event.
+Wall time is the recorder's self-reported UTC observation time in microseconds
+(null if the host clock cannot be represented). elapsed_micros is monotonic time
+since recorder creation. Neither establishes trusted global time or harness
+creation time; stdin has already been read before CLI recording starts. Each
+observation samples these clocks before admission. Wall time may move backward.
+This correction advances the unmerged KANC1 draft, which omitted clocks. Old
+KANC1 bytes remain raw evidence; their missing observation times cannot be recovered. Body offsets count observed entity-body
 bytes. Operation ID is the first 16 bytes of SHA-256 over
 `tools.kan.capture.operation.v1\0`, raw attempt bytes, observer byte (collector 0,
 gateway 1), and ordinal as unsigned big-endian u64. The outer signed request
 binds scope/writer; an event does not establish another observer's behavior.
-KANC1 IDs do not extend the accepted kan URI grammar.
+KANC2 IDs do not extend the accepted kan URI grammar.
 
 Only body bytes and the explicit lifecycle fields are covered here. TLS packets,
 HTTP transfer framing, arbitrary headers/trailers, expanded attachments, tool hooks

@@ -244,6 +244,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let request = bounded_read(std::io::stdin().lock(), capture::MAX_REQUEST)?;
             // Open failure is degraded capture, not permission to drop inference.
             let mut spool = kan::evidence_spool::Spool::open(&spool).ok();
+            // A readable, mismatched writer is a configuration error. Storage
+            // that cannot be inspected still follows the visible-gap policy.
+            if let Some(queue) = spool.as_mut() {
+                if let Ok(status) = queue.status() {
+                    if status.writer != signer.did().as_str() {
+                        return Err("capture signing key does not match spool writer".into());
+                    }
+                }
+            }
             let mut sink = EncryptedSpool {
                 spool: spool.as_mut(),
                 signer: &signer,

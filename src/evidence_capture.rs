@@ -3,12 +3,12 @@ use crate::{evidence_delivery, evidence_service::hex, evidence_spool::Spool, sig
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 pub const CHUNK: usize = 64 * 1024;
 pub const MAX_REQUEST: usize = 16 * 1024 * 1024;
-const MAGIC: &[u8; 5] = b"KANC1";
+const MAGIC: &[u8; 5] = b"KANC2";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -40,6 +40,8 @@ pub struct Header {
     pub attempt: String,
     pub observer: Observer,
     pub ordinal: u64,
+    pub observed_at_unix_micros: Option<u64>,
+    pub elapsed_micros: u64,
     pub unconfirmed_before: u64,
     pub event: Event,
 }
@@ -96,6 +98,7 @@ pub struct Recorder<'a> {
     sink: &'a mut dyn Sink,
     notify: &'a mut dyn FnMut(&Health),
     nonce: [u8; 32],
+    started: Instant,
     health: Health,
     finished: bool,
 }
@@ -125,6 +128,7 @@ impl<'a> Recorder<'a> {
             sink,
             notify,
             nonce,
+            started: Instant::now(),
             health,
             finished: false,
         })
@@ -155,10 +159,15 @@ impl<'a> Recorder<'a> {
             None
         };
         let header = Header {
-            version: 1,
+            version: 2,
             attempt: self.health.attempt.clone(),
             observer: self.health.observer,
             ordinal,
+            observed_at_unix_micros: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .ok()
+                .and_then(|d| u64::try_from(d.as_micros()).ok()),
+            elapsed_micros: self.started.elapsed().as_micros().min(u64::MAX as u128) as u64,
             unconfirmed_before: self.health.unconfirmed,
             event,
         };
@@ -240,6 +249,8 @@ impl Route {
         }
         let client = reqwest::Client::builder()
             .no_proxy()
+            // Avoid hyper-util's pre-wire retry on a canceled pooled connection.
+            .pool_max_idle_per_host(0)
             .redirect(reqwest::redirect::Policy::none())
             .retry(reqwest::retry::never())
             .no_gzip()

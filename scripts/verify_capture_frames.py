@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Independent synthetic KANC1 fixture decoder, not a production archive reader.
+"""Independent synthetic KANC2 fixture decoder, not a production archive reader.
 Inputs: numbered .bin frames/.op IDs and expected request/response files.
 Checks complete, gap-free gateway fixture order and byte bodies without Rust code.
 """
@@ -21,14 +21,16 @@ def verify(root):
     for ordinal, path in enumerate(files):
         require(int(path.stem) == ordinal, 'missing ordinal')
         frame = path.read_bytes()
-        require(frame[:5] == b'KANC1' and len(frame) >= 9, 'magic')
+        require(frame[:5] == b'KANC2' and len(frame) >= 9, 'magic')
         length = int.from_bytes(frame[5:9], 'big')
         require(0 < length <= 16384 and 9+length <= len(frame), 'header bound')
         h = json.loads(frame[9:9+length])
         body = frame[9+length:]
-        require(set(h) == {'version','attempt','observer','ordinal','unconfirmed_before','event'}, 'fields')
-        require(h['version'] == 1 and h['ordinal'] == ordinal and h['unconfirmed_before'] == 0, 'coordinates')
+        require(set(h) == {'version','attempt','observer','ordinal','observed_at_unix_micros','elapsed_micros','unconfirmed_before','event'}, 'fields')
+        require(h['version'] == 2 and h['ordinal'] == ordinal and h['unconfirmed_before'] == 0, 'coordinates')
         require(h['observer'] == 'gateway', 'observer')
+        require(type(h['observed_at_unix_micros']) is int and h['observed_at_unix_micros'] > 0, 'capture time')
+        require(type(h['elapsed_micros']) is int and h['elapsed_micros'] >= 0, 'elapsed time')
         require(len(h['attempt']) == 64 and bytes.fromhex(h['attempt']).hex() == h['attempt'], 'attempt')
         attempt = attempt or h['attempt']
         require(h['attempt'] == attempt, 'attempt changed')

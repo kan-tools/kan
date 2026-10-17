@@ -45,7 +45,7 @@ impl Sink for Memory {
     }
 }
 fn decode(bytes: &[u8]) -> (Header, &[u8]) {
-    assert_eq!(&bytes[..5], b"KANC1");
+    assert_eq!(&bytes[..5], b"KANC2");
     let n = u32::from_be_bytes(bytes[5..9].try_into().unwrap()) as usize;
     (
         serde_json::from_slice(&bytes[9..9 + n]).unwrap(),

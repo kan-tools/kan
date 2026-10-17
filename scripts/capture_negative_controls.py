@@ -2,6 +2,7 @@
 """Mutate a committed source export, never the invoking checkout.
 Mac/APFS dependency clone; bounded runtime witnesses and restoration; retain logs.
 """
+import argparse
 import io
 import os
 from pathlib import Path
@@ -12,6 +13,9 @@ import subprocess
 import tarfile
 import tempfile
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--review-followups-only', action='store_true')
+args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 if shutil.disk_usage(root).free < 15 * 1024**3:
     raise SystemExit('need at least 15 GiB free for scratch build')
@@ -52,12 +56,26 @@ try:
         ('observer-id','Observer::Gateway => 1,','Observer::Gateway => 0,','binary_stream_above_ten_mib_has_exact_bodies_and_independent_frames'),
         ('flush','output.flush().await.map_err(|_| Error::OutcomeUnknown)?;','// omit output flush','empty_body_still_requires_successful_output_flush'),
     ]
-    command=['cargo','test','--features','v2-crypto','--test','evidence_capture']
+    controls += [
+        ('header-observer','observer: self.health.observer,\n            ordinal,','observer: Observer::Gateway,\n            ordinal,','observer_and_capture_clocks_are_retained'),
+        ('actual-route','route: route.url.to_string(),','route: String::from("http://127.0.0.1:1/forged"),','probe_oracle_decrypts_cli_spool_frames'),
+        ('no-proxy','            .no_proxy()\n','','probe_cli_ignores_ambient_proxy_env'),
+        ('pooling','            .pool_max_idle_per_host(0)\n','','reused_route_never_reuses_a_pooled_connection'),
+        ('elapsed-clock','elapsed_micros: self.started.elapsed().as_micros().min(u64::MAX as u128) as u64,','elapsed_micros: 0,','observer_and_capture_clocks_are_retained'),
+        ('wall-clock','observed_at_unix_micros: SystemTime::now()\n                .duration_since(UNIX_EPOCH)\n                .ok()\n                .and_then(|d| u64::try_from(d.as_micros()).ok()),','observed_at_unix_micros: None,','observer_and_capture_clocks_are_retained'),
+        ('writer-config','if status.writer != signer.did().as_str() {','if false {','probe_cli_key_not_spool_writer'),
+    ]
+    if args.review_followups_only:
+        controls = controls[-7:]
+    command=['cargo','test','--features','v2-crypto','--test','evidence_capture', '--test', 'evidence_capture_adversarial']
     code,output=run(command,'baseline')
-    if code or not passed(output,14): raise SystemExit('baseline failed\n'+output)
+    if code or not passed(output,14) or not passed(output,12): raise SystemExit('baseline failed\n'+output)
     for name,old,new,test in controls:
+        source = scratch / ('src/bin/kan-v2.rs' if name == 'writer-config' else 'src/evidence_capture.rs')
+        original = source.read_text()
         if original.count(old)!=1: raise SystemExit(f'{name}: edit not unique')
-        selected=command+[test,'--','--exact']
+        target = 'evidence_capture_adversarial' if name in {'header-observer','actual-route','no-proxy','pooling','elapsed-clock','wall-clock','writer-config'} else 'evidence_capture'
+        selected=['cargo','test','--features','v2-crypto','--test',target,test,'--','--exact']
         try:
             source.write_text(original.replace(old,new,1))
             code,output=run(selected,name)
