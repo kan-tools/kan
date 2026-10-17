@@ -581,6 +581,7 @@ impl Ledger {
         let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         let ledger = Self { conn };
         ledger.check_schema()?;
+        ledger.check_write_schema()?;
         // Reject malformed profile-marked files before changing journal mode.
         // SQLite may still recover/checkpoint preexisting journal/WAL media.
         // Audit once on opening; keep this connection for bounded hot-path writes.
@@ -601,6 +602,33 @@ impl Ledger {
             return Err(Error::Invalid("unknown database profile"));
         }
         Ok(())
+    }
+
+    /// Writable admission is stricter than raw recovery: even an empty archive
+    /// must have exactly the constraints/indexes we rely on and no extra triggers.
+    fn check_write_schema(&self) -> Result<()> {
+        let expected = Connection::open_in_memory()?;
+        expected.execute_batch(SCHEMA)?;
+        let query = "SELECT type,name,tbl_name,sql FROM main.sqlite_schema ORDER BY type,name";
+        let mut expected_stmt = expected.prepare(query)?;
+        let mut actual_stmt = self.conn.prepare(query)?;
+        let mut expected_rows = expected_stmt.query([])?;
+        let mut actual_rows = actual_stmt.query([])?;
+        loop {
+            match (expected_rows.next()?, actual_rows.next()?) {
+                (None, None) => return Ok(()),
+                (Some(expected), Some(actual)) => {
+                    for column in 0..4 {
+                        if expected.get::<_, Option<String>>(column)?
+                            != actual.get::<_, Option<String>>(column)?
+                        {
+                            return Err(Error::Invalid("unsupported writable archive schema"));
+                        }
+                    }
+                }
+                _ => return Err(Error::Invalid("unsupported writable archive schema")),
+            }
+        }
     }
 
     pub fn stage(&mut self, bytes: &[u8]) -> Result<Cid> {
