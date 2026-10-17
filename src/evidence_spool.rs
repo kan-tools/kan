@@ -61,6 +61,23 @@ pub struct Frontier {
     pub next: u64,
     pub previous: Option<String>,
 }
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Status {
+    pub scope: String,
+    pub writer: String,
+    pub audience: String,
+    pub budget: u64,
+    pub next: u64,
+    pub previous: Option<String>,
+    pub pending: u64,
+    pub pending_bytes: u64,
+}
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Operation {
+    pub position: u64,
+    pub manifest: String,
+    pub pending: bool,
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Boundary {
     BeforeCommit,
@@ -155,6 +172,39 @@ fn configure(conn: &Connection) -> Result<()> {
     Ok(())
 }
 impl Spool {
+    /// Consistent metadata snapshot; this does not reserve the writer frontier.
+    pub fn status(&mut self) -> Result<Status> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Deferred)?;
+        let st = state(&tx)?;
+        let (pending, pending_bytes) = tx.query_row(
+            "SELECT count(*),coalesce(sum(length(request)),0) FROM pending",
+            [],
+            |r| Ok((unsigned(r, 0)?, unsigned(r, 1)?)),
+        )?;
+        tx.commit()?;
+        Ok(Status {
+            scope: st.scope,
+            writer: st.writer,
+            audience: st.audience,
+            budget: st.budget,
+            next: st.next,
+            previous: st.previous,
+            pending,
+            pending_bytes,
+        })
+    }
+    /// Retained local operation identity, not a proof of source-content equivalence.
+    pub fn operation(&self, id: &str) -> Result<Option<Operation>> {
+        if service::unhex(id, 16)?.len() != 16 {
+            return Err(Error::Invalid("operation identifier"));
+        }
+        Ok(self.conn.query_row(
+            "SELECT o.position,o.manifest,p.position IS NOT NULL FROM operations o LEFT JOIN pending p ON p.position=o.position WHERE o.operation=?", [id],
+            |r| Ok(Operation { position: unsigned(r, 0)?, manifest: r.get(1)?, pending: r.get(2)? }),
+        ).optional()?)
+    }
     /// New namespace only. Interrupted initialization is retained for explicit recovery.
     pub fn create(
         path: &Path,

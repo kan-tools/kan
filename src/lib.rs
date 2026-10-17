@@ -14,6 +14,8 @@ pub mod context;
 pub mod evidence;
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_crypto;
+#[cfg(feature = "v2-crypto")]
+pub mod evidence_delivery;
 #[cfg(feature = "v2-service")]
 pub mod evidence_http;
 #[cfg(feature = "v2-storage")]
