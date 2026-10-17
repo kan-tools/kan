@@ -1,0 +1,27 @@
+# Experimental signed service review disposition — 2026-10-17
+
+## Initial review
+
+Fresh Claude Code `claude-opus-5-5`, session `f9f2103b-7c1f-4513-8d23-7418b00c3043`, range `d953afca0d71bb38dec58627235184b437162aa8..ecab2bc7e398bdd7db1e7b3e938929d206cd30c3`. Final report SHA-256 `cb442b4fada6058d831b22a3c277a9b7016bcdd508795d9dce48e2f53eed5f75`. Verdict **APPROVE WITH FOLLOW-UPS**, explicitly static and conditional: tool permissions prevented runtime checks. This does not satisfy the runtime review gate. Private day/telos records were unavailable, not absent. Raw report and metadata are retained privately; no hidden reasoning is published.
+
+The author corrected both substantive findings: seconds-to-milliseconds conversion for immutable receipts, and competing service instances mixing scopes. Service commits now enforce a single scope inside the existing SQLite write transaction. The first commit establishes the binding of an empty partition; startup, snapshot-tip, page and read validation fail closed on foreign evidence. Raw owner access remains outside the service capability boundary. No schema or canonical historical record is rewritten.
+
+Additional witnesses cover exact retry after restart with a still-admitted writer, high-S signature rejection, retained bad signatures, wrong original receipt issuers, changed manifest bindings, unchanged standalone backup hashes across rejected admission, and independent OpenSSL verification of bytes selected directly from backup SQLite. Missing objects referenced by committed service records report corrupt evidence. Four executed runtime negative controls cover request signatures, capabilities, audience and retained issuer binding, followed by restored passing tests.
+
+Remaining follow-ups: bounded startup/capacity qualification; production key/grant-file hardening and custody; retained policy history; orphan staging accounting; local connection starvation and broader transport adversarial probes. Replies have no independent freshness nonce; transient failures cannot establish permanent non-admission. The development listener and opaque fixtures do not establish production readiness or complete P4.
+
+A fresh runtime-capable correction review is required before this slice is recommended for merge.
+
+## Fresh runtime correction review
+
+Actual `claude-opus-5-5`, session `54a836e5-ef46-44c2-aa8a-98c851cf556c`, range `ecab2bc7e398bdd7db1e7b3e938929d206cd30c3..39a0214a908c469763c78180e31f70f6e7ffc7f7`. Final report SHA-256 `a12e1f8ebd2af62b30abf813740723363b979943ac6376fcb917d741c3fde0a2`. Verdict **APPROVE WITH FOLLOW-UPS**. Runtime execution succeeded: build, 85 targeted tests, all-target Clippy, formatting, default/contract/storage feature checks and seven storage-feature service tests. Independent probes covered process/service races, exact retry after SIGKILL, expiry and timestamp boundaries, noncanonical wire forms, HTTP route/body/header limits, redirects/proxies/rebound replies and stored-byte OpenSSL verification. Four tracked mutation controls and seven additional scratch controls were killed from a green baseline; the missing-object error-mapping mutation survived and needs a permanent test.
+
+Follow-ups remain explicit. F1 (medium): the single-scope SQL `scope != ?` guard scans under the write lock; reviewer measured 8.7ms at 300k records, versus 0.01ms for indexed `< ?1 OR > ?1`. Optimize and test the query plan before capacity qualification. F2 (medium-low, privileged raw writer): a same-scope malformed raw append after startup can be hidden behind a later valid tip; pages and restart reject it, but snapshot-tip verification is not a full-history certificate. Strengthen writer coordination/admission before bounded-startup qualification. F3: mixed raw partitions currently return conflict on exact retry instead of corrupt. F4: retained receipts are unsigned and may name historical service issuers; startup validates request binding, not historical receipt authenticity. F5/F6: add a missing-object mutation witness and improve idle-header admission/timing. Key/config TOCTOU hardening and reply freshness remain declared limitations.
+
+These are follow-ups on an experimental API build point, not approval for production service or a declaration of completed P3/P4. Author test evidence and reviewer evidence are separate. Raw reports remain private; no hidden reasoning is published.
+
+## Compiler compatibility correction
+
+GitHub CI run `39009926614` failed on the earlier integrated spool snapshot because Rust 1.99 Clippy rejects constant `chunks_exact(2)` with warnings denied. The service now uses `as_chunks::<2>().0.iter()` after its existing even-length guard. This changes no accepted bytes or limits.
+
+Fresh actual `claude-opus-5-5`, session `2a886e94-36aa-4e3b-b81b-c75878708549`, reviewed `01308fe75f1522ad615d10fb3b262b48236b71ea..694ef2fc494f80ead458efa7461b07c7bd4cab6d`. Final report SHA-256 `4e6f4ed317fb37d9c5e9f53868c8f194f00c9f44e1aea64c21315ae8933521b0`. Verdict **APPROVE**, with final wording **PASS**. Seven service tests, all-target Clippy and formatting passed. An independent std-only probe compared 3,187,105 old/new input-and-limit combinations, all byte values and the maximum boundary, on Rust 1.95 and 1.96.1. The local default is 1.96.1; 1.95 is the declared MSRV. The reviewer did not run the full crate on 1.95 or Clippy 1.99 locally. Remote CI must still confirm the 1.99 gate; local success is not reported as remote CI success.

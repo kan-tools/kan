@@ -164,3 +164,50 @@ P3 fixes the experimental local profile above; physical-power-loss qualification
 ## Implementation status
 
 Experimental pure reference codec and decision models are introduced with this draft under `evidence-contract`. No production path invokes them. The `v2-storage` feature adds an experimental opaque storage engine and local backup verifier. No signature verifier, encryption scheme, network service or migration is implied by that implementation.
+
+## Experimental service request profile
+
+The `v2-service` feature exposes an experimental request profile described in
+`.design/kan-v2-service-boundary.md`. It does not change the canonical records
+above or claim production payload encryption. Static did:key credentials sign
+compact ordered JSON requests under `tools.kan.service.request.v1` followed by
+NUL and the SHA-256 of the unsigned request's exact compact JSON bytes. Unknown
+or duplicate fields and alternate whitespace/field ordering are rejected. Byte
+strings use lowercase hex. The maximum opaque payload is 1 MiB; maximum request
+size is twice that plus 4096 bytes. Canonical signed append requests are the
+referenced raw objects, including their public routing/authentication metadata.
+
+An append binds scope token, principal, operation ID, writer position,
+predecessor and opaque payload. Its one-entry manifest is reconstructed from
+those fields and the signed-request object's raw SHA-256 CID. The slot is the
+SHA-256 of the 16-byte operation ID. A service-generated receipt uses the existing
+receipt record contract. Exact request retransmission reaches the existing
+idempotency owner. A new signature serialization is different retained evidence;
+clients retain the original signed bytes for retries.
+
+Read requests carry an expiry no more than 300 seconds ahead of service time.
+Append requests have null expiry so offline immutable evidence can resume, but
+current append authorization is always required. Grants independently allow
+append and inventory within one routing partition. Current grants are not
+historical admission proofs. No trust-filter argument participates in ingress.
+
+Replies sign `tools.kan.service.reply.v1`, NUL and the SHA-256 of the unsigned
+reply's ordered compact JSON. The reply binds the request-byte SHA-256 and the
+serving identity; clients pin that identity. This signature is a current serving
+assertion, not a retained signature from the original receipt issuer. Receipt
+records and original client signatures remain retained. Imported identities and
+RFC 1 control histories are not renamed into this service-credential profile.
+
+The built-in HTTP/1 listener is loopback-only and receives POST /v1/rpc with a
+bounded body. Client transport permits HTTPS or literal-loopback HTTP, forbids
+redirects and ambient proxies, and checks the reply signature. Remote TLS
+termination, production custody, signed grant history and provider forwarding
+remain outside this experimental profile's qualification.
+
+Requests additionally bind the destination service did:key in an `audience`
+field (between scope and principal). Admission compares it with the serving
+identity before accessing storage. Retained request verification binds that
+same audience to the original receipt issuer. This prevents a signed request
+from being redirected to another service identity even if its routing scope and
+grants were copied. Restores that must drain old spools retain the service key;
+key rotation and audience transition are not implemented by this profile.

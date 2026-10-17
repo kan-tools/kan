@@ -697,6 +697,22 @@ impl Ledger {
         receipt: &[u8],
         observe: &mut dyn FnMut(Boundary),
     ) -> Result<Committed> {
+        self.commit_inner(manifest, receipt, observe, false)
+    }
+
+    /// Service partition admission: serialized with all other writers. The first
+    /// commit binds an empty partition; later service commits cannot mix scopes.
+    pub fn commit_partition(&mut self, manifest: &[u8], receipt: &[u8]) -> Result<Committed> {
+        self.commit_inner(manifest, receipt, &mut |_| {}, true)
+    }
+
+    fn commit_inner(
+        &mut self,
+        manifest: &[u8],
+        receipt: &[u8],
+        observe: &mut dyn FnMut(Boundary),
+        single_scope: bool,
+    ) -> Result<Committed> {
         let manifest = known(manifest, Kind::Manifest)?;
         let receipt = known(receipt, Kind::Receipt)?;
         if !evidence::binds(&receipt, &manifest) {
@@ -712,6 +728,15 @@ impl Ledger {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if single_scope
+            && tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM commits WHERE scope != ?)",
+                [scope],
+                |row| row.get::<_, bool>(0),
+            )?
+        {
+            return Err(Error::Conflict("service partition scope"));
+        }
         let prior: Option<(i64,String,Vec<u8>,Vec<u8>)> = tx.query_row(
             "SELECT sequence,cid,manifest,receipt FROM commits WHERE scope=? AND writer=? AND operation=?",
             params![scope, writer, operation], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;

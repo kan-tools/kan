@@ -120,6 +120,7 @@ impl SurfaceWrite {
             ],
             Self::Sqlite => &["sqlite:meta"],
             Self::EvidenceArchive => &[
+                "evidence-service:request",
                 "evidence-db:archive.sqlite",
                 "evidence-db:archive.sqlite-wal",
                 "evidence-db:archive.sqlite-journal",
