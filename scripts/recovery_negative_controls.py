@@ -43,8 +43,16 @@ def main():
         ('early-profile-publication', original.replace('tx.execute_batch(SCHEMA)?;',
          'tx.execute_batch(SCHEMA)?; tx.commit()?; let tx = target.conn.unchecked_transaction()?;', 1),
          'evidence_store', 'recovery_rejects_raw_damage_without_hiding_intact_records'),
-        ('wrong-mutation-capability', original.replace('SurfaceWrite::EvidenceRecovery', 'SurfaceWrite::EvidenceBackup'),
+        ('wrong-mutation-capability', original.replace('SurfaceWrite::EvidenceRecovery,', 'SurfaceWrite::EvidenceBackup,'),
          'surface_conformance', 'every_persistence_facade_call_is_independently_inventoried'),
+        ('wrong-source-coordination-capability', original.replace('SurfaceWrite::EvidenceRecoverySource,', 'SurfaceWrite::EvidenceArchive,'),
+         'surface_conformance', 'every_persistence_facade_call_is_independently_inventoried'),
+        ('no-sqlite-value-limit', original.replace('            RECOVERY_SQLITE_LENGTH_LIMIT,', '            i32::MAX,'),
+         'evidence_store', 'recovery_large_rows_hit_sqlite_limit_before_materialization'),
+        ('unsafe-object-index-seek', original.replace('FROM objects NOT INDEXED WHERE +cid=?', 'FROM objects WHERE cid=?'),
+         'evidence_store', 'recovery_large_rows_hit_sqlite_limit_before_materialization'),
+        ('no-sidecar-namespace-guard', original.replace('let destination = recovery_destination(&self.source, destination)?;', 'let destination = destination.to_path_buf();'),
+         'evidence_store', 'recovery_rejects_overlapping_sqlite_namespaces_and_existing_sidecars'),
     ]
     try:
         for label, changed, suite, test in cases:
@@ -58,7 +66,7 @@ def main():
         SOURCE.write_text(original)
     for _, _, suite, test in cases:
         assert run(suite, test) == 0, 'restored fix'
-    print('All four controls fail; restored fixes pass.')
+    print(f'All {len(cases)} controls fail; restored fixes pass.')
 
 
 if __name__ == '__main__':

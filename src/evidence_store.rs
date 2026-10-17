@@ -1,7 +1,11 @@
 //! Experimental opaque ledger. See `.design/kan-v2-storage.md` and RFC 4.
 //! This layer assumes its caller has authenticated admission. It cannot decrypt.
 
-use std::{collections::BTreeMap, path::Path, time::Duration};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use atproto_dasl::{Cid, Ipld};
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
@@ -91,6 +95,7 @@ pub struct Ledger {
 /// derived indexes. Drop promptly: a live source may retain WAL history meanwhile.
 pub struct RecoveryReader {
     ledger: Ledger,
+    source: PathBuf,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,8 +106,12 @@ pub enum RecoveryBoundary {
     Committed,
 }
 
-// Explicit bounds apply before returning BLOB data to Rust, including damaged
-// rows that were written with SQLite CHECK constraints disabled.
+// Bound SQLite's own value/row materialization, not just returned Rust buffers.
+// Legitimate objects need 4 MiB plus their key; manifest rows are much smaller.
+const RECOVERY_SQLITE_LENGTH_LIMIT: i32 = (MAX_CHUNK * 2) as i32;
+
+// Output bounds supplement the connection's SQLite allocation limit, including
+// damaged rows written with CHECK constraints disabled.
 const RAW_COMMITS: &str = "SELECT sequence,length(manifest),substr(manifest,1,65536),length(receipt),substr(receipt,1,65536) FROM commits NOT INDEXED";
 
 fn raw_commit(row: &rusqlite::Row<'_>) -> Result<Committed> {
@@ -133,16 +142,28 @@ fn raw_commit(row: &rusqlite::Row<'_>) -> Result<Committed> {
 impl RecoveryReader {
     /// Open a database FILE, including a standalone backup, without consulting
     /// derived fields. SQLite must still be able to read its schema/raw tables.
+    /// WAL mode may initialize coordination sidecars; read-only media without
+    /// usable sidecars and hot rollback journals fail closed. Preserve all source
+    /// media together and perform any crash recovery on a separate writable copy.
     pub fn open(path: &Path) -> Result<Self> {
         private_file(path)?;
+        let source = std::fs::canonicalize(path)?;
         let ledger = Ledger {
-            conn: Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?,
+            // surface-write: evidence-recovery-source:database-wal,evidence-recovery-source:database-shm
+            conn: crate::persistence::open_sqlite_recovery_source(
+                crate::persistence::SurfaceWrite::EvidenceRecoverySource,
+                &source,
+            )?,
         };
+        ledger.conn.set_limit(
+            rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
+            RECOVERY_SQLITE_LENGTH_LIMIT,
+        )?;
         ledger.conn.busy_timeout(Duration::from_secs(5))?;
         ledger.conn.execute_batch("PRAGMA query_only=ON; BEGIN;")?;
         // Reading the profile pins the transaction before the handle escapes.
         ledger.check_schema()?;
-        Ok(Self { ledger })
+        Ok(Self { ledger, source })
     }
 
     pub fn record(&self, sequence: u64) -> Result<Committed> {
@@ -159,11 +180,16 @@ impl RecoveryReader {
     }
 
     pub fn read_object(&self, id: &Cid) -> Result<Vec<u8>> {
+        // WITHOUT ROWID key seeks can materialize an entire corrupt object row
+        // before SQLITE_LIMIT_LENGTH applies. This offline recovery path scans
+        // keys instead; NOT INDEXED/+cid prohibit an index seek. Ordinary Ledger
+        // reads retain their indexed path. Memory is bounded; recovery I/O is not
+        // a constant-time point lookup.
         let row: Option<(i64, Vec<u8>)> = self
             .ledger
             .conn
             .query_row(
-                "SELECT length(bytes),substr(bytes,1,4194304) FROM objects WHERE cid=?",
+                "SELECT length(bytes),substr(bytes,1,4194304) FROM objects NOT INDEXED WHERE +cid=?",
                 [id.to_string()],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -175,8 +201,9 @@ impl RecoveryReader {
         Ok(bytes)
     }
 
-    /// Build a NEW standalone SQLite file. A failure retains an incomplete file;
-    /// retry with a fresh destination. Never modifies or promotes the source.
+    /// Build a NEW standalone SQLite file. Failure may retain an incomplete file
+    /// or a complete file after a post-commit error; retry with a fresh destination.
+    /// Never rewrites source evidence or automatically promotes the output.
     pub fn rebuild(&self, destination: &Path) -> Result<Verification> {
         self.rebuild_observed(destination, &mut |_| {})
     }
@@ -187,14 +214,15 @@ impl RecoveryReader {
         destination: &Path,
         observe: &mut dyn FnMut(RecoveryBoundary),
     ) -> Result<Verification> {
+        let destination = recovery_destination(&self.source, destination)?;
         // surface-write: evidence-recovery:archive.sqlite
         crate::persistence::write_new_owner_only(
             crate::persistence::SurfaceWrite::EvidenceRecovery,
-            destination,
+            &destination,
             &[],
         )?;
         let target = Ledger {
-            conn: Connection::open_with_flags(destination, OpenFlags::SQLITE_OPEN_READ_WRITE)?,
+            conn: Connection::open_with_flags(&destination, OpenFlags::SQLITE_OPEN_READ_WRITE)?,
         };
         target.conn.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA fullfsync=ON;")?;
         let tx = target.conn.unchecked_transaction()?;
@@ -261,14 +289,90 @@ impl RecoveryReader {
         tx.commit()?;
         observe(RecoveryBoundary::Committed);
         drop(target);
-        std::fs::File::open(destination)?.sync_all()?;
-        std::fs::File::open(parent_directory(destination))?.sync_all()?;
-        let actual = Ledger::verify_file(destination)?;
+        std::fs::File::open(&destination)?.sync_all()?;
+        std::fs::File::open(parent_directory(&destination))?.sync_all()?;
+        let actual = Ledger::verify_file(&destination)?;
         if actual != expected {
             return Err(Error::Corrupt("rebuild verification changed".into()));
         }
         Ok(actual)
     }
+}
+
+fn sqlite_paths(path: &Path) -> Vec<PathBuf> {
+    let mut paths = vec![path.to_path_buf()];
+    for suffix in ["-journal", "-wal", "-shm"] {
+        let mut name = path.as_os_str().to_os_string();
+        name.push(suffix);
+        paths.push(PathBuf::from(name));
+    }
+    paths
+}
+
+fn same_existing_file(a: &Path, b: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        matches!((std::fs::metadata(a), std::fs::metadata(b)), (Ok(a), Ok(b)) if a.dev() == b.dev() && a.ino() == b.ino())
+    }
+    #[cfg(not(unix))]
+    {
+        matches!((std::fs::canonicalize(a), std::fs::canonicalize(b)), (Ok(a), Ok(b)) if a == b)
+    }
+}
+
+fn recovery_destination(source: &Path, destination: &Path) -> Result<PathBuf> {
+    let parent = std::fs::canonicalize(parent_directory(destination))?;
+    let name = destination
+        .file_name()
+        .ok_or(Error::Invalid("destination filename"))?;
+    let destination = parent.join(name);
+    let target_paths = sqlite_paths(&destination);
+    let source_paths = sqlite_paths(source);
+    // Conservative ASCII case comparison also protects case-insensitive volumes.
+    if target_paths.iter().any(|target| {
+        source_paths.iter().any(|source| {
+            target
+                .as_os_str()
+                .as_encoded_bytes()
+                .eq_ignore_ascii_case(source.as_os_str().as_encoded_bytes())
+        })
+    }) {
+        return Err(Error::Invalid(
+            "recovery destination overlaps source SQLite files",
+        ));
+    }
+    // Resolve an existing base through filesystem aliases (including Unicode
+    // spelling/case aliases on macOS and hard links on Unix), before a sidecar
+    // that does not exist yet can be created under that base's name.
+    if let Some(name) = name.to_str() {
+        for suffix in ["-journal", "-wal", "-shm"] {
+            if name.len() >= suffix.len()
+                && name.as_bytes()[name.len() - suffix.len()..]
+                    .eq_ignore_ascii_case(suffix.as_bytes())
+            {
+                let base = parent.join(&name[..name.len() - suffix.len()]);
+                if same_existing_file(&base, source) {
+                    return Err(Error::Invalid(
+                        "recovery destination aliases source SQLite sidecar",
+                    ));
+                }
+            }
+        }
+    }
+    // A new main filename alone is insufficient: SQLite owns these sibling names.
+    for path in target_paths.iter().skip(1) {
+        match std::fs::symlink_metadata(path) {
+            Ok(_) => {
+                return Err(Error::Invalid(
+                    "recovery destination SQLite sidecar already exists",
+                ))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(destination)
 }
 
 pub fn ciphertext_cid(bytes: &[u8]) -> Cid {

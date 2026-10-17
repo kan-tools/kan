@@ -26,6 +26,8 @@ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
     SurfaceValue::new("evidence-backup:archive.sqlite-journal", "*"),
     SurfaceValue::new("evidence-recovery:archive.sqlite", "*"),
     SurfaceValue::new("evidence-recovery:archive.sqlite-journal", "*"),
+    SurfaceValue::new("evidence-recovery-source:database-wal", "*"),
+    SurfaceValue::new("evidence-recovery-source:database-shm", "*"),
     SurfaceValue::new("evidence-sqlite:objects", "cid"),
     SurfaceValue::new("evidence-sqlite:objects", "bytes"),
     SurfaceValue::new("evidence-sqlite:commits", "sequence"),

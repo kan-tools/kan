@@ -57,6 +57,16 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
 const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     (
         "src/evidence_store.rs",
+        "name",
+        "evidence-recovery:archive.sqlite (caller-selected basename)",
+    ),
+    (
+        "src/evidence_store.rs",
+        "&name[..name.len() - suffix.len()]",
+        "source-sidecar alias validation (read-only metadata)",
+    ),
+    (
+        "src/evidence_store.rs",
         "\"archive.sqlite\"",
         "evidence-db:archive.sqlite",
     ),
@@ -348,6 +358,12 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_store.rs",
+        "open_sqlite_recovery_source",
+        "EvidenceRecoverySource",
+        1,
+    ),
     (
         "src/evidence_store.rs",
         "write_new_owner_only",
@@ -1090,7 +1106,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "4853d8378a21ff25ff6dd8a0f6e541c10a6333ad137e5ee8962a43378efcb40d",
+                "a04ceacfdb51fec8a54d21429586a9bbed60a53d69688123177df69c5662f8ba",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(
