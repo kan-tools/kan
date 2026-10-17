@@ -64,3 +64,17 @@ grants were copied. Restores that must drain old spools retain the service key;
 key rotation and audience transition are not implemented by this profile.
 
 `dispatch` takes Unix seconds for request expiry; receipts convert those seconds to safe Unix milliseconds (second precision). Signed replies bind exact requests but carry no independent freshness nonce; immutable successful retries are stable, while transient/conflict replies must not be treated as permanent evidence that a later retry cannot succeed. Unreferenced staged objects remain retained, including those from conflicting authorized appends.
+
+
+## Incremental audit continuation
+
+`.design/kan-v2-service-hardening.md` extends live dispatch beyond startup and
+selected-record validation. Authorized operations audit all newly observed
+records; read replies cover that audited prefix, and append admission compares
+its exact frontier inside the write transaction. An observed malformed or mixed
+partition returns corrupt, including on exact retries. A concurrent append after
+audit returns conflict without altering the original receipt; retry the same
+signed bytes. The single-scope check now uses indexed range probes. This is
+append coordination through the supported ledger API, not protection against an
+owner rewriting previously audited history with arbitrary SQL. Startup and
+newly observed backlog verification remain potentially expensive.

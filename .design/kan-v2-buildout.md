@@ -268,3 +268,17 @@ The initial importer review found two medium defects in the independent Python r
 Remaining software still includes production restore and reconciled completion evidence; final delta/cutover; collector/gateway/provider streaming and visible recording-gap behavior; production key/grant/configuration operations and owner erasure; service writer coordination, indexed scope guards and bounded startup; backup/clean-host restore and scale qualification. Semantic extraction/day merger remains P8 beyond the raw-storage MVP. All work is in permanent worktrees and stacked draft PRs, with no main merge or live-data cutover.
 
 Final integrated source at `f32011b9198509d539f3afa099a7c693b0e73d6c` passed all 114 v2 integration checks across twelve suites, plus all-target Clippy, formatting and diff checks. Its source/scripts/tests/workflow bytes are identical to the freshly reviewed correction head `29b800e100dd61566993237c93d29d12c45622a7`; the normal parent merge brought only review records and documentation. GitHub CI on the final published documentation head remains a separate gate. The newest draft PRs are #272 (delivery) and #273 (resumable raw import). Permanent worktrees and original source evidence are retained.
+
+
+### Service admission hardening — 2026-10-17
+
+Both delivery #272 (`ac7848e`) and import #273 (`da36f203`) have green tests,
+MSRV, migration matrix and performance CI. The permanent child worktree
+`.worktrees/kan-v2-service-hardening`, branch `feat/kan-v2-service-hardening`,
+starts from import `da36f203ea9e2e5fe7c37d359192db624b188727`.
+Its design `.design/kan-v2-service-hardening.md` addresses the service review's
+indexed scope guard, hidden malformed suffix and missing-object witness
+follow-ups without changing the ledger schema. The remaining production
+restore, capture/gateway, custody/erasure and operational qualification gates
+above are unchanged. Fresh review and evidence are recorded before recommending
+this slice for merge. No main merge or live-data cutover is part of this step.

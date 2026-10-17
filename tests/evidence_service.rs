@@ -480,7 +480,7 @@ fn competing_service_scopes_cannot_mix_or_disclose_records() {
         },
         None,
     );
-    assert_eq!(result(&mut second, &second_append), Err(Failure::Conflict));
+    assert_eq!(result(&mut second, &second_append), Err(Failure::Corrupt));
     assert_eq!(
         result(
             &mut second,
@@ -630,4 +630,232 @@ fn retained_signature_and_receipt_issuer_are_verified_independently_of_structure
             Sha256::digest(std::fs::read(after).unwrap())
         );
     }
+}
+
+// A valid raw-ledger record with the service's scope but no signed request.
+fn append_foreign_format(ledger: &mut Ledger) {
+    use atproto_dasl::Ipld;
+    let vectors: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/evidence-v1/vectors.json")).unwrap();
+    let decode = |name: &str| -> Ipld {
+        let item = vectors["positive"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["name"] == name)
+            .unwrap();
+        atproto_dasl::from_reader(&unhex(item["hex"].as_str().unwrap(), 65536).unwrap()[..])
+            .unwrap()
+    };
+    let encode = |value: &Ipld| {
+        let Decoded::Known(record) = evidence::encode(value).unwrap() else {
+            panic!()
+        };
+        record
+    };
+    let mut m = decode("manifest");
+    let Ipld::Map(root) = &mut m else { panic!() };
+    let Ipld::Map(body) = root.get_mut("body").unwrap() else {
+        panic!()
+    };
+    body.insert("scopeToken".into(), Ipld::Bytes(vec![1; 32]));
+    let manifest = encode(&m);
+    let mut r = decode("receipt");
+    let Ipld::Map(root) = &mut r else { panic!() };
+    let Ipld::Map(body) = root.get_mut("body").unwrap() else {
+        panic!()
+    };
+    body.insert("scopeToken".into(), Ipld::Bytes(vec![1; 32]));
+    body.insert("manifest".into(), Ipld::Link(manifest.cid().clone()));
+    ledger.stage(b"synthetic opaque ciphertext\x00").unwrap();
+    ledger.commit(manifest.bytes(), encode(&r).bytes()).unwrap();
+}
+
+#[test]
+fn invalid_raw_suffix_cannot_hide_behind_valid_tip_or_exact_retry() {
+    let t = tempfile::tempdir().unwrap();
+    let root = t.path().join("archive");
+    let writer = Identity::generate();
+    let mut service = Service::new(
+        Ledger::create(&root).unwrap(),
+        [1; 32],
+        service_identity(),
+        vec![grant(&writer, true, true)],
+    )
+    .unwrap();
+    let first = append(&writer, 1, 0, None);
+    let Output::Committed {
+        record: first_record,
+        ..
+    } = result(&mut service, &first).unwrap()
+    else {
+        panic!()
+    };
+    let mut raw = Ledger::open(&root).unwrap();
+    append_foreign_format(&mut raw);
+
+    // Produce an authentic service record independently, then append it through
+    // the raw API after the invalid record. A tip-only audit would accept this.
+    let other = Identity::generate();
+    let trailing = append(&other, 2, 0, None);
+    let mut producer = Service::new(
+        Ledger::create(&t.path().join("producer")).unwrap(),
+        [1; 32],
+        service_identity(),
+        vec![grant(&other, true, false)],
+    )
+    .unwrap();
+    let Output::Committed { record, .. } = result(&mut producer, &trailing).unwrap() else {
+        panic!()
+    };
+    raw.stage(&trailing).unwrap();
+    raw.commit(
+        &unhex(&record.manifest, 65536).unwrap(),
+        &unhex(&record.receipt, 65536).unwrap(),
+    )
+    .unwrap();
+    let snapshot = raw.snapshot().unwrap();
+    assert_eq!(snapshot.through, 3);
+    let retained = || {
+        raw.page(&snapshot, 0, 128)
+            .unwrap()
+            .iter()
+            .map(|r| (r.manifest.bytes().to_vec(), r.receipt.bytes().to_vec()))
+            .collect::<Vec<_>>()
+    };
+    let before = retained();
+    for command in [
+        Command::Snapshot,
+        Command::Read { sequence: 3 },
+        Command::Page {
+            through: 3,
+            tip: snapshot.tip.as_ref().map(ToString::to_string),
+            after: 2,
+            limit: 1,
+        },
+    ] {
+        assert_eq!(
+            result(&mut service, &request(&writer, 1, command, Some(1100))),
+            Err(Failure::Corrupt)
+        );
+    }
+    assert_eq!(result(&mut service, &first), Err(Failure::Corrupt));
+    assert_eq!(
+        result(
+            &mut service,
+            &append(&writer, 9, 1, Some(cid(&first_record.manifest)))
+        ),
+        Err(Failure::Corrupt)
+    );
+    assert_eq!(
+        result(
+            &mut service,
+            &request(&other, 1, Command::Snapshot, Some(1100))
+        ),
+        Err(Failure::AccessLimited)
+    );
+    assert_eq!(retained(), before);
+    assert_eq!(raw.verify().unwrap().commits, 3);
+    assert!(matches!(
+        Service::new(raw, [1; 32], service_identity(), vec![]),
+        Err(Failure::Corrupt)
+    ));
+}
+
+#[test]
+fn multiple_instances_audit_paginated_suffixes_and_preserve_retries() {
+    let t = tempfile::tempdir().unwrap();
+    let writer = Identity::generate();
+    let reader = Identity::generate();
+    let root = t.path().join("archive");
+    let mut first = Service::new(
+        Ledger::create(&root).unwrap(),
+        [1; 32],
+        service_identity(),
+        vec![grant(&writer, true, true)],
+    )
+    .unwrap();
+    // This instance has no grant for the historical writer. History remains valid.
+    let mut second = Service::new(
+        Ledger::open(&root).unwrap(),
+        [1; 32],
+        service_identity(),
+        vec![grant(&reader, true, true)],
+    )
+    .unwrap();
+    let mut previous = None;
+    let mut original = None;
+    for i in 0..130u8 {
+        let bytes = append(&writer, i, u64::from(i), previous);
+        let Output::Committed {
+            record,
+            duplicate: false,
+        } = result(&mut first, &bytes).unwrap()
+        else {
+            panic!()
+        };
+        previous = Some(cid(&record.manifest));
+        if i == 0 {
+            original = Some((bytes, record));
+        }
+    }
+    assert_eq!(
+        result(
+            &mut second,
+            &request(&reader, 1, Command::Snapshot, Some(1100))
+        )
+        .unwrap(),
+        Output::Snapshot {
+            through: 130,
+            tip: previous
+        }
+    );
+    result(&mut second, &append(&reader, 200, 0, None)).unwrap();
+    let (bytes, expected) = original.unwrap();
+    assert_eq!(
+        result(&mut first, &bytes).unwrap(),
+        Output::Committed {
+            record: expected,
+            duplicate: true
+        }
+    );
+    let output = result(
+        &mut first,
+        &request(&writer, 1, Command::Snapshot, Some(1100)),
+    )
+    .unwrap();
+    assert!(matches!(output, Output::Snapshot { through: 131, .. }));
+    assert_eq!(Ledger::open(&root).unwrap().verify().unwrap().commits, 131);
+}
+
+#[test]
+fn missing_committed_object_is_corrupt_on_read_and_startup() {
+    let t = tempfile::tempdir().unwrap();
+    let root = t.path().join("archive");
+    let writer = Identity::generate();
+    let mut service = Service::new(
+        Ledger::create(&root).unwrap(),
+        [1; 32],
+        service_identity(),
+        vec![grant(&writer, true, true)],
+    )
+    .unwrap();
+    result(&mut service, &append(&writer, 1, 0, None)).unwrap();
+    // Open before owner corruption so Service::new itself must detect the
+    // missing reference rather than relying on Ledger::open verification.
+    let existing = Ledger::open(&root).unwrap();
+    let db = rusqlite::Connection::open(root.join("archive.sqlite")).unwrap();
+    db.execute_batch("PRAGMA foreign_keys=OFF; DELETE FROM objects;")
+        .unwrap();
+    assert_eq!(
+        result(
+            &mut service,
+            &request(&writer, 1, Command::Read { sequence: 1 }, Some(1100))
+        ),
+        Err(Failure::Corrupt)
+    );
+    assert!(matches!(
+        Service::new(existing, [1; 32], service_identity(), vec![]),
+        Err(Failure::Corrupt)
+    ));
 }

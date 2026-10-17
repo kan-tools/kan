@@ -433,6 +433,8 @@ pub struct Service {
     scope: String,
     signer: Identity,
     grants: BTreeMap<String, Grant>,
+    // Disposable process-local evidence of an audited append-only prefix.
+    audited: Snapshot,
 }
 impl Service {
     /// Audits only the declared service profile; never auto-converts a raw ledger.
@@ -449,25 +451,50 @@ impl Service {
                 return Err(Failure::Invalid);
             }
         }
-        let service = Self {
+        let mut service = Self {
             ledger,
             scope: hex(&scope),
             signer,
             grants: permissions,
+            audited: Snapshot {
+                through: 0,
+                tip: None,
+            },
         };
-        let snapshot = service.ledger.snapshot()?;
-        let mut after = 0;
+        service.audit_suffix()?;
+        Ok(service)
+    }
+    fn audit_suffix(&mut self) -> Result<()> {
+        let snapshot = self.ledger.snapshot()?;
+        if snapshot.through < self.audited.through
+            || (snapshot.through == self.audited.through && snapshot.tip != self.audited.tip)
+        {
+            return Err(Failure::Corrupt);
+        }
+        // Check the prior pin even if another writer has appended since then.
+        self.ledger
+            .page(&self.audited, self.audited.through, 1)
+            .map_err(|error| match error {
+                evidence_store::Error::Invalid(_) => Failure::Corrupt,
+                other => other.into(),
+            })?;
+        let mut after = self.audited.through;
         while after < snapshot.through {
-            let page = service.ledger.page(&snapshot, after, 128)?;
+            let page = self.ledger.page(&snapshot, after, 128)?;
             if page.is_empty() {
                 return Err(Failure::Corrupt);
             }
             for record in page {
-                service.read_signed(&record)?;
+                if record.sequence != after + 1 {
+                    return Err(Failure::Corrupt);
+                }
+                self.read_signed(&record)?;
                 after = record.sequence;
             }
         }
-        Ok(service)
+        // Never publish a partially checked suffix after a failed audit.
+        self.audited = snapshot;
+        Ok(())
     }
     pub fn issuer(&self) -> String {
         self.signer.did().to_string()
@@ -516,40 +543,41 @@ impl Service {
         {
             return Err(Failure::AccessLimited);
         }
+        self.audit_suffix()?;
         match &request.command {
             Command::Append { .. } => {
                 let manifest = manifest(&signed, bytes)?;
                 let receipt = receipt(&manifest, self.issuer().as_str(), now)?;
                 self.ledger.stage(bytes)?;
-                let record = self
-                    .ledger
-                    .commit_partition(manifest.bytes(), receipt.bytes())?;
+                let record = self.ledger.commit_partition_at(
+                    manifest.bytes(),
+                    receipt.bytes(),
+                    &self.audited,
+                )?;
+                if !record.duplicate {
+                    self.audited = Snapshot {
+                        through: record.sequence,
+                        tip: Some(record.manifest.cid().clone()),
+                    };
+                }
                 Ok(Output::Committed {
                     record: view(&record),
                     duplicate: record.duplicate,
                 })
             }
-            Command::Snapshot => {
-                let snapshot = self.ledger.snapshot()?;
-                if snapshot.through > 0 {
-                    let tip = self
-                        .ledger
-                        .page(&snapshot, snapshot.through - 1, 1)?
-                        .pop()
-                        .ok_or(Failure::Corrupt)?;
-                    self.read_signed(&tip)?;
-                }
-                Ok(Output::Snapshot {
-                    through: snapshot.through,
-                    tip: snapshot.tip.map(|c| c.to_string()),
-                })
-            }
+            Command::Snapshot => Ok(Output::Snapshot {
+                through: self.audited.through,
+                tip: self.audited.tip.as_ref().map(ToString::to_string),
+            }),
             Command::Page {
                 through,
                 tip,
                 after,
                 limit,
             } => {
+                if *through > self.audited.through {
+                    return Err(Failure::Invalid);
+                }
                 let snapshot = Snapshot {
                     through: *through,
                     tip: tip.as_ref().map(|c| link(c)).transpose()?,
@@ -570,11 +598,11 @@ impl Service {
                 })
             }
             Command::Read { sequence } => {
-                let snapshot = self.ledger.snapshot()?;
+                let snapshot = &self.audited;
                 if *sequence == 0 || *sequence > snapshot.through {
                     return Err(Failure::Missing);
                 }
-                let mut page = self.ledger.page(&snapshot, sequence - 1, 1)?;
+                let mut page = self.ledger.page(snapshot, sequence - 1, 1)?;
                 let record = page
                     .pop()
                     .filter(|r| r.sequence == *sequence)
