@@ -74,3 +74,55 @@ harness/provider coverage, key custody/grants/erasure, independent-host restore,
 final-delta cutover and capacity qualification. No live user data or provider
 credentials were used. HTTPS/TLS, OS proxy settings, physical ENOSPC/power loss
 and simultaneous capture/drain lock contention are not qualified by these tests.
+
+
+## Second independent review
+
+Fresh Claude Code `claude-opus-5-5`, session
+`731dc589-c483-41bf-bb46-48825ca42388`, verified by launcher init. Exact range
+`c78f6a1878ae681027fed1c1e8fe05eb442899de..c1368928dac1dc433427d3c14f723b8f53cc1d78`.
+Final UTF-8 report SHA-256, no added newline:
+`1f6a9f377148e9c6488c094a0a5d2775651207a0b084c7ae6ab8962a218e2996`.
+Verdict **APPROVE WITH FOLLOW-UPS**, independently closing initial F1–F6/F8.
+
+The reviewer ran all 166 v2 integration tests (26 capture, 140 existing), Clippy,
+formatting, citation checks with a disposable Git index, five new probes and all
+seven correction mutation controls. It independently reversed the complete
+production fix: twelve tests failed, including the three named witnesses and the
+encrypted oracle, then all 26 passed after byte-identical restoration. Four of
+six new mutants failed; constant wall time and removed reqwest retry policy
+survived. Default workspace checks, focused lib units and plain-python oracle
+fallback were not rerun locally. Scratch `/tmp/kan-capture-review2-i1Nc` and
+`/tmp/kan-capture-review2-scripts` retain probes/logs, targets removed.
+
+The review additionally reproduced a pre-existing deadline bug: with a matching
+spool write lock, the CLI delivered `ok`, reported every event unconfirmed, then
+exited 1 as outcome-unknown after roughly 32.8 seconds. This conflicts with the
+visible-gap continuation promise even though lock-contention performance was
+unqualified. The next correction excludes own admission time from the cumulative
+I/O budget and retains this actual CLI/SQLite-lock regression. The wall-time test
+also now checks that ordinary-host wall samples advance between observations.
+
+Remaining nonblocking coverage/reader limits: HTTP/2 can be enabled transitively,
+and the explicit reqwest retry policy lacks a TLS/HTTP2 runtime mutant witness;
+HTTPS qualification remains open. Public Header serde decoding is a structure,
+not an admission decoder: it does not validate version or distinguish a missing
+optional clock field from explicit null. A future production capture reader must
+validate magic/version/required fields before interpreting evidence. Synchronous
+stderr callbacks can still stall. These are not claims of production readiness.
+The new deadline correction requires its own reversion evidence and fresh review.
+
+
+### Deadline correction evidence before fresh review
+
+All 29 capture tests passed, including an actual matching-spool SQLite write lock
+held throughout the CLI invocation. Complete body `ok` now returns success with
+all admissions explicitly unconfirmed. Slow output still exhausts a cumulative
+I/O budget. A full reversion of all seven production hunks reproduced the CLI
+failure; restoration passed. The day helper emitted the commit's trailer from
+this named runtime failure. Scratch `kan-capture-budget-revert-0kv8h94m` retains
+source/patch; target removed, and final source diff matched the demonstrated patch.
+The first in-memory slow-sink witness survived reversion because its Vec output
+could complete without yielding; it was not credited in the trailer. That test
+now uses a one-byte duplex output to force an asynchronous boundary. Clippy,
+formatting and citation checks pass. A fresh third review remains required.

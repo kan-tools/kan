@@ -27,7 +27,7 @@ Events are started (POST and normalized configured URL), request chunk (offset),
 
 `EncryptedSpool` delegates to `src/evidence_delivery.rs` queue; no new persistence API or medium bypasses `src/persistence.rs`. Existing typed spool capabilities and `tests/fixtures/read-write-surface.tsv` remain authoritative. A failed enqueue is **unconfirmed**, since failure may follow commit; it is not proof of loss. Health includes observed/queued/unconfirmed event counts and terminal state, never content or route. Emit health on start and after each observation, including gaps and terminal. Subsequent retained events carry cumulative unconfirmed counts; ordinal discontinuities expose missing observations. Restart cannot establish exact coverage for an attempt whose final events were never retained. Drop attempts unknown-outcome finalization; abrupt process termination cannot run it. No new control reserve or persistent health projection is claimed.
 
-The forwarder validates a configured HTTPS URL (or literal loopback HTTP), with no credentials, fragment or query, at most 2048 URL bytes. One immutable route per invocation; no direct fallback. Requests are admitted up to 16 MiB, chunked for capture before forwarding. This is a per-request experimental profile limit, not an archive/lifetime cap. Responses have no total-size cap, with 64-KiB evidence subchunks and awaited output writes; transport-library buffering is additional and not a measured memory budget. reqwest has redirects, retries, automatic decompression and ambient proxies disabled; idle connection pooling is disabled so hyper-util cannot resend on a canceled reused connection. A caller-supplied positive overall I/O deadline bounds network/output await points; synchronous spool admission and health callbacks can delay cancellation and are not a hard real-time bound.
+The forwarder validates a configured HTTPS URL (or literal loopback HTTP), with no credentials, fragment or query, at most 2048 URL bytes. One immutable route per invocation; no direct fallback. Requests are admitted up to 16 MiB, chunked for capture before forwarding. This is a per-request experimental profile limit, not an archive/lifetime cap. Responses have no total-size cap, with 64-KiB evidence subchunks and awaited output writes; transport-library buffering is additional and not a measured memory budget. reqwest has redirects, retries, automatic decompression and ambient proxies disabled; idle connection pooling is disabled so hyper-util cannot resend on a canceled reused connection. A caller-supplied positive cumulative I/O budget bounds network/output awaits, excluding this attempt's synchronous spool admission and health callbacks. Those can still delay cancellation and are not a hard real-time bound, but recording latency alone must not falsely fail completed inference.
 
 `capture-post` in `src/bin/kan-v2.rs` reads bounded stdin, takes explicit route, spool, existing signing key and public archive recipient, writes body to stdout and JSON health to stderr. Failure to open the spool uses unavailable capture and continues; invalid keys/route/input and a known mismatch between the signer and a readable spool writer fail before network. No archive drain occurs inside forwarding; use the existing exact-byte drain separately. A successful command with gaps remains explicitly degraded in stderr. Non-2xx bodies are delivered, status is in health; transport/output failure returns failure without logging payload-bearing errors. There is no background server left running.
 
@@ -52,3 +52,15 @@ are writer-reported, may move backward and are nullable if unavailable. The CLI
 records after bounded stdin admission, not at original harness creation time.
 Fresh review of this correction and a full production-fix reversion witness are
 required; the initial verdict does not cover these changes.
+
+
+### Deadline correction after second review
+
+The second review reproduced a matching-spool SQLite write lock: all response
+bytes arrived, but time spent in synchronous admission expired the old timeout
+and falsely produced outcome-unknown. Replace that timeout with a cumulative
+I/O wait budget around send, read, write and flush individually, subtracting only
+those awaited intervals. Recording remains before output, outside the budget.
+A slow-admission fixture and the actual CLI/write-lock reproduction must finish
+with completed outcome and visible gaps; cumulative slow output must still expire.
+This corrects REQ-2/AC-2 without claiming bounded wall-clock capture latency.

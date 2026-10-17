@@ -627,6 +627,7 @@ fn observer_and_capture_clocks_are_retained() {
             .unwrap()
             .as_micros() as u64;
         let mut previous = 0;
+        let mut previous_wall = 0;
         for (i, frame) in memory.frames.iter().enumerate() {
             let n = u32::from_be_bytes(frame[5..9].try_into().unwrap()) as usize;
             let h: serde_json::Value = serde_json::from_slice(&frame[9..9 + n]).unwrap();
@@ -635,6 +636,13 @@ fn observer_and_capture_clocks_are_retained() {
                 .as_u64()
                 .expect("wall capture time must exist on this host");
             assert!((before..=after).contains(&wall));
+            if i == 1 {
+                assert!(
+                    wall >= previous_wall + 1000,
+                    "sample wall time on each observation"
+                );
+            }
+            previous_wall = wall;
             let elapsed = h["elapsed_micros"]
                 .as_u64()
                 .expect("monotonic elapsed time");
@@ -734,4 +742,56 @@ async fn reused_route_never_reuses_a_pooled_connection() {
         2,
         "each attempt needs a fresh connection"
     );
+}
+
+/// Retain the second reviewer's actual SQLite-lock reproduction. A failed
+/// admission remains a visible gap, not a failed fully delivered inference.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn locked_spool_cli_keeps_completed_outcome() {
+    let dir = tempfile::tempdir().unwrap();
+    let writer = Identity::generate();
+    let key = dir.path().join("key");
+    writer.save(&key).unwrap();
+    let spool_path = spool(dir.path(), &writer, 1024 * 1024);
+    let lock = rusqlite::Connection::open(&spool_path).unwrap();
+    lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let p = raw(
+        b"HTTP/1.1 200 X\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec(),
+        Duration::ZERO,
+        true,
+    )
+    .await;
+    let output = tokio::time::timeout(
+        Duration::from_secs(60),
+        cli(&[
+            "--endpoint",
+            &p.url,
+            "--spool",
+            spool_path.to_str().unwrap(),
+            "--key",
+            key.to_str().unwrap(),
+            "--recipient",
+            &hex(&crypto::public_key(&PRIVATE).unwrap()),
+            "--deadline-seconds",
+            "1",
+        ])
+        .stdin(std::process::Stdio::null())
+        .output(),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    lock.execute_batch("ROLLBACK").unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"ok");
+    let text = String::from_utf8(output.stderr).unwrap();
+    let health: serde_json::Value = serde_json::from_str(text.lines().last().unwrap()).unwrap();
+    assert_eq!(health["outcome"], "completed");
+    assert_eq!(health["recording_gap"], true);
+    assert_eq!(health["locally_queued"], 0);
+    assert_eq!(p.calls.load(Ordering::SeqCst), 1);
 }

@@ -793,3 +793,91 @@ async fn cli_deadline_exits_even_when_stdout_pipe_is_not_consumed() {
     assert!(!status.success());
     assert_eq!(p.calls.load(Ordering::SeqCst), 1);
 }
+
+struct SlowUnavailable;
+impl Sink for SlowUnavailable {
+    fn admit(&mut self, _: &[u8; 16], _: &[u8]) -> Result<(), Unconfirmed> {
+        std::thread::sleep(Duration::from_millis(100));
+        Err(Unconfirmed)
+    }
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn capture_latency_does_not_consume_provider_io_budget() {
+    let p = provider(
+        200,
+        String::new(),
+        vec![b"complete response".to_vec()],
+        true,
+        Duration::ZERO,
+    )
+    .await;
+    let (mut output, mut reader) = tokio::io::duplex(1);
+    let drain = tokio::spawn(async move {
+        let mut received = Vec::new();
+        reader.read_to_end(&mut received).await.unwrap();
+        received
+    });
+    let started = std::time::Instant::now();
+    let result = capture::forward(
+        &Route::new(&p.url).unwrap(),
+        vec![1],
+        &mut SlowUnavailable,
+        &mut |_| {},
+        &mut output,
+        Duration::from_millis(80),
+    )
+    .await;
+    drop(output);
+    let received = drain.await.unwrap();
+    let h = result.unwrap();
+    assert!(started.elapsed() > Duration::from_millis(500));
+    assert_eq!(received, b"complete response");
+    assert_eq!(h.outcome, Some(Outcome::Completed));
+    assert!(h.recording_gap);
+    assert_eq!(h.unconfirmed, h.observed);
+    assert_eq!(p.calls.load(Ordering::SeqCst), 1);
+}
+
+/// Aggregate I/O budget, not a fresh timeout for each successful small write.
+#[tokio::test]
+async fn io_budget_is_cumulative_across_output_writes() {
+    let p = provider(
+        200,
+        String::new(),
+        vec![vec![9; 4 * CHUNK]],
+        true,
+        Duration::ZERO,
+    )
+    .await;
+    let (mut output, mut reader) = tokio::io::duplex(CHUNK);
+    let drain = async {
+        let mut buffer = vec![0; CHUNK];
+        loop {
+            tokio::time::sleep(Duration::from_millis(60)).await;
+            if reader.read(&mut buffer).await.unwrap() == 0 {
+                break;
+            }
+        }
+    };
+    let mut memory = Memory::default();
+    let mut states = Vec::new();
+    let run = async {
+        let result = capture::forward(
+            &Route::new(&p.url).unwrap(),
+            vec![],
+            &mut memory,
+            &mut |h| states.push(h.clone()),
+            &mut output,
+            Duration::from_millis(100),
+        )
+        .await;
+        drop(output);
+        result
+    };
+    let (result, _) = tokio::join!(run, drain);
+    assert!(result.is_err());
+    assert_eq!(
+        states.last().unwrap().outcome,
+        Some(Outcome::OutcomeUnknown)
+    );
+}

@@ -301,15 +301,22 @@ pub async fn forward<W: AsyncWrite + Unpin>(
         &[],
     )?;
     recorder.record(Event::ForwardingIntent, &[])?;
-    let result = tokio::time::timeout(deadline, async {
-        let mut response = route
-            .client
-            .post(route.url.clone())
-            .header("content-type", "application/octet-stream")
-            .body(request)
-            .send()
-            .await
-            .map_err(|_| Error::OutcomeUnknown)?;
+    // Only awaited I/O consumes this budget. Synchronous admission/health work
+    // must not turn a recording failure into a failed provider outcome.
+    let mut budget = IoBudget {
+        remaining: deadline,
+    };
+    let result = async {
+        let mut response = budget
+            .wait(
+                route
+                    .client
+                    .post(route.url.clone())
+                    .header("content-type", "application/octet-stream")
+                    .body(request)
+                    .send(),
+            )
+            .await?;
         recorder.record(
             Event::ResponseHead {
                 status: response.status().as_u16(),
@@ -317,23 +324,20 @@ pub async fn forward<W: AsyncWrite + Unpin>(
             &[],
         )?;
         let mut offset = 0u64;
-        while let Some(bytes) = response.chunk().await.map_err(|_| Error::OutcomeUnknown)? {
+        while let Some(bytes) = budget.wait(response.chunk()).await? {
             for chunk in bytes.chunks(CHUNK) {
                 recorder.record(Event::ResponseChunk { offset }, chunk)?;
                 offset = offset
                     .checked_add(chunk.len() as u64)
                     .ok_or(Error::OutcomeUnknown)?;
-                output
-                    .write_all(chunk)
-                    .await
-                    .map_err(|_| Error::OutcomeUnknown)?;
+                budget.wait(output.write_all(chunk)).await?;
             }
         }
-        output.flush().await.map_err(|_| Error::OutcomeUnknown)?;
+        budget.wait(output.flush()).await?;
         Ok::<_, Error>(())
-    })
+    }
     .await;
-    let success = matches!(result, Ok(Ok(())));
+    let success = result.is_ok();
     recorder.record(
         Event::Terminal {
             outcome: if success {
@@ -348,5 +352,26 @@ pub async fn forward<W: AsyncWrite + Unpin>(
         Ok(recorder.health.clone())
     } else {
         Err(Error::OutcomeUnknown)
+    }
+}
+
+struct IoBudget {
+    remaining: Duration,
+}
+impl IoBudget {
+    async fn wait<T, E>(
+        &mut self,
+        future: impl std::future::Future<Output = Result<T, E>>,
+    ) -> Result<T, Error> {
+        if self.remaining.is_zero() {
+            return Err(Error::OutcomeUnknown);
+        }
+        let started = Instant::now();
+        let result = tokio::time::timeout(self.remaining, future).await;
+        self.remaining = self.remaining.saturating_sub(started.elapsed());
+        match result {
+            Ok(Ok(value)) => Ok(value),
+            _ => Err(Error::OutcomeUnknown),
+        }
     }
 }

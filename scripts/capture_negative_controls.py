@@ -14,7 +14,9 @@ import tarfile
 import tempfile
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--review-followups-only', action='store_true')
+group = parser.add_mutually_exclusive_group()
+group.add_argument('--review-followups-only', action='store_true')
+group.add_argument('--deadline-only', action='store_true')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 if shutil.disk_usage(root).free < 15 * 1024**3:
@@ -51,10 +53,10 @@ try:
     controls=[
         ('gap-health','if self.sink.admit(&operation, &frame).is_ok() {','if { let _ = self.sink.admit(&operation, &frame); true } {','full_and_unavailable_capture_continue_with_visible_gap'),
         ('response-evidence','recorder.record(Event::ResponseChunk { offset }, chunk)?;','let _ = offset;','disconnect_is_unknown_and_retains_observed_prefix'),
-        ('unknown-outcome','let success = matches!(result, Ok(Ok(())));','let success = true;','disconnect_is_unknown_and_retains_observed_prefix'),
+        ('unknown-outcome','let success = result.is_ok();','let success = true;','disconnect_is_unknown_and_retains_observed_prefix'),
         ('redirect','reqwest::redirect::Policy::none()','reqwest::redirect::Policy::limited(1)','redirect_is_observed_but_never_followed'),
         ('observer-id','Observer::Gateway => 1,','Observer::Gateway => 0,','binary_stream_above_ten_mib_has_exact_bodies_and_independent_frames'),
-        ('flush','output.flush().await.map_err(|_| Error::OutcomeUnknown)?;','// omit output flush','empty_body_still_requires_successful_output_flush'),
+        ('flush','budget.wait(output.flush()).await?;','// omit output flush','empty_body_still_requires_successful_output_flush'),
     ]
     controls += [
         ('header-observer','observer: self.health.observer,\n            ordinal,','observer: Observer::Gateway,\n            ordinal,','observer_and_capture_clocks_are_retained'),
@@ -65,16 +67,22 @@ try:
         ('wall-clock','observed_at_unix_micros: SystemTime::now()\n                .duration_since(UNIX_EPOCH)\n                .ok()\n                .and_then(|d| u64::try_from(d.as_micros()).ok()),','observed_at_unix_micros: None,','observer_and_capture_clocks_are_retained'),
         ('writer-config','if status.writer != signer.did().as_str() {','if false {','probe_cli_key_not_spool_writer'),
     ]
+    controls += [
+        ('cumulative-budget','self.remaining = self.remaining.saturating_sub(started.elapsed());','let _ = started;','io_budget_is_cumulative_across_output_writes'),
+        ('per-observation-clock','observed_at_unix_micros: SystemTime::now()','observed_at_unix_micros: SystemTime::now().checked_sub(self.started.elapsed()).unwrap()','observer_and_capture_clocks_are_retained'),
+    ]
     if args.review_followups_only:
-        controls = controls[-7:]
+        controls = controls[6:13]
+    if args.deadline_only:
+        controls = controls[-2:]
     command=['cargo','test','--features','v2-crypto','--test','evidence_capture', '--test', 'evidence_capture_adversarial']
     code,output=run(command,'baseline')
-    if code or not passed(output,14) or not passed(output,12): raise SystemExit('baseline failed\n'+output)
+    if code or not passed(output,16) or not passed(output,13): raise SystemExit('baseline failed\n'+output)
     for name,old,new,test in controls:
         source = scratch / ('src/bin/kan-v2.rs' if name == 'writer-config' else 'src/evidence_capture.rs')
         original = source.read_text()
         if original.count(old)!=1: raise SystemExit(f'{name}: edit not unique')
-        target = 'evidence_capture_adversarial' if name in {'header-observer','actual-route','no-proxy','pooling','elapsed-clock','wall-clock','writer-config'} else 'evidence_capture'
+        target = 'evidence_capture_adversarial' if name in {'header-observer','actual-route','no-proxy','pooling','elapsed-clock','wall-clock','writer-config','per-observation-clock'} else 'evidence_capture'
         selected=['cargo','test','--features','v2-crypto','--test',target,test,'--','--exact']
         try:
             source.write_text(original.replace(old,new,1))

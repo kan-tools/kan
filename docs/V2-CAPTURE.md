@@ -51,9 +51,12 @@ remote acknowledgment and backups are separate stages.
 Request admission is bounded to 16 MiB per invocation and capture chunks to
 64 KiB. Response bodies stream without a total-size cap, awaiting the output on
 each subchunk; transport-library buffers are additional. These limits do not
-restrict archive lifetime size. The I/O deadline is 1–86400 seconds, starting
-after synchronous request capture; it bounds network/output awaits, not wall-clock
-SQLite or health-callback delays. No latency, physical disk exhaustion or power-loss
+restrict archive lifetime size. The I/O deadline is a cumulative 1–86400-second budget across network/output
+awaits, starting after synchronous request capture. This attempt's synchronous
+recording and health callbacks run outside that budget. Slow/locked admission
+can still extend wall-clock duration substantially, but cannot by itself turn a
+fully delivered and flushed response into outcome-unknown. A blocked health
+callback can still stall indefinitely; this is not a wall-clock deadline. No latency, physical disk exhaustion or power-loss
 qualification is claimed.
 
 The recorded lifecycle is started → request chunks → request end → forwarding
