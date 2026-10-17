@@ -19,7 +19,7 @@ Close the service review's F1/F2 follow-ups before relying on the ledger for cap
 - [x] AC-3: A storage test inserts a raw commit between an observed frontier and fenced admission, including stale retry and same-height wrong-tip cases; fenced writes fail without changing committed history. A refreshed frontier permits valid work. (REQ-2, REQ-5)
 - [x] AC-4: Execute the production scope query on a large synthetic same-scope index, assert indexed range searches and a bounded SQLite VM-step count; lower and upper foreign scopes both conflict. A deliberate reversion to the original scan fails this witness. (REQ-3)
 - [x] AC-5: A missing committed request object fails corrupt at restart and on direct retrieval after startup; reverting the missing-object error mapping fails the regression. (REQ-4)
-- [ ] AC-6: Run service/store/delivery/import and surface checks, formatting and Clippy, then obtain a fresh actual Claude Code Opus 5.5 review of the published commit range. (REQ-5)
+- [x] AC-6: Run service/store/delivery/import and surface checks, formatting and Clippy, then obtain a fresh actual Claude Code Opus 5.5 review of the published commit range. (REQ-5)
 
 - [x] AC-7: Deterministic scheduling between audit and execution proves Page/Read/Snapshot stay within the audited prefix; repeated failure preserves valid audit progress, exact retries do not discard it, and owner-SQL fixtures exercise pin/contiguity defenses. (REQ-1, REQ-4, REQ-5)
 
@@ -89,4 +89,13 @@ five unit checks passed (125 total), plus all-target v2-crypto Clippy, formattin
 and diff checks. All seven new targeted controls failed at runtime and passed
 again after restoration. Full correction-source reversion also caused the named
 missing-object/Snapshot integration test to fail, then pass after restoration.
-The independent correction review remains pending at this commit.
+The independent correction review is recorded below.
+
+
+Final correction review: fresh actual Opus 5.5 independently reproduced all 125
+checks and approved `61ca52065d2b276a3c113c3debedbbe8195047a2` with nonblocking
+follow-ups. All three initial findings are closed; provenance, runtime probes,
+remaining test-tool isolation work and operational limits are recorded in
+`.design/reviews/kan-v2-service-hardening-2026-10-17.md`. The remaining low finding
+concerns the mutation script's scratch-isolation responsibility, not service
+admission. No live archive, key configuration or client routing was changed.

@@ -282,3 +282,24 @@ follow-ups without changing the ledger schema. The remaining production
 restore, capture/gateway, custody/erasure and operational qualification gates
 above are unchanged. Fresh review and evidence are recorded before recommending
 this slice for merge. No main merge or live-data cutover is part of this step.
+
+
+Service hardening is now in draft #274. Initial head `0ab98e3` and correction
+`61ca52065d2b276a3c113c3debedbbe8195047a2` each received fresh actual Opus 5.5
+**APPROVE WITH FOLLOW-UPS**. The correction independently closes the initial
+review's repeated audit cost, missing read-boundary witnesses and Snapshot tip
+regression; 125 targeted checks and Clippy/formatting pass. Review provenance and
+remaining nonblocking tooling/error-vocabulary limitations are in
+`.design/reviews/kan-v2-service-hardening-2026-10-17.md`. Final documentation-only
+commits retain the reviewed source/tests/scripts/workflow exactly.
+
+The indexed scope guard, append coordination and missing-object witness follow-ups
+are closed for this experimental profile. Next software work remains verified
+import restore/receipt reconciliation and collector/gateway capture with visible
+gaps, followed by production key/grant operations, owner erasure, backup/clean-host
+restore, final delta/cutover and capacity qualification. Full-history startup is
+still unqualified at operational scale. No live sources were migrated, and the
+original checkout's uncommitted work remains separate. Two old completed-review
+build targets (about 1.5 GiB of generated artifacts) were removed; each new
+reviewer also cleaned its own generated target. Reports and ground-truth fixtures
+were retained, with about 18 GiB free at the final local check.
