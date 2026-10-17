@@ -49,3 +49,29 @@ The three real-binary recovery tests, six migration-preflight tests and 19 surfa
 tests pass. The tests run without legacy kan on PATH and compare source and rebuilt
 bytes directly; Python independently checks the recovered archive. The separate
 core recovery review and fresh CLI review remain pending.
+
+## Review corrections and operating limits
+
+The first fresh Opus 5.5 review approved with follow-ups. Recovery path strings are
+now validated for JSON representation before any destination is created, preventing
+a non-UTF-8 path from causing a post-rebuild JSON panic. Errors name the failed
+source/destination and record/object; output-field assertions cover encoding, CIDs
+and snapshot coordinates. A Unix argv test rejects non-UTF-8 output before creation.
+
+Read-only refers to authoritative evidence access, not a promise of zero filesystem
+coordination writes: SQLite can create `-wal`/`-shm` beside a WAL-mode source and
+needs existing usable sidecars or a writable source directory. A WAL database copied
+alone to read-only media may fail with a readonly-database error. This release does
+not silently use immutable mode or ignore a WAL; either can hide committed data.
+DELETE-mode backups/recovered files avoid this WAL coordination requirement. Keep
+original database and any WAL together; forensic/media-level repair is outside this
+slice. Ordinary API error context now identifies the source when this limitation
+is encountered.
+
+All staged objects are retained and hash-checked, including unreferenced orphans;
+object counts are not committed-event counts and a hash check does not prove a
+committed reference. A failed rebuild may leave an empty/unrecognized output, or a
+complete committed output if a later sync/reverification failed. It is never
+promoted automatically; the failed invocation does not certify durability. Errors
+retain the file and a retry needs a fresh destination. Successful `verify` establishes
+structural closure only, not an independent backup or historical completeness.

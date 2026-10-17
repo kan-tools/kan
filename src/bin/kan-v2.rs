@@ -79,7 +79,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         Command::ReadRecord { database, sequence } => {
-            let record = RecoveryReader::open(&database)?.record(sequence)?;
+            let record = RecoveryReader::open(&database)
+                .and_then(|reader| reader.record(sequence))
+                .map_err(|e| {
+                    format!(
+                        "cannot read sequence {sequence} from {}: {e}",
+                        database.display()
+                    )
+                })?;
             println!(
                 "{}",
                 serde_json::json!({
@@ -92,8 +99,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         Command::ReadObject { database, cid } => {
-            let id = cid.parse()?;
-            let bytes = RecoveryReader::open(&database)?.read_object(&id)?;
+            let id = cid
+                .parse()
+                .map_err(|e| format!("invalid ciphertext CID: {e}"))?;
+            let bytes = RecoveryReader::open(&database)
+                .and_then(|reader| reader.read_object(&id))
+                .map_err(|e| {
+                    format!("cannot read object {cid} from {}: {e}", database.display())
+                })?;
             println!(
                 "{}",
                 serde_json::json!({
@@ -107,11 +120,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             database,
             destination,
         } => {
-            let report = RecoveryReader::open(&database)?.rebuild(&destination)?;
+            // JSON paths must be representable BEFORE creating any output file.
+            let source_text = database
+                .to_str()
+                .ok_or("recovery JSON requires a UTF-8 source path")?;
+            let destination_text = destination
+                .to_str()
+                .ok_or("recovery JSON requires a UTF-8 destination path")?;
+            let reader = RecoveryReader::open(&database)
+                .map_err(|e| format!("cannot read recovery source {}: {e}", database.display()))?;
+            let report = reader.rebuild(&destination).map_err(|e| format!(
+                "recovery into {} failed: {e}; destination must be a new file; any output is retained",
+                destination.display()))?;
             println!(
                 "{}",
                 serde_json::json!({
-                    "source":database, "recovered":destination, "objects":report.objects,
+                    "source":source_text, "recovered":destination_text, "objects":report.objects,
                     "commits":report.commits, "bytes":report.bytes, "through":report.snapshot.through,
                     "tip":report.snapshot.tip.map(|c|c.to_string()), "verification":"structural-closure",
                     "cryptographic_admission":"not-verified", "historical_completeness":"not-verified",
