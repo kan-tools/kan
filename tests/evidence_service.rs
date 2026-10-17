@@ -854,8 +854,82 @@ fn missing_committed_object_is_corrupt_on_read_and_startup() {
         ),
         Err(Failure::Corrupt)
     );
+    assert_eq!(
+        result(
+            &mut service,
+            &request(&writer, 1, Command::Snapshot, Some(1100))
+        ),
+        Err(Failure::Corrupt)
+    );
     assert!(matches!(
         Service::new(existing, [1; 32], service_identity(), vec![]),
         Err(Failure::Corrupt)
     ));
+}
+
+#[test]
+fn audit_pin_guards_detect_retreat_replacement_and_sequence_holes() {
+    // Defense-in-depth against fixture owner-SQL damage; this does not claim
+    // detection of arbitrary rewrites elsewhere in an already audited prefix.
+    for damage in ["gap", "prior-pin", "retreat", "same-height"] {
+        let t = tempfile::tempdir().unwrap();
+        let root = t.path().join("archive");
+        let writer = Identity::generate();
+        let grants = vec![grant(&writer, true, true)];
+        let mut service = Service::new(
+            Ledger::create(&root).unwrap(),
+            [1; 32],
+            service_identity(),
+            grants.clone(),
+        )
+        .unwrap();
+        let Output::Committed { record: first, .. } =
+            result(&mut service, &append(&writer, 1, 0, None)).unwrap()
+        else {
+            panic!()
+        };
+        let mut peer = Service::new(
+            Ledger::open(&root).unwrap(),
+            [1; 32],
+            service_identity(),
+            grants,
+        )
+        .unwrap();
+        result(
+            &mut peer,
+            &append(&writer, 2, 1, Some(cid(&first.manifest))),
+        )
+        .unwrap();
+        let db = rusqlite::Connection::open(root.join("archive.sqlite")).unwrap();
+        db.execute_batch("PRAGMA foreign_keys=OFF;").unwrap();
+        match damage {
+            "gap" => {
+                db.execute("UPDATE commits SET sequence=3 WHERE sequence=2", [])
+                    .unwrap();
+            }
+            "prior-pin" | "same-height" => {
+                if damage == "same-height" {
+                    db.execute("DELETE FROM commits WHERE sequence=2", [])
+                        .unwrap();
+                }
+                db.execute(
+                    "UPDATE commits SET cid=? WHERE sequence=1",
+                    [cid(&first.receipt)],
+                )
+                .unwrap();
+            }
+            "retreat" => {
+                db.execute("DELETE FROM commits", []).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            result(
+                &mut service,
+                &request(&writer, 1, Command::Snapshot, Some(1100))
+            ),
+            Err(Failure::Corrupt),
+            "{damage}"
+        );
+    }
 }

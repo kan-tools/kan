@@ -490,10 +490,14 @@ impl Service {
                 }
                 self.read_signed(&record)?;
                 after = record.sequence;
+                // This entire contiguous prefix is verified even if a later
+                // record fails. Never advance across the failing record.
+                self.audited = Snapshot {
+                    through: after,
+                    tip: Some(record.manifest.cid().clone()),
+                };
             }
         }
-        // Never publish a partially checked suffix after a failed audit.
-        self.audited = snapshot;
         Ok(())
     }
     pub fn issuer(&self) -> String {
@@ -544,9 +548,19 @@ impl Service {
             return Err(Failure::AccessLimited);
         }
         self.audit_suffix()?;
-        match &request.command {
+        self.execute_audited(&signed, bytes, now)
+    }
+    // Private post-authorization/audit phase. Separating this permits tests to
+    // schedule a concurrent raw append precisely between audit and execution.
+    fn execute_audited(
+        &mut self,
+        signed: &SignedRequest,
+        bytes: &[u8],
+        now: u64,
+    ) -> Result<Output> {
+        match &signed.request.command {
             Command::Append { .. } => {
-                let manifest = manifest(&signed, bytes)?;
+                let manifest = manifest(signed, bytes)?;
                 let receipt = receipt(&manifest, self.issuer().as_str(), now)?;
                 self.ledger.stage(bytes)?;
                 let record = self.ledger.commit_partition_at(
@@ -565,10 +579,20 @@ impl Service {
                     duplicate: record.duplicate,
                 })
             }
-            Command::Snapshot => Ok(Output::Snapshot {
-                through: self.audited.through,
-                tip: self.audited.tip.as_ref().map(ToString::to_string),
-            }),
+            Command::Snapshot => {
+                if self.audited.through > 0 {
+                    let tip = self
+                        .ledger
+                        .page(&self.audited, self.audited.through - 1, 1)?
+                        .pop()
+                        .ok_or(Failure::Corrupt)?;
+                    self.read_signed(&tip)?;
+                }
+                Ok(Output::Snapshot {
+                    through: self.audited.through,
+                    tip: self.audited.tip.as_ref().map(ToString::to_string),
+                })
+            }
             Command::Page {
                 through,
                 tip,
@@ -644,5 +668,174 @@ impl Service {
             return Err(Failure::Corrupt);
         }
         Ok(bytes)
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+
+    fn setup(root: &std::path::Path, writer: &Identity) -> Service {
+        Service::new(
+            Ledger::create(root).unwrap(),
+            [1; 32],
+            Identity::generate(),
+            vec![Grant {
+                principal: writer.did().to_string(),
+                append: true,
+                inventory: true,
+            }],
+        )
+        .unwrap()
+    }
+    fn signed(service: &Service, writer: &Identity, command: Command) -> SignedRequest {
+        let expires = if matches!(command, Command::Append { .. }) {
+            None
+        } else {
+            Some(1100)
+        };
+        SignedRequest::sign(
+            Request {
+                version: 1,
+                scope: service.scope.clone(),
+                audience: service.issuer(),
+                principal: writer.did().to_string(),
+                expires,
+                command,
+            },
+            writer,
+        )
+        .unwrap()
+    }
+    fn raw_append(
+        service: &mut Service,
+        writer: &Identity,
+        position: u64,
+        previous: Option<String>,
+        valid: bool,
+    ) -> (Vec<u8>, Committed) {
+        let mut id = [0u8; 16];
+        id[..8].copy_from_slice(&position.to_be_bytes());
+        let mut request = signed(
+            service,
+            writer,
+            Command::Append {
+                id: hex(&id),
+                position,
+                previous,
+                ciphertext: hex(b"opaque"),
+            },
+        );
+        if !valid {
+            request.signature = "00".repeat(64);
+        }
+        let bytes = request.bytes().unwrap();
+        let m = manifest(&request, &bytes).unwrap();
+        let r = receipt(&m, &service.issuer(), 1000).unwrap();
+        service.ledger.stage(&bytes).unwrap();
+        let committed = service.ledger.commit(m.bytes(), r.bytes()).unwrap();
+        (bytes, committed)
+    }
+
+    #[test]
+    fn reads_cannot_cross_audited_frontier_when_raw_append_arrives_after_audit() {
+        let temp = tempfile::tempdir().unwrap();
+        let writer = Identity::generate();
+        let mut service = setup(temp.path(), &writer);
+        service.audit_suffix().unwrap();
+        assert_eq!(service.audited.through, 0);
+        // Precisely schedule the competing commit after audit, before execution.
+        let (_, record) = raw_append(&mut service, &writer, 0, None, true);
+        let tip = record.manifest.cid().to_string();
+        let commands = [
+            (Command::Read { sequence: 1 }, Err(Failure::Missing)),
+            (
+                Command::Page {
+                    through: 1,
+                    tip: Some(tip),
+                    after: 0,
+                    limit: 1,
+                },
+                Err(Failure::Invalid),
+            ),
+            (
+                Command::Snapshot,
+                Ok(Output::Snapshot {
+                    through: 0,
+                    tip: None,
+                }),
+            ),
+        ];
+        for (command, expected) in commands {
+            let request = signed(&service, &writer, command);
+            assert_eq!(
+                service.execute_audited(&request, &request.bytes().unwrap(), 1000),
+                expected
+            );
+        }
+        // The same evidence becomes readable through normal dispatch after audit.
+        let read = signed(&service, &writer, Command::Read { sequence: 1 })
+            .bytes()
+            .unwrap();
+        assert!(matches!(
+            service.dispatch(&read, 1000).unwrap().reply.result,
+            Ok(Output::Evidence { .. })
+        ));
+        assert_eq!(service.audited.through, 1);
+    }
+
+    #[test]
+    fn verified_prefix_is_retained_without_skipping_a_later_invalid_record() {
+        let temp = tempfile::tempdir().unwrap();
+        let writer = Identity::generate();
+        let mut service = setup(temp.path(), &writer);
+        let mut previous = None;
+        for position in 0..130 {
+            let (_, record) = raw_append(&mut service, &writer, position, previous, true);
+            previous = Some(record.manifest.cid().to_string());
+        }
+        raw_append(&mut service, &writer, 130, previous.clone(), false);
+        for _ in 0..3 {
+            let request = signed(&service, &writer, Command::Snapshot)
+                .bytes()
+                .unwrap();
+            assert_eq!(
+                service.dispatch(&request, 1000).unwrap().reply.result,
+                Err(Failure::Corrupt)
+            );
+            assert_eq!(
+                service.audited,
+                Snapshot {
+                    through: 130,
+                    tip: Some(previous.as_ref().unwrap().parse().unwrap())
+                }
+            );
+            assert_eq!(service.ledger.snapshot().unwrap().through, 131);
+        }
+    }
+
+    #[test]
+    fn exact_retry_does_not_discard_audited_progress() {
+        let temp = tempfile::tempdir().unwrap();
+        let writer = Identity::generate();
+        let mut service = setup(temp.path(), &writer);
+        let (first, record) = raw_append(&mut service, &writer, 0, None, true);
+        raw_append(
+            &mut service,
+            &writer,
+            1,
+            Some(record.manifest.cid().to_string()),
+            true,
+        );
+        service.audit_suffix().unwrap();
+        let before = service.audited.clone();
+        assert!(matches!(
+            service.dispatch(&first, 1000).unwrap().reply.result,
+            Ok(Output::Committed {
+                duplicate: true,
+                ..
+            })
+        ));
+        assert_eq!(service.audited, before);
     }
 }

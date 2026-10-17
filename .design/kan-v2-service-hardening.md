@@ -21,9 +21,11 @@ Close the service review's F1/F2 follow-ups before relying on the ledger for cap
 - [x] AC-5: A missing committed request object fails corrupt at restart and on direct retrieval after startup; reverting the missing-object error mapping fails the regression. (REQ-4)
 - [ ] AC-6: Run service/store/delivery/import and surface checks, formatting and Clippy, then obtain a fresh actual Claude Code Opus 5.5 review of the published commit range. (REQ-5)
 
+- [x] AC-7: Deterministic scheduling between audit and execution proves Page/Read/Snapshot stay within the audited prefix; repeated failure preserves valid audit progress, exact retries do not discard it, and owner-SQL fixtures exercise pin/contiguity defenses. (REQ-1, REQ-4, REQ-5)
+
 ## Architecture
 
-`src/evidence_service.rs` retains an in-memory `Snapshot` naming the last fully audited prefix. Each authorized dispatch captures a new ledger snapshot, validates its continuity with that prefix, and scans only the new suffix through bounded pages, requiring contiguous sequence numbers and valid signed request/manifest/receipt bindings. Publish the new in-memory frontier only after the full suffix succeeds. Snapshot and read use that pinned frontier; page requests cannot request beyond it. Selected returned records remain individually checked. A same-height tip change or retreat is corrupt.
+`src/evidence_service.rs` retains an in-memory `Snapshot` naming the last fully audited prefix. Each authorized dispatch captures a new ledger snapshot, validates its continuity with that prefix, and scans only the new suffix through bounded pages, requiring contiguous sequence numbers and valid signed request/manifest/receipt bindings. Retain each fully checked contiguous prefix in memory, including when a later record fails; never advance across an unchecked or failing record. A dispatch still returns an error if any record in its captured suffix fails. Snapshot revalidates its selected tip and read uses that pinned frontier; page requests cannot request beyond it. Selected returned records remain individually checked. A same-height tip change or retreat is corrupt.
 
 `src/evidence_store.rs` adds `commit_partition_at` alongside the existing low-level partition method. Its exact `(sequence, CID)` comparison happens after `BEGIN IMMEDIATE` and before duplicate lookup or insertion. Any intervening commit yields conflict; callers retry the same signed bytes after another audit. A successful new service commit advances the in-memory frontier to its returned sequence/CID, since the service constructed and admitted that record inside the fence. An exact retry leaves the frontier unchanged. Staged objects may remain orphaned after a conflict, as in the existing profile.
 
@@ -44,7 +46,7 @@ No new product decision is needed for this correction. The existing production k
 Live data migration, main-branch merge, deployment, raw capture, owner erasure, durable audit caches and local Lean builds. Day claim/review backfill remains pending because the existing log read withholds untrusted claims; unavailable records are not treated as an empty telos set. The user's v2 continuation and this explicit design are the review target.
 
 
-## Author validation
+## Initial implementation validation (`0ab98e3`)
 
 The integrated v2 run passed 119 tests across the twelve integration suites and
 two unit tests (scope-query planner and spool quota), 121 total. All-target
@@ -63,3 +65,28 @@ with warnings for the two v2 source paths absent there and the two withheld
 claims. Both source files exist in this permanent worktree. Running day directly
 here still refuses the missing local kan workspace; no trust setting or claim
 was changed to bypass that restriction.
+
+
+## Review correction
+
+The initial fresh Opus review approved with follow-ups; see
+`.design/reviews/kan-v2-service-hardening-2026-10-17.md`. Its measured repeated
+revalidation cost justified changing the original all-or-nothing cache policy:
+a fully verified prefix remains valid even if the next record fails. Retaining
+that private progress cannot turn a failed dispatch into success or skip the
+bad record. No policy, byte format or durability promise changes. Requests still
+may take time for a large newly observed backlog; startup still scans all history.
+
+The private post-audit execution method introduces no public bypass: only
+`execute` reaches it in production, after authentication, authorization, expiry
+checks and successful audit. Tests use that boundary to schedule intervening raw
+commits without timing-dependent sleeps. Snapshot again checks its selected tip's
+record/object bytes, preserving the earlier corruption detection. Arbitrary
+rewrites to older already-audited data remain outside the append-only profile.
+
+Correction validation: all 120 integration tests across the twelve v2 suites and
+five unit checks passed (125 total), plus all-target v2-crypto Clippy, formatting
+and diff checks. All seven new targeted controls failed at runtime and passed
+again after restoration. Full correction-source reversion also caused the named
+missing-object/Snapshot integration test to fail, then pass after restoration.
+The independent correction review remains pending at this commit.
