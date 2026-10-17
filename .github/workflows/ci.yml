@@ -29,7 +29,7 @@ jobs:
       - run: cargo build --workspace --all-targets
       - run: cargo test --workspace
       - run: python3 -m pip install cryptography==46.0.3
-      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
+      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_capture --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
       - run: cargo test --features v2-crypto --lib evidence_spool::tests
       - run: cargo test --features v2-crypto --lib evidence_store::admission_tests
       - run: cargo test --features v2-crypto --lib evidence_service::audit_tests
