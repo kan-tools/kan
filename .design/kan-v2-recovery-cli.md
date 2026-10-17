@@ -114,3 +114,7 @@ linear scan cost. It fails explicitly; use preserved backups/specialist recovery
 raw table damage. Damaged derived bindings and cached commit coordinates are the
 supported repair case. More specific hot-journal diagnostics, old init/backup JSON
 path behavior and non-UTF-8 aliases for direct library callers remain follow-ups.
+
+## Initialization and verification continuation
+
+The lifecycle extension adds `kan-v2 init --resume <archive>` and preflights JSON paths for init/backup, while exclusive `init` still refuses an existing file. See `.design/kan-v2-storage-lifecycle.md` and `.design/kan-v2-schema-admission.md` for the reviewed behavior. Writable open and resume require the canonical schema. `kan-v2 verify <database>` currently verifies structural evidence only; success does not establish writable-schema admission, cryptographic admission, historical completeness or independent backup. Its help/JSON still needs explicit writable-admission disclosure. Raw `read-record`, `read-object` and `recover` remain available for damaged derived data under their documented limits.

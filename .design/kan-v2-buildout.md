@@ -182,6 +182,23 @@ The current day record failure remains a documentation-tool limitation, not a re
 
 The work targets the existing raw-data-and-projections, performance-at-scale, and identity/URI continuity goals. No new telos witnesses are declared by this document. The existing day graph nominates generative-build after design; this plan refines what the next build must establish without claiming that an unwitnessed maintenance telos is reached.
 
+### 9. Implementation continuation status — 2026-10-16
+
+This status supplements the original intent table; it does not retroactively mark the parent acceptance criteria complete. Draft stack remains #264 → #265 → #266 → #267 → #268, with permanent worktrees under `.worktrees/`.
+
+| Area | Implemented and reviewed | Remaining delivery boundary |
+|---|---|---|
+| P2 evidence | Experimental strict codec and independent format vectors | Authenticated inventory/admission and service-visible completeness states |
+| P3 storage | Opaque chunks, atomic manifest/receipt commits, retries, snapshot reads, backup, raw recovery/rebuild, explicit initialization resume, SQLite namespace protection and exact writable-schema admission | Bounded normal startup, measured capacity, broader authority and independent backup qualification |
+| P4 service | Contracts/design only | Key custody/profile decision, authenticated service/API, wrapping, capabilities and clients |
+| P5 migration | Local discovery/preview plus experimental maintenance CLI | Wider discovery and identity-history inventory, encrypted resumable import through P4; no cutover |
+| P6 capture | Design/fake-provider contract only | Collector, gateway, encrypted spool and selected real harness/provider qualification |
+| P7 operations | Local backups and synthetic recovery evidence | Independent backup destination, clean-host restore and final migration/cutover evidence |
+
+The latest integrated runtime/test snapshot is `70a4348`: 70 targeted tests, Clippy, formatting, seven demonstrated lifecycle/schema negative controls, and fresh actual Opus 5.5 review per implementation/correction point. See `.design/reviews/kan-v2-lifecycle-2026-10-16.md` for exact ranges, verdicts and unresolved findings. A stopped review on an author test fixture error has no completion verdict and is not counted. Existing v1 sources and live routing remain unchanged.
+
+Continue with normal-startup/capacity qualification and migration preflight completeness while settling P4's inherited owner-key profile decision. Do not treat local backup success or an approved storage slice as primary-archive readiness. The legacy migration-matrix seed fixture currently fails before the candidate reader executes; that CI failure remains visible and must be resolved before merge. CLI `verify` currently checks structural evidence, not writable-schema admission; the disclosure follow-up is tracked in the review disposition.
+
 ## Resolved Questions
 
 - RQ-1: The user requested a draft architecture PR followed by a new permanent worktree/branch based on the design branch, with merges planned in sequence. P0 and P1 form that stack; neither is merged by this pass.
