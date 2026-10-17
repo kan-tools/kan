@@ -1039,6 +1039,9 @@ fn initialization_rejects_foreign_media_without_replacing_it() {
         "PRAGMA application_id=123;",
         "PRAGMA user_version=2;",
         "PRAGMA application_id=1263940097; PRAGMA user_version=2;",
+        // Correct markers do not establish a valid schema. Rejection must not
+        // convert this quiescent DELETE-mode file to WAL first.
+        "PRAGMA application_id=1263940097; PRAGMA user_version=1;",
     ] {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("archive.sqlite");
