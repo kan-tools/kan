@@ -13,9 +13,9 @@ Reject a database whose profile markers match kan but whose schema no longer enf
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Tests reject extra foreign table, deleting trigger, view/index, objects without its constraints and commits without uniqueness; both ordinary open and explicit resume reject without changing main bytes or adding sidecars to quiescent DELETE-mode fixtures. (REQ-1, REQ-2)
-- [ ] AC-2: Canonical archives and normalized backups reopen and accept append; existing recovery tests still reconstruct missing bindings and reopen the result. (REQ-3, REQ-4)
-- [ ] AC-3: A causal control removing writer schema admission makes the hostile-schema test fail; restored admission passes. Existing evidence and independent verifier tests remain passing. (REQ-1, REQ-2, REQ-4)
+- [x] AC-1: Tests reject extra foreign table, deleting trigger, view/index, objects without its constraints and commits without uniqueness; both ordinary open and explicit resume reject without changing main bytes or adding sidecars to quiescent DELETE-mode fixtures. (REQ-1, REQ-2)
+- [x] AC-2: Canonical archives and normalized backups reopen and accept append; existing recovery tests still reconstruct missing bindings and reopen the result. (REQ-3, REQ-4)
+- [x] AC-3: A causal control removing writer schema admission makes the hostile-schema test fail; restored admission passes. Existing evidence and independent verifier tests remain passing. (REQ-1, REQ-2, REQ-4)
 
 ## Architecture
 
@@ -37,3 +37,7 @@ None for this bounded experimental profile.
 ## Out of Scope
 
 Full-history-independent startup, runtime schema migration, non-default SQLite physical profile qualification, cryptographic authenticity, and protection against concurrent owner-issued DDL remain separate work. Day recording remains unavailable because the legacy inventory withholds claims; retain this versioned design for later back-fill without inventing claim identifiers.
+
+## Validation and review
+
+The final independent review covers `a8345b3..70a4348` on the integrated migration branch and returned APPROVE WITH FOLLOW-UPS using actual Claude Code `claude-opus-5-5`. It independently passed the build, all 70 targeted tests, Clippy and formatting; probed fourteen hostile schema variants; and admitted generated, backup and rebuilt archives. The author executed the seven causal controls; the reviewer inspected them without mutating tracked source. Details and remaining follow-ups are recorded in the migration child's `.design/reviews/kan-v2-lifecycle-2026-10-16.md`. CLI `verify` still reports structural evidence verification without explicitly disclosing that writer admission is separate; that disclosure remains a follow-up.
