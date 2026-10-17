@@ -789,3 +789,164 @@ fn recovery_rejects_structurally_valid_but_inconsistent_raw_history() {
         );
     }
 }
+
+#[test]
+fn recovery_large_row_worker() {
+    use kan::evidence_store::RecoveryReader;
+    let Ok(source) = std::env::var("KAN_V2_LARGE_ROW_SOURCE") else {
+        return;
+    };
+    let reader = RecoveryReader::open(Path::new(&source)).unwrap();
+    let error = if std::env::var("KAN_V2_LARGE_ROW_KIND").unwrap() == "manifest" {
+        reader.record(1).unwrap_err()
+    } else {
+        reader
+            .read_object(&kan::evidence_store::ciphertext_cid(b"recovery payload"))
+            .unwrap_err()
+    };
+    assert!(
+        matches!(error, Error::Sql(rusqlite::Error::SqliteFailure(e, _)) if e.code == rusqlite::ErrorCode::TooBig),
+        "{error:?}"
+    );
+    let output = Path::new(&source).with_file_name("rejected.sqlite");
+    let error = reader.rebuild(&output).unwrap_err();
+    assert!(
+        matches!(error, Error::Sql(rusqlite::Error::SqliteFailure(e, _)) if e.code == rusqlite::ErrorCode::TooBig),
+        "{error:?}"
+    );
+    assert!(Ledger::verify_file(&output).is_err());
+}
+
+#[test]
+fn recovery_large_rows_hit_sqlite_limit_before_materialization() {
+    for kind in ["manifest", "object"] {
+        let temp = tempfile::tempdir().unwrap();
+        let (ledger, _) = recovery_fixture(&temp.path().join("source"));
+        let source = temp.path().join("damaged.sqlite");
+        ledger.backup(&source).unwrap();
+        let db = rusqlite::Connection::open(&source).unwrap();
+        db.execute_batch("PRAGMA ignore_check_constraints=ON")
+            .unwrap();
+        if kind == "manifest" {
+            db.execute_batch("UPDATE commits SET manifest=zeroblob(100663296) WHERE sequence=1")
+                .unwrap();
+        } else {
+            db.execute(
+                "UPDATE objects SET bytes=zeroblob(100663296) WHERE cid=?",
+                [kan::evidence_store::ciphertext_cid(b"recovery payload").to_string()],
+            )
+            .unwrap();
+        }
+        drop(db);
+        // Measure only the fresh worker, not the fixture writer's allocations.
+        // The 64 MiB ceiling is deliberately above normal worker overhead and
+        // below materializing the poisoned 96 MiB value. Unix resource units vary.
+        #[cfg(unix)]
+        let out = Command::new("python3")
+            .args(["-c", r#"import json,resource,subprocess,sys
+p=subprocess.run([sys.argv[1], '--exact', 'recovery_large_row_worker', '--nocapture'], capture_output=True, text=True)
+peak=resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+if sys.platform != 'darwin': peak *= 1024
+print(json.dumps({'exit':p.returncode,'peak_bytes':peak,'stdout':p.stdout,'stderr':p.stderr}))
+sys.exit(0 if p.returncode == 0 and peak < 64*1024*1024 else 1)
+"#])
+            .arg(std::env::current_exe().unwrap())
+            .env("KAN_V2_LARGE_ROW_SOURCE", &source)
+            .env("KAN_V2_LARGE_ROW_KIND", kind)
+            .output().unwrap();
+        #[cfg(not(unix))]
+        let out = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "recovery_large_row_worker", "--nocapture"])
+            .env("KAN_V2_LARGE_ROW_SOURCE", &source)
+            .env("KAN_V2_LARGE_ROW_KIND", kind)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
+#[test]
+fn recovery_rejects_overlapping_sqlite_namespaces_and_existing_sidecars() {
+    use kan::evidence_store::RecoveryReader;
+    let temp = tempfile::tempdir().unwrap();
+    let (ledger, _) = recovery_fixture(&temp.path().join("source"));
+    let source = temp.path().join("source.sqlite");
+    ledger.backup(&source).unwrap();
+    let original = std::fs::read(&source).unwrap();
+    let reader = RecoveryReader::open(&source).unwrap();
+    for name in [
+        "source.sqlite-journal",
+        "source.sqlite-wal",
+        "source.sqlite-shm",
+        "SOURCE.SQLITE-JOURNAL",
+    ] {
+        let output = temp.path().join(name);
+        assert!(
+            matches!(reader.rebuild(&output), Err(Error::Invalid(_))),
+            "accepted {name}"
+        );
+        assert!(!output.exists());
+    }
+    for suffix in ["-journal", "-wal", "-shm"] {
+        let sidecar = temp.path().join(format!("output.sqlite{suffix}"));
+        std::fs::write(&sidecar, b"unrelated retained data").unwrap();
+        assert!(reader.rebuild(&temp.path().join("output.sqlite")).is_err());
+        assert!(!temp.path().join("output.sqlite").exists());
+        assert_eq!(std::fs::read(&sidecar).unwrap(), b"unrelated retained data");
+        std::fs::remove_file(sidecar).unwrap();
+    }
+    // The output's journal must not be the source database, either.
+    let reverse_source = temp.path().join("reverse.sqlite-journal");
+    ledger.backup(&reverse_source).unwrap();
+    let reverse = RecoveryReader::open(&reverse_source).unwrap();
+    assert!(reverse
+        .rebuild(&temp.path().join("reverse.sqlite"))
+        .is_err());
+    assert!(!temp.path().join("reverse.sqlite").exists());
+    assert_eq!(std::fs::read(&source).unwrap(), original);
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(temp.path(), temp.path().join("alias")).unwrap();
+        assert!(reader
+            .rebuild(&temp.path().join("alias/source.sqlite-journal"))
+            .is_err());
+        std::fs::hard_link(&source, temp.path().join("hardlink.sqlite")).unwrap();
+        assert!(reader
+            .rebuild(&temp.path().join("hardlink.sqlite-journal"))
+            .is_err());
+        assert!(!temp.path().join("hardlink.sqlite-journal").exists());
+        let unicode_source = temp.path().join("caf\u{e9}.sqlite");
+        ledger.backup(&unicode_source).unwrap();
+        let unicode = RecoveryReader::open(&unicode_source).unwrap();
+        if temp.path().join("cafe\u{301}.sqlite").exists() {
+            assert!(unicode
+                .rebuild(&temp.path().join("cafe\u{301}.sqlite-journal"))
+                .is_err());
+        }
+    }
+}
+
+#[test]
+fn recovery_length_limit_preserves_maximum_valid_chunks() {
+    use kan::evidence_store::RecoveryReader;
+    let temp = tempfile::tempdir().unwrap();
+    let mut ledger = Ledger::create(&temp.path().join("source")).unwrap();
+    let bytes = vec![17; MAX_CHUNK];
+    let id = ledger.stage(&bytes).unwrap();
+    let reader = RecoveryReader::open(&temp.path().join("source/archive.sqlite")).unwrap();
+    assert_eq!(reader.read_object(&id).unwrap(), bytes);
+    let output = temp.path().join("maximum.sqlite");
+    assert_eq!(reader.rebuild(&output).unwrap().bytes, MAX_CHUNK as u64);
+    assert_eq!(
+        RecoveryReader::open(&output)
+            .unwrap()
+            .read_object(&id)
+            .unwrap(),
+        bytes
+    );
+}

@@ -2,7 +2,7 @@
 
 ## Summary
 
-Close storage review F2 with a read-only evidence handle and an out-of-place
+Implement the library part of storage review F2 with a read-only evidence handle and an out-of-place
 rebuild. Derived bindings and cached commit coordinates must not be prerequisites
 for reading raw evidence. Never repair the only copy in place. This is an explicit
 offline recovery operation, not normal bounded writer startup (F1 remains open).
@@ -102,3 +102,70 @@ publishing the profile before copying, and using an unregistered mutation capabi
 Each named test fails under its mutant and passes after restoration. The typed
 facade's implementation digest was updated only for the new capability inventory.
 Fresh independent review and downstream CLI integration remain pending.
+
+## First independent review and correction scope
+
+Fresh Claude Code `claude-opus-5-5` approved c557451 with follow-ups. Its hostile
+probes recovered physically corrupt commit-index/binding pages and rejected raw
+page corruption, unknown records, duplicate raw pairs and real page-spill crashes.
+Before CLI exposure, fix its M1 (SQLite can materialize an oversized value before
+`substr` bounds Rust output) and L1 (destination can collide with source sidecars).
+The fresh correction review remains pending.
+
+The recovery connection now sets `SQLITE_LIMIT_LENGTH` to 8 MiB, enough for a valid
+4 MiB object plus key/row encoding, before reading the schema. This caps SQLite's
+value/row materialization, including corrupt fields, while per-object and canonical
+record format bounds remain 4 MiB and 64 KiB. Oversized database values fail with
+SQLite `TooBig` before the Rust length/digest check; this is not a constant total
+process-RSS guarantee. Two 96 MiB poison fixtures exercise reads and rebuilds.
+
+Destination validation resolves its existing parent and rejects intersecting source
+and output SQLite filename namespaces, source-base aliases, and preexisting output
+sidecars. It includes reverse collisions where the output journal would name the
+source, case-insensitive ASCII comparison, symlinked parents and Unix hard links.
+It does not defend against an owner racing path replacement after validation.
+
+Read-only means no authoritative evidence rewrite. SQLite can initialize source
+`-wal` and `-shm` coordination files; a distinct `EvidenceRecoverySource` capability
+and catalog rows now cover this connection-opening boundary. A WAL source requires
+usable sidecars or a writable directory; read-only media may fail closed. Hot
+rollback journals also fail closed. Preserve database and journal/WAL together,
+then use SQLite crash recovery on a separate writable copy before inspecting it;
+never discard a hot journal or silently assume immutable/no-WAL state. A pinned
+rollback-mode reader can block writers; a WAL reader can retain checkpoint history.
+
+A failed rebuild can leave an empty/unrecognized file or, after commit, a complete
+file when subsequent sync/reverification fails. No error certifies durable success,
+no output is promoted automatically, and retries require new destinations. Raw
+corruption errors currently retain the underlying SQL/codec category where useful;
+a unified diagnostic taxonomy is a later operator-experience improvement.
+
+
+The author's RSS probe exposed a second allocation route: a WITHOUT ROWID primary
+key seek can load an entire poisoned object row before SQLite's value limit. Thus
+`RecoveryReader::read_object` deliberately scans keys using `NOT INDEXED` and unary
+`+cid`, preventing a seek; the ordinary verified `Ledger` retains indexed reads.
+Recovery object lookup has worst-case linear metadata I/O, explicitly outside the
+ordinary bounded-read performance target. Rebuild already streams a table scan.
+Unix child-process tests measure peak RSS below 64 MiB for 96 MiB poisoned manifests
+and objects; Windows still checks rejection but does not run the Unix RSS witness.
+Removing the SQLite limit or restoring the unsafe seek independently fails a test.
+
+
+First-review identity: base ff8d57c1b20eb2c95eeb4512c7eac53e18105533,
+head c557451d501b86c8022d7f222d8809b7b2eaf28e; session
+`da152494-9f34-4f5f-abad-8a975027315c`, actual model `claude-opus-5-5`.
+The unedited final report is `.local-state/reviews/recovery-round-1-report.md`,
+SHA-256 `04d097ddc3e1da98a2965cdaacccd23ef8333b97f2006d77c9ba2c00ee2d60ec`.
+The reviewer independently ran 45 targeted tests, build, lint, formatting, the
+codec oracle and hostile scratch probes. It did not run the full legacy matrix,
+private day process state or author mutation scripts. Its approval covered the
+original library slice with follow-ups, not the subsequent corrections.
+
+Correction validation: 23 storage + seven codec + 19 surface tests pass, along with
+feature all-target Clippy, formatting and whitespace checks. All eight compiling
+negative controls fail their named tests and restored fixes pass. The maximum
+valid 4 MiB object is readable and rebuildable. A separate macOS RSS probe measured
+approximately 9.2 MB peak for both 9 MiB and 96 MiB poisoned manifests/objects after
+the fixes (versus about 110 MB for a 96 MiB object with the unsafe key seek).
+Fresh combined core/CLI correction review is pending on the dependent branch.
