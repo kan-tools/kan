@@ -39,7 +39,7 @@ def main():
          'evidence_store', 'writer_admission_rejects_foreign_schema_without_mutating_evidence'),
         ('configure-before-verification', original.replace('ledger.verify()?;\n        configure(&ledger.conn)?;',
          'configure(&ledger.conn)?;\n        ledger.verify()?;'), 'evidence_store',
-         'initialization_rejects_foreign_media_without_replacing_it'),
+         'open_rejects_corrupt_content_before_journal_conversion'),
         ('no-create-sidecar-guard', original.replace('unused_sqlite_sidecars(&path)?;', ''),
          'evidence_store', 'lifecycle_destinations_preserve_existing_sqlite_namespaces'),
         ('no-initialization-resume', original.replace('Self::initialize_empty(root, &path, &mut |_| {})',

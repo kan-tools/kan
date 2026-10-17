@@ -1252,3 +1252,23 @@ fn canonical_backup_and_rebuild_pass_writer_schema_admission() {
             .success());
     }
 }
+
+#[test]
+fn open_rejects_corrupt_content_before_journal_conversion() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut ledger = Ledger::create(temp.path()).unwrap();
+    ledger.stage(b"committed bytes").unwrap();
+    drop(ledger);
+    let path = temp.path().join("archive.sqlite");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch("PRAGMA journal_mode=DELETE; UPDATE objects SET bytes=x'00'")
+        .unwrap();
+    drop(conn);
+    let before = std::fs::read(&path).unwrap();
+    assert!(Ledger::open(temp.path()).is_err());
+    assert!(Ledger::resume_initialization(temp.path()).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    for suffix in ["-journal", "-wal", "-shm"] {
+        assert!(!temp.path().join(format!("archive.sqlite{suffix}")).exists());
+    }
+}
