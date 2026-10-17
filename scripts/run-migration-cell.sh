@@ -127,6 +127,7 @@ fi
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+export KAN_CONFIG_DIR="$work/system-config"
 cd "$work" || { echo "unwritable"; exit 0; }
 
 git init -q .
@@ -283,6 +284,23 @@ if [ "$MODE" = identity-file ]; then
     say "could not seed a key file with this writer -- continuing; if it predates"
     say "KAN_IDENTITY_FILE it will write .kan/identity and the reader follows it"
   fi
+fi
+
+initialized_scope=false
+# RFC 1 writers require deliberate system-actor and scope initialization.
+# A selected legacy key file still exercises the legacy claim-format path.
+# Probe the released writer itself; old releases must retain their own setup.
+if [ "$MODE" != identity-file ] \
+   && "$OLD_BIN" identity init --help >/dev/null 2>&1 \
+   && "$OLD_BIN" init --help >/dev/null 2>&1; then
+  if ! "$OLD_BIN" identity init >/dev/null 2>>"$work/writer.log" \
+     || ! "$OLD_BIN" init >/dev/null 2>>"$work/writer.log"; then
+    say "explicit writer initialization failed:"
+    tail -20 "$work/writer.log" >&2
+    echo "unwritable"
+    exit 0
+  fi
+  initialized_scope=true
 fi
 
 # `--subject` rather than a positional: the positional form only arrived in
@@ -523,44 +541,48 @@ author="$(printf '%s' "$out" \
   | python3 -c 'import json,sys; c=json.load(sys.stdin)["claims"]; print(c[0]["author"] if c else "")' \
   2>/dev/null)"
 
-did_out="$work/did.txt"
-"$NEW_BIN" identity did >"$did_out" 2>"$work/did.err" &
-did_pid=$!
-( sleep "$READ_TIMEOUT"; kill -9 "$did_pid" 2>/dev/null ) >/dev/null 2>&1 &
-did_watchdog=$!
-if wait "$did_pid" 2>/dev/null; then did_rc=0; else did_rc=$?; fi
-kill "$did_watchdog" 2>/dev/null; wait "$did_watchdog" 2>/dev/null
+if [ "$initialized_scope" = false ]; then
+  did_out="$work/did.txt"
+  "$NEW_BIN" identity did >"$did_out" 2>"$work/did.err" &
+  did_pid=$!
+  ( sleep "$READ_TIMEOUT"; kill -9 "$did_pid" 2>/dev/null ) >/dev/null 2>&1 &
+  did_watchdog=$!
+  if wait "$did_pid" 2>/dev/null; then did_rc=0; else did_rc=$?; fi
+  kill "$did_watchdog" 2>/dev/null; wait "$did_watchdog" 2>/dev/null
 
-if [ "$did_rc" -eq 137 ]; then
-  say "resolving an identity did not return within ${READ_TIMEOUT}s. Its stderr:"
-  # kan prints its own slow-keychain warning after 1.5s
-  # (src/sign.rs::SlowKeychainWarning), and that warning names the cause. The
-  # first version of this branch discarded it -- so the log recorded THAT the
-  # read blocked and threw away the tool's own account of WHY, on the one axis
-  # added to observe keychain behaviour.
-  if [ -s "$work/did.err" ]; then tail -20 "$work/did.err" >&2; else say "  (nothing on stderr)"; fi
-  if [ "$MODE" = keychain ]; then echo "keychain-modal"; else echo "read-hung"; fi
-  exit 0
-fi
+  if [ "$did_rc" -eq 137 ]; then
+    say "resolving an identity did not return within ${READ_TIMEOUT}s. Its stderr:"
+    # kan prints its own slow-keychain warning after 1.5s
+    # (src/sign.rs::SlowKeychainWarning), and that warning names the cause. The
+    # first version of this branch discarded it -- so the log recorded THAT the
+    # read blocked and threw away the tool's own account of WHY, on the one axis
+    # added to observe keychain behaviour.
+    if [ -s "$work/did.err" ]; then tail -20 "$work/did.err" >&2; else say "  (nothing on stderr)"; fi
+    if [ "$MODE" = keychain ]; then echo "keychain-modal"; else echo "read-hung"; fi
+    exit 0
+  fi
 
-resolved="$(tr -d '[:space:]' <"$did_out" 2>/dev/null)"
-if [ "$did_rc" -ne 0 ] || [ -z "$resolved" ]; then
-  # Readable but not writable. A real and previously invisible migration
-  # outcome: the claims fold, and the upgraded binary cannot sign here or even
-  # name the workspace's own identity.
-  say "this build cannot resolve an identity for the migrated workspace:"
-  tail -5 "$work/did.err" >&2 2>/dev/null
-  echo "identity-unresolvable"
-  exit 0
-fi
+  resolved="$(tr -d '[:space:]' <"$did_out" 2>/dev/null)"
+  if [ "$did_rc" -ne 0 ] || [ -z "$resolved" ]; then
+    # Readable but not writable. A real and previously invisible migration
+    # outcome: the claims fold, and the upgraded binary cannot sign here or even
+    # name the workspace's own identity.
+    say "this build cannot resolve an identity for the migrated workspace:"
+    tail -5 "$work/did.err" >&2 2>/dev/null
+    echo "identity-unresolvable"
+    exit 0
+  fi
 
-if [ -n "$author" ] && [ "$resolved" != "$author" ]; then
-  # #90, detected directly rather than inferred from a trust exclusion.
-  say "identity moved: claims authored by $author, this build resolves $resolved"
-  echo "identity-changed"
-  exit 0
+  if [ -n "$author" ] && [ "$resolved" != "$author" ]; then
+    # #90, detected directly rather than inferred from a trust exclusion.
+    say "identity moved: claims authored by $author, this build resolves $resolved"
+    echo "identity-changed"
+    exit 0
+  fi
+  say "identity resolves to $resolved, matching the claims' author"
+else
+  say "RFC 1 identity: checking the actual upgrade-write author below (legacy identity did does not resolve a system actor)"
 fi
-say "identity resolves to $resolved, matching the claims' author"
 
 # The trust-exclusion form of the same question, kept as a secondary signal.
 # NOTE it cannot fire on a single-writer workspace under the current default:
@@ -625,7 +647,7 @@ fi
 say "upgrade write: appending one claim to the migrated workspace"
 write_err="$work/write.err"
 "$NEW_BIN" observe "written by this build after reading an older kan's workspace" \
-  --subject migration-subject >/dev/null 2>"$write_err" &
+  --subject migration-subject >"$work/upgrade-cid.txt" 2>"$write_err" &
 writer_pid=$!
 ( sleep "$READ_TIMEOUT"; kill -9 "$writer_pid" 2>/dev/null ) >/dev/null 2>&1 &
 write_watchdog=$!
@@ -652,6 +674,25 @@ after="$("$NEW_BIN" show migration-subject --json 2>/dev/null)"
 after_cids="$(printf '%s' "$after" \
   | python3 -c 'import json,sys; print("\n".join(sorted(c["cid"] for c in json.load(sys.stdin)["claims"])))' \
   2>/dev/null)"
+if [ "$initialized_scope" = true ]; then
+  # An actual signed write exercises actor resolution. Compare the complete
+  # author value (including identity state), never a trust-filtered author list.
+  if ! python3 - "$read_out" "$work/upgrade-cid.txt" "$after" <<'CHECK_AUTHOR'
+import json, sys
+before = json.load(open(sys.argv[1]))["claims"]
+cid = open(sys.argv[2]).read().strip()
+after = json.loads(sys.argv[3])["claims"]
+written = [c for c in after if c["cid"] == cid]
+if not before or len(written) != 1 or any(c["author"] != written[0]["author"] for c in before):
+    sys.exit(1)
+CHECK_AUTHOR
+  then
+    say "upgrade write changed the RFC 1 author or did not identify exactly one new claim"
+    echo "identity-changed"
+    exit 0
+  fi
+  say "RFC 1 upgrade-write author matches all original claims"
+fi
 after_n="$(printf '%s' "$after_cids" | grep -c . || true)"
 
 if [ "$after_n" -lt $((wrote + 1)) ]; then

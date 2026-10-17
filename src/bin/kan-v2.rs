@@ -20,7 +20,14 @@ enum Command {
         roots: Vec<PathBuf>,
     },
     /// Hash raw evidence and inspect CAR framing; does not import or verify claims.
-    Preview { root: PathBuf },
+    Preview {
+        root: PathBuf,
+        /// Treat root as an explicitly selected raw log directory.
+        #[arg(long)]
+        store: bool,
+    },
+    /// Inventory public identity events beneath an explicitly selected config root.
+    PreviewIdentity { config_root: PathBuf },
     /// Create a new opaque ledger. Its parent directory must already exist.
     Init {
         archive: PathBuf,
@@ -28,7 +35,7 @@ enum Command {
         #[arg(long)]
         resume: bool,
     },
-    /// Verify a quiescent archive/backup file without writing to it.
+    /// Verify structural evidence in a quiescent file; does not check writable admission.
     Verify { database: PathBuf },
     /// Make and verify a consistent local backup into a new file.
     Backup {
@@ -55,9 +62,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "{}",
             serde_json::to_string_pretty(&migration_preflight::discover(&roots))?
         ),
-        Command::Preview { root } => println!(
+        Command::Preview { root, store } => println!(
             "{}",
-            serde_json::to_string_pretty(&migration_preflight::preview(&root)?)?
+            serde_json::to_string_pretty(&if store {
+                migration_preflight::preview_store(&root)?
+            } else {
+                migration_preflight::preview(&root)?
+            })?
+        ),
+        Command::PreviewIdentity { config_root } => println!(
+            "{}",
+            serde_json::to_string_pretty(&migration_preflight::preview_identity(&config_root)?)?
         ),
         Command::Init { archive, resume } => {
             let archive_text = archive
@@ -78,7 +93,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let report = Ledger::verify_file(&database)?;
             println!(
                 "{}",
-                serde_json::json!({"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"through":report.snapshot.through,"tip":report.snapshot.tip.map(|c|c.to_string()),"cryptographic_admission":"not-verified"})
+                serde_json::json!({"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"through":report.snapshot.through,"tip":report.snapshot.tip.map(|c|c.to_string()),"verification":"structural-closure","writable_admission":"not-checked","cryptographic_admission":"not-verified","historical_completeness":"not-verified"})
             );
         }
         Command::Backup {

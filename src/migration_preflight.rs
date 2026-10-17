@@ -14,8 +14,18 @@ const MAX_FILES: usize = 16_384;
 const MAX_DEPTH: usize = 128;
 const BUFFER: usize = 65_536;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NoticeKind {
+    Excluded,
+    Unavailable,
+    Unsupported,
+    Changed,
+    Limit,
+}
 #[derive(Debug, Serialize)]
 pub struct Notice {
+    pub kind: NoticeKind,
     pub path: PathBuf,
     pub reason: String,
 }
@@ -32,6 +42,7 @@ pub fn discover(roots: &[PathBuf]) -> Discovery {
     'walk: while let Some((path, depth)) = pending.pop() {
         if pending.len() + visited.len() + output.notices.len() > 65_536 {
             output.notices.push(Notice {
+                kind: NoticeKind::Limit,
                 path,
                 reason: "traversal inventory limit; discovery incomplete".into(),
             });
@@ -41,6 +52,7 @@ pub fn discover(roots: &[PathBuf]) -> Discovery {
             Ok(m) => m,
             Err(e) => {
                 output.notices.push(Notice {
+                    kind: NoticeKind::Unavailable,
                     path,
                     reason: e.to_string(),
                 });
@@ -49,6 +61,7 @@ pub fn discover(roots: &[PathBuf]) -> Discovery {
         };
         if metadata.file_type().is_symlink() {
             output.notices.push(Notice {
+                kind: NoticeKind::Unsupported,
                 path,
                 reason: "symlink not followed".into(),
             });
@@ -56,6 +69,7 @@ pub fn discover(roots: &[PathBuf]) -> Discovery {
         }
         if !metadata.is_dir() {
             output.notices.push(Notice {
+                kind: NoticeKind::Unsupported,
                 path,
                 reason: "search root is not a directory".into(),
             });
@@ -63,6 +77,7 @@ pub fn discover(roots: &[PathBuf]) -> Discovery {
         }
         if depth > MAX_DEPTH {
             output.notices.push(Notice {
+                kind: NoticeKind::Limit,
                 path,
                 reason: "directory depth limit; discovery incomplete".into(),
             });
@@ -72,6 +87,7 @@ pub fn discover(roots: &[PathBuf]) -> Discovery {
             Ok(p) => p,
             Err(e) => {
                 output.notices.push(Notice {
+                    kind: NoticeKind::Unavailable,
                     path,
                     reason: e.to_string(),
                 });
@@ -81,22 +97,31 @@ pub fn discover(roots: &[PathBuf]) -> Discovery {
         if !visited.insert(canonical.clone()) {
             continue;
         }
-        match fs::symlink_metadata(path.join(".kan")) {
-            Ok(m) if m.is_dir() && !m.file_type().is_symlink() => output.roots.push(canonical),
-            Ok(_) => output.notices.push(Notice {
-                path: path.join(".kan"),
-                reason: "workspace marker is not a real directory".into(),
-            }),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-            Err(e) => output.notices.push(Notice {
-                path: path.join(".kan"),
-                reason: e.to_string(),
-            }),
+        let mut found = false;
+        for marker in [".kan", ".claims"] {
+            match fs::symlink_metadata(path.join(marker)) {
+                Ok(m) if m.is_dir() && !m.file_type().is_symlink() => found = true,
+                Ok(_) => output.notices.push(Notice {
+                    kind: NoticeKind::Unsupported,
+                    path: path.join(marker),
+                    reason: "workspace marker is not a real directory".into(),
+                }),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => output.notices.push(Notice {
+                    kind: NoticeKind::Unavailable,
+                    path: path.join(marker),
+                    reason: e.to_string(),
+                }),
+            }
+        }
+        if found {
+            output.roots.push(canonical);
         }
         let children = match fs::read_dir(&path) {
             Ok(d) => d,
             Err(e) => {
                 output.notices.push(Notice {
+                    kind: NoticeKind::Unavailable,
                     path,
                     reason: e.to_string(),
                 });
@@ -106,6 +131,7 @@ pub fn discover(roots: &[PathBuf]) -> Discovery {
         for child in children {
             if pending.len() + visited.len() + output.notices.len() > 65_536 {
                 output.notices.push(Notice {
+                    kind: NoticeKind::Limit,
                     path: path.clone(),
                     reason: "traversal inventory limit; discovery incomplete".into(),
                 });
@@ -113,6 +139,7 @@ pub fn discover(roots: &[PathBuf]) -> Discovery {
             }
             match child {
                 Err(e) => output.notices.push(Notice {
+                    kind: NoticeKind::Unavailable,
                     path: path.clone(),
                     reason: e.to_string(),
                 }),
@@ -124,6 +151,7 @@ pub fn discover(roots: &[PathBuf]) -> Discovery {
                         .any(|s| name == *s)
                     {
                         output.notices.push(Notice {
+                            kind: NoticeKind::Excluded,
                             path: p,
                             reason: "excluded traversal directory".into(),
                         });
@@ -132,6 +160,7 @@ pub fn discover(roots: &[PathBuf]) -> Discovery {
                             Ok(t) if t.is_dir() || t.is_symlink() => pending.push((p, depth + 1)),
                             Ok(_) => {}
                             Err(e) => output.notices.push(Notice {
+                                kind: NoticeKind::Unavailable,
                                 path: p,
                                 reason: e.to_string(),
                             }),
@@ -280,6 +309,9 @@ pub struct SourceFile {
 }
 #[derive(Debug, Serialize)]
 pub struct Preview {
+    pub selection: &'static str,
+    pub selected_inventory_complete: bool,
+    pub public_identity_history: &'static str,
     pub root: PathBuf,
     pub files: Vec<SourceFile>,
     pub notices: Vec<Notice>,
@@ -327,7 +359,10 @@ fn inspect(root: &Path, path: &Path, medium: &'static str, car: bool) -> io::Res
     }
     let mut file = File::open(path)?;
     if !unchanged(&before, &file.metadata()?) {
-        return Err(io::Error::other("source changed or replaced before read"));
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "source changed or replaced before read",
+        ));
     }
     let mut digest = Sha256::new();
     let mut buffer = [0; BUFFER];
@@ -345,7 +380,10 @@ fn inspect(root: &Path, path: &Path, medium: &'static str, car: bool) -> io::Res
         || !unchanged(&before, &file.metadata()?)
         || !unchanged(&before, &fs::symlink_metadata(path)?)
     {
-        return Err(io::Error::other("source changed during inspection"));
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "source changed during inspection",
+        ));
     }
     Ok(SourceFile {
         path: path.strip_prefix(root).map_err(io::Error::other)?.into(),
@@ -361,21 +399,19 @@ pub fn preview(root: &Path) -> io::Result<Preview> {
         return Err(io::Error::other("workspace root is a symlink"));
     }
     let root = root.canonicalize()?;
-    let marker = fs::symlink_metadata(root.join(".kan"))?;
-    if !marker.is_dir() || marker.file_type().is_symlink() {
-        return Err(io::Error::other("workspace marker is not a real directory"));
+    let mut found = false;
+    for marker in [".kan", ".claims"] {
+        match fs::symlink_metadata(root.join(marker)) {
+            Ok(m) if m.is_dir() && !m.file_type().is_symlink() => found = true,
+            Ok(_) => return Err(io::Error::other("workspace marker is not a real directory")),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
     }
-    let mut output = Preview {
-        root: root.clone(),
-        files: vec![],
-        notices: vec![],
-        observed_bytes: 0,
-        claim_signatures: "not-verified",
-        graph_reachability: "not-verified",
-        git_history: "not-inventoried",
-        snapshot: "file-level-observation-not-atomic",
-        ready_for_cutover: false,
-    };
+    if !found {
+        return Err(io::Error::other("no workspace evidence marker"));
+    }
+    let mut output = empty_preview(root.clone(), "workspace");
     let mut selected = Vec::new();
     for (name, medium) in [("log", "primary-log"), ("overlay", "derived-recovery")] {
         let dir = root.join(".kan").join(name);
@@ -383,6 +419,7 @@ pub fn preview(root: &Path) -> io::Result<Preview> {
             Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
             Err(e) => {
                 output.notices.push(Notice {
+                    kind: NoticeKind::Unavailable,
                     path: dir,
                     reason: e.to_string(),
                 });
@@ -390,6 +427,7 @@ pub fn preview(root: &Path) -> io::Result<Preview> {
             }
             Ok(m) if !m.is_dir() || m.file_type().is_symlink() => {
                 output.notices.push(Notice {
+                    kind: NoticeKind::Unsupported,
                     path: dir,
                     reason: "evidence directory is not a real directory".into(),
                 });
@@ -405,6 +443,7 @@ pub fn preview(root: &Path) -> io::Result<Preview> {
                 selected.push((entry.path(), medium, name != "HEAD"));
             } else {
                 output.notices.push(Notice {
+                    kind: NoticeKind::Excluded,
                     path: entry.path(),
                     reason: "unselected log artifact (including coordination files)".into(),
                 });
@@ -422,17 +461,20 @@ pub fn preview(root: &Path) -> io::Result<Preview> {
                 Ok(_) => selected.push((scope, "public-scope", false)),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {}
                 Err(e) => output.notices.push(Notice {
+                    kind: NoticeKind::Unavailable,
                     path: scope,
                     reason: e.to_string(),
                 }),
             }
         }
         Ok(_) => output.notices.push(Notice {
+            kind: NoticeKind::Unsupported,
             path: scope_dir,
             reason: "scope directory is not a real directory".into(),
         }),
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
         Err(e) => output.notices.push(Notice {
+            kind: NoticeKind::Unavailable,
             path: scope_dir,
             reason: e.to_string(),
         }),
@@ -447,6 +489,7 @@ pub fn preview(root: &Path) -> io::Result<Preview> {
         let meta = fs::symlink_metadata(&path)?;
         if meta.file_type().is_symlink() {
             output.notices.push(Notice {
+                kind: NoticeKind::Unsupported,
                 path,
                 reason: "publication symlink not followed".into(),
             });
@@ -468,6 +511,7 @@ pub fn preview(root: &Path) -> io::Result<Preview> {
             selected.push((path, "publication-working-tree", false));
         } else {
             output.notices.push(Notice {
+                kind: NoticeKind::Excluded,
                 path,
                 reason: "unselected publication artifact".into(),
             });
@@ -483,15 +527,150 @@ pub fn preview(root: &Path) -> io::Result<Preview> {
     for (path, medium, car) in selected {
         match inspect(&root, &path, medium, car) {
             Ok(file) => {
-                output.observed_bytes += file.length;
-                output.files.push(file);
+                record_file(&mut output, file);
             }
             Err(e) => output.notices.push(Notice {
+                kind: inspection_kind(&e),
                 path,
                 reason: e.to_string(),
             }),
         }
     }
-    output.notices.push(Notice { path:root.join(".kan"), reason:"private credentials, identity keys, indexes and unselected configuration excluded from evidence preview".into() });
+    output.notices.push(Notice {
+        kind: NoticeKind::Excluded,
+        path: root.join(".kan"),
+        reason: "private credentials, identity keys, indexes and unselected configuration excluded from evidence preview".into(),
+    });
+    finish_inventory(&mut output);
     Ok(output)
+}
+
+fn empty_preview(root: PathBuf, selection: &'static str) -> Preview {
+    Preview {
+        selection,
+        selected_inventory_complete: false,
+        public_identity_history: "not-inventoried",
+        root,
+        files: vec![],
+        notices: vec![],
+        observed_bytes: 0,
+        claim_signatures: "not-verified",
+        graph_reachability: "not-verified",
+        git_history: "not-inventoried",
+        snapshot: "file-level-observation-not-atomic",
+        ready_for_cutover: false,
+    }
+}
+
+fn finish_inventory(output: &mut Preview) {
+    output.selected_inventory_complete = output
+        .notices
+        .iter()
+        .all(|n| n.kind == NoticeKind::Excluded)
+        && output.files.iter().all(|f| {
+            f.car
+                .as_ref()
+                .is_none_or(|c| c.error.is_none() && c.unsupported_blocks == 0)
+        });
+}
+
+/// Explicit selection only. No global configuration lookup or credential reads.
+pub fn preview_identity(root: &Path) -> io::Result<Preview> {
+    preview_selected(root, "public-identity-history", "identity/ledger/events")
+}
+
+/// Inspect a caller-selected raw log directory without opening the legacy log.
+pub fn preview_store(root: &Path) -> io::Result<Preview> {
+    preview_selected(root, "log-directory", "")
+}
+
+fn preview_selected(root: &Path, selection: &'static str, relative: &str) -> io::Result<Preview> {
+    if fs::symlink_metadata(root)?.file_type().is_symlink() {
+        return Err(io::Error::other("source root is a symlink"));
+    }
+    let root = root.canonicalize()?;
+    let mut output = empty_preview(root.clone(), selection);
+    let mut directory = root.clone();
+    for part in Path::new(relative).components() {
+        directory.push(part);
+        match fs::symlink_metadata(&directory) {
+            Ok(m) if m.is_dir() && !m.file_type().is_symlink() => {}
+            other => {
+                output.notices.push(Notice {
+                    kind: NoticeKind::Unavailable,
+                    path: directory,
+                    reason: format!("selected evidence directory unavailable: {other:?}"),
+                });
+                return Ok(output);
+            }
+        }
+    }
+    let mut selected = Vec::new();
+    for entry in fs::read_dir(&directory)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let log = name == "repo.car"
+            || name == "HEAD"
+            || name
+                .to_str()
+                .is_some_and(|n| n.starts_with("repo.car.damaged-"));
+        let public = selection == "public-identity-history"
+            && entry.path().extension().is_some_and(|e| e == "cbor");
+        if public || (selection == "log-directory" && log) {
+            selected.push(entry.path());
+        } else {
+            output.notices.push(Notice {
+                kind: NoticeKind::Excluded,
+                path: entry.path(),
+                reason: "outside selected evidence allowlist".into(),
+            });
+        }
+        if selected.len() + output.notices.len() > MAX_FILES {
+            return Err(io::Error::other("file inventory limit; preview incomplete"));
+        }
+    }
+    selected.sort();
+    for path in selected {
+        let car = selection == "log-directory" && path.file_name().is_some_and(|n| n != "HEAD");
+        match inspect(&root, &path, selection, car) {
+            Ok(file) => {
+                record_file(&mut output, file);
+            }
+            Err(e) => output.notices.push(Notice {
+                kind: inspection_kind(&e),
+                path,
+                reason: e.to_string(),
+            }),
+        }
+    }
+    if selection == "public-identity-history" {
+        output.public_identity_history = "selected-public-files-not-verified";
+    }
+    finish_inventory(&mut output);
+    Ok(output)
+}
+
+fn inspection_kind(error: &io::Error) -> NoticeKind {
+    if error.kind() == io::ErrorKind::Interrupted {
+        NoticeKind::Changed
+    } else {
+        NoticeKind::Unavailable
+    }
+}
+
+fn record_file(output: &mut Preview, file: SourceFile) {
+    if let Some(scan) = &file.car {
+        if scan.error.is_some() || scan.unsupported_blocks > 0 {
+            output.notices.push(Notice {
+                kind: NoticeKind::Unsupported,
+                path: file.path.clone(),
+                reason: format!(
+                    "CAR inspection incomplete: error={:?}, unsupported_blocks={}",
+                    scan.error, scan.unsupported_blocks
+                ),
+            });
+        }
+    }
+    output.observed_bytes += file.length;
+    output.files.push(file);
 }

@@ -1,6 +1,8 @@
 #![cfg(feature = "v2-storage")]
 
-use kan::migration_preflight::{discover, preview, scan_car};
+use kan::migration_preflight::{
+    discover, preview, preview_identity, preview_store, scan_car, NoticeKind,
+};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
@@ -65,6 +67,112 @@ fn independent_car_frames_stream_beyond_ten_megabytes() {
     assert_eq!(result.verified_blocks, 4);
     assert_eq!(result.unsupported_blocks, 0);
     assert!(result.error.is_none(), "{:?}", result.error);
+}
+
+#[test]
+fn publication_only_workspace_is_discovered_without_creating_a_store() {
+    let t = tempfile::tempdir().unwrap();
+    fs::create_dir(t.path().join(".claims")).unwrap();
+    let bytes = b"original signed publication";
+    fs::write(t.path().join(".claims/record.md"), bytes).unwrap();
+    assert_eq!(
+        discover(&[t.path().into()]).roots,
+        vec![t.path().canonicalize().unwrap()]
+    );
+    let report = preview(t.path()).unwrap();
+    assert!(report.selected_inventory_complete);
+    assert_eq!(report.selection, "workspace");
+    assert_eq!(report.public_identity_history, "not-inventoried");
+    assert_eq!(report.files.len(), 1);
+    assert_eq!(
+        report.files[0].sha256,
+        format!("{:x}", Sha256::digest(bytes))
+    );
+    assert!(!t.path().join(".kan").exists());
+    let result = run(&["preview", t.path().to_str().unwrap()]);
+    assert!(result.status.success());
+    let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(json["selected_inventory_complete"], true);
+    assert_eq!(json["notices"][0]["kind"], "excluded");
+}
+
+#[test]
+fn explicit_store_and_public_identity_selection_exclude_private_material() {
+    let t = tempfile::tempdir().unwrap();
+    let raw = car(4, 3 * 1024 * 1024);
+    fs::write(t.path().join("repo.car"), &raw).unwrap();
+    fs::write(t.path().join("HEAD"), b"original head").unwrap();
+    fs::write(t.path().join("identity"), b"PRIVATE-CANARY").unwrap();
+    let report = preview_store(t.path()).unwrap();
+    assert!(report.selected_inventory_complete);
+    assert_eq!(report.files.len(), 2);
+    assert!(report
+        .notices
+        .iter()
+        .all(|n| n.kind == NoticeKind::Excluded));
+    let result = run(&["preview", t.path().to_str().unwrap(), "--store"]);
+    assert!(result.status.success());
+    let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(json["selection"], "log-directory");
+    assert_eq!(json["selected_inventory_complete"], true);
+    assert_eq!(fs::read(t.path().join("repo.car")).unwrap(), raw);
+
+    let config = tempfile::tempdir().unwrap();
+    let missing = preview_identity(config.path()).unwrap();
+    assert!(!missing.selected_inventory_complete);
+    assert_eq!(missing.notices[0].kind, NoticeKind::Unavailable);
+    fs::create_dir_all(config.path().join("identity/ledger/events")).unwrap();
+    fs::create_dir(config.path().join("credentials")).unwrap();
+    fs::create_dir(config.path().join("identity/profiles")).unwrap();
+    fs::write(config.path().join("credentials/secret"), b"PRIVATE-CANARY").unwrap();
+    let event = config.path().join("identity/ledger/events/event.cbor");
+    fs::write(&event, b"unknown exact public event").unwrap();
+    fs::write(
+        config.path().join("identity/ledger/events/.tmp-ignored"),
+        b"ignored",
+    )
+    .unwrap();
+    let report = preview_identity(config.path()).unwrap();
+    assert!(report.selected_inventory_complete);
+    assert_eq!(report.files.len(), 1);
+    assert_eq!(
+        report.files[0].path.to_str().unwrap(),
+        "identity/ledger/events/event.cbor"
+    );
+    assert_eq!(
+        report.public_identity_history,
+        "selected-public-files-not-verified"
+    );
+    let result = run(&["preview-identity", config.path().to_str().unwrap()]);
+    assert!(result.status.success());
+    assert!(!String::from_utf8_lossy(&result.stdout).contains("PRIVATE-CANARY"));
+    assert_eq!(fs::read(&event).unwrap(), b"unknown exact public event");
+}
+
+#[cfg(unix)]
+#[test]
+fn selected_public_history_symlinks_and_bad_car_report_incomplete() {
+    let t = tempfile::tempdir().unwrap();
+    fs::create_dir_all(t.path().join("identity/ledger/events")).unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("secret"), b"PRIVATE-CANARY").unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("secret"),
+        t.path().join("identity/ledger/events/evil.cbor"),
+    )
+    .unwrap();
+    let report = preview_identity(t.path()).unwrap();
+    assert!(!report.selected_inventory_complete);
+    assert!(report.files.is_empty());
+    assert_eq!(report.notices[0].kind, NoticeKind::Unavailable);
+    fs::write(t.path().join("repo.car"), b"broken").unwrap();
+    let report = preview_store(t.path()).unwrap();
+    assert!(!report.selected_inventory_complete);
+    assert!(report
+        .notices
+        .iter()
+        .any(|n| n.kind == NoticeKind::Unsupported));
+    assert_eq!(report.files.len(), 1);
 }
 #[test]
 fn malformed_and_unsupported_sources_are_explicit() {
