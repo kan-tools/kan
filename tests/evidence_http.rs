@@ -73,6 +73,7 @@ async fn http_roundtrip_and_rejections() {
     let unsigned = Request {
         version: 1,
         scope: hex(&[1; 32]),
+        audience: signer.did().to_string(),
         principal: writer.did().to_string(),
         expires: None,
         command: Command::Append {
@@ -152,6 +153,7 @@ async fn http_roundtrip_and_rejections() {
             Request {
                 version: 1,
                 scope: hex(&[1; 32]),
+                audience: signer.did().to_string(),
                 principal: who.did().to_string(),
                 expires: Some(now + 120),
                 command: Command::Read { sequence: 1 },

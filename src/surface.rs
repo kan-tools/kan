@@ -20,6 +20,7 @@ impl SurfaceValue {
 pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
     SurfaceValue::new("evidence-service:request", "request.version"),
     SurfaceValue::new("evidence-service:request", "request.scope"),
+    SurfaceValue::new("evidence-service:request", "request.audience"),
     SurfaceValue::new("evidence-service:request", "request.principal"),
     SurfaceValue::new("evidence-service:request", "request.expires"),
     SurfaceValue::new("evidence-service:request", "request.command.operation"),

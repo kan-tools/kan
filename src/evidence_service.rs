@@ -52,6 +52,7 @@ type Result<T> = std::result::Result<T, Failure>;
 pub struct Request {
     pub version: u8,
     pub scope: String,
+    pub audience: String,
     pub principal: String,
     pub expires: Option<u64>,
     pub command: Command,
@@ -259,6 +260,7 @@ fn validate_shape(request: &Request) -> Result<()> {
     }
     exact(&request.scope, 32)?;
     author(&request.principal)?;
+    author(&request.audience)?;
     match &request.command {
         Command::Append {
             id,
@@ -458,7 +460,7 @@ impl Service {
     fn execute(&mut self, bytes: &[u8], now: u64) -> Result<Output> {
         let signed = SignedRequest::decode(bytes)?;
         let request = &signed.request;
-        if request.scope != self.scope {
+        if request.scope != self.scope || request.audience != self.issuer() {
             return Err(Failure::AccessLimited);
         }
         let grant = self
@@ -547,7 +549,9 @@ impl Service {
         };
         let bytes = self.ledger.read_object(id)?;
         let request = SignedRequest::decode(&bytes).map_err(|_| Failure::Corrupt)?;
-        if request.request.scope != self.scope
+        if record.receipt.body()["issuer"]
+            != author(&request.request.audience).map_err(|_| Failure::Corrupt)?
+            || request.request.scope != self.scope
             || manifest(&request, &bytes)
                 .map_err(|_| Failure::Corrupt)?
                 .bytes()

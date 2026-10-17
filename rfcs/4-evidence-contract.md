@@ -203,3 +203,11 @@ bounded body. Client transport permits HTTPS or literal-loopback HTTP, forbids
 redirects and ambient proxies, and checks the reply signature. Remote TLS
 termination, production custody, signed grant history and provider forwarding
 remain outside this experimental profile's qualification.
+
+Requests additionally bind the destination service did:key in an `audience`
+field (between scope and principal). Admission compares it with the serving
+identity before accessing storage. Retained request verification binds that
+same audience to the original receipt issuer. This prevents a signed request
+from being redirected to another service identity even if its routing scope and
+grants were copied. Restores that must drain old spools retain the service key;
+key rotation and audience transition are not implemented by this profile.

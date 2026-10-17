@@ -8,11 +8,19 @@ use kan::{
     sign::Identity,
 };
 
+fn service_identity() -> Identity {
+    use std::io::Write;
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    file.write_all(&[7; 32]).unwrap();
+    Identity::load_existing(file.path()).unwrap()
+}
+
 fn request(identity: &Identity, scope: u8, command: Command, expires: Option<u64>) -> Vec<u8> {
     SignedRequest::sign(
         Request {
             version: 1,
             scope: hex(&[scope; 32]),
+            audience: service_identity().did().to_string(),
             principal: identity.did().to_string(),
             expires,
             command,
@@ -67,7 +75,7 @@ fn independent_capabilities_deny_other_scopes_and_unadmitted_writers() {
     let mut service = Service::new(
         Ledger::create(&t.path().join("archive")).unwrap(),
         [1; 32],
-        Identity::generate(),
+        service_identity(),
         vec![grant(&writer, true, false), grant(&reader, false, true)],
     )
     .unwrap();
@@ -146,7 +154,7 @@ fn retained_signed_bytes_retry_conflict_restart_and_revoked_writer() {
     let mut service = Service::new(
         Ledger::create(&root).unwrap(),
         [1; 32],
-        Identity::generate(),
+        service_identity(),
         vec![grant(&writer, true, true)],
     )
     .unwrap();
@@ -191,7 +199,7 @@ fn retained_signed_bytes_retry_conflict_restart_and_revoked_writer() {
     let mut service = Service::new(
         Ledger::open(&root).unwrap(),
         [1; 32],
-        Identity::generate(),
+        service_identity(),
         vec![grant(&reader, false, true)],
     )
     .unwrap();
@@ -265,13 +273,27 @@ fn signatures_canonical_bounds_expiry_and_reply_binding() {
     let mut service = Service::new(
         Ledger::create(&t.path().join("archive")).unwrap(),
         [1; 32],
-        Identity::generate(),
+        service_identity(),
         vec![grant(&writer, true, true)],
     )
     .unwrap();
     let raw = append(&writer, 1, 0, None);
+    let mut elsewhere: SignedRequest = serde_json::from_slice(&raw).unwrap();
+    elsewhere.request.audience = Identity::generate().did().to_string();
+    let elsewhere = SignedRequest::sign(elsewhere.request, &writer)
+        .unwrap()
+        .bytes()
+        .unwrap();
+    assert_eq!(
+        result(&mut service, &elsewhere),
+        Err(Failure::AccessLimited)
+    );
+
     let mut changed: SignedRequest = serde_json::from_slice(&raw).unwrap();
-    changed.request.scope = hex(&[2; 32]);
+    let Command::Append { ciphertext, .. } = &mut changed.request.command else {
+        panic!()
+    };
+    *ciphertext = hex(b"forged payload under an otherwise authorized request");
     assert_eq!(
         result(&mut service, &changed.bytes().unwrap()),
         Err(Failure::AccessLimited)
@@ -316,6 +338,7 @@ fn signatures_canonical_bounds_expiry_and_reply_binding() {
     let oversized = Request {
         version: 1,
         scope: hex(&[1; 32]),
+        audience: service_identity().did().to_string(),
         principal: writer.did().to_string(),
         expires: None,
         command: Command::Append {
@@ -329,6 +352,7 @@ fn signatures_canonical_bounds_expiry_and_reply_binding() {
     let badpage = Request {
         version: 1,
         scope: hex(&[1; 32]),
+        audience: service_identity().did().to_string(),
         principal: writer.did().to_string(),
         expires: Some(1100),
         command: Command::Page {
@@ -349,7 +373,7 @@ fn startup_rejects_wrong_scope_and_foreign_payload_preserves_source() {
     let mut service = Service::new(
         Ledger::create(&root).unwrap(),
         [1; 32],
-        Identity::generate(),
+        service_identity(),
         vec![grant(&writer, true, false)],
     )
     .unwrap();
@@ -358,7 +382,7 @@ fn startup_rejects_wrong_scope_and_foreign_payload_preserves_source() {
     assert!(Service::new(
         Ledger::open(&root).unwrap(),
         [2; 32],
-        Identity::generate(),
+        service_identity(),
         vec![]
     )
     .is_err());

@@ -45,7 +45,7 @@ def verify(path):
     if list(envelope) != ["request", "signature"] or compact(envelope) != raw:
         fail("noncanonical envelope")
     request = envelope["request"]
-    if list(request) != ["version", "scope", "principal", "expires", "command"] or type(request["version"]) is not int or request["version"] != 1:
+    if list(request) != ["version", "scope", "audience", "principal", "expires", "command"] or type(request["version"]) is not int or request["version"] != 1:
         fail("request fields")
     principal = request["principal"]
     if not principal.startswith("did:key:z"):
