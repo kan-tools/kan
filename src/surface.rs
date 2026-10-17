@@ -34,6 +34,7 @@ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
     SurfaceValue::new("evidence-service:request", "request.command.previous"),
     SurfaceValue::new("evidence-service:request", "request.command.ciphertext"),
     SurfaceValue::new("evidence-service:request", "signature"),
+    SurfaceValue::new("evidence-import:plaintext-frame", "*"),
     SurfaceValue::new("evidence-delivery-config:recipient-private-key", "*"),
     SurfaceValue::new("evidence-delivery-config:recipient-public-key", "*"),
     SurfaceValue::new("evidence-service-config:grants", "*"),

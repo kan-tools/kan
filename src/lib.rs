@@ -18,6 +18,8 @@ pub mod evidence_crypto;
 pub mod evidence_delivery;
 #[cfg(feature = "v2-service")]
 pub mod evidence_http;
+#[cfg(feature = "v2-crypto")]
+pub mod evidence_import;
 #[cfg(feature = "v2-storage")]
 pub mod evidence_service;
 #[cfg(feature = "v2-storage")]
