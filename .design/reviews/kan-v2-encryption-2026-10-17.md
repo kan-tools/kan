@@ -9,3 +9,9 @@ F1: HPKE accepted noncanonical recipient public encodings that could encrypt but
 F2/F3: RFC 4 now describes the experimental crypto profile and remaining custody/operational exclusions. Permanent tests now exercise an independent public-key-only Python sender and maximum-size bidirectional interoperability, plus header-field tampering through the independent receiver. The backing store remains unable to validate encryption; the unsalted recipient public-key hash exposes cross-scope linkage under the personal metadata profile.
 
 Fresh correction review remains required for these material changes. No live keys or data were installed or imported.
+
+## Fresh correction review
+
+Actual `claude-opus-5-5`, session `655733a4-6c91-428d-ac67-cf95e994c3bc`, range `807054e494d8a52a51bf471f6750289fe2ca9e79..5f7c9377ecd2eda105c24572847a0a482896dfbf`. Final report SHA-256 `a2fd7850772c5c738d71b84fae8bd9a96aaa737fa98dda36fe74cedc44f782ac`; verdict **APPROVE**. Independently ran all six crypto tests, feature all-target Clippy and formatting. Verified the little-endian field bound against ten edge values and 200,000 random values; independently reproduced the old alias failure and checked the Python sender rejects noncanonical recipients. No command failed or was denied. This correction review is targeted evidence, not a new full-suite run.
+
+Author execution also confirmed three runtime negative controls (recipient canonicality, scope binding and header authentication), followed by all six restored tests passing. The full integrated child-spool snapshot later passed 98 targeted tests after inactive generated artifacts were removed to recover disk space. The earlier ENOSPC failure remains recorded rather than relabeled as a pass. These results establish an experimental explicit-key encryption primitive, not production custody, capture, migration or operational readiness.
