@@ -22,7 +22,12 @@ enum Command {
     /// Hash raw evidence and inspect CAR framing; does not import or verify claims.
     Preview { root: PathBuf },
     /// Create a new opaque ledger. Its parent directory must already exist.
-    Init { archive: PathBuf },
+    Init {
+        archive: PathBuf,
+        /// Explicitly resume an interrupted initialization or reopen a valid archive.
+        #[arg(long)]
+        resume: bool,
+    },
     /// Verify a quiescent archive/backup file without writing to it.
     Verify { database: PathBuf },
     /// Make and verify a consistent local backup into a new file.
@@ -54,11 +59,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "{}",
             serde_json::to_string_pretty(&migration_preflight::preview(&root)?)?
         ),
-        Command::Init { archive } => {
-            let store = Ledger::create(&archive)?;
+        Command::Init { archive, resume } => {
+            let archive_text = archive
+                .to_str()
+                .ok_or("init JSON requires a UTF-8 archive path")?;
+            let store = if resume {
+                Ledger::resume_initialization(&archive)
+            } else {
+                Ledger::create(&archive)
+            }
+            .map_err(|e| format!("cannot initialize {}: {e}", archive.display()))?;
             println!(
                 "{}",
-                serde_json::json!({"created":archive,"commits":store.verify()?.commits,"experimental":true})
+                serde_json::json!({"archive":archive_text,"created":if resume { None } else { Some(archive_text) },"resume_requested":resume,"commits":store.verify()?.commits,"experimental":true})
             );
         }
         Command::Verify { database } => {
@@ -72,10 +85,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             archive,
             destination,
         } => {
-            let report = Ledger::open(&archive)?.backup(&destination)?;
+            let destination_text = destination
+                .to_str()
+                .ok_or("backup JSON requires a UTF-8 destination path")?;
+            let report = Ledger::open(&archive)?.backup(&destination).map_err(|e| {
+                format!(
+                    "backup into {} failed: {e}; any output is retained",
+                    destination.display()
+                )
+            })?;
             println!(
                 "{}",
-                serde_json::json!({"backup":destination,"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"independent_backup":false})
+                serde_json::json!({"backup":destination_text,"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"independent_backup":false})
             );
         }
         Command::ReadRecord { database, sequence } => {

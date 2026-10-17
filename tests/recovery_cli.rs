@@ -234,3 +234,77 @@ fn cli_recovery_rejects_non_utf8_output_before_creating_it() {
     failure(output);
     assert!(!destination.exists());
 }
+
+#[test]
+fn cli_init_resume_is_explicit_and_preserves_existing_evidence() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let created = success(run(root, &["init", "new"]));
+    assert_eq!(created["archive"], "new");
+    assert_eq!(created["resume_requested"], false);
+    failure(run(root, &["init", "new"]));
+    let resumed = success(run(root, &["init", "--resume", "new"]));
+    assert_eq!(resumed["resume_requested"], true);
+    assert_eq!(resumed["commits"], 0);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let interrupted = root.join("interrupted");
+        std::fs::create_dir(&interrupted).unwrap();
+        let path = interrupted.join("archive.sqlite");
+        std::fs::write(&path, []).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        failure(run(root, &["init", "interrupted"]));
+        assert_eq!(
+            success(run(root, &["init", "--resume", "interrupted"]))["commits"],
+            0
+        );
+    }
+    let (m, r) = fixture(&root.join("populated"));
+    let resumed = success(run(root, &["init", "--resume", "populated"]));
+    assert_eq!(resumed["commits"], 1);
+    let record = success(run(root, &["read-record", "populated/archive.sqlite", "1"]));
+    assert_eq!(record["manifest"], hex(&m));
+    assert_eq!(record["receipt"], hex(&r));
+    failure(run(root, &["init", "--resume", "missing"]));
+    assert!(!root.join("missing").exists());
+    let db = rusqlite::Connection::open(root.join("new/archive.sqlite")).unwrap();
+    db.execute_batch("PRAGMA application_id=42").unwrap();
+    drop(db);
+    let before = std::fs::read(root.join("new/archive.sqlite")).unwrap();
+    failure(run(root, &["init", "--resume", "new"]));
+    assert_eq!(
+        std::fs::read(root.join("new/archive.sqlite")).unwrap(),
+        before
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn cli_init_and_backup_reject_non_utf8_output_before_mutation() {
+    use std::os::unix::ffi::OsStringExt;
+    let temp = tempfile::tempdir().unwrap();
+    let invalid = temp
+        .path()
+        .join(std::ffi::OsString::from_vec(b"invalid-\xff".to_vec()));
+    let init = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        .arg("init")
+        .arg(&invalid)
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&init.stderr).contains("UTF-8"));
+    failure(init);
+    assert!(!invalid.exists());
+    let source = temp.path().join("source");
+    fixture(&source);
+    let backup = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        .arg("backup")
+        .arg(&source)
+        .arg(&invalid)
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&backup.stderr).contains("UTF-8"));
+    failure(backup);
+    assert!(!invalid.exists());
+    assert_eq!(Ledger::open(&source).unwrap().verify().unwrap().commits, 1);
+}
