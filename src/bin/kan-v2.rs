@@ -1,4 +1,4 @@
-//! Experimental archive maintenance and migration preflight; no live cutover.
+//! Experimental archive, durable delivery and raw snapshot tools; no live cutover.
 use clap::{Parser, Subcommand};
 use kan::{
     evidence_store::{Ledger, RecoveryReader},
@@ -7,7 +7,7 @@ use kan::{
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(about = "Experimental kan v2 archive maintenance and read-only migration preflight")]
+#[command(about = "Experimental kan v2 archive and durable delivery tools")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

@@ -1,0 +1,23 @@
+# Resumable raw import review disposition — 2026-10-17
+
+## Initial independent review
+
+Fresh actual Claude Code `claude-opus-5-5`, session `ecfa23b8-865e-4622-a335-8de7ec0486f8`, reviewed `37ea1af1773e52741fd2031c160a890910e86a87..e5892ab377beea4edb38ac6caab3d250305d39c2`. Final report SHA-256 `336bec56593b2972a406e37c7693628a44271f129e8a152a412fba9fc2d871dc`. Verdict **APPROVE WITH FOLLOW-UPS**. No critical/high Rust importer defect was found, but two medium defects in the independent decoder are corrected before recommending this build point for merge. Private day/telos records were unavailable, not absent. Raw reports and provenance are retained privately; hidden reasoning is not published.
+
+Independent checks passed 40 importer/delivery/preflight/surface tests, all-target Clippy, formatting, and both runtime negative controls in a separate `git archive` scratch tree with its own target. Actual CLI probes covered plan determinism, source/route changes, failure exits, full queues, four competing imports, eight SIGKILL interruptions with byte-exact resumed 12-MB recovery, malformed source files, empty files, control-character filenames, source byte preservation, private-key decoys, same-ID pre-occupation, hardlinked sources and decoder corruption/omission/forgery. The reviewer corrected three probe-script mistakes before reporting their rerun results. Servers were stopped and the reviewed worktree remained clean.
+
+M1: Python optimization disabled every decoder assertion and could report success on tampered bytes. M2: without an external expected plan, a self-consistent substituted stream could be reported as verified; decoder output also omitted inventory coverage/notices. The correction replaces assertions with explicit runtime checks, requires `--expected-plan`, compares both frame claims and the inventory hash against it, validates framing types, and reports source lineage, recipient, route, coverage and notices. The pinned hash binds all source/destination metadata. Only selected-file byte verification is labeled as verified; transport authentication, claim trust and cutover remain unproven.
+
+The two focused regression witnesses accept the good fixture, reject tampering under normal/optimized Python, and reject a fully self-consistent replacement lineage/recipient/writer stream against the original pin while accepting it only under its deliberately changed pin. The day plugin's `scripts/revert-demo.py` (the repository has no local copy) demonstrated both tests fail with the entire decoder correction reverted and pass after byte-for-byte restoration. Its Cargo invocation was explicitly wrapped to add `--features v2-crypto`; the demonstration algorithm and checks were unchanged. The emitted `Demonstrated-by` trailer accompanies the correction commit. A fresh correction review is required.
+
+## Retained findings and scope
+
+- L1: selection is by allowed evidence names, not secret-content recognition. A credential deliberately hardlinked under `repo.car` can be selected. The guide now states this boundary; automatic hardlink notices remain a follow-up.
+- L2: full 32-MiB-plan/262,144-chunk limit branches and the final completion rescan lack dedicated runtime boundary/mutation witnesses. These are explicit qualification gaps, not tested capacity claims.
+- L3: no recipient-private-key possession ceremony is enforced before bulk admission. The guide requires separate decryption qualification; production key custody remains open.
+- L4: changes even to excluded directory entries alter notices and the plan. The guide now requires quiescing/freezing the selection for stable resume.
+- L5: the report claimed uppercase source IDs normalize. The implementation's lowercase-only decoder contradicts that claim; a new actual CLI test with alphabetic `ab` versus `AB` checks the distinction, rather than treating digit-only hex as a case test.
+- L6: filesystem name checks and opens are separate; pinned hashes prevent different bytes from being admitted. Stronger descriptor-based traversal remains future hardening.
+- L7: chunk counts and ciphertext lengths are visible under the accepted rich-metadata profile; the guide now states this explicitly.
+
+Queue coverage remains an owner-trusted local hint. The reviewer intentionally preoccupied an import operation with unrelated bytes: coverage reported present and the independent decoder refused reconstruction, as the existing design discloses. No reconciled completion certificate, production restore tool, independent backup, final live-source delta or cutover is claimed. Repeated source scans and full-history spool audits remain performance limits. This draft is #273, stacked on delivery #272.

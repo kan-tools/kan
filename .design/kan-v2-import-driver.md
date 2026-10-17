@@ -38,3 +38,7 @@ Production custody, independent destination backup, verified restoration/cutover
 ## Out of Scope
 
 - Automatic discovery of credentials, live source deletion or repair, trust promotion, provider capture, a complete restore CLI, deployment or main merge.
+
+## Decoder review correction
+
+The independent oracle now uses explicit runtime checks rather than Python assertions and requires an external `--expected-plan` commitment. That commitment binds source lineage, recipient, route, inventory and all chunk/file hashes. Reports preserve inventory completeness and notices, and label only selected-file byte verification as proven; transport authentication, claim validity and cutover remain separate. Regression witnesses must reject corruption with Python optimization enabled and reject a fully self-consistent replacement stream against the original expected plan.

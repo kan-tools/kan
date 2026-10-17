@@ -182,7 +182,12 @@ fn cli_resumes_large_malformed_snapshot_and_independent_decoder_recovers_exact_b
     );
     assert_eq!(spool.status().unwrap().next, count);
     let verified = Command::new("python3")
-        .args(["scripts/verify_import_stream.py", frames.to_str().unwrap()])
+        .args([
+            "scripts/verify_import_stream.py",
+            frames.to_str().unwrap(),
+            "--expected-plan",
+            id,
+        ])
         .output()
         .unwrap();
     success(&verified);
@@ -203,7 +208,12 @@ fn cli_resumes_large_malformed_snapshot_and_independent_decoder_recovers_exact_b
     // An independent consumer refuses a missing chunk instead of certifying a partial copy.
     std::fs::remove_file(frames.join("2.bin")).unwrap();
     assert!(!Command::new("python3")
-        .args(["scripts/verify_import_stream.py", frames.to_str().unwrap()])
+        .args([
+            "scripts/verify_import_stream.py",
+            frames.to_str().unwrap(),
+            "--expected-plan",
+            id
+        ])
         .output()
         .unwrap()
         .status
@@ -294,7 +304,12 @@ fn full_queue_preserves_partial_progress_and_resumes_without_resealing() {
     assert_eq!(plan.progress(&mut spool).unwrap().pending_operations, 0);
     success(
         &Command::new("python3")
-            .args(["scripts/verify_import_stream.py", frames.to_str().unwrap()])
+            .args([
+                "scripts/verify_import_stream.py",
+                frames.to_str().unwrap(),
+                "--expected-plan",
+                plan.id(),
+            ])
             .output()
             .unwrap(),
     );
@@ -369,4 +384,150 @@ fn changed_chunk_after_plan_validation_cannot_be_sealed() {
     assert!(plan.read_source_chunk(0, 0).is_err());
     assert!(plan.read_source_chunk(100, 0).is_err());
     assert_eq!(spool.status().unwrap().next, 0);
+}
+
+fn decoder_fixture() -> (tempfile::TempDir, std::path::PathBuf, String) {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("source");
+    store(&source, b"original-decoder-source");
+    let writer = Identity::generate();
+    let destination = Identity::generate();
+    let mut spool = queue(temp.path(), &writer, &destination, 10_000_000);
+    let plan = Plan::build(
+        &source,
+        Selection::Store,
+        SOURCE,
+        crypto::public_key(&PRIVATE).unwrap(),
+        &mut spool,
+    )
+    .unwrap();
+    plan.enqueue(plan.id(), &mut spool, &writer, 128).unwrap();
+    let mut server = service(temp.path(), &writer, destination);
+    let frames = temp.path().join("frames");
+    std::fs::create_dir(&frames).unwrap();
+    let mut next = 0;
+    drain(&mut spool, &mut server, &frames, &writer, &mut next);
+    (temp, frames, plan.id().to_string())
+}
+fn decoder(frames: &Path, id: &str, optimized: bool) -> Output {
+    let mut command = Command::new("python3");
+    if optimized {
+        command.arg("-O");
+    }
+    command.args([
+        "scripts/verify_import_stream.py",
+        frames.to_str().unwrap(),
+        "--expected-plan",
+        id,
+    ]);
+    if optimized {
+        command.env("PYTHONOPTIMIZE", "1");
+    }
+    command.output().unwrap()
+}
+#[test]
+fn decoder_optimization_cannot_disable_content_verification() {
+    let (_temp, frames, id) = decoder_fixture();
+    success(&decoder(&frames, &id, true));
+    let file = frames.join("1.bin");
+    let mut bytes = std::fs::read(&file).unwrap();
+    *bytes.last_mut().unwrap() ^= 1;
+    std::fs::write(&file, &bytes).unwrap();
+    for optimized in [false, true] {
+        let out = decoder(&frames, &id, optimized);
+        assert!(
+            !out.status.success(),
+            "tampered data passed with optimize={optimized}"
+        );
+        assert!(out.stdout.is_empty());
+    }
+}
+fn unpack(raw: &[u8]) -> (serde_json::Value, Vec<u8>) {
+    let length = u32::from_be_bytes(raw[5..9].try_into().unwrap()) as usize;
+    (
+        serde_json::from_slice(&raw[9..9 + length]).unwrap(),
+        raw[9 + length..].to_vec(),
+    )
+}
+fn pack(header: &serde_json::Value, body: &[u8]) -> Vec<u8> {
+    let header = serde_json::to_vec(header).unwrap();
+    let mut raw = b"KANI\x01".to_vec();
+    raw.extend_from_slice(&(header.len() as u32).to_be_bytes());
+    raw.extend_from_slice(&header);
+    raw.extend_from_slice(body);
+    raw
+}
+#[test]
+fn decoder_requires_external_plan_and_reports_provenance_and_omissions() {
+    let (_temp, frames, id) = decoder_fixture();
+    let good = decoder(&frames, &id, false);
+    success(&good);
+    // A fully self-consistent alternate stream must not satisfy the original plan pin.
+    let mut raws = (0..3)
+        .map(|i| std::fs::read(frames.join(format!("{i}.bin"))).unwrap())
+        .collect::<Vec<_>>();
+    let (_, document) = unpack(&raws[0]);
+    let mut plan: serde_json::Value = serde_json::from_slice(&document).unwrap();
+    plan["source_id"] = serde_json::json!(hex(&[10; 32]));
+    plan["recipient"] = serde_json::json!(hex(&[11; 32]));
+    plan["route"]["writer"] = serde_json::json!(Identity::generate().did().to_string());
+    let document = serde_json::to_vec(&plan).unwrap();
+    let mut hash = Sha256::new();
+    hash.update(b"tools.kan.import.plan.v1\0");
+    hash.update(&document);
+    let forged = hex(&hash.finalize());
+    for (i, raw) in raws.iter_mut().enumerate() {
+        let (mut header, mut body) = unpack(raw);
+        header["plan"] = serde_json::json!(forged);
+        if i == 0 {
+            body = document.clone();
+        } else if i == 2 {
+            let mut complete: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            complete["plan"] = serde_json::json!(forged);
+            body = serde_json::to_vec(&complete).unwrap();
+        }
+        *raw = pack(&header, &body);
+        std::fs::write(frames.join(format!("{i}.bin")), raw).unwrap();
+    }
+    let rejected = decoder(&frames, &id, false);
+    assert!(!rejected.status.success());
+    assert!(rejected.stdout.is_empty());
+    let report: serde_json::Value = serde_json::from_slice(&good.stdout).unwrap();
+    assert_eq!(report["source_id"], hex(&SOURCE));
+    assert_eq!(report["selected_inventory_complete"], false);
+    assert!(!report["notices"].as_array().unwrap().is_empty());
+    assert_eq!(report["transport_authentication"], "not-verified");
+    // This proves rejection is due to the external pin, not malformed forged framing.
+    success(&decoder(&frames, &forged, false));
+    assert!(!Command::new("python3")
+        .args(["scripts/verify_import_stream.py", frames.to_str().unwrap()])
+        .output()
+        .unwrap()
+        .status
+        .success());
+}
+
+#[test]
+fn importer_source_id_hex_requires_lowercase_letters() {
+    let (temp, _frames, _id) = decoder_fixture();
+    for (value, valid) in [("ab".repeat(32), true), ("AB".repeat(32), false)] {
+        let output = cli(&[
+            "import-plan",
+            temp.path().join("source").to_str().unwrap(),
+            "--selection",
+            "store",
+            "--spool",
+            temp.path().join("spool.sqlite").to_str().unwrap(),
+            "--source-id",
+            &value,
+            "--recipient",
+            &hex(&crypto::public_key(&PRIVATE).unwrap()),
+        ]);
+        assert_eq!(
+            output.status.success(),
+            valid,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }
