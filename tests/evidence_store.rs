@@ -950,3 +950,37 @@ fn recovery_length_limit_preserves_maximum_valid_chunks() {
         bytes
     );
 }
+
+#[test]
+fn recovery_scan_reports_unrelated_raw_key_damage_without_hiding_record_access() {
+    use kan::evidence_store::RecoveryReader;
+    let temp = tempfile::tempdir().unwrap();
+    let (ledger, records) = recovery_fixture(&temp.path().join("source"));
+    let source = temp.path().join("raw-key-damage.sqlite");
+    ledger.backup(&source).unwrap();
+    let db = rusqlite::Connection::open(&source).unwrap();
+    // This is authoritative raw-key corruption, not a disposable derived index.
+    // 'a' sorts before every canonical base32 CID in the fixture.
+    db.execute(
+        "INSERT INTO objects VALUES(?,?)",
+        rusqlite::params!["a".repeat(9 * 1024 * 1024), b"bad commitment".as_slice()],
+    )
+    .unwrap();
+    let id = kan::evidence_store::ciphertext_cid(b"recovery payload");
+    let indexed: Vec<u8> = db
+        .query_row(
+            "SELECT bytes FROM objects WHERE cid=?",
+            [id.to_string()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(indexed, b"recovery payload");
+    drop(db);
+    let reader = RecoveryReader::open(&source).unwrap();
+    assert!(
+        matches!(reader.read_object(&id), Err(Error::Sql(rusqlite::Error::SqliteFailure(e, _))) if e.code == rusqlite::ErrorCode::TooBig)
+    );
+    let record = reader.record(1).unwrap();
+    assert_eq!(record.manifest.bytes(), records[0].0.bytes());
+    assert_eq!(record.receipt.bytes(), records[0].1.bytes());
+}

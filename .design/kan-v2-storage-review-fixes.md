@@ -41,3 +41,13 @@ Fresh Claude Code `claude-opus-5-5` review returned **APPROVE WITH FOLLOW-UPS** 
 The reviewer independently passed build, 13 storage + seven codec + 19 surface tests, all-target feature lint, format, whitespace, oracle checks and optimized-mode refusal. Its scratch-write probes were denied; full legacy testing was omitted under disk constraints. Public source was the only review input; private teloi and the author's negative-control logs were not reviewed. The author controls above remain separate evidence.
 
 Low-severity follow-ups for the next storage build point: match the precise Rust corruption error in the first-use test; explicitly compare canonical raw bytes before/after the binding mutation; add hostile three-use and cross-scope pointer mutations. AC-1's unchanged-raw-byte clause currently follows from the test's binding-only SQL update, not a direct byte comparison. These do not replace the still-open P3 startup/recovery/catalog/initialization requirements listed above. Those remain prerequisites to P4 readiness.
+
+## Subsequent recovery build point
+
+Storage F2 now has separately reviewed raw reads and out-of-place reconstruction in
+`.design/kan-v2-derived-recovery.md`, exposed by the dependent CLI branch. The earlier
+first-use follow-ups now have exact corruption matching, byte-preservation assertions,
+three-use and cross-scope pointer fixtures. Normal startup, backup-sidecar qualification,
+ordinary interrupted initialization and broader classification review remain open.
+Raw-object page damage may stop the bounded recovery scan; this is documented and
+tested separately from derived-data recovery.

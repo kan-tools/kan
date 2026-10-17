@@ -30,7 +30,7 @@ offline recovery operation, not normal bounded writer startup (F1 remains open).
 - [x] AC-3: Child-process exits during object copy, record copy, after verification
   and after commit leave either an invalid incomplete file or the complete verified
   archive. Existing output and source are unchanged; retry uses a fresh destination. (REQ-3, REQ-4)
-- [ ] AC-4: Independent Python verification agrees on rebuilt counts and closure;
+- [x] AC-4: Independent Python verification agrees on rebuilt counts and closure;
   source corruption remains detectable; surface tests, lint and fresh Claude Code
   Opus 5.5 review pass. (REQ-4)
 
@@ -169,3 +169,31 @@ valid 4 MiB object is readable and rebuildable. A separate macOS RSS probe measu
 approximately 9.2 MB peak for both 9 MiB and 96 MiB poisoned manifests/objects after
 the fixes (versus about 110 MB for a 96 MiB object with the unsafe key seek).
 Fresh combined core/CLI correction review is pending on the dependent branch.
+
+## Final correction review
+
+Fresh Claude Code `claude-opus-5-5` review of the integrated correction
+`1d89ec56ac5024e25629bd877ca597e19f0c5156..f2419adf42ca2f6a17d1caba5a053f6a7d6b951a`
+returned **APPROVE WITH FOLLOW-UPS**. This includes storage implementation
+0b15b9119f71e3f85e492513841a1f185491a7a5 unchanged. The reviewer independently
+passed all 59 integrated tests, lint/format and feature-gate checks, and ran probes
+for memory, Unicode/hard-link/sidecar aliases, WAL-only committed evidence, hot
+journals and non-UTF-8 CLI paths. Exact review identity/digest is recorded in the
+dependent branch's `.design/reviews/kan-v2-recovery-2026-10-16.md`.
+
+The remaining medium finding is an availability boundary under RAW table damage:
+a recovery object scan may encounter an unrelated corrupt page or oversized raw
+key before reaching an otherwise intact requested object. It returns an error,
+never empty success or fabricated content. Bounded indexed access across such raw
+damage would require a separately isolated recovery process or another qualified
+storage format; the library does not impose a process-global SQLite heap limit.
+This limitation is distinct from damaged derived bindings/commit indexes, which
+remain recoverable. Use preserved backup copies/specialist recovery for raw page
+loss; a canonical record at an intact journal sequence may still be readable.
+A new regression demonstrates the raw-key case and retained record access.
+
+Remaining low/informational follow-ups: unified SQL/codec/hot-journal diagnostics;
+non-UTF-8 hard-link alias coverage in direct library callers (the CLI rejects those
+paths); and the older CLI init/backup JSON-path behavior, outside this recovery
+change. Later commits document this verdict and add the raw-key regression only;
+they do not change the reviewed production implementation.
