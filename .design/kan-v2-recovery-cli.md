@@ -75,3 +75,26 @@ complete committed output if a later sync/reverification failed. It is never
 promoted automatically; the failed invocation does not certify durability. Errors
 retain the file and a retry needs a fresh destination. Successful `verify` establishes
 structural closure only, not an independent backup or historical completeness.
+
+
+First CLI review: base 1bdcda28b5fa4842a9432e3f4aee7a7293a48807, head
+1d89ec56ac5024e25629bd877ca597e19f0c5156; fresh `claude-opus-5-5` session
+`fae0f036-197c-4281-8860-21bbcd781b0f`, verdict APPROVE WITH FOLLOW-UPS.
+Unedited final report `.local-state/reviews/recovery-cli-round-1-report.md`, SHA-256
+`7889d7f4a59372d7f2dbe9677837e2177c0e0bb00788b3cb20e8b3ea8435f2f9`.
+It independently passed 28 tests, build, lint, format, feature-gate refusal and
+synthetic CLI probes. Private teloi/process atoms and the full legacy matrix were
+not reviewed. The reviewer could not set environment prefixes in its tool policy;
+the launcher configured profiles, but that was not independently confirmed.
+
+The branch now inherits storage correction 0b15b91: bounded SQLite value allocation,
+a scan for recovery object reads (ordinary ledger reads stay indexed), sidecar
+namespace protection, and explicit source-coordination capabilities. Recovery object
+lookup can scan all keys; its CLI help now says so. These are offline recovery
+operations, outside ordinary bounded-query performance targets. The combined fresh
+correction review remains pending.
+
+Integrated correction validation: all 59 targeted tests pass (23 storage, seven
+codec, six preflight, four recovery CLI and 19 surface tests), as do all-target
+feature Clippy, formatting and whitespace checks. The parent independently passed
+all eight causal negative controls. Fresh combined correction review is pending.

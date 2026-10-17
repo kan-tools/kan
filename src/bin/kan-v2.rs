@@ -32,7 +32,7 @@ enum Command {
     },
     /// Read exact canonical record bytes despite damaged derived lookups.
     ReadRecord { database: PathBuf, sequence: u64 },
-    /// Read and hash-check one opaque object despite damaged derived lookups.
+    /// Read and hash-check one opaque object using an offline key scan.
     ReadObject { database: PathBuf, cid: String },
     /// Rebuild derived data into a NEW file; retain the source and any failed output.
     Recover {
