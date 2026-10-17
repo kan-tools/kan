@@ -20,7 +20,11 @@ scratch = Path(tempfile.mkdtemp(prefix='kan-capture-controls-'))
 print(f'committed source: {head}; scratch: {scratch}', flush=True)
 archive = subprocess.check_output(['git','archive',head],cwd=root)
 with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
-    tar.extractall(scratch, filter='data')
+    for member in tar.getmembers():
+        name = Path(member.name)
+        if name.is_absolute() or '..' in name.parts or not (member.isfile() or member.isdir()):
+            raise SystemExit('unsafe source-export archive entry')
+    tar.extractall(scratch)  # members checked above; supports system Python 3.9
 env = dict(os.environ, CARGO_BUILD_JOBS='4', CARGO_PROFILE_DEV_DEBUG='0',
            CARGO_PROFILE_TEST_DEBUG='0', CARGO_INCREMENTAL='0', CARGO_TARGET_DIR=str(scratch/'target'))
 def run(args, name, timeout=180):
