@@ -72,6 +72,18 @@ Receipt body is exactly `{issuer, manifest, scopeToken, operation, position, dur
 
 All three kinds sign canonical DAG-CBOR of `{domain: "tools.kan.evidence.v1", kind: record.kind, record: recordCID}`. The record already binds the signer through observer/writer/issuer. These bytes are deliberately distinct from claim signing inputs. This RFC fixes only the preimage, not the signature envelope, verification purpose, delegation/admission rules or encryption profile. P4 must specify them before a real service accepts evidence. A parser's validated Author is not a verified signature. Unsupported records have no version-1 signing preimage.
 
+### Experimental SQLite durability profile (P3)
+
+The local reference storage engine uses a distinct `archive.sqlite` database with application ID `0x4b563201`, schema version 1, WAL, synchronous FULL, fullfsync and checkpoint_fullfsync. It is authoritative encrypted evidence storage, not the disposable v1 query index. SQLite and its WAL must remain together on a local filesystem; remote clients do not open that file directly. The [SQLite WAL documentation](https://www.sqlite.org/wal.html) specifies commit synchronization under FULL and the local-host constraint. Device/filesystem durability still depends on honoring synchronization; the tests exercise process death, not physical power loss.
+
+The object table maps raw ciphertext CID to exact BLOB (1–4,194,304 bytes). The commits table retains global local sequence, canonical manifest and canonical receipt bytes, plus indexed manifest CID, scope token, writer principal, operation, writer position and previous manifest. Unique constraints bind operation and position within scope/writer. Bindings retain scoped writer/slot to ciphertext, length and first referencing manifest. Those indexed coordinates are checked against canonical records during explicit verification. There is no update/delete API for committed evidence. Unreferenced staged objects are retained.
+
+An immediate transaction validates object bytes and length, slot consistency and the exact current writer frontier before inserting a manifest, its receipt and bindings. Receipt delivery follows successful transaction commit. A lost delivery returns the originally stored receipt on an identical retry; changed operation content conflicts. The implementation is a lower layer: it accepts structurally bound receipt statements and provides no signature/admission claim until P4 supplies the proof profile.
+
+The local snapshot coordinate is `(through, tip)`: the global journal sequence and its exact manifest CID; `(0, null)` is genesis. Bounded pages exclude every sequence above the pinned frontier. This is an internal storage API, not a newly frozen remote encoding. Independent actors still have their own manifest positions.
+
+Backups use the [SQLite online backup API](https://www.sqlite.org/backup.html), finish into a self-contained owner-only destination, and verify hashes, closure, chain, receipt bindings and indexed coordinates. Copying an active main database without its WAL is not backup. A failed or interrupted backup is incomplete, never overwritten or certified by file existence. A local verified backup is not evidence of independent off-machine recovery.
+
 ## Canonicalization and equivalence
 
 Use [DAG-CBOR](https://ipld.io/specs/codecs/dag-cbor/spec/): definite lengths, shortest integer/length encodings, text map keys ordered by encoded length then bytes, tag 42 only for CIDs, and one object without trailing bytes. The restricted scalar set above is additionally enforced. Record CID is CIDv1/DAG-CBOR/SHA2-256 over those exact bytes. No normalization or re-encoding of noncanonical input is accepted. Re-encoding must reproduce input byte for byte. Sorted-set fields reject duplicates and unsorted input rather than rewriting it; ordered fields retain order. Unknown positive versions or kinds are retained byte-exactly as unsupported after envelope/canonical/bounds validation. A malformed known kind is invalid, never relabeled unsupported.
@@ -147,8 +159,8 @@ RFC review has not accepted the version, bounds or envelope names. These remain 
 
 ## Deferred questions
 
-P3: crash/durability profile, journal and genesis/frontier representation, receipt persistence and atomic inventory snapshots. P4: exact signature envelope and verification purpose, capability delegation, encryption algorithms and key custody/recovery, HTTP and RPC encodings, opaque-token lifecycle, optional metadata-hiding profile. P6: real capture adapter coverage and event vocabulary. These do not prevent synthetic codec conformance but prevent production service claims.
+P3 fixes the experimental local profile above; physical-power-loss qualification and deployment capacity remain operational work. P4: exact signature envelope and verification purpose, capability delegation, encryption algorithms and key custody/recovery, HTTP and RPC encodings, opaque-token lifecycle, optional metadata-hiding profile. P6: real capture adapter coverage and event vocabulary. These do not prevent synthetic codec conformance but prevent production service claims.
 
 ## Implementation status
 
-Experimental pure reference codec and decision models are introduced with this draft under `evidence-contract`. No production path invokes them. No storage engine, signature verifier, encryption scheme, network service or migration has been implemented by this RFC.
+Experimental pure reference codec and decision models are introduced with this draft under `evidence-contract`. No production path invokes them. The `v2-storage` feature adds an experimental opaque storage engine and local backup verifier. No signature verifier, encryption scheme, network service or migration is implied by that implementation.

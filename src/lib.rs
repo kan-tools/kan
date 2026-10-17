@@ -12,6 +12,8 @@ pub mod cli;
 pub mod context;
 #[cfg(feature = "evidence-contract")]
 pub mod evidence;
+#[cfg(feature = "v2-storage")]
+pub mod evidence_store;
 pub mod fold;
 pub mod git;
 pub mod identity;
