@@ -58,7 +58,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     (
         "src/evidence_store.rs",
         "name",
-        "evidence-recovery:archive.sqlite (caller-selected basename)",
+        "evidence-recovery/evidence-backup:archive.sqlite (caller-selected basename)",
     ),
     (
         "src/evidence_store.rs",
@@ -1106,7 +1106,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "a04ceacfdb51fec8a54d21429586a9bbed60a53d69688123177df69c5662f8ba",
+                "3b5a083a01f9bcd4d481a9089b97fafb405f64d0c0f94903d3dcab85db3e3161",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

@@ -984,3 +984,196 @@ fn recovery_scan_reports_unrelated_raw_key_damage_without_hiding_record_access()
     assert_eq!(record.manifest.bytes(), records[0].0.bytes());
     assert_eq!(record.receipt.bytes(), records[0].1.bytes());
 }
+
+#[test]
+fn initialization_crash_worker() {
+    let Ok(root) = std::env::var("KAN_V2_INIT_ROOT") else {
+        return;
+    };
+    let phase = std::env::var("KAN_V2_INIT_PHASE").unwrap();
+    Ledger::create_observed(Path::new(&root), &mut |boundary| {
+        if format!("{boundary:?}") == phase {
+            std::process::exit(92);
+        }
+    })
+    .unwrap();
+    panic!("boundary not reached");
+}
+
+#[test]
+fn initialization_resumes_each_publication_boundary_without_resetting_evidence() {
+    for phase in ["FileCreated", "SchemaWritten", "SchemaCommitted", "Ready"] {
+        let temp = tempfile::tempdir().unwrap();
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "initialization_crash_worker", "--nocapture"])
+            .env("KAN_V2_INIT_ROOT", temp.path())
+            .env("KAN_V2_INIT_PHASE", phase)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(92),
+            "{phase}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(Ledger::create(temp.path()).is_err());
+        let mut ledger = Ledger::resume_initialization(temp.path()).unwrap();
+        assert_eq!(ledger.verify().unwrap().commits, 0);
+        let id = ledger.stage(b"preserve me").unwrap();
+        let (m, r) = pair(b"preserve me", 0, None, 1);
+        ledger.commit(m.bytes(), r.bytes()).unwrap();
+        drop(ledger);
+        let reopened = Ledger::resume_initialization(temp.path()).unwrap();
+        assert_eq!(reopened.read_object(&id).unwrap(), b"preserve me");
+        let records = reopened.page(&reopened.snapshot().unwrap(), 0, 1).unwrap();
+        assert_eq!(records[0].manifest.bytes(), m.bytes());
+        assert_eq!(records[0].receipt.bytes(), r.bytes());
+        assert!(Ledger::create(temp.path()).is_err());
+    }
+}
+
+#[test]
+fn initialization_rejects_foreign_media_without_replacing_it() {
+    for sql in [
+        "CREATE TABLE foreign_data(value TEXT); INSERT INTO foreign_data VALUES('keep');",
+        "PRAGMA application_id=123;",
+        "PRAGMA user_version=2;",
+        "PRAGMA application_id=1263940097; PRAGMA user_version=2;",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("archive.sqlite");
+        owner_file(&path, &[]);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(sql).unwrap();
+        drop(conn);
+        let before = std::fs::read(&path).unwrap();
+        assert!(Ledger::resume_initialization(temp.path()).is_err(), "{sql}");
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("archive.sqlite");
+    owner_file(&path, b"not a database");
+    assert!(Ledger::resume_initialization(temp.path()).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), b"not a database");
+    #[cfg(unix)]
+    {
+        use std::os::unix::{fs::symlink, fs::PermissionsExt};
+        std::fs::remove_file(&path).unwrap();
+        let other = temp.path().join("other");
+        owner_file(&other, &[]);
+        symlink(&other, &path).unwrap();
+        assert!(Ledger::resume_initialization(temp.path()).is_err());
+        std::fs::remove_file(&path).unwrap();
+        owner_file(&path, &[]);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(Ledger::resume_initialization(temp.path()).is_err());
+    }
+}
+
+fn owner_file(path: &Path, bytes: &[u8]) {
+    std::fs::write(path, bytes).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+}
+
+#[test]
+fn lifecycle_destinations_preserve_existing_sqlite_namespaces() {
+    for suffix in ["-journal", "-wal", "-shm"] {
+        let temp = tempfile::tempdir().unwrap();
+        let sentinel = temp.path().join(format!("archive.sqlite{suffix}"));
+        owner_file(&sentinel, b"existing sidecar");
+        assert!(Ledger::create(temp.path()).is_err());
+        assert!(!temp.path().join("archive.sqlite").exists());
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"existing sidecar");
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("source");
+    let mut ledger = Ledger::create(&root).unwrap();
+    let id = ledger.stage(b"original object").unwrap();
+    // Source namespace includes absent rollback journal, not just files that exist.
+    for suffix in ["", "-journal", "-wal", "-shm"] {
+        assert!(ledger
+            .backup(&root.join(format!("archive.sqlite{suffix}")))
+            .is_err());
+        assert_eq!(ledger.read_object(&id).unwrap(), b"original object");
+    }
+    for suffix in ["-journal", "-wal", "-shm"] {
+        let destination = temp.path().join(format!("copy{suffix}.sqlite"));
+        let sentinel = temp.path().join(format!("copy{suffix}.sqlite{suffix}"));
+        owner_file(&sentinel, b"unrelated sidecar");
+        assert!(ledger.backup(&destination).is_err());
+        assert!(!destination.exists());
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"unrelated sidecar");
+    }
+    #[cfg(unix)]
+    {
+        let alias = temp.path().join("alias");
+        std::fs::hard_link(root.join("archive.sqlite"), &alias).unwrap();
+        assert!(ledger.backup(&temp.path().join("alias-journal")).is_err());
+        assert!(!temp.path().join("alias-journal").exists());
+    }
+    assert_eq!(ledger.read_object(&id).unwrap(), b"original object");
+}
+
+#[test]
+fn backup_normalizes_and_catalogs_transient_sidecars() {
+    use kan::evidence_store::BackupBoundary;
+    let temp = tempfile::tempdir().unwrap();
+    let mut ledger = Ledger::create(&temp.path().join("source")).unwrap();
+    ledger.stage(b"backup lifecycle").unwrap();
+    let destination = temp.path().join("backup.sqlite");
+    let mut observed = Vec::new();
+    ledger
+        .backup_observed(&destination, &mut |boundary| {
+            observed.push(boundary);
+            // Opening the copied WAL-mode file observes its possible WAL/SHM media.
+            let conn = rusqlite::Connection::open(&destination).unwrap();
+            let mode: String = conn
+                .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(
+                mode,
+                if boundary == BackupBoundary::Copied {
+                    "wal"
+                } else {
+                    "delete"
+                }
+            );
+            let _: i64 = conn
+                .query_row("SELECT count(*) FROM objects", [], |r| r.get(0))
+                .unwrap();
+            for suffix in ["", "-journal", "-wal", "-shm"] {
+                let path = temp.path().join(format!("backup.sqlite{suffix}"));
+                let artifact = format!("evidence-backup:archive.sqlite{suffix}");
+                assert!(kan::surface::EVIDENCE_VALUES
+                    .iter()
+                    .any(|v| v.artifact == artifact));
+                if let Ok(meta) = std::fs::metadata(&path) {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        assert_eq!(meta.permissions().mode() & 0o077, 0);
+                    }
+                    #[cfg(not(unix))]
+                    let _ = meta;
+                }
+            }
+        })
+        .unwrap();
+    assert_eq!(
+        observed,
+        [BackupBoundary::Copied, BackupBoundary::Normalized]
+    );
+    for suffix in ["-journal", "-wal", "-shm"] {
+        assert!(!temp.path().join(format!("backup.sqlite{suffix}")).exists());
+    }
+    assert!(Command::new("python3")
+        .arg("scripts/verify_evidence_store.py")
+        .arg(&destination)
+        .status()
+        .unwrap()
+        .success());
+}

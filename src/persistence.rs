@@ -128,6 +128,8 @@ impl SurfaceWrite {
             Self::EvidenceBackup => &[
                 "evidence-backup:archive.sqlite",
                 "evidence-backup:archive.sqlite-journal",
+                "evidence-backup:archive.sqlite-wal",
+                "evidence-backup:archive.sqlite-shm",
             ],
             Self::EvidenceRecovery => &[
                 "evidence-recovery:archive.sqlite",
