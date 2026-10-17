@@ -61,6 +61,11 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
 const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     (
         "src/evidence_spool.rs",
+        "\"spool.sqlite\"",
+        "synthetic physical-full unit-test database",
+    ),
+    (
+        "src/evidence_spool.rs",
         "format!(\"{name}{suffix}\")",
         "spool caller-selected namespace and SQLite sidecars",
     ),

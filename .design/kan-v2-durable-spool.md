@@ -34,3 +34,11 @@ Production owner custody, capture adapter selection and independent backup quali
 ## Out of Scope
 
 - Production gateway forwarding, automatic migration/cutover, grants history, erasure, or claiming this primitive completes P5/P6.
+
+## Reviewed operation-history correction
+
+The initial queue forgot operation identifiers when an acknowledgment deleted a pending row. That allowed a reused identifier to enter the queue even though the remote ledger would permanently reject it. The corrected experimental spool profile 2 retains a compact `operations` registry (position, identifier, manifest CID) for every enqueue and audits it against pending rows, the latest acknowledgment and the frontier. Identifier history is not charged to the pending-payload budget, so local metadata grows with lifetime operations. Startup is linear in that history; no bounded-startup claim is made.
+
+Enqueue returns distinct `Queued`, `AlreadyPending` and `AlreadyAcknowledged` outcomes. Any changed commitment under an existing identifier is a conflict, including after acknowledgment and restart. The profile change refuses earlier experimental spool files instead of silently upgrading or resetting them; no live spools have been deployed by this work.
+
+SQLite disk-full maps to `Full`; busy, locked, I/O and related unavailable-storage failures map to `Unavailable`. Initialization sets FULL synchronization/fullfsync before its schema transaction. This is not a power-loss qualification. The queue is owner-trusted local state: coherent raw edits or rollback of the file and its operation registry can drop unacknowledged bytes without detection. Durable external rollback witnesses and explicit recovery of permanently rejected heads remain future operating concerns.

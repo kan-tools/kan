@@ -1,7 +1,7 @@
 #![cfg(feature = "v2-storage")]
 use kan::{
     evidence_service::{self as service, Command, Grant, Request, Service, SignedRequest},
-    evidence_spool::{Error, Spool},
+    evidence_spool::{Enqueue, Error, Spool},
     evidence_store::Ledger,
     sign::Identity,
 };
@@ -52,8 +52,8 @@ fn exact_bytes_restart_capacity_and_proven_remote_acknowledgment() {
     let audience = server.did().to_string();
     let first = append(&writer, &audience, 1, 1, 0, None);
     let mut spool = create(&path, &writer, &server, first.len() as u64);
-    assert!(spool.enqueue(&first).unwrap());
-    assert!(!spool.enqueue(&first).unwrap());
+    assert_eq!(spool.enqueue(&first).unwrap(), Enqueue::Queued);
+    assert_eq!(spool.enqueue(&first).unwrap(), Enqueue::AlreadyPending);
     let frontier = spool.frontier().unwrap();
     let second = append(
         &writer,
@@ -219,7 +219,13 @@ fn concurrent_producers_serialize_one_frontier() {
         }));
     }
     let outcomes: Vec<_> = jobs.into_iter().map(|j| j.join().unwrap()).collect();
-    assert_eq!(outcomes.iter().filter(|r| matches!(r, Ok(true))).count(), 1);
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|r| matches!(r, Ok(Enqueue::Queued)))
+            .count(),
+        1
+    );
     assert_eq!(
         outcomes
             .iter()
@@ -351,4 +357,95 @@ fn encrypted_spool_has_no_plaintext_canary() {
     }
     drop(spool);
     assert_eq!(Spool::open(&path).unwrap().head().unwrap().unwrap(), raw);
+}
+
+#[test]
+fn acknowledged_operation_ids_cannot_be_reused() {
+    let t = tempfile::tempdir().unwrap();
+    let path = t.path().join("spool.sqlite");
+    let writer = Identity::generate();
+    let server = Identity::generate();
+    let audience = server.did().to_string();
+    let mut spool = create(&path, &writer, &server, 100000);
+    let mut service = Service::new(
+        Ledger::create(&t.path().join("remote")).unwrap(),
+        [1; 32],
+        server,
+        vec![Grant {
+            principal: writer.did().to_string(),
+            append: true,
+            inventory: false,
+        }],
+    )
+    .unwrap();
+    let mut first = vec![];
+    for id in [1, 2] {
+        let f = spool.frontier().unwrap();
+        let raw = append(&writer, &audience, 1, id, f.next, f.previous);
+        if id == 1 {
+            first = raw.clone();
+        }
+        assert_eq!(spool.enqueue(&raw).unwrap(), Enqueue::Queued);
+        spool
+            .acknowledge(&service.dispatch(&raw, 1000).unwrap().bytes().unwrap())
+            .unwrap();
+    }
+    let f = spool.frontier().unwrap();
+    let reused = append(&writer, &audience, 1, 1, f.next, f.previous.clone());
+    assert!(matches!(spool.enqueue(&reused), Err(Error::Conflict)));
+    assert_eq!(spool.enqueue(&first).unwrap(), Enqueue::AlreadyAcknowledged);
+    assert_eq!(spool.frontier().unwrap(), f);
+    assert!(spool.head().unwrap().is_none());
+    drop(spool);
+    let mut spool = Spool::open(&path).unwrap();
+    assert!(matches!(spool.enqueue(&reused), Err(Error::Conflict)));
+    assert_eq!(spool.enqueue(&first).unwrap(), Enqueue::AlreadyAcknowledged);
+    let next = append(&writer, &audience, 1, 3, f.next, f.previous);
+    assert_eq!(spool.enqueue(&next).unwrap(), Enqueue::Queued);
+    assert_eq!(spool.enqueue(&next).unwrap(), Enqueue::AlreadyPending);
+    assert_eq!(spool.enqueue(&first).unwrap(), Enqueue::AlreadyAcknowledged);
+    assert_eq!(spool.head().unwrap().unwrap(), next);
+}
+
+#[test]
+fn operation_registry_damage_and_empty_route_damage_refuse_reopen() {
+    let t = tempfile::tempdir().unwrap();
+    let writer = Identity::generate();
+    let server = Identity::generate();
+    for damage in ["registry", "route", "old-profile"] {
+        let path = t.path().join(damage);
+        let mut spool = create(&path, &writer, &server, 100000);
+        if damage == "registry" {
+            spool
+                .enqueue(&append(&writer, server.did().as_str(), 1, 1, 0, None))
+                .unwrap();
+        }
+        drop(spool);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(match damage {
+            "registry" => "DELETE FROM operations",
+            "route" => "UPDATE state SET scope='invalid'",
+            _ => "PRAGMA user_version=1",
+        })
+        .unwrap();
+        drop(conn);
+        assert!(Spool::open(&path).is_err());
+    }
+}
+
+#[test]
+fn actual_writer_lock_reports_storage_unavailable_without_advancing() {
+    let t = tempfile::tempdir().unwrap();
+    let path = t.path().join("spool.sqlite");
+    let writer = Identity::generate();
+    let server = Identity::generate();
+    let mut spool = create(&path, &writer, &server, 100000);
+    let lock = rusqlite::Connection::open(&path).unwrap();
+    lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+    assert!(matches!(
+        spool.enqueue(&append(&writer, server.did().as_str(), 1, 1, 0, None)),
+        Err(Error::Unavailable)
+    ));
+    lock.execute_batch("ROLLBACK").unwrap();
+    assert_eq!(spool.frontier().unwrap().next, 0);
 }

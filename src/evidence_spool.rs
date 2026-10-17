@@ -3,19 +3,22 @@ use crate::evidence_service::{self as service, Command, SignedReply, SignedReque
 use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use std::{path::Path, time::Duration};
 
-const PROFILE: i64 = 0x4b535001;
+const PROFILE: i64 = 0x4b535002;
 const SCHEMA: &str = "
 CREATE TABLE state(singleton INTEGER PRIMARY KEY CHECK(singleton=1), scope TEXT NOT NULL, writer TEXT NOT NULL, audience TEXT NOT NULL, budget INTEGER NOT NULL CHECK(budget>0), next INTEGER NOT NULL CHECK(next>=0), previous TEXT, acknowledged_request BLOB, acknowledged_reply BLOB);
+CREATE TABLE operations(position INTEGER PRIMARY KEY CHECK(position>=0), operation TEXT NOT NULL UNIQUE, manifest TEXT NOT NULL UNIQUE);
 CREATE TABLE pending(position INTEGER PRIMARY KEY CHECK(position>=0), operation TEXT NOT NULL UNIQUE, manifest TEXT NOT NULL UNIQUE, request BLOB NOT NULL CHECK(length(request)>0 AND length(request)<=2101248));
-PRAGMA application_id=1263751169;
-PRAGMA user_version=1;
+PRAGMA application_id=1263751170;
+PRAGMA user_version=2;
 ";
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("spool I/O: {0}")]
     Io(#[from] std::io::Error),
     #[error("spool SQLite: {0}")]
-    Sql(#[from] rusqlite::Error),
+    Sql(rusqlite::Error),
+    #[error("spool storage unavailable")]
+    Unavailable,
     #[error("invalid spool or request: {0}")]
     Invalid(&'static str),
     #[error("spool capacity exhausted")]
@@ -24,6 +27,33 @@ pub enum Error {
     Conflict,
     #[error("service proof rejected: {0}")]
     Proof(#[from] service::Failure),
+}
+impl From<rusqlite::Error> for Error {
+    fn from(error: rusqlite::Error) -> Self {
+        if let rusqlite::Error::SqliteFailure(code, _) = &error {
+            use rusqlite::ErrorCode::*;
+            match code.code {
+                DiskFull => return Self::Full,
+                DatabaseBusy
+                | DatabaseLocked
+                | SystemIoFailure
+                | CannotOpen
+                | ReadOnly
+                | PermissionDenied
+                | OperationInterrupted
+                | FileLockingProtocolFailed
+                | OutOfMemory => return Self::Unavailable,
+                _ => {}
+            }
+        }
+        Self::Sql(error)
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Enqueue {
+    Queued,
+    AlreadyPending,
+    AlreadyAcknowledged,
 }
 type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,10 +141,14 @@ fn coordinates(bytes: &[u8], st: &State) -> Result<(u64, Option<String>, String,
     let cid = service::append_manifest(bytes)?.cid().to_string();
     Ok((position, previous, id, cid))
 }
-fn configure(conn: &Connection) -> Result<()> {
+fn durability(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA checkpoint_fullfsync=ON;",
     )?;
+    Ok(())
+}
+fn configure(conn: &Connection) -> Result<()> {
+    durability(conn)?;
     if conn.query_row("PRAGMA journal_mode=WAL", [], |r| r.get::<_, String>(0))? != "wal" {
         return Err(Error::Invalid("WAL unavailable"));
     }
@@ -167,6 +201,7 @@ impl Spool {
             &[],
         )?;
         let mut conn = connection(path)?;
+        durability(&conn)?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute_batch(SCHEMA)?;
         tx.execute(
@@ -183,7 +218,7 @@ impl Spool {
         let expected = Connection::open_in_memory()?;
         expected.execute_batch(SCHEMA)?;
         if conn.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))? != PROFILE
-            || conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? != 1
+            || conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? != 2
             || schema(&conn)? != schema(&expected)?
         {
             return Err(Error::Invalid("unrecognized schema"));
@@ -219,15 +254,15 @@ impl Spool {
             )
             .optional()?)
     }
-    /// False means the exact request is already pending. No bytes are regenerated.
-    pub fn enqueue(&mut self, bytes: &[u8]) -> Result<bool> {
+    /// Distinguishes new, pending and acknowledged exact retries; never regenerates bytes.
+    pub fn enqueue(&mut self, bytes: &[u8]) -> Result<Enqueue> {
         self.enqueue_observed(bytes, &mut |_| {})
     }
     pub fn enqueue_observed(
         &mut self,
         bytes: &[u8],
         observe: &mut dyn FnMut(Boundary),
-    ) -> Result<bool> {
+    ) -> Result<Enqueue> {
         if bytes.len() > MAX_REQUEST {
             return Err(Error::Invalid("request size"));
         }
@@ -236,19 +271,39 @@ impl Spool {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let st = state(&tx)?;
         let (position, previous, id, cid) = coordinates(bytes, &st)?;
-        let old: Option<Vec<u8>> = tx
+        let old: Option<(u64, String)> = tx
             .query_row(
-                "SELECT request FROM pending WHERE operation=?",
+                "SELECT position,manifest FROM operations WHERE operation=?",
                 [&id],
-                |r| r.get(0),
+                |r| Ok((unsigned(r, 0)?, r.get(1)?)),
             )
             .optional()?;
-        if let Some(old) = old {
-            return if old == bytes {
-                Ok(false)
-            } else {
-                Err(Error::Conflict)
-            };
+        if let Some((old_position, old_cid)) = old {
+            if old_position != position || old_cid != cid {
+                return Err(Error::Conflict);
+            }
+            let pending: Option<Vec<u8>> = tx
+                .query_row(
+                    "SELECT request FROM pending WHERE position=?",
+                    [position as i64],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if let Some(pending) = pending {
+                return if pending == bytes {
+                    Ok(Enqueue::AlreadyPending)
+                } else {
+                    Err(Error::Invalid("pending commitment"))
+                };
+            }
+            if let Some(acknowledged) = &st.request {
+                if coordinates(acknowledged, &st)?.0 >= position {
+                    return Ok(Enqueue::AlreadyAcknowledged);
+                }
+            }
+            return Err(Error::Invalid(
+                "operation lacks pending bytes or acknowledgment",
+            ));
         }
         if position != st.next || previous != st.previous {
             return Err(Error::Conflict);
@@ -261,6 +316,10 @@ impl Spool {
         if used.checked_add(bytes.len() as u64).ok_or(Error::Full)? > st.budget {
             return Err(Error::Full);
         }
+        tx.execute(
+            "INSERT INTO operations VALUES(?,?,?)",
+            params![position as i64, id, cid],
+        )?;
         tx.execute(
             "INSERT INTO pending VALUES(?,?,?,?)",
             params![position as i64, id, cid, bytes],
@@ -276,7 +335,7 @@ impl Spool {
         observe(Boundary::BeforeCommit);
         tx.commit()?;
         observe(Boundary::AfterCommit);
-        Ok(true)
+        Ok(Enqueue::Queued)
     }
     /// Only a verified reply for the current head can release queued bytes.
     pub fn acknowledge(&mut self, reply: &[u8]) -> Result<()> {
@@ -322,13 +381,49 @@ impl Spool {
 }
 fn audit(conn: &Connection) -> Result<()> {
     let st = state(conn)?;
+    service::validate_shape(&service::Request {
+        version: 1,
+        scope: st.scope.clone(),
+        principal: st.writer.clone(),
+        audience: st.audience.clone(),
+        expires: Some(0),
+        command: Command::Snapshot,
+    })?;
+    let mut count = 0u64;
+    let mut operations =
+        conn.prepare("SELECT position,operation,manifest FROM operations ORDER BY position")?;
+    let mut entries = operations.query([])?;
+    while let Some(row) = entries.next()? {
+        let id: String = row.get(1)?;
+        let raw = service::unhex(&id, 16)?;
+        let cid: String = row.get(2)?;
+        if unsigned(row, 0)? != count
+            || raw.len() != 16
+            || service::hex(&raw) != id
+            || cid.parse::<atproto_dasl::Cid>().is_err()
+        {
+            return Err(Error::Invalid("operation registry"));
+        }
+        count += 1;
+    }
+    if count != st.next {
+        return Err(Error::Invalid("operation registry frontier"));
+    }
     if st.budget == 0 || st.budget > 1 << 40 {
         return Err(Error::Invalid("budget"));
     }
     let (mut next, mut previous) = match (&st.request, &st.reply) {
         (None, None) => (0, None),
         (Some(request), Some(reply)) => {
-            let (position, _, _, cid) = coordinates(request, &st)?;
+            let (position, _, id, cid) = coordinates(request, &st)?;
+            let registered: (String, String) = conn.query_row(
+                "SELECT operation,manifest FROM operations WHERE position=?",
+                [position as i64],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            if registered != (id, cid.clone()) {
+                return Err(Error::Invalid("acknowledged operation registry"));
+            }
             let signed: SignedReply =
                 serde_json::from_slice(reply).map_err(|_| Error::Invalid("retained reply"))?;
             if signed.bytes()? != *reply {
@@ -341,7 +436,7 @@ fn audit(conn: &Connection) -> Result<()> {
     };
     let mut used = 0u64;
     let mut stmt =
-        conn.prepare("SELECT position,operation,manifest,request FROM pending ORDER BY position")?;
+        conn.prepare("SELECT p.position,p.operation,p.manifest,p.request,o.operation,o.manifest FROM pending p LEFT JOIN operations o ON o.position=p.position ORDER BY p.position")?;
     let mut rows = stmt.query([])?;
     while let Some(row) = rows.next()? {
         let bytes: Vec<u8> = row.get(3)?;
@@ -351,6 +446,8 @@ fn audit(conn: &Connection) -> Result<()> {
             || position != unsigned(row, 0)?
             || id != row.get::<_, String>(1)?
             || cid != row.get::<_, String>(2)?
+            || Some(id.clone()) != row.get::<_, Option<String>>(4)?
+            || Some(cid.clone()) != row.get::<_, Option<String>>(5)?
         {
             return Err(Error::Invalid("queue chain"));
         }
@@ -362,4 +459,56 @@ fn audit(conn: &Connection) -> Result<()> {
         return Err(Error::Invalid("frontier or capacity"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn physical_sqlite_full_is_explicit_and_atomic() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("spool.sqlite");
+        let writer = crate::sign::Identity::generate();
+        let server = crate::sign::Identity::generate();
+        let mut spool = Spool::create(
+            &path,
+            &service::hex(&[1; 32]),
+            writer.did().as_str(),
+            server.did().as_str(),
+            10_000_000,
+        )
+        .unwrap();
+        let pages: i64 = spool
+            .conn
+            .pragma_query_value(None, "page_count", |r| r.get(0))
+            .unwrap();
+        spool
+            .conn
+            .pragma_update(None, "max_page_count", pages)
+            .unwrap();
+        let raw = SignedRequest::sign(
+            service::Request {
+                version: 1,
+                scope: service::hex(&[1; 32]),
+                principal: writer.did().to_string(),
+                audience: server.did().to_string(),
+                expires: None,
+                command: Command::Append {
+                    id: service::hex(&[2; 16]),
+                    position: 0,
+                    previous: None,
+                    ciphertext: service::hex(&vec![7; 100_000]),
+                },
+            },
+            &writer,
+        )
+        .unwrap()
+        .bytes()
+        .unwrap();
+        assert!(matches!(spool.enqueue(&raw), Err(Error::Full)));
+        assert_eq!(spool.frontier().unwrap().next, 0);
+        assert!(spool.head().unwrap().is_none());
+        drop(spool);
+        assert_eq!(Spool::open(&path).unwrap().frontier().unwrap().next, 0);
+    }
 }
