@@ -45,3 +45,13 @@ small explicit limit; the maximum 32-MiB plan and 262,144-chunk allocations are
 validated in code but not materialized at their full boundary in this suite.
 The restore output parent is trusted. Old source bytes and their semantic defects
 are preserved; the tool does not make a malformed legacy CAR readable by v1.
+
+## Independent review and retained regressions
+
+The initial implementation received fresh Opus 5.5 APPROVE WITH FOLLOW-UPS with
+no correctness blocker. Eleven independent probes, including a separate archive
+signature/HPKE/selected-byte oracle and multipart inventories, are retained in
+`tests/evidence_restore_adversarial.rs`. Three targeted mutation controls cover
+receipt binding, canonical plans and frame coordinates. Production source is
+unchanged by this coverage follow-up. Review identities and evidence are recorded
+in `.design/reviews/kan-v2-import-restore-2026-10-17.md`.

@@ -4,6 +4,7 @@
 No Git worktree and no mutation of the invoking checkout. APFS-clone the caller's
 build dependencies, rebuild this package, retain logs/source, remove scratch target.
 """
+import argparse
 import os
 from pathlib import Path
 import shutil
@@ -11,6 +12,9 @@ import signal
 import subprocess
 import tempfile
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--review-followups-only', action='store_true')
+args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
 if shutil.disk_usage(root).free < 15 * 1024**3:
     raise SystemExit('need at least 15 GiB free for scratch build')
@@ -55,25 +59,34 @@ try:
         ('path-safety', 'safe_path(&file.path) && paths.insert(file.path.as_str())', 'paths.insert(file.path.as_str())', 'unsafe_paths_prefixes_and_filesystem_collisions_rejected'),
         ('early-report', 'observe(Boundary::DirectoryCreated);', 'observe(Boundary::DirectoryCreated);\n crate::persistence::write_new_owner_only(crate::persistence::SurfaceWrite::EvidenceRestore, &destination.join("report.json"), b"{}").unwrap();', 'signed_hostile_frames_and_plans_never_publish_success'),
     ]
-    command = ['cargo', 'test', '--features', 'v2-crypto', '--test', 'evidence_restore']
+    controls += [
+        ('retained-binding', 'service::verify_retained_request(&record, &bytes)', 'service::SignedRequest::decode(&bytes)', 'probe_receipt_issuer_rewrite_rejected'),
+        ('canonical-plan', 'serde_json::to_vec(&value)? == document', 'true', 'probe_noncanonical_but_pinned_plan_rejected'),
+        ('coordinates', 'h.kind == kind && h.file == file && h.part == part && h.parts == parts', 'true', 'probe_multipart_inventory_tampering'),
+    ]
+    if args.review_followups_only:
+        controls = controls[-3:]
+    command = ['cargo', 'test', '--features', 'v2-crypto', '--test', 'evidence_restore', '--test', 'evidence_restore_adversarial']
     code, output = run(command, 'baseline')
-    if code or '9 passed' not in output:
+    if code or '9 passed' not in output or '11 passed' not in output:
         raise SystemExit('baseline failed\n' + output)
     for name, old, new, test in controls:
         if original.count(old) != 1:
             raise SystemExit(f'{name}: edit is not unique')
+        selected = ['cargo', 'test', '--features', 'v2-crypto', '--test',
+                    'evidence_restore_adversarial' if test.startswith('probe_') else 'evidence_restore', test, '--', '--exact']
         try:
             source.write_text(original.replace(old, new, 1))
-            code, output = run(command + [test, '--', '--exact'], name)
+            code, output = run(selected, name)
             if code == 0 or 'test result: FAILED' not in output or '1 failed' not in output:
                 raise SystemExit(f'{name}: no named runtime failure\n{output}')
             print(f'{name}: runtime failure observed', flush=True)
         finally:
             source.write_text(original)
-        code, output = run(command + [test, '--', '--exact'], name + '-restored')
+        code, output = run(selected, name + '-restored')
         if code or '1 passed' not in output:
             raise SystemExit(f'{name}: restoration failed\n{output}')
-    print('six controls killed at runtime and restored', flush=True)
+    print(f'{len(controls)} controls killed at runtime and restored', flush=True)
 finally:
     if (scratch / 'target').exists():
         shutil.rmtree(scratch / 'target')
