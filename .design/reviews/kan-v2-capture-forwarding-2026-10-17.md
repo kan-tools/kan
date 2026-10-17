@@ -64,7 +64,7 @@ failed at runtime under complete reversion and passed after restoration. All
 one CLI hunk and eight recorder/transport hunks were reversed; the demonstrated
 patch was byte-compared with the final production diff. Scratch
 `kan-capture-fix-revert-qcsroan5` retains source/patch with its target removed.
-A second fresh Opus verdict is still required before closure. Day design validation reports five
+The second fresh Opus verdict below covers this correction. Day design validation reports five
 requirements/four criteria, with main-checkout path warnings and two withheld
 legacy claims. Claim/bridge backfill remains pending; no CIDs or completeness
 claims were fabricated. The visible graph reports design → generative-build.
@@ -125,4 +125,66 @@ source/patch; target removed, and final source diff matched the demonstrated pat
 The first in-memory slow-sink witness survived reversion because its Vec output
 could complete without yielding; it was not credited in the trailer. That test
 now uses a one-byte duplex output to force an asynchronous boundary. Clippy,
-formatting and citation checks pass. A fresh third review remains required.
+formatting and citation checks pass. The third fresh review below covers this correction.
+
+
+## Third independent review — final implementation
+
+Fresh Claude Code `claude-opus-5-5`, session
+`797d4a70-f2e1-4220-aa22-ef553656ce02`, verified from launcher init (the reviewer
+could not see the ID). Range
+`c1368928dac1dc433427d3c14f723b8f53cc1d78..8c00a28ecd6a8f098d16302ece98306c177f039f`.
+Final report UTF-8 SHA-256, no added newline:
+`7e1733f48f34fae11968d4aa4fc5f447ff8ef2e2d8241653d394d72f5ab42b23`.
+Verdict **APPROVE WITH FOLLOW-UPS**: no correctness, safety or invariant violation
+found in the deadline correction. No implementation changes followed this review.
+
+The reviewer independently passed all 29 capture tests, the encrypted oracle,
+v2 all-target Clippy, formatting and citation/self-tests. Seven additional probes
+verified aggregate slow-provider reads, ample-budget exact output, slow failed
+admission, overlapping admission/provider latency, CLI partial output and locked
+spool scaling. Both latest author controls failed for the expected runtime
+assertions and passed after restoration. Full source reversion was caught by both
+the strengthened duplex slow-sink test and the real locked-spool CLI test.
+Removing aggregate subtraction was caught; removing the send budget was caught.
+Removing the read budget survived the 29 CI tests but was caught by three review
+probes. Removing the zero-budget guard was caught only by the reviewer's blocking
+output probe. Subtracting elapsed time only on success was behaviorally equivalent
+because any failure terminates the attempt.
+
+The review's public probe source is retained verbatim in
+`.design/reviews/kan-v2-capture-deadline-probes.rs.txt`. It is an evidence artifact,
+not a Cargo test target; promote the response-read timeout witness into CI in the
+next capture build point. This preserves it beyond temporary-directory cleanup
+without claiming that it currently provides CI regression coverage.
+
+### Concrete continuation priorities
+
+1. Bound capture-admission latency before operational streaming use. With a held
+   SQLite write lock, the reviewer measured roughly 5.5 seconds per observation:
+   6 observations took 32.8 seconds; 9 took 49.5 seconds. Outcome and visible gaps
+   are now correct, but synchronous retry on each chunk is not latency-qualified.
+2. Promote the retained provider-body stall/drip probes and zero-budget boundary
+   into CI; describe cumulative I/O budget directly in CLI option help.
+3. Continue authenticated collector↔gateway transport and the selected real
+   harness/provider profile. TLS/H2 retry-policy runtime coverage, production
+   capture-header admission decoding and bounded health reporting remain gates.
+4. Production custody/grants/erasure, independent-host restore, final-delta cutover
+   and capacity qualification remain the parent roadmap's separate requirements.
+
+Synchronous output implementations may overrun a timeout while being polled;
+when their completed await exhausts the budget, the following flush is not
+attempted and the conservative result is unknown. Only awaited intervals consume
+the budget: provider delay overlapping admission is excluded by design. The
+budget uses std Instant while tokio schedules timeouts; paused-tokio-clock tests
+are not supported by this profile. A host wall-clock step can invalidate the
+ordinary-host clock timing test; runtime clocks remain supplementary observations.
+
+Scratch `/tmp/kan-review3-dsIe` retains source/probes/logs; its target and the
+control runner target were removed, with no reviewer processes remaining.
+Author deadline controls from exact commit 8c00a28 retain logs in
+`kan-capture-controls-9lye5nbf` under the host temporary directory, target removed.
+Previous implementations c78f6a1 and c136892 passed all CI workflows including
+performance. Final implementation 8c00a28 has green CI tests, migration matrix and
+performance CI. The final checkpoint changes documentation/evidence artifacts only. Full workspace/default-feature local checks and
+real provider calls were not performed by the third reviewer.

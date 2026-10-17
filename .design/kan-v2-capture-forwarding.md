@@ -14,10 +14,10 @@ Build the first P6 executable witness: a gateway-side opaque HTTP POST forwarder
 
 ## Acceptance Criteria
 
-- [ ] AC-1: Decrypt queued observations and independently reconstruct byte-identical request/response bodies, ordered offsets, observer, attempt and route; distinct attempts and observers cannot share operation IDs. (REQ-1, REQ-5)
-- [ ] AC-2: Full or unavailable capture emits a separate health signal and forwards unchanged bytes; resumed recording carries the earlier unconfirmed count. No signal enters the provider body. (REQ-2, REQ-5)
-- [ ] AC-3: A counting fake provider sees one request, including non-2xx and redirect cases; no redirect target is contacted and draining evidence does not call the provider. Invalid route/request limits fail before forwarding. (REQ-3, REQ-5)
-- [ ] AC-4: Disconnect, deadline, output failure and dropped future preserve observed prefixes and expose unknown provider outcome. Slow output does not create an unbounded application queue. Only observed body EOF and successful output flush produce completion. (REQ-3, REQ-4, REQ-5)
+- [x] AC-1: Decrypt queued observations and independently reconstruct byte-identical request/response bodies, ordered offsets, observer, attempt and route; distinct attempts and observers cannot share operation IDs. (REQ-1, REQ-5)
+- [x] AC-2: Full or unavailable capture emits a separate health signal and forwards unchanged bytes; resumed recording carries the earlier unconfirmed count. No signal enters the provider body. (REQ-2, REQ-5)
+- [x] AC-3: A counting fake provider sees one request, including non-2xx and redirect cases; no redirect target is contacted and draining evidence does not call the provider. Invalid route/request limits fail before forwarding. (REQ-3, REQ-5)
+- [x] AC-4: Disconnect, deadline, output failure and dropped future preserve observed prefixes and expose unknown provider outcome. Slow output does not create an unbounded application queue. Only observed body EOF and successful output flush produce completion. (REQ-3, REQ-4, REQ-5)
 
 ## Architecture
 
@@ -64,3 +64,15 @@ those awaited intervals. Recording remains before output, outside the budget.
 A slow-admission fixture and the actual CLI/write-lock reproduction must finish
 with completed outcome and visible gaps; cumulative slow output must still expire.
 This corrects REQ-2/AC-2 without claiming bounded wall-clock capture latency.
+
+
+## Final checkpoint
+
+The three fresh actual Opus 5.5 review rounds and full-reversion witnesses are
+recorded in `.design/reviews/kan-v2-capture-forwarding-2026-10-17.md`. Acceptance
+is for this synthetic HTTP body-forwarding profile only; full P6 remains open.
+All 29 capture tests pass. The next build point must bound admission latency and
+promote the retained response-body timeout probes into CI before operational
+streaming qualification. No production key, real provider, deployment or live
+cutover was selected. Design validation has five requirements/four criteria;
+legacy claim/bridge backfill remains pending under the partial-view limitation.
