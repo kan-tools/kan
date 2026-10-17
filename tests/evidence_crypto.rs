@@ -223,3 +223,61 @@ fn blind_service_backup_recovers_original_ciphertext_and_plaintext() {
         plaintext
     );
 }
+
+#[test]
+fn noncanonical_recipients_are_rejected_before_sealing() {
+    let mut public = crypto::public_key(&[17; 32]).unwrap();
+    public[31] |= 0x80;
+    assert_eq!(
+        crypto::seal(&public, &[19; 32], b"must remain recoverable"),
+        Err(crypto::Error::Seal)
+    );
+    for low in 0xed..=0xff {
+        let mut at_or_above_prime = [0xff; 32];
+        at_or_above_prime[0] = low;
+        at_or_above_prime[31] = 0x7f;
+        assert_eq!(
+            crypto::seal(&at_or_above_prime, &[19; 32], b"invalid field element"),
+            Err(crypto::Error::Seal)
+        );
+    }
+}
+
+#[test]
+fn independent_sender_and_maximum_receiver_interoperate() {
+    use std::io::Write;
+    let private = [53; 32];
+    let scope = [59; 32];
+    let public = crypto::public_key(&private).unwrap();
+    let python = std::env::var_os("KAN_CRYPTO_ORACLE_PYTHON").unwrap_or_else(|| "python3".into());
+    for size in [0, 17, crypto::MAX_PLAINTEXT] {
+        let plaintext = vec![61; size];
+        let mut child = std::process::Command::new(&python)
+            .args(["-I", "scripts/verify_archive_encryption.py", "--seal"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(serde_json::to_vec(&serde_json::json!({"recipient":hex(&public),"scope":hex(&scope),"plaintext":hex(&plaintext)})).unwrap().as_slice()).unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let frame = unhex(String::from_utf8(output.stdout).unwrap().trim(), 1048576).unwrap();
+        assert_eq!(crypto::open(&private, &scope, &frame).unwrap(), plaintext);
+        let frame = crypto::seal(&public, &scope, &plaintext).unwrap();
+        assert!(oracle(&private, &scope, &frame, &plaintext)
+            .status
+            .success());
+        for offset in [4, 11, 43, 75] {
+            let mut altered = frame.clone();
+            altered[offset] ^= 1;
+            assert!(!oracle(&private, &scope, &altered, &plaintext)
+                .status
+                .success());
+        }
+    }
+}
