@@ -24,7 +24,7 @@ categories = ["command-line-utilities", "development-tools"]
 evidence-contract = []
 v2-storage = ["evidence-contract", "rusqlite/backup", "rusqlite/limits"]
 v2-service = ["v2-storage", "dep:hyper", "dep:hyper-util", "dep:http-body-util", "dep:reqwest", "tokio/net", "tokio/time", "tokio/sync"]
-v2-crypto = ["v2-service", "dep:hpke", "dep:rustls", "dep:tokio-rustls", "tokio/io-std"]
+v2-crypto = ["v2-service", "dep:hpke", "dep:rustls", "dep:tokio-rustls", "tokio/io-std", "tokio/signal"]
 
 [dependencies]
 atproto-dasl = "0.14.5"

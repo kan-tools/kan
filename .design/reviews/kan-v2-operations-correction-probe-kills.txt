@@ -1,0 +1,2 @@
+C1P-lazy-open-skips-binding: KILLED :: p4=FAIL['p2_reporter_at_never_writes_mismatched_journal'](10s)
+C2P-no-loss-when-journal-absent: KILLED :: p4=FAIL['p3_reporter_at_missing_then_restored_counts_losses', 'p4_reporter_at_locked_at_start'](10s)

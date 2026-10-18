@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>ventures.kan.drain</string>
+<key>ProgramArguments</key><array>
+<string>/usr/local/bin/kan-v2</string><string>spool-watch</string>
+<string>/Users/you/Library/Application Support/kan/collector.spool</string>
+<string>--journal</string><string>/Users/you/Library/Application Support/kan/collector.health</string>
+<string>--endpoint</string><string>http://127.0.0.1:7282/v1/rpc</string>
+</array>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+<key>ThrottleInterval</key><integer>5</integer>
+<key>Umask</key><integer>63</integer>
+<key>StandardErrorPath</key><string>/Users/you/Library/Application Support/kan/drain.stderr</string>
+</dict></plist>
