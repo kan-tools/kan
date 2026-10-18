@@ -20,7 +20,7 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const age=w?Math.max(0
   $('updated').textContent='Read '+new Date(s.read_at*1000).toLocaleTimeString();
   $('pending').textContent=q?count(q.pending):'—';$('bytes').textContent=q?bytes(q.pending_bytes)+' awaiting delivery':'No queue sample';
   $('acked').textContent=q?count(q.next-q.pending):'—';$('acktime').textContent='Last worker ack: '+time(w?.last_ack_at);
-  $('gaps').textContent=count(s.unconfirmed);$('attempts').textContent=count(s.attempts);$('telemetry').textContent=count(s.telemetry_dropped)+' telemetry updates lost';
+  $('gaps').textContent=count(s.unconfirmed);$('attempts').textContent=count(s.attempts);$('telemetry').textContent=count(s.telemetry_dropped)+' capture updates lost · '+count(w?.telemetry_failures)+' worker reports failed';
   $('worker').textContent=!w?'No worker':age>45?'Stale · '+w.state:w.state;
   $('retry').textContent=w?.state==='retrying'?'Retry delay: '+w.retry_seconds+'s · '+count(w.consecutive_failures)+' consecutive failures':w?.state==='idle'?'Queue empty at last sample':'Exact retained bytes, in order';
   $('capacity').value=q?Math.min(100,100*q.pending_bytes/q.budget):0;$('capacity-label').textContent=q?bytes(q.pending_bytes)+' / '+bytes(q.budget):'No queue sample';
@@ -28,6 +28,8 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const age=w?Math.max(0
   if(age>45)notice('Worker status is missing or stale. These values do not establish current service health.','warning');
   else if((s.reporters||[]).some(r=>!r.clean&&Date.now()/1000-r.updated_at>5))notice('A health reporter is stale or stopped without closing. Capture coverage is unknown.','warning');
   else if(s.unconfirmed||s.telemetry_dropped)notice('Recording or telemetry gaps are retained. Archive progress does not establish complete capture.','warning');
+  else if(w?.telemetry_failures)notice('Worker telemetry writes have failed. Delivery continues; reporting coverage is incomplete.','warning');
+  else if(!(s.reporters||[]).some(r=>!r.clean))notice('No active capture reporter is recorded. Capture coverage is unknown.','warning');
   else if(s.unclosed_sessions)notice(count(s.unclosed_sessions)+' reporting session(s) are active or ended without a clean close. Coverage across interruption is unknown.','warning');
   else notice('Status is current. Capture completion and archive acknowledgment are separate observations.');
   rows();

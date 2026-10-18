@@ -51,6 +51,8 @@ pub struct WorkerStatus {
     pub last_ack_position: Option<u64>,
     pub consecutive_failures: u32,
     pub retry_seconds: u64,
+    #[serde(default)]
+    pub telemetry_failures: u64,
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Snapshot {
@@ -150,7 +152,17 @@ impl Journal {
             [],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
-        if spool.canonicalize()?.to_str() != Some(&stored) || writer.is_some_and(|w| w != owner) {
+        let selected = match spool.canonicalize() {
+            Ok(path) => path,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => spool
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or(Path::new("."))
+                .canonicalize()?
+                .join(spool.file_name().ok_or_else(invalid)?),
+            Err(e) => return Err(e.into()),
+        };
+        if selected.to_str() != Some(&stored) || writer.is_some_and(|w| w != owner) {
             return Err(invalid());
         }
         Ok(())
@@ -265,19 +277,50 @@ impl ReporterGuard {
 }
 /// Bounded nonblocking capture callback; a separate writer persists summaries.
 pub fn reporter(
-    mut journal: Journal,
+    journal: Journal,
+) -> Result<(crate::evidence_gateway::HealthReporter, ReporterGuard)> {
+    reporter_inner(Some(journal), None)
+}
+/// Proxy startup performs no journal I/O. Unavailable, locked, full or invalid
+/// journals remain visibly unknown; the dedicated writer retries opening them.
+pub fn reporter_at(
+    path: std::path::PathBuf,
+    spool: std::path::PathBuf,
+    writer: String,
+) -> Result<(crate::evidence_gateway::HealthReporter, ReporterGuard)> {
+    reporter_inner(None, Some((path, spool, writer)))
+}
+fn reporter_inner(
+    mut journal: Option<Journal>,
+    selection: Option<(std::path::PathBuf, std::path::PathBuf, String)>,
 ) -> Result<(crate::evidence_gateway::HealthReporter, ReporterGuard)> {
     let id = crate::evidence_service::hex(&rand::random::<[u8; 16]>());
-    journal.session(&id, 0, false)?;
+    // Even initial session admission is best effort: capacity cannot stop inference.
+    let initial_loss = u64::from(
+        journal
+            .as_ref()
+            .is_some_and(|j| j.session(&id, 0, false).is_err()),
+    );
     let (tx, rx) = mpsc::sync_channel::<Health>(256);
-    let dropped = Arc::new(AtomicU64::new(0));
+    let dropped = Arc::new(AtomicU64::new(initial_loss));
     let losses = dropped.clone();
     let thread = std::thread::Builder::new()
         .name("kan-health".into())
         .spawn(move || loop {
-            let disconnected = match rx.recv_timeout(Duration::from_millis(500)) {
+            let message = rx.recv_timeout(Duration::from_millis(500));
+            if journal.is_none() {
+                if let Some((path, spool, writer)) = &selection {
+                    journal = Journal::open(path)
+                        .and_then(|j| {
+                            j.check_binding(spool, Some(writer))?;
+                            Ok(j)
+                        })
+                        .ok();
+                }
+            }
+            let disconnected = match message {
                 Ok(h) => {
-                    if journal.record(&h).is_err() {
+                    if journal.as_mut().is_none_or(|j| j.record(&h).is_err()) {
                         losses.fetch_add(1, Ordering::Relaxed);
                     }
                     false
@@ -285,7 +328,9 @@ pub fn reporter(
                 Err(mpsc::RecvTimeoutError::Timeout) => false,
                 Err(mpsc::RecvTimeoutError::Disconnected) => true,
             };
-            let _ = journal.session(&id, losses.load(Ordering::Relaxed), disconnected);
+            if let Some(j) = &journal {
+                let _ = j.session(&id, losses.load(Ordering::Relaxed), disconnected);
+            }
             if disconnected {
                 break;
             }
@@ -298,42 +343,70 @@ pub fn reporter(
     Ok((callback, ReporterGuard(thread)))
 }
 
+fn persist_worker(
+    journal: &mut Option<Journal>,
+    status: &mut WorkerStatus,
+    load: &impl Fn() -> Result<Journal>,
+    next_open: &mut std::time::Instant,
+) {
+    if journal.is_none() && std::time::Instant::now() >= *next_open {
+        *next_open = std::time::Instant::now() + Duration::from_secs(1);
+        *journal = load().ok();
+    }
+    if journal
+        .as_ref()
+        .is_none_or(|j| j.save_worker(status).is_err())
+    {
+        status.telemetry_failures = status.telemetry_failures.saturating_add(1);
+    }
+}
+
 /// Independent archive worker. Cancellation may leave a remote commit unknown;
 /// retained request bytes are the only retry. Never invokes an inference route.
 pub async fn drain(spool_path: &Path, journal_path: &Path, endpoint: &str) -> Result<()> {
-    let mut journal = Journal::open(journal_path)?;
-    journal.check_binding(spool_path, None)?;
-    let prior = journal.snapshot()?.worker;
+    let mut spool = Spool::open(spool_path)?;
+    let binding = spool.status()?;
+    let load_journal = || -> Result<Journal> {
+        let j = Journal::open(journal_path)?;
+        j.check_binding(spool_path, None)?;
+        j.check_queue(&binding)?;
+        Ok(j)
+    };
+    let mut journal = load_journal().ok();
+    let prior = journal
+        .as_mut()
+        .and_then(|j| j.snapshot().ok())
+        .and_then(|s| s.worker);
+    let mut next_open = std::time::Instant::now() + Duration::from_secs(1);
     let mut status = WorkerStatus {
         sampled_at: now(),
         state: "starting".into(),
         queue: None,
         nonempty_since: None,
         last_ack_at: prior.as_ref().and_then(|s| s.last_ack_at),
-        last_ack_position: prior.and_then(|s| s.last_ack_position),
+        last_ack_position: prior.as_ref().and_then(|s| s.last_ack_position),
+        telemetry_failures: prior.map(|s| s.telemetry_failures).unwrap_or(0),
         consecutive_failures: 0,
         retry_seconds: 0,
     };
-    journal.save_worker(&status)?;
-    let mut spool = Spool::open(spool_path)?;
+    persist_worker(&mut journal, &mut status, &load_journal, &mut next_open);
     loop {
         status.sampled_at = now();
         status.queue = Some(spool.status()?);
         let queue = status.queue.as_ref().expect("sample");
-        journal.check_queue(queue)?;
         if queue.pending == 0 {
             status.nonempty_since = None;
             status.state = "idle".into();
             status.consecutive_failures = 0;
             status.retry_seconds = 1;
-            journal.save_worker(&status)?;
+            persist_worker(&mut journal, &mut status, &load_journal, &mut next_open);
             tokio::time::sleep(Duration::from_secs(1)).await;
             continue;
         }
         status.nonempty_since.get_or_insert(now());
         status.state = "delivering".into();
         status.retry_seconds = 0;
-        journal.save_worker(&status)?;
+        persist_worker(&mut journal, &mut status, &load_journal, &mut next_open);
         match evidence_delivery::deliver_one(&mut spool, endpoint).await {
             Ok(Some(ack)) => {
                 status.last_ack_at = Some(now());
@@ -346,7 +419,7 @@ pub async fn drain(spool_path: &Path, journal_path: &Path, endpoint: &str) -> Re
                 status.sampled_at = now();
                 status.consecutive_failures = status.consecutive_failures.saturating_add(1);
                 status.retry_seconds = (1u64 << status.consecutive_failures.min(5)).min(30);
-                journal.save_worker(&status)?;
+                persist_worker(&mut journal, &mut status, &load_journal, &mut next_open);
                 tokio::time::sleep(Duration::from_secs(status.retry_seconds)).await;
             }
         }
@@ -371,6 +444,16 @@ mod tests {
         )
         .unwrap();
         let mut journal = Journal::create(&path, &spool).unwrap();
+        drop(journal);
+        journal = Journal::open(&path).unwrap();
+        assert_eq!(
+            journal
+                .conn
+                .query_row("PRAGMA max_page_count", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            8192,
+            "reopened writer must enforce the physical page cap"
+        );
         let mut health = Health {
             attempt: crate::evidence_service::hex(&[1; 32]),
             observer: crate::evidence_capture::Observer::Collector,

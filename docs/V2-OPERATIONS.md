@@ -14,10 +14,13 @@ kan-v2 dashboard "$HEALTH" --listen 127.0.0.1:7283 --token-file "$DASHBOARD_TOKE
 
 Add `--health-journal "$HEALTH"` to the corresponding `collector` or `gateway`
 command. It replaces synchronous per-observation stderr health output with a
-bounded nonblocking handoff to a dedicated writer. The journal is provisioned
-before startup and bound to the canonical spool path, scope, writer and audience.
-A missing/mismatched journal is a configuration error at startup. Failures after
-startup do not stop inference. Do not share a journal between observers.
+bounded nonblocking handoff to a dedicated writer. Provision the journal before startup and bind it to the canonical spool path,
+scope, writer and audience. Journal opening and binding checks run on the reporter
+thread: missing, locked, invalid or full health storage never gates proxy startup.
+Until it recovers the dashboard shows unavailable/unknown coverage, and lost
+updates are counted when persistence becomes possible. A mismatched journal is
+never written; repair configuration explicitly. Do not share journals between
+observers. A missing spool remains reportable through its existing journal.
 
 Open `http://127.0.0.1:7283` and enter a separately provisioned, random dashboard
 token of at least 32 printable ASCII characters. Its file must be owner-only.
@@ -60,17 +63,24 @@ for each attempt, reporter sessions, and the latest worker sample. It is not an
 append-only archive of every health callback, and cannot replace raw encrypted
 evidence. It retains these records until explicit owner removal, with no automatic
 expiry. The database is capped at 8192 4-KiB pages (32 MiB), plus SQLite rollback
-journal space, and 100,000 attempts. It refuses growth rather than deleting old
-records. Database-full/lock failures and channel overflow increment telemetry-loss
+journal space, and independently at most 100,000 attempts. The first limit reached wins;
+100,000 is not a promised capacity. A realistic review fixture filled the byte
+cap near 79,740 attempts. It refuses growth rather than deleting old records. Database-full/lock failures and channel overflow increment telemetry-loss
 counts when persistence returns; a crash before that update leaves coverage
-unknown. A separate journal reserves logical capacity outside the queue budget,
+unknown. The 256-item FIFO can lose the latest cumulative attempt summary under a burst,
+even on healthy storage. Its global loss count is retained where possible; per-
+attempt counts can then undercount. Coalescing the latest snapshot per attempt
+is a follow-up, not an implemented guarantee. A separate journal reserves logical capacity outside the queue budget,
 not physical capacity when the entire device fails or fills. Monitor free disk.
 
 Startup audit and filesystem calls remain synchronous and are not hard-time
 bounded. The current capture queue still audits on opening per request. This
 batch does not claim to solve large-history startup or capture-admission latency.
-A worker exits on journal/queue failure; the supervisor can restart it, while the
-dashboard shows stale/missing observations. A dashboard read may fail under writer
+The worker validates its spool independently and continues archive delivery through
+telemetry write failures, accumulating a failure counter and retrying persistence
+on later samples. An unavailable or mismatched journal is retried without writing through an
+unverified binding. Queue failure still exits the worker; the supervisor can restart it. The dashboard shows stale/missing observations when
+metadata cannot be persisted. A dashboard read may fail under writer
 contention and displays unavailable rather than reporting zero.
 
 ## Supervision and shutdown

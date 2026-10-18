@@ -575,3 +575,22 @@ fn end_to_end(input: &reqwest::header::HeaderMap) -> reqwest::header::HeaderMap 
     }
     output
 }
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    #[test]
+    fn ipv6_subnets_and_mapped_ipv4_share_their_peer_budget() {
+        let group = |s: &str| peer_group(s.parse().unwrap());
+        assert_eq!(
+            group("2001:db8:1234:5678::1"),
+            group("2001:db8:1234:5678:abcd::f")
+        );
+        assert_ne!(
+            group("2001:db8:1234:5678::1"),
+            group("2001:db8:1234:5679::1")
+        );
+        assert_eq!(group("::ffff:127.0.0.1"), group("127.0.0.1"));
+        assert_ne!(group("127.0.0.1"), group("127.0.0.2"));
+    }
+}

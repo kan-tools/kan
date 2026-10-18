@@ -16,7 +16,7 @@ Continue the reviewed gateway toward a supervised personal service. A separate w
 - [ ] AC-2: Journal reopen retains gap summaries; missing/full/locked health storage cannot block capture callbacks; dropped telemetry appears as incomplete coverage, and database capacity never removes retained records. (REQ-2)
 - [ ] AC-3: CLI and HTTP return the same status shape; samples retain timestamps, archive totals are distinguished from capture completion, and stale or missing observations render visibly. (REQ-3)
 - [ ] AC-4: Authenticated browser flow renders real synthetic status, failure and empty states; unauthenticated API, foreign Host/Origin and unsupported methods fail. No token enters URL, storage or response bodies. (REQ-4)
-- [ ] AC-5: A delayed legitimate handshake from a different peer survives churn; same-peer limits and global caps hold and existing authenticated streams survive. (REQ-5)
+- [ ] AC-5: An admitted delayed handshake survives churn, and a distinct peer can authenticate while another peer saturates its pending allowance; same-peer limits and global caps hold and existing authenticated streams survive. (REQ-5)
 - [ ] AC-6: Document and validate example supervisor arguments against CLI help; fresh actual Claude Code Opus 5.5 audits this build before its draft PR. (REQ-6)
 
 ## Architecture
@@ -40,3 +40,13 @@ Public dashboard hosting, browser decryption, destructive controls, provider cal
 
 ## Process record
 Legacy kan reads still withhold two claims without subject attribution. The visible telos remains intentionally unwitnessed. Claim/bridge backfill stays pending; no fabricated CIDs or inferred witness completion. Git retains the design and independent review evidence.
+
+## Review correction
+The initial d55f821 review returned BLOCK for health capacity stopping proxy
+restart and journal locking ending delivery. The correction moves proxy journal
+opening/binding into the reporter thread, retains counters for failed worker
+metadata writes, and keeps both paths independent of telemetry availability.
+Capacity ceilings are independent: the byte cap may precede 100,000 attempts.
+Bounded FIFO handoff can still lose the newest cumulative summary during bursts;
+global lost-update reporting discloses incomplete coverage. Coalescing remains a
+named follow-up. The UI treats absent reporters as unknown, never healthy silence.

@@ -866,14 +866,18 @@ fn run_proxy(
         .transpose()?;
     let signer = service_identity(&capture.key)?;
     let (report, guard) = if let Some(path) = &capture.health_journal {
-        let journal = kan::evidence_operations::Journal::open(path)
-            .map_err(|_| "health journal unavailable")?;
-        journal
-            .check_binding(&capture.spool, Some(signer.did().as_str()))
-            .map_err(|_| "health journal binding mismatch")?;
-        let (report, guard) = kan::evidence_operations::reporter(journal)
-            .map_err(|_| "health reporter unavailable")?;
-        (report, Some(guard))
+        match kan::evidence_operations::reporter_at(
+            path.clone(),
+            capture.spool.clone(),
+            signer.did().to_string(),
+        ) {
+            Ok((report, guard)) => (report, Some(guard)),
+            Err(_) => {
+                eprintln!("health reporter could not start; recording coverage is unknown");
+                let report: kan::evidence_gateway::HealthReporter = std::sync::Arc::new(|_| {});
+                (report, None)
+            }
+        }
     } else {
         let report: kan::evidence_gateway::HealthReporter = std::sync::Arc::new(|h| {
             if let Ok(json) = serde_json::to_string(h) {

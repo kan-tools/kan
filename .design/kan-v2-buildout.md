@@ -460,3 +460,17 @@ Independent Opus review and final CI are pending at this implementation commit.
 Production custody, bounded history audit/asynchronous capture admission,
 independent-host restore qualification, migration rehearsal and cutover remain
 separate gates. No live service installation or data migration occurred.
+
+The initial operations review at d55f821 returned BLOCK despite green CI. A full
+health journal could prevent proxy restart, and journal contention could terminate
+the archive worker. The correction moves proxy journal access behind the reporter
+thread and makes archive telemetry availability independent of delivery at both
+startup and runtime. Failed status samples are counted and persisted after recovery.
+Absent reporters are explicitly unknown in the UI. All five named regression
+cases fail under whole-production-fix reversion and pass restored; the separate
+Node unavailable-reporter control fails on the old client and passes restored.
+Fresh correction review is pending. Test coverage now includes distinct-source
+pending admission in Linux CI (macOS aliases are unavailable without host changes),
+IPv6 grouping, retry timing/backlog age, reporter sessions and access controls.
+Bounded FIFO coalescing remains a disclosed observability follow-up; record and
+byte ceilings are separate, and the page cap may precede 100,000 attempts.

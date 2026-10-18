@@ -922,6 +922,12 @@ async fn cli_profile_uses_explicit_files_and_streams_both_hops() {
         ckey.to_str().unwrap().into(),
         "--recipient".into(),
         recipient,
+        "--health-journal".into(),
+        root.path()
+            .join("missing-health-journal")
+            .to_str()
+            .unwrap()
+            .into(),
     ])
     .await;
     let response = reqwest::Client::builder()
@@ -1070,7 +1076,7 @@ async fn pending_peer_limit_refuses_new_connections_without_eviction() {
         }
     }
     tokio::time::sleep(Duration::from_millis(100)).await;
-    for index in [39, 79] {
+    for index in [8, 48] {
         let mut byte = [0];
         let closed =
             tokio::time::timeout(Duration::from_secs(1), idle[index].read(&mut byte)).await;
@@ -1433,5 +1439,77 @@ async fn delayed_admitted_tls_handshake_survives_connection_churn() {
         .await
         .unwrap();
     assert!(response.starts_with(b"HTTP/1.1 200"), "{:?}", response);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+// Linux supports distinct 127/8 source bindings without host reconfiguration.
+// macOS requires interface aliases, which this test must never install.
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn global_pending_cap_is_32_across_distinct_peers() {
+    let (p, calls, _p) = provider(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_vec()).await;
+    let gd = tempfile::tempdir().unwrap();
+    let (g, _, _) = config(Route::new(&p).unwrap(), Observer::Gateway, gd.path(), false);
+    let (url, _g) = start(tls(), g).await;
+    let u = reqwest::Url::parse(&url).unwrap();
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", u.port().unwrap()).parse().unwrap();
+    let mut held = Vec::new();
+    for peer in 2..=5 {
+        for _ in 0..8 {
+            let socket = tokio::net::TcpSocket::new_v4().unwrap();
+            socket
+                .bind(format!("127.0.0.{peer}:0").parse().unwrap())
+                .unwrap();
+            held.push(socket.connect(addr).await.unwrap());
+        }
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut excess = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let mut byte = [0];
+    assert!(
+        matches!(
+            tokio::time::timeout(Duration::from_secs(1), excess.read(&mut byte)).await,
+            Ok(Ok(0)) | Ok(Err(_))
+        ),
+        "global pending cap did not refuse connection 33"
+    );
+    held.pop();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let mut available = tokio::net::TcpStream::connect(addr).await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), available.read(&mut byte))
+            .await
+            .is_err(),
+        "freed pending capacity was not usable by another peer"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn distinct_peer_can_authenticate_while_other_peer_saturates_pending_slots() {
+    let (p, calls, _p) =
+        provider(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec())
+            .await;
+    let gd = tempfile::tempdir().unwrap();
+    let (g, _, _) = config(Route::new(&p).unwrap(), Observer::Gateway, gd.path(), false);
+    let (url, _g) = start(tls(), g).await;
+    let u = reqwest::Url::parse(&url).unwrap();
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{}", u.port().unwrap()).parse().unwrap();
+    let mut held = Vec::new();
+    for _ in 0..80 {
+        let socket = tokio::net::TcpSocket::new_v4().unwrap();
+        socket.bind("127.0.0.2:0".parse().unwrap()).unwrap();
+        held.push(socket.connect(addr).await.unwrap());
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let r = client(CA, true)
+        .post(&url)
+        .header("x-kan-exchange", hex(&[7; 32]))
+        .body("x")
+        .send()
+        .await
+        .expect("another peer retains handshake capacity");
+    assert_eq!(r.bytes().await.unwrap(), "ok");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
