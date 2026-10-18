@@ -1,0 +1,723 @@
+diff --git a/src/bin/kan-v2.rs b/src/bin/kan-v2.rs
+index 2de2d68..5d2f469 100644
+--- a/src/bin/kan-v2.rs
++++ b/src/bin/kan-v2.rs
+@@ -88,0 +89,13 @@ enum Command {
++    /// Human evidence Library; separate reader identity and explicitly configured scopes.
++    #[cfg(feature = "v2-crypto")]
++    Library {
++        #[arg(long)]
++        config: PathBuf,
++        #[arg(long)]
++        signing_key: PathBuf,
++        #[arg(long)]
++        token_file: PathBuf,
++        #[arg(long, default_value = "127.0.0.1:7284")]
++        listen: std::net::SocketAddr,
++    },
++
+@@ -419,0 +433,46 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
++        Command::Library {
++            config,
++            signing_key,
++            token_file,
++            listen,
++        } => {
++            #[derive(serde::Deserialize)]
++            #[serde(deny_unknown_fields)]
++            struct SelectedScope {
++                scope: String,
++                endpoint: String,
++                issuer: String,
++                private_key_file: PathBuf,
++            }
++            if !listen.ip().is_loopback() {
++                return Err("reader requires literal loopback".into());
++            }
++            let bytes = kan::evidence_gateway::secret_file(&config)?;
++            let configured: Vec<SelectedScope> = serde_json::from_slice(&bytes)?;
++            if configured.is_empty() || configured.len() > 16 {
++                return Err("reader requires 1..16 configured scopes".into());
++            }
++            let mut scopes = Vec::new();
++            for entry in configured {
++                if !entry.private_key_file.is_absolute() {
++                    return Err("reader key paths must be absolute".into());
++                }
++                scopes.push(kan::evidence_reader::ScopeAccess {
++                    scope: fixed_hex(&entry.scope)?,
++                    endpoint: entry.endpoint,
++                    issuer: entry.issuer,
++                    private_key: recipient_private(&entry.private_key_file)?,
++                });
++            }
++            let reader =
++                kan::evidence_reader::Reader::new(service_identity(&signing_key)?, scopes)?;
++            let token = String::from_utf8(kan::evidence_gateway::secret_file(&token_file)?)?
++                .trim_end_matches('\n')
++                .to_string();
++            tokio::runtime::Runtime::new()?.block_on(async {
++                let listener = tokio::net::TcpListener::bind(listen).await?;
++                eprintln!("library http://{}", listener.local_addr()?);
++                tokio::select! { result=kan::evidence_library::serve(listener,token,reader)=>result, _=shutdown()=>Ok(()) }
++            })?;
++        }
++        #[cfg(feature = "v2-crypto")]
+diff --git a/src/evidence_library.rs b/src/evidence_library.rs
+new file mode 100644
+index 0000000..45ada46
+--- /dev/null
++++ b/src/evidence_library.rs
+@@ -0,0 +1,187 @@
++//! Human evidence Library. Loopback presentation with a separate read capability.
++use crate::evidence_reader::{Pin, Reader};
++use crate::evidence_service::Failure;
++use http_body_util::{BodyExt, Full, Limited};
++use hyper::{
++    body::{Bytes, Incoming},
++    Request, Response, StatusCode,
++};
++use hyper_util::rt::TokioIo;
++use serde::Deserialize;
++use std::{convert::Infallible, io, sync::Arc, time::Duration};
++use tokio::{net::TcpListener, sync::Semaphore, task::JoinSet};
++#[derive(Deserialize)]
++#[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
++enum Query {
++    Catalog,
++    Snapshot {
++        scope: String,
++    },
++    Page {
++        pin: Pin,
++        after: u64,
++        limit: usize,
++    },
++    Source {
++        pin: Pin,
++        sequence: u64,
++        offset: usize,
++        length: usize,
++    },
++}
++fn response(code: StatusCode, mime: &'static str, body: impl Into<Bytes>) -> Response<Full<Bytes>> {
++    let mut r = Response::new(Full::new(body.into()));
++    *r.status_mut() = code;
++    for (key,value) in [("content-type",mime),("cache-control","no-store"),("x-content-type-options","nosniff"),("referrer-policy","no-referrer"),("content-security-policy","default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"),("cross-origin-resource-policy","same-origin")] {
++        r.headers_mut().insert(key,hyper::header::HeaderValue::from_static(value));
++    }
++    r
++}
++fn denied(code: StatusCode) -> Response<Full<Bytes>> {
++    response(
++        code,
++        "application/json",
++        r#"{"error":"reader request unavailable or refused"}"#,
++    )
++}
++async fn query(reader: &Reader, query: Query) -> Result<serde_json::Value, Failure> {
++    match query {
++        Query::Catalog => {
++            let mut scopes = Vec::new();
++            for scope in reader.configured_scopes() {
++                match reader.snapshot(&scope).await {
++                    Ok(pin) => scopes.push(serde_json::json!({"scope":scope,"pin":pin})),
++                    Err(Failure::AccessLimited) => {}
++                    Err(e) => return Err(e),
++                }
++            }
++            Ok(
++                serde_json::json!({"version":1,"scopes":scopes,"capabilities":["snapshot-inventory","source-ranges","provenance"],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]}),
++            )
++        }
++        Query::Snapshot { scope } => Ok(serde_json::json!({"pin":reader.snapshot(&scope).await?})),
++        Query::Page { pin, after, limit } => {
++            serde_json::to_value(reader.page(&pin, after, limit).await?)
++                .map_err(|_| Failure::Invalid)
++        }
++        Query::Source {
++            pin,
++            sequence,
++            offset,
++            length,
++        } => serde_json::to_value(reader.source(&pin, sequence, offset, length).await?)
++            .map_err(|_| Failure::Invalid),
++    }
++}
++async fn handle(
++    r: Request<Incoming>,
++    host: String,
++    token: Arc<String>,
++    reader: Arc<Reader>,
++) -> Result<Response<Full<Bytes>>, Infallible> {
++    if r.headers().get("host").and_then(|v| v.to_str().ok()) != Some(host.as_str())
++        || r.headers()
++            .get("origin")
++            .is_some_and(|v| v.to_str().ok() != Some(format!("http://{host}").as_str()))
++    {
++        return Ok(denied(StatusCode::FORBIDDEN));
++    }
++    let path = r.uri().path_and_query().map(|p| p.as_str());
++    if r.method() == hyper::Method::GET {
++        return Ok(match path {
++            Some("/") => response(
++                StatusCode::OK,
++                "text/html; charset=utf-8",
++                include_str!("../web/library/index.html"),
++            ),
++            Some("/app.js") => response(
++                StatusCode::OK,
++                "text/javascript; charset=utf-8",
++                include_str!("../web/library/app.js"),
++            ),
++            Some("/theme.js") => response(
++                StatusCode::OK,
++                "text/javascript; charset=utf-8",
++                include_str!("../web/theme.js"),
++            ),
++            Some("/base.css") => response(
++                StatusCode::OK,
++                "text/css; charset=utf-8",
++                include_str!("../web/operations/style.css"),
++            ),
++            Some("/style.css") => response(
++                StatusCode::OK,
++                "text/css; charset=utf-8",
++                include_str!("../web/library/style.css"),
++            ),
++            _ => denied(StatusCode::NOT_FOUND),
++        });
++    }
++    if r.method() != hyper::Method::POST || path != Some("/api/library") {
++        return Ok(denied(StatusCode::METHOD_NOT_ALLOWED));
++    }
++    let wanted = format!("Bearer {token}");
++    if r.headers().get_all("authorization").iter().count() != 1
++        || r.headers().get("authorization").map(|v| v.as_bytes()) != Some(wanted.as_bytes())
++    {
++        return Ok(denied(StatusCode::UNAUTHORIZED));
++    }
++    if r.headers()
++        .get("content-type")
++        .and_then(|v| v.to_str().ok())
++        != Some("application/json")
++    {
++        return Ok(denied(StatusCode::BAD_REQUEST));
++    }
++    let body = match Limited::new(r.into_body(), 16384).collect().await {
++        Ok(body) => body.to_bytes(),
++        Err(_) => return Ok(denied(StatusCode::PAYLOAD_TOO_LARGE)),
++    };
++    let request = match serde_json::from_slice(&body) {
++        Ok(request) => request,
++        Err(_) => return Ok(denied(StatusCode::BAD_REQUEST)),
++    };
++    Ok(match query(&reader, request).await {
++        Ok(value) => match serde_json::to_vec(&value) {
++            Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
++            Err(_) => denied(StatusCode::SERVICE_UNAVAILABLE),
++        },
++        Err(Failure::AccessLimited) => denied(StatusCode::FORBIDDEN),
++        Err(Failure::Missing) => denied(StatusCode::NOT_FOUND),
++        Err(Failure::Invalid) => denied(StatusCode::BAD_REQUEST),
++        Err(_) => denied(StatusCode::SERVICE_UNAVAILABLE),
++    })
++}
++/// Bounded concurrent reads. Tokens/keys are operator-configured and never logged.
++pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::Result<()> {
++    let addr = listener.local_addr()?;
++    if !addr.ip().is_loopback()
++        || token.len() < 32
++        || token.len() > 4096
++        || !token.bytes().all(|b| b.is_ascii_graphic())
++    {
++        return Err(io::Error::other("invalid reader configuration"));
++    }
++    let host = addr.to_string();
++    let token = Arc::new(token);
++    let reader = Arc::new(reader);
++    let slots = Arc::new(Semaphore::new(4));
++    let mut tasks = JoinSet::new();
++    loop {
++        tokio::select! {
++            accepted=listener.accept()=>{
++                let (stream,_)=accepted?;
++                let Ok(permit)=slots.clone().try_acquire_owned() else {continue;};
++                let host=host.clone();let token=token.clone();let reader=reader.clone();
++                tasks.spawn(async move {
++                    let _permit=permit;
++                    let mut builder=hyper::server::conn::http1::Builder::new();
++                    builder.keep_alive(false).max_buf_size(16384).timer(hyper_util::rt::TokioTimer::new()).header_read_timeout(Duration::from_secs(5));
++                    let service=hyper::service::service_fn(move |r|handle(r,host.clone(),token.clone(),reader.clone()));
++                    let _=tokio::time::timeout(Duration::from_secs(35),builder.serve_connection(TokioIo::new(stream),service)).await;
++                });
++            },
++            _=tasks.join_next(),if !tasks.is_empty()=>{}
++        }
++    }
++}
+diff --git a/src/evidence_reader.rs b/src/evidence_reader.rs
+new file mode 100644
+index 0000000..18e9ccb
+--- /dev/null
++++ b/src/evidence_reader.rs
+@@ -0,0 +1,302 @@
++//! Bounded, explicitly authorized reads. No plaintext persistence or mutation API.
++use crate::{
++    evidence_crypto, evidence_http,
++    evidence_service::{
++        self as service, Command, Failure, Output, RecordView, Request, SignedReply, SignedRequest,
++    },
++    sign::Identity,
++};
++use serde::{Deserialize, Serialize};
++use std::collections::BTreeMap;
++
++#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
++pub struct Occurrence {
++    pub sequence: u64,
++    pub manifest: String,
++    pub receipt: String,
++}
++fn decode_record(
++    view: &RecordView,
++    access: &ScopeAccess,
++) -> Result<crate::evidence_store::Committed, Failure> {
++    use crate::evidence::{self, Decoded};
++    let decode =
++        |bytes: &str| match evidence::decode(&service::unhex(bytes, evidence::MAX_RECORD_BYTES)?) {
++            Ok(Decoded::Known(record)) => Ok(record),
++            _ => Err(Failure::Corrupt),
++        };
++    let manifest = decode(&view.manifest)?;
++    let receipt = decode(&view.receipt)?;
++    if !evidence::binds(&receipt, &manifest)
++        || manifest.body()["scopeToken"] != atproto_dasl::Ipld::Bytes(access.scope.to_vec())
++        || receipt.body()["issuer"] != service::author(&access.issuer)?
++    {
++        return Err(Failure::Corrupt);
++    }
++    Ok(crate::evidence_store::Committed {
++        sequence: view.sequence,
++        manifest,
++        receipt,
++        duplicate: false,
++    })
++}
++fn occurrence(record: &crate::evidence_store::Committed) -> Occurrence {
++    Occurrence {
++        sequence: record.sequence,
++        manifest: record.manifest.cid().to_string(),
++        receipt: record.receipt.cid().to_string(),
++    }
++}
++pub const PAGE_LIMIT: usize = 40;
++pub const RANGE_LIMIT: usize = 256 * 1024;
++/// Configuration is operator-supplied, never taken from captured content or a URL.
++pub struct ScopeAccess {
++    pub scope: [u8; 32],
++    pub endpoint: String,
++    pub issuer: String,
++    pub private_key: [u8; 32],
++}
++pub struct Reader {
++    signer: Identity,
++    scopes: BTreeMap<String, ScopeAccess>,
++}
++/// The original signed snapshot reply and request are the snapshot evidence.
++/// A pin is not a grant: every subsequent read contacts the authorized service.
++#[derive(Clone, Debug, Serialize, Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct Pin {
++    pub request: String,
++    pub reply: SignedReply,
++}
++#[derive(Debug, Serialize)]
++pub struct Inventory {
++    pub scope: String,
++    pub through: u64,
++    pub tip: Option<String>,
++    pub records: Vec<Occurrence>,
++    pub next: Option<u64>,
++    pub coverage: &'static str,
++}
++#[derive(Debug, Serialize)]
++pub struct Source {
++    pub scope: String,
++    pub record: Occurrence,
++    pub writer: String,
++    pub service_issuer: String,
++    pub signature: &'static str,
++    pub admission: &'static str,
++    pub content_trust: &'static str,
++    pub total_bytes: usize,
++    pub offset: usize,
++    pub next: Option<usize>,
++    pub bytes_hex: String,
++    pub utf8: Option<String>,
++}
++impl Reader {
++    pub fn new(signer: Identity, scopes: Vec<ScopeAccess>) -> Result<Self, Failure> {
++        if scopes.is_empty() || scopes.len() > 16 {
++            return Err(Failure::Invalid);
++        }
++        let mut selected = BTreeMap::new();
++        for scope in scopes {
++            // Validate the identity/scope pair without writing or sending anything.
++            SignedRequest::sign(
++                Request {
++                    version: 1,
++                    scope: service::hex(&scope.scope),
++                    principal: signer.did().to_string(),
++                    audience: scope.issuer.clone(),
++                    expires: Some(1),
++                    command: Command::Snapshot,
++                },
++                &signer,
++            )?;
++            if selected.insert(service::hex(&scope.scope), scope).is_some() {
++                return Err(Failure::Invalid);
++            }
++        }
++        Ok(Self {
++            signer,
++            scopes: selected,
++        })
++    }
++    fn access(&self, scope: &str) -> Result<&ScopeAccess, Failure> {
++        self.scopes.get(scope).ok_or(Failure::AccessLimited)
++    }
++    /// Configured selection, not proof of a currently valid remote grant.
++    pub fn configured_scopes(&self) -> Vec<String> {
++        self.scopes.keys().cloned().collect()
++    }
++    async fn call(
++        &self,
++        access: &ScopeAccess,
++        command: Command,
++    ) -> Result<(Vec<u8>, SignedReply), Failure> {
++        let request = SignedRequest::sign(
++            Request {
++                version: 1,
++                scope: service::hex(&access.scope),
++                principal: self.signer.did().to_string(),
++                audience: access.issuer.clone(),
++                expires: Some(crate::evidence_operations::now().saturating_add(60)),
++                command,
++            },
++            &self.signer,
++        )?
++        .bytes()?;
++        let reply = evidence_http::send(&access.endpoint, &access.issuer, &request).await?;
++        reply.verify(&request, &access.issuer)?;
++        Ok((request, reply))
++    }
++    pub async fn snapshot(&self, scope: &str) -> Result<Pin, Failure> {
++        let access = self.access(scope)?;
++        let (request, reply) = self.call(access, Command::Snapshot).await?;
++        let pin = Pin {
++            request: service::hex(&request),
++            reply,
++        };
++        self.check_pin(&pin)?;
++        Ok(pin)
++    }
++    fn check_pin(&self, pin: &Pin) -> Result<(&ScopeAccess, u64, Option<String>), Failure> {
++        let bytes = service::unhex(&pin.request, 4096)?;
++        let signed = SignedRequest::decode(&bytes)?;
++        let access = self.access(&signed.request.scope)?;
++        if signed.request.principal != self.signer.did().as_str()
++            || signed.request.audience != access.issuer
++            || !matches!(signed.request.command, Command::Snapshot)
++        {
++            return Err(Failure::AccessLimited);
++        }
++        let reply = pin.reply.verify(&bytes, &access.issuer)?;
++        let Output::Snapshot { through, tip } = reply.result.as_ref().map_err(Clone::clone)? else {
++            return Err(Failure::Invalid);
++        };
++        // Reuse the service's page-shape contract for empty/tip consistency.
++        service::validate_shape(&Request {
++            version: 1,
++            scope: signed.request.scope,
++            principal: signed.request.principal,
++            audience: signed.request.audience,
++            expires: Some(1),
++            command: Command::Page {
++                through: *through,
++                tip: tip.clone(),
++                after: 0,
++                limit: 1,
++            },
++        })?;
++        Ok((access, *through, tip.clone()))
++    }
++    pub async fn page(&self, pin: &Pin, after: u64, limit: usize) -> Result<Inventory, Failure> {
++        if limit == 0 || limit > PAGE_LIMIT {
++            return Err(Failure::Invalid);
++        }
++        let (access, through, tip) = self.check_pin(pin)?;
++        if after > through {
++            return Err(Failure::Invalid);
++        }
++        let (_, reply) = self
++            .call(
++                access,
++                Command::Page {
++                    through,
++                    tip: tip.clone(),
++                    after,
++                    limit,
++                },
++            )
++            .await?;
++        let Output::Page { records, complete } = reply.reply.result? else {
++            return Err(Failure::Invalid);
++        };
++        if records.len() > limit {
++            return Err(Failure::Invalid);
++        }
++        let mut last = after;
++        let mut occurrences = Vec::new();
++        for row in &records {
++            if row.sequence != last.checked_add(1).ok_or(Failure::Invalid)?
++                || row.sequence > through
++            {
++                return Err(Failure::Invalid);
++            }
++            let record = decode_record(row, access)?;
++            if row.sequence == through && Some(record.manifest.cid().to_string()) != tip {
++                return Err(Failure::Corrupt);
++            }
++            occurrences.push(occurrence(&record));
++            last = row.sequence;
++        }
++        if complete != (last == through) || (!complete && records.is_empty()) {
++            return Err(Failure::Invalid);
++        }
++        Ok(Inventory { scope: service::hex(&access.scope), through, tip, records: occurrences,
++            next: (!complete).then_some(last), coverage: "selected scope at authenticated snapshot; committed occurrences, not normalized sessions" })
++    }
++    pub async fn source(
++        &self,
++        pin: &Pin,
++        sequence: u64,
++        offset: usize,
++        length: usize,
++    ) -> Result<Source, Failure> {
++        if sequence == 0 || length == 0 || length > RANGE_LIMIT {
++            return Err(Failure::Invalid);
++        }
++        let (access, through, _) = self.check_pin(pin)?;
++        if sequence > through {
++            return Err(Failure::Missing);
++        }
++        // Verify current permission and membership at the selected snapshot,
++        // not merely membership in a newer, differently pinned archive.
++        let mut membership = self.page(pin, sequence - 1, 1).await?;
++        let expected = membership.records.pop().ok_or(Failure::Missing)?;
++        let (_, reply) = self.call(access, Command::Read { sequence }).await?;
++        let Output::Evidence {
++            record,
++            signed_request,
++        } = reply.reply.result?
++        else {
++            return Err(Failure::Invalid);
++        };
++        let committed = decode_record(&record, access)?;
++        let record = occurrence(&committed);
++        if record != expected {
++            return Err(Failure::Corrupt);
++        }
++        let bytes = service::unhex(&signed_request, service::MAX_REQUEST)?;
++        let signed = service::verify_retained_request(&committed, &bytes)?;
++        if signed.request.scope != service::hex(&access.scope)
++            || signed.request.audience != access.issuer
++        {
++            return Err(Failure::Corrupt);
++        }
++        let Command::Append { ciphertext, .. } = signed.request.command else {
++            return Err(Failure::Corrupt);
++        };
++        let ciphertext = service::unhex(&ciphertext, service::MAX_PAYLOAD)?;
++        let plaintext = evidence_crypto::open(&access.private_key, &access.scope, &ciphertext)
++            .map_err(|_| Failure::Corrupt)?;
++        if offset > plaintext.len() {
++            return Err(Failure::Invalid);
++        }
++        let end = offset.saturating_add(length).min(plaintext.len());
++        let slice = &plaintext[offset..end];
++        Ok(Source {
++            scope: service::hex(&access.scope),
++            record,
++            writer: signed.request.principal,
++            service_issuer: access.issuer.clone(),
++            signature: "retained writer signature and manifest verified",
++            admission: "signed service response; membership verified at selected snapshot",
++            content_trust:
++                "untrusted observed bytes; writer identity does not establish the claimed speaker",
++            total_bytes: plaintext.len(),
++            offset,
++            next: (end < plaintext.len()).then_some(end),
++            bytes_hex: service::hex(slice),
++            utf8: std::str::from_utf8(slice).ok().map(str::to_owned),
++        })
++    }
++}
+diff --git a/src/evidence_service.rs b/src/evidence_service.rs
+index c1d5320..cf0f8f3 100644
+--- a/src/evidence_service.rs
++++ b/src/evidence_service.rs
+@@ -178 +178 @@ fn preimage<T: Serialize>(domain: &[u8], value: &T) -> Result<Vec<u8>> {
+-fn author(did: &str) -> Result<Ipld> {
++pub(crate) fn author(did: &str) -> Result<Ipld> {
+diff --git a/src/lib.rs b/src/lib.rs
+index 90b575a..6ef5efc 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -62,0 +63,6 @@ pub mod evidence_operations_collection;
++
++#[cfg(feature = "v2-crypto")]
++pub mod evidence_reader;
++
++#[cfg(feature = "v2-crypto")]
++pub mod evidence_library;
+diff --git a/src/surface.rs b/src/surface.rs
+index f60254e..8b2b293 100644
+--- a/src/surface.rs
++++ b/src/surface.rs
+@@ -20,0 +21,5 @@ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
++    SurfaceValue::new("evidence-reader-config:scopes", "*"),
++    SurfaceValue::new("evidence-reader-config:signing-key", "*"),
++    SurfaceValue::new("evidence-reader-config:access-token", "*"),
++    SurfaceValue::new("evidence-reader-config:private-keys", "*"),
++    SurfaceValue::new("browser:source-range-download", "*"),
+diff --git a/web/library/app.js b/web/library/app.js
+new file mode 100644
+index 0000000..66ad4da
+--- /dev/null
++++ b/web/library/app.js
+@@ -0,0 +1,108 @@
++(() => {
++  'use strict';
++  const $ = id => document.getElementById(id);
++  let token = '', epoch = 0, controller, scopes = [], pin, after = 0, next = null, history = [], selected = null, source = null, hexadecimal = false;
++  const buttons = new Map(), exports = new Map();
++  function releaseExport(url) { clearTimeout(exports.get(url)); exports.delete(url); URL.revokeObjectURL(url); }
++  function notice(text, error = false) { $('notice').textContent = text; $('notice').className = `notice${error ? ' error' : ''}`; }
++  function clearInspector() {
++    source = null; selected = null; $('inspection').hidden = true; $('source').textContent = '';
++    $('provenance').replaceChildren(); $('range').textContent = ''; $('selection').textContent = 'Select an occurrence';
++    $('source-hint').textContent = 'Read exact retained bytes alongside their provenance.'; $('close-inspector').hidden = true;
++    for (const button of buttons.values()) button.setAttribute('aria-pressed', 'false');
++  }
++  function lock(message = 'Locked · connect to browse authorized evidence.') {
++    for (const url of exports.keys()) releaseExport(url);
++    epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
++    clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('coverage').textContent = '';
++    $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
++    $('lock').disabled = true; $('token').value = ''; notice(message); $('token').focus();
++  }
++  async function rpc(body) {
++    const current = ++epoch; if (controller) controller.abort(); controller = new AbortController();
++    try {
++    const response = await fetch('/api/library', {method:'POST', headers:{'Authorization':`Bearer ${token}`, 'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'omit', cache:'no-store', signal:controller.signal});
++    if (current !== epoch) return null;
++    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : 'The reader could not verify this request. Reconnect to retry.');
++    const value = await response.json(); if (current !== epoch) return null; return value;
++    } catch (error) { if (current !== epoch) return null; throw error; }
++  }
++  function run(fn) { Promise.resolve().then(fn).catch(error => { if (error.name !== 'AbortError') lock(error.message); }); }
++  function tab(name) {
++    $('source-panel').hidden = name !== 'source'; $('provenance').hidden = name !== 'provenance';
++    $('source-tab').setAttribute('aria-pressed', String(name === 'source')); $('provenance-tab').setAttribute('aria-pressed', String(name === 'provenance'));
++  }
++  function renderBytes() {
++    if (!source) return;
++    const end = source.offset + source.bytes_hex.length / 2;
++    $('range').textContent = `Bytes ${source.offset}–${end} of ${source.total_bytes} · ${hexadecimal ? 'hex' : 'UTF-8'} · end exclusive`;
++    $('source').textContent = hexadecimal ? source.bytes_hex : source.utf8;
++    $('encoding').textContent = hexadecimal ? 'Show UTF-8' : 'Show hex';
++    $('encoding').disabled = source.utf8 === null;
++  }
++  function showSource(value) {
++    source = value; $('inspection').hidden = false; $('close-inspector').hidden = false;
++    $('selection').textContent = `Occurrence ${value.record.sequence}`;
++    $('source-hint').textContent = value.content_trust;
++    hexadecimal = value.utf8 === null || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value.utf8);
++    renderBytes(); $('more').disabled = value.next === null;
++    $('provenance').replaceChildren();
++    for (const [key, val] of Object.entries({Scope:value.scope, Manifest:value.record.manifest, Receipt:value.record.receipt, 'Observed writer':value.writer, Observer:'Not normalized in this source view', 'Claimed speaker':'Not inferred from the writer key', 'Service issuer':value.service_issuer, Signature:value.signature, Admission:value.admission, 'Content trust':value.content_trust})) {
++      const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = key; dd.textContent = val; $('provenance').append(dt); $('provenance').append(dd);
++    }
++    notice('Source verified · this is one retained occurrence, not a reconstructed session.');
++  }
++  async function inspect(sequence, offset = 0) {
++    clearInspector(); selected = sequence; const button = buttons.get(sequence); if (button) button.setAttribute('aria-pressed','true');
++    notice('Verifying snapshot membership and reading source…');
++    const value = await rpc({action:'source', pin, sequence, offset, length:65536}); if (!value) return;
++    showSource(value); tab('source'); $('source-tab').focus();
++  }
++  async function page(position) {
++    clearInspector(); notice('Reading the selected snapshot…');
++    const value = await rpc({action:'page', pin, after:position, limit:20}); if (!value) return;
++    after = position; next = value.next; buttons.clear(); $('rows').replaceChildren();
++    for (const row of value.records) {
++      const button = document.createElement('button'); button.className = 'occurrence'; button.setAttribute('aria-pressed','false');
++      const title = document.createElement('strong'), id = document.createElement('span'); title.textContent = `Occurrence ${row.sequence}`; id.textContent = row.manifest;
++      button.append(title); button.append(id); button.addEventListener('click', () => run(() => inspect(row.sequence))); buttons.set(row.sequence,button); $('rows').append(button);
++    }
++    $('count').textContent = `${value.through} at snapshot`; $('coverage').textContent = value.coverage;
++    $('page-position').textContent = value.records.length ? `${value.records[0].sequence}–${value.records[value.records.length-1].sequence}` : '0 entries';
++    $('empty').hidden = value.records.length !== 0; $('previous').disabled = history.length === 0; $('next').disabled = next === null;
++    notice('Snapshot pinned · refresh the snapshot to include newer entries.');
++  }
++  $('connect').addEventListener('submit', event => {
++    event.preventDefault(); token = $('token').value; $('token').value = '';
++    run(async () => {
++      notice('Checking scope access…'); const value = await rpc({action:'catalog'}); if (!value) return;
++      if (value.version !== 1) throw new Error('Unsupported reader version.');
++      scopes = value.scopes; $('scope').replaceChildren();
++      for (const scope of scopes) { const option = document.createElement('option'); option.value = scope.scope; option.textContent = scope.scope; $('scope').append(option); }
++      $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;
++      if (!scopes.length) { notice('No currently authorized scopes.'); return; }
++      $('scope').value = scopes[0].scope; pin = scopes[0].pin; history = []; await page(0);
++    });
++  });
++  $('scope').addEventListener('change', () => run(async () => { const chosen = scopes.find(s => s.scope === $('scope').value); if (!chosen) return; pin = chosen.pin; history = []; await page(0); }));
++  $('resnapshot').addEventListener('click', () => run(async () => { if (!pin) return; clearInspector(); const value = await rpc({action:'snapshot',scope:$('scope').value}); if (!value) return; pin = value.pin; const chosen = scopes.find(s => s.scope === $('scope').value); chosen.pin = pin; history = []; await page(0); }));
++  $('next').addEventListener('click', () => run(async () => { if (next === null) return; history.push(after); await page(next); }));
++  $('previous').addEventListener('click', () => run(async () => { if (history.length) await page(history.pop()); }));
++  $('more').addEventListener('click', () => run(async () => { if (source && source.next !== null) await inspect(selected,source.next); }));
++  $('download').addEventListener('click', () => run(async () => {
++    if (!source) return; const offset = source.offset, sequence = selected;
++    // Export rechecks authorization; the displayed range is not an offline grant.
++    const value = await rpc({action:'source',pin,sequence,offset,length:65536}); if (!value) return;
++    const bytes = new Uint8Array(value.bytes_hex.match(/../g)?.map(x => parseInt(x,16)) || []);
++    const url = URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));
++    // Keep the URL alive for navigation to begin; lock/pagehide release it early.
++    exports.set(url, setTimeout(() => releaseExport(url), 1000));
++    const a = document.createElement('a'); a.href = url; a.download = `kan-occurrence-${sequence}-offset-${offset}.bin`;
++    a.hidden = true; document.body.append(a); a.click(); a.remove();
++  }));
++  $('encoding').addEventListener('click', () => { if (source && source.utf8 !== null) { hexadecimal = !hexadecimal; renderBytes(); } });
++  $('source-tab').addEventListener('click', () => tab('source')); $('provenance-tab').addEventListener('click', () => tab('provenance'));
++  $('close-inspector').addEventListener('click', () => { epoch++; if(controller) controller.abort(); const button = buttons.get(selected); clearInspector(); if(button)button.focus(); });
++  $('lock').addEventListener('click', () => lock());
++  window.addEventListener('pagehide', () => lock());
++})();
+diff --git a/web/library/index.html b/web/library/index.html
+new file mode 100644
+index 0000000..7d0192a
+--- /dev/null
++++ b/web/library/index.html
+@@ -0,0 +1 @@
++<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Kan · Evidence Library</title><script src="/theme.js"></script><link rel="stylesheet" href="/base.css"><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head><body><div class="shell"><aside><a class="brand" href="/">kan<span>•</span></a><div class="workspace">YOUR KNOWLEDGE</div><div class="nav" aria-current="page">Evidence Library</div><p class="aside-note">Retained source.<br>Inspectable provenance.</p><details><summary>Build coverage</summary><p>Live inventory and source inspection. Session reconstruction, search, annotations, saved views, analysis and admin jobs are upcoming.</p></details><span class="local">Authorized reader</span></aside><main><header><div><div class="eyebrow">KAN STUDIO / LIBRARY</div><h1>Your evidence library.</h1><p class="subtitle">Explore retained occurrences and inspect the bytes behind them.</p></div><div class="header-actions"><label for="theme">Appearance</label><select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select><button id="lock" disabled>Lock</button></div></header><section id="login" class="panel login"><div><h2>Open your Library</h2><p>This reader has its own scope grants. Your access token stays in this tab’s memory.</p></div><form id="connect"><label for="token">Reader access token</label><div class="login-fields"><input id="token" type="password" autocomplete="off" required><button class="primary">Open Library</button></div></form></section><div id="notice" class="notice" role="status" aria-live="polite">Locked · connect to browse authorized evidence.</div><section id="library" hidden><div class="toolbar"><label for="scope">Authorized scope</label><select id="scope"></select><button id="resnapshot">Refresh snapshot</button><span id="coverage"></span></div><div class="browser"><section class="panel occurrences" aria-label="Retained occurrences"><div class="section-head"><h2>Occurrences</h2><span id="count" class="badge"></span></div><p>Committed entries at the selected snapshot.</p><div id="rows"></div><p id="empty" hidden>No occurrences in this scope at this snapshot.</p><div class="pagination"><button id="previous" disabled>Previous</button><span id="page-position"></span><button id="next" disabled>Next</button></div></section><section class="panel inspector" aria-label="Source inspector"><div class="section-head"><h2 id="selection">Select an occurrence</h2><button id="close-inspector" hidden>Close</button></div><p id="source-hint">Read exact retained bytes alongside their provenance.</p><div id="inspection" hidden><div class="tabs"><button id="source-tab" aria-pressed="true">Source</button><button id="provenance-tab" aria-pressed="false">Provenance</button></div><div id="source-panel"><div class="range"><span id="range"></span><button id="encoding">Show hex</button><button id="download">Download this range</button><button id="more" disabled>Next range</button></div><pre id="source" tabindex="0"></pre></div><dl id="provenance" hidden></dl></div></section></div></section></main></div></body></html>
+diff --git a/web/library/style.css b/web/library/style.css
+new file mode 100644
+index 0000000..ea26e62
+--- /dev/null
++++ b/web/library/style.css
+@@ -0,0 +1,2 @@
++.brand span{color:var(--green)}aside details{margin-top:30px;color:var(--muted);font-size:12px}summary{cursor:pointer}select{max-width:100%;color:var(--ink);background:var(--surface);border:1px solid var(--line);padding:8px;border-radius:5px;font:inherit}select:focus-visible,pre:focus-visible{outline:3px solid #7290ff;outline-offset:2px}.toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:24px 0}.toolbar label{font-size:12px;color:var(--muted)}#scope{font:12px ui-monospace,monospace;max-width:360px;min-width:0}#coverage{font-size:12px;color:var(--muted);overflow-wrap:anywhere}.browser{display:grid;grid-template-columns:minmax(270px,.8fr) minmax(340px,1.2fr);gap:20px;align-items:start}.occurrences,.inspector{padding:24px;min-width:0}.occurrences>p{font-size:12px;margin-bottom:20px}#rows{display:grid}.occurrence{display:block;text-align:left;white-space:normal;padding:15px 10px;border:0;border-top:1px solid var(--line);border-radius:0;background:transparent}.occurrence[aria-pressed=true]{background:var(--accent-soft);box-shadow:inset 3px 0 var(--green)}.occurrence strong{display:block;font-size:13px}.occurrence span{display:block;font:11px/1.6 ui-monospace,monospace;color:var(--muted);overflow-wrap:anywhere}.pagination,.range,.tabs{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:20px 0}.pagination{justify-content:space-between;font-size:12px}.tabs button[aria-pressed=true]{color:var(--green);border-color:var(--green)}.range{font-size:11px;color:var(--muted)}.range button{font-size:11px}pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;max-height:65vh;overflow:auto;background:var(--soft);padding:18px;border:1px solid var(--line);border-radius:6px;font:12px/1.7 ui-monospace,monospace}.inspector dl{font-size:12px}.inspector dt{color:var(--muted);margin-top:16px}.inspector dd{margin:4px 0;overflow-wrap:anywhere}#source-hint{font-size:12px;margin:15px 0}#selection{overflow-wrap:anywhere}[hidden]{display:none!important}@media(max-width:1050px){.browser{grid-template-columns:1fr}.inspector{min-height:240px}}@media(max-width:700px){.occurrences,.inspector{padding:18px}.toolbar{align-items:stretch}.toolbar select{width:100%}header{align-items:flex-start}h1{font-size:34px}.range{align-items:flex-start}pre{padding:12px}}
++#rows{max-height:62vh;overflow-y:auto;overscroll-behavior:contain}.inspector{position:sticky;top:24px}@media(max-width:1050px){.inspector{position:static}#rows{max-height:45vh}}

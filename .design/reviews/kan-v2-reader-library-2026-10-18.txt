@@ -1,0 +1,81 @@
+**APPROVE WITH FOLLOW-UPS.** I'm a fresh Opus 5.5 session and didn't write this code. The security core held under my probes and mutants: reader/grant separation, signed reply and retained-request checks, snapshot pin membership, revocation, plaintext lifetime and the HTTP boundary. I found no unauthorized disclosure. But the two areas you asked me to judge independently both have real defects, and the runbook says things the code doesn't do. AC-3 is **not met** for the missing-object case.
+
+**What I reviewed.** `git diff HEAD` in this export (HEAD 2c6fdd9, labelled "baseline 9d300b4"). The commits df74506, 9d300b4 and 833bef3 don't exist here, so the link to df74506 rests on your word. The current src/web diff does match the author's `production.patch` file for file. The north star is `telos/raw-data-and-projections`, taken from review-context.txt. It is deliberately unwitnessed and the main read still withholds two records; I invented no witnesses. I made no kan/day writes, so the skill's Step 7 (record the verdict) and Step 8 (ask `day next`) were not done.
+
+## Verification I ran (raw output in `review-evidence/`)
+- **Tests:** reader 8 passed (1 ignored), CLI 1, surface conformance 19, Node 29.
+- **Lint and format:** strict `--features v2-crypto --all-targets` Clippy and `cargo fmt --check` both exit 0.
+- **Reversion replay:** `scripts/revert_v2.py` reported **DEMONSTRATED**. The CLI test passes, then fails a runtime assertion under revert (`unrecognized subcommand 'library'`; the binary compiled, so this is not a compile kill), then passes after restore. I ran `cargo clean -p kan` before and after so no stale or mutant binary could be reused. That kill only shows the subcommand exists, not the reader's checks.
+- **After restoration:** all hashes match, the tests pass again, and no processes are left running.
+
+## Findings
+1. **Missing and corrupt objects look the same, and one bad object breaks a whole page** (AC-3 unmet; probe 06).
+   - I deleted or corrupted one object after the service started. Snapshot still works, but every page containing that record fails as `Corrupt`, and so does `source`.
+   - `Missing` only means "beyond the pin" (`src/evidence_reader.rs:248-250`). The cause is service-side: a missing object is mapped to `Corrupt` (`src/evidence_service.rs:672-674`), and Page verifies every row's object (`:625-627`).
+   - The server returns 503 and the UI locks the whole session on any error (`web/library/app.js:26,30`). Since the UI always starts at page 0, one bad object in the first 20 entries makes that scope unbrowsable, hiding valid neighbours. That cuts directly against the telos.
+   - It also contradicts the runbook line that "a source can be unavailable even while its committed inventory is readable".
+2. **A forged reply signature makes a scope silently vanish from the catalog** (probe 05).
+   - `SignedReply::verify` returns `AccessLimited` on a bad signature (`evidence_service.rs:324`). The catalog drops that error silently (`src/evidence_library.rs:54`), so the response is 200 with `scopes:[]`, indistinguishable from revocation.
+   - This contradicts "Missing evidence is never silently skipped". Disclosure still fails closed.
+   - The reverse problem: one unreachable scope makes the entire catalog return 503.
+3. **Stale clicks during a scope switch read the wrong scope** (probe 07).
+   - Changing scope sets the new pin immediately, but the old rows and the Next button stay live until the new page arrives (`app.js:87,64-68,89`).
+   - Clicking a scope-A row then sends `{pin:B, sequence:3}`, so scope B's occurrence 3 appears beside scope A's list. Provenance does show scope B, so nothing leaks, but the content is misattributed. Next also sends A's offset under B's pin.
+4. **Four idle sockets lock everyone out** (probe 05).
+   - The server allows four connections and drops the fifth (`evidence_library.rs:168-181`). With four idle sockets open, `GET /` fails in under 1 ms, and the slots only free when the 5 s header timeout expires.
+   - Any local process can repeat this to keep the reader unavailable. A browser's parallel asset loads can plausibly hit the same cap.
+5. **Reader principal separation is documentation only.** `Reader::new` accepts the storage service's own key as the reader signer (`evidence_reader.rs:96-122`; probe 05).
+6. **The capability matrix in REQ-7 isn't really there.** The API returns `capabilities` and `unavailable`, but `app.js` ignores both. The UI shows a static sentence inside a collapsed `<details>` in `index.html`.
+7. **Smaller issues:**
+   - "Every request contacts the service" isn't quite true: out-of-range sequence or offset is answered locally even with the service down. Nothing is disclosed.
+   - The token comparison isn't constant-time.
+   - rustfmt leaves several overlong lines unformatted (`evidence_library.rs:35,175-181`; `evidence_reader.rs:234-235`), so the fmt check passes without actually checking them.
+   - A source read makes two sequential remote calls with 30 s timeouts each, and the catalog up to 16, against a 35 s connection deadline.
+   - Bidi control characters stay in the UTF-8 view, which allows display spoofing only.
+
+## Surviving mutants (25 of 32 applied, plus 2 extra; logs in `review-evidence/mutants/`)
+- **Killed:** M03, M06b, M07, M09–M12, M15, M16, M24, J02–J05, J08.
+- **Real test gaps:**
+  - **M25:** the reader's own check of the pin's signature is untested. The existing tampered-pin test is caught by the service instead.
+  - **M04** (the tip binding the design names) and **M05** (page completeness): no test with a hostile service.
+  - **M19:** a catalog that swallows every failure goes undetected.
+  - **M21:** no test that `serve` refuses non-loopback addresses.
+  - **M17, M18, M20, M22, M23:** HTTP hardening (duplicate Authorization, content-type, nosniff, token length floor, 35 s deadline) is untested.
+  - **M13, M14:** the 16-scope cap and the local `after > through` check are untested.
+- **Effectively harmless:** M01 and M02 are redundant with the service's own checks. M08 is redundant with manifest and receipt binding. J01 and J06 each back up the other; removing both (J08) is killed.
+- **Compile failure, not counted:** M06.
+
+## REQ/AC coverage
+| Item | Verdict | Evidence |
+|---|---|---|
+| REQ-1 | partial | Separate command, signer and grant; no Append path. Signer can equal issuer (F5) |
+| REQ-2 | partial | Replies, manifests and scope are checked; unknown and revoked return identical 403 bodies (tested). Integrity failure is treated as denial (F2) |
+| REQ-3 | partial | Pinned, with 40-row and 256 KiB bounds and continuation. Slot exhaustion (F4); M04/M05/M25 untested |
+| REQ-4 | met | Writer, issuer, signature, admission and content trust are separate; speaker not inferred (`evidence_reader.rs:286-300`) |
+| REQ-5 | met (code) | No plaintext persistence; export re-reads from the service |
+| REQ-6 | partial | Lock, abort, no-store and CSP are sound. Stale scope-switch defect (F3) |
+| REQ-7 | partial | F6 |
+| AC-1 | partial | API meets it; the UI has F3 |
+| AC-2 | partial | Fail-closed paths are tested. Many-connection pressure fails (F4); payloads only tested to 256 KiB + 123 bytes, not the 1 MiB max |
+| AC-3 | **unmet** | F1; file delivery unverified |
+| AC-4 | partial | Text-only rendering, CSP, `rotate`→400, wrong-key→Corrupt. No network trace |
+| AC-5 | partial | Node late-response tests and API revocation tests only |
+| AC-6 | partial | Three viewport screenshots only; empty, denied, stale and failed states not shown in a real browser |
+
+## Exact limits
+- I used no browser. Download delivery remains **unverified**: the author tested API bytes and Blob contents only, and I'm not upgrading that.
+- No external-request trace, accessibility audit, or test against a real (non-synthetic) service.
+- Probe 05's first attempt failed because the ledger refuses to open with a dangling object. I reran with the deletion made after the service starts.
+
+## Smallest necessary follow-ups
+1. Return typed missing/corrupt states per row and per source instead of failing the whole page, without locking the UI. Or, if the service contract stays as it is, correct the runbook and the design doc.
+2. Show catalog verification failures as their own state. Stop treating `AccessLimited` from a bad signature as revocation.
+3. Disable the row list and pagination while a page or scope switch is in flight, or bind each row's click to its own pin.
+4. Queue connections with a bounded wait rather than dropping the fifth.
+5. Reject a reader signer that equals a configured issuer.
+6. Add kill tests for M25, M04, M05, M19 and M21.
+7. Render the API's capability list as the visible matrix.
+
+The parent full-frontend criteria remain open.
+
+Everything is in `review-evidence/`; start with `README.md` there, which indexes the rest. The reversion run also left its source export at `.local-state/reversion/91635f750de34296b24ca04ba55d1ee0`.

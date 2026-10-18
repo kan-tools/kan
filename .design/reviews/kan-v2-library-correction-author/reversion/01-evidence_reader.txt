@@ -1,0 +1,9 @@
+
+running 1 test
+test catalog_verification_failure_is_not_an_empty_authorized_inventory ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.14s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion/d3a6f864da404c929bfa3bbfa0e5fe07)
+    Finished `test` profile [unoptimized] target(s) in 11.76s
+     Running tests/evidence_reader.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion-cache/target/debug/deps/evidence_reader-6b0841214b94ad1d)

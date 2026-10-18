@@ -165,20 +165,27 @@ pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::
     let host = addr.to_string();
     let token = Arc::new(token);
     let reader = Arc::new(reader);
-    let slots = Arc::new(Semaphore::new(4));
+    // Four requests execute; eight more accepted sockets may wait up to six
+    // seconds. This absorbs browser asset bursts without unbounded tasks.
+    let slots = Arc::new(Semaphore::new(12));
+    let requests = Arc::new(Semaphore::new(4));
     let mut tasks = JoinSet::new();
     loop {
         tokio::select! {
             accepted=listener.accept()=>{
                 let (stream,_)=accepted?;
                 let Ok(permit)=slots.clone().try_acquire_owned() else {continue;};
-                let host=host.clone();let token=token.clone();let reader=reader.clone();
+                let host=host.clone();let token=token.clone();let reader=reader.clone();let requests=requests.clone();
                 tasks.spawn(async move {
                     let _permit=permit;
-                    let mut builder=hyper::server::conn::http1::Builder::new();
-                    builder.keep_alive(false).max_buf_size(16384).timer(hyper_util::rt::TokioTimer::new()).header_read_timeout(Duration::from_secs(5));
-                    let service=hyper::service::service_fn(move |r|handle(r,host.clone(),token.clone(),reader.clone()));
-                    let _=tokio::time::timeout(Duration::from_secs(35),builder.serve_connection(TokioIo::new(stream),service)).await;
+                    let connection = async move {
+                        let Ok(Ok(_request)) = tokio::time::timeout(Duration::from_secs(6), requests.acquire_owned()).await else { return; };
+                        let mut builder=hyper::server::conn::http1::Builder::new();
+                        builder.keep_alive(false).max_buf_size(16384).timer(hyper_util::rt::TokioTimer::new()).header_read_timeout(Duration::from_secs(5));
+                        let service=hyper::service::service_fn(move |r|handle(r,host.clone(),token.clone(),reader.clone()));
+                        let _=builder.serve_connection(TokioIo::new(stream),service).await;
+                    };
+                    let _=tokio::time::timeout(Duration::from_secs(35),connection).await;
                 });
             },
             _=tasks.join_next(),if !tasks.is_empty()=>{}

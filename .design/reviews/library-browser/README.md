@@ -22,3 +22,14 @@ waitForEvent(download) calls timed out after 15 seconds without console errors.
 No delivered local file was verified. API byte ranges and Blob construction are
 verified separately and must not be substituted for browser file delivery.
 All temporary browser tabs and fixture servers were closed after testing.
+
+
+Correction check: `desktop-capabilities-light.jpg` and
+`phone-capabilities-dark.jpg` show the API-driven capability matrix (full-page
+captures at 1440×1000 and 390×844 viewports). Source inspection and scope switching
+were rechecked with the corrected assets; the transition showed Loading, then
+only the new scope's row and disabled continuation. The matrix showed three
+available and six upcoming capabilities. No console errors or horizontal
+overflow were observed. Lock cleared rows, source and capability rows and focused
+the token. Theme/viewport were reset and the fixture/tab stopped. Download was
+not requalified in this correction check.

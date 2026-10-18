@@ -59,18 +59,22 @@ only that range as a `.bin` file after another authorization check, not the full
 object or a transcript. No source HTML, external images or attachment scripts
 are executed.
 
-Every source/page/export request contacts the service, so an effective remote
-grant revocation denies the next request. To replace local reader keys, scope
+Every valid source/page/export read contacts the service before returning data,
+so an effective remote grant revocation denies the next read. Malformed and
+out-of-range requests can be refused locally without contacting it. To replace local reader keys, scope
 selection or browser token, restart the explicitly configured reader; it has no
 hidden config watcher or administrative mutation API. Service grant rollout
 remains governed by that service's own restart/configuration contract.
 
 Bounds: 40 inventory records per API page, 256 KiB per API source range, 16 KiB
-request body, four concurrent browser connections, 5-second header deadline and
-35-second overall connection deadline. A range currently decrypts one bounded
-service object in memory. It is not streaming decryption, and a source can be
-unavailable even while its committed inventory is readable. Errors clear the
-client view and require reconnecting. Missing evidence is never silently skipped.
+request body, four executing browser connections plus eight queued connections,
+a 6-second queue deadline, 5-second header deadline and 35-second overall
+connection deadline including queue time. Additional connections are refused;
+this is bounded burst handling, not immunity to a hostile local process. A range currently decrypts one bounded
+service object in memory. It is not streaming decryption. The current service can fail an entire inventory
+page containing a missing or damaged object. Authorization errors lock the view;
+other read failures clear the inspector and remain visibly unavailable, allowing
+retry or selection of another scope. No failed page is presented as empty success.
 
 Validation and review are recorded with the implementation checkpoint; do not
 interpret this runbook as proof that uncompleted acceptance criteria passed.
@@ -94,3 +98,11 @@ backend contract is required for full browsing coverage.
 Directional formatting controls default to hex, like control bytes. An explicit
 UTF-8 toggle shows the exact original text; it does not sanitize or rewrite the
 source. Byte ranges remain the unambiguous comparison/export representation.
+
+The reader refuses a signing principal equal to any configured storage issuer.
+Only a verified signed access-denial result may exclude a scope from the catalog;
+a bad reply signature produces a verification error. If another configured scope
+is unreachable, the current all-or-error catalog remains unavailable rather than
+publishing a partial catalog as complete. Per-scope error rows are future work.
+The visible capability matrix is populated from the authenticated API; unknown
+capabilities are labeled client-unsupported, never presented as working controls.

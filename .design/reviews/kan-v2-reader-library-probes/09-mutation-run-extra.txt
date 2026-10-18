@@ -1,0 +1,4 @@
+M06b membership checked at fresh (not pinned) snapshot => KILLED by test source_refuses_a_valid_read_from_a_different_snapshot_history ... FAILED
+M25 pin reply signature not verified => SURVIVED
+J08 both late-response epoch checks removed => KILLED by ✖ lock aborts pending source and clears every private view (1.522ms); ✖ failing tests:; ✖ lock aborts pending source and clears every private view (1.522ms)
+exit=0

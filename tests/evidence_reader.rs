@@ -59,6 +59,11 @@ fn mutate_record(row: &mut svc::RecordView, mode: u8) {
         rb.insert("scopeToken".into(), Ipld::Bytes(vec![99; 32]));
         rb.insert("manifest".into(), Ipld::Link(manifest.cid().clone()));
         row.manifest = svc::hex(manifest.bytes());
+    } else if mode == 9 {
+        mb.insert("writer".into(), rb["issuer"].clone());
+        let manifest = encode("manifest", mb);
+        rb.insert("manifest".into(), Ipld::Link(manifest.cid().clone()));
+        row.manifest = svc::hex(manifest.bytes());
     } else {
         rb.insert("issuer".into(), mb["writer"].clone());
     }
@@ -130,13 +135,15 @@ impl Fixture {
                             if mode==1 {reply.signature="00".repeat(64);}
                             if mode==2 {if let Ok(Output::Page{records,..})=&mut reply.reply.result {if let Some(row)=records.first_mut(){row.sequence+=1;}}}
                             if mode==3 {if let Ok(Output::Evidence{record,..})=&mut reply.reply.result {record.sequence+=1;}}
-                            if mode==4 || mode==5 { if let Ok(Output::Page{records,..})=&mut reply.reply.result { if let Some(row)=records.first_mut() { mutate_record(row,mode); } } }
+                            if mode==4 || mode==5 || mode==9 { if let Ok(Output::Page{records,..})=&mut reply.reply.result { if let Some(row)=records.first_mut() { mutate_record(row,mode); } } }
                             if mode==6 {if let Ok(Output::Evidence{signed_request,..})=&mut reply.reply.result {
                                 let mut retained=SignedRequest::decode(&svc::unhex(signed_request,svc::MAX_REQUEST).unwrap()).unwrap();
                                 if let Command::Append{id,..}=&mut retained.request.command {*id="ff".repeat(16);}
                                 *signed_request=svc::hex(&SignedRequest::sign(retained.request,&Identity::load_existing(&signing.with_file_name("writer.key")).unwrap()).unwrap().bytes().unwrap());
                             }}
-                            if (2..=6).contains(&mode) {
+                            if mode==7 {if let Ok(Output::Page{complete,..})=&mut reply.reply.result {*complete = !*complete;}}
+                            if mode==8 {if let Ok(Output::Page{records,complete})=&mut reply.reply.result {records.clear();*complete=false;}}
+                            if (2..=9).contains(&mode) {
                                 use sha2::{Digest,Sha256};
                                 let mut preimage=b"tools.kan.service.reply.v1\0".to_vec();preimage.extend_from_slice(&Sha256::digest(serde_json::to_vec(&reply.reply).unwrap()));
                                 reply.signature=svc::hex(&Identity::load_existing(&signing).unwrap().sign(&preimage).unwrap());
@@ -376,6 +383,11 @@ async fn library_http_authority_is_separate_and_denial_does_not_reveal_scope_exi
         .to_str()
         .unwrap()
         .contains("default-src 'none'"));
+    assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+    assert!(response.headers()["content-security-policy"]
+        .to_str()
+        .unwrap()
+        .contains("frame-ancestors 'none'"));
     let bytes = response.bytes().await.unwrap();
     assert!(!String::from_utf8_lossy(&bytes).contains("private-library-http-canary"));
     assert!(!String::from_utf8_lossy(&bytes).contains("unauthorized-third-scope-canary"));
@@ -390,6 +402,24 @@ async fn library_http_authority_is_separate_and_denial_does_not_reveal_scope_exi
     .await
     .unwrap();
     assert!(source.status().is_success());
+    let duplicate_auth = request(serde_json::json!({"action":"catalog"}))
+        .header(
+            "authorization",
+            "Bearer synthetic-library-token-32-characters",
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(duplicate_auth.status(), 401);
+    let wrong_type = client
+        .post(&endpoint)
+        .header("content-type", "text/plain")
+        .bearer_auth("synthetic-library-token-32-characters")
+        .body(r#"{"action":"catalog"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(wrong_type.status(), 400);
     let bad_origin = request(serde_json::json!({"action":"catalog"}))
         .header("origin", "https://untrusted.invalid")
         .send()
@@ -595,4 +625,230 @@ async fn source_refuses_a_valid_read_from_a_different_snapshot_history() {
             .as_deref(),
         Some("replacement history at the same sequence")
     );
+}
+
+#[tokio::test]
+async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
+    let identity = Identity::generate();
+    let a = Fixture::new(31, &identity).await;
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/api/library", listener.local_addr().unwrap());
+    struct Stop(JoinHandle<std::io::Result<()>>);
+    impl Drop for Stop {
+        fn drop(&mut self) {
+            self.0.abort();
+        }
+    }
+    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
+        listener,
+        "synthetic-reader-catalog-token-32".into(),
+        reader,
+    )));
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let request = || {
+        client
+            .post(&endpoint)
+            .header("content-type", "application/json")
+            .bearer_auth("synthetic-reader-catalog-token-32")
+            .body(r#"{"action":"catalog"}"#)
+    };
+    let honest = request().send().await.unwrap();
+    assert_eq!(honest.status(), 200);
+    let value: serde_json::Value = serde_json::from_slice(&honest.bytes().await.unwrap()).unwrap();
+    assert_eq!(value["scopes"].as_array().unwrap().len(), 1);
+    a.mode.store(1, Ordering::Relaxed);
+    let forged = request().send().await.unwrap();
+    assert_eq!(
+        forged.status(),
+        503,
+        "unverified replies must not become successful empty catalogs"
+    );
+    assert!(!String::from_utf8_lossy(&forged.bytes().await.unwrap()).contains("scopes"));
+    a.mode.store(0, Ordering::Relaxed);
+    a.revoke();
+    let denied = request().send().await.unwrap();
+    assert_eq!(denied.status(), 200);
+    let value: serde_json::Value = serde_json::from_slice(&denied.bytes().await.unwrap()).unwrap();
+    assert_eq!(
+        value["scopes"].as_array().unwrap().len(),
+        0,
+        "verified grant denial may exclude the scope"
+    );
+}
+
+#[tokio::test]
+async fn reader_refuses_reusing_the_storage_issuer_signing_key() {
+    let a = Fixture::new(32, &Identity::generate()).await;
+    let storage_key = Identity::load_existing(&a.dir.path().join("server.key")).unwrap();
+    assert!(matches!(
+        Reader::new(storage_key, vec![a.access()]),
+        Err(Failure::Invalid)
+    ));
+}
+
+#[test]
+fn reader_configuration_scope_count_and_duplicates_are_bounded() {
+    let issuer = Identity::generate().did().to_string();
+    let access = |n| ScopeAccess {
+        scope: [n; 32],
+        endpoint: "http://127.0.0.1:1/v1/rpc".into(),
+        issuer: issuer.clone(),
+        private_key: [27; 32],
+    };
+    assert!(Reader::new(Identity::generate(), (0..16).map(access).collect()).is_ok());
+    for values in [
+        vec![],
+        (0..17).map(access).collect(),
+        vec![access(1), access(1)],
+    ] {
+        assert!(matches!(
+            Reader::new(Identity::generate(), values),
+            Err(Failure::Invalid)
+        ));
+    }
+}
+
+#[tokio::test]
+async fn reader_rejects_signed_page_completeness_and_tip_mismatches() {
+    let identity = Identity::generate();
+    let mut a = Fixture::new(33, &identity).await;
+    a.append(b"one");
+    a.append(b"two");
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    for mode in [7, 8] {
+        a.mode.store(mode, Ordering::Relaxed);
+        assert!(matches!(
+            reader.page(&pin, 0, 1).await,
+            Err(Failure::Invalid)
+        ));
+    }
+    a.mode.store(9, Ordering::Relaxed);
+    assert!(matches!(
+        reader.page(&pin, 1, 1).await,
+        Err(Failure::Corrupt)
+    ));
+    a.mode.store(0, Ordering::Relaxed);
+    assert_eq!(reader.page(&pin, 1, 1).await.unwrap().records.len(), 1);
+}
+
+#[tokio::test]
+async fn pin_principal_and_audience_are_checked_even_with_valid_signatures() {
+    use sha2::{Digest, Sha256};
+    let identity = Identity::generate();
+    let keys = tempfile::tempdir().unwrap();
+    identity.save(&keys.path().join("reader.key")).unwrap();
+    let mut a = Fixture::new(34, &identity).await;
+    a.append(b"pin-check");
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    let mut forged = pin.clone();
+    forged.reply.signature = "00".repeat(64);
+    assert!(matches!(
+        reader.page(&forged, 0, 1).await,
+        Err(Failure::AccessLimited)
+    ));
+    for wrong_principal in [true, false] {
+        let mut altered = pin.clone();
+        let mut request = SignedRequest::decode(&svc::unhex(&altered.request, 4096).unwrap())
+            .unwrap()
+            .request;
+        let signer = if wrong_principal {
+            Identity::generate()
+        } else {
+            Identity::load_existing(&keys.path().join("reader.key")).unwrap()
+        };
+        if wrong_principal {
+            request.principal = signer.did().to_string();
+        } else {
+            request.audience = a.writer.did().to_string();
+        }
+        let bytes = SignedRequest::sign(request, &signer)
+            .unwrap()
+            .bytes()
+            .unwrap();
+        altered.request = svc::hex(&bytes);
+        altered.reply.reply.request = svc::hex(&Sha256::digest(&bytes));
+        let mut preimage = b"tools.kan.service.reply.v1\0".to_vec();
+        preimage.extend_from_slice(&Sha256::digest(
+            serde_json::to_vec(&altered.reply.reply).unwrap(),
+        ));
+        altered.reply.signature = svc::hex(
+            &Identity::load_existing(&a.dir.path().join("server.key"))
+                .unwrap()
+                .sign(&preimage)
+                .unwrap(),
+        );
+        assert!(matches!(
+            reader.page(&altered, 0, 1).await,
+            Err(Failure::AccessLimited)
+        ));
+    }
+    assert_eq!(reader.page(&pin, 0, 1).await.unwrap().records.len(), 1);
+}
+
+#[tokio::test]
+async fn library_queues_a_browser_request_behind_four_idle_connections() {
+    use tokio::io::AsyncWriteExt;
+    let identity = Identity::generate();
+    let a = Fixture::new(35, &identity).await;
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    struct Stop(JoinHandle<std::io::Result<()>>);
+    impl Drop for Stop {
+        fn drop(&mut self) {
+            self.0.abort();
+        }
+    }
+    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
+        listener,
+        "synthetic-browser-queue-token-32".into(),
+        reader,
+    )));
+    let mut idle = Vec::new();
+    for _ in 0..4 {
+        let mut socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+        socket.write_all(b"GET / HTTP/1.1\r\n").await.unwrap();
+        idle.push(socket);
+        tokio::task::yield_now().await;
+    }
+    // Give accepted partial headers time to enter their five-second deadline.
+    // Whole-fix reversion independently proves the old immediate drop is caught.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .unwrap();
+    let result = client.get(format!("http://{addr}/")).send().await;
+    assert!(
+        result.is_ok(),
+        "the fifth connection must wait rather than be dropped: {result:?}"
+    );
+    assert_eq!(result.unwrap().status(), 200);
+    drop(idle);
+}
+
+#[tokio::test]
+async fn library_refuses_public_listeners_and_short_tokens_before_serving() {
+    for (address, token) in [
+        ("0.0.0.0:0", "synthetic-private-reader-token-32"),
+        ("127.0.0.1:0", "short"),
+    ] {
+        let identity = Identity::generate();
+        let a = Fixture::new(36, &identity).await;
+        let reader = Reader::new(identity, vec![a.access()]).unwrap();
+        let listener = tokio::net::TcpListener::bind(address).await.unwrap();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            kan::evidence_library::serve(listener, token.into(), reader),
+        )
+        .await;
+        assert!(
+            matches!(result,Ok(Err(ref e)) if e.kind()==std::io::ErrorKind::Other),
+            "invalid configuration must be refused before accepting requests"
+        );
+    }
 }

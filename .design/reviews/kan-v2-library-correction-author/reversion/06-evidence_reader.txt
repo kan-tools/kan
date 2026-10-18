@@ -1,0 +1,21 @@
+
+running 1 test
+test reader_refuses_reusing_the_storage_issuer_signing_key ... FAILED
+
+failures:
+
+---- reader_refuses_reusing_the_storage_issuer_signing_key stdout ----
+
+thread 'reader_refuses_reusing_the_storage_issuer_signing_key' (8807097) panicked at tests/evidence_reader.rs:684:5:
+assertion failed: matches!(Reader::new(storage_key, vec![a.access()]), Err(Failure::Invalid))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    reader_refuses_reusing_the_storage_issuer_signing_key
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.04s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_reader.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion-cache/target/debug/deps/evidence_reader-6b0841214b94ad1d)
+error: test failed, to rerun pass `--test evidence_reader`

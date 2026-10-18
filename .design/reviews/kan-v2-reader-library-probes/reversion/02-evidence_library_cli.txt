@@ -1,0 +1,22 @@
+
+running 1 test
+test library_cli_browses_authenticated_retained_source_without_storage_authority ... FAILED
+
+failures:
+
+---- library_cli_browses_authenticated_retained_source_without_storage_authority stdout ----
+
+thread 'library_cli_browses_authenticated_retained_source_without_storage_authority' (8798683) panicked at tests/evidence_library_cli.rs:134:5:
+Library CLI must start its real authenticated reader; got "error: unrecognized subcommand 'library'\n"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    library_cli_browses_authenticated_retained_source_without_storage_authority
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library/.local-state/reversion/91635f750de34296b24ca04ba55d1ee0)
+    Finished `test` profile [unoptimized] target(s) in 6.67s
+     Running tests/evidence_library_cli.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library/target/debug/deps/evidence_library_cli-ab14b7f82f96c656)
+error: test failed, to rerun pass `--test evidence_library_cli`

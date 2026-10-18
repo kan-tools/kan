@@ -100,8 +100,8 @@ Inventory pages contain at most 40 records (UI requests 20). Source responses
 contain at most 256 KiB (UI requests 64 KiB), with exact hex bytes, optional UTF-8,
 range offsets and total size. Each range currently decrypts one service-bounded
 object in memory; it is not streaming whole-object decryption. The HTTP adapter
-allows four concurrent connections, limits request bodies to 16 KiB, and has
-header and overall deadlines. No plaintext index or automatic file write exists.
+allows four executing connections and eight bounded queued connections, limits
+request bodies to 16 KiB, and has queue, header and overall deadlines. No plaintext index or automatic file write exists.
 Export is explicitly triggered and downloads only the current range after fresh
 membership/authorization checks. A .bin download never executes source HTML.
 
@@ -155,3 +155,30 @@ read clears displayed plaintext; 401/403 still lock everything. These changes
 have Node coverage and real whole-fix reversion, but require their own fresh
 review. The backend still fails a page containing a missing/corrupt referenced
 object; per-occurrence unavailable-evidence rows remain an explicit AC-3 gap.
+
+
+The next correction refuses a reader signer equal to a configured storage issuer,
+classifies transport signature failures as integrity failures rather than signed
+grant denials, queues up to eight additional accepted sockets for at most six
+seconds behind four executing requests, and renders the authenticated capability
+list as a visible matrix. The overall 35-second connection deadline includes
+queueing. Excess load remains visibly unavailable; this is not a guarantee of
+availability against hostile local processes. Remote calls can exhaust the
+connection budget, especially a multi-scope catalog; per-scope error rows and
+composed timeout budgeting remain follow-ups.
+
+Author tests now directly exercise hostile signed pin principal/audience and
+signature, page completeness/tip, duplicate auth, content type, scope-count,
+loopback/token-floor and capability-display boundaries. These strengthen the
+reported mutation gaps; only actual observed mutation/reversion results count as
+kills. Future review must independently verify them.
+
+
+Correction validation: 15 reader tests plus one ignored manual fixture, one CLI,
+19 surface tests, 34 Node tests, strict v2 all-target Clippy and formatting pass.
+Whole-correction reversion compiled and killed the catalog-signature, reused-
+issuer-key and fifth-connection assertions, plus the Node capability matrix test;
+all passed before and after restoration. Exact generated trailer and raw logs
+are in `reviews/kan-v2-library-correction-author/`. Desktop/phone browser checks
+confirm the visible matrix and corrected navigation. Fresh correction review
+is pending; the earlier approval covers only df74506.

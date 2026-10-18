@@ -99,6 +99,9 @@ impl Reader {
         }
         let mut selected = BTreeMap::new();
         for scope in scopes {
+            if signer.did().as_str() == scope.issuer {
+                return Err(Failure::Invalid);
+            }
             // Validate the identity/scope pair without writing or sending anything.
             SignedRequest::sign(
                 Request {
@@ -144,8 +147,17 @@ impl Reader {
             &self.signer,
         )?
         .bytes()?;
-        let reply = evidence_http::send(&access.endpoint, &access.issuer, &request).await?;
-        reply.verify(&request, &access.issuer)?;
+        // Transport-level AccessLimited means a reply signature failed, not a
+        // verified service denial. Only a signed result may exclude a scope.
+        let reply = evidence_http::send(&access.endpoint, &access.issuer, &request)
+            .await
+            .map_err(|failure| match failure {
+                Failure::AccessLimited => Failure::Corrupt,
+                other => other,
+            })?;
+        reply
+            .verify(&request, &access.issuer)
+            .map_err(|_| Failure::Corrupt)?;
         Ok((request, reply))
     }
     pub async fn snapshot(&self, scope: &str) -> Result<Pin, Failure> {

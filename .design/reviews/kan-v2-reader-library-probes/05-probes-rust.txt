@@ -1,0 +1,37 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library)
+    Finished `test` profile [unoptimized] target(s) in 0.64s
+     Running tests/zz_review_probes.rs (target/debug/deps/zz_review_probes-5f8d79629593581f)
+
+running 3 tests
+test probe_catalog_tampered_signature_and_unreachable_scope ... PROBE catalog honest status=200 OK body=1627
+PROBE catalog forged-signature status=200 OK body={"capabilities":["snapshot-inventory","source-ranges","provenance"],"scopes":[],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"],"version":1}
+PROBE snapshot forged-signature status=403 Forbidden body={"error":"reader request unavailable or refused"}
+PROBE catalog with one unreachable scope status=503 Service Unavailable body={"error":"reader request unavailable or refused"}
+ok
+test probe_missing_and_corrupt_object_states ... PROBE sql affected rows=1
+
+thread 'probe_missing_and_corrupt_object_states' (8786426) panicked at tests/zz_review_probes.rs:44:54:
+called `Result::unwrap()` on an `Err` value: Corrupt("foreign keys")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test probe_principal_reuse_offline_paths_and_slots ... PROBE Reader::new(signer == storage issuer) ok=true
+PROBE service down: source(beyond pin) => Some(Missing)
+PROBE service down: page(after>through) => Some(Invalid)
+PROBE service down: source(1) => Some(Unavailable)
+PROBE GET / baseline => Ok(200)
+PROBE GET / with 4 idle sockets => ok=false err=Some("error sending request for url (http://127.0.0.1:54238/)") after 469µs
+PROBE GET / after header timeout => Ok(200)
+PROBE host=localhost:54238 origin=None => 403 Forbidden
+PROBE host=127.0.0.1:54238 origin=None => 200 OK
+PROBE host=127.0.0.1:54238 origin=Some("null") => 403 Forbidden
+ok
+
+failures:
+
+failures:
+    probe_missing_and_corrupt_object_states
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.74s
+
+error: test failed, to rerun pass `--test zz_review_probes`
+exit=101

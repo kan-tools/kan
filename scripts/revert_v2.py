@@ -26,6 +26,7 @@ import tarfile
 import uuid
 
 NODE_TESTS = {
+    'library_capabilities': ('tests/library_ui.test.cjs', 'capability matrix renders actual service capabilities without claiming unknown support'),
     'library_unavailable': ('tests/library_ui.test.cjs', 'unavailable or unverifiable source clears plaintext but preserves other browsing'),
     'library_directional': ('tests/library_ui.test.cjs', 'directional format controls default to exact hex and permit explicit UTF-8'),
     'library_scope_switch': ('tests/library_ui.test.cjs', 'scope changes remove old-scope rows before a new pin is used'),

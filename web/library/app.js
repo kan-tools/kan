@@ -14,7 +14,7 @@
   function lock(message = 'Locked · connect to browse authorized evidence.') {
     for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
-    clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('coverage').textContent = '';
+    clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
     $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
     $('lock').disabled = true; $('token').value = ''; notice(message); $('token').focus();
   }
@@ -86,11 +86,29 @@
     $('empty').hidden = value.records.length !== 0; $('previous').disabled = history.length === 0; $('next').disabled = next === null;
     notice('Snapshot pinned · refresh the snapshot to include newer entries.');
   }
+  function renderCapabilities(value) {
+    if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
+    const labels = {'snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
+    const supported = new Set(['snapshot-inventory','source-ranges','provenance']), seen = new Set();
+    $('capability-list').replaceChildren();
+    for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
+      for (const capability of items) {
+        if (typeof capability !== 'string' || seen.has(capability)) throw new Error('Inconsistent capability response.');
+        seen.add(capability);
+        const row = document.createElement('div'), name = document.createElement('dt'), state = document.createElement('dd');
+        name.textContent = labels[capability] || capability;
+        state.textContent = available ? (supported.has(capability) ? 'Available' : 'Client unsupported') : 'Upcoming';
+        state.className = available && supported.has(capability) ? 'available' : '';
+        row.append(name); row.append(state); $('capability-list').append(row);
+      }
+    }
+  }
   $('connect').addEventListener('submit', event => {
     event.preventDefault(); token = $('token').value; $('token').value = '';
     run(async () => {
       notice('Checking scope access…'); const value = await rpc({action:'catalog'}); if (!value) return;
       if (value.version !== 1) throw new Error('Unsupported reader version.');
+      renderCapabilities(value);
       scopes = value.scopes; $('scope').replaceChildren();
       for (const scope of scopes) { const option = document.createElement('option'); option.value = scope.scope; option.textContent = scope.scope; $('scope').append(option); }
       $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;

@@ -1,0 +1,12 @@
+# M06 source membership page removed
+# file src/evidence_reader.rs
+# rc 101 elapsed 3.3s
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library)
+error[E0425]: cannot find value `expected` in this scope
+   --> src/evidence_reader.rs:264:22
+    |
+264 |         if record != expected {
+    |                      ^^^^^^^^ not found in this scope
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `kan` (lib) due to 1 previous error
