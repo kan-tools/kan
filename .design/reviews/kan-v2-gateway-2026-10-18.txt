@@ -1,0 +1,93 @@
+**Verdict: APPROVE WITH FOLLOW-UPS** (reviewed range `9d9e16c..f70f52be23d168b7c813fee18d3d72dcbf28bc18`)
+
+The transport and capture work holds up under the hostile probes I ran. I found nothing that breaks an invariant: no plaintext reaches the storage boundary, the destination is fixed, nothing retries inference, a truncated stream never looks like a clean end, and capture failures leave inference running. There is one serious availability gap, and some provenance and witness gaps, listed below.
+
+**Review identity.** I'm a fresh cold reviewer running as `claude-opus-5-5`; no session ID is exposed to me. I wrote none of this code. Confirmed HEAD SHA: `f70f52be23d168b7c813fee18d3d72dcbf28bc18`. All builds, probes and mutations ran in my own `git archive` export at `/tmp/kan-gw-review-opus55/src`, using my own `CARGO_TARGET_DIR`. The author's checkout is still clean at HEAD. I didn't read or write kan/day, so the skill's telos-reading, `day review record` and `day next` steps weren't run. I measured against your stated north star and the design docs, and invented no witnesses for `telos/raw-data-and-projections`.
+
+## Findings
+
+1. **High, fix before any non-loopback exposure: unauthenticated clients can block the gateway.** A connection takes one of the 8 slots before the TLS handshake and can hold it for up to 15 s (`src/evidence_gateway.rs:440-455`); extra connections are closed.
+   - My probe opened 8 idle TCP sockets. A valid mutual-TLS client then failed with "tls handshake eof", and the provider received zero calls.
+   - An attacker can renew this every 15 s indefinitely. The collector has no fallback, so Claude Code just gets a 502.
+   - The guide's own example uses `--listen 0.0.0.0:8443`.
+   - The same pattern works locally against the collector: authentication happens only after headers are read.
+   - The design does document the 8-slot behaviour, and this slice isn't a deployment, so I rate it a follow-up, not a BLOCK. Fix by separating handshake slots from authenticated-request slots, or limiting per peer.
+2. **Medium, provenance: the gateway doesn't record the request it actually sends to the provider.** Its "request" metadata is a copy of the headers it received from the collector (`evidence_gateway.rs:299-303`). The headers it really sends, filtered plus the installed key, are built at `:304-326` and `evidence_capture.rs:509-510` and never recorded.
+   - Probe: gateway request metadata names were `[content-type, accept, x-kan-exchange, host, content-length]`, with `omitted=[]`.
+   - So nothing in the gateway's evidence shows that a provider credential was installed.
+   - This only partly meets the parent's "observed provider exchange" and the harness design's "explicit omissions" (REQ-3, AC-2).
+3. **Low, fidelity: two undocumented header rewrites.** `cache-control: no-store` overwrites any `cache-control` the provider sent (`evidence_gateway.rs:421-424`). A request with no content-type is sent to the provider as `application/octet-stream` (`evidence_capture.rs:509`).
+4. **Low, independent witness: nothing outside Rust decodes the new event kinds.** The Python decoders reject `http-metadata`, `http-metadata-chunk` and `transport-link` (`scripts/verify_encrypted_capture.py:58-59`, `scripts/verify_capture_frames.py`). Gateway evidence is only checked by the crate's own decrypt and deserialise path.
+   - The design's "KANC2 readers must preserve unfamiliar event variants" has no witness. `Event` rejects unknown fields and has no catch-all variant. Readers fail loudly rather than treating unknowns as absent, so nothing is lost silently.
+   - The real Claude Code smoke test checks the requests the provider received but never inspects either spool.
+5. **Low, test gaps.** These mutants all pass the committed suite; each was killed only by my probes:
+   - TLS 1.2 enabled
+   - slot count raised from 8 to 10000
+   - duplicate-credential check disabled
+   - 30 s body timeout raised to 3600 s
+
+   The behaviour itself is correct at runtime: a TLS 1.2 client gets a `ProtocolVersion` alert.
+6. **Low:** `enqueue_generated` lost the before-commit/after-commit fault-injection hooks that `enqueue_observed` has (`evidence_spool.rs:378-380` vs `386-428`). Crash-boundary tests can't target the capture path's enqueue.
+7. **Scope, partial against the parent:** the "visible gap" is only JSON health on the proxy's stderr. Claude Code and the user's session get no signal. The harness profile also doesn't list source event IDs as the parent asks. Both designs state their exclusions honestly: OAuth, hook capture, deployment and migration are named as out of scope before implementation, not narrowed during it.
+8. **Doc nit:** the harness design says `persistence.rs` and the surface TSV "remain unchanged". The range edits both (a comment and the design reference), as part of the gateway design's spool change. Harmless.
+
+## REQ/AC coverage
+
+| Item | Verdict | Evidence |
+|---|---|---|
+| GW REQ-1 TLS 1.3, client certs, explicit roots, no proxy/redirect/retry | met | TLS 1.2 probe rejected; author's `client-auth` control killed; my probes: `::1`, which the server cert doesn't list, and a client-only certificate both → 502; `evidence_capture.rs:346-367` |
+| GW REQ-2 token, routes, 16 MiB, 8 connections, 30 s, non-2xx | met | Chunked 17 MiB → 413; slow body → 413 at 30.05 s; 429/529 bodies exact; provider never reached |
+| GW REQ-3 separate spools, gaps, one reserved transaction, no remote-ack claim | met | `deferred-tx` mutant killed by both the 80-admission test and P3; `remote_acknowledged` always false |
+| GW REQ-4 bounded streaming, cancellation, truncation, shutdown | met | Two-hop truncation → body error, both observers end OutcomeUnknown, provider called once; two-hop cancel releases the provider; stopping the server releases the provider and the client sees an error, not a clean end |
+| GW REQ-5 / AC-1..3 | met | 10/10 gateway tests; Python TLS witness; locked/missing spool keeps inference running |
+| Harness REQ-1 / AC-1 fixed origin, two paths, optional `beta=true` | met | Absolute-form target `http://evil.invalid/...` still goes to the provider host; `..`, `%6d`, a trailing `&` and `*` → 404 |
+| Harness REQ-2 credentials | met | Duplicate, mixed, lowercase `bearer`, double-space, short and missing credentials → 401 |
+| Harness REQ-3 headers, bodies, metadata | partial | Fake gzip passes byte-exact; findings 2 and 3 |
+| Harness AC-2 omissions | partial | Collector names its omissions; the gateway's installed key has no omission marker (finding 2) |
+| Harness REQ-4 / AC-3 real harness | met | Claude Code 2.1.300 → `KAN_HARNESS_OK` through both hops, 1 provider request (provider side only, see finding 4) |
+
+## Commands and counts (all in my export, all exit 0)
+
+- **Gateway:** `evidence_gateway` 10 passed, 1 ignored.
+- **Capture:** `evidence_capture` 18, `evidence_capture_adversarial` 13, `evidence_capture_deadlines` 6, `evidence_capture_contention` 6. That's 43 total, matching the author's claim.
+- **Spool and callers:** `evidence_spool` 11, lib `evidence_spool::tests` 2, `evidence_delivery` 5, `evidence_import` 8 and `migration_harness` 2 (the queue callers).
+- **Surface:** `surface_conformance` 19 with v2-crypto and 19 with default features.
+- **Lint and format:** clippy `--features v2-crypto --all-targets -D warnings` clean; `cargo fmt --check` clean.
+- **Real harness:** the ignored `real_claude_code_uses_both_hops` test, run with `KAN_CLAUDE_BIN=/opt/homebrew/bin/claude`, passed.
+
+## Negative controls
+
+- **Author's script** (`scripts/gateway_negative_controls.py`, read before running): all 7 controls failed by name and were restored; it removed its own scratch target.
+- **My runtime mutations:**
+  - TLS 1.2, slot count, duplicate-auth and body timeout were each killed by my probes and survived the committed suite (finding 5).
+  - `deferred-tx` was killed by the committed tests.
+  - `cred-strip` and `xkan-strip` survived, but they're equivalent mutants: the request path forwards only an allowlist (`evidence_gateway.rs:307-321`), so the deny-list there is a second layer.
+- **12 hostile probes:** all behaved correctly apart from the gaps above. One first-run failure was my own mistake, since HTTP trims trailing whitespace from header values; I corrected the case and reran.
+
+## House rules
+
+No subject is destroyed. There are no blocking hooks. Persistence changes are inventoried in the TSV with a digest update, and the spool still holds only HPKE ciphertext. Inference is never replayed. There's no second UI. The atomicity change is sound: the frontier is read, encryption and signing happen, and enqueue commits, all under one immediate transaction. Reused operation IDs are refused before encryption, and the import caller's semantics are unchanged.
+
+## Follow-ups
+
+1. Stop unauthenticated clients from exhausting the gateway's slots.
+2. Record the gateway's outgoing provider request headers, with the installed key named as an omission.
+3. Stop overwriting the provider's `cache-control` and defaulting content-type, or document both.
+4. Add an independent decoder for the new event kinds, and have the smoke test check both spools.
+5. Add committed tests for TLS 1.2 rejection, the slot cap, duplicate credentials and the body timeout.
+6. Restore the commit-boundary fault hooks on `enqueue_generated`.
+7. Decide how recording gaps reach the harness user, beyond proxy stderr.
+
+**Rationale:** every REQ is met or partial with evidence I produced myself. Findings 1–3 are real but don't break the server-first, encrypted, no-retry design. Finding 1 is a hard prerequisite before any network exposure.
+
+## Cleanup and limitations
+
+- Removed my scratch target and CLI scratch directory. About 17 GiB free afterwards.
+- No processes of mine are still running. The mutated files in my export match the committed source again.
+- Kept: source export, probes (`/tmp/kan-gw-review-opus55/probes/`) and logs (`/tmp/kan-gw-review-opus55/logs/`).
+- Limitations:
+  - No full workspace test run.
+  - Didn't rerun the earlier capture mutations.
+  - No capacity testing.
+  - The real-harness test used only the synthetic provider.
+  - Nothing recorded in kan/day, per your instruction.
