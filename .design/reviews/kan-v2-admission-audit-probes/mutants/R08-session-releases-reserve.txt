@@ -1,0 +1,63 @@
+mutant R08-session-releases-reserve on src/evidence_operations.rs
+--- old
+if reason != "session_limit" {
+                    tx.execute("DELETE FROM reserve"
++++ new
+if true {
+                    tx.execute("DELETE FROM reserve"
+
+$ cargo test --features v2-crypto --test evidence_operations -- --exact journal_session_exhaustion_is_visible_without_refusing_reporter_start
+[exit=101 timeout=False]
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission)
+    Finished `test` profile [unoptimized] target(s) in 6.88s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+test journal_session_exhaustion_is_visible_without_refusing_reporter_start ... FAILED
+
+failures:
+
+---- journal_session_exhaustion_is_visible_without_refusing_reporter_start stdout ----
+
+thread 'journal_session_exhaustion_is_visible_without_refusing_reporter_start' (8678130) panicked at tests/evidence_operations.rs:962:5:
+assertion `left == right` failed
+  left: Number(0)
+ right: 262144
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    journal_session_exhaustion_is_visible_without_refusing_reporter_start
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.25s
+
+error: test failed, to rerun pass `--test evidence_operations`
+
+$ cargo test --features v2-crypto --lib evidence_operations::tests::session_capacity_is_sticky_and_existing_control_still_updates -- --exact evidence_operations::tests::session_capacity_is_sticky_and_existing_control_still_updates
+[exit=101 timeout=False]
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission)
+    Finished `test` profile [unoptimized] target(s) in 5.89s
+     Running unittests src/lib.rs (target/debug/deps/kan-ef78140debb95ee4)
+
+running 1 test
+test evidence_operations::tests::session_capacity_is_sticky_and_existing_control_still_updates ... FAILED
+
+failures:
+
+---- evidence_operations::tests::session_capacity_is_sticky_and_existing_control_still_updates stdout ----
+
+thread 'evidence_operations::tests::session_capacity_is_sticky_and_existing_control_still_updates' (8678343) panicked at src/evidence_operations.rs:1699:9:
+assertion `left == right` failed
+  left: 0
+ right: 262144
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations::tests::session_capacity_is_sticky_and_existing_control_still_updates
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 70 filtered out; finished in 0.24s
+
+error: test failed, to rerun pass `--lib`
+
+RESULT [{"cmd": "journal_session_exhaustion_is_visible_without_refusing_reporter_start", "verdict": "ASSERT-KILL", "failed": ["journal_session_exhaustion_is_visible_without_refusing_reporter_start"], "panic": [["tests/evidence_operations.rs:962:5:", "assertion `left == right` failed"]]}, {"cmd": "evidence_operations::tests::session_capacity_is_sticky_and_existing_control_still_updates", "verdict": "ASSERT-KILL", "failed": ["evidence_operations::tests::session_capacity_is_sticky_and_existing_control_still_updates"], "panic": [["src/evidence_operations.rs:1699:9:", "assertion `left == right` failed"]]}]

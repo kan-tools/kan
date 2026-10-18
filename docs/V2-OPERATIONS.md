@@ -171,3 +171,12 @@ Many sources can still fill the global pool, and authenticated clients can
 consume the active pool. This is bounded admission, not Internet denial-of-service
 qualification. Use private/source-restricted ingress until deployment-specific
 capacity and abuse limits are established.
+
+Older v2 journals already marked `session_limit` with a released reserve also
+resume writable attempt summaries with this correction. The reserve stays zero;
+no silent repair or reallocation occurs. Their coverage warning remains sticky,
+and owner rotation establishes a fresh reserve. Do not mix old and new binaries
+against the same journal: older versions still refuse those attempt writes.
+The current UI uses a conservative five-second freshness window; long worker I/O
+can exceed it and appear stale/unknown while still running. This is not a claim
+that the worker has failed or that capture is complete.

@@ -1,0 +1,39 @@
+mutant U09-close-ignores-replacement on web/operations/app.js
+--- old
+inspectorTrigger?.isConnected?inspectorTrigger:attemptButtons.get(inspectorAttempt)
++++ new
+inspectorTrigger
+
+$ node --test --test-name-pattern=polling preserves tests/operations_ui.test.cjs
+[exit=1 timeout=False]
+✖ polling preserves the focused attempt and inspector close returns to the replacement row (13.259083ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 41.439
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:28:1
+✖ polling preserves the focused attempt and inspector close returns to the replacement row (13.259083ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - true
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission/tests/operations_ui.test.cjs:28:654)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: 'strictEqual'
+  }
+
+RESULT [{"cmd": "tests/operations_ui.test.cjs", "verdict": "ASSERT-KILL", "failed": ["polling preserves the focused attempt and inspector close returns to the replacement row"], "panic": []}]

@@ -1,0 +1,35 @@
+mutant R18-worker-no-capacity-mark on src/evidence_operations.rs
+--- old
+        j.note_capacity_failure(&result);
+        result.is_err()
++++ new
+        result.is_err()
+
+$ cargo test --features v2-crypto --lib evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space -- --exact evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space
+[exit=101 timeout=False]
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission)
+    Finished `test` profile [unoptimized] target(s) in 5.94s
+     Running unittests src/lib.rs (target/debug/deps/kan-ef78140debb95ee4)
+
+running 1 test
+test evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space ... FAILED
+
+failures:
+
+---- evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space stdout ----
+
+thread 'evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space' (8681129) panicked at src/evidence_operations.rs:1480:9:
+assertion `left == right` failed
+  left: None
+ right: Some("sqlite_full")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 70 filtered out; finished in 0.20s
+
+error: test failed, to rerun pass `--lib`
+
+RESULT [{"cmd": "evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space", "verdict": "ASSERT-KILL", "failed": ["evidence_operations::tests::worker_full_failure_marks_capacity_and_retains_recovery_space"], "panic": [["src/evidence_operations.rs:1480:9:", "assertion `left == right` failed"]]}]

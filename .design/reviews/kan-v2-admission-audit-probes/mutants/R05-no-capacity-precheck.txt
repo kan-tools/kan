@@ -1,0 +1,59 @@
+mutant R05-no-capacity-precheck on src/evidence_operations.rs
+--- old
+        if current >= 256 {
+            return false;
+        }
+        match compare(current)
++++ new
+        match compare(current)
+
+$ cargo test --features v2-crypto --lib evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget -- --exact evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget
+[exit=101 timeout=False]
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission)
+    Finished `test` profile [unoptimized] target(s) in 5.62s
+     Running unittests src/lib.rs (target/debug/deps/kan-ef78140debb95ee4)
+
+running 1 test
+test evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget ... FAILED
+
+failures:
+
+---- evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget stdout ----
+
+thread 'evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget' (8677137) panicked at src/evidence_operations.rs:1206:55:
+full capacity must not attempt a reservation
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 70 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`
+
+$ cargo test --features v2-crypto --lib evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded -- --exact evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded
+[exit=101 timeout=False]
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running unittests src/lib.rs (target/debug/deps/kan-ef78140debb95ee4)
+
+running 1 test
+test evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded ... FAILED
+
+failures:
+
+---- evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded stdout ----
+
+thread 'evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded' (8677176) panicked at src/evidence_operations.rs:1288:9:
+assertion failed: !offer_pending(&buffer, &make(1001))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 70 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`
+
+RESULT [{"cmd": "evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget", "verdict": "ASSERT-KILL", "failed": ["evidence_operations::tests::reservation_retries_spurious_failure_and_stops_at_its_finite_budget"], "panic": [["src/evidence_operations.rs:1206:55:", "full capacity must not attempt a reservation"]]}, {"cmd": "evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded", "verdict": "ASSERT-KILL", "failed": ["evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded"], "panic": [["src/evidence_operations.rs:1288:9:", "assertion failed: !offer_pending(&buffer, &make(1001))"]]}]

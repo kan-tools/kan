@@ -1,0 +1,39 @@
+mutant U05-future-clock-guard on web/operations/app.js
+--- old
+&&j.last_success_at<=now+5&&
++++ new
+&&
+
+$ node --test --test-name-pattern=future persistence timestamps tests/operations_ui.test.cjs
+[exit=1 timeout=False]
+✖ future persistence timestamps stay unknown (12.943125ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 41.038
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:26:1
+✖ future persistence timestamps stay unknown (12.943125ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'Write observed'
+  - 'Persistence unknown'
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission/tests/operations_ui.test.cjs:26:253)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'Write observed',
+    expected: 'Persistence unknown',
+    operator: 'strictEqual'
+  }
+
+RESULT [{"cmd": "tests/operations_ui.test.cjs", "verdict": "ASSERT-KILL", "failed": ["future persistence timestamps stay unknown"], "panic": []}]

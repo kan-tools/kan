@@ -1,0 +1,35 @@
+mutant R15-timestamp-before-validation on src/evidence_operations.rs
+--- old
+        let result = self.record_inner(h);
++++ new
+        let _ = successful(&self.conn, self.schema);
+        let result = self.record_inner(h);
+
+$ cargo test --features v2-crypto --lib evidence_operations::tests::successful_write_is_observed_only_after_commit -- --exact evidence_operations::tests::successful_write_is_observed_only_after_commit
+[exit=101 timeout=False]
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission)
+    Finished `test` profile [unoptimized] target(s) in 5.84s
+     Running unittests src/lib.rs (target/debug/deps/kan-ef78140debb95ee4)
+
+running 1 test
+test evidence_operations::tests::successful_write_is_observed_only_after_commit ... FAILED
+
+failures:
+
+---- evidence_operations::tests::successful_write_is_observed_only_after_commit stdout ----
+
+thread 'evidence_operations::tests::successful_write_is_observed_only_after_commit' (8680405) panicked at src/evidence_operations.rs:1525:9:
+assertion `left == right` failed
+  left: Some(1792358761)
+ right: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations::tests::successful_write_is_observed_only_after_commit
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 70 filtered out; finished in 0.20s
+
+error: test failed, to rerun pass `--lib`
+
+RESULT [{"cmd": "evidence_operations::tests::successful_write_is_observed_only_after_commit", "verdict": "ASSERT-KILL", "failed": ["evidence_operations::tests::successful_write_is_observed_only_after_commit"], "panic": [["src/evidence_operations.rs:1525:9:", "assertion `left == right` failed"]]}]

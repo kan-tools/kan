@@ -1,0 +1,20 @@
+[
+ {
+  "id": "R06c-always-rewrite-reason-probe",
+  "results": [
+   {
+    "cmd": "--nocapture",
+    "verdict": "ASSERT-KILL",
+    "failed": [
+     "probe_attempt_limit_reason_survives_later_page_full"
+    ],
+    "panic": [
+     [
+      "tests/zz_review_probe.rs:168:5:",
+      "assertion `left == right` failed: first sealing reason was overwritten"
+     ]
+    ]
+   }
+  ]
+ }
+]

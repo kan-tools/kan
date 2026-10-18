@@ -1,0 +1,18 @@
+mutant P04-error-accepted on scripts/revert_v2.py
+--- old
+        raise ValueError('named Python test errored rather than failing an assertion')
+
++++ new
+        pass
+
+
+$ /Library/Developer/CommandLineTools/usr/bin/python3 -I tests/test_revert_v2.py -v Results.test_python_assertions_are_distinct_from_errors_and_skips
+[exit=0 timeout=False]
+test_python_assertions_are_distinct_from_errors_and_skips (__main__.Results) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+
+RESULT [{"cmd": "Results.test_python_assertions_are_distinct_from_errors_and_skips", "verdict": "PASS", "failed": [], "panic": []}]
