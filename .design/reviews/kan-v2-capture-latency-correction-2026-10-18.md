@@ -1,0 +1,98 @@
+# Capture latency correction: fresh independent review
+
+Range: `b6427c31fd0dc412c0f4b170006eb58d46505de7..f8e5b855def2178efd9e08090dbfa06c0cd76ad1`.
+
+Actual model: `claude-opus-5-5`. Session: `6e82359d-73de-443e-bed4-53be5b594acb`.
+
+Verdict: **APPROVE WITH FOLLOW-UPS**. UTF-8 report SHA-256: `2cb33e59e3359f4cc826114b28b78fde33c95e6af5121dccd802df5283d51282`.
+
+The concurrent frontier finding is being corrected in the gateway child PR #278. This parent does not claim lossless concurrent capture. The per-observation cap probe is promoted below this reviewed implementation, the negative-control script is repaired, and the synchronous wait helper explicitly forbids nesting. These follow-ups do not change production behavior.
+
+## Reviewer report
+
+The shorthand workflow citation is expanded in this readable copy. The
+[exact original report](kan-v2-capture-latency-correction-2026-10-18.txt) retains
+the bytes identified by the hash above.
+
+# Cold review 2: kan v2 capture latency correction (`b6427c3..f8e5b85`)
+
+**Hard verdict: APPROVE WITH FOLLOW-UPS.**
+
+The correction fixes both problems the first REDIRECT found. Two captures opening the spool at the same time now both succeed, and short lock contention no longer turns into near-total loss. The wait-budget accounting behaves as designed when run, and gaps are still reported. Provider bytes come back exact, inference was sent once, and no unconfirmed write is reported as recorded. A full reversion of the production code breaks the tests.
+
+But running it turned up a separate problem that this correction neither caused nor fixes: **when two captures share one spool, one of them can lose almost all of its evidence.** That needs fixing before capture claims to support concurrent streams.
+
+**Independence:** I didn't write this code. As instructed, I didn't read or write live kan/day, so I recorded no verdict claim. The north star comes from your stated purpose and `telos/raw-data-and-projections` as you described it. The partial claim view (two withheld claims) is a limit of this review, not evidence that no other teloi apply.
+
+## Main finding: concurrent captures sharing a spool lose evidence (pre-existing)
+- **Where it comes from:** `evidence_delivery::queue` (`src/evidence_delivery.rs:40-70`) reads the spool's frontier (its next write position) outside any transaction. It then encrypts and signs, and only then takes the write lock. If another writer committed in between, `enqueue` rejects the write as a frontier conflict (`src/evidence_spool.rs:406`).
+- **What I measured:**
+  - The new P3 test printed `A: queued=67`, `B: queued=0 unconfirmed=67`.
+  - Probe Q1b shows the cause is `"spool frontier conflict": 60` of 60. The losing writer gets locked into step behind the winner and loses every time.
+  - With random 0–6 ms gaps between writes (Q1d), about 45% of writes are lost.
+- **Not caused by this range:** under the pre-correction 5 s policy (Q1c) the result is the same, 0/60.
+- **Why it still matters:**
+  - The first review blamed P3's 0/66 on failing opens. That diagnosis was incomplete.
+  - The correction kept P3 as "observational": it only checks that the queued count is reported truthfully, so CI stays green while one capture records nothing.
+  - Neither the design doc nor `docs/V2-CAPTURE.md` mentions this. The parent design expects many collectors at once and proposes 16 concurrent capture streams (`.design/kan-v2-server-first.md:159,173`).
+- **Not a BLOCK:** each lost write is a definite non-admission, reported as a gap (`recording_gap: true`, `unconfirmed: 67`). Inference still completes and nothing is wrongly reported as recorded.
+
+## REQ/AC coverage
+| Item | Verdict | Evidence |
+|---|---|---|
+| REQ-1 | met | Open waits 100 ms; the probe for a fully locked spool finished in 145 ms. Q2 shows about 106–118 ms per observation for 10 observations, then immediate attempts. Total 1.19 s, with recovery after unlock. The FULL durability setting is untouched. P2 shows the caller's normal wait is restored afterwards. |
+| REQ-2 | met as written | The lock-out after a failure is gone (re-adding it breaks 2 tests). P4 recorded 88/88 beside a writer briefly holding the lock. P5: 0 failures in 80 simultaneous opens. The concurrent-capture loss above remains. |
+| REQ-3 | met | `.github/workflows/ci.yml:32` now runs the deadline and contention tests. The CLI help says "Cumulative awaited network/output I/O budget" (`src/bin/kan-v2.rs:29`). |
+| AC-1 | met | The CLI tests pass. Q5 with the spool locked for the whole attempt: 1.35 s, exact 40 bytes, one provider request, outcome completed with gaps. |
+| AC-2 | met, with a caveat | The test now checks that the already-queued item is untouched (`head == retained`). "Simultaneous opens" is met only in the narrow sense: P3 still shows one of two concurrent captures losing everything. |
+| AC-3 | met | Removing the new zero-budget check fails `blocking_final_flush_over_budget_is_unknown`. |
+
+## Verification (scratch export of HEAD, own cloned target)
+Every cargo command set `CARGO_TARGET_DIR` to the scratch target.
+
+- **Author's claims hold:**
+  - 52 targeted tests pass (capture 18, adversarial 13, contention 5, deadlines 6, spool 10). Delivery 5/5 and surface conformance 19/19 also pass.
+  - The 2 spool unit tests pass.
+  - fmt is clean, and clippy is clean both with `v2-crypto` on all targets and on the default workspace.
+- **Full-fix reversion:** I put `src/evidence_capture.rs` and `src/evidence_spool.rs` back to their b6427c3 versions and kept the new tests. The author's 4 named tests fail, plus `p5_concurrent_capture_opens`.
+- **Mutants caught by a named test:**
+
+  | Mutant | Failing test |
+  |---|---|
+  | allowance never debited | `capture_wait_allowance_exhaustion_does_not_disable_recovery` |
+  | sleep time not counted | `capture_wait_allowance_exhaustion_does_not_disable_recovery` |
+  | caller's wait not restored | `p2_admission_restores_callers_busy_timeout` |
+  | no restore on panic | `capture_wait_restores_policy_and_thread_state_after_unwind` |
+  | open with zero wait | `p5_concurrent_capture_opens` |
+  | open with 5 s wait | `p1_cli_open_does_not_wait_on_exclusive_lock` |
+  | busy handler never waits | `p4_capture_beside_brief_periodic_writer` |
+  | zero-budget check removed | `blocking_final_flush_over_budget_is_unknown` |
+  | lock-out re-added | 2 tests in `evidence_capture` |
+
+- **Mutants that survive the shipped suite:**
+  - **No 100 ms per-observation cap.** The first observation then waits 1018 ms. My Q2 probe catches this; nothing shipped does.
+  - **Thread-local wait state not restored to its prior value.** This only matters if the wait helper is ever nested, which doesn't happen today.
+- **Negative-controls script is stale.** `scripts/capture_negative_controls.py` exits "baseline failed" at HEAD: it expects 16 capture tests and there are 18, and its `gap-health` edit pattern no longer exists. It was already stale at b6427c3.
+
+## Smaller limits (low severity)
+- **Nesting:** while the custom busy handler is installed, SQLite reports the stored timeout as 0. A nested call would therefore restore 0 and disable waiting for the outer call. This is from reading the code; I didn't run it, and nothing nests today.
+- **Open's bound is per statement:** the 100 ms applies to each statement of open/audit plus the CLI's `status()`, not to open as a whole. The design says "Open/audit is separate."
+- **Long locks after the allowance is spent:** they lose evidence by design. In Q4, a writer holding the lock for 150 ms out of every 400 ms cost 63 of 200 observations. This limit is stated explicitly.
+- **Stale comments:** P4 and P5 still call themselves "Observational" but now assert, and P2's comment names the old `without_busy_wait`.
+
+## Scope and forbidden patterns
+- **Scope:** the out-of-scope items (async storage workers, disk latency bounds, and so on) were named up front, so they're legitimate. Labelling P3 "observational" is suspicious: it hides the hard remaining case.
+- **Forbidden patterns:** none found. Nothing is deleted or rewritten. Redirects, retries and connection pooling are still off. Provider retries stay at one request (Q5: 1 hit). There is no new persistence path. The no-redirect/no-retry settings didn't change in this range.
+
+## Follow-ups
+1. **Fix the frontier conflict.** One option: read the frontier and encrypt inside the write-locked transaction. Another: do a bounded re-encrypt only after a definite conflict, which is unambiguous and isn't an inference retry. Then make P3 assert that both attempts are recorded. Until then, say in `docs/V2-CAPTURE.md` that concurrent captures sharing a spool can lose evidence.
+2. Promote Q2 into the suite so the per-observation cap is tested.
+3. Update `capture_negative_controls.py`, or retire it.
+4. Either state that the wait helper must not be nested, or save and restore the handler state properly.
+
+## Cleanup
+My scratch target is removed (1.3 GiB) and no processes are left running. The author checkout is clean at f8e5b85 and 16 GiB is free. The negative-controls script left its own source and logs in `/var/folders/.../kan-capture-controls-eqyitr54`, as it's designed to (its target was removed). Everything I kept is in `/tmp/kan-latency-review2-dxaB`:
+- `REVIEW.md`: a summary of this review
+- `src/`: the exported source
+- `probes/`: `review2_probes.rs` (Q1–Q5), `mutate.py`, the original and pre-correction sources
+- `logs/`: 21 logs

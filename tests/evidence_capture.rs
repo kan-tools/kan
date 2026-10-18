@@ -881,3 +881,88 @@ async fn io_budget_is_cumulative_across_output_writes() {
         Some(Outcome::OutcomeUnknown)
     );
 }
+
+#[test]
+fn encrypted_sink_recovers_after_contention_without_rewriting_evidence() {
+    let dir = tempfile::tempdir().unwrap();
+    let writer = Identity::generate();
+    let path = dir.path().join("spool");
+    let mut spool = Spool::create(
+        &path,
+        &kan::evidence_service::hex(&SCOPE),
+        &writer.did().to_string(),
+        &Identity::generate().did().to_string(),
+        1 << 20,
+    )
+    .unwrap();
+    let recipient = crypto::public_key(&PRIVATE).unwrap();
+    let lock = rusqlite::Connection::open(&path).unwrap();
+    lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let mut sink = EncryptedSpool {
+        spool: Some(&mut spool),
+        signer: &writer,
+        recipient,
+    };
+    let started = std::time::Instant::now();
+    assert!(sink.admit(&[1; 16], b"first").is_err());
+    assert!(started.elapsed() < Duration::from_secs(1));
+    lock.execute_batch("ROLLBACK").unwrap();
+    sink.admit(&[2; 16], b"recovered within attempt").unwrap();
+    assert!(sink.spool.is_some());
+    let retained = spool.head().unwrap().unwrap();
+    assert_eq!(spool.status().unwrap().pending, 1);
+    let mut fresh = EncryptedSpool {
+        spool: Some(&mut spool),
+        signer: &writer,
+        recipient,
+    };
+    fresh.admit(&[3; 16], b"later attempt").unwrap();
+    assert_eq!(spool.status().unwrap().pending, 2);
+    let head = spool.head().unwrap().unwrap();
+    assert_eq!(head, retained);
+    assert_eq!(
+        delivery::decrypt_request(&head, &PRIVATE, &SCOPE, &writer.did().to_string()).unwrap(),
+        b"recovered within attempt"
+    );
+}
+
+#[test]
+fn capture_wait_allowance_exhaustion_does_not_disable_recovery() {
+    let dir = tempfile::tempdir().unwrap();
+    let writer = Identity::generate();
+    let path = dir.path().join("spool");
+    let mut spool = Spool::create(
+        &path,
+        &kan::evidence_service::hex(&SCOPE),
+        &writer.did().to_string(),
+        &Identity::generate().did().to_string(),
+        1 << 20,
+    )
+    .unwrap();
+    let lock = rusqlite::Connection::open(&path).unwrap();
+    lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let mut sink = EncryptedSpool {
+        spool: Some(&mut spool),
+        signer: &writer,
+        recipient: crypto::public_key(&PRIVATE).unwrap(),
+    };
+    let mut notify = |_: &Health| {};
+    let mut recorder = Recorder::new(Observer::Gateway, &mut sink, &mut notify).unwrap();
+    let started = std::time::Instant::now();
+    for n in 0..30 {
+        recorder
+            .record(Event::RequestChunk { offset: n }, b"x")
+            .unwrap();
+    }
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "repeated waits exceeded allowance"
+    );
+    assert_eq!(recorder.health().unconfirmed, 30);
+    lock.execute_batch("ROLLBACK").unwrap();
+    recorder
+        .record(Event::RequestChunk { offset: 30 }, b"r")
+        .unwrap();
+    assert_eq!(recorder.health().locally_queued, 1);
+    assert!(recorder.health().recording_gap);
+}

@@ -26,6 +26,7 @@ enum Command {
         #[arg(long)]
         recipient: String,
         #[arg(long, default_value_t = 300, value_parser = clap::value_parser!(u32).range(1..=86400))]
+        /// Cumulative awaited network/output I/O budget; excludes capture work.
         deadline_seconds: u32,
     },
     /// Recover an explicitly pinned import into a NEW private plaintext directory.
@@ -243,7 +244,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let recipient = fixed_hex::<32>(&recipient)?;
             let request = bounded_read(std::io::stdin().lock(), capture::MAX_REQUEST)?;
             // Open failure is degraded capture, not permission to drop inference.
-            let mut spool = kan::evidence_spool::Spool::open(&spool).ok();
+            let mut spool = kan::evidence_spool::Spool::open_for_capture(&spool).ok();
             // A readable, mismatched writer is a configuration error. Storage
             // that cannot be inspected still follows the visible-gap policy.
             if let Some(queue) = spool.as_mut() {

@@ -92,3 +92,16 @@ remaining P6 work includes authenticated encrypted collector/gateway transport,
 request streaming, the chosen real provider/harness profile, persistent health and
 control reserves. Production key custody, independent-host backup drills and
 explicit cutover remain required before using v2 as the primary archive.
+
+
+Capture opens its spool with a 100 ms SQLite busy timeout to tolerate brief WAL
+setup contention. Each Recorder allocates at most 100 ms of busy wait per
+admission from a one-second allowance, debited only by actual busy-handler sleep. Once spent, immediate admission continues. Failure reports a gap but never
+latches off the rest of an attempt; later observations can recover. The scoped handler shares each admission allowance across statements and restores caller policy on unwind. OS sleep overruns remain possible; this is not a hard wall-clock deadline. Startup audit, fsync, crypto and reporting
+remain synchronous. Ordinary offline spool operations retain their wait policy.
+
+The latency correction alone does not resolve concurrent request preparation:
+the follow-up review found a pre-existing stale-frontier race between queue
+producers. The gateway child (#278) moves preparation into the reserved writer
+transaction. See the retained correction review; this parent does not claim
+lossless concurrent capture.
