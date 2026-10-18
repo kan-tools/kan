@@ -49,3 +49,6 @@ pub mod workspace;
 
 #[cfg(feature = "v2-storage")]
 pub mod evidence_spool;
+
+#[cfg(feature = "v2-crypto")]
+pub mod evidence_gateway;

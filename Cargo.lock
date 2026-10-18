@@ -1906,6 +1906,7 @@ dependencies = [
  "rmcp",
  "rpassword",
  "rusqlite",
+ "rustls",
  "schemars",
  "serde",
  "serde_bytes",
@@ -1915,6 +1916,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tiktoken-rs",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "x25519-dalek 2.0.1",
 ]
