@@ -926,7 +926,7 @@ fn synchronized_streams_retain_terminal_summaries() {
         .filter(|r| r["capture"]["outcome"] == "completed")
         .count();
     eprintln!(
-        "synchronized terminals={terminal}/80; lost-summary observations={}",
+        "synchronized terminals={terminal}/80; lost-telemetry observations={}",
         s.telemetry_dropped
     );
     assert!(
@@ -959,9 +959,52 @@ fn journal_session_exhaustion_is_visible_without_refusing_reporter_start() {
     );
     assert_eq!(value["journal"]["exhaustion_reason"], "session_limit");
     assert_eq!(value["journal"]["sessions_used"], 1024);
+    assert_eq!(value["journal"]["reserve_bytes"], 256 * 1024);
     assert_eq!(value["journal"]["loss_count_certainty"], "lower_bound");
     assert!(
-        journal.record(&f.health()).is_err(),
-        "a heartbeat cannot unseal exhausted history"
+        journal.record(&f.health()).is_ok(),
+        "session capacity must not stop writable attempt recording"
     );
+    let after = serde_json::to_value(journal.snapshot().unwrap()).unwrap();
+    assert_eq!(after["journal"]["exhausted_observed"], true);
+    assert_eq!(after["journal"]["exhaustion_reason"], "session_limit");
+}
+
+#[test]
+fn sealed_record_refusals_do_not_rewrite_control() {
+    let f = Fixture::new();
+    let conn = rusqlite::Connection::open(&f.journal).unwrap();
+    conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<99999) INSERT INTO attempts SELECT printf('%064x',i),0,0,0,0,'{}' FROM n").unwrap();
+    drop(conn);
+    let mut journal = Journal::open(&f.journal).unwrap();
+    assert!(journal.record(&f.health()).is_err());
+    let before = std::fs::read(&f.journal).unwrap();
+    for _ in 0..20 {
+        assert!(journal.record(&f.health()).is_err());
+    }
+    assert_eq!(
+        std::fs::read(&f.journal).unwrap(),
+        before,
+        "already sealed refusals must not cause another durable control write"
+    );
+}
+
+#[test]
+fn session_exhaustion_escalates_when_attempt_capacity_is_reached() {
+    let f = Fixture::new();
+    let conn = rusqlite::Connection::open(&f.journal).unwrap();
+    conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<1023) INSERT INTO sessions SELECT printf('%032x',i),0,0,1 FROM n").unwrap();
+    let (report, guard) = ops::reporter(Journal::open(&f.journal).unwrap()).unwrap();
+    drop(report);
+    guard.join();
+    conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<99999) INSERT INTO attempts SELECT printf('%064x',i),0,0,0,0,'{}' FROM n").unwrap();
+    drop(conn);
+    let mut journal = Journal::open(&f.journal).unwrap();
+    assert!(journal.record(&f.health()).is_err());
+    let value = serde_json::to_value(journal.snapshot().unwrap()).unwrap();
+    assert_eq!(value["journal"]["exhaustion_reason"], "attempt_limit");
+    assert_eq!(value["journal"]["reserve_bytes"], 0);
+    let before = std::fs::read(&f.journal).unwrap();
+    assert!(journal.record(&f.health()).is_err());
+    assert_eq!(std::fs::read(&f.journal).unwrap(), before);
 }

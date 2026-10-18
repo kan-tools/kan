@@ -68,11 +68,13 @@ reporter sessions and the latest worker checkpoint. It cannot replace the raw
 encrypted append-only evidence ledger. No automatic expiry or deletion occurs.
 
 New v2 journals have an 8192-page (32 MiB) ceiling plus rollback-journal space,
-a 100,000-attempt bound and a 1,024-session bound. The first limit reached wins;
-the row limits are not promised physical capacities. A 256 KiB reserve is
-preallocated for finite control-record recovery. A recorded capacity failure
-releases the reserve and sets a sticky exhaustion marker; subsequent attempt
-writes are refused until owner rotation. Existing metadata may still update.
+a 100,000-attempt bound and a 1,024-session bound. Row limits are not promised
+physical capacities. A 256 KiB reserve is preallocated for finite control-record
+recovery. Attempt/page exhaustion releases it and seals further attempt writes
+until owner rotation. Session exhaustion is a sticky coverage warning: it refuses
+new reporter registration while writable attempt summaries continue, retaining
+the reserve until attempt/page exhaustion occurs. Existing metadata may still
+update. Repeated unchanged exhaustion refusals do not rewrite the control row.
 Restart or a later successful heartbeat never clears exhaustion. Whole-device
 failure can also prevent the marker from being recorded. Capacity, last success
 and loss-count certainty are distinct observations, not a disk-health guarantee.
@@ -82,7 +84,7 @@ buffer with sharded locks and finite nonblocking retries. Distinct-attempt
 overflow, exhausted retry budgets, contradictions and failed summary writes are
 counted where possible. Counts are lower bounds, not missing-raw-message counts;
 older journal histories can include individual update losses. No arbitrary-load
-lossless guarantee is made. A separate journal reserves logical queue-independent
+lossless guarantee is made. Finite shard-lock and atomic reservation retry budgets can both exhaust below the global attempt cap; those failed admissions count as telemetry losses. A separate journal reserves logical queue-independent
 capacity, not physical capacity when the entire device fails or fills.
 
 Startup audit and filesystem calls remain synchronous and are not hard-time
@@ -113,7 +115,7 @@ kan-v2 ops-rotate "$HEALTH_COLLECTION"
 kan-v2 ops-history "$HEALTH_COLLECTION" --generation "$GENERATION_ID"
 ```
 
-Adoption requires a new private destination. It copies and verifies the standalone
+Adoption requires a new private destination. This journal profile accepts only SQLite rollback-journal format; WAL-mode headers are refused before SQLite access, without changing the source or creating WAL/SHM sidecars. It copies and verifies the standalone
 journal, seals that history by hash and creates a fresh v2 active generation.
 Reconfigure `--health-journal` and `--journal`, and the dashboard positional path,
 to the collection directory before restarting writers. Worker acknowledgment and

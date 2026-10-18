@@ -1,0 +1,20 @@
+     Removed 795 files, 248.0MiB total
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reversion/e20cb5b39a874f778bc6cccdc8e8c6ca
+note: untracked and therefore NOT reverted: ['.design/kan-v2-admission-audit.md', '.design/reviews/kan-v2-admission-audit-reversion/01-python.txt', '.design/reviews/kan-v2-admission-audit-reversion/02-python.txt', '.design/reviews/kan-v2-admission-audit-reversion/03-python.txt', '.design/reviews/kan-v2-admission-audit-reversion/production.patch', '.design/reviews/kan-v2-admission-audit-reversion/result.txt']
+What would be reverted (worktree):
+  skipped .design/kan-v2-human-frontend.md (not in --include)
+  skipped .design/kan-v2-journal-generations.md (not in --include)
+  skipped docs/V2-OPERATIONS.md (not in --include)
+  reverting scripts/revert_v2.py: 9/9 hunk(s)
+  reverting src/evidence_operations.rs: 10/13 hunk(s) (3 test-side hunk(s) kept in place)
+  skipped tests/evidence_operations.rs (not in --include)
+  skipped tests/evidence_operations_collection.rs (not in --include)
+  skipped tests/operations_ui.test.cjs (not in --include)
+  skipped tests/test_revert_v2.py (not in --include)
+  reverting web/operations/app.js: 4/4 hunk(s)
+
+DEMONSTRATED — failed under revert: python::bounded_pipe_cleanup, evidence_operations_collection::wal_format_is_refused_before_sqlite_can_create_untracked_sidecars, evidence_operations::journal_session_exhaustion_is_visible_without_refusing_reporter_start, evidence_operations::sealed_record_refusals_do_not_rewrite_control
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=python::bounded_pipe_cleanup,evidence_operations_collection::wal_format_is_refused_before_sqlite_can_create_untracked_sidecars,evidence_operations::journal_session_exhaustion_is_visible_without_refusing_reporter_start,evidence_operations::sealed_record_refusals_do_not_rewrite_control outcome=DEMONSTRATED
