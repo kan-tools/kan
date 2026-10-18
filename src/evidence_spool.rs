@@ -271,6 +271,8 @@ impl Spool {
     pub fn open_for_capture(path: &Path) -> Result<Self> {
         Self::open_with_wait(path, Duration::from_millis(100))
     }
+    /// Synchronous, non-nestable admission scope. Do not invoke this helper
+    /// recursively or on another spool from inside `operation`.
     pub(crate) fn with_capture_wait<T, E: From<Error>>(
         &mut self,
         wait: Duration,
