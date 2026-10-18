@@ -501,17 +501,22 @@ pub async fn forward_http<W: HttpOutput>(
         remaining: deadline,
     };
     let result = async {
-        let mut response = budget
-            .wait(
-                route
-                    .client
-                    .post(route.url.clone())
-                    .header("content-type", "application/octet-stream")
-                    .headers(headers)
-                    .body(request)
-                    .send(),
-            )
-            .await?;
+        let builder = route.client.post(route.url.clone());
+        // Only the opaque body profile supplies a synthetic content type.
+        let builder = if metadata.is_none() {
+            builder.header("content-type", "application/octet-stream")
+        } else {
+            builder
+        };
+        let outgoing = builder
+            .headers(headers)
+            .body(request)
+            .build()
+            .map_err(|_| Error::OutcomeUnknown)?;
+        if metadata.is_some() {
+            record_metadata(&mut recorder, "request-outgoing", outgoing.headers())?;
+        }
+        let mut response = budget.wait(route.client.execute(outgoing)).await?;
         recorder.record(
             Event::ResponseHead {
                 status: response.status().as_u16(),

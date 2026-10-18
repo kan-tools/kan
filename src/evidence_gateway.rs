@@ -8,13 +8,14 @@ use hyper::{
 use hyper_util::rt::TokioIo;
 use rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
 use std::{
+    collections::VecDeque,
     convert::Infallible,
     io,
     net::SocketAddr,
     path::{Path, PathBuf},
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
     },
     task::{Context, Poll},
@@ -23,8 +24,8 @@ use std::{
 use tokio::{
     io::{AsyncRead, AsyncWrite, DuplexStream, ReadBuf},
     net::TcpListener,
-    sync::{oneshot, Semaphore},
-    task::{JoinHandle, JoinSet},
+    sync::{oneshot, OwnedSemaphorePermit, Semaphore},
+    task::{AbortHandle, JoinHandle, JoinSet},
 };
 
 pub type HealthReporter = Arc<dyn Fn(&capture::Health) + Send + Sync>;
@@ -186,6 +187,7 @@ struct StreamBody {
     reader: DuplexStream,
     complete: Arc<AtomicBool>,
     _task: AbortTask,
+    _permit: Option<OwnedSemaphorePermit>,
     ended: bool,
 }
 impl Body for StreamBody {
@@ -256,6 +258,7 @@ async fn handle(
     request: Request<Incoming>,
     config: Arc<Config>,
     token: Option<String>,
+    admission: Option<Admission>,
 ) -> Result<Response<HttpBody>, Infallible> {
     if let Some(token) = token {
         let mut found = false;
@@ -280,6 +283,13 @@ async fn handle(
             return Ok(error(StatusCode::UNAUTHORIZED));
         }
     }
+    let permit = match admission {
+        Some(a) => match a.promote() {
+            Some(p) => Some(p),
+            None => return Ok(error(StatusCode::SERVICE_UNAVAILABLE)),
+        },
+        None => None,
+    };
     if request.method() != hyper::Method::POST {
         return Ok(error(StatusCode::NOT_FOUND));
     }
@@ -405,6 +415,7 @@ async fn handle(
             reader,
             complete,
             _task: task,
+            _permit: permit,
             ended: false,
         }
         .boxed_unsync(),
@@ -418,15 +429,36 @@ async fn handle(
             hyper::header::HeaderValue::from_static("application/octet-stream"),
         );
     }
-    response.headers_mut().insert(
-        "cache-control",
-        hyper::header::HeaderValue::from_static("no-store"),
-    );
+    if profile == Profile::Opaque {
+        response.headers_mut().insert(
+            "cache-control",
+            hyper::header::HeaderValue::from_static("no-store"),
+        );
+    }
     Ok(response)
 }
 
-/// Stops owned connection tasks when canceled. Bind first to announce the actual
-/// address; this validates the actual listener, not an unchecked CLI string.
+const PENDING: u8 = 0;
+const AUTHENTICATED: u8 = 1;
+const EVICTED: u8 = 2;
+#[derive(Clone)]
+struct Admission {
+    state: Arc<AtomicU8>,
+    permits: Arc<Semaphore>,
+}
+impl Admission {
+    fn promote(&self) -> Option<OwnedSemaphorePermit> {
+        let permit = self.permits.clone().try_acquire_owned().ok()?;
+        self.state
+            .compare_exchange(PENDING, AUTHENTICATED, Ordering::AcqRel, Ordering::Acquire)
+            .ok()?;
+        Some(permit)
+    }
+}
+
+/// Own every connection task. Unauthenticated clients have a separate bounded
+/// queue with oldest-pending eviction; they cannot reserve authenticated slots.
+/// This prevents idle-slot starvation, not general network/CPU denial of service.
 pub async fn serve(listener: TcpListener, auth: ListenerAuth, config: Config) -> io::Result<()> {
     auth.validate(listener.local_addr()?)?;
     config.validate()?;
@@ -438,27 +470,40 @@ pub async fn serve(listener: TcpListener, auth: ListenerAuth, config: Config) ->
     }
     let config = Arc::new(config);
     let permits = Arc::new(Semaphore::new(8));
+    let mut pending: VecDeque<(AbortHandle, Arc<AtomicU8>)> = VecDeque::new();
     let mut tasks = JoinSet::new();
     loop {
         tokio::select! {
             accepted=listener.accept()=>{
                 let (stream,_)=accepted?;
-                let Ok(permit)=permits.clone().try_acquire_owned() else { drop(stream);continue; };
+                while tasks.try_join_next().is_some() {}
+                pending.retain(|(task,state)| !task.is_finished() && state.load(Ordering::Acquire)==PENDING);
+                while pending.len()>=32 {
+                    let (task,state)=pending.pop_front().expect("bounded queue");
+                    // Promotion wins over eviction, or eviction wins over admission.
+                    // A successfully authenticated stream is never aborted here.
+                    if state.compare_exchange(PENDING,EVICTED,Ordering::AcqRel,Ordering::Acquire).is_ok() {
+                        task.abort();
+                    }
+                }
+                let state=Arc::new(AtomicU8::new(PENDING));
+                let admission=Admission {state:state.clone(),permits:permits.clone()};
                 let config=config.clone();
-                match &auth {
+                let task=match &auth {
                     ListenerAuth::MutualTls(tls)=>{
                         let acceptor=tokio_rustls::TlsAcceptor::from(tls.0.clone());
                         tasks.spawn(async move {
-                            let _permit=permit;
                             let Ok(Ok(stream))=tokio::time::timeout(Duration::from_secs(15),acceptor.accept(stream)).await else{return;};
-                            connection(stream,config,None).await;
-                        });
+                            let Some(_permit)=admission.promote() else{return;};
+                            connection(stream,config,None,None).await;
+                        })
                     },
                     ListenerAuth::LoopbackToken(token)=>{
                         let token=token.clone();
-                        tasks.spawn(async move {let _permit=permit;connection(stream,config,Some(token)).await;});
+                        tasks.spawn(async move {connection(stream,config,Some(token),Some(admission)).await;})
                     }
-                }
+                };
+                pending.push_back((task,state));
             },
             _=tasks.join_next(),if !tasks.is_empty()=>{}
         }
@@ -468,8 +513,11 @@ async fn connection<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     stream: T,
     config: Arc<Config>,
     token: Option<String>,
+    admission: Option<Admission>,
 ) {
-    let service = hyper::service::service_fn(move |r| handle(r, config.clone(), token.clone()));
+    let service = hyper::service::service_fn(move |r| {
+        handle(r, config.clone(), token.clone(), admission.clone())
+    });
     let mut builder = hyper::server::conn::http1::Builder::new();
     builder
         .keep_alive(false)

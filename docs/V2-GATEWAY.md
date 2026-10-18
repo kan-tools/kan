@@ -40,8 +40,12 @@ harness paths are supplied by the following harness profile, not this command's
 generic default. Do not point a real harness at this body-only route.
 
 Requests are bounded to 16 MiB; responses stream through a 64-KiB application
-buffer plus transport buffers. Eight connection slots cover handshake through
-response; excess connections are closed. TLS/header reception is limited to
+buffer plus transport buffers. Eight authenticated slots cover verified TLS connections or token-authenticated
+local requests through response. Up to 32 pending unauthenticated connections
+use a separate queue: a new arrival evicts the oldest still-pending connection.
+Atomic promotion protects authenticated streams from that eviction. Idle sockets
+cannot reserve authenticated slots; authenticated overload is refused. This is
+not qualification against sustained CPU/bandwidth flooding. TLS/header reception is limited to
 15 seconds, request bodies to 30 seconds, connections to 24 hours. The ordinary
 I/O budget is cumulative awaited send/read/write/flush time. Synchronous audit,
 crypto, fsync and health callbacks are not hard-latency bounded. CLI stderr
@@ -77,14 +81,19 @@ configuration; do not replace your existing global harness configuration.
 This profile accepts `/v1/messages` and `/v1/messages/count_tokens`, with optional
 `?beta=true`. It forwards opaque bodies and the open `anthropic-*` and
 `x-claude-code-*` header families, plus content type/accept/user agent/request ID.
-Response status, end-to-end headers, SSE pings and body bytes are preserved.
+Response status, end-to-end headers (including provider cache-control), SSE
+pings and body bytes are preserved. An absent request content-type stays absent
+in this profile; the opaque profile alone supplies application/octet-stream.
 Hop-by-hop headers, fields named by Connection, content length (reframed),
 cookies and authorization fields are removed. The gateway installs only its
 explicit provider API key. Local and provider tokens are not interchangeable.
 If both local authentication headers are present, both must match the local token.
 
 KANC2 HTTP metadata observations preserve normalized header names and hex-encoded
-values, with credential/cookie omissions named explicitly. Individual frame header JSON is bounded to 128 KiB. Large metadata is
+values, with credential/cookie omissions named explicitly. `request` records
+incoming headers; `request-outgoing` records the built application request after
+filtering and credential installation. The gateway names its installed API key
+as an omission. Library-added wire framing/host fields are outside this claim. Individual frame header JSON is bounded to 128 KiB. Large metadata is
 serialized as complete normalized HttpMetadata JSON and retained in ordered
 HttpMetadataChunk bodies of at most 64 KiB with offset/total coordinates; it
 must be reassembled before interpretation. This prevents metadata size from
@@ -122,3 +131,11 @@ framing and trailers are not archived by this profile. Collector and gateway
 coverage must be assessed separately; neither observer certifies the other's
 missing events. This is an inference API capture profile, not universal network
 or harness activity capture.
+
+The synthetic independent witness `scripts/verify_gateway_evidence.py` reads
+SQLite/JSON and HPKE with Python, checks both observers against external body
+expectations, reassembles metadata chunks and retains unknown event frames. It
+is not a production archive reader or independent outer-signature verifier.
+The older body-only witness scripts remain scoped to their original fixtures.
+Rust `Header`/`Event` are closed typed views: an unknown variant is an explicit
+decode failure, never permission to discard the original archived bytes.

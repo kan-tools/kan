@@ -8,4 +8,17 @@ Verdict: **APPROVE WITH FOLLOW-UPS**.
 
 The review independently verified 10 gateway fixtures, 43 capture fixtures, 11 spool tests, two spool units, delivery/import/migration callers, surface checks, lint, the actual isolated Claude Code smoke and seven runtime mutation controls. Twelve additional hostile probes are retained in [the public probe source](kan-v2-gateway-probes.rs), separate from the implementation tests.
 
-Corrections planned before network exposure: unauthenticated connection-slot starvation; explicit outgoing request metadata and credential omissions; HTTP header fidelity. Additional evidence work promotes authentication/resource probes and independently decodes both observer spools. Remaining production gates include durable/harness-visible health, source-event adapters, custody/erasure, capacity, backup and cutover. The review does not certify complete P6 or production deployment.
+Corrections prepared for fresh review: unauthenticated connection-slot starvation; explicit outgoing request metadata and credential omissions; HTTP header fidelity. Additional evidence work promotes authentication/resource probes and independently decodes both observer spools. Remaining production gates include durable/harness-visible health, source-event adapters, custody/erasure, capacity, backup and cutover. The review does not certify complete P6 or production deployment.
+
+The correction separates pending unauthenticated connections from authenticated
+slots, atomically arbitrates promotion/eviction, captures outgoing application
+headers and explicit provider-key omissions, and preserves cache-control/absent
+content-type in the Anthropic profile. New tests retain TLS-version, duplicate
+credential, slot-limit and body-timeout probes; independent Python readback now
+checks both normal and actual-harness spools and segmented metadata.
+
+The generated-admission commit fault hooks remain a low-priority follow-up;
+existing crash tests cover the shared transaction/storage mechanism but do not
+inject at that new entry point. Harness-visible/durable health remains beyond
+proxy stderr, and source-event adapters remain open. No claim of full P6 or
+DoS/capacity qualification is made.

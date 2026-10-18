@@ -557,7 +557,7 @@ async fn anthropic_provider() -> (String, Requests, Task) {
             } else {
                 (sse(), "text/event-stream")
             };
-            let header=format!("HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close, x-private-hop\r\nx-private-hop: drop-me\r\nrequest-id: fixture-request\r\nanthropic-ratelimit-unified-status: allowed\r\nx-should-retry: false\r\n\r\n",body.len());
+            let header=format!("HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close, x-private-hop\r\nx-private-hop: drop-me\r\nrequest-id: fixture-request\r\nanthropic-ratelimit-unified-status: allowed\r\nx-should-retry: false\r\nCache-Control: max-age=17\r\n\r\n",body.len());
             let _ = s.write_all(header.as_bytes()).await;
             for chunk in body.chunks(31) {
                 if s.write_all(chunk).await.is_err() {
@@ -623,6 +623,7 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
     assert_eq!(r.headers()["content-type"], "text/event-stream");
     assert_eq!(r.headers()["request-id"], "fixture-request");
     assert_eq!(r.headers()["x-should-retry"], "false");
+    assert_eq!(r.headers()["cache-control"], "max-age=17");
     assert!(r.headers().get("x-private-hop").is_none());
     assert_eq!(r.bytes().await.unwrap().as_ref(), sse());
     {
@@ -649,6 +650,10 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
         .await
         .unwrap();
     assert_eq!(r.bytes().await.unwrap(), "{\"input_tokens\":42}");
+    assert!(!requests.lock().unwrap()[1]
+        .0
+        .to_ascii_lowercase()
+        .contains("content-type:"));
     for path in [
         "v1/messages?beta=false",
         "v1/messages?beta=true&url=evil",
@@ -678,12 +683,18 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
     );
     assert_eq!(requests.lock().unwrap().len(), 2);
     let mut saw_omission = false;
-    for (dir, did) in [(gd.path(), gdid), (cd.path(), cdid)] {
+    let mut outgoing_provider_omission = false;
+    for (dir, did) in [(gd.path(), gdid.clone()), (cd.path(), cdid.clone())] {
         for (h, _) in frames(&dir.join("spool"), &did) {
             if let capture::Event::HttpMetadata {
-                headers, omitted, ..
+                direction,
+                headers,
+                omitted,
             } = h.event
             {
+                if h.observer == Observer::Gateway && direction == "request-outgoing" {
+                    outgoing_provider_omission |= omitted.iter().any(|s| s == "x-api-key");
+                }
                 let text = serde_json::to_string(&headers).unwrap();
                 assert!(!text.contains(&hex(TOKEN.as_bytes())));
                 assert!(!text.contains(&hex(b"synthetic-provider-secret")));
@@ -694,6 +705,17 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
         }
     }
     assert!(saw_omission);
+    independent_evidence(
+        gd.path(),
+        cd.path(),
+        &gdid,
+        &cdid,
+        &requests.lock().unwrap(),
+    );
+    assert!(
+        outgoing_provider_omission,
+        "provider credential installation must have an omission marker"
+    );
 }
 
 /// Explicit opt-in: actual installed harness, isolated configuration, synthetic
@@ -705,7 +727,7 @@ async fn real_claude_code_uses_both_hops() {
     let gd = tempfile::tempdir().unwrap();
     let cd = tempfile::tempdir().unwrap();
     let sandbox = tempfile::tempdir().unwrap();
-    let (origin, requests, _tasks, _, _) = anthropic_pair(gd.path(), cd.path()).await;
+    let (origin, requests, _tasks, gdid, cdid) = anthropic_pair(gd.path(), cd.path()).await;
     let version = tokio::process::Command::new(&binary)
         .arg("--version")
         .output()
@@ -771,6 +793,7 @@ async fn real_claude_code_uses_both_hops() {
         .iter()
         .all(|(h, _)| h.contains("synthetic-provider-secret") && !h.contains(TOKEN)));
     println!("real Claude Code → collector → mutual TLS gateway → synthetic provider: {} requests, expected result",requests.len());
+    independent_evidence(gd.path(), cd.path(), &gdid, &cdid, &requests);
 }
 
 struct CliProcess {
@@ -960,6 +983,12 @@ async fn large_response_metadata_does_not_block_inference() {
     assert_eq!(r.bytes().await.unwrap(), "ok");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert!(!health.lock().unwrap().last().unwrap().recording_gap);
+    independent_spool(
+        dir.path(),
+        &did,
+        "gateway",
+        &serde_json::json!({"private":hex(&PRIVATE),"scope":hex(&SCOPE),"exchanges":[{"request":hex(b"{}"),"response":hex(b"ok"),"status":200}]}),
+    );
     let mut metadata = Vec::new();
     let mut total = 0;
     for (h, b) in frames(&dir.path().join("spool"), &did) {
@@ -978,4 +1007,284 @@ async fn large_response_metadata_does_not_block_inference() {
         .unwrap()
         .iter()
         .any(|h| h[0] == "x-large-fixture" && h[1] == hex(large.as_bytes())));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn probe_tls12_client_rejected() {
+    let (p, calls, _p) =
+        provider(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec())
+            .await;
+    let dir = tempfile::tempdir().unwrap();
+    let (g, _, _) = config(
+        Route::new(&p).unwrap(),
+        Observer::Gateway,
+        dir.path(),
+        false,
+    );
+    let (url, _g) = start(tls(), g).await;
+    let c = reqwest::Client::builder()
+        .no_proxy()
+        .tls_built_in_root_certs(false)
+        .add_root_certificate(reqwest::Certificate::from_pem(CA).unwrap())
+        .identity(reqwest::Identity::from_pem(ID).unwrap())
+        .max_tls_version(reqwest::tls::Version::TLS_1_2)
+        .build()
+        .unwrap();
+    let r = c
+        .post(&url)
+        .header("x-kan-exchange", hex(&[7; 32]))
+        .body("x")
+        .send()
+        .await;
+    println!("PROBE tls1.2: {:?}", r.as_ref().map(|r| r.status()));
+    assert!(r.is_err());
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn idle_unauthenticated_connections_cannot_starve_either_listener() {
+    let (p, calls, _p) =
+        provider(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec())
+            .await;
+    let gd = tempfile::tempdir().unwrap();
+    let cd = tempfile::tempdir().unwrap();
+    let (g, _, _) = config(Route::new(&p).unwrap(), Observer::Gateway, gd.path(), false);
+    let (remote, _g) = start(tls(), g).await;
+    let (c, _, _) = config(
+        Route::mutual_tls(&remote, CA, ID).unwrap(),
+        Observer::Collector,
+        cd.path(),
+        false,
+    );
+    let (local, _c) = start(ListenerAuth::LoopbackToken(TOKEN.into()), c).await;
+    let mut idle = Vec::new();
+    // More than the whole pending queue at each hop: a fresh valid connection
+    // must evict pending work rather than being refused behind idle sockets.
+    for url in [&remote, &local] {
+        let u = reqwest::Url::parse(url).unwrap();
+        for _ in 0..40 {
+            idle.push(
+                tokio::net::TcpStream::connect((u.host_str().unwrap(), u.port().unwrap()))
+                    .await
+                    .unwrap(),
+            );
+        }
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    for index in [0, 40] {
+        let mut byte = [0];
+        let closed =
+            tokio::time::timeout(Duration::from_secs(1), idle[index].read(&mut byte)).await;
+        assert!(
+            matches!(closed, Ok(Ok(0)) | Ok(Err(_))),
+            "old pending socket was not evicted"
+        );
+    }
+    let r = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .unwrap()
+        .post(&local)
+        .bearer_auth(TOKEN)
+        .body("x")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.bytes().await.unwrap(), "ok");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn authenticated_slot_limit_and_body_timeout_are_enforced() {
+    let gd = tempfile::tempdir().unwrap();
+    let cd = tempfile::tempdir().unwrap();
+    let (origin, requests, _tasks, _, _) = anthropic_pair(gd.path(), cd.path()).await;
+    let url = reqwest::Url::parse(&origin).unwrap();
+    let addr = (url.host_str().unwrap(), url.port().unwrap());
+    let mut pending = Vec::new();
+    for _ in 0..8 {
+        let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
+        s.write_all(format!("POST /v1/messages HTTP/1.1\r\nHost: fixture\r\nx-api-key: {TOKEN}\r\nContent-Length: 10\r\n\r\n{{").as_bytes()).await.unwrap();
+        pending.push(s);
+    }
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    let c = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .unwrap();
+    assert_eq!(
+        c.post(format!("{origin}v1/messages"))
+            .header("x-api-key", TOKEN)
+            .body("{}")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        503
+    );
+    let mut response = Vec::new();
+    tokio::time::timeout(
+        Duration::from_secs(35),
+        pending[0].read_to_end(&mut response),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(response.starts_with(b"HTTP/1.1 413"));
+    drop(pending);
+    assert_eq!(requests.lock().unwrap().len(), 0);
+    // Matching duplicate credentials are still ambiguous, not two votes to allow.
+    assert_eq!(
+        c.post(format!("{origin}v1/messages"))
+            .header("x-api-key", TOKEN)
+            .header("x-api-key", TOKEN)
+            .body("{}")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+}
+
+fn independent_evidence(
+    gd: &std::path::Path,
+    cd: &std::path::Path,
+    gdid: &str,
+    cdid: &str,
+    requests: &[(String, Vec<u8>)],
+) {
+    let expected = serde_json::json!({"private":hex(&PRIVATE),"scope":hex(&SCOPE),"exchanges":requests.iter().map(|(h,b)|{
+        let response=if h.starts_with("POST /v1/messages/count_tokens") {b"{\"input_tokens\":42}".to_vec()} else {sse()};
+        serde_json::json!({"request":hex(b),"response":hex(&response),"status":200})
+    }).collect::<Vec<_>>()});
+    let mut summaries = Vec::new();
+    for (dir, did, observer) in [(gd, gdid, "gateway"), (cd, cdid, "collector")] {
+        summaries.push(independent_spool(dir, did, observer, &expected));
+    }
+    assert_eq!(
+        summaries[0], summaries[1],
+        "independently decoded exchange links differ"
+    );
+}
+
+fn independent_spool(
+    dir: &std::path::Path,
+    did: &str,
+    observer: &str,
+    expected: &serde_json::Value,
+) -> serde_json::Value {
+    let fixture = dir.join("oracle-expectations.json");
+    std::fs::write(&fixture, serde_json::to_vec(expected).unwrap()).unwrap();
+    let python = std::env::var("KAN_CRYPTO_ORACLE_PYTHON").unwrap_or_else(|_| "python3".into());
+    let output = std::process::Command::new(&python)
+        .args([
+            "-I",
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/scripts/verify_gateway_evidence.py"
+            ),
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/scripts/verify_archive_encryption.py"
+            ),
+        ])
+        .arg(dir.join("spool"))
+        .arg(&fixture)
+        .args([did, observer])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let summary = serde_json::from_slice(&output.stdout).unwrap();
+    // A changed external expectation must fail even with Python optimization.
+    let mut corrupt = expected.clone();
+    corrupt["exchanges"][0]["request"] = serde_json::json!("ff");
+    std::fs::write(&fixture, serde_json::to_vec(&corrupt).unwrap()).unwrap();
+    let bad = std::process::Command::new(&python)
+        .args([
+            "-I",
+            "-O",
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/scripts/verify_gateway_evidence.py"
+            ),
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/scripts/verify_archive_encryption.py"
+            ),
+        ])
+        .arg(dir.join("spool"))
+        .arg(&fixture)
+        .args([did, observer])
+        .output()
+        .unwrap();
+    assert!(!bad.status.success());
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("external body expectations"));
+    summary
+}
+
+#[test]
+fn independent_reader_retains_unknown_event_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let frame = dir.path().join("future.bin");
+    let json = br#"{"event":{"type":"future-event","new-field":7}}"#;
+    let mut raw = b"KANC2".to_vec();
+    raw.extend((json.len() as u32).to_be_bytes());
+    raw.extend(json);
+    raw.extend([0, 255, 7]);
+    std::fs::write(&frame, &raw).unwrap();
+    let output=std::process::Command::new("python3").args(["-I","-O","-c","import pathlib,runpy,sys; m=runpy.run_path(sys.argv[1]); print(m['parse_frame'](pathlib.Path(sys.argv[2]).read_bytes())[2])",concat!(env!("CARGO_MANIFEST_DIR"),"/scripts/verify_gateway_evidence.py")]).arg(&frame).output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), hex(&raw));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn authenticated_stream_survives_pending_connection_eviction() {
+    let provider = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let p = format!("http://{}/fixed", provider.local_addr().unwrap());
+    let (release, wait) = tokio::sync::oneshot::channel();
+    let _p = Task(tokio::spawn(async move {
+        let (mut stream, _) = provider.accept().await.unwrap();
+        let mut head = Vec::new();
+        let mut byte = [0];
+        while !head.ends_with(b"\r\n\r\n") {
+            stream.read_exact(&mut byte).await.unwrap();
+            head.push(byte[0]);
+        }
+        stream.read_exact(&mut byte).await.unwrap();
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n")
+            .await
+            .unwrap();
+        wait.await.unwrap();
+        stream.write_all(b"1\r\nb\r\n0\r\n\r\n").await.unwrap();
+    }));
+    let gd = tempfile::tempdir().unwrap();
+    let (g, _, _) = config(Route::new(&p).unwrap(), Observer::Gateway, gd.path(), false);
+    let (url, _g) = start(tls(), g).await;
+    let mut response = client(CA, true)
+        .post(&url)
+        .header("x-kan-exchange", hex(&[7; 32]))
+        .body("x")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.chunk().await.unwrap().unwrap(), "a");
+    let u = reqwest::Url::parse(&url).unwrap();
+    let mut idle = Vec::new();
+    for _ in 0..80 {
+        idle.push(
+            tokio::net::TcpStream::connect((u.host_str().unwrap(), u.port().unwrap()))
+                .await
+                .unwrap(),
+        );
+    }
+    release.send(()).unwrap();
+    assert_eq!(response.bytes().await.unwrap(), "b");
 }
