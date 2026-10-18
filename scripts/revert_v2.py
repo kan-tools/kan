@@ -6,7 +6,8 @@ Working diff: --tests target::exact_name,node::summary_loss_units
 History: --verify COMMIT (reads that commit's actual Demonstrated-by trailer).
 
 Runs in a permanent source export under .local-state/reversion, never in a Git
-worktree or the caller's source tree. Uses CARGO_TARGET_DIR only when explicitly
+worktree; the caller's tracked source is never changed. Exports are inside its
+gitignored scratch directory. Uses CARGO_TARGET_DIR only when explicitly
 set by the caller; run sequentially with other Cargo jobs. Retains raw test logs.
 This is the explicit mixed-language adapter; vanilla day --verify is Rust-only.
 """
@@ -17,6 +18,7 @@ import io
 import os
 from pathlib import Path
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -27,6 +29,24 @@ NODE_TESTS = {
     'future_clock_badge': ('tests/operations_ui.test.cjs', 'future clock samples produce consistent badges and retain uncertain reporter history'),
     'summary_loss_units': ('tests/operations_ui.test.cjs', 'unsampled sessions and summary loss units are explicit'),
 }
+
+
+def run_process(command, cwd, timeout):
+    """Own a POSIX process group so timeout cannot orphan a test descendant."""
+    if os.name != 'posix':
+        raise ValueError('the reversion runner requires POSIX process-group cleanup')
+    process = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, text=True, start_new_session=True)
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except (subprocess.TimeoutExpired, KeyboardInterrupt):
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.communicate()
+        raise
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def parse_result(kind, name, output, returncode):
@@ -143,7 +163,7 @@ def main():
                     command += [exact, '--', '--exact']
                 counter += 1
                 try:
-                    run = subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=240)
+                    run = run_process(command, cwd, timeout=240)
                 except subprocess.TimeoutExpired as exc:
                     (logs / f'{counter:02d}-timeout.txt').write_text(str(exc))
                     raise engine.CouldNotCheck('RUNNER-TIMEOUT', test) from exc
@@ -165,13 +185,14 @@ def main():
             print(f'{revision}: {outcome}; all trailer tests reproduced={ok}')
             return 0 if ok else 1
         original_git = engine.git
+        untracked = git(root, 'ls-files', '--others', '--exclude-standard').decode()
         def exported_git(*argv, **kwargs):
             if argv == ('rev-parse', '--show-toplevel'):
                 return str(dest)
             if argv == ('diff', '--unified=0', 'HEAD'):
                 return patch
             if argv and argv[0] == 'ls-files':
-                return ''
+                return untracked
             return original_git(*argv, **kwargs)
         engine.git = exported_git
         sys.argv = [str(args.helper), '--tests', ','.join(names)]

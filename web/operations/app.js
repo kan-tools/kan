@@ -20,7 +20,7 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
   $('updated').textContent='Read '+new Date(s.read_at*1000).toLocaleTimeString();
   $('pending').textContent=q?count(q.pending):'—';$('bytes').textContent=q?bytes(q.pending_bytes)+' awaiting delivery':'No queue sample';
   $('acked').textContent=q?count(q.next-q.pending):'—';$('acktime').textContent='Last worker ack: '+time(w?.last_ack_at);
-  $('gaps').textContent=count(s.unconfirmed);$('attempts').textContent=count(s.attempts);$('telemetry').textContent=count(s.telemetry_dropped)+' health summary loss observations (at least) · '+count(w?.telemetry_failures)+' worker reports failed';
+  $('gaps').textContent=count(s.unconfirmed);$('attempts').textContent=count(s.attempts);$('telemetry').textContent=count(s.telemetry_dropped)+' health telemetry loss observations (at least) · '+count(w?.telemetry_failures)+' worker reports failed';
   $('worker').textContent=!w?'No worker':!workerCurrent?'Stale · '+w.state:w.state;
   $('retry').textContent=w?.state==='retrying'?'Retry delay: '+w.retry_seconds+'s · '+count(w.consecutive_failures)+' consecutive failures':w?.state==='idle'?'Queue empty at last sample':'Exact retained bytes, in order';
   $('capacity').value=q?Math.min(100,100*q.pending_bytes/q.budget):0;$('capacity-label').textContent=q?bytes(q.pending_bytes)+' / '+bytes(q.budget):'No queue sample';
@@ -31,7 +31,7 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
   const unseen=Math.max(0,s.unclosed_sessions-unclosed.length);
   const history=[];
   if(s.unconfirmed)history.push(count(s.unconfirmed)+' unconfirmed capture observations');
-  if(s.telemetry_dropped)history.push(count(s.telemetry_dropped)+' health summary loss observations (at least)');
+  if(s.telemetry_dropped)history.push(count(s.telemetry_dropped)+' health telemetry loss observations (at least)');
   if(w?.telemetry_failures)history.push(count(w.telemetry_failures)+' worker reports failed');
   if(stale.length)history.push(count(stale.length)+' sampled unclosed sessions without a current heartbeat');
   if(unseen)history.push(count(unseen)+' unclosed sessions outside the recent sample');

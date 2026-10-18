@@ -1,0 +1,42 @@
+M1-finish-no-decrement contended_admission_is_bounded_and_counts_one_summary ok
+M1-finish-no-decrement sharded_admission_is_independent_and_globally_bounded FAILED
+M1-finish-no-decrement burst_keeps_final_cumulative_summary_and_terminal_gap ok
+M1-finish-no-decrement synchronized ok ['synchronized terminals=80/80; lost-summary observations=0']
+M1-finish-no-decrement synchronized ok ['synchronized terminals=80/80; lost-summary observations=0']
+M1-finish-no-decrement synchronized ok ['synchronized terminals=80/80; lost-summary observations=0']
+M2-double-count-loss contended_admission_is_bounded_and_counts_one_summary FAILED
+M2-double-count-loss sharded_admission_is_independent_and_globally_bounded ok
+M2-double-count-loss burst_keeps_final_cumulative_summary_and_terminal_gap FAILED
+M2-double-count-loss synchronized ok ['synchronized terminals=80/80; lost-summary observations=0']
+M2-double-count-loss synchronized ok ['synchronized terminals=80/80; lost-summary observations=0']
+M2-double-count-loss synchronized ok ['synchronized terminals=80/80; lost-summary observations=0']
+M3-loss-uncounted contended_admission_is_bounded_and_counts_one_summary FAILED
+M3-loss-uncounted sharded_admission_is_independent_and_globally_bounded ok
+M3-loss-uncounted burst_keeps_final_cumulative_summary_and_terminal_gap FAILED
+M3-loss-uncounted synchronized ok ['synchronized terminals=80/80; lost-summary observations=0']
+M3-loss-uncounted synchronized ok ['synchronized terminals=80/80; lost-summary observations=0']
+M3-loss-uncounted synchronized ok ['synchronized terminals=80/80; lost-summary observations=0']
+M4-count-every-offer contended_admission_is_bounded_and_counts_one_summary ok
+M4-count-every-offer sharded_admission_is_independent_and_globally_bounded FAILED
+M4-count-every-offer burst_keeps_final_cumulative_summary_and_terminal_gap FAILED
+M4-count-every-offer synchronized FAILED ['synchronized terminals=9/80; lost-summary observations=2198']
+M4-count-every-offer synchronized FAILED ['synchronized terminals=10/80; lost-summary observations=2199']
+M4-count-every-offer synchronized FAILED ['synchronized terminals=8/80; lost-summary observations=2199']
+M5-single-try contended_admission_is_bounded_and_counts_one_summary ok
+M5-single-try sharded_admission_is_independent_and_globally_bounded ok
+M5-single-try burst_keeps_final_cumulative_summary_and_terminal_gap ok
+M5-single-try synchronized ok ['synchronized terminals=78/80; lost-summary observations=35']
+M5-single-try synchronized ok ['synchronized terminals=79/80; lost-summary observations=26']
+M5-single-try synchronized ok ['synchronized terminals=79/80; lost-summary observations=22']
+M6-single-shard contended_admission_is_bounded_and_counts_one_summary ok
+M6-single-shard sharded_admission_is_independent_and_globally_bounded FAILED
+M6-single-shard burst_keeps_final_cumulative_summary_and_terminal_gap ok
+M6-single-shard synchronized ok ['synchronized terminals=78/80; lost-summary observations=58']
+M6-single-shard synchronized FAILED ['synchronized terminals=75/80; lost-summary observations=94']
+M6-single-shard synchronized FAILED ['synchronized terminals=72/80; lost-summary observations=185']
+M7-parent-like contended_admission_is_bounded_and_counts_one_summary ok
+M7-parent-like sharded_admission_is_independent_and_globally_bounded FAILED
+M7-parent-like burst_keeps_final_cumulative_summary_and_terminal_gap ok
+M7-parent-like synchronized FAILED ['synchronized terminals=35/80; lost-summary observations=1386']
+M7-parent-like synchronized FAILED ['synchronized terminals=30/80; lost-summary observations=1526']
+M7-parent-like synchronized FAILED ['synchronized terminals=37/80; lost-summary observations=1451']

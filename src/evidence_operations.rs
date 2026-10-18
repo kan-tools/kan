@@ -286,6 +286,27 @@ fn dominates(new: &Health, old: &Health) -> bool {
         && old.status.is_none_or(|s| new.status == Some(s))
         && old.outcome.is_none_or(|o| new.outcome == Some(o))
 }
+fn reserve_attempt(count: &AtomicUsize) -> bool {
+    let mut current = count.load(Ordering::Relaxed);
+    for _ in 0..64 {
+        if current >= 256 {
+            return false;
+        }
+        match count.compare_exchange_weak(
+            current,
+            current + 1,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return true,
+            Err(observed) => {
+                current = observed;
+                std::hint::spin_loop();
+            }
+        }
+    }
+    false
+}
 #[derive(Default)]
 struct PendingHealth {
     revision: u64,
@@ -304,13 +325,7 @@ impl PendingHealth {
         let Some(revision) = self.revision.checked_add(1) else {
             return false;
         };
-        if !self.entries.contains_key(&health.attempt)
-            && count
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
-                    (n < 256).then_some(n + 1)
-                })
-                .is_err()
-        {
+        if !self.entries.contains_key(health.attempt.as_str()) && !reserve_attempt(count) {
             return false;
         }
         self.revision = revision;
@@ -381,12 +396,18 @@ fn offer_pending(pending: &HealthBuffer, h: &Health) -> bool {
         return false;
     }
     let shard = &pending.shards[pending.shard(h)];
+    bounded_admission(|| match shard.try_lock() {
+        Ok(mut p) => Some(p.offer(h, &pending.count)),
+        Err(std::sync::TryLockError::Poisoned(_)) => Some(false),
+        Err(std::sync::TryLockError::WouldBlock) => None,
+    })
+}
+fn bounded_admission(mut attempt: impl FnMut() -> Option<bool>) -> bool {
     for _ in 0..ADMISSION_TRIES {
-        match shard.try_lock() {
-            Ok(mut p) => return p.offer(h, &pending.count),
-            Err(std::sync::TryLockError::Poisoned(_)) => return false,
-            Err(std::sync::TryLockError::WouldBlock) => std::hint::spin_loop(),
+        if let Some(result) = attempt() {
+            return result;
         }
+        std::hint::spin_loop();
     }
     false
 }
@@ -805,6 +826,30 @@ mod tests {
             snapshot.telemetry_dropped, 1,
             "only the contradiction is lost; coalescing is not dropped evidence"
         );
+    }
+    #[test]
+    fn admission_retries_transient_contention_but_stops_at_budget() {
+        let mut calls = 0;
+        assert!(bounded_admission(|| {
+            calls += 1;
+            (calls == 4).then_some(true)
+        }));
+        assert_eq!(calls, 4, "brief contention must be retried");
+        calls = 0;
+        assert!(!bounded_admission(|| {
+            calls += 1;
+            None
+        }));
+        assert_eq!(
+            calls, 512,
+            "admission must stop at its documented finite budget"
+        );
+        calls = 0;
+        assert!(!bounded_admission(|| {
+            calls += 1;
+            Some(false)
+        }));
+        assert_eq!(calls, 1, "a semantic refusal must not be retried");
     }
     #[test]
     fn contended_admission_is_bounded_and_counts_one_summary() {

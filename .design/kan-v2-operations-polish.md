@@ -215,3 +215,20 @@ repository reversion runner that accepts real exact Rust/Node names and replayab
 committed correction ranges, with baseline/revert/restore evidence and failure
 classification. The bundled day tool remains the authority for generated trailers;
 the repository runner supplies the mixed-language execution adapter explicitly.
+
+
+## Reliability review correction
+
+Fresh Opus 5.5 approved fcd8c6f with follow-ups. The next correction adds a
+deterministic transient-contention retry test (independent of the workload
+threshold), bounds global capacity reservation to 64 compare-exchange attempts,
+and replaces the deprecated atomic API flagged by the newer Linux CI compiler.
+The callback uses at most 512 shard-lock tries; semantic refusal is not retried.
+
+The mixed-language runner now owns a POSIX process group so a timeout kills test
+descendants in that group, reports untracked source files, and tests export
+isolation and timeout cleanup. Build-cache sharing through an explicitly supplied
+CARGO_TARGET_DIR is documented separately from tracked-source isolation. The loss
+label is broadened to health telemetry observations because initial session and
+dead-writer wake failures also contribute. Small fixed-size allocation remains;
+there is no hard-realtime scheduling claim.
