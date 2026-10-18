@@ -474,3 +474,16 @@ pending admission in Linux CI (macOS aliases are unavailable without host change
 IPv6 grouping, retry timing/backlog age, reporter sessions and access controls.
 Bounded FIFO coalescing remains a disclosed observability follow-up; record and
 byte ceilings are separate, and the page cap may precede 100,000 attempts.
+
+Operations checkpoint e95a3ec: fresh cold actual Claude Code Opus 5.5 returned
+APPROVE WITH FOLLOW-UPS; independent whole-correction reversion reproduced the
+five regressions and the Node unavailable-reporter failure, with restored passes.
+Push/PR CI, Linux distinct-source admission, migration matrix and performance grid
+are green. The actual browser passed synthetic login/filter/lock/stale/disconnect
+and mobile-layout checks. Draft #279 is stacked on #278. Review records and precise
+nonblocking follow-ups are in the operations correction review. Health exhaustion
+can undercount losses, late journal return can reset worker-history fields, and
+active-reporter warnings remain noisy. AC-2 stays partial. No live installation,
+cutover, main merge or user-data migration; temporary previews and review targets
+were removed. Production custody, bounded audit/admission and independent-host
+restore/migration rehearsal remain the next production gates.

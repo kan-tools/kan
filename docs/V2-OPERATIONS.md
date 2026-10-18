@@ -37,8 +37,11 @@ The dashboard and `ops-status` use version 1 of the same JSON contract. The brow
 polls every five seconds and flags worker observations older than 45 seconds.
 Reporter heartbeats older than five seconds are stale. Active sessions and
 unclean exits are distinguished from clean closes, but an unclosed session alone
-cannot tell whether its process is alive. Any cumulative recording gap or lost
-telemetry stays visible. An absent report never establishes complete capture.
+cannot tell whether its process is alive. Any persisted cumulative recording gap or lost
+telemetry stays visible. The current UI also warns for fresh active sessions;
+that conservative warning does not distinguish them from historical unclean
+exits, so a useful healthy-state display remains a follow-up. An absent report
+never establishes complete capture.
 
 Queue totals come from a consistent spool sample. `next - pending` is the number
 of locally committed archive acknowledgments in that queue; it is not an
@@ -67,7 +70,10 @@ journal space, and independently at most 100,000 attempts. The first limit reach
 100,000 is not a promised capacity. A realistic review fixture filled the byte
 cap near 79,740 attempts. It refuses growth rather than deleting old records. Database-full/lock failures and channel overflow increment telemetry-loss
 counts when persistence returns; a crash before that update leaves coverage
-unknown. The 256-item FIFO can lose the latest cumulative attempt summary under a burst,
+unknown. If the journal remains full across reporter restarts, new session rows
+can also fail, so the retained loss count is only a lower bound. Fullness is not
+yet a distinct dashboard state, and an owner-controlled rotation/erasure command
+is still a follow-up. The 256-item FIFO can lose the latest cumulative attempt summary under a burst,
 even on healthy storage. Its global loss count is retained where possible; per-
 attempt counts can then undercount. Coalescing the latest snapshot per attempt
 is a follow-up, not an implemented guarantee. A separate journal reserves logical capacity outside the queue budget,
@@ -80,7 +86,11 @@ The worker validates its spool independently and continues archive delivery thro
 telemetry write failures, accumulating a failure counter and retrying persistence
 on later samples. An unavailable or mismatched journal is retried without writing through an
 unverified binding. Queue failure still exits the worker; the supervisor can restart it. The dashboard shows stale/missing observations when
-metadata cannot be persisted. A dashboard read may fail under writer
+metadata cannot be persisted. If the journal first becomes available after worker
+startup, its earlier last-ack fields can be replaced by null and its earlier
+telemetry-failure count can be lost. Those operational fields are not currently
+lifetime-monotone; the queue acknowledgment state is unaffected. Preserving late-
+loaded worker history is a follow-up. A dashboard read may fail under writer
 contention and displays unavailable rather than reporting zero.
 
 ## Supervision and shutdown

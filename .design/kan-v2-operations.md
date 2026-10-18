@@ -12,12 +12,12 @@ Continue the reviewed gateway toward a supervised personal service. A separate w
 - REQ-6: Provide supervisor templates and stop/restart guidance; do not install services, choose production secrets or perform live cutover. Preserve v1 sources and backups.
 
 ## Acceptance Criteria
-- [ ] AC-1: Fake archive outage/recovery and worker restart deliver identical retained signed requests, acknowledge only verified replies and retain a rejected head. Cancellation does not initiate provider traffic. (REQ-1)
+- [x] AC-1: Fake archive outage/recovery and worker restart deliver identical retained signed requests, acknowledge only verified replies and retain a rejected head. Cancellation does not initiate provider traffic. (REQ-1)
 - [ ] AC-2: Journal reopen retains gap summaries; missing/full/locked health storage cannot block capture callbacks; dropped telemetry appears as incomplete coverage, and database capacity never removes retained records. (REQ-2)
-- [ ] AC-3: CLI and HTTP return the same status shape; samples retain timestamps, archive totals are distinguished from capture completion, and stale or missing observations render visibly. (REQ-3)
-- [ ] AC-4: Authenticated browser flow renders real synthetic status, failure and empty states; unauthenticated API, foreign Host/Origin and unsupported methods fail. No token enters URL, storage or response bodies. (REQ-4)
-- [ ] AC-5: An admitted delayed handshake survives churn, and a distinct peer can authenticate while another peer saturates its pending allowance; same-peer limits and global caps hold and existing authenticated streams survive. (REQ-5)
-- [ ] AC-6: Document and validate example supervisor arguments against CLI help; fresh actual Claude Code Opus 5.5 audits this build before its draft PR. (REQ-6)
+- [x] AC-3: CLI and HTTP return the same status shape; samples retain timestamps, archive totals are distinguished from capture completion, and stale or missing observations render visibly. (REQ-3)
+- [x] AC-4: Authenticated browser flow renders real synthetic status, failure and empty states; unauthenticated API, foreign Host/Origin and unsupported methods fail. No token enters URL, storage or response bodies. (REQ-4)
+- [x] AC-5: An admitted delayed handshake survives churn, and a distinct peer can authenticate while another peer saturates its pending allowance; same-peer limits and global caps hold and existing authenticated streams survive. (REQ-5)
+- [x] AC-6: Document and validate example supervisor arguments against CLI help; fresh actual Claude Code Opus 5.5 audits this build before its draft PR. (REQ-6)
 
 ## Architecture
 The existing `src/persistence.rs` capability boundary and `tests/surface_conformance.rs` catalog remain mandatory. `src/evidence_delivery.rs` remains the only archive send/ack composition. The new operations worker owns one audited spool connection for its lifetime and records a bounded status sample between deliveries. It backs off after all delivery errors and never discards an offending head. One worker per spool is the deployment convention; existing acknowledgment checks remain the concurrency defense.
@@ -50,3 +50,17 @@ Capacity ceilings are independent: the byte cap may precede 100,000 attempts.
 Bounded FIFO handoff can still lose the newest cumulative summary during bursts;
 global lost-update reporting discloses incomplete coverage. Coalescing remains a
 named follow-up. The UI treats absent reporters as unknown, never healthy silence.
+
+## Verified checkpoint
+
+Implementation e95a3ec received fresh actual Opus 5.5 **APPROVE WITH FOLLOW-UPS**.
+All implementation CI, migration and performance checks passed; Linux verified
+the distinct-source admission fixtures. The author verified the synthetic browser
+flow and responsive layout. Exact review, evidence and open follow-ups are retained
+in `.design/reviews/kan-v2-operations-correction-2026-10-18.md`.
+
+AC-2 remains partial: fully exhausted health storage can stop persisting loss
+counters, and FIFO overflow can lose the latest summary. Worker history can reset
+when its journal returns late, and healthy reporter warnings are overly cautious.
+These limits remain explicit; no completeness or lifetime-monotone worker-history
+guarantee is claimed. Draft #279 contains the build and is stacked on #278.

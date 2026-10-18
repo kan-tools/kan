@@ -1,0 +1,82 @@
+**Verdict: APPROVE WITH FOLLOW-UPS** for `d55f82128e37b474ce7d22f6c96b04b116711cbb..e95a3ec249180d6764cf3ce00b44aa03d1802cf5` (18 files, +1235/−46).
+
+Both blocking findings are fixed, and I confirmed it by running the code, not by reading the summary. Telemetry storage being full, missing, locked or invalid no longer stops proxy startup or archive delivery. The remaining gaps are missing tests and accuracy problems, not invariant violations. Gaps stay visible as warnings, and the archive worker still only sends retained bytes to the archive endpoint.
+
+I'm Opus 5.5 in a cold, in-session pass with no delegation, and I didn't write this code. As the brief instructed, I didn't read live kan/day teloi and didn't record a verdict claim; the north star comes from your brief and `.design/kan-v2-operations.md` (telos/raw-data-and-projections).
+
+## Re-running the gates myself
+
+All runs used my own `git archive` export and target; the author tree was untouched.
+
+| Gate | Result |
+|---|---|
+| `evidence_operations` | 11 passed |
+| `evidence_gateway` | 17 passed, 1 ignored (real harness) |
+| lib `evidence_operations::tests` + `evidence_gateway::admission_tests` | 2 passed |
+| `surface_conformance` | 19 passed |
+| Node UI tests | 4 passed |
+| encrypted all-target Clippy `-D warnings`, fmt | clean |
+| `scripts/check_v2_supervision.py` | validated 2 commands, nothing installed |
+
+The two Linux-only admission tests aren't compiled on macOS, so I haven't verified them. I also didn't read CI or run citations.
+
+**Reverting the whole correction:** I reverted the three production files (`src/bin/kan-v2.rs`, `src/evidence_operations.rs`, `web/operations/app.js`) to d55 and kept the new tests. Exactly the five named tests failed, plus the Node absent-reporter test. Restoring the files made all of them pass again.
+
+## Mutation sweep against the strengthened tests
+
+- **Previously surviving mutants now killed:** M1, M2 (IPv6 unit test), M3 (same-peer cap), M5, M6, M7, M9, M11, M13, M16, M18, M21, M22.
+- **M8 (blocking send) is now a real kill:** it fails an assertion instead of timing out.
+- **M4 (global cap 64) still survives locally.** Only the Linux test `global_pending_cap_is_32_across_distinct_peers` covers it, so it's unverified here.
+- **New mutants on the correction itself:** 5 killed (C4, C5, C9, C10, C12) and 7 survived:
+  - **C1:** the reporter thread skips the binding check when it opens the journal late. Nothing in the suite catches it.
+  - **C2:** losses aren't counted while the journal is absent. Nothing in the suite catches it.
+  - **C3:** the startup session write's failure isn't counted.
+  - **C6:** the worker skips the spool-path binding check.
+  - **C7:** the worker skips the queue check. This is close to equivalent, because `save_worker` repeats the check.
+  - **C8:** the worker doesn't carry over the previous failure count.
+  - **C11, C13:** the UI's worker-failure notice and count are hidden.
+- **C1 and C2 aren't code defects:** my probes P2, P3 and P4 kill both. They are gaps in the tests.
+
+## Findings (none blocking)
+
+1. **The production startup path has almost no direct tests.** All five regression tests use `ops::reporter(Journal)`; the CLI uses `reporter_at` (`src/bin/kan-v2.rs:869`). Only the CLI test touches it, and only with a missing journal. The documented rule that "a mismatched journal is never written" (`docs/V2-OPERATIONS.md`) holds when I run it (P2), but nothing in the suite would catch it breaking (C1).
+2. **A truly full journal silently stops counting losses.** In probe P1 I filled the journal and then restarted the reporter 300 times, sending 20 updates per start:
+   - Only the first 88 session rows fit. After that, `telemetry_dropped` stayed at 1,760 even though 6,000 updates were lost.
+   - The docs say losses "increment… when persistence returns". Without an erase or rotate command, persistence never returns.
+   - The dashboard shows only the generic "gaps are retained" warning. Nothing reports that the journal is full or that capture isn't being recorded.
+   - Startup still works. This is a visible gap with the wrong size.
+3. **Worker history is reset when the journal comes back late** (probe P6). `last_ack_at` and `last_ack_position` change from recorded values to `null`, and `telemetry_failures` drops from 7 to 3 (`src/evidence_operations.rs:378-388`). The docs call this counter "accumulating", but here it goes down.
+4. **The dashboard can no longer show "Status is current"** (`web/operations/app.js:32-34`). A healthy, active reporter always gets the "N reporting session(s) are active or ended without a clean close" warning. That's conservative, but it trains operators to ignore warnings, which the first review also raised.
+5. **Known limits that are disclosed:** the 256-item queue can drop the newest snapshot during bursts (coalescing is a named follow-up), and the byte and record caps are independent. Both are documented accurately.
+
+## REQ/AC coverage
+
+| Item | Verdict | Evidence |
+|---|---|---|
+| REQ-1/AC-1 | met | A journal lock or missing journal doesn't stop delivery; rejected-head and restart tests pass; P5 (mismatched journal never written by the worker). |
+| REQ-2/AC-2 | partial | Startup is no longer gated and callbacks stay prompt (P4: 1000 calls in under 500 ms). Loss counts undercount once the journal is full (finding 2); FIFO follow-up. |
+| REQ-3/AC-3 | met, with finding 4 | Absent reporter shows as unknown (C12 killed); stale reporter warning (M22 killed). |
+| REQ-4/AC-4 | met (browser not checked) | M11 and M13 now killed; no browser available here. |
+| REQ-5/AC-5 | partial | M1, M2, M3 killed; the different-peer and global-cap tests are Linux-only and unverified by me (M4 survives). |
+| REQ-6/AC-6 | met | Supervisor argument check runs and validates both templates; CLAUDE.md now names the operator front end. |
+
+**Scope-narrowing:** the FIFO-coalescing follow-up was narrowed during review, but it's disclosed and losses are counted, so it's legitimate. The startup audit, custody, and restore/cutover gates were named before implementation.
+
+**House rules:** the UI exception is now recorded in CLAUDE.md. The dashboard and worker have no mutation or decryption routes, and nothing writes through an unverified binding.
+
+## Follow-ups
+
+1. Add tests on `reporter_at` for a mismatched journal and for losses while the journal is absent or locked (my P2–P4 would do).
+2. Make a full journal explicit: report its state, or reserve space for loss counters, and add an owner erasure or rotation path.
+3. Keep the previous worker history when the journal returns late.
+4. Bring back a reachable healthy state, with the reporter shown as active and fresh.
+5. Add UI tests for the worker-failure notice and count (C11, C13).
+6. Confirm M4 and the Linux admission tests in CI.
+
+## Retained files and limits
+
+Probes and logs are kept in `/Users/m/code/kan-tools/.reviews/kan-v2-operations-e95a3ec/`:
+- `probes/`: `review_probes_e95.rs`, `ui_probe.cjs`, `mutate.py`
+- `logs/`: `mutants.log`, `mutants-probe-kills.log`, `probes.log`, `probe-p1-300.log`, `revert-*.log`, `test-*.log`
+
+My target directory is removed and none of my processes are still running.
