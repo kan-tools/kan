@@ -1,0 +1,49 @@
+**Verdict: APPROVE WITH FOLLOW-UPS**
+
+I'm a fresh agent and didn't write this code. I made no kan/day writes, so the skill's record and next-step steps (7–8) were not done. The north star is `telos/raw-data-and-projections`, taken from `review-context.txt`. It is deliberately unwitnessed, and I added no evidence for it. Two main-log claims were withheld, and I didn't read the empty local log as "no teloi". I reviewed `git diff HEAD` against 9c41cb5 (actual baseline 771341e, production a885565). The retained `production.patch` matches the current diff exactly.
+
+Nothing here breaks an invariant. Source preservation and exact manifest membership hold. The new ones are test gaps plus one compatibility behaviour that needs a decision.
+
+## What I ran (restored tree, fresh rebuild)
+- **Rust:** operations units 13/13, operations integrations 22/22, collection 9/9, surface 19/19.
+- **Node and Python:** Node 20/20 (16 UI + 4 theme), Python 7/7.
+- **Lint and format:** `fmt --check` passes; clippy `-D warnings --all-targets` passes with default and v2-crypto features.
+- **Whole-production reversion:** I replayed it with the bundled day engine. Five named tests failed **at assertions** under revert and passed before and after: pipe cleanup (watchdog), WAL refusal, session continuity, sealed byte-stability, and session→attempt escalation. There were no compile failures or timeouts. The new helper unit tests were not part of this claim; they are covered by mutants below.
+- **Stale builds:** the replay compiled into the same target with the same crate hash, so I touched the sources and confirmed `Compiling kan` before the restored passes.
+
+## Coverage by requirement
+| REQ/AC | Verdict | Evidence |
+|---|---|---|
+| REQ-1/AC-1 (real WouldBlock) | met, with a gap | Making WouldBlock refuse immediately fails at `src/evidence_operations.rs:1162`. Gap: rewriting the production `offer_pending` (`:702`) as a single try_lock **survives** every test, so the parent R1 call-site concern is only partly closed. |
+| REQ-2/AC-2 (CAS budget) | met, with a gap | Budget 64→1 fails `:1187`; removing the capacity check fails `:1206`. Gap: making the production `reserve_attempt` a single weak CAS **survives**. Docs describe exhaustion as telemetry loss. |
+| REQ-3/AC-3 (timeout cleanup) | met | An unbounded drain fails the watchdog assertion; killing only the direct child fails the descendant check. Removing the pipe close survives, but that's fd hygiene and boundedness doesn't depend on it. |
+| REQ-4/AC-4 (Python parsing) | met | Both the Python 3.9 and 3.11+ unittest formats are parsed (dropping the 3.11 form is killed). ERROR, skip and wrong-class results fail closed. Two mutants that stop ERROR being treated specially survive, but the exit-status check already rejects ERROR, so they change nothing in practice. |
+| REQ-6/AC-5 (WAL refusal) | met | Removing the byte check and moving it after the lock sidecar are both killed. My probe found header variants 1,2 / 2,1 / 2,2 / 0,1 and a 16-byte file all refused, with no sidecar and unchanged bytes. The disclosed same-owner header-then-open race remains. |
+| REQ-7/AC-6 (session continuation) | met, plus finding 2 | Reserve release on session limit, sealing on session limit, and no escalation are all killed. My probe showed session-limited → real page ceiling → `sqlite_full` with reserve 0, and later refusals byte-stable. |
+| REQ-8/AC-7 | **partial** | Killed: committed-only timestamp (3 variants), worker SQLITE_FULL marking, active-ID check, notice rewrite, row focus, future clock. Unpinned: the no-rewrite guard (finding 1) and modal focus during polling (finding 3). |
+| REQ-5 (wording) | met | No "lost-summary" wording remains. This review is the required fresh one. |
+
+## Findings
+1. **Medium-low: the no-durable-rewrite guard (`src/evidence_operations.rs:388-394`) is untested.** Disabling it passes the whole suite.
+   - `sealed_record_refusals_do_not_rewrite_control` only reaches the `sealed_for_capacity` filter (`:378`). Removing that filter alone also survives; removing both together is killed.
+   - Only my probe kills the guard mutant. It shows that, without the guard, a later worker `sqlite_full` overwrites the first `attempt_limit` reason with a durable write. That overwritten reason is also a small instance of the telos tension.
+2. **Low-medium: older v2 journals are reopened for writing.** A journal the old binary sealed for `session_limit` (reserve 0) accepts new attempt writes under the new binary (probe: `record=Ok`, reserve 0).
+   - The design and docs only say such journals "remain readable without repair".
+   - They now record with no reserve, and an old binary pointed at the same file would still refuse. This needs an explicit decision or disclosure.
+3. **Low: "modal focus survives polling" isn't asserted.** A mutant that sends focus to search on every poll survives, because the test mock never clears `focused` and nothing checks `activeElement`.
+4. **Low:** the production wrappers bypassing the helpers survive (the call-site and CAS gaps in rows 1–2). The attempt threshold can be raised to 0.99 because the test sits exactly at 99,000. The Python runner accepts any module prefix, and the unknown-alias check has no test (it still fails later with a KeyError).
+5. **Low (capacity follow-up 6):** the 5 s UI freshness window against the 45 s worker allowance is neither changed nor recorded as a decision.
+6. **Evidence hygiene:**
+   - `08-evidence_operations.txt` is a **133 MB** staged log, because `assert_eq!` on a whole-file `Vec<u8>` prints every byte. Comparing digests would avoid this.
+   - At 14:19:19 an **external process** (not me) replaced the worktree copy with a stub plus `.gz`. The `.gz` decompresses to the staged blob's SHA, so nothing was lost, but the index still holds 133 MB, and this export was not fully isolated.
+   - Production sources were unchanged throughout (126/126 SHAs).
+
+## Not proven
+- Real device ENOSPC: the page-ceiling tests are synthetic.
+- Power loss and crash safety, including the directory fsync.
+- Same-owner path or symlink swap races, multi-process lock races, and old binaries against the new journals.
+- A real browser or screen reader.
+- The full workspace suite and Linux-only scripts.
+- The full frontend and collection-wide dedup overview: this is a correction checkpoint, not a claim that the frontend is complete.
+
+All mutations are restored, my scratch reversion export is deleted, no probe processes or servers are left running, and the private target is left for you to remove. Raw evidence, the mutation driver, the probe source, the full compressed replay log and a written report are in `review-evidence/`; open `REPORT.md` first.

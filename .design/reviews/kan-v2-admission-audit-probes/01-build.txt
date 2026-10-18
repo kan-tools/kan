@@ -1,0 +1,7 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission)
+    Finished `test` profile [unoptimized] target(s) in 11.65s
+  Executable unittests src/lib.rs (target/debug/deps/kan-ef78140debb95ee4)
+  Executable tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+  Executable tests/evidence_operations_collection.rs (target/debug/deps/evidence_operations_collection-9f7d9f7685ac0e2b)
+  Executable tests/surface_conformance.rs (target/debug/deps/surface_conformance-745092a17a076f98)
+cargo test --features v2-crypto --no-run --lib --test evidence_operations      23.68s user 1.53s system 215% cpu 11.694 total

@@ -1,0 +1,24 @@
+
+running 1 test
+test journal_session_exhaustion_is_visible_without_refusing_reporter_start ... FAILED
+
+failures:
+
+---- journal_session_exhaustion_is_visible_without_refusing_reporter_start stdout ----
+
+thread 'journal_session_exhaustion_is_visible_without_refusing_reporter_start' (8688534) panicked at tests/evidence_operations.rs:962:5:
+assertion `left == right` failed
+  left: Number(0)
+ right: 262144
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    journal_session_exhaustion_is_visible_without_refusing_reporter_start
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.27s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission/.local-state/reversion/0c537f8b41da442384dd0c090a89bcf9)
+    Finished `test` profile [unoptimized] target(s) in 0.71s
+     Running tests/evidence_operations.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission/target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+error: test failed, to rerun pass `--test evidence_operations`

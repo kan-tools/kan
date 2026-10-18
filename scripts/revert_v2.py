@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay v2 Rust/Node correction evidence using the bundled day reversion engine.
+"""Replay v2 Rust/Node/Python correction evidence using the bundled day reversion engine.
 
 Required: --helper /absolute/path/to/day/scripts/revert-demo.py
 Working diff: --tests target::exact_name,node::summary_loss_units
@@ -29,10 +29,18 @@ NODE_TESTS = {
     'future_clock_badge': ('tests/operations_ui.test.cjs', 'future clock samples produce consistent badges and retain uncertain reporter history'),
     'summary_loss_units': ('tests/operations_ui.test.cjs', 'unsampled sessions and summary loss units are explicit'),
 }
+PYTHON_TESTS = {
+    'bounded_pipe_cleanup': ('tests/test_revert_v2.py', 'Execution.test_detached_pipe_holder_cannot_hang_timeout_cleanup'),
+}
+
 
 
 def run_process(command, cwd, timeout):
-    """Own a POSIX process group so timeout cannot orphan a test descendant."""
+    """Kill our POSIX group and bound pipe cleanup, including escaped pipe owners.
+
+    Deliberately detached descendants are outside our kill group; never wait
+    indefinitely for their inherited pipes or claim to have terminated them.
+    """
     if os.name != 'posix':
         raise ValueError('the reversion runner requires POSIX process-group cleanup')
     process = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE,
@@ -44,25 +52,39 @@ def run_process(command, cwd, timeout):
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-        process.communicate()
+        try:
+            process.communicate(timeout=1)
+        except subprocess.TimeoutExpired:
+            # A descendant may leave the group while retaining our pipe. Close
+            # our handles; the already-killed direct child can still be reaped.
+            process.stdout.close()
+            process.stderr.close()
+            process.wait(timeout=1)
         raise
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def parse_result(kind, name, output, returncode):
     """One exact executed result; skips, duplicates, crashes and empty runs fail closed."""
-    expression = (r'^(ok|not ok) \d+ - (.+)$' if kind == 'node'
-                  else r'^test (.+) \.\.\. (ok|FAILED)$')
+    expression = (r'^(ok|not ok) \d+ - (.+)$' if kind == 'node' else
+                  r'^(\w+) \(__main__\.(\w+)(?:\.\1)?\) \.\.\. (ok|FAIL|ERROR)$' if kind == 'python' else
+                  r'^test (.+) \.\.\. (ok|FAILED)$')
     hits = []
     for line in output.splitlines():
         m = re.fullmatch(expression, line)
         if m:
-            verdict, actual = m.groups() if kind == 'node' else m.groups()[::-1]
+            if kind == 'python':
+                method, cls, verdict = m.groups()
+                actual = cls + '.' + method
+            else:
+                verdict, actual = m.groups() if kind == 'node' else m.groups()[::-1]
             if actual == name:
                 hits.append(verdict)
     if len(hits) != 1:
         return set(), set()
-    failed = hits[0] in ('not ok', 'FAILED')
+    if hits[0] == 'ERROR':
+        raise ValueError('named Python test errored rather than failing an assertion')
+    failed = hits[0] in ('not ok', 'FAILED', 'FAIL')
     if (returncode != 0) != failed:
         raise ValueError('exit status and named assertion result disagree')
     return {name}, {name} if failed else set()
@@ -139,6 +161,8 @@ def main():
         for name in names:
             if name.startswith('node::') and name[6:] not in NODE_TESTS:
                 raise ValueError(f'unknown Node test alias: {name}')
+            if name.startswith('python::') and name[8:] not in PYTHON_TESTS:
+                raise ValueError(f'unknown Python test alias: {name}')
             if not re.fullmatch(r'[A-Za-z0-9_]+::[A-Za-z0-9_:]+', name):
                 raise ValueError(f'expected exact qualified test name: {name}')
         dest = root / '.local-state/reversion' / uuid.uuid4().hex
@@ -157,6 +181,9 @@ def main():
                 if target == 'node':
                     path, exact = NODE_TESTS[exact]
                     command = ['node', '--test', '--test-reporter=tap', '--test-name-pattern=^'+re.escape(exact)+'$', path]
+                elif target == 'python':
+                    path, exact = PYTHON_TESTS[exact]
+                    command = [sys.executable, path, '-v', exact]
                 else:
                     command = ['cargo', 'test', '--features', 'v2-crypto']
                     command += ['--lib'] if target == 'lib' else ['--test', target]

@@ -1,0 +1,24 @@
+Losslessly compressed full assertion output: 08-evidence_operations.txt.gz
+Uncompressed SHA-256: 2cacc62df6344fda22cbf880cdb6830df1c18188110bbf4f724e326db45285e4
+
+
+running 1 test
+test sealed_record_refusals_do_not_rewrite_control ... FAILED
+
+failures:
+
+---- sealed_record_refusals_do_not_rewrite_control stdout ----
+
+thread 'sealed_record_refusals_do_not_rewrite_control' (8642480) panicked at tests/evidence_operations.rs:985:5:
+assertion `left == right` failed: already sealed refusals must not cause another durable control write
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    sealed_record_refusals_do_not_rewrite_control
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.88s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_operations.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reversion-target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+error: test failed, to rerun pass `--test evidence_operations`

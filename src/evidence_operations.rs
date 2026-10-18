@@ -183,6 +183,15 @@ impl Journal {
                 return Err(invalid());
             }
         }
+        // This profile owns rollback-journal files only. A WAL-mode header can
+        // make even read-only SQLite access create -wal/-shm files, and copied
+        // WAL headers cannot serve as standalone sealed history. Refuse before
+        // SQLite opens the file; do not repair or rewrite an existing journal.
+        let mut header = [0u8; 20];
+        std::io::Read::read_exact(&mut std::fs::File::open(path)?, &mut header)?;
+        if &header[..16] != b"SQLite format 3\0" || header[18..20] != [1, 1] {
+            return Err(invalid());
+        }
         // flock and SQLite fcntl locks can interact on macOS. Lifetime
         // maintenance coordination must use a separate inode.
         let mut lock_name = path.as_os_str().to_os_string();
@@ -266,11 +275,11 @@ impl Journal {
             if rows != 1
                 || (exhausted == 0 && (!reason.is_empty() || reserved != 64 || valid != 64))
                 || (exhausted == 1
-                    && (reserved != 0
-                        || !matches!(
-                            reason.as_str(),
-                            "sqlite_full" | "attempt_limit" | "session_limit"
-                        )))
+                    && match reason.as_str() {
+                        "session_limit" => !(reserved == 0 || (reserved == 64 && valid == 64)),
+                        "sqlite_full" | "attempt_limit" => reserved != 0,
+                        _ => true,
+                    })
                 || !matches!(exhausted, 0 | 1)
             {
                 return Err(invalid());
@@ -366,11 +375,30 @@ impl Journal {
             else if e.downcast_ref::<rusqlite::Error>().is_some_and(|e| matches!(e, rusqlite::Error::SqliteFailure(code, _) if code.code == rusqlite::ErrorCode::DiskFull)) { Some("sqlite_full") }
             else { None }
         });
-        if let Some(reason) = reason {
+        if let Some(reason) = reason.filter(|reason| *reason != "sealed_for_capacity") {
             let mark = || -> Result<()> {
                 let tx = self.conn.unchecked_transaction()?;
-                tx.execute("DELETE FROM reserve", [])?;
-                tx.execute("UPDATE control SET exhausted=1, reason=CASE WHEN exhausted=0 THEN ? ELSE reason END WHERE singleton=1", [reason])?;
+                let (exhausted, prior): (bool, String) = tx.query_row(
+                    "SELECT exhausted,reason FROM control WHERE singleton=1",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )?;
+                // Session exhaustion is a sticky coverage warning. Escalate it
+                // when attempt/page capacity also fails, but never fsync an
+                // unchanged exhaustion observation on every refused update.
+                if exhausted
+                    && !(prior == "session_limit"
+                        && matches!(reason, "attempt_limit" | "sqlite_full"))
+                {
+                    return Ok(());
+                }
+                if reason != "session_limit" {
+                    tx.execute("DELETE FROM reserve", [])?;
+                }
+                tx.execute(
+                    "UPDATE control SET exhausted=1, reason=? WHERE singleton=1",
+                    [reason],
+                )?;
                 tx.commit()?;
                 Ok(())
             };
@@ -387,12 +415,15 @@ impl Journal {
             return Err(invalid());
         }
         let tx = self.conn.transaction()?;
-        if self.schema == 2
-            && tx.query_row("SELECT exhausted FROM control WHERE singleton=1", [], |r| {
-                r.get::<_, bool>(0)
-            })?
-        {
-            return Err(Box::new(CapacityLimit("sealed_for_capacity")));
+        if self.schema == 2 {
+            let (exhausted, reason): (bool, String) = tx.query_row(
+                "SELECT exhausted,reason FROM control WHERE singleton=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            if exhausted && reason != "session_limit" {
+                return Err(Box::new(CapacityLimit("sealed_for_capacity")));
+            }
         }
         let count = tx.query_row("SELECT count(*) FROM attempts", [], |r| unsigned(r, 0))?;
         let old: Option<String> = tx
@@ -561,17 +592,20 @@ fn dominates(new: &Health, old: &Health) -> bool {
         && old.outcome.is_none_or(|o| new.outcome == Some(o))
 }
 fn reserve_attempt(count: &AtomicUsize) -> bool {
+    reserve_attempt_observed(count, |current| {
+        count.compare_exchange_weak(current, current + 1, Ordering::Relaxed, Ordering::Relaxed)
+    })
+}
+fn reserve_attempt_observed(
+    count: &AtomicUsize,
+    mut compare: impl FnMut(usize) -> std::result::Result<usize, usize>,
+) -> bool {
     let mut current = count.load(Ordering::Relaxed);
     for _ in 0..64 {
         if current >= 256 {
             return false;
         }
-        match count.compare_exchange_weak(
-            current,
-            current + 1,
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-        ) {
+        match compare(current) {
             Ok(_) => return true,
             Err(observed) => {
                 current = observed;
@@ -663,9 +697,12 @@ impl HealthBuffer {
 
 // Bounded CPU work only: never wait for a lock holder to be scheduled. Shared
 // observations keep the writer's batch copy short. A stalled holder still causes
-// one visible lost-summary observation after the finite admission budget.
+// one visible lost-telemetry observation after the finite admission budget.
 const ADMISSION_TRIES: usize = 512;
 fn offer_pending(pending: &HealthBuffer, h: &Health) -> bool {
+    offer_pending_observed(pending, h, || {})
+}
+fn offer_pending_observed(pending: &HealthBuffer, h: &Health, mut contended: impl FnMut()) -> bool {
     if !valid_health(h) {
         return false;
     }
@@ -673,7 +710,10 @@ fn offer_pending(pending: &HealthBuffer, h: &Health) -> bool {
     bounded_admission(|| match shard.try_lock() {
         Ok(mut p) => Some(p.offer(h, &pending.count)),
         Err(std::sync::TryLockError::Poisoned(_)) => Some(false),
-        Err(std::sync::TryLockError::WouldBlock) => None,
+        Err(std::sync::TryLockError::WouldBlock) => {
+            contended();
+            None
+        }
     })
 }
 fn bounded_admission(mut attempt: impl FnMut() -> Option<bool>) -> bool {
@@ -1104,6 +1144,73 @@ mod tests {
         );
     }
     #[test]
+    fn actual_shard_contention_retries_after_release_without_loss() {
+        let pending = HealthBuffer::default();
+        let health = Health {
+            attempt: format!("{:064x}", 1),
+            observer: crate::evidence_capture::Observer::Collector,
+            observed: 1,
+            locally_queued: 0,
+            unconfirmed: 1,
+            recording_gap: true,
+            remote_acknowledged: false,
+            status: None,
+            outcome: None,
+        };
+        let mut held = Some(pending.shards[pending.shard(&health)].lock().unwrap());
+        let mut contentions = 0;
+        assert!(
+            offer_pending_observed(&pending, &health, || {
+                contentions += 1;
+                if contentions == 3 {
+                    drop(held.take());
+                }
+            }),
+            "real WouldBlock must retry and admit after release"
+        );
+        assert_eq!(contentions, 3);
+        assert_eq!(pending.count.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            pending.shards[pending.shard(&health)]
+                .lock()
+                .unwrap()
+                .entries[&health.attempt]
+                .1
+                .observed,
+            1
+        );
+    }
+    #[test]
+    fn reservation_retries_spurious_failure_and_stops_at_its_finite_budget() {
+        let count = AtomicUsize::new(0);
+        let mut calls = 0;
+        assert!(reserve_attempt_observed(&count, |current| {
+            calls += 1;
+            if calls < 4 {
+                Err(current)
+            } else {
+                count.compare_exchange(current, current + 1, Ordering::Relaxed, Ordering::Relaxed)
+            }
+        }));
+        assert_eq!(calls, 4);
+        assert_eq!(count.load(Ordering::Relaxed), 1);
+        calls = 0;
+        assert!(!reserve_attempt_observed(&count, |current| {
+            calls += 1;
+            Err(current)
+        }));
+        assert_eq!(calls, 64, "CAS retry budget must be finite and explicit");
+        assert_eq!(
+            count.load(Ordering::Relaxed),
+            1,
+            "failed reservation must not leak capacity"
+        );
+        count.store(256, Ordering::Relaxed);
+        assert!(!reserve_attempt_observed(&count, |_| panic!(
+            "full capacity must not attempt a reservation"
+        )));
+    }
+    #[test]
     fn admission_retries_transient_contention_but_stops_at_budget() {
         let mut calls = 0;
         assert!(bounded_admission(|| {
@@ -1329,6 +1436,150 @@ mod tests {
         assert_eq!(after.journal.loss_count_certainty, "lower_bound");
     }
     #[test]
+    fn worker_full_failure_marks_capacity_and_retains_recovery_space() {
+        let dir = tempfile::tempdir().unwrap();
+        let spool = dir.path().join("queue");
+        let path = dir.path().join("health");
+        let id = crate::sign::Identity::generate();
+        Spool::create(
+            &spool,
+            &crate::evidence_service::hex(&[3; 32]),
+            id.did().as_str(),
+            id.did().as_str(),
+            10000,
+        )
+        .unwrap();
+        let journal = Journal::create(&path, &spool).unwrap();
+        let pages: i64 = journal
+            .conn
+            .query_row("PRAGMA page_count", [], |r| r.get(0))
+            .unwrap();
+        journal
+            .conn
+            .execute_batch(&format!("PRAGMA max_page_count={pages}"))
+            .unwrap();
+        let mut journal = Some(journal);
+        // A synthetic oversized checkpoint requires new pages at the actual
+        // SQLite page ceiling. No device-wide ENOSPC is claimed by this test.
+        let mut status = WorkerStatus {
+            sampled_at: now(),
+            state: "x".repeat(20000),
+            queue: None,
+            nonempty_since: None,
+            last_ack_at: None,
+            last_ack_position: None,
+            consecutive_failures: 0,
+            retry_seconds: 0,
+            telemetry_failures: 0,
+        };
+        let mut run = WorkerRun::new();
+        let mut next_open = std::time::Instant::now();
+        let load = || -> Result<Journal> { panic!("existing journal should not reopen") };
+        persist_worker(&mut journal, &mut status, &mut run, &load, &mut next_open);
+        assert_eq!(run.failures, 1);
+        let failed = journal.as_mut().unwrap().snapshot().unwrap();
+        assert_eq!(
+            failed.journal.exhaustion_reason.as_deref(),
+            Some("sqlite_full")
+        );
+        assert_eq!(failed.journal.reserve_bytes, 0);
+        assert_eq!(failed.journal.last_success_at, None);
+        status.state = "idle".into();
+        persist_worker(&mut journal, &mut status, &mut run, &load, &mut next_open);
+        assert_eq!(run.failures, 1);
+        assert!(run.committed);
+        let recovered = journal.as_mut().unwrap().snapshot().unwrap();
+        assert_eq!(recovered.journal.exhausted_observed, Some(true));
+        assert!(recovered.journal.last_success_at.is_some());
+        assert_eq!(recovered.worker.unwrap().telemetry_failures, 1);
+    }
+    #[test]
+    fn successful_write_is_observed_only_after_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let spool = dir.path().join("queue");
+        let path = dir.path().join("health");
+        let id = crate::sign::Identity::generate();
+        Spool::create(
+            &spool,
+            &crate::evidence_service::hex(&[3; 32]),
+            id.did().as_str(),
+            id.did().as_str(),
+            10000,
+        )
+        .unwrap();
+        let mut journal = Journal::create(&path, &spool).unwrap();
+        assert_eq!(journal.snapshot().unwrap().journal.last_success_at, None);
+        let mut health = Health {
+            attempt: format!("{:064x}", 1),
+            observer: crate::evidence_capture::Observer::Collector,
+            observed: 2,
+            locally_queued: 0,
+            unconfirmed: 1,
+            recording_gap: true,
+            remote_acknowledged: false,
+            status: None,
+            outcome: None,
+        };
+        assert!(journal.record(&health).is_err());
+        assert_eq!(journal.snapshot().unwrap().journal.last_success_at, None);
+        health.observed = 1;
+        journal.record(&health).unwrap();
+        assert!(journal
+            .snapshot()
+            .unwrap()
+            .journal
+            .last_success_at
+            .is_some());
+        journal
+            .conn
+            .execute("UPDATE control SET last_success=0", [])
+            .unwrap();
+        journal.conn.execute_batch("CREATE TEMP TRIGGER refuse_control BEFORE UPDATE ON control BEGIN SELECT RAISE(ABORT,'synthetic control write failure'); END").unwrap();
+        health.observed = 2;
+        health.unconfirmed = 2;
+        assert!(journal.record(&health).is_err());
+        let rolled_back = journal.snapshot().unwrap();
+        assert_eq!(
+            rolled_back.observed, 1,
+            "failed control write must roll back the attempt transaction"
+        );
+        assert_eq!(rolled_back.journal.last_success_at, None);
+        journal
+            .conn
+            .execute_batch("DROP TRIGGER refuse_control")
+            .unwrap();
+        journal.session("freshness-session", 0, false).unwrap();
+        assert!(journal
+            .snapshot()
+            .unwrap()
+            .journal
+            .last_success_at
+            .is_some());
+        journal
+            .conn
+            .execute("UPDATE control SET last_success=0", [])
+            .unwrap();
+        journal
+            .save_worker(&WorkerStatus {
+                sampled_at: now(),
+                state: "idle".into(),
+                queue: None,
+                nonempty_since: None,
+                last_ack_at: None,
+                last_ack_position: None,
+                consecutive_failures: 0,
+                retry_seconds: 0,
+                telemetry_failures: 0,
+            })
+            .unwrap();
+        assert!(journal
+            .snapshot()
+            .unwrap()
+            .journal
+            .last_success_at
+            .is_some());
+    }
+    #[test]
     fn legacy_snapshot_does_not_rewrite_or_invent_control_evidence() {
         use sha2::{Digest, Sha256};
         let dir = tempfile::tempdir().unwrap();
@@ -1445,6 +1696,29 @@ mod tests {
             Some("session_limit")
         );
         assert_eq!(s.telemetry_dropped, 12);
-        assert_eq!(s.journal.reserve_bytes, 0);
+        assert_eq!(s.journal.reserve_bytes, 256 * 1024);
+        drop(journal);
+        assert_eq!(
+            Journal::open(&path)
+                .unwrap()
+                .snapshot()
+                .unwrap()
+                .journal
+                .reserve_bytes,
+            256 * 1024
+        );
+        // Accept older v2 journals that had already released this reserve.
+        let conn = Connection::open(&path).unwrap();
+        conn.execute("DELETE FROM reserve", []).unwrap();
+        drop(conn);
+        assert_eq!(
+            Journal::open(&path)
+                .unwrap()
+                .snapshot()
+                .unwrap()
+                .journal
+                .reserve_bytes,
+            0
+        );
     }
 }

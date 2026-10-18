@@ -1,0 +1,644 @@
+diff --git a/.design/kan-v2-human-frontend.md b/.design/kan-v2-human-frontend.md
+index 8d84ba0..d967d36 100644
+--- a/.design/kan-v2-human-frontend.md
++++ b/.design/kan-v2-human-frontend.md
+@@ -145 +145,3 @@ Capacity, preserved-history collection commands, recent-list search and metadata
+-inspection are the next unreviewed operations slice. They still do not provide
++inspection are in draft #284 (production 67e3414, review record 771341e). Fresh
++Opus 5.5 review approved with follow-ups. The child admission-audit correction
++addresses those findings plus WAL-header refusal; its review remains pending. They still do not provide
+diff --git a/.design/kan-v2-journal-generations.md b/.design/kan-v2-journal-generations.md
+index e011c68..3891a67 100644
+--- a/.design/kan-v2-journal-generations.md
++++ b/.design/kan-v2-journal-generations.md
+@@ -25 +25 @@ Implement the remaining capacity and owner-rotation operations requirements from
+-The standalone reader in `src/evidence_operations.rs` accepts exact schema v1 or v2. New v2 adds a preallocated control row with 256 KiB of reserve, the last successful persistence timestamp and sticky exhaustion. On a record capacity failure, a separate transaction releases reserve and sets the sticky marker; later attempt writes are refused. Reporter/worker metadata can use the finite freed pages, but whole-device failure and session exhaustion remain possible. Every reported loss count is a lower bound, including legacy values. No exactness is inferred from a successful read. v1 is not rewritten or silently adopted.
++The standalone reader in `src/evidence_operations.rs` accepts exact schema v1 or v2. New v2 adds a preallocated control row with 256 KiB of reserve, the last successful persistence timestamp and sticky exhaustion. On an attempt/page capacity failure, a separate transaction releases reserve and sets the sticky marker; later attempt writes are refused. Session capacity is instead a sticky coverage warning that retains the reserve and allows writable attempt summaries to continue; a later attempt/page failure promotes the reason and releases the reserve. Repeated unchanged refusals do not rewrite control. Older v2 session-exhausted journals with an already released reserve remain readable without repair. Reporter/worker metadata can use the finite freed pages, but whole-device failure and session exhaustion remain possible. Every reported loss count is a lower bound, including legacy values. No exactness is inferred from a successful read. v1 is not rewritten or silently adopted.
+diff --git a/docs/V2-OPERATIONS.md b/docs/V2-OPERATIONS.md
+index caba579..b69a974 100644
+--- a/docs/V2-OPERATIONS.md
++++ b/docs/V2-OPERATIONS.md
+@@ -71,5 +71,7 @@ New v2 journals have an 8192-page (32 MiB) ceiling plus rollback-journal space,
+-a 100,000-attempt bound and a 1,024-session bound. The first limit reached wins;
+-the row limits are not promised physical capacities. A 256 KiB reserve is
+-preallocated for finite control-record recovery. A recorded capacity failure
+-releases the reserve and sets a sticky exhaustion marker; subsequent attempt
+-writes are refused until owner rotation. Existing metadata may still update.
++a 100,000-attempt bound and a 1,024-session bound. Row limits are not promised
++physical capacities. A 256 KiB reserve is preallocated for finite control-record
++recovery. Attempt/page exhaustion releases it and seals further attempt writes
++until owner rotation. Session exhaustion is a sticky coverage warning: it refuses
++new reporter registration while writable attempt summaries continue, retaining
++the reserve until attempt/page exhaustion occurs. Existing metadata may still
++update. Repeated unchanged exhaustion refusals do not rewrite the control row.
+@@ -85 +87 @@ older journal histories can include individual update losses. No arbitrary-load
+-lossless guarantee is made. A separate journal reserves logical queue-independent
++lossless guarantee is made. Finite shard-lock and atomic reservation retry budgets can both exhaust below the global attempt cap; those failed admissions count as telemetry losses. A separate journal reserves logical queue-independent
+@@ -116 +118 @@ kan-v2 ops-history "$HEALTH_COLLECTION" --generation "$GENERATION_ID"
+-Adoption requires a new private destination. It copies and verifies the standalone
++Adoption requires a new private destination. This journal profile accepts only SQLite rollback-journal format; WAL-mode headers are refused before SQLite access, without changing the source or creating WAL/SHM sidecars. It copies and verifies the standalone
+diff --git a/scripts/revert_v2.py b/scripts/revert_v2.py
+index 60fde85..cebfc05 100644
+--- a/scripts/revert_v2.py
++++ b/scripts/revert_v2.py
+@@ -2 +2 @@
+-"""Replay v2 Rust/Node correction evidence using the bundled day reversion engine.
++"""Replay v2 Rust/Node/Python correction evidence using the bundled day reversion engine.
+@@ -31,0 +32,4 @@ NODE_TESTS = {
++PYTHON_TESTS = {
++    'bounded_pipe_cleanup': ('tests/test_revert_v2.py', 'Execution.test_detached_pipe_holder_cannot_hang_timeout_cleanup'),
++}
++
+@@ -35 +39,5 @@ def run_process(command, cwd, timeout):
+-    """Own a POSIX process group so timeout cannot orphan a test descendant."""
++    """Kill our POSIX group and bound pipe cleanup, including escaped pipe owners.
++
++    Deliberately detached descendants are outside our kill group; never wait
++    indefinitely for their inherited pipes or claim to have terminated them.
++    """
+@@ -47 +55,8 @@ def run_process(command, cwd, timeout):
+-        process.communicate()
++        try:
++            process.communicate(timeout=1)
++        except subprocess.TimeoutExpired:
++            # A descendant may leave the group while retaining our pipe. Close
++            # our handles; the already-killed direct child can still be reaped.
++            process.stdout.close()
++            process.stderr.close()
++            process.wait(timeout=1)
+@@ -54,2 +69,3 @@ def parse_result(kind, name, output, returncode):
+-    expression = (r'^(ok|not ok) \d+ - (.+)$' if kind == 'node'
+-                  else r'^test (.+) \.\.\. (ok|FAILED)$')
++    expression = (r'^(ok|not ok) \d+ - (.+)$' if kind == 'node' else
++                  r'^(\w+) \(__main__\.(\w+)(?:\.\1)?\) \.\.\. (ok|FAIL|ERROR)$' if kind == 'python' else
++                  r'^test (.+) \.\.\. (ok|FAILED)$')
+@@ -60 +76,5 @@ def parse_result(kind, name, output, returncode):
+-            verdict, actual = m.groups() if kind == 'node' else m.groups()[::-1]
++            if kind == 'python':
++                method, cls, verdict = m.groups()
++                actual = cls + '.' + method
++            else:
++                verdict, actual = m.groups() if kind == 'node' else m.groups()[::-1]
+@@ -65 +85,3 @@ def parse_result(kind, name, output, returncode):
+-    failed = hits[0] in ('not ok', 'FAILED')
++    if hits[0] == 'ERROR':
++        raise ValueError('named Python test errored rather than failing an assertion')
++    failed = hits[0] in ('not ok', 'FAILED', 'FAIL')
+@@ -141,0 +164,2 @@ def main():
++            if name.startswith('python::') and name[8:] not in PYTHON_TESTS:
++                raise ValueError(f'unknown Python test alias: {name}')
+@@ -159,0 +184,3 @@ def main():
++                elif target == 'python':
++                    path, exact = PYTHON_TESTS[exact]
++                    command = [sys.executable, path, '-v', exact]
+diff --git a/src/evidence_operations.rs b/src/evidence_operations.rs
+index a134291..979d3ce 100644
+--- a/src/evidence_operations.rs
++++ b/src/evidence_operations.rs
+@@ -185,0 +186,9 @@ impl Journal {
++        // This profile owns rollback-journal files only. A WAL-mode header can
++        // make even read-only SQLite access create -wal/-shm files, and copied
++        // WAL headers cannot serve as standalone sealed history. Refuse before
++        // SQLite opens the file; do not repair or rewrite an existing journal.
++        let mut header = [0u8; 20];
++        std::io::Read::read_exact(&mut std::fs::File::open(path)?, &mut header)?;
++        if &header[..16] != b"SQLite format 3\0" || header[18..20] != [1, 1] {
++            return Err(invalid());
++        }
+@@ -269,5 +278,5 @@ impl Journal {
+-                    && (reserved != 0
+-                        || !matches!(
+-                            reason.as_str(),
+-                            "sqlite_full" | "attempt_limit" | "session_limit"
+-                        )))
++                    && match reason.as_str() {
++                        "session_limit" => !(reserved == 0 || (reserved == 64 && valid == 64)),
++                        "sqlite_full" | "attempt_limit" => reserved != 0,
++                        _ => true,
++                    })
+@@ -369 +378 @@ impl Journal {
+-        if let Some(reason) = reason {
++        if let Some(reason) = reason.filter(|reason| *reason != "sealed_for_capacity") {
+@@ -372,2 +381,21 @@ impl Journal {
+-                tx.execute("DELETE FROM reserve", [])?;
+-                tx.execute("UPDATE control SET exhausted=1, reason=CASE WHEN exhausted=0 THEN ? ELSE reason END WHERE singleton=1", [reason])?;
++                let (exhausted, prior): (bool, String) = tx.query_row(
++                    "SELECT exhausted,reason FROM control WHERE singleton=1",
++                    [],
++                    |r| Ok((r.get(0)?, r.get(1)?)),
++                )?;
++                // Session exhaustion is a sticky coverage warning. Escalate it
++                // when attempt/page capacity also fails, but never fsync an
++                // unchanged exhaustion observation on every refused update.
++                if exhausted
++                    && !(prior == "session_limit"
++                        && matches!(reason, "attempt_limit" | "sqlite_full"))
++                {
++                    return Ok(());
++                }
++                if reason != "session_limit" {
++                    tx.execute("DELETE FROM reserve", [])?;
++                }
++                tx.execute(
++                    "UPDATE control SET exhausted=1, reason=? WHERE singleton=1",
++                    [reason],
++                )?;
+@@ -390,6 +418,9 @@ impl Journal {
+-        if self.schema == 2
+-            && tx.query_row("SELECT exhausted FROM control WHERE singleton=1", [], |r| {
+-                r.get::<_, bool>(0)
+-            })?
+-        {
+-            return Err(Box::new(CapacityLimit("sealed_for_capacity")));
++        if self.schema == 2 {
++            let (exhausted, reason): (bool, String) = tx.query_row(
++                "SELECT exhausted,reason FROM control WHERE singleton=1",
++                [],
++                |r| Ok((r.get(0)?, r.get(1)?)),
++            )?;
++            if exhausted && reason != "session_limit" {
++                return Err(Box::new(CapacityLimit("sealed_for_capacity")));
++            }
+@@ -563,0 +595,8 @@ fn reserve_attempt(count: &AtomicUsize) -> bool {
++    reserve_attempt_observed(count, |current| {
++        count.compare_exchange_weak(current, current + 1, Ordering::Relaxed, Ordering::Relaxed)
++    })
++}
++fn reserve_attempt_observed(
++    count: &AtomicUsize,
++    mut compare: impl FnMut(usize) -> std::result::Result<usize, usize>,
++) -> bool {
+@@ -569,6 +608 @@ fn reserve_attempt(count: &AtomicUsize) -> bool {
+-        match count.compare_exchange_weak(
+-            current,
+-            current + 1,
+-            Ordering::Relaxed,
+-            Ordering::Relaxed,
+-        ) {
++        match compare(current) {
+@@ -666 +700 @@ impl HealthBuffer {
+-// one visible lost-summary observation after the finite admission budget.
++// one visible lost-telemetry observation after the finite admission budget.
+@@ -668,0 +703,3 @@ fn offer_pending(pending: &HealthBuffer, h: &Health) -> bool {
++    offer_pending_observed(pending, h, || {})
++}
++fn offer_pending_observed(pending: &HealthBuffer, h: &Health, mut contended: impl FnMut()) -> bool {
+@@ -676 +713,4 @@ fn offer_pending(pending: &HealthBuffer, h: &Health) -> bool {
+-        Err(std::sync::TryLockError::WouldBlock) => None,
++        Err(std::sync::TryLockError::WouldBlock) => {
++            contended();
++            None
++        }
+@@ -1106,0 +1147,67 @@ mod tests {
++    fn actual_shard_contention_retries_after_release_without_loss() {
++        let pending = HealthBuffer::default();
++        let health = Health {
++            attempt: format!("{:064x}", 1),
++            observer: crate::evidence_capture::Observer::Collector,
++            observed: 1,
++            locally_queued: 0,
++            unconfirmed: 1,
++            recording_gap: true,
++            remote_acknowledged: false,
++            status: None,
++            outcome: None,
++        };
++        let mut held = Some(pending.shards[pending.shard(&health)].lock().unwrap());
++        let mut contentions = 0;
++        assert!(
++            offer_pending_observed(&pending, &health, || {
++                contentions += 1;
++                if contentions == 3 {
++                    drop(held.take());
++                }
++            }),
++            "real WouldBlock must retry and admit after release"
++        );
++        assert_eq!(contentions, 3);
++        assert_eq!(pending.count.load(Ordering::Relaxed), 1);
++        assert_eq!(
++            pending.shards[pending.shard(&health)]
++                .lock()
++                .unwrap()
++                .entries[&health.attempt]
++                .1
++                .observed,
++            1
++        );
++    }
++    #[test]
++    fn reservation_retries_spurious_failure_and_stops_at_its_finite_budget() {
++        let count = AtomicUsize::new(0);
++        let mut calls = 0;
++        assert!(reserve_attempt_observed(&count, |current| {
++            calls += 1;
++            if calls < 4 {
++                Err(current)
++            } else {
++                count.compare_exchange(current, current + 1, Ordering::Relaxed, Ordering::Relaxed)
++            }
++        }));
++        assert_eq!(calls, 4);
++        assert_eq!(count.load(Ordering::Relaxed), 1);
++        calls = 0;
++        assert!(!reserve_attempt_observed(&count, |current| {
++            calls += 1;
++            Err(current)
++        }));
++        assert_eq!(calls, 64, "CAS retry budget must be finite and explicit");
++        assert_eq!(
++            count.load(Ordering::Relaxed),
++            1,
++            "failed reservation must not leak capacity"
++        );
++        count.store(256, Ordering::Relaxed);
++        assert!(!reserve_attempt_observed(&count, |_| panic!(
++            "full capacity must not attempt a reservation"
++        )));
++    }
++    #[test]
+@@ -1331,0 +1439,144 @@ mod tests {
++    fn worker_full_failure_marks_capacity_and_retains_recovery_space() {
++        let dir = tempfile::tempdir().unwrap();
++        let spool = dir.path().join("queue");
++        let path = dir.path().join("health");
++        let id = crate::sign::Identity::generate();
++        Spool::create(
++            &spool,
++            &crate::evidence_service::hex(&[3; 32]),
++            id.did().as_str(),
++            id.did().as_str(),
++            10000,
++        )
++        .unwrap();
++        let journal = Journal::create(&path, &spool).unwrap();
++        let pages: i64 = journal
++            .conn
++            .query_row("PRAGMA page_count", [], |r| r.get(0))
++            .unwrap();
++        journal
++            .conn
++            .execute_batch(&format!("PRAGMA max_page_count={pages}"))
++            .unwrap();
++        let mut journal = Some(journal);
++        // A synthetic oversized checkpoint requires new pages at the actual
++        // SQLite page ceiling. No device-wide ENOSPC is claimed by this test.
++        let mut status = WorkerStatus {
++            sampled_at: now(),
++            state: "x".repeat(20000),
++            queue: None,
++            nonempty_since: None,
++            last_ack_at: None,
++            last_ack_position: None,
++            consecutive_failures: 0,
++            retry_seconds: 0,
++            telemetry_failures: 0,
++        };
++        let mut run = WorkerRun::new();
++        let mut next_open = std::time::Instant::now();
++        let load = || -> Result<Journal> { panic!("existing journal should not reopen") };
++        persist_worker(&mut journal, &mut status, &mut run, &load, &mut next_open);
++        assert_eq!(run.failures, 1);
++        let failed = journal.as_mut().unwrap().snapshot().unwrap();
++        assert_eq!(
++            failed.journal.exhaustion_reason.as_deref(),
++            Some("sqlite_full")
++        );
++        assert_eq!(failed.journal.reserve_bytes, 0);
++        assert_eq!(failed.journal.last_success_at, None);
++        status.state = "idle".into();
++        persist_worker(&mut journal, &mut status, &mut run, &load, &mut next_open);
++        assert_eq!(run.failures, 1);
++        assert!(run.committed);
++        let recovered = journal.as_mut().unwrap().snapshot().unwrap();
++        assert_eq!(recovered.journal.exhausted_observed, Some(true));
++        assert!(recovered.journal.last_success_at.is_some());
++        assert_eq!(recovered.worker.unwrap().telemetry_failures, 1);
++    }
++    #[test]
++    fn successful_write_is_observed_only_after_commit() {
++        let dir = tempfile::tempdir().unwrap();
++        let spool = dir.path().join("queue");
++        let path = dir.path().join("health");
++        let id = crate::sign::Identity::generate();
++        Spool::create(
++            &spool,
++            &crate::evidence_service::hex(&[3; 32]),
++            id.did().as_str(),
++            id.did().as_str(),
++            10000,
++        )
++        .unwrap();
++        let mut journal = Journal::create(&path, &spool).unwrap();
++        assert_eq!(journal.snapshot().unwrap().journal.last_success_at, None);
++        let mut health = Health {
++            attempt: format!("{:064x}", 1),
++            observer: crate::evidence_capture::Observer::Collector,
++            observed: 2,
++            locally_queued: 0,
++            unconfirmed: 1,
++            recording_gap: true,
++            remote_acknowledged: false,
++            status: None,
++            outcome: None,
++        };
++        assert!(journal.record(&health).is_err());
++        assert_eq!(journal.snapshot().unwrap().journal.last_success_at, None);
++        health.observed = 1;
++        journal.record(&health).unwrap();
++        assert!(journal
++            .snapshot()
++            .unwrap()
++            .journal
++            .last_success_at
++            .is_some());
++        journal
++            .conn
++            .execute("UPDATE control SET last_success=0", [])
++            .unwrap();
++        journal.conn.execute_batch("CREATE TEMP TRIGGER refuse_control BEFORE UPDATE ON control BEGIN SELECT RAISE(ABORT,'synthetic control write failure'); END").unwrap();
++        health.observed = 2;
++        health.unconfirmed = 2;
++        assert!(journal.record(&health).is_err());
++        let rolled_back = journal.snapshot().unwrap();
++        assert_eq!(
++            rolled_back.observed, 1,
++            "failed control write must roll back the attempt transaction"
++        );
++        assert_eq!(rolled_back.journal.last_success_at, None);
++        journal
++            .conn
++            .execute_batch("DROP TRIGGER refuse_control")
++            .unwrap();
++        journal.session("freshness-session", 0, false).unwrap();
++        assert!(journal
++            .snapshot()
++            .unwrap()
++            .journal
++            .last_success_at
++            .is_some());
++        journal
++            .conn
++            .execute("UPDATE control SET last_success=0", [])
++            .unwrap();
++        journal
++            .save_worker(&WorkerStatus {
++                sampled_at: now(),
++                state: "idle".into(),
++                queue: None,
++                nonempty_since: None,
++                last_ack_at: None,
++                last_ack_position: None,
++                consecutive_failures: 0,
++                retry_seconds: 0,
++                telemetry_failures: 0,
++            })
++            .unwrap();
++        assert!(journal
++            .snapshot()
++            .unwrap()
++            .journal
++            .last_success_at
++            .is_some());
++    }
++    #[test]
+@@ -1448 +1699,24 @@ mod tests {
+-        assert_eq!(s.journal.reserve_bytes, 0);
++        assert_eq!(s.journal.reserve_bytes, 256 * 1024);
++        drop(journal);
++        assert_eq!(
++            Journal::open(&path)
++                .unwrap()
++                .snapshot()
++                .unwrap()
++                .journal
++                .reserve_bytes,
++            256 * 1024
++        );
++        // Accept older v2 journals that had already released this reserve.
++        let conn = Connection::open(&path).unwrap();
++        conn.execute("DELETE FROM reserve", []).unwrap();
++        drop(conn);
++        assert_eq!(
++            Journal::open(&path)
++                .unwrap()
++                .snapshot()
++                .unwrap()
++                .journal
++                .reserve_bytes,
++            0
++        );
+diff --git a/tests/evidence_operations.rs b/tests/evidence_operations.rs
+index ee373cf..4f9bd15 100644
+--- a/tests/evidence_operations.rs
++++ b/tests/evidence_operations.rs
+@@ -929 +929 @@ fn synchronized_streams_retain_terminal_summaries() {
+-        "synchronized terminals={terminal}/80; lost-summary observations={}",
++        "synchronized terminals={terminal}/80; lost-telemetry observations={}",
+@@ -961,0 +962 @@ fn journal_session_exhaustion_is_visible_without_refusing_reporter_start() {
++    assert_eq!(value["journal"]["reserve_bytes"], 256 * 1024);
+@@ -964,2 +965,2 @@ fn journal_session_exhaustion_is_visible_without_refusing_reporter_start() {
+-        journal.record(&f.health()).is_err(),
+-        "a heartbeat cannot unseal exhausted history"
++        journal.record(&f.health()).is_ok(),
++        "session capacity must not stop writable attempt recording"
+@@ -966,0 +968,42 @@ fn journal_session_exhaustion_is_visible_without_refusing_reporter_start() {
++    let after = serde_json::to_value(journal.snapshot().unwrap()).unwrap();
++    assert_eq!(after["journal"]["exhausted_observed"], true);
++    assert_eq!(after["journal"]["exhaustion_reason"], "session_limit");
++}
++
++#[test]
++fn sealed_record_refusals_do_not_rewrite_control() {
++    let f = Fixture::new();
++    let conn = rusqlite::Connection::open(&f.journal).unwrap();
++    conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<99999) INSERT INTO attempts SELECT printf('%064x',i),0,0,0,0,'{}' FROM n").unwrap();
++    drop(conn);
++    let mut journal = Journal::open(&f.journal).unwrap();
++    assert!(journal.record(&f.health()).is_err());
++    let before = std::fs::read(&f.journal).unwrap();
++    for _ in 0..20 {
++        assert!(journal.record(&f.health()).is_err());
++    }
++    assert_eq!(
++        std::fs::read(&f.journal).unwrap(),
++        before,
++        "already sealed refusals must not cause another durable control write"
++    );
++}
++
++#[test]
++fn session_exhaustion_escalates_when_attempt_capacity_is_reached() {
++    let f = Fixture::new();
++    let conn = rusqlite::Connection::open(&f.journal).unwrap();
++    conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<1023) INSERT INTO sessions SELECT printf('%032x',i),0,0,1 FROM n").unwrap();
++    let (report, guard) = ops::reporter(Journal::open(&f.journal).unwrap()).unwrap();
++    drop(report);
++    guard.join();
++    conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<99999) INSERT INTO attempts SELECT printf('%064x',i),0,0,0,0,'{}' FROM n").unwrap();
++    drop(conn);
++    let mut journal = Journal::open(&f.journal).unwrap();
++    assert!(journal.record(&f.health()).is_err());
++    let value = serde_json::to_value(journal.snapshot().unwrap()).unwrap();
++    assert_eq!(value["journal"]["exhaustion_reason"], "attempt_limit");
++    assert_eq!(value["journal"]["reserve_bytes"], 0);
++    let before = std::fs::read(&f.journal).unwrap();
++    assert!(journal.record(&f.health()).is_err());
++    assert_eq!(std::fs::read(&f.journal).unwrap(), before);
+diff --git a/tests/evidence_operations_collection.rs b/tests/evidence_operations_collection.rs
+index 0d99471..0b8ede9 100644
+--- a/tests/evidence_operations_collection.rs
++++ b/tests/evidence_operations_collection.rs
+@@ -243 +243 @@ fn malformed_membership_and_bounds_are_rejected_without_repair() {
+-    for mutation in 0..4 {
++    for mutation in 0..5 {
+@@ -249 +249,2 @@ fn malformed_membership_and_bounds_are_rejected_without_repair() {
+-            _ => bad["binding"]["scope"] = "wrong-scope".into(),
++            3 => bad["binding"]["scope"] = "wrong-scope".into(),
++            _ => bad["active"] = bad["generations"][0]["id"].clone(),
+@@ -306,0 +308,44 @@ fn source_aliases_and_malformed_coordination_files_cannot_bypass_lifetime_locks(
++
++#[test]
++fn wal_format_is_refused_before_sqlite_can_create_untracked_sidecars() {
++    for legacy in [false, true] {
++        let f = Fixture::new();
++        let connection = rusqlite::Connection::open(&f.source).unwrap();
++        if legacy {
++            connection
++                .execute_batch("DROP TABLE control; DROP TABLE reserve; PRAGMA user_version=1")
++                .unwrap();
++        }
++        let mode: String = connection
++            .query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))
++            .unwrap();
++        assert_eq!(mode, "wal");
++        drop(connection);
++        std::fs::remove_file(f._dir.path().join("health.lock")).unwrap();
++        let original = digest(&f.source);
++        let files = || {
++            let mut names = std::fs::read_dir(f._dir.path())
++                .unwrap()
++                .map(|e| e.unwrap().file_name())
++                .collect::<Vec<_>>();
++            names.sort();
++            names
++        };
++        let before = files();
++        assert!(
++            Journal::open(&f.source).is_err(),
++            "WAL-format journals must be refused before SQLite access"
++        );
++        assert!(collection::adopt(&f.source, &f.root).is_err());
++        assert!(
++            !f.root.exists(),
++            "unsupported source cannot publish a collection"
++        );
++        assert_eq!(digest(&f.source), original);
++        assert_eq!(
++            files(),
++            before,
++            "refusal must not create WAL or SHM sidecars"
++        );
++    }
++}
+diff --git a/tests/operations_ui.test.cjs b/tests/operations_ui.test.cjs
+index 846ff0e..b9cc021 100644
+--- a/tests/operations_ui.test.cjs
++++ b/tests/operations_ui.test.cjs
+@@ -3,2 +3,2 @@ const {test}=require('node:test');const assert=require('node:assert/strict');con
+-function ui(){const nodes=new Map();class Element{constructor(){this.value='';this.hidden=false;this.events={};this.children=[];this.checked=false;this.open=false;this.isConnected=true;}setAttribute(k,v){this[k]=v;}showModal(){this.open=true;}close(){this.open=false;}focus(){this.focused=true;}select(){this.selected=true;}addEventListener(k,f){this.events[k]=f;}replaceChildren(){this.children=[];}append(x){this.children.push(x);}}
+- const node=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};const pending=[];const context={document:{getElementById:node,createElement:()=>new Element()},fetch:(url,opts)=>new Promise(resolve=>pending.push({url,opts,resolve})),setInterval:()=>{},setTimeout,clearTimeout,AbortController,Date,Number};vm.createContext(context);vm.runInContext(fs.readFileSync('web/operations/app.js','utf8'),context);
++function ui(){const nodes=new Map();class Element{constructor(){this.value='';this.hidden=false;this.events={};this.children=[];this.checked=false;this.open=false;this.isConnected=true;this.textWrites=0;}set textContent(value){this._text=value;this.textWrites++;}get textContent(){return this._text;}getAttribute(k){return this[k]??null;}setAttribute(k,v){this[k]=v;}showModal(){this.open=true;}close(){this.open=false;}focus(){this.focused=true;document.activeElement=this;}select(){this.selected=true;}addEventListener(k,f){this.events[k]=f;}replaceChildren(){const disconnect=n=>{n.isConnected=false;for(const child of n.children)disconnect(child);};for(const child of this.children)disconnect(child);this.children=[];}append(x){this.children.push(x);}}
++ const node=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};const pending=[];const document={getElementById:node,createElement:()=>new Element(),activeElement:null};const context={document,fetch:(url,opts)=>new Promise(resolve=>pending.push({url,opts,resolve})),setInterval:()=>{},setTimeout,clearTimeout,AbortController,Date,Number};vm.createContext(context);vm.runInContext(fs.readFileSync('web/operations/app.js','utf8'),context);
+@@ -19 +19 @@ test('unsampled sessions and summary loss units are explicit',async()=>{const u=
+-test('journal capacity is independent, sticky and never an exact coverage claim',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:Date.now()/1000}];s.unclosed_sessions=1;s.journal.exhausted_observed=true;s.journal.exhaustion_reason='sqlite_full';s.journal.reserve_bytes=0;await u.respond(s);assert.match(u.node('notice').textContent,/exhaustion was recorded/);assert.equal(u.node('journal-state').textContent,'Exhaustion recorded');assert.match(u.node('journal-scope').textContent,/lower bounds/);assert.equal(u.node('pending').textContent,'2');s.journal.exhausted_observed=false;s.journal.pages_used=8000;u.node('refresh').events.click();await u.respond(s);assert.match(u.node('notice').textContent,/near its page ceiling/);s.journal.schema=1;s.journal.last_success_at=null;u.node('refresh').events.click();await u.respond(s);assert.match(u.node('journal-state').textContent,/Legacy.*unknown/);assert.match(u.node('notice').textContent,/no recent successful observation/);});
++test('journal capacity is independent, sticky and never an exact coverage claim',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:Date.now()/1000}];s.unclosed_sessions=1;s.journal.exhausted_observed=true;s.journal.exhaustion_reason='sqlite_full';s.journal.reserve_bytes=0;await u.respond(s);assert.match(u.node('notice').textContent,/exhaustion was recorded/);assert.equal(u.node('journal-state').textContent,'Exhaustion recorded');assert.match(u.node('journal-scope').textContent,/lower bounds/);assert.equal(u.node('pending').textContent,'2');s.journal.exhausted_observed=false;s.journal.pages_used=8000;u.node('refresh').events.click();await u.respond(s);assert.match(u.node('notice').textContent,/near its capacity limit/);s.journal.schema=1;s.journal.last_success_at=null;u.node('refresh').events.click();await u.respond(s);assert.match(u.node('journal-state').textContent,/Legacy.*unknown/);assert.match(u.node('notice').textContent,/no recent successful observation/);});
+@@ -23,0 +24,6 @@ test('locking clears rendered private metadata and closes the inspector',async()
++
++test('reporter and attempt limits warn before exhaustion and preserve partial recording semantics',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:Date.now()/1000}];s.unclosed_sessions=1;s.journal.sessions_used=1000;await u.respond(s);assert.match(u.node('notice').textContent,/capacity limit \(reporter sessions\)/);s.journal.sessions_used=1;s.journal.attempts_used=99000;u.node('refresh').events.click();await u.respond(s);assert.match(u.node('notice').textContent,/capacity limit \(attempts\)/);s.journal.exhausted_observed=true;s.journal.exhaustion_reason='session_limit';u.node('refresh').events.click();await u.respond(s);assert.match(u.node('notice').textContent,/Attempt summaries may still persist/);assert.equal(u.node('journal-state').textContent,'Reporter capacity exhausted');});
++test('future persistence timestamps stay unknown',async()=>{const u=ui();u.login();const s=snapshot();s.journal.last_success_at=Date.now()/1000+3600;s.reporters=[{clean:false,updated_at:Date.now()/1000}];s.unclosed_sessions=1;await u.respond(s);assert.equal(u.node('journal-state').textContent,'Persistence unknown');assert.match(u.node('notice').textContent,/no recent successful observation/);});
++
++test('polling preserves the focused attempt and inspector close returns to the replacement row',async()=>{const u=ui();u.login();await u.respond(snapshot());const first=u.node('rows').children[0].children[0].children[0];first.focus();u.node('refresh').events.click();await u.respond(snapshot());const second=u.node('rows').children[0].children[0].children[0];assert.notEqual(first,second);assert.equal(first.isConnected,false);assert.equal(second.focused,true);second.events.click();u.node('refresh').events.click();await u.respond(snapshot());const third=u.node('rows').children[0].children[0].children[0];u.node('inspect-close').events.click();assert.equal(third.focused,true);});
++test('unchanged notices are not announced again on every poll',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:Date.now()/1000}];s.unclosed_sessions=1;await u.respond(s);const before=u.node('notice').textWrites;u.node('refresh').events.click();await u.respond(s);assert.equal(u.node('notice').textWrites,before);s.unclosed_sessions=2;u.node('refresh').events.click();await u.respond(s);assert.equal(u.node('notice').textWrites,before+1);});
+diff --git a/tests/test_revert_v2.py b/tests/test_revert_v2.py
+index c22a7d7..e9becf7 100644
+--- a/tests/test_revert_v2.py
++++ b/tests/test_revert_v2.py
+@@ -8,0 +9,2 @@ import os
++import signal
++import threading
+@@ -17,0 +20,8 @@ class Results(unittest.TestCase):
++    def test_python_assertions_are_distinct_from_errors_and_skips(self):
++        for name in ('__main__.Execution', '__main__.Execution.sample'):
++            self.assertEqual(runner.parse_result('python','Execution.sample',f'sample ({name}) ... ok',0),({'Execution.sample'},set()))
++            self.assertEqual(runner.parse_result('python','Execution.sample',f'sample ({name}) ... FAIL',1),({'Execution.sample'},{'Execution.sample'}))
++            with self.assertRaises(ValueError):
++                runner.parse_result('python','Execution.sample',f'sample ({name}) ... ERROR',1)
++        self.assertEqual(runner.parse_result('python','Execution.sample',"sample (__main__.Execution) ... skipped 'reason'",0),(set(),set()))
++        self.assertEqual(runner.parse_result('python','Execution.sample','sample (__main__.Other) ... FAIL',1),(set(),set()))
+@@ -41,0 +52,32 @@ class Execution(unittest.TestCase):
++    def timeout_probe(self, detached):
++        with tempfile.TemporaryDirectory() as tmp:
++            ticks=Path(tmp)/'ticks'; child_pid=Path(tmp)/'child.pid'; parent_pid=Path(tmp)/'parent.pid'
++            child="import os,time; from pathlib import Path; Path("+repr(str(child_pid))+").write_text(str(os.getpid())); p=Path("+repr(str(ticks))+");\nwhile True:\n p.open('a').write('x'); time.sleep(.02)"
++            parent="import os,subprocess,sys,time; from pathlib import Path; Path("+repr(str(parent_pid))+").write_text(str(os.getpid())); subprocess.Popen([sys.executable,'-c',"+repr(child)+"],start_new_session="+repr(detached)+"); time.sleep(30)"
++            result=[]
++            def invoke():
++                try: result.append(runner.run_process([sys.executable,'-c',parent],tmp,1))
++                except BaseException as error: result.append(error)
++            worker=threading.Thread(target=invoke,daemon=True)
++            worker.start()
++            try:
++                # Independent watchdog: a broken production drain must fail an
++                # assertion, not hang the test process or leave a probe behind.
++                worker.join(8)
++                self.assertFalse(worker.is_alive(),'timeout cleanup exceeded its outer watchdog')
++                self.assertTrue(result)
++                self.assertIsInstance(result[0],subprocess.TimeoutExpired)
++                self.assertTrue(ticks.exists(),'descendant must actually run')
++                size=ticks.stat().st_size; time.sleep(.15)
++                if not detached:
++                    self.assertEqual(ticks.stat().st_size,size,'timeout left test descendant running')
++                else:
++                    self.assertGreater(ticks.stat().st_size,size,'probe must own an escaped pipe holder')
++            finally:
++                # These PIDs came only from this test's own subprocesses.
++                for path in (child_pid, parent_pid):
++                    if path.exists():
++                        try:
++                            os.kill(int(path.read_text()),signal.SIGKILL)
++                        except ProcessLookupError: pass
++                worker.join(2)
+@@ -44,9 +86,4 @@ class Execution(unittest.TestCase):
+-        with tempfile.TemporaryDirectory() as tmp:
+-            ticks=Path(tmp)/'ticks'
+-            child="import time; from pathlib import Path; p=Path("+repr(str(ticks))+ ");\nwhile True:\n p.open('a').write('x'); time.sleep(.02)"
+-            parent="import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',"+repr(child)+"]); time.sleep(30)"
+-            with self.assertRaises(subprocess.TimeoutExpired):
+-                runner.run_process([sys.executable,'-c',parent],tmp,1)
+-            self.assertTrue(ticks.exists(),'descendant must actually run')
+-            size=ticks.stat().st_size; time.sleep(.15)
+-            self.assertEqual(ticks.stat().st_size,size,'timeout left test descendant running')
++        self.timeout_probe(False)
++    @unittest.skipUnless(os.name=='posix','requires POSIX process groups')
++    def test_detached_pipe_holder_cannot_hang_timeout_cleanup(self):
++        self.timeout_probe(True)
+diff --git a/web/operations/app.js b/web/operations/app.js
+index 7e2b6e0..d0ca583 100644
+--- a/web/operations/app.js
++++ b/web/operations/app.js
+@@ -50,2 +50,2 @@ function journalState(j,now){
+-  const near=used>=j.pages_limit*0.9;
+-  $('journal-state').textContent=j.exhausted_observed===true?'Exhaustion recorded':j.schema===1?'Legacy · persistence unknown':near?'Near page limit':fresh?'Write observed':'Persistence unknown';
++  const nearCauses=[];if(used>=j.pages_limit*0.9)nearCauses.push('pages');if(j.attempts_used>=j.attempts_limit*0.9)nearCauses.push('attempts');if(Number.isFinite(j.sessions_limit)&&j.sessions_limit>0&&j.sessions_used>=j.sessions_limit*0.9)nearCauses.push('reporter sessions');const near=nearCauses.length>0;const sessionsExhausted=j.exhausted_observed===true&&j.exhaustion_reason==='session_limit';
++  $('journal-state').textContent=sessionsExhausted?'Reporter capacity exhausted':j.exhausted_observed===true?'Exhaustion recorded':j.schema===1?'Legacy · persistence unknown':near?'Near capacity limit':fresh?'Write observed':'Persistence unknown';
+@@ -57 +57 @@ function journalState(j,now){
+-  return {fresh,near,exhausted:j.exhausted_observed===true};
++  return {fresh,near,nearCauses,sessionsExhausted,exhausted:j.exhausted_observed===true};
+@@ -81 +81,2 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
+-  if(storage.exhausted)notice('Health journal exhaustion was recorded. Capture and delivery continue; journal history requires owner rotation.','warning');
++  if(storage.sessionsExhausted)notice('New reporter registration is exhausted. Attempt summaries may still persist; coverage is incomplete. Owner rotation preserves history.','warning');
++  else if(storage.exhausted)notice('Health journal exhaustion was recorded. Capture and delivery continue; journal history requires owner rotation.','warning');
+@@ -85 +86 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
+-  else if(storage.near)notice('Health journal is near its page ceiling. Prepare owner rotation; evidence queue capacity is separate.','warning');
++  else if(storage.near)notice('Health journal is near its capacity limit ('+storage.nearCauses.join(', ')+'). Prepare owner rotation; evidence queue capacity is separate.','warning');

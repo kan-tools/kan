@@ -1,0 +1,26 @@
+mutant P03-kill-direct-child-only on scripts/revert_v2.py
+--- old
+os.killpg(process.pid, signal.SIGKILL)
++++ new
+process.kill()
+
+$ /Library/Developer/CommandLineTools/usr/bin/python3 -I tests/test_revert_v2.py -v Execution.test_timeout_stops_descendant_writes
+[exit=1 timeout=False]
+test_timeout_stops_descendant_writes (__main__.Execution) ... FAIL
+
+======================================================================
+FAIL: test_timeout_stops_descendant_writes (__main__.Execution)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission/tests/test_revert_v2.py", line 86, in test_timeout_stops_descendant_writes
+    self.timeout_probe(False)
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission/tests/test_revert_v2.py", line 73, in timeout_probe
+    self.assertEqual(ticks.stat().st_size,size,'timeout left test descendant running')
+AssertionError: 77 != 72 : timeout left test descendant running
+
+----------------------------------------------------------------------
+Ran 1 test in 2.171s
+
+FAILED (failures=1)
+
+RESULT [{"cmd": "Execution.test_timeout_stops_descendant_writes", "verdict": "ASSERT-KILL", "failed": ["test_timeout_stops_descendant_writes (__main__.Execution)"], "panic": []}]

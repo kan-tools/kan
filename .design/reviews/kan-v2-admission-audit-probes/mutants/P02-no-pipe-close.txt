@@ -1,0 +1,27 @@
+mutant P02-no-pipe-close on scripts/revert_v2.py
+--- old
+            process.stdout.close()
+            process.stderr.close()
+
++++ new
+
+
+$ /Library/Developer/CommandLineTools/usr/bin/python3 -I tests/test_revert_v2.py -v Execution.test_detached_pipe_holder_cannot_hang_timeout_cleanup
+[exit=0 timeout=False]
+test_detached_pipe_holder_cannot_hang_timeout_cleanup (__main__.Execution) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 2.164s
+
+OK
+
+$ /Library/Developer/CommandLineTools/usr/bin/python3 -I tests/test_revert_v2.py -v Execution.test_timeout_stops_descendant_writes
+[exit=0 timeout=False]
+test_timeout_stops_descendant_writes (__main__.Execution) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 1.168s
+
+OK
+
+RESULT [{"cmd": "Execution.test_detached_pipe_holder_cannot_hang_timeout_cleanup", "verdict": "PASS", "failed": [], "panic": []}, {"cmd": "Execution.test_timeout_stops_descendant_writes", "verdict": "PASS", "failed": [], "panic": []}]

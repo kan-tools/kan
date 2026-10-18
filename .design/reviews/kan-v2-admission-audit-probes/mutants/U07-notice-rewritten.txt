@@ -1,0 +1,37 @@
+mutant U07-notice-rewritten on web/operations/app.js
+--- old
+if($('notice').textContent!==text)$('notice').textContent=text;
++++ new
+$('notice').textContent=text;
+
+$ node --test --test-name-pattern=unchanged notices tests/operations_ui.test.cjs
+[exit=1 timeout=False]
+✖ unchanged notices are not announced again on every poll (12.84975ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 41.069792
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:29:1
+✖ unchanged notices are not announced again on every poll (12.84975ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission/tests/operations_ui.test.cjs:29:312)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual'
+  }
+
+RESULT [{"cmd": "tests/operations_ui.test.cjs", "verdict": "ASSERT-KILL", "failed": ["unchanged notices are not announced again on every poll"], "panic": []}]

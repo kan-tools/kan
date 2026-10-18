@@ -1,0 +1,6 @@
+test_detached_pipe_holder_cannot_hang_timeout_cleanup (__main__.Execution) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 2.167s
+
+OK

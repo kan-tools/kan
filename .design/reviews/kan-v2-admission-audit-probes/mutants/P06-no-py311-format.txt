@@ -1,0 +1,31 @@
+mutant P06-no-py311-format on scripts/revert_v2.py
+--- old
+(?:\.\1)?
++++ new
+
+
+$ /Library/Developer/CommandLineTools/usr/bin/python3 -I tests/test_revert_v2.py -v Results.test_python_assertions_are_distinct_from_errors_and_skips
+[exit=1 timeout=False]
+test_python_assertions_are_distinct_from_errors_and_skips (__main__.Results) ... FAIL
+
+======================================================================
+FAIL: test_python_assertions_are_distinct_from_errors_and_skips (__main__.Results)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission/tests/test_revert_v2.py", line 22, in test_python_assertions_are_distinct_from_errors_and_skips
+    self.assertEqual(runner.parse_result('python','Execution.sample',f'sample ({name}) ... ok',0),({'Execution.sample'},set()))
+AssertionError: Tuples differ: (set(), set()) != ({'Execution.sample'}, set())
+
+First differing element 0:
+set()
+{'Execution.sample'}
+
+- (set(), set())
++ ({'Execution.sample'}, set())
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (failures=1)
+
+RESULT [{"cmd": "Results.test_python_assertions_are_distinct_from_errors_and_skips", "verdict": "ASSERT-KILL", "failed": ["test_python_assertions_are_distinct_from_errors_and_skips (__main__.Results)"], "panic": []}]

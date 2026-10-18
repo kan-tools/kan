@@ -1,0 +1,20 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-admission-audit/.local-state/reviews/opus-admission)
+    Finished `test` profile [unoptimized] target(s) in 6.54s
+     Running tests/zz_review_probe.rs (target/debug/deps/zz_review_probe-165f9159ec825e19)
+
+running 4 tests
+test probe_header_variants_refused_without_side_effects ... PROBE header 1,2: refused=true
+PROBE header 2,1: refused=true
+PROBE header 2,2: refused=true
+PROBE header 0,1: refused=true
+PROBE short file: refused=true err=Some("failed to fill whole buffer")
+ok
+test probe_old_v2_session_marker_with_released_reserve ... PROBE old-v2 released-reserve session marker: record=Ok(()) reason="session_limit" reserve=0
+ok
+test probe_repeated_session_refusals_are_byte_stable ... PROBE repeated session refusals byte-stable=true
+ok
+test probe_session_limited_then_page_full_escalates ... PROBE page-full after session-limit: pages=8192 first_err=Some((12, "database or disk is full")) reason="sqlite_full" reserve=0
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.79s
+
