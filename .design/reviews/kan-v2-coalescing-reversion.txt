@@ -1,0 +1,13 @@
+scratch /var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/kan-gateway-review-fix-revert-21qw4tbi
+     Removed 1616 files, 540.3MiB total
+What would be reverted (worktree):
+  reverting src/evidence_capture.rs: 1/1 hunk(s)
+  reverting src/evidence_operations.rs: 15/16 hunk(s) (1 test-side hunk(s) kept in place)
+  reverting web/operations/app.js: 5/5 hunk(s)
+
+DEMONSTRATED — failed under revert: lib::evidence_operations::tests::burst_keeps_final_cumulative_summary_and_terminal_gap, evidence_operations::persisted_terminal_observation_rejects_regression_and_contradiction, node::future_clock_badge
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=lib::evidence_operations::tests::burst_keeps_final_cumulative_summary_and_terminal_gap,evidence_operations::persisted_terminal_observation_rejects_regression_and_contradiction,node::future_clock_badge outcome=DEMONSTRATED
+removed scratch target; source and patch retained

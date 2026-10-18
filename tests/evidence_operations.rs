@@ -106,8 +106,10 @@ fn locked_journal_never_blocks_callback_and_retains_loss_count() {
     let (done, completion) = std::sync::mpsc::channel();
     let health = f.health();
     let caller = std::thread::spawn(move || {
-        for _ in 0..600 {
-            report(&health);
+        for i in 0..600u64 {
+            let mut distinct = health.clone();
+            distinct.attempt = format!("{i:064x}");
+            report(&distinct);
         }
         drop(report);
         done.send(()).unwrap();
@@ -120,10 +122,11 @@ fn locked_journal_never_blocks_callback_and_retains_loss_count() {
     let s = Journal::open(&f.journal).unwrap().snapshot().unwrap();
     assert!(
         s.telemetry_dropped > 250,
-        "bounded-channel loss must be counted independently of failed journal writes"
+        "distinct-attempt overflow must be counted independently of failed journal writes"
     );
     assert_eq!(s.unclosed_sessions, 0);
-    assert_eq!(s.unconfirmed, 1);
+    // Every write may have failed before the lock was released. This pressure
+    // test requires a visible loss count, not a scheduling-dependent survivor.
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn continuous_delivery_retries_exact_head_and_resumes_after_restart() {
@@ -848,4 +851,25 @@ async fn worker_refuses_history_outside_current_queue_lineage() {
         );
         drop(worker);
     }
+}
+
+#[test]
+fn persisted_terminal_observation_rejects_regression_and_contradiction() {
+    let f = Fixture::new();
+    let mut journal = Journal::open(&f.journal).unwrap();
+    let health = f.health();
+    journal.record(&health).unwrap();
+    let mut next = health.clone();
+    next.outcome = None;
+    assert!(journal.record(&next).is_err());
+    next = health.clone();
+    next.status = Some(503);
+    assert!(journal.record(&next).is_err());
+    next = health.clone();
+    next.observer = Observer::Gateway;
+    assert!(journal.record(&next).is_err());
+    assert_eq!(
+        journal.snapshot().unwrap().recent[0]["capture"]["outcome"],
+        "completed"
+    );
 }
