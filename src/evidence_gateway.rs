@@ -11,7 +11,7 @@ use std::{
     collections::VecDeque,
     convert::Infallible,
     io,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     pin::Pin,
     sync::{
@@ -440,7 +440,7 @@ async fn handle(
 
 const PENDING: u8 = 0;
 const AUTHENTICATED: u8 = 1;
-const EVICTED: u8 = 2;
+
 #[derive(Clone)]
 struct Admission {
     state: Arc<AtomicU8>,
@@ -456,9 +456,24 @@ impl Admission {
     }
 }
 
+fn peer_group(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v) => {
+            if let Some(v4) = v.to_ipv4_mapped() {
+                return IpAddr::V4(v4);
+            }
+            let mut octets = v.octets();
+            octets[8..].fill(0);
+            IpAddr::V6(octets.into())
+        }
+        v => v,
+    }
+}
+
 /// Own every connection task. Unauthenticated clients have a separate bounded
-/// queue with oldest-pending eviction; they cannot reserve authenticated slots.
-/// This prevents idle-slot starvation, not general network/CPU denial of service.
+/// queue with per-peer limits; new arrivals never evict admitted handshakes.
+/// Peer means IPv4 address or IPv6 /64. Shared-peer and distributed saturation
+/// remain deployment concerns, not a general denial-of-service guarantee.
 pub async fn serve(listener: TcpListener, auth: ListenerAuth, config: Config) -> io::Result<()> {
     auth.validate(listener.local_addr()?)?;
     config.validate()?;
@@ -470,22 +485,18 @@ pub async fn serve(listener: TcpListener, auth: ListenerAuth, config: Config) ->
     }
     let config = Arc::new(config);
     let permits = Arc::new(Semaphore::new(8));
-    let mut pending: VecDeque<(AbortHandle, Arc<AtomicU8>)> = VecDeque::new();
+    let mut pending: VecDeque<(AbortHandle, Arc<AtomicU8>, IpAddr)> = VecDeque::new();
     let mut tasks = JoinSet::new();
     loop {
         tokio::select! {
             accepted=listener.accept()=>{
-                let (stream,_)=accepted?;
+                let (stream,peer)=accepted?;
+                let peer=peer_group(peer.ip());
                 while tasks.try_join_next().is_some() {}
-                pending.retain(|(task,state)| !task.is_finished() && state.load(Ordering::Acquire)==PENDING);
-                while pending.len()>=32 {
-                    let (task,state)=pending.pop_front().expect("bounded queue");
-                    // Promotion wins over eviction, or eviction wins over admission.
-                    // A successfully authenticated stream is never aborted here.
-                    if state.compare_exchange(PENDING,EVICTED,Ordering::AcqRel,Ordering::Acquire).is_ok() {
-                        task.abort();
-                    }
-                }
+                pending.retain(|(task,state,_)| !task.is_finished() && state.load(Ordering::Acquire)==PENDING);
+                // Refusal preserves older admitted handshakes. A single source
+                // cannot consume all 32 pending slots or evict another source.
+                if pending.len()>=32 || pending.iter().filter(|(_,_,p)| *p==peer).count()>=8 {continue;}
                 let state=Arc::new(AtomicU8::new(PENDING));
                 let admission=Admission {state:state.clone(),permits:permits.clone()};
                 let config=config.clone();
@@ -503,7 +514,7 @@ pub async fn serve(listener: TcpListener, auth: ListenerAuth, config: Config) ->
                         tasks.spawn(async move {connection(stream,config,Some(token),Some(admission)).await;})
                     }
                 };
-                pending.push_back((task,state));
+                pending.push_back((task,state,peer));
             },
             _=tasks.join_next(),if !tasks.is_empty()=>{}
         }

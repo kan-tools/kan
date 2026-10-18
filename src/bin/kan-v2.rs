@@ -15,6 +15,9 @@ struct Cli {
 #[cfg(feature = "v2-crypto")]
 #[derive(clap::Args)]
 struct ProxyCapture {
+    /// Existing private operations journal; replaces blocking stderr health output.
+    #[arg(long)]
+    health_journal: Option<PathBuf>,
     #[arg(long, value_enum, default_value = "opaque")]
     profile: kan::evidence_gateway::Profile,
     #[arg(long)]
@@ -29,6 +32,35 @@ struct ProxyCapture {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Initialize a separate private operations journal bound to an existing spool.
+    #[cfg(feature = "v2-crypto")]
+    OpsInit {
+        journal: PathBuf,
+        #[arg(long)]
+        spool: PathBuf,
+    },
+    /// Read the same operations snapshot used by the dashboard.
+    #[cfg(feature = "v2-crypto")]
+    OpsStatus { journal: PathBuf },
+    /// Continuously deliver retained signed requests, with bounded retry backoff.
+    #[cfg(feature = "v2-crypto")]
+    SpoolWatch {
+        spool: PathBuf,
+        #[arg(long)]
+        journal: PathBuf,
+        #[arg(long)]
+        endpoint: String,
+    },
+    /// Read-only operator dashboard; access remotely through an authenticated tunnel.
+    #[cfg(feature = "v2-crypto")]
+    Dashboard {
+        journal: PathBuf,
+        #[arg(long, default_value = "127.0.0.1:7283")]
+        listen: std::net::SocketAddr,
+        #[arg(long)]
+        token_file: PathBuf,
+    },
+
     /// TLS 1.3 gateway; explicit client CA authorizes this single-tenant instance.
     #[cfg(feature = "v2-crypto")]
     Gateway {
@@ -280,6 +312,52 @@ fn hex(bytes: &[u8]) -> String {
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     match Cli::parse().command {
+        #[cfg(feature = "v2-crypto")]
+        Command::OpsInit { journal, spool } => {
+            kan::evidence_operations::Journal::create(&journal, &spool)
+                .map_err(|_| "operations initialization failed; preserve partial output")?;
+            print_json(&serde_json::json!({"initialized":true}))?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::OpsStatus { journal } => {
+            let snapshot = kan::evidence_operations::Journal::open(&journal)
+                .and_then(|mut j| j.snapshot())
+                .map_err(|_| "operations status unavailable")?;
+            print_json(&serde_json::to_value(&snapshot)?)?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::SpoolWatch {
+            spool,
+            journal,
+            endpoint,
+        } => {
+            tokio::runtime::Runtime::new()?.block_on(async {
+                tokio::select! {
+                    result=kan::evidence_operations::drain(&spool,&journal,&endpoint)=>result.map_err(|_|"archive worker failed; inspect queue and journal"),
+                    _=shutdown()=>Ok(())
+                }
+            })?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::Dashboard {
+            journal,
+            listen,
+            token_file,
+        } => {
+            if !listen.ip().is_loopback() {
+                return Err("dashboard requires literal loopback".into());
+            }
+            let token = kan::evidence_gateway::secret_file(&token_file)?;
+            let token = String::from_utf8(token)?.trim_end_matches('\n').to_string();
+            tokio::runtime::Runtime::new()?.block_on(async {
+                let listener = tokio::net::TcpListener::bind(listen).await?;
+                eprintln!("dashboard http://{}", listener.local_addr()?);
+                tokio::select! {
+                    result=kan::evidence_dashboard::serve(listener,token,journal)=>result,
+                    _=shutdown()=>Ok(())
+                }
+            })?;
+        }
         #[cfg(feature = "v2-crypto")]
         Command::Gateway {
             listen,
@@ -786,33 +864,67 @@ fn run_proxy(
             Ok::<_, reqwest::header::InvalidHeaderValue>(value)
         })
         .transpose()?;
+    let signer = service_identity(&capture.key)?;
+    let (report, guard) = if let Some(path) = &capture.health_journal {
+        let journal = kan::evidence_operations::Journal::open(path)
+            .map_err(|_| "health journal unavailable")?;
+        journal
+            .check_binding(&capture.spool, Some(signer.did().as_str()))
+            .map_err(|_| "health journal binding mismatch")?;
+        let (report, guard) = kan::evidence_operations::reporter(journal)
+            .map_err(|_| "health reporter unavailable")?;
+        (report, Some(guard))
+    } else {
+        let report: kan::evidence_gateway::HealthReporter = std::sync::Arc::new(|h| {
+            if let Ok(json) = serde_json::to_string(h) {
+                eprintln!("{json}");
+            }
+        });
+        (report, None)
+    };
     let config = kan::evidence_gateway::Config {
         profile: capture.profile,
         provider_key,
         route,
         observer,
         spool: capture.spool,
-        signer: service_identity(&capture.key)?,
+        signer,
         recipient: fixed_hex::<32>(&capture.recipient)?,
         io_budget: std::time::Duration::from_secs(u64::from(capture.deadline_seconds)),
-        report: std::sync::Arc::new(|h| {
-            if let Ok(json) = serde_json::to_string(h) {
-                eprintln!("{json}");
-            }
-        }),
+        report,
     };
     config.validate()?;
     auth.validate(listen)?;
     let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(async move {
+    let result = runtime.block_on(async move {
         let listener = tokio::net::TcpListener::bind(listen).await?;
         eprintln!(
             "{}",
             serde_json::json!({"listening":listener.local_addr()?.to_string(),"observer":observer})
         );
-        kan::evidence_gateway::serve(listener, auth, config).await
-    })?;
+        tokio::select! {
+            result=kan::evidence_gateway::serve(listener,auth,config)=>result,
+            _=shutdown()=>Ok(())
+        }
+    });
+    if let Some(guard) = guard {
+        guard.join();
+    }
+    result?;
     Ok(())
+}
+#[cfg(feature = "v2-crypto")]
+async fn shutdown() {
+    #[cfg(unix)]
+    {
+        if let Ok(mut term) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
+            tokio::select! { _=tokio::signal::ctrl_c()=>{}, _=term.recv()=>{} }
+            return;
+        }
+    }
+    let _ = tokio::signal::ctrl_c().await;
 }
 fn main() -> std::process::ExitCode {
     match run() {

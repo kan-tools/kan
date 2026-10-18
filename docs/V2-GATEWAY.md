@@ -44,18 +44,19 @@ generic default. Do not point a real harness at this body-only route.
 Requests are bounded to 16 MiB; responses stream through a 64-KiB application
 buffer plus transport buffers. Eight authenticated slots cover verified TLS connections or token-authenticated
 local requests through response. Up to 32 pending unauthenticated connections
-use a separate queue: a new arrival evicts the oldest still-pending connection.
-Atomic promotion protects authenticated streams from that eviction. Idle sockets
-cannot reserve authenticated slots; authenticated overload is refused. This is
-not qualification against connection churn or resource flooding. Roughly 32 new
-connections during a collector’s handshake can evict it, even with few bytes
-sent; a simulated 50 ms round-trip probe lost all legitimate requests at about
-1000 new connections/s. Use an access-controlled private network/source allowlist
-until admission fairness and per-peer limits are qualified for untrusted exposure. TLS/header reception is limited to
+use a separate queue with at most eight pending connections per IPv4 address or
+IPv6 /64. Excess new connections are refused; admitted handshakes are not evicted.
+Idle sockets cannot reserve authenticated slots; authenticated overload is refused.
+This corrects the previous oldest-eviction churn defect. Shared-NAT clients still
+share a pending budget, and multiple sources can saturate the global pool. Use
+private/source-restricted ingress until deployment-specific capacity is qualified.
+TLS/header reception is limited to
 15 seconds, request bodies to 30 seconds, connections to 24 hours. The ordinary
 I/O budget is cumulative awaited send/read/write/flush time. Synchronous audit,
-crypto, fsync and health callbacks are not hard-latency bounded. CLI stderr
+crypto, fsync and health callbacks are not hard-latency bounded. Without `--health-journal`, CLI stderr
 reporting can block; supervise it with a continuously consumed private log pipe.
+The optional durable reporter and operator dashboard are described in
+[V2-OPERATIONS.md](V2-OPERATIONS.md).
 No payload, token or upstream error details enter health output.
 
 A disconnected downstream aborts its owned forwarding task. Upstream truncation
@@ -63,7 +64,7 @@ causes an incomplete downstream response, never a synthesized clean EOF. Bytes
 already written may exceed bytes actually consumed by the harness. Completion
 means local HTTP body EOF and successful local output flush, not model success,
 end-user receipt or remote archive acknowledgment. There is no resume/fallback
-inference path. Existing `spool-drain` is a separate archive-delivery command.
+inference path. Existing `spool-drain` and continuous `spool-watch` are separate archive-delivery commands.
 
 TLS private keys and provider plaintext exist in gateway memory. The OS, process
 isolation, swap, crash dumps and backup policy remain operator responsibilities.

@@ -439,3 +439,24 @@ service-hardening and restore worktrees were removed; source, history and v1
 backups were preserved. Legacy kan/day design-claim backfill is still pending
 under the two-withheld-claim partial-trust limitation; no witness or claim CID
 was fabricated.
+
+
+## Operations and front end build — 2026-10-18
+
+The user approved continuous delivery, durable operational status and admission
+hardening, and explicitly requested a front end. The permanent child worktree
+`kan-v2-operations` builds from gateway 2bbac8b.
+`.design/kan-v2-operations.md` defines the implementation and review criteria.
+The CLI gains ops-init/status, spool-watch and a read-only authenticated loopback
+dashboard. An optional private health journal decouples proxy callbacks from
+blocking stderr. The dashboard is deliberately operations-only at this stage;
+message browsing and extraction need a later decryption/query surface.
+
+The old no-second-UI rule is superseded for this explicitly authorized v2 front
+end; the existing raw-evidence/projection authority distinction remains intact.
+Pending admission now refuses excess arrivals with per-peer limits instead of
+evicting admitted handshakes. Same-peer and distributed exhaustion remain limits.
+Independent Opus review and final CI are pending at this implementation commit.
+Production custody, bounded history audit/asynchronous capture admission,
+independent-host restore qualification, migration rehearsal and cutover remain
+separate gates. No live service installation or data migration occurred.
