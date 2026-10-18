@@ -8,7 +8,11 @@ Verdict: **APPROVE WITH FOLLOW-UPS**. UTF-8 report SHA-256: `2cb33e59e3359f4cc82
 
 The concurrent frontier finding is being corrected in the gateway child PR #278. This parent does not claim lossless concurrent capture. The per-observation cap probe is promoted below this reviewed implementation, the negative-control script is repaired, and the synchronous wait helper explicitly forbids nesting. These follow-ups do not change production behavior.
 
-## Verbatim reviewer report
+## Reviewer report
+
+The shorthand workflow citation is expanded in this readable copy. The
+[exact original report](kan-v2-capture-latency-correction-2026-10-18.txt) retains
+the bytes identified by the hash above.
 
 # Cold review 2: kan v2 capture latency correction (`b6427c3..f8e5b85`)
 
@@ -38,7 +42,7 @@ But running it turned up a separate problem that this correction neither caused 
 |---|---|---|
 | REQ-1 | met | Open waits 100 ms; the probe for a fully locked spool finished in 145 ms. Q2 shows about 106–118 ms per observation for 10 observations, then immediate attempts. Total 1.19 s, with recovery after unlock. The FULL durability setting is untouched. P2 shows the caller's normal wait is restored afterwards. |
 | REQ-2 | met as written | The lock-out after a failure is gone (re-adding it breaks 2 tests). P4 recorded 88/88 beside a writer briefly holding the lock. P5: 0 failures in 80 simultaneous opens. The concurrent-capture loss above remains. |
-| REQ-3 | met | `ci.yml:32` now runs the deadline and contention tests. The CLI help says "Cumulative awaited network/output I/O budget" (`src/bin/kan-v2.rs:29`). |
+| REQ-3 | met | `.github/workflows/ci.yml:32` now runs the deadline and contention tests. The CLI help says "Cumulative awaited network/output I/O budget" (`src/bin/kan-v2.rs:29`). |
 | AC-1 | met | The CLI tests pass. Q5 with the spool locked for the whole attempt: 1.35 s, exact 40 bytes, one provider request, outcome completed with gaps. |
 | AC-2 | met, with a caveat | The test now checks that the already-queued item is untouched (`head == retained`). "Simultaneous opens" is met only in the narrow sense: P3 still shows one of two concurrent captures losing everything. |
 | AC-3 | met | Removing the new zero-budget check fails `blocking_final_flush_over_budget_is_unknown`. |
