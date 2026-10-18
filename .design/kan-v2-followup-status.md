@@ -9,7 +9,7 @@ for acceptance. The complete human frontend remains required by
 | Health admission/reporter reliability | #283, a04f288; fresh Opus approval with follow-ups; all CI green | Qualification under wider production load; no universal zero-loss claim |
 | Capacity and owner rotation | #284, 771341e; fresh Opus approval with follow-ups; all CI green | Merge only with #285 corrections; whole-device/power-loss qualification remains distinct |
 | Session-cap continuation, WAL refusal, runner cleanup | #285, 9d300b4; fresh Opus approval with follow-ups; all CI green | Commit the surviving focused test improvements listed below |
-| Real Library reader and source/provenance UI | #286, first production df74506; author API/CLI/UI/browser evidence | Fresh review in progress; scope-switch race corrected separately; browser file delivery remains unverified |
+| Real Library reader and source/provenance UI | #286, df74506 independently approved with follow-ups; corrections through a8cbf21 | Fresh correction review in progress; per-record unavailable evidence and browser file delivery remain open |
 | Deduplicated collection overview | `kan-v2-collection-overview.md` | Implement and qualify the bounded projection, typed status, refresh/cancel and human states |
 | Normalized sessions and navigation | Parent human-frontend design | Versioned adapters and exact source mapping for messages, tools, branches, attachments and gaps |
 | Search and views | Parent human-frontend design | Authorized encrypted projections, filters, frontiers, saved trust-aware views and stable URI extensions |
