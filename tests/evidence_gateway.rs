@@ -613,6 +613,8 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
         .header("connection", "close, anthropic-hop")
         .header("anthropic-hop", "remove-me")
         .header("content-type", "application/json")
+        .header("content-encoding", "identity")
+        .header("accept-encoding", "identity")
         .body(body.to_vec())
         .send()
         .await
@@ -634,6 +636,8 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
         assert!(!h.contains("x-kan-exchange"));
         assert!(!h.contains("anthropic-hop"));
         assert!(h.contains("anthropic-future-feature: keep-me"));
+        assert!(h.contains("content-encoding: identity"));
+        assert!(h.contains("accept-encoding: identity"));
         assert!(h.contains("anthropic-beta: future-one,future-two"));
         assert!(h.contains("x-claude-code-session-id: fixture-session"));
     }

@@ -309,7 +309,12 @@ async fn handle(
                 || name.as_str().starts_with("x-claude-code-")
                 || matches!(
                     name.as_str(),
-                    "content-type" | "accept" | "user-agent" | "x-request-id"
+                    "content-type"
+                        | "content-encoding"
+                        | "accept"
+                        | "accept-encoding"
+                        | "user-agent"
+                        | "x-request-id"
                 )
             {
                 outgoing.append(name.clone(), value.clone());
