@@ -39,6 +39,11 @@ pub enum Event {
     TransportLink {
         exchange: String,
     },
+    HttpMetadataChunk {
+        direction: String,
+        offset: u64,
+        total: u64,
+    },
     HttpMetadata {
         direction: String,
         headers: Vec<(String, String)>,
@@ -184,7 +189,9 @@ impl<'a> Recorder<'a> {
             || self.health.observed == u64::MAX
             || (!matches!(
                 event,
-                Event::RequestChunk { .. } | Event::ResponseChunk { .. }
+                Event::RequestChunk { .. }
+                    | Event::ResponseChunk { .. }
+                    | Event::HttpMetadataChunk { .. }
             ) && !body.is_empty())
             || matches!(&event, Event::TransportLink { exchange } if crate::evidence_service::unhex(exchange,32).map_or(true, |v|v.len()!=32))
             || matches!(&event, Event::Started { method, route } if method.len() > 32 || route.len() > 2048)
@@ -591,12 +598,27 @@ fn record_metadata(
             headers.push((name.to_owned(), hex(value.as_bytes())));
         }
     }
-    recorder.record(
-        Event::HttpMetadata {
-            direction: direction.into(),
-            headers,
-            omitted,
-        },
-        &[],
-    )
+    let event = Event::HttpMetadata {
+        direction: direction.into(),
+        headers,
+        omitted,
+    };
+    let bytes = serde_json::to_vec(&event).expect("typed metadata");
+    if bytes.len() <= CHUNK {
+        recorder.record(event, &[])
+    } else {
+        // Large valid HTTP heads must not turn capture framing limits into a
+        // failed inference. Chunk the complete normalized metadata JSON.
+        for (index, chunk) in bytes.chunks(CHUNK).enumerate() {
+            recorder.record(
+                Event::HttpMetadataChunk {
+                    direction: direction.into(),
+                    offset: (index * CHUNK) as u64,
+                    total: bytes.len() as u64,
+                },
+                chunk,
+            )?;
+        }
+        Ok(())
+    }
 }

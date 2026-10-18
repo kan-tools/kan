@@ -84,8 +84,11 @@ explicit provider API key. Local and provider tokens are not interchangeable.
 If both local authentication headers are present, both must match the local token.
 
 KANC2 HTTP metadata observations preserve normalized header names and hex-encoded
-values, with credential/cookie omissions named explicitly. Metadata header JSON
-is bounded to 128 KiB. These are library-visible HTTP observations, not packet
+values, with credential/cookie omissions named explicitly. Individual frame header JSON is bounded to 128 KiB. Large metadata is
+serialized as complete normalized HttpMetadata JSON and retained in ordered
+HttpMetadataChunk bodies of at most 64 KiB with offset/total coordinates; it
+must be reassembled before interpretation. This prevents metadata size from
+turning otherwise valid inference into a capture-framing failure. These are library-visible HTTP observations, not packet
 captures. TLS peer identities are authorized by the configured instance CA;
 this version does not record certificate fingerprints or offer per-client grants.
 
@@ -111,3 +114,11 @@ Claude installation. No live deployment or production-key selection is implied.
 
 On macOS, set `KAN_TLS_ORACLE_PYTHON=/opt/homebrew/bin/python3` when the system
 Python lacks TLS 1.3. The independent TLS witness fails explicitly in that case.
+
+
+Capture begins after authentication, route checks and complete bounded request
+admission. Rejected or incomplete uploads, failed TLS handshakes, HTTP transfer
+framing and trailers are not archived by this profile. Collector and gateway
+coverage must be assessed separately; neither observer certifies the other's
+missing events. This is an inference API capture profile, not universal network
+or harness activity capture.

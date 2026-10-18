@@ -99,3 +99,12 @@ setup contention. Each Recorder allocates at most 100 ms of busy wait per
 admission from a one-second allowance, debited only by actual busy-handler sleep. Once spent, immediate admission continues. Failure reports a gap but never
 latches off the rest of an attempt; later observations can recover. The scoped handler shares each admission allowance across statements and restores caller policy on unwind. OS sleep overruns remain possible; this is not a hard wall-clock deadline. Startup audit, fsync, crypto and reporting
 remain synchronous. Ordinary offline spool operations retain their wait policy.
+
+The gateway branch also fixes concurrent queue preparation: writer reservation,
+frontier selection, encryption/signing and enqueue share one IMMEDIATE
+transaction. This prevents competing captures from repeatedly signing stale
+frontiers. A synchronized 80-request admission fixture checks this directly;
+a paced two-stream fixture checks capture integration. These are correctness
+fixtures, not capacity qualification. Waiting still obeys the capture allowance;
+short but repeatedly contended bursts can also exhaust an observation’s wait and yield
+visible gaps, but a conflict does not silently discard an entire stream.

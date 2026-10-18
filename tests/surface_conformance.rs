@@ -1169,7 +1169,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "f041a957e402dfa4ca00b1de4201b097c9f918b3f2ce6833514c141501ea1d7e",
+                "ce9359571e7e9ddc41f8447b0e038fccf10404fd9a1a2a3fe11a69280778da96",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

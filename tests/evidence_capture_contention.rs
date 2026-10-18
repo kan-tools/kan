@@ -149,7 +149,7 @@ async fn p1_cli_open_does_not_wait_on_exclusive_lock() {
     );
 }
 
-/// P2: without_busy_wait must hand the caller's normal policy back.
+/// P2: with_capture_wait must hand the caller's normal policy back.
 #[test]
 fn p2_admission_restores_callers_busy_timeout() {
     let dir = tempfile::tempdir().unwrap();
@@ -223,7 +223,8 @@ fn capture_thread(
 }
 
 /// P3: two ordinary concurrent captures sharing one spool (frontier contention).
-/// Observational: prints how much of each attempt was durably recorded.
+/// Both paced concurrent attempts must retain every observation. This is a
+/// low-rate fixture, not an unbounded throughput or scheduling guarantee.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn p3_concurrent_captures_share_spool() {
     let dir = tempfile::tempdir().unwrap();
@@ -231,8 +232,9 @@ async fn p3_concurrent_captures_share_spool() {
     let key = dir.path().join("key");
     writer.save(&key).unwrap();
     let path = make_spool(dir.path(), &writer);
-    let (url, task) = drip(60, 512, Duration::from_millis(3)).await;
+    let (url, task) = drip(20, 512, Duration::from_millis(100)).await;
     let a = capture_thread(path.clone(), key.clone(), url.clone());
+    tokio::time::sleep(Duration::from_millis(150)).await;
     let b = capture_thread(path.clone(), key.clone(), url.clone());
     let (ha, hb) = (a.join().unwrap(), b.join().unwrap());
     task.abort();
@@ -245,6 +247,14 @@ async fn p3_concurrent_captures_share_spool() {
     }
     println!("P3 spool pending={pending}");
     assert_eq!(
+        ha.locally_queued, ha.observed,
+        "first concurrent stream lost evidence"
+    );
+    assert_eq!(
+        hb.locally_queued, hb.observed,
+        "second concurrent stream lost evidence"
+    );
+    assert_eq!(
         pending,
         ha.locally_queued + hb.locally_queued,
         "queued count must be truthful"
@@ -252,7 +262,7 @@ async fn p3_concurrent_captures_share_spool() {
 }
 
 /// P4: one capture while a separate writer performs brief periodic commits
-/// (a drain acknowledging replies). Observational.
+/// (a drain acknowledging replies).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn p4_capture_beside_brief_periodic_writer() {
     let dir = tempfile::tempdir().unwrap();
@@ -322,7 +332,7 @@ fn concurrent_opens(
 }
 
 /// P5: does a zero-timeout capture open fail merely because another
-/// connection opens at the same moment (no long-held lock)? Observational.
+/// connection opens at the same moment (no long-held lock)?
 #[test]
 fn p5_concurrent_capture_opens() {
     let dir = tempfile::tempdir().unwrap();

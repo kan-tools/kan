@@ -23,6 +23,8 @@ pub enum Error {
     Invalid(&'static str),
     #[error("spool capacity exhausted")]
     Full,
+    #[error("operation identifier already retained")]
+    ReusedOperation,
     #[error("spool frontier conflict")]
     Conflict,
     #[error("service proof rejected: {0}")]
@@ -367,73 +369,61 @@ impl Spool {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let st = state(&tx)?;
-        let (position, previous, id, cid) = coordinates(bytes, &st)?;
-        let old: Option<(u64, String)> = tx
-            .query_row(
-                "SELECT position,manifest FROM operations WHERE operation=?",
-                [&id],
-                |r| Ok((unsigned(r, 0)?, r.get(1)?)),
-            )
-            .optional()?;
-        if let Some((old_position, old_cid)) = old {
-            if old_position != position || old_cid != cid {
-                return Err(Error::Conflict);
-            }
-            let pending: Option<Vec<u8>> = tx
-                .query_row(
-                    "SELECT request FROM pending WHERE position=?",
-                    [position as i64],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            if let Some(pending) = pending {
-                return if pending == bytes {
-                    Ok(Enqueue::AlreadyPending)
-                } else {
-                    Err(Error::Invalid("pending commitment"))
-                };
-            }
-            if let Some(acknowledged) = &st.request {
-                if coordinates(acknowledged, &st)?.0 >= position {
-                    return Ok(Enqueue::AlreadyAcknowledged);
-                }
-            }
-            return Err(Error::Invalid(
-                "operation lacks pending bytes or acknowledgment",
-            ));
+        let result = enqueue_in(&tx, bytes, None)?;
+        if result != Enqueue::Queued {
+            return Ok(result);
         }
-        if position != st.next || previous != st.previous {
-            return Err(Error::Conflict);
-        }
-        let used: u64 = tx.query_row(
-            "SELECT coalesce(sum(length(request)),0) FROM pending",
-            [],
-            |r| unsigned(r, 0),
-        )?;
-        if used.checked_add(bytes.len() as u64).ok_or(Error::Full)? > st.budget {
-            return Err(Error::Full);
-        }
-        tx.execute(
-            "INSERT INTO operations VALUES(?,?,?)",
-            params![position as i64, id, cid],
-        )?;
-        tx.execute(
-            "INSERT INTO pending VALUES(?,?,?,?)",
-            params![position as i64, id, cid, bytes],
-        )?;
-        let next = position
-            .checked_add(1)
-            .filter(|n| *n <= crate::evidence::MAX_SAFE_INTEGER as u64)
-            .ok_or(Error::Invalid("frontier exhausted"))?;
-        tx.execute(
-            "UPDATE state SET next=?,previous=? WHERE singleton=1",
-            params![next as i64, cid],
-        )?;
         observe(Boundary::BeforeCommit);
         tx.commit()?;
         observe(Boundary::AfterCommit);
         Ok(Enqueue::Queued)
+    }
+    /// Reserve the writer before deriving its next request. The crate-local
+    /// preparer runs once, synchronously, under the same transaction as enqueue.
+    #[cfg(feature = "v2-crypto")]
+    pub(crate) fn enqueue_generated<T, E: From<Error>>(
+        &mut self,
+        operation: &str,
+        prepare: impl FnOnce(Status) -> std::result::Result<(Vec<u8>, T), E>,
+    ) -> std::result::Result<T, E> {
+        service::unhex(operation, 16).map_err(Error::from)?;
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(Error::from)?;
+        let st = state(&tx)?;
+        let exists: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM operations WHERE operation=?)",
+                [operation],
+                |r| r.get(0),
+            )
+            .map_err(Error::from)?;
+        if exists {
+            return Err(Error::ReusedOperation.into());
+        }
+        let (pending, pending_bytes) = tx
+            .query_row(
+                "SELECT count(*),coalesce(sum(length(request)),0) FROM pending",
+                [],
+                |r| Ok((unsigned(r, 0)?, unsigned(r, 1)?)),
+            )
+            .map_err(Error::from)?;
+        let (bytes, value) = prepare(Status {
+            scope: st.scope,
+            writer: st.writer,
+            audience: st.audience,
+            budget: st.budget,
+            next: st.next,
+            previous: st.previous,
+            pending,
+            pending_bytes,
+        })?;
+        if enqueue_in(&tx, &bytes, Some(operation))? != Enqueue::Queued {
+            return Err(Error::ReusedOperation.into());
+        }
+        tx.commit().map_err(Error::from)?;
+        Ok(value)
     }
     /// Only a verified reply for the current head can release queued bytes.
     pub fn acknowledge(&mut self, reply: &[u8]) -> Result<()> {
@@ -477,6 +467,83 @@ impl Spool {
         Ok(())
     }
 }
+fn enqueue_in(
+    tx: &rusqlite::Transaction<'_>,
+    bytes: &[u8],
+    expected_operation: Option<&str>,
+) -> Result<Enqueue> {
+    if bytes.len() > MAX_REQUEST {
+        return Err(Error::Invalid("request size"));
+    }
+    let st = state(tx)?;
+    let (position, previous, id, cid) = coordinates(bytes, &st)?;
+    if expected_operation.is_some_and(|expected| expected != id) {
+        return Err(Error::Invalid("prepared operation binding"));
+    }
+    let old: Option<(u64, String)> = tx
+        .query_row(
+            "SELECT position,manifest FROM operations WHERE operation=?",
+            [&id],
+            |r| Ok((unsigned(r, 0)?, r.get(1)?)),
+        )
+        .optional()?;
+    if let Some((old_position, old_cid)) = old {
+        if old_position != position || old_cid != cid {
+            return Err(Error::Conflict);
+        }
+        let pending: Option<Vec<u8>> = tx
+            .query_row(
+                "SELECT request FROM pending WHERE position=?",
+                [position as i64],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(pending) = pending {
+            return if pending == bytes {
+                Ok(Enqueue::AlreadyPending)
+            } else {
+                Err(Error::Invalid("pending commitment"))
+            };
+        }
+        if let Some(acknowledged) = &st.request {
+            if coordinates(acknowledged, &st)?.0 >= position {
+                return Ok(Enqueue::AlreadyAcknowledged);
+            }
+        }
+        return Err(Error::Invalid(
+            "operation lacks pending bytes or acknowledgment",
+        ));
+    }
+    if position != st.next || previous != st.previous {
+        return Err(Error::Conflict);
+    }
+    let used: u64 = tx.query_row(
+        "SELECT coalesce(sum(length(request)),0) FROM pending",
+        [],
+        |r| unsigned(r, 0),
+    )?;
+    if used.checked_add(bytes.len() as u64).ok_or(Error::Full)? > st.budget {
+        return Err(Error::Full);
+    }
+    tx.execute(
+        "INSERT INTO operations VALUES(?,?,?)",
+        params![position as i64, id, cid],
+    )?;
+    tx.execute(
+        "INSERT INTO pending VALUES(?,?,?,?)",
+        params![position as i64, id, cid, bytes],
+    )?;
+    let next = position
+        .checked_add(1)
+        .filter(|n| *n <= crate::evidence::MAX_SAFE_INTEGER as u64)
+        .ok_or(Error::Invalid("frontier exhausted"))?;
+    tx.execute(
+        "UPDATE state SET next=?,previous=? WHERE singleton=1",
+        params![next as i64, cid],
+    )?;
+    Ok(Enqueue::Queued)
+}
+
 fn audit(conn: &Connection) -> Result<()> {
     let st = state(conn)?;
     service::validate_shape(&service::Request {

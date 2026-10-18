@@ -772,3 +772,210 @@ async fn real_claude_code_uses_both_hops() {
         .all(|(h, _)| h.contains("synthetic-provider-secret") && !h.contains(TOKEN)));
     println!("real Claude Code → collector → mutual TLS gateway → synthetic provider: {} requests, expected result",requests.len());
 }
+
+struct CliProcess {
+    _child: tokio::process::Child,
+    _stderr: Task,
+}
+async fn proxy_cli(args: &[String]) -> (String, CliProcess) {
+    use tokio::io::AsyncBufReadExt;
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut stderr = tokio::io::BufReader::new(child.stderr.take().unwrap());
+    let mut line = String::new();
+    tokio::time::timeout(Duration::from_secs(5), stderr.read_line(&mut line))
+        .await
+        .unwrap()
+        .unwrap();
+    let ready: serde_json::Value =
+        serde_json::from_str(&line).unwrap_or_else(|_| panic!("proxy did not start: {line}"));
+    let address = ready["listening"]
+        .as_str()
+        .expect("ready address")
+        .to_owned();
+    let drain = Task(tokio::spawn(async move {
+        loop {
+            line.clear();
+            match stderr.read_line(&mut line).await {
+                Ok(0) | Err(_) => break,
+                _ => {}
+            }
+        }
+    }));
+    (
+        address,
+        CliProcess {
+            _child: child,
+            _stderr: drain,
+        },
+    )
+}
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cli_profile_uses_explicit_files_and_streams_both_hops() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let file = |name: &str, bytes: &[u8]| {
+        let p = root.path().join(name);
+        std::fs::write(&p, bytes).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).unwrap();
+        p.to_str().unwrap().to_owned()
+    };
+    let ca = file("ca", CA);
+    let cert = file("cert", CERT);
+    let tlskey = file("tlskey", KEY);
+    let identity = file("identity", ID);
+    let token = file("token", TOKEN.as_bytes());
+    let providerkey = file("providerkey", b"synthetic-provider-secret");
+    let gwriter = Identity::generate();
+    let cwriter = Identity::generate();
+    let gkey = root.path().join("gkey");
+    let ckey = root.path().join("ckey");
+    gwriter.save(&gkey).unwrap();
+    cwriter.save(&ckey).unwrap();
+    let gspool = root.path().join("gspool");
+    let cspool = root.path().join("cspool");
+    for (path, writer) in [(&gspool, &gwriter), (&cspool, &cwriter)] {
+        drop(
+            Spool::create(
+                path,
+                &hex(&SCOPE),
+                writer.did().as_str(),
+                Identity::generate().did().as_str(),
+                64 << 20,
+            )
+            .unwrap(),
+        );
+    }
+    let (provider, requests, _p) = anthropic_provider().await;
+    let recipient = hex(&crypto::public_key(&PRIVATE).unwrap());
+    let (gaddr, _g) = proxy_cli(&[
+        "gateway".into(),
+        "--listen".into(),
+        "127.0.0.1:0".into(),
+        "--certificate".into(),
+        cert,
+        "--tls-key".into(),
+        tlskey,
+        "--client-ca".into(),
+        ca.clone(),
+        "--provider".into(),
+        provider,
+        "--provider-key-file".into(),
+        providerkey,
+        "--profile".into(),
+        "anthropic".into(),
+        "--spool".into(),
+        gspool.to_str().unwrap().into(),
+        "--key".into(),
+        gkey.to_str().unwrap().into(),
+        "--recipient".into(),
+        recipient.clone(),
+    ])
+    .await;
+    let (caddr, _c) = proxy_cli(&[
+        "collector".into(),
+        "--listen".into(),
+        "127.0.0.1:0".into(),
+        "--gateway".into(),
+        format!("https://{gaddr}/"),
+        "--server-ca".into(),
+        ca,
+        "--identity".into(),
+        identity,
+        "--token-file".into(),
+        token,
+        "--profile".into(),
+        "anthropic".into(),
+        "--spool".into(),
+        cspool.to_str().unwrap().into(),
+        "--key".into(),
+        ckey.to_str().unwrap().into(),
+        "--recipient".into(),
+        recipient,
+    ])
+    .await;
+    let response = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .unwrap()
+        .post(format!("http://{caddr}/v1/messages?beta=true"))
+        .header("x-api-key", TOKEN)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .body("{\"stream\":true}")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.headers()["content-type"], "text/event-stream");
+    assert_eq!(response.bytes().await.unwrap().as_ref(), sse());
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    for (path, writer, observer) in [
+        (&gspool, &gwriter, Observer::Gateway),
+        (&cspool, &cwriter, Observer::Collector),
+    ] {
+        let f = frames(path, writer.did().as_str());
+        assert!(!f.is_empty());
+        assert!(f.iter().all(|(h, _)| h.observer == observer));
+        assert!(matches!(
+            f.last().unwrap().0.event,
+            capture::Event::Terminal {
+                outcome: Outcome::Completed
+            }
+        ));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn large_response_metadata_does_not_block_inference() {
+    let large = "x".repeat(90000);
+    let response=format!("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nX-Large-Fixture: {large}\r\nConnection: close\r\n\r\nok").into_bytes();
+    let (p, calls, _p) = provider(response).await;
+    let dir = tempfile::tempdir().unwrap();
+    let (mut config, health, did) = config(
+        Route::new(p.trim_end_matches("fixed")).unwrap(),
+        Observer::Gateway,
+        dir.path(),
+        true,
+    );
+    config.profile = gateway::Profile::Anthropic;
+    config.provider_key = Some(reqwest::header::HeaderValue::from_static(
+        "synthetic-provider-secret",
+    ));
+    let (url, _g) = start(tls(), config).await;
+    let r = client(CA, true)
+        .post(url.replace("v1/forward", "v1/messages"))
+        .header("x-kan-exchange", hex(&[8; 32]))
+        .body("{}")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.headers()["x-large-fixture"].as_bytes(), large.as_bytes());
+    assert_eq!(r.bytes().await.unwrap(), "ok");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(!health.lock().unwrap().last().unwrap().recording_gap);
+    let mut metadata = Vec::new();
+    let mut total = 0;
+    for (h, b) in frames(&dir.path().join("spool"), &did) {
+        let event = serde_json::to_value(h.event).unwrap();
+        if event["type"] == "http-metadata-chunk" && event["direction"] == "response" {
+            assert_eq!(event["offset"].as_u64().unwrap(), metadata.len() as u64);
+            total = event["total"].as_u64().unwrap();
+            metadata.extend(b);
+        }
+    }
+    assert_eq!(metadata.len() as u64, total);
+    assert!(total > capture::CHUNK as u64);
+    let event: serde_json::Value = serde_json::from_slice(&metadata).unwrap();
+    assert!(event["headers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|h| h[0] == "x-large-fixture" && h[1] == hex(large.as_bytes())));
+}
