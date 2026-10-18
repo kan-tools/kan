@@ -1,0 +1,49 @@
+test	Run python3 scripts/check_gateway_global_cap.py	﻿2026-10-18T19:08:42.3473527Z ##[group]Run python3 scripts/check_gateway_global_cap.py
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.3474173Z ^[[36;1mpython3 scripts/check_gateway_global_cap.py^[[0m
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.3554714Z shell: /usr/bin/bash -e {0}
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.3554990Z env:
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.3555213Z   CARGO_HOME: /home/runner/.cargo
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.3555486Z   CARGO_INCREMENTAL: 0
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.3555728Z   CARGO_TERM_COLOR: always
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.3555962Z   CACHE_ON_FAILURE: false
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.3556200Z ##[endgroup]
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.9730714Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.9731264Z running 1 test
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.9731658Z test global_pending_cap_is_32_across_distinct_peers ... ok
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.9731938Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.9732196Z test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.34s
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.9732606Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.9733104Z ^[[1m^[[92m    Finished^[[0m `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.9733982Z ^[[1m^[[92m     Running^[[0m tests/evidence_gateway.rs (target/debug/deps/evidence_gateway-a2839af932fa1781)
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:08:42.9734555Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0468029Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0468675Z running 1 test
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0469242Z test global_pending_cap_is_32_across_distinct_peers ... FAILED
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0469569Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0469657Z failures:
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0469775Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0469859Z failures:
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0470097Z     global_pending_cap_is_32_across_distinct_peers
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0470315Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0470597Z test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 19 filtered out; finished in 1.13s
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0470969Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0471443Z ^[[1m^[[92m   Compiling^[[0m kan v1.0.0-beta.1 (/home/runner/work/kan/kan)
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0472071Z ^[[1m^[[92m    Finished^[[0m `test` profile [unoptimized + debuginfo] target(s) in 19.87s
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0472776Z ^[[1m^[[92m     Running^[[0m tests/evidence_gateway.rs (target/debug/deps/evidence_gateway-a2839af932fa1781)
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0473197Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0473529Z thread 'global_pending_cap_is_32_across_distinct_peers' (35918) panicked at tests/evidence_gateway.rs:1469:5:
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0474367Z global pending cap did not refuse connection 33
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0474805Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0475473Z ^[[1m^[[91merror^[[0m: test failed, to rerun pass `--test evidence_gateway`
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:04.0475747Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:24.0516295Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:24.0516897Z running 1 test
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:24.0517290Z test global_pending_cap_is_32_across_distinct_peers ... ok
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:24.0517559Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:24.0517812Z test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.34s
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:24.0518207Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:24.0518695Z ^[[1m^[[92m   Compiling^[[0m kan v1.0.0-beta.1 (/home/runner/work/kan/kan)
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:24.0519267Z ^[[1m^[[92m    Finished^[[0m `test` profile [unoptimized + debuginfo] target(s) in 19.60s
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:24.0519957Z ^[[1m^[[92m     Running^[[0m tests/evidence_gateway.rs (target/debug/deps/evidence_gateway-a2839af932fa1781)
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:24.0520333Z 
+test	Run python3 scripts/check_gateway_global_cap.py	2026-10-18T19:09:24.0520587Z DEMONSTRATED: baseline passed; cap removal failed the named assertion; restored passed.

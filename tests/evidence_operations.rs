@@ -59,6 +59,16 @@ impl Drop for Task {
         self.0.abort();
     }
 }
+fn sample_worker(path: &std::path::Path) -> Option<ops::WorkerStatus> {
+    match Journal::open(path).and_then(|mut j| j.snapshot()) {
+            Ok(snapshot) => snapshot.worker,
+            Err(error) if error.downcast_ref::<rusqlite::Error>().is_some_and(|e| {
+                matches!(e, rusqlite::Error::SqliteFailure(code, _) if matches!(code.code, rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked))
+            }) => None,
+            Err(error) => panic!("unexpected journal read failure: {error}"),
+        }
+}
+
 #[test]
 fn journal_reopen_preserves_monotone_gaps_and_binding() {
     let f = Fixture::new();
@@ -141,13 +151,7 @@ async fn continuous_delivery_retries_exact_head_and_resumes_after_restart() {
     let first = run(f.spool.clone(), f.journal.clone(), endpoint.clone());
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            if Journal::open(&f.journal)
-                .unwrap()
-                .snapshot()
-                .unwrap()
-                .worker
-                .is_some_and(|w| w.state == "retrying")
-            {
+            if sample_worker(&f.journal).is_some_and(|w| w.state == "retrying") {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
@@ -180,8 +184,7 @@ async fn continuous_delivery_retries_exact_head_and_resumes_after_restart() {
     let _worker = run(f.spool.clone(), f.journal.clone(), endpoint);
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            let st = Journal::open(&f.journal).unwrap().snapshot().unwrap();
-            if st.worker.is_some_and(|w| {
+            if sample_worker(&f.journal).is_some_and(|w| {
                 w.queue.is_some_and(|q| q.pending == 0) && w.last_ack_position == Some(0)
             }) {
                 break;
@@ -479,11 +482,7 @@ async fn archive_retries_wait_and_preserve_continuous_backlog_age() {
     }));
     let first = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            let w = Journal::open(&f.journal)
-                .unwrap()
-                .snapshot()
-                .unwrap()
-                .worker;
+            let w = sample_worker(&f.journal);
             if let Some(w) = w {
                 if w.consecutive_failures == 1 {
                     break w;
@@ -498,12 +497,7 @@ async fn archive_retries_wait_and_preserve_continuous_backlog_age() {
     assert_eq!(calls.load(Ordering::SeqCst), 1, "no tight-loop retry storm");
     let second = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            if let Some(w) = Journal::open(&f.journal)
-                .unwrap()
-                .snapshot()
-                .unwrap()
-                .worker
-            {
+            if let Some(w) = sample_worker(&f.journal) {
                 if w.consecutive_failures >= 2 {
                     break w;
                 }
@@ -739,4 +733,119 @@ async fn startup_read_lock_cannot_erase_worker_history() {
     assert_eq!((w.last_ack_position, w.last_ack_at), (Some(0), Some(1234)));
     assert!(w.telemetry_failures > 7);
     drop(worker);
+}
+
+#[test]
+fn lazy_reporter_rejects_wrong_spool_and_wrong_writer() {
+    let f = Fixture::new();
+    let other = Fixture::new();
+    for (journal, writer) in [
+        (other.journal.clone(), f.writer.did().to_string()),
+        (f.journal.clone(), other.writer.did().to_string()),
+    ] {
+        let (report, guard) = ops::reporter_at(journal.clone(), f.spool.clone(), writer).unwrap();
+        report(&f.health());
+        drop(report);
+        guard.join();
+        let snapshot = Journal::open(&journal).unwrap().snapshot().unwrap();
+        assert_eq!(snapshot.attempts, 0);
+        assert!(snapshot.reporters.is_empty());
+    }
+}
+#[test]
+fn lazy_reporter_counts_absent_journal_losses_after_recovery() {
+    let f = Fixture::new();
+    let saved = f.dir.path().join("temporarily-unavailable");
+    std::fs::rename(&f.journal, &saved).unwrap();
+    let (report, guard) = ops::reporter_at(
+        f.journal.clone(),
+        f.spool.clone(),
+        f.writer.did().to_string(),
+    )
+    .unwrap();
+    for i in 0..10u8 {
+        let mut h = f.health();
+        h.attempt = hex(&[i; 32]);
+        report(&h);
+    }
+    std::thread::sleep(Duration::from_millis(700));
+    std::fs::rename(saved, &f.journal).unwrap();
+    report(&f.health());
+    drop(report);
+    guard.join();
+    let snapshot = Journal::open(&f.journal).unwrap().snapshot().unwrap();
+    assert!(
+        snapshot.telemetry_dropped >= 10,
+        "missing-journal updates must not disappear from the loss count"
+    );
+    assert_eq!(snapshot.attempts, 1);
+    assert_eq!(snapshot.unclosed_sessions, 0);
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn worker_rejects_a_journal_bound_to_another_spool() {
+    let f = Fixture::new();
+    let other = Fixture::new();
+    let (spool, journal) = (f.spool.clone(), other.journal.clone());
+    let worker = Task(tokio::spawn(async move {
+        ops::drain(&spool, &journal, "http://127.0.0.1:9/v1/rpc")
+            .await
+            .unwrap();
+    }));
+    tokio::time::sleep(Duration::from_millis(2200)).await;
+    assert!(
+        !worker.0.is_finished(),
+        "journal binding failure must not stop delivery"
+    );
+    assert!(Journal::open(&other.journal)
+        .unwrap()
+        .snapshot()
+        .unwrap()
+        .worker
+        .is_none());
+    drop(worker);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn worker_refuses_history_outside_current_queue_lineage() {
+    for case in [
+        "regressed-frontier",
+        "different-head",
+        "unacknowledged-position",
+    ] {
+        let f = Fixture::new();
+        let mut prior = seeded_worker_history(&f);
+        match case {
+            "regressed-frontier" => prior.queue.as_mut().unwrap().next += 1,
+            "different-head" => {
+                prior.queue.as_mut().unwrap().previous = Some("different-retained-head".into())
+            }
+            _ => prior.last_ack_position = Some(1),
+        }
+        Journal::open(&f.journal)
+            .unwrap()
+            .save_worker(&prior)
+            .unwrap();
+        let (spool, journal) = (f.spool.clone(), f.journal.clone());
+        let worker = Task(tokio::spawn(async move {
+            ops::drain(&spool, &journal, "http://127.0.0.1:9/v1/rpc")
+                .await
+                .unwrap();
+        }));
+        tokio::time::sleep(Duration::from_millis(2200)).await;
+        assert!(
+            !worker.0.is_finished(),
+            "delivery must remain independent of rejected history"
+        );
+        let retained = Journal::open(&f.journal)
+            .unwrap()
+            .snapshot()
+            .unwrap()
+            .worker
+            .unwrap();
+        assert_eq!(
+            retained.sampled_at, 1,
+            "{case}: incompatible history must not be merged into a fresh status"
+        );
+        drop(worker);
+    }
 }

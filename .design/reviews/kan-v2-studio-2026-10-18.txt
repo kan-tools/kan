@@ -1,0 +1,81 @@
+# Cold adversarial review: kan-v2 studio build, first slice (`git diff HEAD` against 75fea76)
+
+I didn't write this code. Everything below comes from code I read or commands I ran in this export; raw outputs are in `review-evidence/`.
+
+**North star:** I didn't run a kan read. The export has no kan store, and `review-context.txt` says `telos/raw-data-and-projections` is an unwitnessed maintenance telos. I measured against that telos as stated in the brief and the two design docs: keep raw evidence and provenance, report coverage honestly, and deliver the authorized human UI. The `day review record` and `kan observe` steps were skipped because you prohibited kan/day writes.
+
+## What I verified myself
+
+- **Build, tests, lint, format (all pass):**
+
+  | Check | Result | Evidence |
+  |---|---|---|
+  | `cargo build --workspace --all-targets` | exit 0 | `cargo-build-workspace.txt` |
+  | `cargo test --workspace` | exit 0, 121 result blocks, none failed | `cargo-test-workspace.txt` |
+  | `--features v2-crypto`: gateway / operations / surface_conformance | 17 passed + 1 ignored / 13 passed / 19 passed | `cargo-test-v2-focused.txt` |
+  | `--lib evidence_operations::tests` | 2 passed | `cargo-test-v2-lib-ops.txt` |
+  | clippy (workspace and v2-crypto, `-D warnings`) | exit 0 | `clippy-*.txt` |
+  | `cargo fmt --check` | exit 0 | `fmt-check.txt` |
+  | Node UI and theme tests | 10 of 10 pass | `node-tests.txt` |
+
+- **Whole-file reversion of `src/evidence_operations.rs`** (using `git show HEAD:…`):
+  - Both `late_journal_recovery_preserves_ack_and_accumulates_failures_once` and `startup_read_lock_cannot_erase_worker_history` fail on an assertion, not a compile error: `left: (None, None) right: (Some(0), Some(1234))` (`revert-ops-reverted.txt`).
+  - With the file restored, both pass. The sha256 `4489829b…` matched after every mutation (`revert-hashes.txt`).
+  - My first two attempts failed because of how I wrote the cargo command. Those are not counted as results.
+- **Merge mutants on the new worker checkpoint code** (`mut-*.txt`):
+
+  | Mutant | Killed? | Killed by |
+  |---|---|---|
+  | A: run-failure watermark ignored | yes | unit test + late-journal test |
+  | G: successor guard removed | yes | unit test, "superseded run must not overwrite a successor" |
+  | H: ack timestamp not paired with position | yes | both integration tests |
+  | K: prior ack not merged | yes | both integration tests |
+
+  The survivors D, F and I are finding 1.
+- **UI reversion** (HEAD `app.js` in a throwaway copy): the two new fresh/stale tests fail, and so does the modified auth test.
+- **UI and theme mutants:** 9 of 10 killed. The survivor is `m5` (finding 2). Results are in `ui-mutants.txt`.
+- **Theme:**
+  - The default follows the platform setting, and an explicit choice overrides it.
+  - Choosing System removes the stored key.
+  - If browser storage is blocked, the choice still works for the current tab.
+  - The CSP is `script-src 'self'`, with no inline script or style in production (`src/evidence_dashboard.rs:18`).
+  - `app.js` has no storage or cookie access (grep).
+  - The token goes in a header only, with `credentials:'omit'`.
+  - The committed `preview.html` matches a fresh run of the generator byte for byte.
+- **Backward compatibility:** legacy worker rows still read. `WorkerCheckpoint` uses `#[serde(default)]` on top of the flattened `WorkerStatus`, and the integration tests seed their history through the legacy `save_worker`. The API response serializes plain `WorkerStatus`, so the run ID never leaves the database.
+
+## Findings
+
+1. **Frontier and lineage rejections are untested (medium).** The design says "A regressed queue frontier or mismatched stored binding fails reconciliation." Three mutants survive, each failing only on the lock flake from finding 3 or not at all:
+   - D: removing `q.next > queue.next`.
+   - I: removing the same-`next`/different-`previous` check.
+   - F: removing the "ack beyond acked frontier" rejection (`src/evidence_operations.rs:411-419`), which passed everything.
+
+   Also, once a check like this fires, the worker can never write to the journal again, and nothing tells the operator why. The dashboard just shows "stale" indefinitely.
+2. **Reporter future-clock guard is untested (low).** Removing `r.updated_at>Date.now()/1000+5` (`web/operations/app.js:31`) passes all tests. Only the worker's future-clock case is covered.
+3. **New CI flake risk (medium).** The full `evidence_operations` suite panicked with `DatabaseBusy` at `tests/evidence_operations.rs:145`/`:483` (an `.unwrap()` on journal open/snapshot) in 5 of 11 runs where locking was unchanged. The 11 are the 6 plain reviewed-code runs plus 5 mutants that don't touch locking (failures: 1 plain, D, G twice, I).
+   - With the two new tests skipped: 0 of 10 failures on reviewed code, 0 of 8 on HEAD source (`flake-*.txt`).
+   - The likely trigger is extra concurrent fsync load (`fullfsync=ON`) against the 100 ms busy timeout. That's unconfirmed, and Linux CI may be less affected.
+4. **Worker badge contradicts the notice (low).** When `sampled_at` is in the future or not a number, the badge reads `idle` while the notice says "missing or stale" (`probes/ui_probe.out`). The cause is that `age=Math.max(0,…)` and a NaN age both get past the `age>45` check at `app.js:19,23`.
+5. **Past interruptions are mixed into current status (design follow-up).** A single unclean session, even one 30 days old, makes "Status is current" unreachable forever. That includes the case where it falls outside the 100-row window, through `unseen`. Interrupted sessions also don't appear in the new coverage-history panel (`probes/ui_probe.out`). This matches the design's wording ("stale … unclosed sessions remain uncertain"), so it's not a code bug. But after any crash, the current-vs-historical separation stops working. Graceful SIGTERM does close sessions (`src/bin/kan-v2.rs:915,925`), so this only happens after crashes or SIGKILL.
+6. **Catalog category is a forced fit, and nothing enforces the storage rule (low).** The browser `localStorage` row is filed as `source=system-config` because the enum has no browser category. Surface conformance only checks that the row is well-formed. Nothing scans `web/` for storage writes, so "only `kan.theme` is persisted" is enforced only by the Node theme test.
+
+## Not run
+
+- **Linux global-cap negative control:** not run. On this Mac the script refused with exit 1 and left `src/evidence_gateway.rs` unchanged.
+  - By reading the code, the setup looks valid: IPv4 peers aren't grouped (`peer_group`, `src/evidence_gateway.rs:459-471`), so connection 33 from 127.0.0.1 would get past the per-peer cap of 8 once the global cap is removed.
+  - The script also refuses to count a compile failure or timeout as a kill.
+  - Whether CI kills the mutant is still unproven.
+- **Browser rendering:** not checked by me. Your note says the author verified it in a browser, and I didn't count that as evidence.
+
+## Proposed follow-ups
+
+- Add tests for findings 1 and 2.
+- Make the journal reads in those two older tests (`tests/evidence_operations.rs:145`, `:483`) retry on busy instead of unwrapping.
+- Base the badge on the same freshness check as the notice.
+- Decide in the design how past interruptions should affect current status, and list them in the coverage-history panel.
+- Get one green Linux run of the global-cap control.
+
+**APPROVE WITH FOLLOW-UPS.** The main fix (merging worker history in one transaction, deduplicated by run, with the ack position and its timestamp kept together) is correct on the supported path. Its two named regression tests are proven by reversion, and their core mutants are killed. Theme handling stores nothing sensitive and works under the CSP. Coverage honesty improved: past gaps stay visible, and a retrying, future-clock or unsampled worker can't show as current. Nothing I found loses evidence or provenance or overstates coverage. The gaps are the untested lineage branches, a likely flake, a misleading badge, and a design question about crashed sessions. None of these block this slice, but finding 3 should be fixed before CI depends on this suite.
+
+All reviewed production files match their original bytes, verified by `cmp` against the saved diff. No servers are running, and I made no commits or pushes.
