@@ -125,3 +125,14 @@ The browser requires a plaintext reader and searchable projections, separately p
 
 ## Process record
 Design work is retained in the permanent `.worktrees/kan-v2-operations-polish` checkout. Only `.design/` artifacts change in this pass. The main bulk kan read still withholds two claims; process composition is explicitly partial. Claim/bridge backfill remains pending under the standing Git-first workaround. `telos/raw-data-and-projections` is the existing target and deliberately declares no maintenance witnesses; none are fabricated. The process graph reports generative-build after design. Runtime acceptance criteria remain unchecked.
+
+## Appearance preference
+
+The owner requested System/Light/Dark on 2026-10-18. System is the default and
+follows live platform changes. An explicit light/dark choice is retained in the
+browser origin under `localStorage["kan.theme"]`; selecting System removes it.
+Only this enumerated appearance preference may be written by `web/theme.js`,
+which is its narrow browser-side persistence owner (not a Rust filesystem
+capability). Failed browser storage falls back to tab memory. Tokens, message
+content, keys and search results never use this surface. The same controller
+serves the production dashboard and the generated offline design artifact.

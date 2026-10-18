@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    ("browser-theme", "tests/theme_ui.test.cjs"),
     ("operations-observations", "tests/evidence_operations.rs"),
     ("verified-import-restore", "tests/evidence_restore.rs"),
     ("encrypted-import-frame", "tests/evidence_import.rs"),
@@ -691,6 +692,7 @@ fn implemented_values() -> BTreeSet<(String, String)> {
         .chain(kan::identity::system::SURFACE_VALUES)
         .chain(kan::identity::transport::SURFACE_VALUES)
         .chain(kan::surface::EVIDENCE_VALUES)
+        .chain(kan::surface::BROWSER_VALUES)
         .map(|SurfaceValue { artifact, value }| ((*artifact).into(), (*value).into()));
     declared.chain(sqlite_values()).collect()
 }

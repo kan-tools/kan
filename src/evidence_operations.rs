@@ -343,9 +343,106 @@ fn reporter_inner(
     Ok((callback, ReporterGuard(thread)))
 }
 
+// A watermark belongs to one drain invocation. There is still one supervised
+// worker per spool, as in the original delivery contract; this is not election.
+#[derive(Serialize, Deserialize)]
+struct WorkerCheckpoint {
+    #[serde(flatten)]
+    status: WorkerStatus,
+    #[serde(default)]
+    run: String,
+    #[serde(default)]
+    run_failures: u64,
+}
+struct WorkerRun {
+    id: String,
+    failures: u64,
+    committed: bool,
+}
+impl WorkerRun {
+    fn new() -> Self {
+        Self {
+            id: crate::evidence_service::hex(&rand::random::<[u8; 16]>()),
+            failures: 0,
+            committed: false,
+        }
+    }
+}
+fn save_worker_run(
+    journal: &mut Journal,
+    status: &mut WorkerStatus,
+    run: &mut WorkerRun,
+) -> Result<()> {
+    if let Some(queue) = &status.queue {
+        journal.check_queue(queue)?;
+    }
+    let tx = journal
+        .conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let prior: Option<String> = tx
+        .query_row("SELECT body FROM worker WHERE singleton=1", [], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    let prior: Option<WorkerCheckpoint> =
+        prior.map(|body| serde_json::from_str(&body)).transpose()?;
+    // If another run took over after our checkpoint, do not overwrite it. A
+    // supervisor must stop the previous worker before starting its successor.
+    if run.committed && prior.as_ref().is_some_and(|p| p.run != run.id) {
+        return Err(invalid());
+    }
+    let mut merged = status.clone();
+    let prior_total = prior
+        .as_ref()
+        .map(|p| &p.status)
+        .map_or(0, |s| s.telemetry_failures);
+    let watermark = prior
+        .as_ref()
+        .filter(|p| p.run == run.id)
+        .map_or(0, |p| p.run_failures);
+    if watermark > run.failures {
+        return Err(invalid());
+    }
+    merged.telemetry_failures = prior_total.saturating_add(run.failures - watermark);
+    if let Some(old) = prior.as_ref().map(|p| &p.status) {
+        let queue = status.queue.as_ref().ok_or_else(invalid)?;
+        if old.queue.as_ref().is_some_and(|q| {
+            q.writer != queue.writer
+                || q.scope != queue.scope
+                || q.audience != queue.audience
+                || q.next > queue.next
+                || (q.next == queue.next && q.previous != queue.previous)
+        }) || old
+            .last_ack_position
+            .is_some_and(|p| p >= queue.next.saturating_sub(queue.pending))
+        {
+            return Err(invalid());
+        }
+        if old.last_ack_position > merged.last_ack_position {
+            // Preserve the timestamp paired with the greatest position; clocks
+            // are not a monotone progress cursor.
+            merged.last_ack_position = old.last_ack_position;
+            merged.last_ack_at = old.last_ack_at;
+        }
+    }
+    let checkpoint = WorkerCheckpoint {
+        status: merged.clone(),
+        run: run.id.clone(),
+        run_failures: run.failures,
+    };
+    tx.execute(
+        "INSERT INTO worker VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET body=excluded.body",
+        [serde_json::to_string(&checkpoint)?],
+    )?;
+    tx.commit()?;
+    *status = merged;
+    run.committed = true;
+    Ok(())
+}
 fn persist_worker(
     journal: &mut Option<Journal>,
     status: &mut WorkerStatus,
+    run: &mut WorkerRun,
     load: &impl Fn() -> Result<Journal>,
     next_open: &mut std::time::Instant,
 ) {
@@ -354,10 +451,10 @@ fn persist_worker(
         *journal = load().ok();
     }
     if journal
-        .as_ref()
-        .is_none_or(|j| j.save_worker(status).is_err())
+        .as_mut()
+        .is_none_or(|j| save_worker_run(j, status, run).is_err())
     {
-        status.telemetry_failures = status.telemetry_failures.saturating_add(1);
+        run.failures = run.failures.saturating_add(1);
     }
 }
 
@@ -373,23 +470,26 @@ pub async fn drain(spool_path: &Path, journal_path: &Path, endpoint: &str) -> Re
         Ok(j)
     };
     let mut journal = load_journal().ok();
-    let prior = journal
-        .as_mut()
-        .and_then(|j| j.snapshot().ok())
-        .and_then(|s| s.worker);
+    let mut run = WorkerRun::new();
     let mut next_open = std::time::Instant::now() + Duration::from_secs(1);
     let mut status = WorkerStatus {
         sampled_at: now(),
         state: "starting".into(),
-        queue: None,
+        queue: Some(binding.clone()),
         nonempty_since: None,
-        last_ack_at: prior.as_ref().and_then(|s| s.last_ack_at),
-        last_ack_position: prior.as_ref().and_then(|s| s.last_ack_position),
-        telemetry_failures: prior.map(|s| s.telemetry_failures).unwrap_or(0),
+        last_ack_at: None,
+        last_ack_position: None,
+        telemetry_failures: 0,
         consecutive_failures: 0,
         retry_seconds: 0,
     };
-    persist_worker(&mut journal, &mut status, &load_journal, &mut next_open);
+    persist_worker(
+        &mut journal,
+        &mut status,
+        &mut run,
+        &load_journal,
+        &mut next_open,
+    );
     loop {
         status.sampled_at = now();
         status.queue = Some(spool.status()?);
@@ -399,14 +499,26 @@ pub async fn drain(spool_path: &Path, journal_path: &Path, endpoint: &str) -> Re
             status.state = "idle".into();
             status.consecutive_failures = 0;
             status.retry_seconds = 1;
-            persist_worker(&mut journal, &mut status, &load_journal, &mut next_open);
+            persist_worker(
+                &mut journal,
+                &mut status,
+                &mut run,
+                &load_journal,
+                &mut next_open,
+            );
             tokio::time::sleep(Duration::from_secs(1)).await;
             continue;
         }
         status.nonempty_since.get_or_insert(now());
         status.state = "delivering".into();
         status.retry_seconds = 0;
-        persist_worker(&mut journal, &mut status, &load_journal, &mut next_open);
+        persist_worker(
+            &mut journal,
+            &mut status,
+            &mut run,
+            &load_journal,
+            &mut next_open,
+        );
         match evidence_delivery::deliver_one(&mut spool, endpoint).await {
             Ok(Some(ack)) => {
                 status.last_ack_at = Some(now());
@@ -419,7 +531,13 @@ pub async fn drain(spool_path: &Path, journal_path: &Path, endpoint: &str) -> Re
                 status.sampled_at = now();
                 status.consecutive_failures = status.consecutive_failures.saturating_add(1);
                 status.retry_seconds = (1u64 << status.consecutive_failures.min(5)).min(30);
-                persist_worker(&mut journal, &mut status, &load_journal, &mut next_open);
+                persist_worker(
+                    &mut journal,
+                    &mut status,
+                    &mut run,
+                    &load_journal,
+                    &mut next_open,
+                );
                 tokio::time::sleep(Duration::from_secs(status.retry_seconds)).await;
             }
         }
@@ -429,6 +547,56 @@ pub async fn drain(spool_path: &Path, journal_path: &Path, endpoint: &str) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn worker_checkpoint_retry_is_idempotent_after_uncertain_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let spool = dir.path().join("queue");
+        let path = dir.path().join("health");
+        let id = crate::sign::Identity::generate();
+        let queue = Spool::create(
+            &spool,
+            &crate::evidence_service::hex(&[3; 32]),
+            id.did().as_str(),
+            id.did().as_str(),
+            10000,
+        )
+        .unwrap()
+        .status()
+        .unwrap();
+        let mut journal = Journal::create(&path, &spool).unwrap();
+        let mut status = WorkerStatus {
+            sampled_at: now(),
+            state: "idle".into(),
+            queue: Some(queue),
+            nonempty_since: None,
+            last_ack_at: None,
+            last_ack_position: None,
+            consecutive_failures: 0,
+            retry_seconds: 1,
+            telemetry_failures: 7,
+        };
+        journal.save_worker(&status).unwrap();
+        let mut run = WorkerRun::new();
+        run.failures = 3;
+        save_worker_run(&mut journal, &mut status, &mut run).unwrap();
+        assert_eq!(status.telemetry_failures, 10);
+        // Simulate commit reaching storage without the caller advancing memory.
+        run.committed = false;
+        status.telemetry_failures = 0;
+        save_worker_run(&mut journal, &mut status, &mut run).unwrap();
+        assert_eq!(status.telemetry_failures, 10);
+        run.failures += 1;
+        save_worker_run(&mut journal, &mut status, &mut run).unwrap();
+        assert_eq!(status.telemetry_failures, 11);
+        let mut successor = WorkerRun::new();
+        successor.failures = 2;
+        save_worker_run(&mut journal, &mut status, &mut successor).unwrap();
+        assert_eq!(status.telemetry_failures, 13);
+        assert!(
+            save_worker_run(&mut journal, &mut status, &mut run).is_err(),
+            "superseded run must not overwrite a successor"
+        );
+    }
     #[test]
     fn physical_full_keeps_prior_health_and_rejects_new_record() {
         let dir = tempfile::tempdir().unwrap();

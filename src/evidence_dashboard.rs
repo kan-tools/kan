@@ -10,6 +10,7 @@ use std::{convert::Infallible, io, path::PathBuf, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, sync::Semaphore, task::JoinSet};
 const HTML: &str = include_str!("../web/operations/index.html");
 const JS: &str = include_str!("../web/operations/app.js");
+const THEME: &str = include_str!("../web/theme.js");
 const CSS: &str = include_str!("../web/operations/style.css");
 fn response(code: StatusCode, mime: &'static str, body: impl Into<Bytes>) -> Response<Full<Bytes>> {
     let mut r = Response::new(Full::new(body.into()));
@@ -46,6 +47,7 @@ async fn handle(
     let path = r.uri().path_and_query().map(|p| p.as_str());
     Ok(match path {
         Some("/") => response(StatusCode::OK, "text/html; charset=utf-8", HTML),
+        Some("/theme.js") => response(StatusCode::OK, "text/javascript; charset=utf-8", THEME),
         Some("/app.js") => response(StatusCode::OK, "text/javascript; charset=utf-8", JS),
         Some("/style.css") => response(StatusCode::OK, "text/css; charset=utf-8", CSS),
         Some("/api/status") => {

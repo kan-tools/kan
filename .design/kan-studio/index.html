@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Kan Studio · Design preview</title><link rel="stylesheet" href="studio.css"><script defer src="studio.js"></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><script src="theme.js"></script><title>Kan Studio · Design preview</title><link rel="stylesheet" href="studio.css"><script defer src="studio.js"></script></head>
 <body>
 <div class="preview"><span><b>DESIGN PREVIEW</b> · Synthetic data · No service connected</span><button id="map-open">Implementation map ↗</button></div>
 <div class="app">
@@ -24,7 +24,7 @@
   <div class="sidebar-foot"><span class="mini-mark">k/</span><div><strong>A record worth keeping.</strong><small>Evidence before interpretation.</small></div></div>
  </aside>
  <div class="workspace-main">
-  <header class="topbar"><div class="breadcrumb"><span>Personal</span><i>/</i><strong id="crumb">Library</strong></div><div class="top-actions"><span class="read-only"><span class="dot blue"></span> Local preview</span><button id="lock" class="icon-button" aria-label="Lock preview">Lock</button><span class="avatar" aria-label="Demo user">M</span></div></header>
+  <header class="topbar"><div class="breadcrumb"><span>Personal</span><i>/</i><strong id="crumb">Library</strong></div><div class="top-actions"><label class="theme-control" for="theme">Theme <select id="theme" aria-label="Color theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label><span class="read-only"><span class="dot blue"></span> Local preview</span><button id="lock" class="icon-button" aria-label="Lock preview">Lock</button><span class="avatar" aria-label="Demo user">M</span></div></header>
   <main id="main" tabindex="-1"></main>
   <footer class="app-footer"><span><span class="dot blue"></span> Synthetic snapshot · All IDs begin with demo:</span><span>Design scope: full Kan client</span></footer>
  </div>
