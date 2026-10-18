@@ -100,8 +100,12 @@ admission from a one-second allowance, debited only by actual busy-handler sleep
 latches off the rest of an attempt; later observations can recover. The scoped handler shares each admission allowance across statements and restores caller policy on unwind. OS sleep overruns remain possible; this is not a hard wall-clock deadline. Startup audit, fsync, crypto and reporting
 remain synchronous. Ordinary offline spool operations retain their wait policy.
 
-The latency correction alone does not resolve concurrent request preparation:
-the follow-up review found a pre-existing stale-frontier race between queue
-producers. The gateway child (#278) moves preparation into the reserved writer
-transaction. See the retained correction review; this parent does not claim
-lossless concurrent capture.
+The gateway branch also fixes concurrent queue preparation: writer reservation,
+frontier selection, encryption/signing and enqueue share one IMMEDIATE
+transaction. This prevents competing captures from repeatedly signing stale
+frontiers. A synchronized 80-request admission fixture checks this directly;
+a two-stream fixture checks recorder/queue integration with the normal offline
+wait policy, independently of the production capture latency allowance. These are correctness
+fixtures, not capacity qualification. Waiting still obeys the capture allowance;
+short but repeatedly contended bursts can also exhaust an observation’s wait and yield
+visible gaps, but a conflict does not silently discard an entire stream.

@@ -2,7 +2,7 @@
 use crate::{
     evidence_crypto as crypto,
     evidence_service::{self as service, Command, Request, SignedRequest},
-    evidence_spool::{Enqueue, Spool},
+    evidence_spool::Spool,
     sign::Identity,
 };
 
@@ -29,7 +29,8 @@ pub struct Queued {
 }
 
 /// No network I/O. Reused identifiers are refused, never re-encrypted as retries.
-/// A concurrent enqueue can cause a frontier conflict, leaving this input unqueued.
+/// Writer reservation, frontier derivation, encryption/signing and commit share
+/// one transaction, so concurrent producers cannot sign a stale frontier.
 pub fn queue(
     spool: &mut Spool,
     signer: &Identity,
@@ -37,44 +38,48 @@ pub fn queue(
     operation: &[u8; 16],
     plaintext: &[u8],
 ) -> Result<Queued, Error> {
-    let st = spool.status()?;
-    if signer.did().as_str() != st.writer {
-        return Err(Error::Writer);
-    }
     let operation = service::hex(operation);
-    if spool.operation(&operation)?.is_some() {
-        return Err(Error::ReusedOperation);
-    }
-    let scope = service::unhex(&st.scope, 32)?
-        .try_into()
-        .map_err(|_| service::Failure::Invalid)?;
-    let ciphertext = crypto::seal(recipient, &scope, plaintext)?;
-    let request = SignedRequest::sign(
-        Request {
-            version: 1,
-            scope: st.scope,
-            principal: st.writer,
-            audience: st.audience,
-            expires: None,
-            command: Command::Append {
-                id: operation.clone(),
-                position: st.next,
-                previous: st.previous,
-                ciphertext: service::hex(&ciphertext),
+    let result = spool.enqueue_generated(&operation, |st| {
+        if signer.did().as_str() != st.writer {
+            return Err(Error::Writer);
+        }
+        let scope = service::unhex(&st.scope, 32)?
+            .try_into()
+            .map_err(|_| service::Failure::Invalid)?;
+        let ciphertext = crypto::seal(recipient, &scope, plaintext)?;
+        let request = SignedRequest::sign(
+            Request {
+                version: 1,
+                scope: st.scope,
+                principal: st.writer,
+                audience: st.audience,
+                expires: None,
+                command: Command::Append {
+                    id: operation.clone(),
+                    position: st.next,
+                    previous: st.previous,
+                    ciphertext: service::hex(&ciphertext),
+                },
             },
-        },
-        signer,
-    )?
-    .bytes()?;
-    let manifest = service::append_manifest(&request)?.cid().to_string();
-    if spool.enqueue(&request)? != Enqueue::Queued {
-        return Err(Error::ReusedOperation);
+            signer,
+        )?
+        .bytes()?;
+        let manifest = service::append_manifest(&request)?.cid().to_string();
+        Ok((
+            request,
+            Queued {
+                operation: operation.clone(),
+                position: st.next,
+                manifest,
+            },
+        ))
+    });
+    match result {
+        Err(Error::Spool(crate::evidence_spool::Error::ReusedOperation)) => {
+            Err(Error::ReusedOperation)
+        }
+        other => other,
     }
-    Ok(Queued {
-        operation,
-        position: st.next,
-        manifest,
-    })
 }
 
 /// Sends only a durably queued request. No key, resealing, skipping or frontier guessing.

@@ -25,13 +25,39 @@ pub enum Outcome {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Event {
-    Started { method: String, route: String },
-    RequestChunk { offset: u64 },
-    RequestEnd { bytes: u64 },
+    Started {
+        method: String,
+        route: String,
+    },
+    RequestChunk {
+        offset: u64,
+    },
+    RequestEnd {
+        bytes: u64,
+    },
     ForwardingIntent,
-    ResponseHead { status: u16 },
-    ResponseChunk { offset: u64 },
-    Terminal { outcome: Outcome },
+    TransportLink {
+        exchange: String,
+    },
+    HttpMetadataChunk {
+        direction: String,
+        offset: u64,
+        total: u64,
+    },
+    HttpMetadata {
+        direction: String,
+        headers: Vec<(String, String)>,
+        omitted: Vec<String>,
+    },
+    ResponseHead {
+        status: u16,
+    },
+    ResponseChunk {
+        offset: u64,
+    },
+    Terminal {
+        outcome: Outcome,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -63,7 +89,7 @@ pub struct Health {
 pub struct Unconfirmed;
 /// Implementations must return success only after durable admission. Failures may
 /// be ambiguous. Never retry inference here; retain original queued bytes instead.
-pub trait Sink {
+pub trait Sink: Send {
     fn admit(&mut self, operation: &[u8; 16], frame: &[u8]) -> Result<(), Unconfirmed>;
     fn admit_with_wait(
         &mut self,
@@ -116,7 +142,7 @@ pub enum Error {
 /// terminal unknown observation; process crashes cannot execute Drop.
 pub struct Recorder<'a> {
     sink: &'a mut dyn Sink,
-    notify: &'a mut dyn FnMut(&Health),
+    notify: &'a mut (dyn FnMut(&Health) + Send),
     nonce: [u8; 32],
     started: Instant,
     health: Health,
@@ -127,7 +153,7 @@ impl<'a> Recorder<'a> {
     pub fn new(
         observer: Observer,
         sink: &'a mut dyn Sink,
-        notify: &'a mut dyn FnMut(&Health),
+        notify: &'a mut (dyn FnMut(&Health) + Send),
     ) -> Result<Self, Error> {
         let mut nonce = [0; 32];
         rand::rngs::OsRng
@@ -163,8 +189,11 @@ impl<'a> Recorder<'a> {
             || self.health.observed == u64::MAX
             || (!matches!(
                 event,
-                Event::RequestChunk { .. } | Event::ResponseChunk { .. }
+                Event::RequestChunk { .. }
+                    | Event::ResponseChunk { .. }
+                    | Event::HttpMetadataChunk { .. }
             ) && !body.is_empty())
+            || matches!(&event, Event::TransportLink { exchange } if crate::evidence_service::unhex(exchange,32).map_or(true, |v|v.len()!=32))
             || matches!(&event, Event::Started { method, route } if method.len() > 32 || route.len() > 2048)
         {
             return Err(Error::Invalid);
@@ -194,6 +223,9 @@ impl<'a> Recorder<'a> {
             event,
         };
         let json = serde_json::to_vec(&header).expect("bounded typed capture header");
+        if json.len() > 128 * 1024 {
+            return Err(Error::Invalid);
+        }
         let mut frame = Vec::with_capacity(9 + json.len() + body.len());
         frame.extend_from_slice(MAGIC);
         frame.extend_from_slice(&(json.len() as u32).to_be_bytes());
@@ -252,13 +284,47 @@ impl Drop for Recorder<'_> {
 }
 
 /// Route is supplied by configuration, never extracted from captured content.
-/// No credentials or arbitrary request headers are supported in this profile.
+/// The body-only entry point supplies no credentials. HTTP adapters supply
+/// explicitly configured headers; none are discovered from the environment.
 pub struct Route {
     url: reqwest::Url,
     client: reqwest::Client,
+    mutual_tls: bool,
 }
 impl Route {
+    pub(crate) fn is_mutual_tls(&self) -> bool {
+        self.mutual_tls
+    }
+    pub(crate) fn is_origin(&self) -> bool {
+        self.url.path() == "/"
+    }
+    pub(crate) fn anthropic_path(&self, path: &str) -> Result<Self, Error> {
+        let (path, query) = path
+            .split_once('?')
+            .map_or((path, None), |(p, q)| (p, Some(q)));
+        if !self.is_origin()
+            || !matches!(path, "/v1/messages" | "/v1/messages/count_tokens")
+            || query.is_some_and(|q| q != "beta=true")
+        {
+            return Err(Error::Invalid);
+        }
+        let mut url = self.url.clone();
+        url.set_path(path);
+        url.set_query(query);
+        Ok(Self {
+            url,
+            client: self.client.clone(),
+            mutual_tls: self.mutual_tls,
+        })
+    }
     pub fn new(endpoint: &str) -> Result<Self, Error> {
+        Self::build(endpoint, None)
+    }
+    /// Explicit private CA and client identity; never ambient roots or credentials.
+    pub fn mutual_tls(endpoint: &str, ca: &[u8], identity: &[u8]) -> Result<Self, Error> {
+        Self::build(endpoint, Some((ca, identity)))
+    }
+    fn build(endpoint: &str, tls: Option<(&[u8], &[u8])>) -> Result<Self, Error> {
         if endpoint.len() > 2048 {
             return Err(Error::Invalid);
         }
@@ -277,7 +343,7 @@ impl Route {
         {
             return Err(Error::Invalid);
         }
-        let client = reqwest::Client::builder()
+        let builder = reqwest::Client::builder()
             .no_proxy()
             // Avoid hyper-util's pre-wire retry on a canceled pooled connection.
             .pool_max_idle_per_host(0)
@@ -286,10 +352,28 @@ impl Route {
             .no_gzip()
             .no_brotli()
             .no_deflate()
-            .no_zstd()
-            .build()
-            .map_err(|_| Error::Invalid)?;
-        Ok(Self { url, client })
+            .no_zstd();
+        let builder = if let Some((ca, identity)) = tls {
+            if url.scheme() != "https" {
+                return Err(Error::Invalid);
+            }
+            builder
+                .https_only(true)
+                .tls_built_in_root_certs(false)
+                .min_tls_version(reqwest::tls::Version::TLS_1_3)
+                .add_root_certificate(
+                    reqwest::Certificate::from_pem(ca).map_err(|_| Error::Invalid)?,
+                )
+                .identity(reqwest::Identity::from_pem(identity).map_err(|_| Error::Invalid)?)
+        } else {
+            builder
+        };
+        let client = builder.build().map_err(|_| Error::Invalid)?;
+        Ok(Self {
+            url,
+            client,
+            mutual_tls: tls.is_some(),
+        })
     }
 }
 
@@ -301,14 +385,85 @@ pub async fn forward<W: AsyncWrite + Unpin>(
     route: &Route,
     request: Vec<u8>,
     sink: &mut dyn Sink,
-    notify: &mut dyn FnMut(&Health),
+    notify: &mut (dyn FnMut(&Health) + Send),
     output: &mut W,
     deadline: Duration,
 ) -> Result<Health, Error> {
+    forward_http(
+        route,
+        ForwardInput {
+            body: request,
+            observer: Observer::Gateway,
+            headers: reqwest::header::HeaderMap::new(),
+            exchange: None,
+            metadata: None,
+        },
+        sink,
+        notify,
+        &mut BodyOutput(output),
+        deadline,
+    )
+    .await
+}
+
+/// HTTP adapters receive the status/headers before any response body bytes.
+/// Implementations must not block in `head`.
+pub trait HttpOutput: AsyncWrite + Unpin {
+    fn head(&mut self, status: u16, headers: &reqwest::header::HeaderMap) -> Result<(), Error>;
+}
+struct BodyOutput<'a, W>(&'a mut W);
+impl<W: AsyncWrite + Unpin> AsyncWrite for BodyOutput<'_, W> {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        b: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut *self.0).poll_write(cx, b)
+    }
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut *self.0).poll_flush(cx)
+    }
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut *self.0).poll_shutdown(cx)
+    }
+}
+impl<W: AsyncWrite + Unpin> HttpOutput for BodyOutput<'_, W> {
+    fn head(&mut self, _: u16, _: &reqwest::header::HeaderMap) -> Result<(), Error> {
+        Ok(())
+    }
+}
+pub struct ForwardInput {
+    pub body: Vec<u8>,
+    pub observer: Observer,
+    pub headers: reqwest::header::HeaderMap,
+    pub exchange: Option<String>,
+    pub metadata: Option<reqwest::header::HeaderMap>,
+}
+pub async fn forward_http<W: HttpOutput>(
+    route: &Route,
+    input: ForwardInput,
+    sink: &mut dyn Sink,
+    notify: &mut (dyn FnMut(&Health) + Send),
+    output: &mut W,
+    deadline: Duration,
+) -> Result<Health, Error> {
+    let ForwardInput {
+        body: request,
+        observer,
+        headers,
+        exchange,
+        metadata,
+    } = input;
     if request.len() > MAX_REQUEST || deadline.is_zero() || deadline > Duration::from_secs(86400) {
         return Err(Error::Invalid);
     }
-    let mut recorder = Recorder::new(Observer::Gateway, sink, notify)?;
+    let mut recorder = Recorder::new(observer, sink, notify)?;
     recorder.record(
         Event::Started {
             method: "POST".into(),
@@ -316,6 +471,15 @@ pub async fn forward<W: AsyncWrite + Unpin>(
         },
         &[],
     )?;
+    if let Some(exchange) = exchange {
+        if crate::evidence_service::unhex(&exchange, 32).map_or(true, |b| b.len() != 32) {
+            return Err(Error::Invalid);
+        }
+        recorder.record(Event::TransportLink { exchange }, &[])?;
+    }
+    if let Some(headers) = &metadata {
+        record_metadata(&mut recorder, "request", headers)?;
+    }
     for (i, chunk) in request.chunks(CHUNK).enumerate() {
         recorder.record(
             Event::RequestChunk {
@@ -337,22 +501,32 @@ pub async fn forward<W: AsyncWrite + Unpin>(
         remaining: deadline,
     };
     let result = async {
-        let mut response = budget
-            .wait(
-                route
-                    .client
-                    .post(route.url.clone())
-                    .header("content-type", "application/octet-stream")
-                    .body(request)
-                    .send(),
-            )
-            .await?;
+        let builder = route.client.post(route.url.clone());
+        // Only the opaque body profile supplies a synthetic content type.
+        let builder = if metadata.is_none() {
+            builder.header("content-type", "application/octet-stream")
+        } else {
+            builder
+        };
+        let outgoing = builder
+            .headers(headers)
+            .body(request)
+            .build()
+            .map_err(|_| Error::OutcomeUnknown)?;
+        if metadata.is_some() {
+            record_metadata(&mut recorder, "request-outgoing", outgoing.headers())?;
+        }
+        let mut response = budget.wait(route.client.execute(outgoing)).await?;
         recorder.record(
             Event::ResponseHead {
                 status: response.status().as_u16(),
             },
             &[],
         )?;
+        if metadata.is_some() {
+            record_metadata(&mut recorder, "response", response.headers())?;
+        }
+        output.head(response.status().as_u16(), response.headers())?;
         let mut offset = 0u64;
         while let Some(bytes) = budget.wait(response.chunk()).await? {
             for chunk in bytes.chunks(CHUNK) {
@@ -406,5 +580,50 @@ impl IoBudget {
             Ok(Ok(value)) => Ok(value),
             _ => Err(Error::OutcomeUnknown),
         }
+    }
+}
+
+/// Normalized HTTP headers. Secret-bearing fields are explicitly omitted, never
+/// copied into evidence or health. This does not represent raw wire framing.
+fn record_metadata(
+    recorder: &mut Recorder<'_>,
+    direction: &str,
+    map: &reqwest::header::HeaderMap,
+) -> Result<(), Error> {
+    let mut headers = Vec::new();
+    let mut omitted = Vec::new();
+    for (name, value) in map {
+        let name = name.as_str();
+        if matches!(
+            name,
+            "authorization" | "x-api-key" | "proxy-authorization" | "cookie" | "set-cookie"
+        ) {
+            omitted.push(name.to_owned());
+        } else {
+            headers.push((name.to_owned(), hex(value.as_bytes())));
+        }
+    }
+    let event = Event::HttpMetadata {
+        direction: direction.into(),
+        headers,
+        omitted,
+    };
+    let bytes = serde_json::to_vec(&event).expect("typed metadata");
+    if bytes.len() <= CHUNK {
+        recorder.record(event, &[])
+    } else {
+        // Large valid HTTP heads must not turn capture framing limits into a
+        // failed inference. Chunk the complete normalized metadata JSON.
+        for (index, chunk) in bytes.chunks(CHUNK).enumerate() {
+            recorder.record(
+                Event::HttpMetadataChunk {
+                    direction: direction.into(),
+                    offset: (index * CHUNK) as u64,
+                    total: bytes.len() as u64,
+                },
+                chunk,
+            )?;
+        }
+        Ok(())
     }
 }

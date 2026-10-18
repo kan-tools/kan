@@ -12,8 +12,58 @@ struct Cli {
     #[command(subcommand)]
     command: Command,
 }
+#[cfg(feature = "v2-crypto")]
+#[derive(clap::Args)]
+struct ProxyCapture {
+    #[arg(long, value_enum, default_value = "opaque")]
+    profile: kan::evidence_gateway::Profile,
+    #[arg(long)]
+    spool: PathBuf,
+    #[arg(long)]
+    key: PathBuf,
+    #[arg(long)]
+    recipient: String,
+    /// Cumulative awaited I/O budget, excluding synchronous capture work.
+    #[arg(long, default_value_t=300, value_parser=clap::value_parser!(u32).range(1..=86400))]
+    deadline_seconds: u32,
+}
 #[derive(Subcommand)]
 enum Command {
+    /// TLS 1.3 gateway; explicit client CA authorizes this single-tenant instance.
+    #[cfg(feature = "v2-crypto")]
+    Gateway {
+        #[arg(long)]
+        listen: std::net::SocketAddr,
+        #[arg(long)]
+        certificate: PathBuf,
+        #[arg(long)]
+        tls_key: PathBuf,
+        #[arg(long)]
+        client_ca: PathBuf,
+        #[arg(long)]
+        provider: String,
+        #[arg(long)]
+        provider_key_file: Option<PathBuf>,
+        #[command(flatten)]
+        capture: ProxyCapture,
+    },
+    /// Loopback collector authenticated by a local bearer token; mutual TLS upstream.
+    #[cfg(feature = "v2-crypto")]
+    Collector {
+        #[arg(long)]
+        listen: std::net::SocketAddr,
+        #[arg(long)]
+        gateway: String,
+        #[arg(long)]
+        server_ca: PathBuf,
+        /// PEM containing client certificate chain and private key.
+        #[arg(long)]
+        identity: PathBuf,
+        #[arg(long)]
+        token_file: PathBuf,
+        #[command(flatten)]
+        capture: ProxyCapture,
+    },
     /// Experimental single POST: raw stdin/body stdout, capture health on stderr.
     #[cfg(feature = "v2-crypto")]
     CapturePost {
@@ -230,6 +280,62 @@ fn hex(bytes: &[u8]) -> String {
 }
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     match Cli::parse().command {
+        #[cfg(feature = "v2-crypto")]
+        Command::Gateway {
+            listen,
+            certificate,
+            tls_key,
+            client_ca,
+            provider,
+            provider_key_file,
+            capture,
+        } => {
+            use kan::{evidence_capture::Route, evidence_gateway as gateway};
+            let tls = gateway::server_tls(
+                &gateway::secret_file(&certificate)?,
+                &gateway::secret_file(&tls_key)?,
+                &gateway::secret_file(&client_ca)?,
+            )?;
+            let provider_key = provider_key_file
+                .map(|p| gateway::secret_file(&p))
+                .transpose()?;
+            run_proxy(
+                listen,
+                gateway::ListenerAuth::MutualTls(tls),
+                Route::new(&provider)?,
+                kan::evidence_capture::Observer::Gateway,
+                capture,
+                provider_key,
+            )?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::Collector {
+            listen,
+            gateway: endpoint,
+            server_ca,
+            identity,
+            token_file,
+            capture,
+        } => {
+            use kan::{evidence_capture::Route, evidence_gateway as gateway};
+            if !listen.ip().is_loopback() {
+                return Err("collector requires literal loopback".into());
+            }
+            let route = Route::mutual_tls(
+                &endpoint,
+                &gateway::secret_file(&server_ca)?,
+                &gateway::secret_file(&identity)?,
+            )?;
+            let token = String::from_utf8(gateway::secret_file(&token_file)?)?;
+            run_proxy(
+                listen,
+                gateway::ListenerAuth::LoopbackToken(token.trim_end_matches('\n').into()),
+                route,
+                kan::evidence_capture::Observer::Collector,
+                capture,
+                None,
+            )?;
+        }
         #[cfg(feature = "v2-crypto")]
         Command::CapturePost {
             endpoint,
@@ -662,6 +768,51 @@ fn service_identity(
     return Err("service key-file permission validation is currently Unix-only".into());
     #[cfg(unix)]
     Ok(kan::sign::Identity::load_existing(path)?)
+}
+#[cfg(feature = "v2-crypto")]
+fn run_proxy(
+    listen: std::net::SocketAddr,
+    auth: kan::evidence_gateway::ListenerAuth,
+    route: kan::evidence_capture::Route,
+    observer: kan::evidence_capture::Observer,
+    capture: ProxyCapture,
+    provider_key: Option<Vec<u8>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let provider_key = provider_key
+        .map(|bytes| {
+            let bytes = bytes.strip_suffix(b"\n").unwrap_or(&bytes);
+            let mut value = reqwest::header::HeaderValue::from_bytes(bytes)?;
+            value.set_sensitive(true);
+            Ok::<_, reqwest::header::InvalidHeaderValue>(value)
+        })
+        .transpose()?;
+    let config = kan::evidence_gateway::Config {
+        profile: capture.profile,
+        provider_key,
+        route,
+        observer,
+        spool: capture.spool,
+        signer: service_identity(&capture.key)?,
+        recipient: fixed_hex::<32>(&capture.recipient)?,
+        io_budget: std::time::Duration::from_secs(u64::from(capture.deadline_seconds)),
+        report: std::sync::Arc::new(|h| {
+            if let Ok(json) = serde_json::to_string(h) {
+                eprintln!("{json}");
+            }
+        }),
+    };
+    config.validate()?;
+    auth.validate(listen)?;
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async move {
+        let listener = tokio::net::TcpListener::bind(listen).await?;
+        eprintln!(
+            "{}",
+            serde_json::json!({"listening":listener.local_addr()?.to_string(),"observer":observer})
+        );
+        kan::evidence_gateway::serve(listener, auth, config).await
+    })?;
+    Ok(())
 }
 fn main() -> std::process::ExitCode {
     match run() {
