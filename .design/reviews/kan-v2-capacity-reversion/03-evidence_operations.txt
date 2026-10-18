@@ -1,0 +1,9 @@
+
+running 1 test
+test journal_session_exhaustion_is_visible_without_refusing_reporter_start ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.27s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-journal-capacity/.local-state/reversion/2277944790b94f75815681bac0112593)
+    Finished `test` profile [unoptimized] target(s) in 6.72s
+     Running tests/evidence_operations.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-journal-capacity/.local-state/reversion-target/debug/deps/evidence_operations-8f396ba67ddb65cc)

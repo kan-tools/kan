@@ -1,0 +1,1819 @@
+diff --git a/.design/kan-v2-human-frontend.md b/.design/kan-v2-human-frontend.md
+index a417a2a..8d84ba0 100644
+--- a/.design/kan-v2-human-frontend.md
++++ b/.design/kan-v2-human-frontend.md
+@@ -138,0 +139,14 @@ serves the production dashboard and the generated offline design artifact.
++
++## Build checkpoint — operations generations and next reader slice
++
++The shared appearance controller and worker-history correction are in draft #281;
++bounded coalescing is in #282; sharded admission/reversion tooling is in #283.
++Capacity, preserved-history collection commands, recent-list search and metadata
++inspection are the next unreviewed operations slice. They still do not provide
++raw message browsing. The collection-wide deduplicated overview remains required.
++
++`.design/kan-v2-reader-library.md` makes the next real Library API boundary concrete:
++signed snapshot inventory, authorized bounded source/provenance inspection, and
++no persistent plaintext index. It is a build plan, not a capability claim. The
++existing reader-placement question remains open; portable code and synthetic
++fixtures do not select production key placement.
+diff --git a/.design/kan-v2-journal-generations.md b/.design/kan-v2-journal-generations.md
+new file mode 100644
+index 0000000..e011c68
+--- /dev/null
++++ b/.design/kan-v2-journal-generations.md
+@@ -0,0 +1,55 @@
++# Feature: Explicit journal capacity and retained generations
++
++## Summary
++Implement the remaining capacity and owner-rotation operations requirements from `.design/kan-v2-operations-polish.md`. Preserve every existing journal and expose observations honestly, separately from encrypted evidence capacity. This serves `telos/raw-data-and-projections`; operational summaries never certify complete capture.
++
++## Requirements
++- REQ-1: Read old standalone v1 journals without schema migration, and create v2 journals with reserved control capacity and a sticky exhaustion observation. Count limits, page use, persistence timestamps and lower-bound loss semantics are explicit.
++- REQ-2: Continue inference/delivery when status writes fail. Exhaustion never clears through restart or a later heartbeat; owner rotation selects a fresh generation. Whole-device failure can still prevent recording and must remain unknown.
++- REQ-3: Adopt journals by verified copying into a new owner-only collection; preserve the source byte-for-byte. All upgraded collection readers/writers hold a shared lifetime lock; rotation requires a nonblocking exclusive lock and stopped older binaries.
++- REQ-4: Rotate through unique staged journals and an atomically published versioned manifest. Retain sealed generations with verified hashes/bindings, reject conflicting or unsafe paths and recover without treating unreferenced files as committed history.
++- REQ-5: Expose active generation status and explicitly paged historical snapshots. Do not add cumulative snapshots across generations as if they were disjoint raw events. No live polling scans the whole retained collection.
++- REQ-6: CLI and read-only dashboard share the new versioned status contract. Display journal capacity separately, preserve privacy boundaries, and leave rotation execution to the owner CLI until the separately authorized admin API is implemented.
++- REQ-7: Catalog every new persisted surface and verify exhaustion, compatibility, interrupted rotation, locking and preserved evidence with synthetic fixtures and fresh Opus 5.5 review.
++
++## Acceptance Criteria
++- [ ] AC-1: Open v1 without changing its bytes; v2 survives actual SQLITE_FULL with retained attempt history, a sticky exhaustion marker and usable reserved metadata space. Verify independent attempt/session limits and lower-bound semantics. (REQ-1, REQ-2)
++- [ ] AC-2: Missing, denied and locked status storage never stops capture/delivery; versioned CLI/UI reports stale or unavailable evidence rather than precise completeness. (REQ-2, REQ-6)
++- [ ] AC-3: Adoption preserves source hash, owner permissions and binding; rotation refuses active writers, symlinks, reused paths, unknown manifests and conflicting history. (REQ-3, REQ-4)
++- [ ] AC-4: Inject interruption before/after sealing and manifest publication. Reopen deterministically selects the committed generation; old bytes and historical snapshots remain readable, staged files remain unselected. (REQ-4, REQ-5)
++- [ ] AC-5: Active polling visits only the selected generation; historical pages name their scope and cannot be mistaken for deduplicated whole-collection totals. Duplicate attempt/session identities never produce a false summed total. (REQ-5)
++- [ ] AC-6: Test capacity, exhausted, unknown/legacy and incompatible status in the real client; preserve authentication/Host/Origin/CSP and browser memory-only token behavior. Review the layout at desktop/mobile. (REQ-6)
++- [ ] AC-7: Surface catalog, capabilities and conformance tests cover collection manifest, generations, temporary files and lock. Independent review and real reversion evidence accompany corrections. (REQ-7)
++
++## Architecture
++The standalone reader in `src/evidence_operations.rs` accepts exact schema v1 or v2. New v2 adds a preallocated control row with 256 KiB of reserve, the last successful persistence timestamp and sticky exhaustion. On a record capacity failure, a separate transaction releases reserve and sets the sticky marker; later attempt writes are refused. Reporter/worker metadata can use the finite freed pages, but whole-device failure and session exhaustion remain possible. Every reported loss count is a lower bound, including legacy values. No exactness is inferred from a successful read. v1 is not rewritten or silently adopted.
++
++Journal connections hold an advisory shared lifetime lock on a private `.lock`
++sidecar, and maintenance takes it exclusively. This is a separate inode because
++flock and SQLite's fcntl locking interact on macOS; locking the SQLite inode
++blocked ordinary writes in the first test run. Lock files carry no evidence and
++are retained coordination artifacts; old binaries still require explicit stop.
++
++A versioned collection module will resolve one active generation from an owner-only manifest, taking a shared lifetime lock before reading it. Rotation takes the same lock exclusively, validates all existing membership and selected bindings, creates/fsyncs a unique empty v2 journal, preserves the old file under its existing name with a sealed hash, then publishes a new manifest using a unique write-new temporary file, rename and parent-directory fsync. Failed publication leaves the prior manifest authoritative; successful publication names the new active generation. No generation is deleted or renamed under an open writer. The collection path itself is never a symlink. A malformed or unsupported manifest is an error, not a request to scan filenames and guess.
++
++Adoption uses an SQLite-consistent verified copy under exclusive source ownership for upgraded clients; the runbook also requires stopping older binaries, which cannot participate in the new locking protocol. It does not mutate the source. History is accessed by named immutable generation with a matching manifest hash. Active snapshots remain bounded to one generation; the UI labels this scope. Until a rebuildable, deduplicated overview is implemented, no collection-wide additive total is exposed. That overview remains required by the parent design before its full completion claim.
++
++`src/bin/kan-v2.rs` will expose owner adoption/rotation/history commands. The existing dashboard remains read-only and consumes the same status object. Owner-triggered browser execution is part of the later full frontend admin plan/job boundary, not granted to the dashboard token.
++
++## Open Questions
++The authorized reader deployment remains open in the full-frontend design. It does not affect journal capacity or rotation. No product decision is needed to implement the finite reserve, locking and publication protocol; their correctness is an engineering obligation.
++
++## Out of Scope
++- Automatic expiration, deletion, live-user adoption, deployment, main merges or production credential use.
++- Claiming full operations completion before the bounded deduplicated overview, or full frontend completion before real reader, annotation, analysis and admin workflows.
++
++## Process record
++The main bulk kan read still withholds two claims. Worktree day commands refuse to infer an empty workspace; no kan/day writes or fabricated witnesses are used. Git-first design/review backfill follows the standing user decision. Parent correction fcd8c6f received APPROVE WITH FOLLOW-UPS; its follow-up correction 68acb0e is under a second fresh independent Opus 5.5 review. This child remains preparatory until that verdict is resolved. No heavy job runs here during the parent review.
++
++## Operations interaction completion in this slice
++The parent design already requires bounded recent-attempt search, metadata
++inspection, identifier copying and focus-safe polling. This slice implements them
++on the real status client, with native modal focus, explicit sample scope and
++lock-time clearing of private DOM contents. The shared theme remains System by
++default. Browser evidence is retained under `reviews/capacity-browser/`; it uses
++the production assets with a synthetic API and is not a backend verification.
+diff --git a/.design/kan-v2-reader-library.md b/.design/kan-v2-reader-library.md
+new file mode 100644
+index 0000000..908569f
+--- /dev/null
++++ b/.design/kan-v2-reader-library.md
+@@ -0,0 +1,67 @@
++# Feature: Authorized evidence Library vertical slice
++
++## Summary
++Implement the first real browsing area from `.design/kan-v2-human-frontend.md`:
++read an explicitly authorized, snapshot-pinned evidence inventory and inspect its
++retained source and provenance. Serve the technical-studio shell with the shared
++System/Light/Dark controller. This serves `telos/raw-data-and-projections` and
++must never treat the current synthetic Studio as an integrated application.
++
++## Requirements
++- REQ-1: Run the reader as an explicitly configured principal separate from blind storage, inference gateway, operations, administration and annotation signing. Deployable location is not hard-coded; no production key placement is inferred.
++- REQ-2: Validate signed storage replies and scope membership before returning inventory, counts, snippets or source bytes. An unknown, revoked or unauthorized scope has one indistinguishable denial shape. Filter before derived counts or facets.
++- REQ-3: Pin inventory to a signed evidence snapshot and selected scopes. Bound rows, bytes, requests and concurrency; return explicit continuation and coverage rather than an unbounded scan. Cursors bind selection, snapshot and version.
++- REQ-4: Show retained occurrence identity, observer, claimed speaker, admission and cryptographic verification separately. Source bytes have explicit encoding, byte ranges and retained identity; an unsupported semantic format remains inspectable.
++- REQ-5: Keep decrypted material in bounded reader memory for this first slice. No plaintext index, temporary file, log, URL or browser storage is created. Index-backed search remains an explicit unavailable capability until encrypted projections and their grant invalidation are implemented.
++- REQ-6: Production Library navigation and inspector use real typed endpoints. Lock aborts/invalidates in-flight reads, clears DOM and client caches. Captured content is text, never executable HTML or active attachments. Responses are no-store and cross-origin use is denied.
++- REQ-7: Expose an implementation matrix distinguishing inventory/source inspection from later transcript normalization, annotation writes, saved views, analysis and admin jobs. Missing capability is visible; no synthetic success state appears in production.
++
++## Acceptance Criteria
++- [ ] AC-1: Browse two synthetic authorized scopes at a pinned snapshot with pagination and stable return-to-list state. A third unauthorized scope changes neither counts nor snippets; test unknown and revoked scopes at the same API boundary. (REQ-1, REQ-2, REQ-3)
++- [ ] AC-2: Tampered reply signatures, mismatched snapshots, malformed cursors and cross-scope object IDs fail closed before source disclosure. Limits hold under hostile page sizes, many requests and large ciphertext. (REQ-2, REQ-3)
++- [ ] AC-3: Inspect retained source with byte-exact export/range comparison and separate provenance judgments. Unknown semantic payload and missing object remain distinct authorized states, not silent omissions. (REQ-4)
++- [ ] AC-4: A captured script, external image and instruction to schedule work execute nothing and produce no external request. Reader credentials cannot rotate, annotate, decrypt a different scope or access administrative routes. (REQ-1, REQ-5, REQ-6)
++- [ ] AC-5: Lock during pagination/source retrieval leaves no plaintext in DOM or caches after late responses. No key/token/content persists in browser storage; only the shared enumerated theme preference does. Revoke access and verify the next source/page/export read is denied. (REQ-2, REQ-5, REQ-6)
++- [ ] AC-6: Real-browser desktop/tablet/phone tests cover inventory, pagination, inspector, source/provenance tabs, locked, empty, denied, stale and failed states. Fresh Opus 5.5 review identifies exact implemented commits; the full-frontend matrix remains partial. (REQ-6, REQ-7)
++
++## Architecture
++The existing `evidence_service::{SignedRequest,SignedReply,Command,Output}`
++contracts supply signed Snapshot/Page/Record/Object requests. Compose these
++through a bounded reader adapter; do not give the browser an archive-wide token
++or silently mount a whole ledger. The `evidence_crypto` primitives implement
++scope-bound ciphertext opening; they do not supply reader authorization.
++Authorization must precede object opening and any derived response.
++
++The first API contract is inventory/source/provenance, not semantic search. A
++reader session selects from its configured grants and pins a snapshot. A typed
++cursor carries snapshot and scope selection plus continuation state and is
++validated on every request. No opaque client-provided cursor grants a new scope.
++Durable capture/resource identifiers must follow RFC 2's extension rules; UI
++fragment routes are navigation state, not invented canonical evidence URIs.
++
++The app shell shares the approved Studio typography, master/detail layout and
++appearance controller. The evidence inspector has source/provenance states and
++explicit unavailable representations. The existing operations endpoint retains
++its separate capability. Later admin plans/jobs and annotation signing must have
++separate authorizations even if presented in the same application shell.
++
++A plaintext index is unnecessary for bounded inventory. Implementing encrypted
++search projections later requires a separate persisted-surface design covering
++WAL, temporary files, backups, replay/frontier and revocation. Full cross-project
++search, normalized transcripts, annotations, views, analysis and admin workflows
++remain required by the parent design; this slice does not close those criteria.
++
++## Open Questions
++The previously asked deployment-location question remains unanswered. Portable
++configuration and synthetic fixture tests can proceed independently; installation,
++production keys and a home-server/local default must wait for that decision.
++
++## Out of Scope
++Live installation, production archive access, real keys, provider traffic, public
++network exposure, automatic indexing of the user's existing archive, or declaring
++the full frontend complete after this initial read-only slice.
++
++## Process record
++Planning only. No reader API implementation or acceptance criterion is claimed.
++Legacy kan/day claim backfill remains subject to the recorded partial-trust
++limitation; this document does not fabricate witnesses or evidence claims.
+diff --git a/.design/reviews/capacity-browser/README.md b/.design/reviews/capacity-browser/README.md
+new file mode 100644
+index 0000000..d277f0c
+--- /dev/null
++++ b/.design/reviews/capacity-browser/README.md
+@@ -0,0 +1,22 @@
++# Capacity and inspector browser checks — 2026-10-18
++
++Actual production HTML/CSS/JS served by an owned loopback-only synthetic API
++fixture. No real journal, token, provider, user traffic or deployment was used.
++This verifies client behavior/layout, not the Rust HTTP boundary (covered by its
++separate integration suite). Screenshots contain synthetic values only.
++
++Verified in Codex in-app browser:
++- Exhaustion remains prominent alongside current retrying delivery and retained gaps.
++- Search by observer and gaps filter operate on the recent sample, visibly bounded.
++- Enter opens the metadata dialog; full identifier and observer/cumulative counts
++  are present. Copy reports success; Escape restores the corresponding row after
++  polling replaces its DOM element. The fallback is the search field if absent.
++- Light desktop at 1440px, light tablet at 768px and dark phone at 390px:
++  document scroll width equals viewport; the long table scrolls internally.
++  Phone dialog is 356px wide inside a 390px viewport.
++- Lock closes inspector, empties identifiers/metadata/coverage text, hides data,
++  and focuses the token field. Error/warning console logs were empty.
++- Viewport override reset; temporary browser tab closed after validation.
++
++The fixture does not replace source/security regression tests or a full
++accessibility/contrast audit. Remaining broader frontend workflows stay open.
+diff --git a/.design/reviews/capacity-browser/inspector-mobile-dark.png b/.design/reviews/capacity-browser/inspector-mobile-dark.png
+new file mode 100644
+index 0000000..2acd933
+Binary files /dev/null and b/.design/reviews/capacity-browser/inspector-mobile-dark.png differ
+diff --git a/.design/reviews/capacity-browser/operations-desktop-light.png b/.design/reviews/capacity-browser/operations-desktop-light.png
+new file mode 100644
+index 0000000..4814d51
+Binary files /dev/null and b/.design/reviews/capacity-browser/operations-desktop-light.png differ
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index f234e8e..2d9bac1 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -34 +34 @@ jobs:
+-      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
++      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_operations_collection --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
+diff --git a/docs/V2-OPERATIONS.md b/docs/V2-OPERATIONS.md
+index d5b9d5a..caba579 100644
+--- a/docs/V2-OPERATIONS.md
++++ b/docs/V2-OPERATIONS.md
+@@ -36,9 +36,11 @@ listener through a public reverse proxy. A privileged local user remains trusted
+-The dashboard and `ops-status` use version 1 of the same JSON contract. The browser
+-polls every five seconds and flags worker observations older than 45 seconds.
+-Reporter heartbeats older than five seconds are stale. Active sessions and
+-unclean exits are distinguished from clean closes, but an unclosed session alone
+-cannot tell whether its process is alive. Any persisted cumulative recording gap or lost
+-telemetry stays visible. The current UI also warns for fresh active sessions;
+-that conservative warning does not distinguish them from historical unclean
+-exits, so a useful healthy-state display remains a follow-up. An absent report
+-never establishes complete capture.
++The dashboard and `ops-status` use version 2 of the same JSON contract, including
++`journal` capacity, scope and persistence observations. Version 1 HTTP clients
++must be updated; old v1 SQLite files remain readable without schema migration.
++The browser polls every five seconds and flags worker observations older than
++45 seconds. Reporter heartbeats and persistence observations older than five
++seconds are stale. Fresh unclosed sessions are active observations; stale and
++unsampled unclosed sessions remain uncertain. Historical gaps have a separate
++retained-coverage display. No absence of reported gaps proves complete capture.
++
++System/Light/Dark defaults to the platform setting. Only the appearance enum is
++stored in browser localStorage; tokens and private data remain in tab memory.
+@@ -62,19 +64,23 @@ are still protected by head acknowledgment checks, not a leader election.
+-Operations metadata is intentionally plaintext and owner-only, matching the
+-instance's rich-metadata default. It contains summaries, counts and identities,
+-not message bodies or tokens. The journal keeps the latest cumulative snapshot
+-for each attempt, reporter sessions, and the latest worker sample. It is not an
+-append-only archive of every health callback, and cannot replace raw encrypted
+-evidence. It retains these records until explicit owner removal, with no automatic
+-expiry. The database is capped at 8192 4-KiB pages (32 MiB), plus SQLite rollback
+-journal space, and independently at most 100,000 attempts. The first limit reached wins;
+-100,000 is not a promised capacity. A realistic review fixture filled the byte
+-cap near 79,740 attempts. It refuses growth rather than deleting old records. Database-full/lock failures and channel overflow increment telemetry-loss
+-counts when persistence returns; a crash before that update leaves coverage
+-unknown. If the journal remains full across reporter restarts, new session rows
+-can also fail, so the retained loss count is only a lower bound. Fullness is not
+-yet a distinct dashboard state, and an owner-controlled rotation/erasure command
+-is still a follow-up. The 256-item FIFO can lose the latest cumulative attempt summary under a burst,
+-even on healthy storage. Its global loss count is retained where possible; per-
+-attempt counts can then undercount. Coalescing the latest snapshot per attempt
+-is a follow-up, not an implemented guarantee. A separate journal reserves logical capacity outside the queue budget,
+-not physical capacity when the entire device fails or fills. Monitor free disk.
++Operations metadata is plaintext and owner-only, matching the instance's
++rich-metadata default. It contains summaries, counts and identities, not message
++bodies or tokens. The journal stores the latest cumulative observation per attempt,
++reporter sessions and the latest worker checkpoint. It cannot replace the raw
++encrypted append-only evidence ledger. No automatic expiry or deletion occurs.
++
++New v2 journals have an 8192-page (32 MiB) ceiling plus rollback-journal space,
++a 100,000-attempt bound and a 1,024-session bound. The first limit reached wins;
++the row limits are not promised physical capacities. A 256 KiB reserve is
++preallocated for finite control-record recovery. A recorded capacity failure
++releases the reserve and sets a sticky exhaustion marker; subsequent attempt
++writes are refused until owner rotation. Existing metadata may still update.
++Restart or a later successful heartbeat never clears exhaustion. Whole-device
++failure can also prevent the marker from being recorded. Capacity, last success
++and loss-count certainty are distinct observations, not a disk-health guarantee.
++
++The callback coalesces cumulative observations in a globally bounded 256-attempt
++buffer with sharded locks and finite nonblocking retries. Distinct-attempt
++overflow, exhausted retry budgets, contradictions and failed summary writes are
++counted where possible. Counts are lower bounds, not missing-raw-message counts;
++older journal histories can include individual update losses. No arbitrary-load
++lossless guarantee is made. A separate journal reserves logical queue-independent
++capacity, not physical capacity when the entire device fails or fills.
+@@ -89,6 +95,44 @@ unverified binding. Queue failure still exits the worker; the supervisor can res
+-metadata cannot be persisted. If the journal first becomes available after worker
+-startup, its earlier last-ack fields can be replaced by null and its earlier
+-telemetry-failure count can be lost. Those operational fields are not currently
+-lifetime-monotone; the queue acknowledgment state is unaffected. Preserving late-
+-loaded worker history is a follow-up. A dashboard read may fail under writer
+-contention and displays unavailable rather than reporting zero.
++metadata cannot be persisted. Checkpoint writes transactionally reconcile prior
++acknowledgment/time pairs and deduplicate per-run failure deltas, including late
++journal return. Mismatched or regressed queue history is refused; delivery still
++continues. A dashboard read may fail under contention and displays unavailable
++rather than reporting zero.
++
++## Owner-controlled retained generations
++
++Stop the collector/gateway health reporter and archive worker before maintenance.
++Upgraded clients hold lifetime shared locks; maintenance refuses them promptly.
++Older binaries do not participate in these locks and **must be stopped explicitly**.
++No command below deletes the original journal or an old generation.
++
++```sh
++kan-v2 ops-adopt "$HEALTH" "$HEALTH_COLLECTION"
++kan-v2 ops-status "$HEALTH_COLLECTION"
++kan-v2 ops-generations "$HEALTH_COLLECTION" --limit 50
++kan-v2 ops-rotate "$HEALTH_COLLECTION"
++kan-v2 ops-history "$HEALTH_COLLECTION" --generation "$GENERATION_ID"
++```
++
++Adoption requires a new private destination. It copies and verifies the standalone
++journal, seals that history by hash and creates a fresh v2 active generation.
++Reconfigure `--health-journal` and `--journal`, and the dashboard positional path,
++to the collection directory before restarting writers. Worker acknowledgment and
++failure history is seeded into the fresh generation; attempt/session snapshots
++remain in their old generation. Do not select generation files directly.
++
++Rotation retains the active file under its existing name, creates/fsyncs a unique
++new journal and atomically publishes the manifest. Interrupted staging does not
++change membership. A failure after publication is commit-uncertain: inspect
++`ops-generations` before deciding whether another rotation is wanted. Unreferenced
++staged files are retained recovery artifacts and are never automatically admitted
++or deleted. Adoption failure similarly preserves partial output; choose a new
++destination only after inspecting the existing one.
++
++Active polling reads one generation, explicitly excluding sealed history. History
++reads verify the selected sealed hash and binding. Generation pages are bounded
++to 100 entries; `next` supplies the following offset. Cumulative attempts/sessions
++can recur across generations, so these snapshots **must not be summed**. A bounded
++deduplicated whole-collection overview remains a separate build item. Collections
++currently allow at most 1,024 generations; hitting this limit refuses rotation
++without deleting anything. The dashboard token remains read-only; browser-triggered
++rotation belongs to the forthcoming separate owner admin API.
+diff --git a/src/bin/kan-v2.rs b/src/bin/kan-v2.rs
+index 402dd05..2de2d68 100644
+--- a/src/bin/kan-v2.rs
++++ b/src/bin/kan-v2.rs
+@@ -44,0 +45,25 @@ enum Command {
++    /// Copy a stopped standalone journal into a new collection, preserving the source.
++    #[cfg(feature = "v2-crypto")]
++    OpsAdopt {
++        source: PathBuf,
++        collection: PathBuf,
++    },
++    /// Select a fresh health generation, retaining sealed history; stop writers first.
++    #[cfg(feature = "v2-crypto")]
++    OpsRotate { collection: PathBuf },
++    /// List retained generations in bounded pages; counts are not additive.
++    #[cfg(feature = "v2-crypto")]
++    OpsGenerations {
++        collection: PathBuf,
++        #[arg(long, default_value_t = 0)]
++        after: usize,
++        #[arg(long, default_value_t = 50)]
++        limit: usize,
++    },
++    /// Read one hash-verified sealed generation, without modifying it.
++    #[cfg(feature = "v2-crypto")]
++    OpsHistory {
++        collection: PathBuf,
++        #[arg(long)]
++        generation: String,
++    },
+@@ -328,0 +354,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
++        Command::OpsAdopt { source, collection } => {
++            kan::evidence_operations_collection::adopt(&source, &collection).map_err(|_| {
++                "operations adoption failed; preserve partial output and inspect source/collection"
++            })?;
++            print_json(&serde_json::json!({"adopted":true,"source_preserved":true}))?;
++        }
++        #[cfg(feature = "v2-crypto")]
++        Command::OpsRotate { collection } => {
++            kan::evidence_operations_collection::rotate(&collection).map_err(|_| {
++                "operations rotation failed or commit uncertain; inspect collection before retrying"
++            })?;
++            print_json(&serde_json::json!({"rotated":true,"history_preserved":true}))?;
++        }
++        #[cfg(feature = "v2-crypto")]
++        Command::OpsGenerations {
++            collection,
++            after,
++            limit,
++        } => {
++            let page = kan::evidence_operations_collection::generations(&collection, after, limit)
++                .map_err(|_| "operations collection unavailable")?;
++            print_json(&serde_json::to_value(page)?)?;
++        }
++        #[cfg(feature = "v2-crypto")]
++        Command::OpsHistory {
++            collection,
++            generation,
++        } => {
++            let history = kan::evidence_operations_collection::history(&collection, &generation)
++                .map_err(|_| "operations generation unavailable or not verified")?;
++            print_json(&serde_json::to_value(history)?)?;
++        }
++        #[cfg(feature = "v2-crypto")]
+diff --git a/src/evidence_operations.rs b/src/evidence_operations.rs
+index 2a777e5..a134291 100644
+--- a/src/evidence_operations.rs
++++ b/src/evidence_operations.rs
+@@ -29,0 +30,37 @@ CREATE TABLE worker(singleton INTEGER PRIMARY KEY CHECK(singleton=1), body TEXT
++const CAPACITY_SCHEMA: &str = "
++PRAGMA user_version=2;
++CREATE TABLE control(singleton INTEGER PRIMARY KEY CHECK(singleton=1), last_success INTEGER NOT NULL, exhausted INTEGER NOT NULL, reason TEXT NOT NULL);
++CREATE TABLE reserve(id INTEGER PRIMARY KEY, bytes BLOB NOT NULL);
++";
++const ATTEMPT_LIMIT: u64 = 100_000;
++const SESSION_LIMIT: u64 = 1024;
++#[derive(Debug, thiserror::Error)]
++#[error("operations capacity exhausted: {0}")]
++struct CapacityLimit(&'static str);
++#[derive(Debug, Serialize, Deserialize)]
++pub struct JournalCapacity {
++    pub schema: u8,
++    pub pages_used: u64,
++    pub pages_limit: u64,
++    pub free_pages: u64,
++    pub page_size: u64,
++    pub attempts_used: u64,
++    pub attempts_limit: u64,
++    pub sessions_used: u64,
++    pub sessions_limit: Option<u64>,
++    pub reserve_bytes: u64,
++    pub exhausted_observed: Option<bool>,
++    pub exhaustion_reason: Option<String>,
++    pub last_success_at: Option<u64>,
++    pub loss_count_certainty: String,
++    pub scope: String,
++}
++fn successful(conn: &Connection, schema: u8) -> Result<()> {
++    if schema == 2 {
++        conn.execute(
++            "UPDATE control SET last_success=? WHERE singleton=1",
++            [now() as i64],
++        )?;
++    }
++    Ok(())
++}
+@@ -44,0 +82,5 @@ pub struct Journal {
++    schema: u8,
++    read_only: bool,
++    _file_lock: std::fs::File,
++    pub(crate) collection_lock: Option<std::fs::File>,
++    pub(crate) scope: String,
+@@ -72,0 +115 @@ pub struct Snapshot {
++    pub journal: JournalCapacity,
+@@ -78 +121 @@ impl Journal {
+-        for suffix in ["-journal", "-wal", "-shm"] {
++        for suffix in ["-journal", "-wal", "-shm", ".lock"] {
+@@ -96 +139,7 @@ impl Journal {
+-        conn.execute(
++        conn.execute_batch(CAPACITY_SCHEMA)?;
++        let initialization = conn.unchecked_transaction()?;
++        initialization.execute("INSERT INTO control VALUES(1,0,0,'')", [])?;
++        for i in 0..64 {
++            initialization.execute("INSERT INTO reserve VALUES(?,zeroblob(4096))", [i])?;
++        }
++        initialization.execute(
+@@ -104,0 +154 @@ impl Journal {
++        initialization.commit()?;
+@@ -111 +161 @@ impl Journal {
+-        Self::open(path)
++        Self::open_file(path, false, false)
+@@ -113,0 +164,11 @@ impl Journal {
++        let meta = std::fs::symlink_metadata(path)?;
++        if meta.file_type().is_symlink() {
++            return Err(invalid());
++        }
++        if meta.is_dir() {
++            return crate::evidence_operations_collection::open(path);
++        }
++        crate::evidence_operations_collection::check_standalone(path)?;
++        Self::open_file(path, false, false)
++    }
++    pub(crate) fn open_file(path: &Path, exclusive: bool, read_only: bool) -> Result<Self> {
+@@ -120,2 +181,2 @@ impl Journal {
+-            use std::os::unix::fs::PermissionsExt;
+-            if meta.permissions().mode() & 0o077 != 0 {
++            use std::os::unix::fs::{MetadataExt, PermissionsExt};
++            if meta.permissions().mode() & 0o077 != 0 || meta.nlink() != 1 {
+@@ -125 +186,46 @@ impl Journal {
+-        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
++        // flock and SQLite fcntl locks can interact on macOS. Lifetime
++        // maintenance coordination must use a separate inode.
++        let mut lock_name = path.as_os_str().to_os_string();
++        lock_name.push(".lock");
++        let lock_path = Path::new(&lock_name);
++        match std::fs::symlink_metadata(lock_path) {
++            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
++                // surface-write: evidence-operations:database-lock
++                match crate::persistence::write_new_owner_only(
++                    crate::persistence::SurfaceWrite::EvidenceOperations,
++                    lock_path,
++                    &[],
++                ) {
++                    Ok(()) => {}
++                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
++                    Err(e) => return Err(e.into()),
++                }
++            }
++            Err(e) => return Err(e.into()),
++            Ok(_) => {}
++        }
++        let lock_meta = std::fs::symlink_metadata(lock_path)?;
++        if !lock_meta.is_file() || lock_meta.file_type().is_symlink() || lock_meta.len() != 0 {
++            return Err(invalid());
++        }
++        #[cfg(unix)]
++        {
++            use std::os::unix::fs::{MetadataExt, PermissionsExt};
++            if lock_meta.permissions().mode() & 0o077 != 0 || lock_meta.nlink() != 1 {
++                return Err(invalid());
++            }
++        }
++        let file_lock = std::fs::File::open(lock_path)?;
++        if exclusive {
++            fs4::FileExt::try_lock(&file_lock).map_err(|_| invalid())?;
++        } else {
++            fs4::FileExt::try_lock_shared(&file_lock).map_err(|_| invalid())?;
++        }
++        let conn = Connection::open_with_flags(
++            path,
++            if read_only {
++                OpenFlags::SQLITE_OPEN_READ_ONLY
++            } else {
++                OpenFlags::SQLITE_OPEN_READ_WRITE
++            },
++        )?;
+@@ -127,0 +234 @@ impl Journal {
++        let schema_version: u8 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+@@ -129 +236 @@ impl Journal {
+-            || conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? != 1
++            || !matches!(schema_version, 1 | 2)
+@@ -133,3 +240,5 @@ impl Journal {
+-        conn.execute_batch(
+-            "PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA max_page_count=8192;",
+-        )?;
++        if !read_only {
++            conn.execute_batch(
++                "PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA max_page_count=8192;",
++            )?;
++        }
+@@ -140,0 +250,3 @@ impl Journal {
++        if schema_version == 2 {
++            expected.execute_batch(CAPACITY_SCHEMA)?;
++        }
+@@ -149 +261,58 @@ impl Journal {
+-        Ok(Self { conn })
++        if schema_version == 2 {
++            let (rows, exhausted, reason, reserved, valid): (i64,i64,String,u64,u64) = conn.query_row(
++                "SELECT count(*),exhausted,reason,(SELECT count(*) FROM reserve),(SELECT coalesce(sum(id>=0 AND id<64 AND length(bytes)=4096),0) FROM reserve) FROM control WHERE singleton=1",
++                [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,unsigned(r,3)?,unsigned(r,4)?)),
++            )?;
++            if rows != 1
++                || (exhausted == 0 && (!reason.is_empty() || reserved != 64 || valid != 64))
++                || (exhausted == 1
++                    && (reserved != 0
++                        || !matches!(
++                            reason.as_str(),
++                            "sqlite_full" | "attempt_limit" | "session_limit"
++                        )))
++                || !matches!(exhausted, 0 | 1)
++            {
++                return Err(invalid());
++            }
++        }
++        Ok(Self {
++            conn,
++            schema: schema_version,
++            read_only,
++            _file_lock: file_lock,
++            collection_lock: None,
++            scope: "selected standalone journal only".into(),
++        })
++    }
++    pub(crate) fn binding(&self) -> Result<(String, String, String, String)> {
++        Ok(self.conn.query_row(
++            "SELECT spool,writer,scope,audience FROM binding WHERE singleton=1",
++            [],
++            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
++        )?)
++    }
++    pub(crate) fn frozen_bytes(&mut self, path: &Path) -> Result<Vec<u8>> {
++        let tx = self
++            .conn
++            .transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)?;
++        let bytes = std::fs::read(path)?;
++        tx.commit()?;
++        Ok(bytes)
++    }
++    pub(crate) fn seed_worker(&mut self, old: &Journal) -> Result<()> {
++        let body: Option<String> = old
++            .conn
++            .query_row("SELECT body FROM worker WHERE singleton=1", [], |r| {
++                r.get(0)
++            })
++            .optional()?;
++        if let Some(body) = body {
++            let checked: WorkerCheckpoint = serde_json::from_str(&body)?;
++            if let Some(queue) = &checked.status.queue {
++                self.check_queue(queue)?;
++            }
++            self.conn
++                .execute("INSERT INTO worker VALUES(1,?)", [body])?;
++        }
++        Ok(())
+@@ -188,0 +358,22 @@ impl Journal {
++    // A finite reserve preserves the exhaustion observation; it cannot make a
++    // failed whole-device write durable. Failed markers leave freshness unknown.
++    fn note_capacity_failure<T>(&mut self, result: &Result<T>) {
++        if self.schema != 2 {
++            return;
++        }
++        let reason = result.as_ref().err().and_then(|e| {
++            if let Some(limit) = e.downcast_ref::<CapacityLimit>() { Some(limit.0) }
++            else if e.downcast_ref::<rusqlite::Error>().is_some_and(|e| matches!(e, rusqlite::Error::SqliteFailure(code, _) if code.code == rusqlite::ErrorCode::DiskFull)) { Some("sqlite_full") }
++            else { None }
++        });
++        if let Some(reason) = reason {
++            let mark = || -> Result<()> {
++                let tx = self.conn.unchecked_transaction()?;
++                tx.execute("DELETE FROM reserve", [])?;
++                tx.execute("UPDATE control SET exhausted=1, reason=CASE WHEN exhausted=0 THEN ? ELSE reason END WHERE singleton=1", [reason])?;
++                tx.commit()?;
++                Ok(())
++            };
++            let _ = mark(); // The original write failure remains the caller's result.
++        }
++    }
+@@ -189,0 +381,5 @@ impl Journal {
++        let result = self.record_inner(h);
++        self.note_capacity_failure(&result);
++        result
++    }
++    fn record_inner(&mut self, h: &Health) -> Result<()> {
+@@ -193,0 +390,7 @@ impl Journal {
++        if self.schema == 2
++            && tx.query_row("SELECT exhausted FROM control WHERE singleton=1", [], |r| {
++                r.get::<_, bool>(0)
++            })?
++        {
++            return Err(Box::new(CapacityLimit("sealed_for_capacity")));
++        }
+@@ -202,2 +405,2 @@ impl Journal {
+-        if old.is_none() && count >= 100_000 {
+-            return Err(invalid());
++        if old.is_none() && count >= ATTEMPT_LIMIT {
++            return Err(Box::new(CapacityLimit("attempt_limit")));
+@@ -211,0 +415 @@ impl Journal {
++        successful(&tx, self.schema)?;
+@@ -215,3 +419,22 @@ impl Journal {
+-    fn session(&self, id: &str, dropped: u64, clean: bool) -> Result<()> {
+-        self.conn.execute("INSERT INTO sessions VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated=excluded.updated,dropped=max(dropped,excluded.dropped),clean=excluded.clean",params![id,now() as i64,i64::try_from(dropped)?,clean])?;
+-        Ok(())
++    fn session(&mut self, id: &str, dropped: u64, clean: bool) -> Result<()> {
++        let write = || -> Result<()> {
++            let tx = rusqlite::Transaction::new_unchecked(
++                &self.conn,
++                rusqlite::TransactionBehavior::Immediate,
++            )?;
++            let (count, existing): (u64, bool) = tx.query_row(
++                "SELECT count(*),coalesce(sum(id=?),0)>0 FROM sessions",
++                [id],
++                |r| Ok((unsigned(r, 0)?, r.get(1)?)),
++            )?;
++            if self.schema == 2 && count >= SESSION_LIMIT && !existing {
++                return Err(Box::new(CapacityLimit("session_limit")));
++            }
++            tx.execute("INSERT INTO sessions VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated=excluded.updated,dropped=max(dropped,excluded.dropped),clean=excluded.clean",params![id,now() as i64,i64::try_from(dropped)?,clean])?;
++            successful(&tx, self.schema)?;
++            tx.commit()?;
++            Ok(())
++        };
++        let result = write();
++        self.note_capacity_failure(&result);
++        result
+@@ -219 +442,6 @@ impl Journal {
+-    pub fn save_worker(&self, status: &WorkerStatus) -> Result<()> {
++    pub fn save_worker(&mut self, status: &WorkerStatus) -> Result<()> {
++        let result = self.save_worker_inner(status);
++        self.note_capacity_failure(&result);
++        result
++    }
++    fn save_worker_inner(&mut self, status: &WorkerStatus) -> Result<()> {
+@@ -223 +451,4 @@ impl Journal {
+-        self.conn.execute("INSERT INTO worker VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET body=excluded.body",[serde_json::to_string(status)?])?;
++        let tx = self.conn.transaction()?;
++        tx.execute("INSERT INTO worker VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET body=excluded.body",[serde_json::to_string(status)?])?;
++        successful(&tx, self.schema)?;
++        tx.commit()?;
+@@ -251,0 +483,42 @@ impl Journal {
++        let (reserve_bytes, exhausted_observed, exhaustion_reason, last_success_at) =
++            if self.schema == 2 {
++                let (at, full, reason): (u64, bool, String) = tx.query_row(
++                    "SELECT last_success,exhausted,reason FROM control WHERE singleton=1",
++                    [],
++                    |r| Ok((unsigned(r, 0)?, r.get(1)?, r.get(2)?)),
++                )?;
++                let reserve = tx.query_row(
++                    "SELECT coalesce(sum(length(bytes)),0) FROM reserve",
++                    [],
++                    |r| unsigned(r, 0),
++                )?;
++                (
++                    reserve,
++                    Some(full),
++                    (!reason.is_empty()).then_some(reason),
++                    (at > 0).then_some(at),
++                )
++            } else {
++                (0, None, None, None)
++            };
++        let journal = JournalCapacity {
++            schema: self.schema,
++            pages_used: tx.query_row("PRAGMA page_count", [], |r| unsigned(r, 0))?,
++            pages_limit: if self.read_only {
++                8192
++            } else {
++                tx.query_row("PRAGMA max_page_count", [], |r| unsigned(r, 0))?
++            },
++            free_pages: tx.query_row("PRAGMA freelist_count", [], |r| unsigned(r, 0))?,
++            page_size: 4096,
++            attempts_used: attempts,
++            attempts_limit: ATTEMPT_LIMIT,
++            sessions_used: tx.query_row("SELECT count(*) FROM sessions", [], |r| unsigned(r, 0))?,
++            sessions_limit: (self.schema == 2).then_some(SESSION_LIMIT),
++            reserve_bytes,
++            exhausted_observed,
++            exhaustion_reason,
++            last_success_at,
++            loss_count_certainty: "lower_bound".into(),
++            scope: self.scope.clone(),
++        };
+@@ -254 +527 @@ impl Journal {
+-            version: 1,
++            version: 2,
+@@ -265,0 +539 @@ impl Journal {
++            journal,
+@@ -454 +728 @@ fn reporter_inner(
+-            .as_ref()
++            .as_mut()
+@@ -489 +763 @@ fn reporter_inner(
+-                    if let Some(j) = &journal {
++                    if let Some(j) = &mut journal {
+@@ -495 +769 @@ fn reporter_inner(
+-            if let Some(j) = &journal {
++            if let Some(j) = &mut journal {
+@@ -604,0 +879 @@ fn save_worker_run(
++    successful(&tx, journal.schema)?;
+@@ -621,4 +896,5 @@ fn persist_worker(
+-    if journal
+-        .as_mut()
+-        .is_none_or(|j| save_worker_run(j, status, run).is_err())
+-    {
++    if journal.as_mut().is_none_or(|j| {
++        let result = save_worker_run(j, status, run);
++        j.note_capacity_failure(&result);
++        result.is_err()
++    }) {
+@@ -1035,0 +1312,11 @@ mod tests {
++        assert_eq!(before.journal.exhausted_observed, Some(true));
++        assert_eq!(
++            before.journal.exhaustion_reason.as_deref(),
++            Some("sqlite_full")
++        );
++        assert_eq!(before.journal.reserve_bytes, 0);
++        journal.session("reserved-control-probe", 9, true).unwrap();
++        assert!(
++            journal.record(&health).is_err(),
++            "capacity exhaustion stays sticky after control writes"
++        );
+@@ -1039,0 +1327,122 @@ mod tests {
++        assert_eq!(after.telemetry_dropped, 9);
++        assert_eq!(after.journal.exhausted_observed, Some(true));
++        assert_eq!(after.journal.loss_count_certainty, "lower_bound");
++    }
++    #[test]
++    fn legacy_snapshot_does_not_rewrite_or_invent_control_evidence() {
++        use sha2::{Digest, Sha256};
++        let dir = tempfile::tempdir().unwrap();
++        let spool = dir.path().join("queue");
++        let path = dir.path().join("health");
++        let id = crate::sign::Identity::generate();
++        Spool::create(
++            &spool,
++            &crate::evidence_service::hex(&[3; 32]),
++            id.did().as_str(),
++            id.did().as_str(),
++            10000,
++        )
++        .unwrap();
++        let journal = Journal::create(&path, &spool).unwrap();
++        journal
++            .conn
++            .execute_batch("DROP TABLE control; DROP TABLE reserve; PRAGMA user_version=1")
++            .unwrap();
++        drop(journal);
++        let before = Sha256::digest(std::fs::read(&path).unwrap());
++        let snapshot = Journal::open(&path).unwrap().snapshot().unwrap();
++        assert_eq!(snapshot.version, 2);
++        assert_eq!(snapshot.journal.schema, 1);
++        assert_eq!(snapshot.journal.exhausted_observed, None);
++        assert_eq!(snapshot.journal.last_success_at, None);
++        assert_eq!(snapshot.journal.sessions_limit, None);
++        assert_eq!(Sha256::digest(std::fs::read(&path).unwrap()), before);
++    }
++    #[test]
++    fn attempt_count_exhaustion_retains_existing_rows_and_marks_once() {
++        let dir = tempfile::tempdir().unwrap();
++        let spool = dir.path().join("queue");
++        let path = dir.path().join("health");
++        let id = crate::sign::Identity::generate();
++        Spool::create(
++            &spool,
++            &crate::evidence_service::hex(&[3; 32]),
++            id.did().as_str(),
++            id.did().as_str(),
++            10000,
++        )
++        .unwrap();
++        let mut journal = Journal::create(&path, &spool).unwrap();
++        // Compact synthetic rows reach the logical count before the page limit.
++        // The selected new health remains a valid production observation.
++        journal.conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<99999) INSERT INTO attempts SELECT printf('%064x',i),0,0,0,0,'{}' FROM n").unwrap();
++        let health = Health {
++            attempt: format!("{:064x}", 100_000),
++            observer: crate::evidence_capture::Observer::Collector,
++            observed: 1,
++            locally_queued: 0,
++            unconfirmed: 1,
++            recording_gap: true,
++            remote_acknowledged: false,
++            status: None,
++            outcome: None,
++        };
++        let error = journal.record(&health).unwrap_err();
++        assert_eq!(
++            error.downcast_ref::<CapacityLimit>().unwrap().0,
++            "attempt_limit"
++        );
++        let (count, exhausted, reason, reserve): (u64, bool, String, u64) = journal.conn.query_row("SELECT (SELECT count(*) FROM attempts),exhausted,reason,(SELECT count(*) FROM reserve) FROM control", [], |r| Ok((unsigned(r,0)?,r.get(1)?,r.get(2)?,unsigned(r,3)?))).unwrap();
++        assert_eq!(count, 100_000);
++        assert!(exhausted);
++        assert_eq!(reason, "attempt_limit");
++        assert_eq!(reserve, 0);
++        journal
++            .session("control-after-attempt-limit", 1, true)
++            .unwrap();
++        assert_eq!(
++            journal
++                .record(&health)
++                .unwrap_err()
++                .downcast_ref::<CapacityLimit>()
++                .unwrap()
++                .0,
++            "sealed_for_capacity"
++        );
++        drop(journal);
++        let reopened = Journal::open(&path).unwrap();
++        assert_eq!(
++            reopened
++                .conn
++                .query_row("SELECT reason FROM control", [], |r| r.get::<_, String>(0))
++                .unwrap(),
++            "attempt_limit"
++        );
++    }
++    #[test]
++    fn session_capacity_is_sticky_and_existing_control_still_updates() {
++        let dir = tempfile::tempdir().unwrap();
++        let spool = dir.path().join("queue");
++        let path = dir.path().join("health");
++        let id = crate::sign::Identity::generate();
++        Spool::create(
++            &spool,
++            &crate::evidence_service::hex(&[3; 32]),
++            id.did().as_str(),
++            id.did().as_str(),
++            10000,
++        )
++        .unwrap();
++        let mut journal = Journal::create(&path, &spool).unwrap();
++        // Seed the bounded session table without thousands of separate fsyncs.
++        journal.conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<1023) INSERT INTO sessions SELECT printf('%032x',i),0,0,1 FROM n").unwrap();
++        assert!(journal.session("new-session", 1, false).is_err());
++        journal.session(&format!("{:032x}", 0), 12, true).unwrap();
++        let s = journal.snapshot().unwrap();
++        assert_eq!(s.journal.sessions_used, 1024);
++        assert_eq!(
++            s.journal.exhaustion_reason.as_deref(),
++            Some("session_limit")
++        );
++        assert_eq!(s.telemetry_dropped, 12);
++        assert_eq!(s.journal.reserve_bytes, 0);
+diff --git a/src/evidence_operations_collection.rs b/src/evidence_operations_collection.rs
+new file mode 100644
+index 0000000..5304c7f
+--- /dev/null
++++ b/src/evidence_operations_collection.rs
+@@ -0,0 +1,357 @@
++//! Owner-triggered operations generations. No automatic expiry or deletion.
++use crate::evidence_operations::{Journal, Snapshot};
++use serde::{Deserialize, Serialize};
++use sha2::{Digest, Sha256};
++use std::{
++    collections::BTreeSet,
++    fs::File,
++    path::{Path, PathBuf},
++};
++type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
++const MANIFEST: &str = "manifest.json";
++const LOCK: &str = "LOCK";
++const MAX_MANIFEST: u64 = 1024 * 1024;
++fn invalid() -> Box<dyn std::error::Error + Send + Sync> {
++    "operations collection invalid, unavailable or in use".into()
++}
++fn hex(value: &str, size: usize) -> bool {
++    value.len() == size
++        && value
++            .bytes()
++            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
++}
++fn id() -> String {
++    crate::evidence_service::hex(&rand::random::<[u8; 16]>())
++}
++fn digest(bytes: &[u8]) -> String {
++    crate::evidence_service::hex(&Sha256::digest(bytes))
++}
++fn generation_path(root: &Path, id: &str) -> PathBuf {
++    root.join(format!("generation-{id}.sqlite"))
++}
++fn private(path: &Path, directory: bool, max: u64) -> Result<()> {
++    let meta = std::fs::symlink_metadata(path)?;
++    if meta.file_type().is_symlink()
++        || (directory && !meta.is_dir())
++        || (!directory && (!meta.is_file() || meta.len() > max))
++    {
++        return Err(invalid());
++    }
++    #[cfg(unix)]
++    {
++        use std::os::unix::fs::{MetadataExt, PermissionsExt};
++        if meta.permissions().mode() & 0o077 != 0 || (!directory && meta.nlink() != 1) {
++            return Err(invalid());
++        }
++    }
++    Ok(())
++}
++fn lock(root: &Path, exclusive: bool) -> Result<File> {
++    private(root, true, 0)?;
++    let path = root.join(LOCK);
++    private(&path, false, 0)?;
++    let file = File::open(path)?;
++    if exclusive {
++        fs4::FileExt::try_lock(&file).map_err(|_| invalid())?;
++    } else {
++        fs4::FileExt::try_lock_shared(&file).map_err(|_| invalid())?;
++    }
++    Ok(file)
++}
++#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
++#[serde(deny_unknown_fields)]
++struct Binding {
++    spool: String,
++    writer: String,
++    scope: String,
++    audience: String,
++}
++impl Binding {
++    fn of(journal: &Journal) -> Result<Self> {
++        let (spool, writer, scope, audience) = journal.binding()?;
++        Ok(Self {
++            spool,
++            writer,
++            scope,
++            audience,
++        })
++    }
++}
++#[derive(Debug, Clone, Serialize, Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct Generation {
++    pub id: String,
++    pub sealed_sha256: Option<String>,
++}
++#[derive(Debug, Clone, Serialize, Deserialize)]
++#[serde(deny_unknown_fields)]
++struct Manifest {
++    version: u8,
++    binding: Binding,
++    active: String,
++    generations: Vec<Generation>,
++}
++fn manifest(root: &Path) -> Result<Manifest> {
++    let path = root.join(MANIFEST);
++    private(&path, false, MAX_MANIFEST)?;
++    let m: Manifest = serde_json::from_slice(&std::fs::read(path)?)?;
++    if m.version != 1
++        || m.generations.is_empty()
++        || m.generations.len() > 1024
++        || !hex(&m.active, 32)
++    {
++        return Err(invalid());
++    }
++    let mut ids = BTreeSet::new();
++    for (i, g) in m.generations.iter().enumerate() {
++        if !hex(&g.id, 32) || !ids.insert(&g.id) {
++            return Err(invalid());
++        }
++        if i == m.generations.len() - 1 {
++            if g.id != m.active || g.sealed_sha256.is_some() {
++                return Err(invalid());
++            }
++        } else if !g.sealed_sha256.as_ref().is_some_and(|s| hex(s, 64)) {
++            return Err(invalid());
++        }
++    }
++    Ok(m)
++}
++/// Prevent upgraded callers from bypassing collection lifetime locks by opening
++/// a generation path directly. Historical readers use the read-only API below.
++pub(crate) fn check_standalone(path: &Path) -> Result<()> {
++    if path
++        .file_name()
++        .and_then(|s| s.to_str())
++        .is_some_and(|s| s.starts_with("generation-"))
++        && path
++            .parent()
++            .is_some_and(|p| std::fs::symlink_metadata(p.join(MANIFEST)).is_ok())
++    {
++        return Err(invalid());
++    }
++    Ok(())
++}
++pub fn open(root: &Path) -> Result<Journal> {
++    let held = lock(root, false)?;
++    let m = manifest(root)?;
++    let path = generation_path(root, &m.active);
++    private(&path, false, 32 * 1024 * 1024)?;
++    let mut journal = Journal::open_file(&path, false, false)?;
++    if Binding::of(&journal)? != m.binding {
++        return Err(invalid());
++    }
++    journal.scope = format!(
++        "active generation {} only; sealed history excluded",
++        m.active
++    );
++    journal.collection_lock = Some(held);
++    Ok(journal)
++}
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum Boundary {
++    StagedGeneration,
++    SealedHistory,
++    StagedManifest,
++    PublishedManifest,
++    DirectorySynced,
++}
++fn publish(root: &Path, m: &Manifest, hook: &mut impl FnMut(Boundary) -> Result<()>) -> Result<()> {
++    let tmp = root.join(format!(".manifest-{}", id()));
++    let body = serde_json::to_vec(m)?;
++    if body.len() > MAX_MANIFEST as usize {
++        return Err(invalid());
++    }
++    // surface-write: evidence-operations-collection:.manifest-*
++    crate::persistence::write_new_owner_only(
++        crate::persistence::SurfaceWrite::EvidenceOperationsCollection,
++        &tmp,
++        &body,
++    )?;
++    hook(Boundary::StagedManifest)?;
++    let destination = root.join(MANIFEST);
++    match std::fs::symlink_metadata(&destination) {
++        Ok(_) => private(&destination, false, MAX_MANIFEST)?,
++        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
++        Err(e) => return Err(e.into()),
++    }
++    // surface-write: evidence-operations-collection:manifest.json,evidence-operations-collection:.manifest-*
++    crate::persistence::rename(
++        crate::persistence::SurfaceWrite::EvidenceOperationsCollection,
++        &tmp,
++        &destination,
++    )?;
++    hook(Boundary::PublishedManifest)?;
++    File::open(root)?.sync_all()?;
++    hook(Boundary::DirectorySynced)
++}
++fn sidecars_absent(path: &Path) -> Result<()> {
++    for suffix in ["-journal", "-wal", "-shm"] {
++        let mut name = path.as_os_str().to_os_string();
++        name.push(suffix);
++        match std::fs::symlink_metadata(Path::new(&name)) {
++            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
++            _ => return Err(invalid()),
++        }
++    }
++    Ok(())
++}
++fn new_generation(root: &Path, binding: &Binding, old: &Journal) -> Result<Generation> {
++    let id = id();
++    let path = generation_path(root, &id);
++    let mut fresh = Journal::create(&path, Path::new(&binding.spool))?;
++    if Binding::of(&fresh)? != *binding {
++        return Err(invalid());
++    }
++    fresh.seed_worker(old)?;
++    drop(fresh);
++    File::open(&path)?.sync_all()?;
++    File::open(root)?.sync_all()?;
++    Ok(Generation {
++        id,
++        sealed_sha256: None,
++    })
++}
++/// Adopt by copying: the original standalone file remains untouched. Older
++/// binaries do not honor our advisory locks and must be stopped by the owner.
++pub fn adopt(source: &Path, root: &Path) -> Result<()> {
++    adopt_with_hook(source, root, |_| Ok(()))
++}
++pub fn adopt_with_hook(
++    source: &Path,
++    root: &Path,
++    mut hook: impl FnMut(Boundary) -> Result<()>,
++) -> Result<()> {
++    check_standalone(source)?;
++    sidecars_absent(source)?;
++    let mut original = Journal::open_file(source, true, false)?;
++    let binding = Binding::of(&original)?;
++    let bytes = original.frozen_bytes(source)?;
++    // surface-write: evidence-operations-collection:directory
++    crate::persistence::create_dir_owner_only(
++        crate::persistence::SurfaceWrite::EvidenceOperationsCollection,
++        root,
++    )?;
++    // surface-write: evidence-operations-collection:LOCK
++    crate::persistence::write_new_owner_only(
++        crate::persistence::SurfaceWrite::EvidenceOperationsCollection,
++        &root.join(LOCK),
++        &[],
++    )?;
++    let _held = lock(root, true)?;
++    let copied = id();
++    let copy = generation_path(root, &copied);
++    // surface-write: evidence-operations-collection:generation-*.sqlite
++    crate::persistence::write_new_owner_only(
++        crate::persistence::SurfaceWrite::EvidenceOperationsCollection,
++        &copy,
++        &bytes,
++    )?;
++    if digest(&std::fs::read(&copy)?) != digest(&bytes) {
++        return Err(invalid());
++    }
++    let checked = Journal::open_file(&copy, false, true)?;
++    if Binding::of(&checked)? != binding {
++        return Err(invalid());
++    }
++    let fresh = new_generation(root, &binding, &original)?;
++    hook(Boundary::StagedGeneration)?;
++    let m = Manifest {
++        version: 1,
++        binding,
++        active: fresh.id.clone(),
++        generations: vec![
++            Generation {
++                id: copied,
++                sealed_sha256: Some(digest(&bytes)),
++            },
++            fresh,
++        ],
++    };
++    hook(Boundary::SealedHistory)?;
++    publish(root, &m, &mut hook)
++}
++pub fn rotate(root: &Path) -> Result<()> {
++    rotate_with_hook(root, |_| Ok(()))
++}
++pub fn rotate_with_hook(root: &Path, mut hook: impl FnMut(Boundary) -> Result<()>) -> Result<()> {
++    let _held = lock(root, true)?;
++    let mut m = manifest(root)?;
++    if m.generations.len() >= 1024 {
++        return Err(invalid());
++    }
++    // Owner maintenance verifies membership; ordinary active polling does not
++    // read every sealed file. Unreferenced staged files are never auto-admitted.
++    for g in &m.generations[..m.generations.len() - 1] {
++        let path = generation_path(root, &g.id);
++        private(&path, false, 32 * 1024 * 1024)?;
++        sidecars_absent(&path)?;
++        if Some(digest(&std::fs::read(&path)?)) != g.sealed_sha256 {
++            return Err(invalid());
++        }
++        let j = Journal::open_file(&path, true, true)?;
++        if Binding::of(&j)? != m.binding {
++            return Err(invalid());
++        }
++    }
++    let path = generation_path(root, &m.active);
++    private(&path, false, 32 * 1024 * 1024)?;
++    sidecars_absent(&path)?;
++    let mut old = Journal::open_file(&path, true, false)?;
++    if Binding::of(&old)? != m.binding {
++        return Err(invalid());
++    }
++    let frozen = old.frozen_bytes(&path)?;
++    let fresh = new_generation(root, &m.binding, &old)?;
++    hook(Boundary::StagedGeneration)?;
++    m.generations.last_mut().ok_or_else(invalid)?.sealed_sha256 = Some(digest(&frozen));
++    m.active = fresh.id.clone();
++    m.generations.push(fresh);
++    hook(Boundary::SealedHistory)?;
++    publish(root, &m, &mut hook)
++}
++#[derive(Debug, Serialize)]
++pub struct Generations {
++    pub version: u8,
++    pub active: String,
++    pub generations: Vec<Generation>,
++    pub next: Option<usize>,
++    pub totals: &'static str,
++}
++pub fn generations(root: &Path, after: usize, limit: usize) -> Result<Generations> {
++    if limit == 0 || limit > 100 {
++        return Err(invalid());
++    }
++    let _held = lock(root, false)?;
++    let m = manifest(root)?;
++    if after > m.generations.len() {
++        return Err(invalid());
++    }
++    let end = after.saturating_add(limit).min(m.generations.len());
++    Ok(Generations {
++        version: 1,
++        active: m.active,
++        generations: m.generations[after..end].to_vec(),
++        next: (end < m.generations.len()).then_some(end),
++        totals: "not additive; cumulative identities may recur across generations",
++    })
++}
++pub fn history(root: &Path, generation: &str) -> Result<Snapshot> {
++    let _held = lock(root, false)?;
++    let m = manifest(root)?;
++    let g = m
++        .generations
++        .iter()
++        .find(|g| g.id == generation)
++        .ok_or_else(invalid)?;
++    let expected = g.sealed_sha256.as_ref().ok_or_else(invalid)?;
++    let path = generation_path(root, generation);
++    private(&path, false, 32 * 1024 * 1024)?;
++    sidecars_absent(&path)?;
++    let mut journal = Journal::open_file(&path, false, true)?;
++    if &digest(&std::fs::read(&path)?) != expected || Binding::of(&journal)? != m.binding {
++        return Err(invalid());
++    }
++    journal.scope = format!("sealed generation {generation} only; not a collection total");
++    journal.snapshot()
++}
+diff --git a/src/lib.rs b/src/lib.rs
+index 53de85c..90b575a 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -59,0 +60,3 @@ pub mod evidence_operations;
++
++#[cfg(feature = "v2-crypto")]
++pub mod evidence_operations_collection;
+diff --git a/src/persistence.rs b/src/persistence.rs
+index fe08b8b..aebbfe9 100644
+--- a/src/persistence.rs
++++ b/src/persistence.rs
+@@ -36,0 +37 @@ pub enum SurfaceWrite {
++    EvidenceOperationsCollection,
+@@ -67,0 +69 @@ impl SurfaceWrite {
++        Self::EvidenceOperationsCollection,
+@@ -128,0 +131,7 @@ impl SurfaceWrite {
++            Self::EvidenceOperationsCollection => &[
++                "evidence-operations-collection:directory",
++                "evidence-operations-collection:LOCK",
++                "evidence-operations-collection:manifest.json",
++                "evidence-operations-collection:.manifest-*",
++                "evidence-operations-collection:generation-*.sqlite",
++            ],
+@@ -131,0 +141 @@ impl SurfaceWrite {
++                "evidence-operations:database-lock",
+diff --git a/src/surface.rs b/src/surface.rs
+index 97d3c33..f60254e 100644
+--- a/src/surface.rs
++++ b/src/surface.rs
+@@ -20,0 +21,5 @@ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
++    SurfaceValue::new("evidence-operations-collection:directory", "*"),
++    SurfaceValue::new("evidence-operations-collection:LOCK", "*"),
++    SurfaceValue::new("evidence-operations-collection:manifest.json", "*"),
++    SurfaceValue::new("evidence-operations-collection:.manifest-*", "*"),
++    SurfaceValue::new("evidence-operations-collection:generation-*.sqlite", "*"),
+@@ -22,0 +28 @@ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
++    SurfaceValue::new("evidence-operations:database-lock", "*"),
+diff --git a/tests/evidence_operations.rs b/tests/evidence_operations.rs
+index f098f18..ee373cf 100644
+--- a/tests/evidence_operations.rs
++++ b/tests/evidence_operations.rs
+@@ -941,0 +942,26 @@ fn synchronized_streams_retain_terminal_summaries() {
++
++#[test]
++fn journal_session_exhaustion_is_visible_without_refusing_reporter_start() {
++    let f = Fixture::new();
++    let conn = rusqlite::Connection::open(&f.journal).unwrap();
++    conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<1023) INSERT INTO sessions SELECT printf('%032x',i),0,0,1 FROM n").unwrap();
++    drop(conn);
++    let (report, guard) = ops::reporter(Journal::open(&f.journal).unwrap())
++        .expect("health session capacity cannot refuse capture startup");
++    report(&f.health());
++    drop(report);
++    guard.join();
++    let mut journal = Journal::open(&f.journal).unwrap();
++    let value = serde_json::to_value(journal.snapshot().unwrap()).unwrap();
++    assert_eq!(
++        value["journal"]["exhausted_observed"], true,
++        "session exhaustion must be retained and visible after restart"
++    );
++    assert_eq!(value["journal"]["exhaustion_reason"], "session_limit");
++    assert_eq!(value["journal"]["sessions_used"], 1024);
++    assert_eq!(value["journal"]["loss_count_certainty"], "lower_bound");
++    assert!(
++        journal.record(&f.health()).is_err(),
++        "a heartbeat cannot unseal exhausted history"
++    );
++}
+diff --git a/tests/evidence_operations_collection.rs b/tests/evidence_operations_collection.rs
+new file mode 100644
+index 0000000..0d99471
+--- /dev/null
++++ b/tests/evidence_operations_collection.rs
+@@ -0,0 +1,306 @@
++#![cfg(feature = "v2-crypto")]
++use kan::{
++    evidence_capture::{Health, Observer, Outcome},
++    evidence_operations::{Journal, WorkerStatus},
++    evidence_operations_collection as collection,
++    evidence_spool::Spool,
++    sign::Identity,
++};
++use sha2::{Digest, Sha256};
++use std::path::{Path, PathBuf};
++struct Fixture {
++    _dir: tempfile::TempDir,
++    source: PathBuf,
++    root: PathBuf,
++    spool: PathBuf,
++}
++fn digest(path: &Path) -> Vec<u8> {
++    Sha256::digest(std::fs::read(path).unwrap()).to_vec()
++}
++fn health(n: u64) -> Health {
++    Health {
++        attempt: format!("{:064x}", 1),
++        observer: Observer::Collector,
++        observed: n,
++        locally_queued: n - 1,
++        unconfirmed: 1,
++        recording_gap: true,
++        remote_acknowledged: false,
++        status: Some(200),
++        outcome: Some(Outcome::Completed),
++    }
++}
++impl Fixture {
++    fn new() -> Self {
++        let dir = tempfile::tempdir().unwrap();
++        let source = dir.path().join("health");
++        let root = dir.path().join("collection");
++        let spool = dir.path().join("queue");
++        let id = Identity::generate();
++        Spool::create(
++            &spool,
++            &format!("{:064x}", 3),
++            id.did().as_str(),
++            id.did().as_str(),
++            1 << 20,
++        )
++        .unwrap();
++        let mut j = Journal::create(&source, &spool).unwrap();
++        j.record(&health(1)).unwrap();
++        j.save_worker(&WorkerStatus {
++            sampled_at: 1,
++            state: "idle".into(),
++            queue: Some(Spool::open(&spool).unwrap().status().unwrap()),
++            nonempty_since: None,
++            last_ack_at: None,
++            last_ack_position: None,
++            consecutive_failures: 0,
++            retry_seconds: 0,
++            telemetry_failures: 7,
++        })
++        .unwrap();
++        Self {
++            _dir: dir,
++            source,
++            root,
++            spool,
++        }
++    }
++    fn path(&self, id: &str) -> PathBuf {
++        self.root.join(format!("generation-{id}.sqlite"))
++    }
++}
++#[test]
++fn adoption_rotation_and_history_preserve_bytes_scope_and_worker_history() {
++    let f = Fixture::new();
++    let source = digest(&f.source);
++    collection::adopt(&f.source, &f.root).unwrap();
++    assert_eq!(digest(&f.source), source);
++    let first = collection::generations(&f.root, 0, 1).unwrap();
++    assert_eq!(first.next, Some(1));
++    let old = &first.generations[0];
++    let sealed = digest(&f.path(&old.id));
++    let h = collection::history(&f.root, &old.id).unwrap();
++    assert_eq!(h.observed, 1);
++    assert!(h.journal.scope.contains("not a collection total"));
++    assert_eq!(digest(&f.path(&old.id)), sealed);
++    let mut active = Journal::open(&f.root).unwrap();
++    active.check_binding(&f.spool, None).unwrap();
++    let snapshot = active.snapshot().unwrap();
++    assert_eq!(snapshot.observed, 0);
++    assert_eq!(snapshot.worker.unwrap().telemetry_failures, 7);
++    assert_eq!(snapshot.journal.reserve_bytes, 262144);
++    active.record(&health(2)).unwrap();
++    assert!(
++        collection::rotate(&f.root).is_err(),
++        "active writer holds shared lock"
++    );
++    assert!(
++        Journal::open(&f.path(&first.active)).is_err(),
++        "direct generation access bypasses collection locking"
++    );
++    drop(active);
++    collection::rotate(&f.root).unwrap();
++    let all = collection::generations(&f.root, 0, 100).unwrap();
++    assert_eq!(all.generations.len(), 3);
++    assert_eq!(
++        collection::history(&f.root, &first.active)
++            .unwrap()
++            .observed,
++        2
++    );
++    assert_eq!(
++        Journal::open(&f.root).unwrap().snapshot().unwrap().observed,
++        0
++    );
++    assert_eq!(digest(&f.source), source);
++    assert_eq!(digest(&f.path(&old.id)), sealed);
++    assert!(
++        collection::history(&f.root, &all.active).is_err(),
++        "active generation is not sealed history"
++    );
++    assert!(all.totals.contains("not additive"));
++    assert!(
++        collection::adopt(&f.source, &f.root).is_err(),
++        "cannot reuse destination"
++    );
++}
++#[test]
++fn source_writer_refuses_adoption_before_creating_destination() {
++    let f = Fixture::new();
++    let held = Journal::open(&f.source).unwrap();
++    assert!(collection::adopt(&f.source, &f.root).is_err());
++    assert!(!f.root.exists());
++    drop(held);
++    collection::adopt(&f.source, &f.root).unwrap();
++}
++#[test]
++fn interrupted_rotation_only_selects_published_generation() {
++    use collection::Boundary::*;
++    for boundary in [
++        StagedGeneration,
++        SealedHistory,
++        StagedManifest,
++        PublishedManifest,
++        DirectorySynced,
++    ] {
++        let f = Fixture::new();
++        collection::adopt(&f.source, &f.root).unwrap();
++        let before = collection::generations(&f.root, 0, 100).unwrap();
++        Journal::open(&f.root).unwrap().record(&health(2)).unwrap();
++        let old = digest(&f.path(&before.active));
++        assert!(collection::rotate_with_hook(&f.root, |b| if b == boundary {
++            Err("synthetic interruption".into())
++        } else {
++            Ok(())
++        })
++        .is_err());
++        let after = collection::generations(&f.root, 0, 100).unwrap();
++        let published = matches!(boundary, PublishedManifest | DirectorySynced);
++        assert_eq!(after.active != before.active, published, "{boundary:?}");
++        assert_eq!(
++            digest(&f.path(&before.active)),
++            old,
++            "sealed source bytes changed"
++        );
++        let live = Journal::open(&f.root).unwrap().snapshot().unwrap();
++        assert_eq!(live.observed, if published { 0 } else { 2 });
++        if published {
++            assert_eq!(
++                collection::history(&f.root, &before.active)
++                    .unwrap()
++                    .observed,
++                2
++            );
++        }
++        collection::rotate(&f.root).unwrap(); // old staged files remain unselected
++        assert_eq!(
++            collection::generations(&f.root, 0, 100)
++                .unwrap()
++                .generations
++                .len(),
++            if published { 4 } else { 3 }
++        );
++    }
++}
++#[test]
++fn interrupted_adoption_keeps_original_and_never_guesses_a_manifest() {
++    use collection::Boundary::*;
++    for boundary in [
++        StagedGeneration,
++        SealedHistory,
++        StagedManifest,
++        PublishedManifest,
++        DirectorySynced,
++    ] {
++        let f = Fixture::new();
++        let original = digest(&f.source);
++        assert!(
++            collection::adopt_with_hook(&f.source, &f.root, |b| if b == boundary {
++                Err("synthetic interruption".into())
++            } else {
++                Ok(())
++            })
++            .is_err()
++        );
++        assert_eq!(digest(&f.source), original);
++        assert_eq!(
++            Journal::open(&f.root).is_ok(),
++            matches!(boundary, PublishedManifest | DirectorySynced)
++        );
++    }
++}
++#[test]
++fn sealed_corruption_blocks_history_and_rotation_without_poisoning_active_poll() {
++    let f = Fixture::new();
++    collection::adopt(&f.source, &f.root).unwrap();
++    let before = collection::generations(&f.root, 0, 100).unwrap();
++    let path = f.path(&before.generations[0].id);
++    let mut damaged = std::fs::read(&path).unwrap();
++    damaged[200] ^= 1;
++    std::fs::write(&path, damaged).unwrap();
++    assert!(collection::history(&f.root, &before.generations[0].id).is_err());
++    assert!(collection::rotate(&f.root).is_err());
++    assert!(Journal::open(&f.root)
++        .unwrap()
++        .snapshot()
++        .unwrap()
++        .journal
++        .scope
++        .contains("sealed history excluded"));
++    assert_eq!(
++        collection::generations(&f.root, 0, 100).unwrap().active,
++        before.active
++    );
++}
++#[test]
++fn malformed_membership_and_bounds_are_rejected_without_repair() {
++    let f = Fixture::new();
++    collection::adopt(&f.source, &f.root).unwrap();
++    let path = f.root.join("manifest.json");
++    let original = std::fs::read(&path).unwrap();
++    let value: serde_json::Value = serde_json::from_slice(&original).unwrap();
++    for mutation in 0..4 {
++        let mut bad = value.clone();
++        match mutation {
++            0 => bad["version"] = 99.into(),
++            1 => bad["active"] = "../../outside".into(),
++            2 => bad["generations"][1]["id"] = bad["generations"][0]["id"].clone(),
++            _ => bad["binding"]["scope"] = "wrong-scope".into(),
++        };
++        let bytes = serde_json::to_vec(&bad).unwrap();
++        std::fs::write(&path, &bytes).unwrap();
++        assert!(Journal::open(&f.root).is_err());
++        assert_eq!(std::fs::read(&path).unwrap(), bytes);
++    }
++    std::fs::write(&path, original).unwrap();
++    assert!(collection::generations(&f.root, 0, 101).is_err());
++    assert!(collection::generations(&f.root, 9999, 1).is_err());
++}
++#[cfg(unix)]
++#[test]
++fn symlinks_public_paths_and_hardlinked_generations_are_refused() {
++    use std::os::unix::fs::{symlink, PermissionsExt};
++    let f = Fixture::new();
++    collection::adopt(&f.source, &f.root).unwrap();
++    let alias = f._dir.path().join("alias");
++    symlink(&f.root, &alias).unwrap();
++    assert!(Journal::open(&alias).is_err());
++    let active = collection::generations(&f.root, 0, 100).unwrap().active;
++    std::fs::hard_link(f.path(&active), f._dir.path().join("hardlink")).unwrap();
++    assert!(Journal::open(&f.root).is_err());
++    std::fs::remove_file(f._dir.path().join("hardlink")).unwrap();
++    std::fs::set_permissions(&f.root, std::fs::Permissions::from_mode(0o755)).unwrap();
++    assert!(Journal::open(&f.root).is_err());
++    std::fs::set_permissions(&f.root, std::fs::Permissions::from_mode(0o700)).unwrap();
++    let manifest = f.root.join("manifest.json");
++    std::fs::remove_file(&manifest).unwrap();
++    symlink(f._dir.path().join("missing"), &manifest).unwrap();
++    assert!(Journal::open(&f.root).is_err());
++    assert!(collection::rotate(&f.root).is_err());
++    assert!(Journal::open(&f.path(&active)).is_err());
++}
++
++#[cfg(unix)]
++#[test]
++fn source_aliases_and_malformed_coordination_files_cannot_bypass_lifetime_locks() {
++    use std::os::unix::fs::{symlink, PermissionsExt};
++    let f = Fixture::new();
++    let alias = f._dir.path().join("hardlinked-source");
++    std::fs::hard_link(&f.source, &alias).unwrap();
++    assert!(Journal::open(&alias).is_err());
++    assert!(collection::adopt(&f.source, &f.root).is_err());
++    assert!(!f.root.exists());
++    std::fs::remove_file(&alias).unwrap();
++    let lock = f._dir.path().join("health.lock");
++    let before = digest(&f.source);
++    std::fs::write(&lock, b"not a coordination lock").unwrap();
++    assert!(Journal::open(&f.source).is_err());
++    std::fs::write(&lock, b"").unwrap();
++    std::fs::set_permissions(&lock, std::fs::Permissions::from_mode(0o644)).unwrap();
++    assert!(Journal::open(&f.source).is_err());
++    std::fs::remove_file(&lock).unwrap();
++    symlink(f._dir.path().join("missing"), &lock).unwrap();
++    assert!(Journal::open(&f.source).is_err());
++    assert_eq!(digest(&f.source), before);
++}
+diff --git a/tests/fixtures/read-write-surface.tsv b/tests/fixtures/read-write-surface.tsv
+index cd8a605..ba337c9 100644
+--- a/tests/fixtures/read-write-surface.tsv
++++ b/tests/fixtures/read-write-surface.tsv
+@@ -127,2 +127,2 @@ implemented	derived	evidence-store	system	evidence-restore:report.json	*	src/evi
+-implemented	authoritative-kan	evidence-store	system	evidence-operations:database	*	src/evidence_operations.rs	crate::evidence_operations::Journal	validate:operations-observations	retain-observations-until-owner-erasure	.design/kan-v2-operations.md#architecture
+-implemented	authoritative-kan	evidence-store	system	evidence-operations:database-journal	*	src/evidence_operations.rs	crate::evidence_operations::Journal	validate:operations-observations	retain-observations-until-owner-erasure	.design/kan-v2-operations.md#architecture
++implemented	authoritative-kan	evidence-store	system	evidence-operations:database	*	src/evidence_operations.rs	crate::evidence_operations::Journal	validate:operations-observations-v1-v2	retain-observations-until-owner-erasure	.design/kan-v2-operations.md#architecture
++implemented	authoritative-kan	evidence-store	system	evidence-operations:database-journal	*	src/evidence_operations.rs	crate::evidence_operations::Journal	validate:operations-observations-v1-v2	retain-observations-until-owner-erasure	.design/kan-v2-operations.md#architecture
+@@ -129,0 +130,6 @@ implemented	authoritative-other	system-config	system	browser:localStorage	kan.th
++implemented	authoritative-kan	evidence-store	system	evidence-operations-collection:directory	*	src/evidence_operations_collection.rs	crate::evidence_operations_collection	validate:operations-generation-membership	retain-until-owner-erasure	.design/kan-v2-journal-generations.md#architecture
++implemented	authoritative-kan	evidence-store	system	evidence-operations-collection:LOCK	*	src/evidence_operations_collection.rs	crate::evidence_operations_collection	validate:operations-generation-membership	retain-until-owner-erasure	.design/kan-v2-journal-generations.md#architecture
++implemented	authoritative-kan	evidence-store	system	evidence-operations-collection:manifest.json	*	src/evidence_operations_collection.rs	crate::evidence_operations_collection	validate:operations-generation-membership	retain-until-owner-erasure	.design/kan-v2-journal-generations.md#architecture
++implemented	authoritative-kan	evidence-store	system	evidence-operations-collection:.manifest-*	*	src/evidence_operations_collection.rs	crate::evidence_operations_collection	validate:operations-generation-membership	retain-until-owner-erasure	.design/kan-v2-journal-generations.md#architecture
++implemented	authoritative-kan	evidence-store	system	evidence-operations-collection:generation-*.sqlite	*	src/evidence_operations_collection.rs	crate::evidence_operations_collection	validate:operations-generation-membership	retain-until-owner-erasure	.design/kan-v2-journal-generations.md#architecture
++implemented	authoritative-kan	evidence-store	system	evidence-operations:database-lock	*	src/evidence_operations.rs	crate::evidence_operations::Journal	validate:operations-lifetime-lock	retain-until-owner-erasure	.design/kan-v2-journal-generations.md#architecture
+diff --git a/tests/operations_ui.test.cjs b/tests/operations_ui.test.cjs
+index f418f7a..846ff0e 100644
+--- a/tests/operations_ui.test.cjs
++++ b/tests/operations_ui.test.cjs
+@@ -3 +3 @@ const {test}=require('node:test');const assert=require('node:assert/strict');con
+-function ui(){const nodes=new Map();class Element{constructor(){this.value='';this.hidden=false;this.events={};this.children=[];this.checked=false;}addEventListener(k,f){this.events[k]=f;}replaceChildren(){this.children=[];}append(x){this.children.push(x);}}
++function ui(){const nodes=new Map();class Element{constructor(){this.value='';this.hidden=false;this.events={};this.children=[];this.checked=false;this.open=false;this.isConnected=true;}setAttribute(k,v){this[k]=v;}showModal(){this.open=true;}close(){this.open=false;}focus(){this.focused=true;}select(){this.selected=true;}addEventListener(k,f){this.events[k]=f;}replaceChildren(){this.children=[];}append(x){this.children.push(x);}}
+@@ -6 +6 @@ function ui(){const nodes=new Map();class Element{constructor(){this.value='';th
+-const snapshot=()=>({version:1,read_at:Date.now()/1000,worker:{sampled_at:Date.now()/1000,state:'idle',queue:{next:9,pending:2,pending_bytes:64,budget:128}},attempts:1,unconfirmed:1,telemetry_dropped:0,unclosed_sessions:0,reporters:[],recent:[{updated_at:1,capture:{attempt:'<img src=x onerror=alert(1)>',observer:'collector',observed:2,locally_queued:1,unconfirmed:1,recording_gap:true,outcome:'completed'}}]});
++const snapshot=()=>({version:2,journal:{schema:2,pages_used:80,pages_limit:8192,free_pages:0,page_size:4096,attempts_used:1,attempts_limit:100000,sessions_used:1,sessions_limit:1024,reserve_bytes:262144,exhausted_observed:false,last_success_at:Date.now()/1000,scope:"selected journal only"},read_at:Date.now()/1000,worker:{sampled_at:Date.now()/1000,state:'idle',queue:{next:9,pending:2,pending_bytes:64,budget:128}},attempts:1,unconfirmed:1,telemetry_dropped:0,unclosed_sessions:0,reporters:[],recent:[{updated_at:1,capture:{attempt:'<img src=x onerror=alert(1)>',observer:'collector',observed:2,locally_queued:1,unconfirmed:1,recording_gap:true,outcome:'completed'}}]});
+@@ -17,0 +18,6 @@ test('unsampled sessions and summary loss units are explicit',async()=>{const u=
++
++test('journal capacity is independent, sticky and never an exact coverage claim',async()=>{const u=ui();u.login();const s=snapshot();s.reporters=[{clean:false,updated_at:Date.now()/1000}];s.unclosed_sessions=1;s.journal.exhausted_observed=true;s.journal.exhaustion_reason='sqlite_full';s.journal.reserve_bytes=0;await u.respond(s);assert.match(u.node('notice').textContent,/exhaustion was recorded/);assert.equal(u.node('journal-state').textContent,'Exhaustion recorded');assert.match(u.node('journal-scope').textContent,/lower bounds/);assert.equal(u.node('pending').textContent,'2');s.journal.exhausted_observed=false;s.journal.pages_used=8000;u.node('refresh').events.click();await u.respond(s);assert.match(u.node('notice').textContent,/near its page ceiling/);s.journal.schema=1;s.journal.last_success_at=null;u.node('refresh').events.click();await u.respond(s);assert.match(u.node('journal-state').textContent,/Legacy.*unknown/);assert.match(u.node('notice').textContent,/no recent successful observation/);});
++test('unsupported status version retains visibly disconnected values',async()=>{const u=ui();u.login();await u.respond({...snapshot(),version:1});assert.match(u.node('notice').textContent,/Unsupported status version/);assert.match(u.node('updated').textContent,/Disconnected/);});
++
++test('search is sample-bounded and inspection preserves exact untrusted identifiers',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('search').value='collector';u.node('search').events.input();assert.equal(u.node('rows').children.length,1);assert.match(u.node('sample-count').textContent,/does not scan older history/);const button=u.node('rows').children[0].children[0].children[0];button.events.click();assert.equal(u.node('inspector').open,true);assert.equal(u.node('attempt-id').value,'<img src=x onerror=alert(1)>');assert.equal(u.node('inspect-close').focused,true);await u.node('copy-id').events.click();assert.equal(u.node('attempt-id').selected,true);u.node('inspector').events.cancel({preventDefault(){}});assert.equal(u.node('inspector').open,false);assert.equal(button.focused,true);u.node('search').value='absent';u.node('search').events.input();assert.equal(u.node('rows').children.length,0);assert.match(u.node('empty').textContent,/latest sample/);});
++test('locking clears rendered private metadata and closes the inspector',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('rows').children[0].children[0].children[0].events.click();u.node('lock').events.click();assert.equal(u.node('inspector').open,false);assert.equal(u.node('inspect-fields').children.length,0);assert.equal(u.node('attempt-id').value,'');assert.equal(u.node('journal-scope').textContent,'');assert.equal(u.node('coverage-history').textContent,'');assert.equal(u.node('pending').textContent,'');assert.equal(u.node('token').focused,true);});
+diff --git a/tests/surface_conformance.rs b/tests/surface_conformance.rs
+index edd1972..20e0877 100644
+--- a/tests/surface_conformance.rs
++++ b/tests/surface_conformance.rs
+@@ -16,0 +17,12 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
++    (
++        "operations-observations-v1-v2",
++        "tests/evidence_operations.rs",
++    ),
++    (
++        "operations-generation-membership",
++        "tests/evidence_operations_collection.rs",
++    ),
++    (
++        "operations-lifetime-lock",
++        "tests/evidence_operations_collection.rs",
++    ),
+@@ -66,0 +79,20 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
++    (
++        "src/evidence_operations_collection.rs",
++        "MANIFEST",
++        "collection manifest",
++    ),
++    (
++        "src/evidence_operations_collection.rs",
++        "LOCK",
++        "collection lock",
++    ),
++    (
++        "src/evidence_operations_collection.rs",
++        "format!(\"generation-{id}.sqlite\")",
++        "collection generation",
++    ),
++    (
++        "src/evidence_operations_collection.rs",
++        "format!(\".manifest-{}\", id())",
++        "collection staging manifest",
++    ),
+@@ -385,0 +418 @@ const PERSISTENCE_MODULES: &[&str] = &[
++    "src/evidence_operations_collection.rs",
+@@ -402,0 +436,18 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
++    (
++        "src/evidence_operations_collection.rs",
++        "create_dir_owner_only",
++        "EvidenceOperationsCollection",
++        1,
++    ),
++    (
++        "src/evidence_operations_collection.rs",
++        "write_new_owner_only",
++        "EvidenceOperationsCollection",
++        3,
++    ),
++    (
++        "src/evidence_operations_collection.rs",
++        "rename",
++        "EvidenceOperationsCollection",
++        1,
++    ),
+@@ -425 +476 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+-        1,
++        2,
+@@ -1182 +1233 @@ fn every_persistence_facade_call_is_independently_inventoried() {
+-                "ef682997bd2b789be63f0f75d49e45699941af8492431a0a3936e46067c487a3",
++                "17136afe4612d3a6b906b8a3afb9290826e8fc15643a072836c865e198f3d7a3",
+diff --git a/web/operations/app.js b/web/operations/app.js
+index a8620b8..7e2b6e0 100644
+--- a/web/operations/app.js
++++ b/web/operations/app.js
+@@ -2 +2 @@
+-let token='', snapshot=null, busy=false, generation=0;
++let token='', snapshot=null, busy=false, generation=0, inspectorTrigger=null, inspectorAttempt=null, attemptButtons=new Map();
+@@ -7 +7 @@ const bytes=n=>n>=1048576?(n/1048576).toFixed(1)+' MiB':n>=1024?(n/1024).toFixed
+-function notice(text,kind=''){ $('notice').textContent=text;$('notice').className='notice '+kind; }
++function notice(text,kind=''){if($('notice').textContent!==text)$('notice').textContent=text;const name='notice '+kind;if($('notice').className!==name)$('notice').className=name;}
+@@ -8,0 +9,2 @@ function rows(){
++  const focused=document.activeElement?.getAttribute('data-attempt');
++  attemptButtons=new Map();
+@@ -10 +12,3 @@ function rows(){
+-  const list=(snapshot?.recent||[]).filter(x=>!$('gaps-only').checked||x.capture.recording_gap);
++  const query=$('search').value.trim().toLowerCase();
++  const list=(snapshot?.recent||[]).filter(x=>(!$('gaps-only').checked||x.capture.recording_gap)&&[x.capture.attempt,x.capture.observer,x.capture.outcome||''].some(v=>v.toLowerCase().includes(query)));
++  $('sample-count').textContent=list.length+' shown / '+(snapshot?.recent||[]).length+' in the latest sample. Search does not scan older history.';
+@@ -13 +17 @@ function rows(){
+-      const td=document.createElement('td');td.textContent=value;if(i===0)td.title=h.attempt;if(i===4&&h.unconfirmed)td.className='gap';tr.append(td);
++      const td=document.createElement('td');if(i===0){const button=document.createElement('button');button.className='attempt-link';button.textContent=value;button.title=h.attempt;button.setAttribute('aria-label','Inspect attempt '+h.attempt);button.setAttribute('data-attempt',h.attempt);attemptButtons.set(h.attempt,button);button.addEventListener('click',()=>inspect(item,button));td.title=h.attempt;td.append(button);}else td.textContent=value;if(i===4&&h.unconfirmed)td.className='gap';tr.append(td);
+@@ -16 +20,38 @@ function rows(){
+-  $('empty').hidden=list.length>0;$('empty').textContent=$('gaps-only').checked?'No recording gaps in these recent summaries.':'No capture attempts have been reported yet.';
++  if(focused){if(attemptButtons.has(focused))attemptButtons.get(focused).focus();else $('search').focus();}
++  $('empty').hidden=list.length>0;$('empty').textContent=query?'No matching attempts in the latest sample.':$('gaps-only').checked?'No recording gaps in these recent summaries.':'No capture attempts have been reported yet.';
++}
++function inspect(item,trigger){
++  inspectorTrigger=trigger;inspectorAttempt=item.capture.attempt;
++  const h=item.capture;
++  $('attempt-id').value=h.attempt;
++  $('inspect-fields').replaceChildren();
++  for(const [label,value] of [['Observer',h.observer],['Updated',time(item.updated_at)],['Capture observations',count(h.observed)],['Locally queued',count(h.locally_queued)],['Unconfirmed',count(h.unconfirmed)],['Recording gap',h.recording_gap?'Observed':'Not reported; completeness unknown'],['Remote acknowledgment',h.remote_acknowledged?'Observed':'Not observed'],['Provider status',h.status===null||h.status===undefined?'Not observed':String(h.status)],['Outcome',h.outcome||'No terminal report']]){
++    const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value;$('inspect-fields').append(dt);$('inspect-fields').append(dd);
++  }
++  $('copy-result').textContent='';
++  $('inspector').showModal();$('inspect-close').focus();
++}
++function closeInspector(){
++  if($('inspector').open)$('inspector').close();
++  $('attempt-id').value='';$('inspect-fields').replaceChildren();$('copy-result').textContent='';
++  const trigger=inspectorTrigger?.isConnected?inspectorTrigger:attemptButtons.get(inspectorAttempt);inspectorTrigger=null;inspectorAttempt=null;
++  if(trigger?.isConnected)trigger.focus();else if(snapshot)$('search').focus();
++}
++$('inspect-close').addEventListener('click',closeInspector);
++$('inspector').addEventListener('cancel',e=>{e.preventDefault();closeInspector();});
++$('copy-id').addEventListener('click',async()=>{
++  const current=generation,value=$('attempt-id').value;
++  try{await navigator.clipboard.writeText(value);if(current===generation&&$('inspector').open)$('copy-result').textContent='Identifier copied.';}
++  catch{if(current===generation&&$('inspector').open){$('attempt-id').focus();$('attempt-id').select();$('copy-result').textContent='Select and copy the identifier above.';}}
++});
++function journalState(j,now){
++  const fresh=Number.isFinite(j.last_success_at)&&j.last_success_at>0&&j.last_success_at<=now+5&&now-j.last_success_at<=5;
++  const used=j.pages_used-j.free_pages;
++  const near=used>=j.pages_limit*0.9;
++  $('journal-state').textContent=j.exhausted_observed===true?'Exhaustion recorded':j.schema===1?'Legacy · persistence unknown':near?'Near page limit':fresh?'Write observed':'Persistence unknown';
++  $('journal-capacity').value=Math.min(100,100*used/j.pages_limit);
++  $('journal-pages').textContent=bytes(j.pages_used*j.page_size)+' allocated / '+bytes(j.pages_limit*j.page_size)+' page ceiling · '+bytes(j.free_pages*j.page_size)+' reusable';
++  $('journal-limits').textContent=count(j.attempts_used)+' / '+count(j.attempts_limit)+' attempts · '+count(j.sessions_used)+' / '+(j.sessions_limit===null?'legacy unbounded':count(j.sessions_limit))+' reporter sessions · '+bytes(j.reserve_bytes)+' control reserve';
++  $('journal-persistence').textContent='Last successful persistence observation: '+time(j.last_success_at)+(j.exhaustion_reason?' · '+j.exhaustion_reason:'');
++  $('journal-scope').textContent='Scope: '+j.scope+'. Loss counts are lower bounds, not a count of missing raw messages.';
++  return {fresh,near,exhausted:j.exhausted_observed===true};
+@@ -18,0 +60 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
++  const storage=journalState(s.journal,now);
+@@ -39 +81,2 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
+-  if(!workerCurrent)notice('Worker status is missing or stale. These values do not establish current service health.','warning');
++  if(storage.exhausted)notice('Health journal exhaustion was recorded. Capture and delivery continue; journal history requires owner rotation.','warning');
++  else if(!workerCurrent)notice('Worker status is missing or stale. These values do not establish current service health.','warning');
+@@ -40,0 +84,2 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
++  else if(!storage.fresh)notice('Health persistence has no recent successful observation. Loss counts are lower bounds and coverage is unknown.','warning');
++  else if(storage.near)notice('Health journal is near its page ceiling. Prepare owner rotation; evidence queue capacity is separate.','warning');
+@@ -46 +91 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
+-async function refresh(){if(!token||busy)return;busy=true;const current=generation;const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),8000);try{const r=await fetch('/api/status',{headers:{Authorization:'Bearer '+token},cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal});if(!r.ok)throw new Error(r.status===401?'Token rejected. Lock and reconnect.':'Status unavailable. Retained values may be stale.');const s=await r.json();if(s.version!==1)throw new Error('Unsupported status version.');if(current===generation)render(s);}catch(e){if(current!==generation)return;notice(e.name==='AbortError'?'Status request timed out. Retained values may be stale.':e.message,'error');$('updated').textContent='Disconnected · last values retained';}finally{clearTimeout(timeout);busy=false;}}
++async function refresh(){if(!token||busy)return;busy=true;const current=generation;const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),8000);try{const r=await fetch('/api/status',{headers:{Authorization:'Bearer '+token},cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal});if(!r.ok)throw new Error(r.status===401?'Token rejected. Lock and reconnect.':'Status unavailable. Retained values may be stale.');const s=await r.json();if(s.version!==2||!s.journal)throw new Error('Unsupported status version.');if(current===generation)render(s);}catch(e){if(current!==generation)return;notice(e.name==='AbortError'?'Status request timed out. Retained values may be stale.':e.message,'error');$('updated').textContent='Disconnected · last values retained';}finally{clearTimeout(timeout);busy=false;}}
+@@ -48,2 +93,2 @@ $('connect').addEventListener('submit',e=>{e.preventDefault();generation++;token
+-$('refresh').addEventListener('click',refresh);$('gaps-only').addEventListener('change',rows);
+-$('lock').addEventListener('click',()=>{generation++;token='';snapshot=null;$('rows').replaceChildren();$('data').hidden=true;$('login').hidden=false;$('lock').hidden=true;$('refresh').disabled=true;$('updated').textContent='Locked';notice('Locked. Enter your token to reconnect.');});
++$('refresh').addEventListener('click',refresh);$('gaps-only').addEventListener('change',rows);$('search').addEventListener('input',rows);
++$('lock').addEventListener('click',()=>{generation++;token='';snapshot=null;attemptButtons.clear();closeInspector();$('search').value='';$('gaps-only').checked=false;$('rows').replaceChildren();for(const id of ['pending','bytes','acked','acktime','gaps','attempts','telemetry','worker','retry','capacity-label','age','journal-state','journal-pages','journal-limits','journal-persistence','journal-scope','coverage-history','sample-count'])$(id).textContent='';$('capacity').value=0;$('journal-capacity').value=0;$('data').hidden=true;$('login').hidden=false;$('lock').hidden=true;$('refresh').disabled=true;$('updated').textContent='Locked';notice('Locked. Enter your token to reconnect.');$('token').focus();});
+diff --git a/web/operations/index.html b/web/operations/index.html
+index b5a83be..ccf2952 100644
+--- a/web/operations/index.html
++++ b/web/operations/index.html
+@@ -8 +8,2 @@
+-<section class="panel delivery"><div class="section-head"><h2>Archive delivery</h2><span id="worker" class="badge">Unknown</span></div><div class="pipeline"><div><span class="step">01</span><h3>Capture</h3><p>Encrypted into the local queue</p></div><span class="arrow">→</span><div><span class="step">02</span><h3>Delivery</h3><p id="retry">Waiting for worker status</p></div><span class="arrow">→</span><div><span class="step">03</span><h3>Archive</h3><p>Released locally after a verified reply</p></div></div><div class="capacity"><div class="section-head"><span>Pending queue budget</span><span id="capacity-label">—</span></div><progress id="capacity" max="100" value="0"></progress><p id="age">No backlog age observation.</p></div></section>
++<section class="panel delivery"><div class="section-head"><h2>Archive delivery</h2><span id="worker" class="badge">Unknown</span></div><div class="pipeline"><div><span class="step">01</span><h3>Capture</h3><p>Encrypted into the local queue</p></div><span class="arrow">→</span><div><span class="step">02</span><h3>Delivery</h3><p id="retry">Waiting for worker status</p></div><span class="arrow">→</span><div><span class="step">03</span><h3>Archive</h3><p>Released locally after a verified reply</p></div></div><div class="capacity"><div class="section-head"><span>Pending queue budget</span><span id="capacity-label">—</span></div><progress aria-label="Pending queue budget used" id="capacity" max="100" value="0"></progress><p id="age">No backlog age observation.</p></div></section>
++<section class="panel journal-storage" aria-labelledby="journal-title"><div class="section-head"><h2 id="journal-title">Health journal capacity</h2><span id="journal-state" class="badge">Unknown</span></div><progress aria-label="Health journal page capacity used" id="journal-capacity" max="100" value="0"></progress><p id="journal-pages"></p><p id="journal-limits"></p><p id="journal-persistence"></p><p id="journal-scope"></p><p>Health storage is separate from the encrypted queue. Loss counts are lower bounds; whole-device failure can prevent recording them. Owner rotation preserves older generations and requires stopped writers.</p></section>
+@@ -10,2 +11,2 @@
+-<section class="panel records"><div class="section-head"><div><h2>Recent capture attempts</h2><p>Latest 100 retained summaries · each observer reports its own evidence</p></div><label class="filter"><input type="checkbox" id="gaps-only"> Gaps only</label></div><div class="table-wrap"><table><thead><tr><th>Attempt</th><th>Observer</th><th>Observed</th><th>Queued</th><th>Unconfirmed</th><th>Outcome</th><th>Updated</th></tr></thead><tbody id="rows"></tbody></table></div><p id="empty" class="empty" hidden>No capture attempts have been reported yet.</p></section>
+-<footer>These are operational observations, not a completeness certificate. Missing reports, process exits, and bypass traffic may leave unknown gaps. This view contains no message content.</footer></div></main></div></body></html>
++<section class="panel records"><div class="section-head"><div><h2>Recent capture attempts</h2><p>Latest 100 retained summaries · each observer reports its own evidence</p></div><div class="filters"><label for="search">Search recent attempts<input id="search" type="search" placeholder="Identifier, observer, outcome" autocomplete="off" maxlength="256"></label><label class="filter"><input type="checkbox" id="gaps-only"> Gaps only</label></div></div><p id="sample-count"></p><div class="table-wrap" tabindex="0" role="region" aria-label="Recent attempt summaries"><table><thead><tr><th>Attempt</th><th>Observer</th><th>Observed</th><th>Queued</th><th>Unconfirmed</th><th>Outcome</th><th>Updated</th></tr></thead><tbody id="rows"></tbody></table></div><p id="empty" class="empty" hidden>No capture attempts have been reported yet.</p></section>
++<footer>These are operational observations, not a completeness certificate. Missing reports, process exits, and bypass traffic may leave unknown gaps. This view contains no message content.</footer></div></main></div><dialog id="inspector" aria-labelledby="inspect-title"><div class="section-head"><h2 id="inspect-title">Capture attempt</h2><button id="inspect-close" aria-label="Close attempt inspector">Close</button></div><p>Operational evidence from the selected observer. Counts are cumulative observations, not raw message contents or a completeness certificate.</p><label for="attempt-id">Full attempt identifier</label><input id="attempt-id" readonly spellcheck="false"><button id="copy-id">Copy identifier</button><p id="copy-result" role="status"></p><dl id="inspect-fields"></dl><p>This inspector is a snapshot of the selected row. Close and reopen it to inspect a newer observation.</p></dialog></body></html>
+diff --git a/web/operations/style.css b/web/operations/style.css
+index 7123243..7402659 100644
+--- a/web/operations/style.css
++++ b/web/operations/style.css
+@@ -4,0 +5,4 @@ input{color:var(--ink)}.primary{background:#315cf5;border-color:#315cf5}.theme-c
++
++.journal-storage{padding:24px;margin-bottom:24px}.journal-storage p{font-size:12px;overflow-wrap:anywhere}@media(max-width:700px){.journal-storage{padding:18px}}
++
++.filters{display:flex;align-items:end;gap:16px;flex-wrap:wrap}.filters label{font-size:12px}.filters input[type=search]{display:block;width:240px;max-width:100%;padding:8px;border:1px solid var(--line);border-radius:5px;background:var(--soft);font:inherit}.attempt-link{font:inherit;color:var(--green);border:0;padding:4px 0;background:transparent}.table-wrap:focus-visible{outline:3px solid #7290ff;outline-offset:2px}#sample-count{font-size:12px;margin-top:16px}dialog{width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:24px}dialog::backdrop{background:#080e1b99}dialog p{font-size:12px;margin:14px 0}dialog label{font-size:12px}dialog input{display:block;width:100%;min-width:0;font:12px ui-monospace,monospace;background:var(--soft);border:1px solid var(--line);border-radius:5px;padding:10px;margin:6px 0 10px}dialog dl{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px}dialog dt{color:var(--muted)}dialog dd{margin:0;overflow-wrap:anywhere}@media(max-width:700px){.filters{width:100%}.filters input[type=search]{width:100%}.filters label:first-child{flex:1;min-width:170px}dialog{padding:18px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}

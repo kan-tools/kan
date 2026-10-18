@@ -939,3 +939,29 @@ fn synchronized_streams_retain_terminal_summaries() {
     );
     assert_eq!(s.unclosed_sessions, 0);
 }
+
+#[test]
+fn journal_session_exhaustion_is_visible_without_refusing_reporter_start() {
+    let f = Fixture::new();
+    let conn = rusqlite::Connection::open(&f.journal).unwrap();
+    conn.execute_batch("WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<1023) INSERT INTO sessions SELECT printf('%032x',i),0,0,1 FROM n").unwrap();
+    drop(conn);
+    let (report, guard) = ops::reporter(Journal::open(&f.journal).unwrap())
+        .expect("health session capacity cannot refuse capture startup");
+    report(&f.health());
+    drop(report);
+    guard.join();
+    let mut journal = Journal::open(&f.journal).unwrap();
+    let value = serde_json::to_value(journal.snapshot().unwrap()).unwrap();
+    assert_eq!(
+        value["journal"]["exhausted_observed"], true,
+        "session exhaustion must be retained and visible after restart"
+    );
+    assert_eq!(value["journal"]["exhaustion_reason"], "session_limit");
+    assert_eq!(value["journal"]["sessions_used"], 1024);
+    assert_eq!(value["journal"]["loss_count_certainty"], "lower_bound");
+    assert!(
+        journal.record(&f.health()).is_err(),
+        "a heartbeat cannot unseal exhausted history"
+    );
+}

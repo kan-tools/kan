@@ -136,3 +136,17 @@ which is its narrow browser-side persistence owner (not a Rust filesystem
 capability). Failed browser storage falls back to tab memory. Tokens, message
 content, keys and search results never use this surface. The same controller
 serves the production dashboard and the generated offline design artifact.
+
+## Build checkpoint — operations generations and next reader slice
+
+The shared appearance controller and worker-history correction are in draft #281;
+bounded coalescing is in #282; sharded admission/reversion tooling is in #283.
+Capacity, preserved-history collection commands, recent-list search and metadata
+inspection are the next unreviewed operations slice. They still do not provide
+raw message browsing. The collection-wide deduplicated overview remains required.
+
+`.design/kan-v2-reader-library.md` makes the next real Library API boundary concrete:
+signed snapshot inventory, authorized bounded source/provenance inspection, and
+no persistent plaintext index. It is a build plan, not a capability claim. The
+existing reader-placement question remains open; portable code and synthetic
+fixtures do not select production key placement.
