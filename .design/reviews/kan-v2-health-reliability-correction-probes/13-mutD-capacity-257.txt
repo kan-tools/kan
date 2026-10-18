@@ -1,0 +1,37 @@
+file=src/evidence_operations.rs
+sha_before=1c8ce1223529072a48c856e37add7477e9ee0f02e1d83215a0f14f9aa54c896b
+OLD='        if current >= 256 {'
+NEW='        if current >= 257 {'
+sha_mutated=415fc23145fc10a719a481acce9670891d529e3ba772a4f78ff8eb0fc8a7a001
+
+$ cargo test --offline --features v2-crypto --lib evidence_operations::
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reviews/opus-reliability-correction)
+    Finished `test` profile [unoptimized] target(s) in 5.90s
+     Running unittests src/lib.rs (target/debug/deps/kan-ef78140debb95ee4)
+
+running 6 tests
+test evidence_operations::tests::admission_retries_transient_contention_but_stops_at_budget ... ok
+test evidence_operations::tests::contended_admission_is_bounded_and_counts_one_summary ... ok
+test evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded ... FAILED
+test evidence_operations::tests::worker_checkpoint_retry_is_idempotent_after_uncertain_commit ... ok
+test evidence_operations::tests::physical_full_keeps_prior_health_and_rejects_new_record ... ok
+test evidence_operations::tests::burst_keeps_final_cumulative_summary_and_terminal_gap ... ok
+
+failures:
+
+---- evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded stdout ----
+
+thread 'evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded' (8582484) panicked at src/evidence_operations.rs:908:9:
+assertion failed: !offer_pending(&buffer, &make(1001))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 58 filtered out; finished in 0.91s
+
+error: test failed, to rerun pass `--lib`
+[exit 101]
+
+sha_restored=1c8ce1223529072a48c856e37add7477e9ee0f02e1d83215a0f14f9aa54c896b match=True

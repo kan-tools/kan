@@ -1,0 +1,11 @@
+file=scripts/revert_v2.py
+sha_before=7528f04b5bf3269ee359fcc4d69a772beb221240d9ef2921324c7dd13d4daf0b
+OLD='            os.killpg(process.pid, signal.SIGKILL)'
+NEW='            process.kill()'
+sha_mutated=445696734a39a94d39dce92290c9d331236bee0784ae060a4099be9d33334132
+
+$ python3 -I /Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reviews/opus-reliability-correction/review-evidence/driver/guard.py 20 python3 -m unittest -v tests.test_revert_v2.Execution.test_timeout_stops_descendant_writes
+test_timeout_stops_descendant_writes (tests.test_revert_v2.Execution) ... [guard] HUNG: killed after 20.0s
+[exit 124]
+
+sha_restored=7528f04b5bf3269ee359fcc4d69a772beb221240d9ef2921324c7dd13d4daf0b match=True

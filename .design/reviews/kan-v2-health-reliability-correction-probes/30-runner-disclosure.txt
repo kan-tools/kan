@@ -1,0 +1,24 @@
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reviews/opus-reliability-correction/.local-state/reversion/cb2fb176b7c14414890ea677147f0b42
+note: untracked and therefore NOT reverted: ['review-context.txt', 'review-evidence/00-diff-sha-before.txt', 'review-evidence/00-status-before.txt', 'review-evidence/01-build.txt', 'review-evidence/02-ops-units.txt', 'review-evidence/03-ops-integration.txt', 'review-evidence/04-synchronized-current-x15.txt', 'review-evidence/10-mutA-admission-tries-1.txt', 'review-evidence/11-mutB-wouldblock-no-retry.txt', 'review-evidence/12-mutC-cas-budget-1.txt', 'review-evidence/13-mutD-capacity-257.txt', 'review-evidence/14-diag-admission-tries-1e6.txt', 'review-evidence/20-python-runner.txt', 'review-evidence/21-node.txt', 'review-evidence/22-node-all.txt', 'review-evidence/23-mutE-kill-leader-only.txt', 'review-evidence/30-runner-disclosure.txt', 'review-evidence/driver/guard.py', 'review-evidence/driver/mutate.py']
+What would be reverted (worktree):
+  reverting .design/kan-v2-operations-polish.md: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-health-reliability-2026-10-18.md: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-health-reliability-2026-10-18.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-health-reliability-correction-reversion/01-node.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-health-reliability-correction-reversion/02-node.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-health-reliability-correction-reversion/03-node.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-health-reliability-correction-reversion/production.patch: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-health-reliability-correction-reversion/result.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-health-reliability-mutations.txt: 1/1 hunk(s)
+  reverting scripts/revert_v2.py: 6/6 hunk(s)
+  reverting src/evidence_operations.rs: 5/6 hunk(s) (1 test-side hunk(s) kept in place)
+  skipped tests/operations_ui.test.cjs (test side; --include it to revert it)
+  skipped tests/test_revert_v2.py (test side; --include it to revert it)
+  reverting web/operations/app.js: 2/2 hunk(s)
+
+DEMONSTRATED — failed under revert: node::summary_loss_units
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=node::summary_loss_units outcome=DEMONSTRATED
+[guard] exit 0

@@ -1,0 +1,16 @@
+M  .design/kan-v2-operations-polish.md
+A  .design/reviews/kan-v2-health-reliability-2026-10-18.md
+A  .design/reviews/kan-v2-health-reliability-2026-10-18.txt
+A  .design/reviews/kan-v2-health-reliability-correction-reversion/01-node.txt
+A  .design/reviews/kan-v2-health-reliability-correction-reversion/02-node.txt
+A  .design/reviews/kan-v2-health-reliability-correction-reversion/03-node.txt
+A  .design/reviews/kan-v2-health-reliability-correction-reversion/production.patch
+A  .design/reviews/kan-v2-health-reliability-correction-reversion/result.txt
+A  .design/reviews/kan-v2-health-reliability-mutations.txt
+M  scripts/revert_v2.py
+M  src/evidence_operations.rs
+M  tests/operations_ui.test.cjs
+M  tests/test_revert_v2.py
+M  web/operations/app.js
+?? review-context.txt
+?? review-evidence/
