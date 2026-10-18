@@ -15,26 +15,27 @@ function rows(){
   }
   $('empty').hidden=list.length>0;$('empty').textContent=$('gaps-only').checked?'No recording gaps in these recent summaries.':'No capture attempts have been reported yet.';
 }
-function render(s){snapshot=s;const w=s.worker,q=w?.queue;const age=w?Math.max(0,Date.now()/1000-w.sampled_at):Infinity;
+function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1000;const age=w?Math.max(0,now-w.sampled_at):Infinity;const workerCurrent=!!w&&Number.isFinite(w.sampled_at)&&w.sampled_at<=now+5&&age<=45;
   $('data').hidden=false;$('login').hidden=true;$('lock').hidden=false;$('refresh').disabled=false;
   $('updated').textContent='Read '+new Date(s.read_at*1000).toLocaleTimeString();
   $('pending').textContent=q?count(q.pending):'—';$('bytes').textContent=q?bytes(q.pending_bytes)+' awaiting delivery':'No queue sample';
   $('acked').textContent=q?count(q.next-q.pending):'—';$('acktime').textContent='Last worker ack: '+time(w?.last_ack_at);
   $('gaps').textContent=count(s.unconfirmed);$('attempts').textContent=count(s.attempts);$('telemetry').textContent=count(s.telemetry_dropped)+' capture updates lost · '+count(w?.telemetry_failures)+' worker reports failed';
-  $('worker').textContent=!w?'No worker':age>45?'Stale · '+w.state:w.state;
+  $('worker').textContent=!w?'No worker':!workerCurrent?'Stale · '+w.state:w.state;
   $('retry').textContent=w?.state==='retrying'?'Retry delay: '+w.retry_seconds+'s · '+count(w.consecutive_failures)+' consecutive failures':w?.state==='idle'?'Queue empty at last sample':'Exact retained bytes, in order';
   $('capacity').value=q?Math.min(100,100*q.pending_bytes/q.budget):0;$('capacity-label').textContent=q?bytes(q.pending_bytes)+' / '+bytes(q.budget):'No queue sample';
   $('age').textContent=w?.nonempty_since?'Queue observed continuously nonempty since '+time(w.nonempty_since)+'. This is not oldest-event age.':'No continuous backlog currently observed.';
   const reporters=s.reporters||[];
   const unclosed=reporters.filter(r=>!r.clean);
-  const stale=unclosed.filter(r=>!Number.isFinite(r.updated_at)||Date.now()/1000-r.updated_at>5||r.updated_at>Date.now()/1000+5);
+  const stale=unclosed.filter(r=>!Number.isFinite(r.updated_at)||now-r.updated_at>5||r.updated_at>now+5);
   const unseen=Math.max(0,s.unclosed_sessions-unclosed.length);
   const history=[];
   if(s.unconfirmed)history.push(count(s.unconfirmed)+' unconfirmed capture observations');
   if(s.telemetry_dropped)history.push(count(s.telemetry_dropped)+' capture updates lost');
   if(w?.telemetry_failures)history.push(count(w.telemetry_failures)+' worker reports failed');
+  if(stale.length||unseen)history.push(count(stale.length+unseen)+' unclosed sessions without a current heartbeat');
   $('coverage-history').textContent=history.length?history.join(' · '):'No gaps reported in the retained observations. This does not establish complete capture.';
-  if(age>45||!Number.isFinite(w?.sampled_at)||w.sampled_at>Date.now()/1000+5)notice('Worker status is missing or stale. These values do not establish current service health.','warning');
+  if(!workerCurrent)notice('Worker status is missing or stale. These values do not establish current service health.','warning');
   else if(w.state==='retrying')notice('Archive delivery is retrying. Retained evidence remains queued.','warning');
   else if(stale.length||unseen)notice('A health reporter is stale or has no recent sampled heartbeat. Capture coverage is unknown.','warning');
   else if(!unclosed.length)notice('No active capture reporter is recorded. Capture coverage is unknown.','warning');
