@@ -1,0 +1,62 @@
+
+running 8 tests
+test source_aliases_and_malformed_coordination_files_cannot_bypass_lifetime_locks ... ok
+test source_writer_refuses_adoption_before_creating_destination ... ok
+test sealed_corruption_blocks_history_and_rotation_without_poisoning_active_poll ... ok
+test symlinks_public_paths_and_hardlinked_generations_are_refused ... FAILED
+test malformed_membership_and_bounds_are_rejected_without_repair ... ok
+test adoption_rotation_and_history_preserve_bytes_scope_and_worker_history ... FAILED
+test interrupted_adoption_keeps_original_and_never_guesses_a_manifest ... ok
+test interrupted_rotation_only_selects_published_generation ... ok
+
+failures:
+
+---- symlinks_public_paths_and_hardlinked_generations_are_refused stdout ----
+
+thread 'symlinks_public_paths_and_hardlinked_generations_are_refused' (8616233) panicked at tests/evidence_operations_collection.rs:281:5:
+assertion failed: Journal::open(&f.path(&active)).is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- adoption_rotation_and_history_preserve_bytes_scope_and_worker_history stdout ----
+
+thread 'adoption_rotation_and_history_preserve_bytes_scope_and_worker_history' (8616226) panicked at tests/evidence_operations_collection.rs:98:5:
+direct generation access bypasses collection locking
+
+
+failures:
+    adoption_rotation_and_history_preserve_bytes_scope_and_worker_history
+    symlinks_public_paths_and_hardlinked_generations_are_refused
+
+test result: FAILED. 6 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.67s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-journal-capacity/.local-state/reviews/opus-capacity)
+warning: unreachable statement
+   --> src/evidence_operations_collection.rs:123:5
+    |
+122 |   pub(crate) fn check_standalone(path: &Path) -> Result<()> { return Ok(());
+    |                                                               ------------- any code following this expression is unreachable
+123 | /     if path
+124 | |         .file_name()
+125 | |         .and_then(|s| s.to_str())
+126 | |         .is_some_and(|s| s.starts_with("generation-"))
+...   |
+131 | |         return Err(invalid());
+132 | |     }
+    | |_____^ unreachable statement
+    |
+    = note: `#[warn(unreachable_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `path`
+   --> src/evidence_operations_collection.rs:122:32
+    |
+122 | pub(crate) fn check_standalone(path: &Path) -> Result<()> { return Ok(());
+    |                                ^^^^ help: if this is intentional, prefix it with an underscore: `_path`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 2 warnings (run `cargo fix --lib -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 6.57s
+     Running tests/evidence_operations_collection.rs (target/debug/deps/evidence_operations_collection-9f7d9f7685ac0e2b)
+error: test failed, to rerun pass `--test evidence_operations_collection`
+error: 1 target failed:
+    `--test evidence_operations_collection`

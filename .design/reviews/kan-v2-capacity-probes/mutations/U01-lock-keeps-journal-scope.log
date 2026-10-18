@@ -1,0 +1,40 @@
+✔ auth is header-only; gap filtering and untrusted values use text (12.9035ms)
+✔ late authenticated response cannot unlock a locked view (0.879208ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.597958ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.696333ms)
+✔ fresh active sessions are current while historical losses remain visible (0.588875ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.710583ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.715875ms)
+✔ unsampled sessions and summary loss units are explicit (0.472042ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.616083ms)
+✔ unsupported status version retains visibly disconnected values (0.494875ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.617792ms)
+✖ locking clears rendered private metadata and closes the inspector (0.8455ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 11
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 48.798875
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:23:1
+✖ locking clears rendered private metadata and closes the inspector (0.8455ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'Scope: selected journal only. Loss counts are lower bounds, not a count of missing raw messages.'
+  - ''
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-journal-capacity/.local-state/reviews/opus-capacity/tests/operations_ui.test.cjs:23:384)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'Scope: selected journal only. Loss counts are lower bounds, not a count of missing raw messages.',
+    expected: '',
+    operator: 'strictEqual'
+  }

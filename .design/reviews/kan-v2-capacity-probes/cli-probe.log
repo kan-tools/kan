@@ -1,0 +1,81 @@
+## ops-init
+{"initialized":true}
+exit=0
+total 712
+drwx------@ 7 m  staff     224 Oct 18 13:49 .
+drwx------@ 9 m  staff     288 Oct 18 13:49 ..
+lrwx------@ 1 m  staff       4 Oct 18 13:49 alias -> coll
+-rw-------@ 1 m  staff  331776 Oct 18 13:49 health
+-rw-------@ 1 m  staff       0 Oct 18 13:49 health.lock
+-rw-------@ 1 m  staff   32768 Oct 18 13:49 queue
+-rw-------@ 1 m  staff       0 Oct 18 13:49 src.sha
+## ops-status standalone
+2 {"attempts_limit": 100000, "attempts_used": 0, "exhausted_observed": false, "exhaustion_reason": null, "free_pages": 0, "last_success_at": null, "loss_count_certainty": "lower_bound", "page_size": 4096, "pages_limit": 8192, "pages_used": 81, "reserve_bytes": 262144, "schema": 2, "scope": "selected standalone journal only", "sessions_limit": 1024, "sessions_used": 0}
+## adopt
+{"adopted":true,"source_preserved":true}
+exit=0
+health: OK
+.:
+total 720
+drwx------@ 8 m  staff     256 Oct 18 13:49 .
+drwx------@ 9 m  staff     288 Oct 18 13:49 ..
+lrwx------@ 1 m  staff       4 Oct 18 13:49 alias -> coll
+drwx------@ 8 m  staff     256 Oct 18 13:49 coll
+-rw-------@ 1 m  staff  331776 Oct 18 13:49 health
+-rw-------@ 1 m  staff       0 Oct 18 13:49 health.lock
+-rw-------@ 1 m  staff   32768 Oct 18 13:49 queue
+-rw-------@ 1 m  staff      73 Oct 18 13:49 src.sha
+
+coll:
+total 1304
+drwx------@ 8 m  staff     256 Oct 18 13:49 .
+drwx------@ 8 m  staff     256 Oct 18 13:49 ..
+-rw-------@ 1 m  staff       0 Oct 18 13:49 LOCK
+-rw-------@ 1 m  staff  331776 Oct 18 13:49 generation-02c23959ea90e79c473b3f34299f57f5.sqlite
+-rw-------@ 1 m  staff       0 Oct 18 13:49 generation-02c23959ea90e79c473b3f34299f57f5.sqlite.lock
+-rw-------@ 1 m  staff  331776 Oct 18 13:49 generation-3078fe4826bb2996ec9676b67149a764.sqlite
+-rw-------@ 1 m  staff       0 Oct 18 13:49 generation-3078fe4826bb2996ec9676b67149a764.sqlite.lock
+-rw-------@ 1 m  staff     632 Oct 18 13:49 manifest.json
+## generations
+{"active":"02c23959ea90e79c473b3f34299f57f5","generations":[{"id":"3078fe4826bb2996ec9676b67149a764","sealed_sha256":"f79c6f4425a898fa391e23e2d0586ae7b529a8b943992930dc689697f491e4c6"}],"next":1,"totals":"not additive; cumulative identities may recur across generations","version":1}
+## status coll
+2 {"attempts_limit": 100000, "attempts_used": 0, "exhausted_observed": false, "exhaustion_reason": null, "free_pages": 0, "last_success_at": null, "loss_count_certainty": "lower_bound", "page_size": 4096, "pages_limit": 8192, "pages_used": 81, "reserve_bytes": 262144, "schema": 2, "scope": "active generation 02c23959ea90e79c473b3f34299f57f5 only; sealed history excluded", "sessions_limit": 1024, "sessions_used": 0}
+## adopt again into same dest
+error: operations adoption failed; preserve partial output and inspect source/collection
+exit=1
+## rotate
+{"history_preserved":true,"rotated":true}
+exit=0
+## generations page
+{"active":"0f6444502330cb0c987bfc6dd7f50897","generations":[{"id":"02c23959ea90e79c473b3f34299f57f5","sealed_sha256":"f79c6f4425a898fa391e23e2d0586ae7b529a8b943992930dc689697f491e4c6"}],"next":2,"totals":"not additive; cumulative identities may recur across generations","version":1}
+## history 3078fe4826bb2996ec9676b67149a764
+2 {"attempts_limit": 100000, "attempts_used": 0, "exhausted_observed": false, "exhaustion_reason": null, "free_pages": 0, "last_success_at": null, "loss_count_certainty": "lower_bound", "page_size": 4096, "pages_limit": 8192, "pages_used": 81, "reserve_bytes": 262144, "schema": 2, "scope": "sealed generation 3078fe4826bb2996ec9676b67149a764 only; not a collection total", "sessions_limit": 1024, "sessions_used": 0}
+## history bogus
+error: operations generation unavailable or not verified
+exit=1
+## limit 101
+error: operations collection unavailable
+exit=1
+## status on a generation file directly
+error: operations status unavailable
+exit=1
+## symlink collection
+error: operations status unavailable
+exit=1
+error: operations rotation failed or commit uncertain; inspect collection before retrying
+exit=1
+## source still usable standalone after adoption (split-brain check)
+exit=0
+health: OK
+total 1952
+drwx------@ 11 m  staff     352 Oct 18 13:49 .
+drwx------@  8 m  staff     256 Oct 18 13:49 ..
+-rw-------@  1 m  staff       0 Oct 18 13:49 LOCK
+lrwx------@  1 m  staff       4 Oct 18 13:49 coll -> coll
+-rw-------@  1 m  staff  331776 Oct 18 13:49 generation-02c23959ea90e79c473b3f34299f57f5.sqlite
+-rw-------@  1 m  staff       0 Oct 18 13:49 generation-02c23959ea90e79c473b3f34299f57f5.sqlite.lock
+-rw-------@  1 m  staff  331776 Oct 18 13:49 generation-0f6444502330cb0c987bfc6dd7f50897.sqlite
+-rw-------@  1 m  staff       0 Oct 18 13:49 generation-0f6444502330cb0c987bfc6dd7f50897.sqlite.lock
+-rw-------@  1 m  staff  331776 Oct 18 13:49 generation-3078fe4826bb2996ec9676b67149a764.sqlite
+-rw-------@  1 m  staff       0 Oct 18 13:49 generation-3078fe4826bb2996ec9676b67149a764.sqlite.lock
+-rw-------@  1 m  staff     757 Oct 18 13:49 manifest.json

@@ -1,0 +1,6 @@
+fmt-exit=0
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-journal-capacity/.local-state/reviews/opus-capacity)
+    Finished `dev` profile [unoptimized] target(s) in 7.73s
+    Checking rusqlite v0.40.1
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-journal-capacity/.local-state/reviews/opus-capacity)
+    Finished `dev` profile [unoptimized] target(s) in 5.89s
