@@ -367,3 +367,75 @@ backup/restore, final delta/cutover and capacity qualification remain open.
 No main merge, deployment or live user-data migration occurred. The original
 checkout's edits are untouched; scratch build targets were cleaned, with about
 16 GiB free at the final review checkpoint.
+
+
+## Authenticated capture and first harness checkpoint — 2026-10-18
+
+The permanent stack now includes draft #277 (`feat/kan-v2-capture-latency`)
+and #278 (`feat/kan-v2-gateway`). The first bounds SQLite capture waits,
+continues immediate admission after allowance exhaustion, and reports visible
+gaps without latching off the stream. The second adds a loopback collector,
+TLS 1.3 mutual authentication terminating inside the gateway process, and an
+explicit Anthropic Messages profile for Claude Code. Both observers encrypt
+body evidence into provisioned spools; opaque archive drain remains separate.
+
+Final production implementation `4be3f28efdd245e3050fd433e4ec825cdeebaf2d` includes the
+concurrent-frontier correction: one reserved writer transaction covers frontier
+derivation, encryption/signing and admission. Large normalized HTTP metadata
+is segmented into bounded body chunks. Tests retain exact response bytes/status,
+separate credentials and observer provenance, failed-authentication boundaries,
+truncation/cancellation behavior, and explicit configuration of both CLI processes.
+Capture starts after bounded request admission; rejected/incomplete uploads,
+handshake failures, trailers and harness-local activity are not archived here.
+
+Author validation includes 43 capture/deadline/contention tests, 16 gateway
+fixtures, 11 spool tests, delivery 5, importer 8, restore 9 and surface checks 19.
+The actual installed Claude Code 2.1.300 completed the isolated two-hop smoke
+against a synthetic provider in one request, returning KAN_HARNESS_OK. This is
+protocol compatibility evidence, not paid model inference or full harness coverage.
+Whole-fix reversion rejected the metadata and atomic-admission corrections at
+runtime; seven gateway mutation controls had previously failed/restored on the
+initial feature head. Lint and formatting passed on the frozen implementation.
+
+The latency correction received fresh actual Opus 5.5 APPROVE WITH FOLLOW-UPS.
+The first gateway/harness review also returned APPROVE WITH FOLLOW-UPS. Its
+important findings are corrected: separate bounded pending authentication,
+atomic promotion/eviction, outgoing application-header metadata with explicit
+provider-key omission, and Anthropic header fidelity. Independent Python HPKE
+and KANC2 readback now checks both observer spools, chunked metadata, expected
+bodies and unknown-event preservation. The fresh correction review also returned APPROVE WITH FOLLOW-UPS; exact
+reports, sessions, hashes and public probes are in the two gateway review records.
+Test/documentation follow-ups preserve that exact production implementation.
+
+These three requested build points do not complete all P6/P7 production gates.
+Remaining work includes asynchronous request/capture admission and bounded
+startup/audit, continuous archive draining and durable health/control reserves,
+production key custody/grants/erasure, additional harness profiles/hooks,
+capacity qualification, independent-host backup/restore drills, final-delta
+migration and explicit cutover. Extraction/day merger remains P8 beyond raw
+storage. Existing backups and v1 ground truth remain preserved. No main merge,
+production deployment, production credential selection or live migration occurred.
+
+The final follow-ups distinguish frontier correctness from the production
+100 ms wait allowance. A slower CI runner exceeded the latter in the paced P3
+fixture; the full-retention P3 now uses normal offline waits and is checked
+against the original stale-frontier implementation. Production wait-budget,
+visible-gap and recovery tests remain unchanged. Added assertions cover all four
+surviving reviewer mutants (seven slots, shortened body timeout, no mutual-TLS
+slot cap, and promotion before token authentication).
+
+Remaining limits are precise: pending eviction can reject a remote handshake
+under rapid bare-TCP arrivals, even without saturating CPU/bandwidth. A simulated
+50 ms round trip with about 1000 arrivals/s rejected 20/20 legitimate requests.
+Use private/source-restricted access until admission fairness is qualified.
+Outgoing metadata records the built request before reqwest defaults (such as
+Accept) and framing, not a complete sent-header attestation. Reviewer text is
+retained verbatim separately from author-maintained summaries/dispositions.
+
+The latency parent 8713024 has green CI, migration and performance checks.
+Final gateway CI results are tracked on #278. Both requested worktrees remain
+under the permanent project directory. Only generated build targets in the old
+service-hardening and restore worktrees were removed; source, history and v1
+backups were preserved. Legacy kan/day design-claim backfill is still pending
+under the two-withheld-claim partial-trust limitation; no witness or claim CID
+was fabricated.

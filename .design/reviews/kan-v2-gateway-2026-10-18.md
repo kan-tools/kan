@@ -1,5 +1,7 @@
 # Authenticated gateway and Claude Code review
 
+Author-maintained summary; the linked exact report is the independent reviewer’s output.
+
 Fresh actual `claude-opus-5-5`, session `1615fd80-ae92-4b08-9d7d-80ef7f4e7c7c`.
 Range: `9d9e16c04a07489dcab83dbe4dbe888b5e406318..f70f52be23d168b7c813fee18d3d72dcbf28bc18`.
 Verdict: **APPROVE WITH FOLLOW-UPS**.
@@ -9,6 +11,8 @@ Verdict: **APPROVE WITH FOLLOW-UPS**.
 The review independently verified 10 gateway fixtures, 43 capture fixtures, 11 spool tests, two spool units, delivery/import/migration callers, surface checks, lint, the actual isolated Claude Code smoke and seven runtime mutation controls. Twelve additional hostile probes are retained in [the public probe source](kan-v2-gateway-probes.rs), separate from the implementation tests.
 
 Corrections prepared for fresh review: unauthenticated connection-slot starvation; explicit outgoing request metadata and credential omissions; HTTP header fidelity. Additional evidence work promotes authentication/resource probes and independently decodes both observer spools. Remaining production gates include durable/harness-visible health, source-event adapters, custody/erasure, capacity, backup and cutover. The review does not certify complete P6 or production deployment.
+
+## Author correction disposition
 
 The correction separates pending unauthenticated connections from authenticated
 slots, atomically arbitrates promotion/eviction, captures outgoing application

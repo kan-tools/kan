@@ -54,7 +54,7 @@ try:
     ]
     command=['cargo','test','--features','v2-crypto','--test','evidence_gateway']
     code,output=run(command,'baseline')
-    if code or not passed(output,15):raise SystemExit('baseline failed\n'+output)
+    if code or not passed(output,16):raise SystemExit('baseline failed\n'+output)
     for name,file,old,new,test in controls:
         source = scratch / file
         original = source.read_text()

@@ -1,6 +1,8 @@
 # Experimental authenticated collector/gateway
 
 The network path is harness → loopback collector → TLS 1.3 gateway → provider.
+Use the network example only with private/source-restricted ingress; pending
+connection admission remains vulnerable to connection churn, as detailed below.
 TLS terminates inside the gateway; do not put a plaintext TLS-terminating proxy
 between collector and gateway. The gateway CA authorizes clients for one
 instance. Use a dedicated CA and replace configuration/restart for revocation.
@@ -45,7 +47,11 @@ local requests through response. Up to 32 pending unauthenticated connections
 use a separate queue: a new arrival evicts the oldest still-pending connection.
 Atomic promotion protects authenticated streams from that eviction. Idle sockets
 cannot reserve authenticated slots; authenticated overload is refused. This is
-not qualification against sustained CPU/bandwidth flooding. TLS/header reception is limited to
+not qualification against connection churn or resource flooding. Roughly 32 new
+connections during a collector’s handshake can evict it, even with few bytes
+sent; a simulated 50 ms round-trip probe lost all legitimate requests at about
+1000 new connections/s. Use an access-controlled private network/source allowlist
+until admission fairness and per-peer limits are qualified for untrusted exposure. TLS/header reception is limited to
 15 seconds, request bodies to 30 seconds, connections to 24 hours. The ordinary
 I/O budget is cumulative awaited send/read/write/flush time. Synchronous audit,
 crypto, fsync and health callbacks are not hard-latency bounded. CLI stderr
@@ -93,7 +99,9 @@ KANC2 HTTP metadata observations preserve normalized header names and hex-encode
 values, with credential/cookie omissions named explicitly. `request` records
 incoming headers; `request-outgoing` records the built application request after
 filtering and credential installation. The gateway names its installed API key
-as an omission. Library-added wire framing/host fields are outside this claim. Individual frame header JSON is bounded to 128 KiB. Large metadata is
+as an omission. This is the constructed request before client defaults, not a full wire-header
+attestation: reqwest may add `accept: */*` when absent, as well as generated
+framing/host fields. These later additions are outside `request-outgoing`. Individual frame header JSON is bounded to 128 KiB. Large metadata is
 serialized as complete normalized HttpMetadata JSON and retained in ordered
 HttpMetadataChunk bodies of at most 64 KiB with offset/total coordinates; it
 must be reassembled before interpretation. This prevents metadata size from

@@ -188,19 +188,51 @@ fn p2_admission_restores_callers_busy_timeout() {
     );
 }
 
-/// One capture attempt in its own thread/runtime over its own capture-open connection.
+/// Full-retention race witness uses the normal spool wait policy, so it tests
+/// frontier atomicity independently of host crypto/fsync throughput. Production
+/// capture's short wait policy has separate contention/budget/recovery tests.
+struct FrontierSink<'a> {
+    spool: &'a mut Spool,
+    signer: &'a Identity,
+}
+impl capture::Sink for FrontierSink<'_> {
+    fn admit(&mut self, operation: &[u8; 16], frame: &[u8]) -> Result<(), capture::Unconfirmed> {
+        delivery::queue(
+            self.spool,
+            self.signer,
+            &crypto::public_key(&PRIVATE).unwrap(),
+            operation,
+            frame,
+        )
+        .map(|_| ())
+        .map_err(|_| capture::Unconfirmed)
+    }
+}
+/// One capture attempt in its own thread/runtime and connection.
 fn capture_thread(
     path: PathBuf,
     key: PathBuf,
     url: String,
+    frontier_only: bool,
 ) -> std::thread::JoinHandle<capture::Health> {
     std::thread::spawn(move || {
         let signer = Identity::load_existing(&key).unwrap();
-        let mut spool = Spool::open_for_capture(&path).ok();
-        let mut sink = EncryptedSpool {
-            spool: spool.as_mut(),
-            signer: &signer,
-            recipient: crypto::public_key(&PRIVATE).unwrap(),
+        let mut spool = if frontier_only {
+            Some(Spool::open(&path).unwrap())
+        } else {
+            Spool::open_for_capture(&path).ok()
+        };
+        let mut sink: Box<dyn capture::Sink + '_> = if frontier_only {
+            Box::new(FrontierSink {
+                spool: spool.as_mut().unwrap(),
+                signer: &signer,
+            })
+        } else {
+            Box::new(EncryptedSpool {
+                spool: spool.as_mut(),
+                signer: &signer,
+                recipient: crypto::public_key(&PRIVATE).unwrap(),
+            })
         };
         let mut last = None;
         let mut notify = |h: &capture::Health| last = Some(h.clone());
@@ -212,7 +244,7 @@ fn capture_thread(
         let r = rt.block_on(capture::forward(
             &Route::new(&url).unwrap(),
             vec![1; 16],
-            &mut sink,
+            sink.as_mut(),
             &mut notify,
             &mut out,
             Duration::from_secs(30),
@@ -222,9 +254,9 @@ fn capture_thread(
     })
 }
 
-/// P3: two ordinary concurrent captures sharing one spool (frontier contention).
-/// Both paced concurrent attempts must retain every observation. This is a
-/// low-rate fixture, not an unbounded throughput or scheduling guarantee.
+/// P3: two concurrent capture recorders sharing the durable queue. Both must
+/// retain every observation using the normal offline wait policy. Deliberately
+/// separate this atomicity assertion from the 100 ms capture wait allowance.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn p3_concurrent_captures_share_spool() {
     let dir = tempfile::tempdir().unwrap();
@@ -232,10 +264,9 @@ async fn p3_concurrent_captures_share_spool() {
     let key = dir.path().join("key");
     writer.save(&key).unwrap();
     let path = make_spool(dir.path(), &writer);
-    let (url, task) = drip(20, 512, Duration::from_millis(100)).await;
-    let a = capture_thread(path.clone(), key.clone(), url.clone());
-    tokio::time::sleep(Duration::from_millis(150)).await;
-    let b = capture_thread(path.clone(), key.clone(), url.clone());
+    let (url, task) = drip(20, 512, Duration::from_millis(10)).await;
+    let a = capture_thread(path.clone(), key.clone(), url.clone(), true);
+    let b = capture_thread(path.clone(), key.clone(), url.clone(), true);
     let (ha, hb) = (a.join().unwrap(), b.join().unwrap());
     task.abort();
     let pending = Spool::open(&path).unwrap().status().unwrap().pending;
@@ -285,7 +316,9 @@ async fn p4_capture_beside_brief_periodic_writer() {
         held
     });
     let (url, task) = drip(80, 512, Duration::from_millis(5)).await;
-    let h = capture_thread(path.clone(), key, url).join().unwrap();
+    let h = capture_thread(path.clone(), key, url, false)
+        .join()
+        .unwrap();
     stop.store(true, std::sync::atomic::Ordering::SeqCst);
     let held = drainer.join().unwrap();
     task.abort();

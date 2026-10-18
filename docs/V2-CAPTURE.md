@@ -104,7 +104,8 @@ The gateway branch also fixes concurrent queue preparation: writer reservation,
 frontier selection, encryption/signing and enqueue share one IMMEDIATE
 transaction. This prevents competing captures from repeatedly signing stale
 frontiers. A synchronized 80-request admission fixture checks this directly;
-a paced two-stream fixture checks capture integration. These are correctness
+a two-stream fixture checks recorder/queue integration with the normal offline
+wait policy, independently of the production capture latency allowance. These are correctness
 fixtures, not capacity qualification. Waiting still obeys the capture allowance;
 short but repeatedly contended bursts can also exhaust an observation’s wait and yield
 visible gaps, but a conflict does not silently discard an entire stream.

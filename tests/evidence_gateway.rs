@@ -1102,6 +1102,7 @@ async fn authenticated_slot_limit_and_body_timeout_are_enforced() {
     let (origin, requests, _tasks, _, _) = anthropic_pair(gd.path(), cd.path()).await;
     let url = reqwest::Url::parse(&origin).unwrap();
     let addr = (url.host_str().unwrap(), url.port().unwrap());
+    let started = std::time::Instant::now();
     let mut pending = Vec::new();
     for _ in 0..8 {
         let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
@@ -1124,6 +1125,26 @@ async fn authenticated_slot_limit_and_body_timeout_are_enforced() {
             .status(),
         503
     );
+    // Every one of the eight requests must still be admitted and awaiting body.
+    for stream in &mut pending {
+        let mut byte = [0];
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), stream.read(&mut byte))
+                .await
+                .is_err(),
+            "fewer than eight authenticated slots"
+        );
+    }
+    // Authentication must precede slot reservation, even when all slots are full.
+    assert_eq!(
+        c.post(format!("{origin}v1/messages"))
+            .body("{}")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
     let mut response = Vec::new();
     tokio::time::timeout(
         Duration::from_secs(35),
@@ -1133,6 +1154,10 @@ async fn authenticated_slot_limit_and_body_timeout_are_enforced() {
     .unwrap()
     .unwrap();
     assert!(response.starts_with(b"HTTP/1.1 413"));
+    assert!(
+        started.elapsed() >= Duration::from_secs(29),
+        "body timeout was shortened"
+    );
     drop(pending);
     assert_eq!(requests.lock().unwrap().len(), 0);
     // Matching duplicate credentials are still ambiguous, not two votes to allow.
@@ -1287,4 +1312,66 @@ async fn authenticated_stream_survives_pending_connection_eviction() {
     }
     release.send(()).unwrap();
     assert_eq!(response.bytes().await.unwrap(), "b");
+}
+
+/// R3: the mutual-TLS listener's eight authenticated slots (retained independent probe): eight completed handshakes with no request occupy all slots.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rp_mtls_authenticated_slots_are_eight() {
+    let (p, calls, _p) =
+        provider(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_vec())
+            .await;
+    let gd = tempfile::tempdir().unwrap();
+    let (g, _, _) = config(Route::new(&p).unwrap(), Observer::Gateway, gd.path(), false);
+    let (url, _g) = start(tls(), g).await;
+    let u = reqwest::Url::parse(&url).unwrap();
+    let addr = format!("{}:{}", u.host_str().unwrap(), u.port().unwrap());
+    let mut roots = rustls::RootCertStore::empty();
+    for c in rustls::pki_types::CertificateDer::pem_slice_iter(CA) {
+        roots.add(c.unwrap()).unwrap();
+    }
+    use rustls::pki_types::pem::PemObject;
+    let certs: Vec<_> = rustls::pki_types::CertificateDer::pem_slice_iter(ID)
+        .map(|c| c.unwrap())
+        .collect();
+    let key = rustls::pki_types::PrivateKeyDer::from_pem_slice(ID).unwrap();
+    let cfg = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_protocol_versions(&[&rustls::version::TLS13])
+    .unwrap()
+    .with_root_certificates(roots)
+    .with_client_auth_cert(certs, key)
+    .unwrap();
+    let connector = tokio_rustls::TlsConnector::from(Arc::new(cfg));
+    let mut held = Vec::new();
+    for _ in 0..8 {
+        let tcp = tokio::net::TcpStream::connect(&addr).await.unwrap();
+        let name =
+            rustls::pki_types::ServerName::try_from(u.host_str().unwrap().to_owned()).unwrap();
+        held.push(connector.connect(name, tcp).await.unwrap());
+    }
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let ninth = client(CA, true)
+        .post(&url)
+        .header("x-kan-exchange", hex(&[7; 32]))
+        .body("x")
+        .send()
+        .await;
+    println!(
+        "PROBE R3 ninth with 8 idle authenticated TLS: {:?}",
+        ninth.as_ref().map(|r| r.status())
+    );
+    assert!(ninth.is_err());
+    drop(held);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let after = client(CA, true)
+        .post(&url)
+        .header("x-kan-exchange", hex(&[7; 32]))
+        .body("x")
+        .send()
+        .await
+        .unwrap();
+    println!("PROBE R3 after release: {}", after.status());
+    assert_eq!(after.status(), 200);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
