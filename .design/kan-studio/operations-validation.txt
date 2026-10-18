@@ -1,0 +1,19 @@
+Design doc validation:
+  [PASS] section present: Summary
+  [PASS] section present: Requirements
+  [PASS] section present: Acceptance Criteria
+  [PASS] section present: Architecture
+  [PASS] requirements: 10
+  [PASS] acceptance criteria: 10
+  [PASS] every requirement is referenced by an acceptance criterion
+  [PASS] no placeholder text
+  [PASS] 4 of 12 referenced path(s) exist (Architecture)
+  [WARN] referenced path does not exist yet: .design/reviews/kan-v2-operations-correction-2026-10-18.md
+  [WARN] referenced path does not exist yet: src/evidence_operations.rs
+  [WARN] referenced path does not exist yet: src/evidence_operations.rs
+  [WARN] referenced path does not exist yet: src/evidence_dashboard.rs
+  [WARN] referenced path does not exist yet: src/bin/kan-v2.rs
+  [WARN] referenced path does not exist yet: web/operations/app.js
+  [WARN] referenced path does not exist yet: web/operations/index.html
+  [WARN] referenced path does not exist yet: .design/kan-studio/index.html
+  [WARN] the log withholds 2 claim(s) without naming their subjects, so `kan-v2-operations-polish` may be absent or omitted

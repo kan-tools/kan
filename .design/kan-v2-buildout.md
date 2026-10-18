@@ -487,3 +487,28 @@ active-reporter warnings remain noisy. AC-2 stays partial. No live installation,
 cutover, main merge or user-data migration; temporary previews and review targets
 were removed. Production custody, bounded audit/admission and independent-host
 restore/migration rehearsal remain the next production gates.
+
+
+## Full human frontend design — 2026-10-18
+
+The owner clarified that Kan needs a complete human-facing frontend, beyond
+operations: Library, session/source/provenance reading, knowledge/annotations,
+saved views, analysis/day runs, and full storage/migration/access administration.
+This supersedes the interim operations-only design choice. Technical-studio
+light styling, dense data and vivid accents were selected; health rotation stays
+owner-triggered with all prior history retained.
+
+`.design/kan-v2-human-frontend.md` maps all product areas to existing foundations,
+missing contracts and sequenced vertical slices. `.design/kan-v2-operations-polish.md`
+covers all six operations review follow-ups. `.design/kan-studio/preview.html`
+is a self-contained interactive synthetic prototype, not a service integration.
+Its browser checks and screenshots are retained beside it. The deployment location
+of the authorized plaintext reader remains an explicit open question.
+
+The full frontend requires a reader/query boundary, annotations and admin job APIs,
+and the analysis/day backend; styling the existing status endpoint cannot supply
+those capabilities. Full-frontend completion is defined by real end-to-end workflows
+across the whole capability matrix. No implementation or production readiness is
+claimed by this design checkpoint. Fresh Opus 5.5 reviews remain required at
+substantive build/fix points. Worktree: `.worktrees/kan-v2-operations-polish`,
+branch `design/kan-v2-operations-polish`, parent operations 0729bbb / draft #279.
