@@ -26,6 +26,8 @@ import tarfile
 import uuid
 
 NODE_TESTS = {
+    'library_unavailable': ('tests/library_ui.test.cjs', 'unavailable or unverifiable source clears plaintext but preserves other browsing'),
+    'library_directional': ('tests/library_ui.test.cjs', 'directional format controls default to exact hex and permit explicit UTF-8'),
     'library_scope_switch': ('tests/library_ui.test.cjs', 'scope changes remove old-scope rows before a new pin is used'),
     'future_clock_badge': ('tests/operations_ui.test.cjs', 'future clock samples produce consistent badges and retain uncertain reporter history'),
     'summary_loss_units': ('tests/operations_ui.test.cjs', 'unsampled sessions and summary loss units are explicit'),

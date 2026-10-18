@@ -139,3 +139,19 @@ and deterministic late-response/lock tests; this does not claim operating-system
 memory scrubbing. AC-6 is partial: empty/denied/stale/error cases have API/Node
 coverage rather than all being exercised in the real browser. Fresh review
 remains required. The parent complete-frontend acceptance criteria stay open.
+
+
+## Review-driven UI corrections in progress
+
+The author and independent reviewer both reproduced stale rows/continuation
+remaining actionable during a scope switch. The client now clears old rows,
+counts and navigation before requesting a page under the new pin. This has a
+named assertion kill under whole-fix reversion (61e2487).
+
+A second correction distinguishes 404 unavailable source from verification and
+transport failures, preserves other browsing after non-authorization errors,
+and defaults directional formatting controls to exact hex. Every failed source
+read clears displayed plaintext; 401/403 still lock everything. These changes
+have Node coverage and real whole-fix reversion, but require their own fresh
+review. The backend still fails a page containing a missing/corrupt referenced
+object; per-occurrence unavailable-evidence rows remain an explicit AC-3 gap.

@@ -74,3 +74,23 @@ client view and require reconnecting. Missing evidence is never silently skipped
 
 Validation and review are recorded with the implementation checkpoint; do not
 interpret this runbook as proof that uncompleted acceptance criteria passed.
+
+## Unavailable evidence and safe display
+
+Authorization failures lock and clear the Library. A missing response (404),
+verification/server failure, or transport failure clears the source inspector
+but keeps other already-authorized browsing controls available. An unavailable
+page displays no rows or counts from its failed response. Refresh the snapshot
+or select another scope to recover. This does not bypass verification or skip
+unreadable rows silently.
+
+The current storage Page RPC verifies referenced objects as it reads records.
+A damaged or missing object can therefore make its containing page unavailable;
+this first reader does not yet return per-occurrence unavailable-evidence rows.
+The service reports absent retained bytes as corruption, so physical absence and
+corruption are not independently distinguished by the Library. That remaining
+backend contract is required for full browsing coverage.
+
+Directional formatting controls default to hex, like control bytes. An explicit
+UTF-8 toggle shows the exact original text; it does not sanitize or rewrite the
+source. Byte ranges remain the unambiguous comparison/export representation.

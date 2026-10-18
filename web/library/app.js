@@ -23,11 +23,22 @@
     try {
     const response = await fetch('/api/library', {method:'POST', headers:{'Authorization':`Bearer ${token}`, 'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'omit', cache:'no-store', signal:controller.signal});
     if (current !== epoch) return null;
-    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : 'The reader could not verify this request. Reconnect to retry.');
+    if (!response.ok) {
+      const denied = response.status === 401 || response.status === 403;
+      const message = denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
+        ? 'Retained source is unavailable for this request. Choose another occurrence or refresh the snapshot.'
+        : 'This response could not be verified. Retry, refresh the snapshot, or choose another scope.';
+      const error = new Error(message); error.accessDenied = denied; error.readerMessage = message; throw error;
+    }
     const value = await response.json(); if (current !== epoch) return null; return value;
     } catch (error) { if (current !== epoch) return null; throw error; }
   }
-  function run(fn) { Promise.resolve().then(fn).catch(error => { if (error.name !== 'AbortError') lock(error.message); }); }
+  function run(fn) { Promise.resolve().then(fn).catch(error => {
+    if (error.name === 'AbortError') return;
+    const message = error.readerMessage || 'Reader unavailable. Retry, refresh the snapshot, or choose another scope.';
+    if (error.accessDenied || $('library').hidden) lock(message);
+    else { clearInspector(); notice(message, true); }
+  }); }
   function tab(name) {
     $('source-panel').hidden = name !== 'source'; $('provenance').hidden = name !== 'provenance';
     $('source-tab').setAttribute('aria-pressed', String(name === 'source')); $('provenance-tab').setAttribute('aria-pressed', String(name === 'provenance'));
@@ -44,7 +55,7 @@
     source = value; $('inspection').hidden = false; $('close-inspector').hidden = false;
     $('selection').textContent = `Occurrence ${value.record.sequence}`;
     $('source-hint').textContent = value.content_trust;
-    hexadecimal = value.utf8 === null || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value.utf8);
+    hexadecimal = value.utf8 === null || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(value.utf8);
     renderBytes(); $('more').disabled = value.next === null;
     $('provenance').replaceChildren();
     for (const [key, val] of Object.entries({Scope:value.scope, Manifest:value.record.manifest, Receipt:value.record.receipt, 'Observed writer':value.writer, Observer:'Not normalized in this source view', 'Claimed speaker':'Not inferred from the writer key', 'Service issuer':value.service_issuer, Signature:value.signature, Admission:value.admission, 'Content trust':value.content_trust})) {
