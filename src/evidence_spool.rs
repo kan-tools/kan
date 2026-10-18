@@ -115,7 +115,7 @@ fn schema(conn: &Connection) -> Result<Vec<(String, String, String, String)>> {
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .collect::<std::result::Result<_, _>>()?)
 }
-fn connection(path: &Path) -> Result<Connection> {
+fn connection(path: &Path, wait: Duration) -> Result<Connection> {
     let meta = std::fs::symlink_metadata(path)?;
     if !meta.is_file() || meta.file_type().is_symlink() {
         return Err(Error::Invalid("regular file required"));
@@ -131,7 +131,7 @@ fn connection(path: &Path) -> Result<Connection> {
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )?;
-    conn.busy_timeout(Duration::from_secs(5))?;
+    conn.busy_timeout(wait)?;
     conn.set_limit(
         rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
         (2 * MAX_REQUEST + 65536) as i32,
@@ -250,7 +250,7 @@ impl Spool {
             path,
             &[],
         )?;
-        let mut conn = connection(path)?;
+        let mut conn = connection(path, Duration::from_secs(5))?;
         durability(&conn)?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute_batch(SCHEMA)?;
@@ -264,7 +264,32 @@ impl Spool {
         Ok(Self { conn })
     }
     pub fn open(path: &Path) -> Result<Self> {
-        let mut conn = connection(path)?;
+        Self::open_with_wait(path, Duration::from_secs(5))
+    }
+    /// Capture must not wait for SQLite locks, including during initial audit.
+    /// Filesystem I/O and the audit itself are not hard real-time operations.
+    pub fn open_for_capture(path: &Path) -> Result<Self> {
+        Self::open_with_wait(path, Duration::ZERO)
+    }
+    pub(crate) fn without_busy_wait<T, E: From<Error>>(
+        &mut self,
+        operation: impl FnOnce(&mut Self) -> std::result::Result<T, E>,
+    ) -> std::result::Result<T, E> {
+        let previous: u32 = self
+            .conn
+            .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+            .map_err(Error::from)?;
+        self.conn
+            .busy_timeout(Duration::ZERO)
+            .map_err(Error::from)?;
+        let result = operation(self);
+        self.conn
+            .busy_timeout(Duration::from_millis(u64::from(previous)))
+            .map_err(Error::from)?;
+        result
+    }
+    fn open_with_wait(path: &Path, wait: Duration) -> Result<Self> {
+        let mut conn = connection(path, wait)?;
         let expected = Connection::open_in_memory()?;
         expected.execute_batch(SCHEMA)?;
         if conn.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))? != PROFILE

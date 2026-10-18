@@ -92,3 +92,12 @@ remaining P6 work includes authenticated encrypted collector/gateway transport,
 request streaming, the chosen real provider/harness profile, persistent health and
 control reserves. Production key custody, independent-host backup drills and
 explicit cutover remain required before using v2 as the primary archive.
+
+
+Capture now opens its spool with zero SQLite busy timeout and makes admission
+without lock waits. The first unconfirmed encrypted admission suspends that
+sink for the rest of its lifetime; subsequent observations report gaps. A new
+attempt may recover with a fresh sink. No queued bytes or frontiers are removed.
+This bounds lock-wait policy, not fsync, startup audit or arbitrary callbacks.
+The deadline flag is a cumulative awaited network/output budget, not elapsed
+wall time. Ordinary offline spool queue/drain retain their existing wait policy.

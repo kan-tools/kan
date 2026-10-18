@@ -74,9 +74,16 @@ pub struct EncryptedSpool<'a> {
 impl Sink for EncryptedSpool<'_> {
     fn admit(&mut self, operation: &[u8; 16], frame: &[u8]) -> Result<(), Unconfirmed> {
         let spool = self.spool.as_deref_mut().ok_or(Unconfirmed)?;
-        evidence_delivery::queue(spool, self.signer, &self.recipient, operation, frame)
-            .map(|_| ())
-            .map_err(|_| Unconfirmed)
+        let result = spool.without_busy_wait(|spool| {
+            evidence_delivery::queue(spool, self.signer, &self.recipient, operation, frame)
+        });
+        if result.is_err() {
+            // Ambiguous admission is never retried here. A fresh sink on the
+            // next attempt may recover; retained pending bytes are untouched.
+            self.spool = None;
+            return Err(Unconfirmed);
+        }
+        Ok(())
     }
 }
 
