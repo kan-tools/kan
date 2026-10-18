@@ -1,0 +1,45 @@
+**Verdict: APPROVE WITH FOLLOW-UPS**
+
+The correction is sound, and I found no broken count, capacity, cleanup or export invariant. But it closes the prior finding F1 (the retry budget is unproven) only at the level of the helper function. Nothing tests that admission actually retries when the shard lock is busy: a single-try mutant that bypasses the helper still passes every test. That is a coverage gap, not a correctness violation, so it doesn't warrant BLOCK.
+
+## North star
+`kan show --all --json` read fine but returned `subjects: []` with `excluded_by_trust: 18`, which per the context means the export's trust base is empty, not that there are no teloi. The only telos on record is the one in `review-context.txt`, `telos/raw-data-and-projections`. Its retraction supersedes a claim (`bafyreiaezpl…`) that isn't in the export, and two claims are withheld. I didn't invent anything to fill that gap. The work fits the telos: the loss counter is a derived value that counts low, raw capture code is untouched, and the label now describes what is counted.
+
+## Follow-ups
+
+| Item | Status | Evidence |
+|---|---|---|
+| Bounded compare-exchange admission | met | `src/evidence_operations.rs:289-309`. The counter only goes up from values below 256, and only under the shard lock alongside an insert. It only goes down alongside a remove whose revision matches (`:339-347`). The loop gives up after 64 attempts and counts a loss. |
+| ADMISSION_TRIES=1 kills the new test | met | Mutation A: `admission_retries_transient_contention_but_stops_at_budget` panics at `:833`. It is the only test that fails (`review-evidence/10-…`). |
+| Retry actually wired into admission | **partial** | Mutation B: changing `WouldBlock => None` to `Some(false)` at `:402` means admission never retries. All 6/6 units and 5/5 synchronized runs still pass, with 7–22 counted losses per run (`11-…`). |
+| Process-group cleanup on timeout | met, with a gap | `scripts/revert_v2.py:34-49`. Mutation E (`killpg` replaced by `process.kill()`): the test **hangs** rather than failing, and the grandchild process survives (I killed it, `23-…`). |
+| Untracked-file disclosure | met | I ran the real runner (Node alias only). It printed `note: untracked and therefore NOT reverted: [...]` listing every untracked file, and the caller's checksums were unchanged (`30-…`). |
+| Export safety | met for what changed | The new test covers copying untracked files, isolation from the source and symlink refusal. The tar path is unchanged and not covered by the new tests. |
+| Truthful telemetry units | met | `web/operations/app.js:23,34` now say "health telemetry loss observations (at least)". Every loss path increments the counter, and the stored value only increases (`:216`), so "at least" is accurate. |
+| Retained patch matches the code | met | The production files in `production.patch` are byte-identical to `git diff HEAD`. |
+
+## Findings
+- **R1 (medium):** No test pins the call-site retry (`:399-403`). Mutation B is the old single-try survivor reached by a different edit. A deterministic fix would be a held-lock test where a helper thread releases the lock after a few attempts, asserting the offer is admitted and nothing is counted lost.
+- **R2 (low):** "Zero counted losses" is one sample, not a property. In 15 isolated runs, 2 counted one loss each, and my full-suite run counted 2, all at 80/80 terminals. With the budget raised to 1,000,000, 12/12 runs counted zero (`14-…`). So these losses come from the 512-try budget running out. They are disclosed and counted, so this is honest, but the claim should be worded as a sample.
+- **R3 (low):** The 64-attempt compare-exchange limit is untested. Mutation C (64→1) survives everything because 8 threads barely contend on the counter. Running out below 256 is a new, counted loss source that the UI and docs don't name.
+- **R4 (low):** In `run_process`, the `communicate()` call after the kill has no timeout. A descendant that leaves the process group while holding the output pipe would hang the runner, and that is exactly how mutation E showed up: a hang, not a failed assertion.
+- **R5 (nit):** "lost-summary" wording remains at `src/evidence_operations.rs:392` and `tests/evidence_operations.rs:929`.
+- **R6 (note):** I couldn't confirm that `fetch_update` is deprecated. Local rustc 1.96.1 compiles it with `-D warnings` and no warning (`43-…`). The CAS replacement is valid either way.
+- **R7 (note):** As you said, the trailer only demonstrates the Node wording change. A reversion trailer can't cover the new unit test, because that test calls `bounded_admission`, which only exists after the fix. Mutation A is the evidence for that test instead.
+
+## Checks I ran
+- **Build:** v2-crypto all-targets build passed.
+- **Rust tests:** ops units 6/6 and ops integration 19/19 passed. The synchronized test passed 15/15 when run on its own.
+- **Node and Python:** Node 12/12 across both files, Python runner tests 5/5 on Python 3.9.6.
+- **Lint and format:** clippy with `-D warnings` was clean for both v2 and default features, and fmt was clean.
+- **Mutations:**
+  - A: killed by the new test only.
+  - B: survived everything.
+  - C: survived everything.
+  - D (capacity check off by one): killed by the sharding test.
+  - E: showed up only as a hang.
+  - Plus one diagnostic run (budget raised to 1,000,000).
+
+Every mutation was restored and checked by sha256. The `git diff HEAD` hash still matches the start (`ac46c92f…`). No processes are left running, and my runner export was deleted after I copied its logs. Raw output is in `review-evidence/`.
+
+**Not run:** the full workspace, Linux CI, an MSRV 1.95 build, `--verify` against the historical commits (not in this export), browser checks, real gateway concurrency, and the kan/day steps 7–8 (writes are forbidden).

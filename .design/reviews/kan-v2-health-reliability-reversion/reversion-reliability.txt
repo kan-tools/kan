@@ -1,0 +1,15 @@
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reversion/092efbcf573b46d0a0b3df168cc789ad
+What would be reverted (worktree):
+  skipped .design/kan-v2-operations-polish.md (not in --include)
+  skipped .github/workflows/ci.yml (not in --include)
+  skipped Cargo.toml (not in --include)
+  reverting src/evidence_operations.rs: 15/21 hunk(s) (6 test-side hunk(s) kept in place)
+  skipped tests/evidence_operations.rs (not in --include)
+  skipped tests/operations_ui.test.cjs (not in --include)
+  reverting web/operations/app.js: 3/3 hunk(s)
+
+DEMONSTRATED — failed under revert: evidence_operations::synchronized_streams_retain_terminal_summaries, node::summary_loss_units
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=evidence_operations::synchronized_streams_retain_terminal_summaries,node::summary_loss_units outcome=DEMONSTRATED

@@ -1,0 +1,44 @@
+**Verdict: APPROVE WITH FOLLOW-UPS**
+
+This correction is a real improvement over parent 833bef3, and it covers all six coalescing-review follow-ups. I found no capacity leak, deadlock, shutdown/wake race, duplicate counting or hidden loss. Raw capture and spool code is untouched. The one material gap: the bounded try_lock/spin retry, which the design treats as a main mechanism, isn't shown to matter by any test.
+
+I'm a fresh agent with no stake in this code. As instructed, I made no kan/day writes, delegated nothing and fixed nothing. The only telos on record in `review-context.txt` is `telos/raw-data-and-projections`: health summaries are derived values, so a lost summary must be counted and the raw data kept. The work serves that.
+
+## The six follow-ups
+
+| # | Follow-up | Status | Evidence |
+|---|---|---|---|
+| 1 | Contention loss / qualify callback concurrency | met, with F1 | Parent reverted: synchronized test failed 3/3 (35–42/80 terminals, ~1,200–1,400 counted losses); the runner's own revert phase got 40/80. Current: 80/80 with 0 losses in 30/30 runs, 10 of them with 2× CPU oversubscription. My tight-loop probe (no sleeps, 2/8/16 threads, 45 runs, deleted afterwards): worst case 79/80 and 95/96, and lost terminals were always ≤ the loss counter. |
+| 2 | Deterministic loss accounting | met (private unit test only, as you declared) | The held-lock test sees `WouldBlock` deterministically and counts 7→8. Mutants that skip or double the count fail both it and the burst test, every time. |
+| 3 | Barrier tied to the record write | met | `src/evidence_operations.rs:739-758`: the barrier is set only when the record transaction's `BEGIN DEFERRED` runs, a heartbeat is forced to hit the lock first, and the test asserts `!BLOCKED` after it. Passed 15/15. |
+| 4 | Sampled vs unsampled wording | met | `web/operations/app.js:30-37`: "stale" counts only sampled sessions; sessions outside the 100-row sample are listed separately. |
+| 5 | Counter units | met, nit F8 | "health summary loss observations (at least)" — honestly a lower bound. |
+| 6 | Mixed Rust/Node reversion replay | met for working-tree mode | Under Python 3.9.6 the runner reproduced DEMONSTRATED (baseline ok → revert FAILED → restore ok), created no Git worktree and left the source byte-identical. Unknown Node alias exits 1; a missing test is NO-SUCH-TEST; a lib test that can't compile under revert is DID-NOT-COMPILE. Integration and Node tests compile against the reverted parent. |
+
+**What I confirmed in the code:**
+- **Capacity:** the global count only changes under the shard lock, together with the matching insert or remove (`:307-331`), and the 256 bound uses an atomic compare-and-update, so it can't be exceeded.
+- **Locking:** the writer takes one shard lock at a time (`:354-372`) and the callback makes a single bounded try_lock attempt, so neither can deadlock.
+- **Wake and shutdown:** a wake is sent after every admission, and the writer drains the final batch on disconnect. `unclosed_sessions` was 0 in every run.
+
+## Findings
+
+- **F1 (medium): the retry budget is unproven.** With `ADMISSION_TRIES = 512` changed to `1`, every test passes (synchronized got 78–79/80 with 22–35 losses, inside the allowance of 4). Sharding alone carries the qualification. Collapsing to one shard fails the synchronized test only 2 of 3 times; only the private sharding test catches it every time. Since healthy runs score 80/80 with 0 losses, the threshold of ≥76 is loose. Don't cite this test as evidence for the retry.
+- **F2 (low): the runner hides untracked files.** `scripts/revert_v2.py` stubs `ls-files` to return nothing. That suppresses the engine's "untracked and therefore NOT reverted" note: during my run `review-evidence/` was untracked and no note printed. Such files are copied into the export but neither reverted nor reported. It had no effect here because all production files are staged.
+- **F3 (low): a timeout leaves the test running.** `subprocess.run(timeout=240)` kills only cargo. My probe showed the grandchild process survives (I killed it).
+- **F4 (low): build isolation.** The author's retained logs were built in another worktree's target (`.worktrees/kan-v2-gateway/target`). Source export isolation holds; build-output isolation doesn't. The exports also land under `<root>/.local-state/reversion`, which is gitignored but inside the caller's tree, contrary to the docstring's wording.
+- **F5 (low):** `tests/test_revert_v2.py` only tests result parsing. Export, the Git stubbing, compile-error classification and timeout have no tests (I checked those by hand, above).
+- **F6 (nit):** the callback still allocates under the shard lock (`:317-318`, an `Arc::new` plus a clone). This existed in the parent too.
+- **F7 (nit):** the barrier matches any `BEGIN DEFERRED` on the writer connection and stays set once tripped. That's record-specific today only because `record()` is the only transaction on that connection.
+- **F8 (nit):** the loss counter also counts a failed initial session registration (`:431-435`) and a dead-writer wake (`:486-488`), which aren't strictly "health summary" losses.
+
+## Checks I ran
+- **Build and tests:** v2 all-targets build passed. Tests passed: operations integration 19, ops unit 5, capture 18, adversarial 13, contention 6, deadlines 6, gateway 17 (1 ignored), surface 19.
+- **Node, Python, lint:** Node 12/12; runner tests 2/2 on Python 3.9.6; clippy (v2 and default) and fmt clean.
+- **Mutants:** I ran 7 production mutants. Every production change was restored and checked by sha256, and the temporary probe test is deleted. `git diff HEAD --stat` matches the start; the only addition is `review-evidence/`, which holds the raw logs, probe copies and mutation driver.
+
+## Not run
+- `--verify cde8b0f`: that commit isn't in this export, so I only read the retained historical logs.
+- Linux CI, full workspace, browser checks, and qualification against real gateway concurrency.
+- kan/day recording (Steps 7–8), since writes are forbidden.
+
+The disposable runner exports under `.local-state/reversion/` are left for you to remove. The operations design ACs beyond this correction (capacity/rotation, reader/frontend) remain open as declared. Nothing here completes them.

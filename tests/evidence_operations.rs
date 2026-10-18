@@ -873,3 +873,69 @@ fn persisted_terminal_observation_rejects_regression_and_contradiction() {
         "completed"
     );
 }
+
+/// Qualification workload from the independent coalescing review: 80 distinct
+/// attempts (below the 256 bound), eight concurrent streams at 1 ms intervals.
+/// Allows four terminal losses to avoid claiming a scheduling-independent SLA;
+/// the mandatory held-lock unit separately proves exact loss accounting.
+#[test]
+fn synchronized_streams_retain_terminal_summaries() {
+    let f = Fixture::new();
+    let (report, guard) = ops::reporter(Journal::open(&f.journal).unwrap()).unwrap();
+    let start = std::sync::Arc::new(std::sync::Barrier::new(8));
+    let mut threads = Vec::new();
+    for t in 0..8 {
+        let report = report.clone();
+        let start = start.clone();
+        threads.push(std::thread::spawn(move || {
+            start.wait();
+            for i in 0..10 {
+                let mut h = Health {
+                    attempt: format!("{:064x}", t * 1_000_000 + i + 10),
+                    observer: Observer::Collector,
+                    observed: 0,
+                    locally_queued: 0,
+                    unconfirmed: 0,
+                    recording_gap: false,
+                    remote_acknowledged: false,
+                    status: Some(200),
+                    outcome: None,
+                };
+                report(&h);
+                for n in 1..=30 {
+                    std::thread::sleep(Duration::from_millis(1));
+                    h.observed = n;
+                    h.locally_queued = n;
+                    if n == 30 {
+                        h.outcome = Some(Outcome::Completed);
+                    }
+                    report(&h);
+                }
+            }
+        }));
+    }
+    for t in threads {
+        t.join().unwrap();
+    }
+    drop(report);
+    guard.join();
+    let s = Journal::open(&f.journal).unwrap().snapshot().unwrap();
+    let terminal = s
+        .recent
+        .iter()
+        .filter(|r| r["capture"]["outcome"] == "completed")
+        .count();
+    eprintln!(
+        "synchronized terminals={terminal}/80; lost-summary observations={}",
+        s.telemetry_dropped
+    );
+    assert!(
+        terminal >= 76,
+        "healthy-journal contention lost more than 5% of terminal summaries"
+    );
+    assert!(
+        s.observed == 2400 || s.telemetry_dropped > 0,
+        "shortfall must be disclosed"
+    );
+    assert_eq!(s.unclosed_sessions, 0);
+}

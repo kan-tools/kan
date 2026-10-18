@@ -1,0 +1,152 @@
+file=src/evidence_operations.rs
+sha_before=1c8ce1223529072a48c856e37add7477e9ee0f02e1d83215a0f14f9aa54c896b
+OLD='const ADMISSION_TRIES: usize = 512;'
+NEW='const ADMISSION_TRIES: usize = 1_000_000;'
+sha_mutated=827e4f2131269dc4f6414ce0b785f3dd6bf7a250ed100ff6544136193a36be98
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reviews/opus-reliability-correction)
+    Finished `test` profile [unoptimized] target(s) in 6.58s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=80/80; lost-summary observations=0
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.54s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=80/80; lost-summary observations=0
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.53s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=80/80; lost-summary observations=0
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.45s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=80/80; lost-summary observations=0
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.51s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=80/80; lost-summary observations=0
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.57s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=80/80; lost-summary observations=0
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.52s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=80/80; lost-summary observations=0
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.52s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=80/80; lost-summary observations=0
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.53s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=80/80; lost-summary observations=0
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.51s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=80/80; lost-summary observations=0
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.50s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=80/80; lost-summary observations=0
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.50s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=80/80; lost-summary observations=0
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.50s
+
+[exit 0]
+
+sha_restored=1c8ce1223529072a48c856e37add7477e9ee0f02e1d83215a0f14f9aa54c896b match=True

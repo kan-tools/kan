@@ -1,0 +1,85 @@
+file=src/evidence_operations.rs
+sha_before=1c8ce1223529072a48c856e37add7477e9ee0f02e1d83215a0f14f9aa54c896b
+OLD='Err(std::sync::TryLockError::WouldBlock) => None,'
+NEW='Err(std::sync::TryLockError::WouldBlock) => Some(false),'
+sha_mutated=edd32bcb58ad2544fff2d8742b4741dbbb38c9cc74367a71450087ea929a7190
+
+$ cargo test --offline --features v2-crypto --lib evidence_operations::
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reviews/opus-reliability-correction)
+    Finished `test` profile [unoptimized] target(s) in 5.49s
+     Running unittests src/lib.rs (target/debug/deps/kan-ef78140debb95ee4)
+
+running 6 tests
+test evidence_operations::tests::admission_retries_transient_contention_but_stops_at_budget ... ok
+test evidence_operations::tests::contended_admission_is_bounded_and_counts_one_summary ... ok
+test evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded ... ok
+test evidence_operations::tests::worker_checkpoint_retry_is_idempotent_after_uncertain_commit ... ok
+test evidence_operations::tests::physical_full_keeps_prior_health_and_rejects_new_record ... ok
+test evidence_operations::tests::burst_keeps_final_cumulative_summary_and_terminal_gap ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 58 filtered out; finished in 0.89s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reviews/opus-reliability-correction)
+    Finished `test` profile [unoptimized] target(s) in 6.75s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=79/80; lost-summary observations=22
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.60s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=78/80; lost-summary observations=15
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.54s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.13s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=79/80; lost-summary observations=21
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.51s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=79/80; lost-summary observations=15
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.50s
+
+[exit 0]
+
+$ cargo test --offline --features v2-crypto --test evidence_operations synchronized_streams_retain_terminal_summaries -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_operations.rs (target/debug/deps/evidence_operations-8f396ba67ddb65cc)
+
+running 1 test
+synchronized terminals=80/80; lost-summary observations=7
+test synchronized_streams_retain_terminal_summaries ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 1.51s
+
+[exit 0]
+
+sha_restored=1c8ce1223529072a48c856e37add7477e9ee0f02e1d83215a0f14f9aa54c896b match=True

@@ -1,0 +1,61 @@
+file=src/evidence_operations.rs
+sha_before=1c8ce1223529072a48c856e37add7477e9ee0f02e1d83215a0f14f9aa54c896b
+OLD='const ADMISSION_TRIES: usize = 512;'
+NEW='const ADMISSION_TRIES: usize = 1;'
+sha_mutated=d86e42d5e9f929968cec6070dacd6eacfb464517a9b81143dadc3f0bb1d6a4a0
+
+$ cargo test --offline --features v2-crypto --lib evidence_operations::tests::admission_retries_transient_contention_but_stops_at_budget -- --exact
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-health-reliability/.local-state/reviews/opus-reliability-correction)
+    Finished `test` profile [unoptimized] target(s) in 5.54s
+     Running unittests src/lib.rs (target/debug/deps/kan-ef78140debb95ee4)
+
+running 1 test
+test evidence_operations::tests::admission_retries_transient_contention_but_stops_at_budget ... FAILED
+
+failures:
+
+---- evidence_operations::tests::admission_retries_transient_contention_but_stops_at_budget stdout ----
+
+thread 'evidence_operations::tests::admission_retries_transient_contention_but_stops_at_budget' (8580621) panicked at src/evidence_operations.rs:833:9:
+assertion failed: bounded_admission(|| { calls += 1; (calls == 4).then_some(true) })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations::tests::admission_retries_transient_contention_but_stops_at_budget
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 63 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`
+[exit 101]
+
+$ cargo test --offline --features v2-crypto --lib evidence_operations::
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running unittests src/lib.rs (target/debug/deps/kan-ef78140debb95ee4)
+
+running 6 tests
+test evidence_operations::tests::admission_retries_transient_contention_but_stops_at_budget ... FAILED
+test evidence_operations::tests::contended_admission_is_bounded_and_counts_one_summary ... ok
+test evidence_operations::tests::sharded_admission_is_independent_and_globally_bounded ... ok
+test evidence_operations::tests::worker_checkpoint_retry_is_idempotent_after_uncertain_commit ... ok
+test evidence_operations::tests::physical_full_keeps_prior_health_and_rejects_new_record ... ok
+test evidence_operations::tests::burst_keeps_final_cumulative_summary_and_terminal_gap ... ok
+
+failures:
+
+---- evidence_operations::tests::admission_retries_transient_contention_but_stops_at_budget stdout ----
+
+thread 'evidence_operations::tests::admission_retries_transient_contention_but_stops_at_budget' (8580661) panicked at src/evidence_operations.rs:833:9:
+assertion failed: bounded_admission(|| { calls += 1; (calls == 4).then_some(true) })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations::tests::admission_retries_transient_contention_but_stops_at_budget
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 58 filtered out; finished in 0.93s
+
+error: test failed, to rerun pass `--lib`
+[exit 101]
+
+sha_restored=1c8ce1223529072a48c856e37add7477e9ee0f02e1d83215a0f14f9aa54c896b match=True
