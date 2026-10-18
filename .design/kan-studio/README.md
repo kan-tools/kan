@@ -59,3 +59,14 @@ limitation, so it warns about v2 paths relative to that older checkout. Every
 path in those warnings was separately confirmed to exist in this design worktree.
 The two withheld-claim warnings remain real and unresolved. Runtime acceptance
 criteria are not checked off by this document validation.
+
+## Appearance update — 2026-10-18
+
+System/Light/Dark is available in the top bar. System follows the platform; explicit
+choices persist only `kan.theme` in browser storage. Storage refusal falls back to
+this tab. The shared source is `web/theme.js`; regenerate both the copy beside this
+preview and the self-contained HTML with `python3 scripts/build_studio_preview.py`.
+Browser checks covered dark desktop Library, all nine mobile areas at 390px without
+document overflow, dark annotation dialog and Escape return, Light switching,
+reload persistence, System reset, and the production dashboard login in dark mode.
+No error/warning logs were reported. New screenshots show dark desktop/mobile.
