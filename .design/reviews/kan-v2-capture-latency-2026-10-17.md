@@ -81,4 +81,4 @@ attempting immediate admission after exhaustion and never latches off capture.
 It retains P1–P5 as compiled tests, adds budget-exhaustion/recovery and final-flush
 regressions, restores the caller timeout and thread-local state on unwind, and
 wires contention/deadline tests into feature-enabled CI. No production format
-or persistence-medium changes. Fresh verdict pending.
+or persistence-medium changes. The fresh correction verdict is APPROVE WITH FOLLOW-UPS; see [the retained report](kan-v2-capture-latency-correction-2026-10-18.md).

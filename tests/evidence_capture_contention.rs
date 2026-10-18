@@ -341,3 +341,50 @@ fn p5_concurrent_capture_opens() {
     assert!(concurrent_opens(&path, true, 40).is_empty());
     assert!(concurrent_opens(&path, false, 40).is_empty());
 }
+
+/// Q2: per-observation cap and allowance accounting under a lock held across repeated admissions.
+#[test]
+fn q2_per_observation_cap_and_allowance() {
+    let dir = tempfile::tempdir().unwrap();
+    let writer = Identity::generate();
+    let path = make_spool(dir.path(), &writer);
+    let mut spool = Spool::open_for_capture(&path).unwrap();
+    let lock = rusqlite::Connection::open(&path).unwrap();
+    lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let mut sink = EncryptedSpool {
+        spool: Some(&mut spool),
+        signer: &writer,
+        recipient: crypto::public_key(&PRIVATE).unwrap(),
+    };
+    let mut notify = |_: &capture::Health| {};
+    let mut rec =
+        capture::Recorder::new(capture::Observer::Gateway, &mut sink, &mut notify).unwrap();
+    let mut per = Vec::new();
+    let all = Instant::now();
+    for n in 0..15 {
+        let s = Instant::now();
+        rec.record(capture::Event::RequestChunk { offset: n }, b"x")
+            .unwrap();
+        per.push(s.elapsed().as_millis());
+    }
+    println!("Q2 per-observation ms={per:?} total={:?}", all.elapsed());
+    let max = *per.iter().max().unwrap();
+    lock.execute_batch("ROLLBACK").unwrap();
+    rec.record(capture::Event::RequestChunk { offset: 15 }, b"r")
+        .unwrap();
+    println!(
+        "Q2 after unlock queued={} unconfirmed={}",
+        rec.health().locally_queued,
+        rec.health().unconfirmed
+    );
+    assert!(max < 200, "per-observation wait exceeded cap: {max} ms");
+    assert!(
+        per.iter().take(5).all(|&m| m >= 90),
+        "admission did not wait: {per:?}"
+    );
+    assert!(
+        per.iter().skip(12).all(|&m| m < 50),
+        "allowance not exhausted: {per:?}"
+    );
+    assert_eq!(rec.health().locally_queued, 1);
+}
