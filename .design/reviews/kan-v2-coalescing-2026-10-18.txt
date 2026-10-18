@@ -1,0 +1,73 @@
+# Cold review: v2 health coalescing slice
+
+**Verdict: APPROVE WITH FOLLOW-UPS**
+
+This was a fresh, independent context; I wrote none of this code. Kan/day writes are forbidden here and the export has no live store, so the verdict is not recorded in kan. The north star is the one you stated: raw evidence and provenance, plus honest coverage.
+
+The slice is correct on its supported path:
+- The callback never does database I/O, and a full wake channel is not counted as a loss.
+- Completion is checked by revision, so a newer state that arrives during a write survives.
+- Every replacement and every journal write must cover the whole previous observation, and terminal outcomes and gaps are kept.
+- Shutdown drains the last batch, and I found no lost-wakeup race.
+- Journals written by the parent code still read correctly.
+- Raw capture and spool bytes, the database schema and the snapshot shape are unchanged.
+- In every probe, losses were counted; I never saw a silent loss.
+
+Under the same burst load the parent lost 310 of 320 attempts outright, so this is a large improvement. The follow-ups below don't break the honest-coverage rule, because every loss is counted.
+
+## Checks I ran myself
+
+All in this export with its own target, at jobs=4, debug=0, incremental=0:
+- **Build:** v2-crypto, all targets — passed.
+- **Operations tests:** 18/18 integration and 3/3 unit.
+- **Capture, gateway and surface tests:** 18, 13, 6, 6, 17 (one ignored: it needs `KAN_CLAUDE_BIN`) and 19. Gateway admission unit test: 1/1.
+- **Lint:** Clippy (with v2-crypto and workspace) and `fmt --check` are clean.
+- **Node:** 11/11.
+
+## Reverting the production change
+
+I did this by hand rather than with the author's script. Your new unit test stayed in place under `#[cfg(test)]`.
+- **Burst test:** fails on its count check, expecting `(1002,1001,1)` but getting `(257,256,1)`. Its barrier check had already passed, so this is a genuine failure.
+- **Persisted-terminal test:** fails at `tests/evidence_operations.rs:864`, where the regression to no outcome is wrongly accepted.
+- **Future-clock Node test:** fails when all of `app.js` is reverted. It also fails when only the worker badge is reverted, so the badge and history checks are independent.
+- **After restoring:** file hashes matched, and all three tests pass.
+- **The author's Node adapter:** its result parsing is correct. It matches Node 24's real output, treats skipped or missing tests as "no such test", and its three runs are baseline, reverted and restored, in that order.
+
+## Mutation tests
+
+Every mutant compiled, and I restored and hash-checked the code after each one.
+- **Revision check, full-wake counting, status/outcome/observer checks, pending-map cap, and both whole-observation checks:** each is caught by the slice's tests.
+- **The parent review's three surviving checks (D, I, F):** all three are now caught by the promoted test `worker_refuses_history_outside_current_queue_lineage`. Each fails on its own named case (regressed frontier, different head, unacknowledged position), not on a database-lock flake.
+- **The parent's UI survivor (reporter future-clock guard):** now caught by the new Node test.
+- **No database-lock flakes** appeared in any of my 15 full operations-suite runs.
+
+## Findings
+
+1. **Medium: concurrent callers lose terminal summaries even when the journal is healthy.** The callback uses `try_lock` (`src/evidence_operations.rs:412`), and each wake makes the writer grab the lock right after a caller's offer (`:385-388`), which is when a fast caller makes its next one. With extra counters added temporarily, every loss in my healthy-journal runs came from `try_lock` failing; there were no write failures and no rejected updates.
+
+   | Setup | Terminal summaries lost |
+   |---|---|
+   | 1 caller in a tight loop | up to 7 of 40 |
+   | 2 callers in a tight loop | 78 of 80 |
+   | 8 callers, 1 ms sleeps | 38–56 of 80 |
+   | Random, unaligned spacing | none, but 0–1.5% of updates dropped |
+
+   Every one of these is counted, but "capture updates lost" becomes noise in a healthy system. The design says contention losses are counted but not how many there can be. A blocking lock (the critical section does no I/O) or a bounded retry would fix it.
+2. **Medium: no reliable test that contention losses are counted.** If I make contention losses go uncounted, only an unrelated test (`lazy_reporter_counts_absent_journal_losses_after_recovery`) notices, in 6 of 8 runs.
+3. **Low: the burst test can block on the wrong write.** If the test thread stalls for more than 500 ms, the barrier can catch the session write instead of the first record, so the in-flight case goes untested. The test still passes when that happens.
+4. **Low: unsampled sessions are labelled as missing a heartbeat.** At `app.js:36`, sessions outside the 100-row sample are listed as "without a current heartbeat", but they are unsampled, not known to be stale.
+5. **Low: the loss counter's unit changed.** `telemetry_dropped` now counts lost summaries rather than individual updates, but the UI still says "capture updates lost".
+6. **Low: the author's `Demonstrated-by:` trailer can't be re-checked.** It names `node::future_clock_badge`, which the bundled `--verify` mode can't run.
+
+The deferred work the design names is legitimate: capacity reserve and rotation, stable reporter source identity, and exhausted-journal or whole-device certainty. Removing the old `unconfirmed == 1` check from the pressure test is also fine; that check depended on scheduling, and the burst test now covers the locked-then-released case.
+
+## Not run
+
+- Linux CI and the global-cap negative control.
+- `cargo test --workspace`, and the other v2 test suites: delivery, crypto, import, restore, migration, recovery, store, service, spool, HTTP and contract.
+- The ignored real-provider gateway test.
+- Any browser or real-device UI check. The Node tests only use a simulated page.
+- The kan telos read and the verdict record.
+- Contention under real gateway load; my probes used plain threads.
+
+The reviewed files are restored (hashes verified), my temporary probe test is deleted, and I started no servers. Everything is in `review-evidence/`; `REVIEW.md` is the full report.

@@ -182,3 +182,14 @@ an older revision is in flight. It verifies exact final counters, terminal/gap
 preservation and a separately counted contradictory update. This avoids a timing
 assumption about when a background writer has started. The bounded distinct-attempt
 pressure test retains its independent callback deadline and overflow accounting.
+
+
+Fresh actual Opus 5.5 review of cde8b0f returned APPROVE WITH FOLLOW-UPS. The
+independent report and author disposition are in
+`.design/reviews/kan-v2-coalescing-2026-10-18.{txt,md}`. Its probes found substantial
+counted terminal-summary loss under synchronized healthy-journal contention.
+Before claiming normal-load reliability, add deterministic contention accounting,
+qualify callback concurrency, and tighten the burst barrier to the record write.
+Unsampled-session wording, summary counter units and native mixed-language
+reversion replay also remain explicit follow-ups. Capacity/rotation and the full
+reader/frontend sequence remain unchanged.
