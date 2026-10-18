@@ -1,0 +1,26 @@
+Design doc validation:
+  [PASS] section present: Summary
+  [PASS] section present: Requirements
+  [PASS] section present: Acceptance Criteria
+  [PASS] section present: Architecture
+  [PASS] requirements: 12
+  [PASS] acceptance criteria: 10
+  [PASS] every requirement is referenced by an acceptance criterion
+  [PASS] no placeholder text
+  [PASS] 6 of 20 referenced path(s) exist (Architecture)
+  [WARN] referenced path does not exist yet: src/evidence_dashboard.rs
+  [WARN] referenced path does not exist yet: src/evidence_service.rs
+  [WARN] referenced path does not exist yet: src/evidence_store.rs
+  [WARN] referenced path does not exist yet: src/evidence_crypto.rs
+  [WARN] referenced path does not exist yet: src/evidence_capture.rs
+  [WARN] referenced path does not exist yet: src/evidence_gateway.rs
+  [WARN] referenced path does not exist yet: .design/kan-v2-server-first.md
+  [WARN] referenced path does not exist yet: src/evidence_operations.rs
+  [WARN] referenced path does not exist yet: src/evidence_dashboard.rs
+  [WARN] referenced path does not exist yet: web/operations/
+  [WARN] referenced path does not exist yet: src/evidence_import.rs
+  [WARN] referenced path does not exist yet: src/evidence_restore.rs
+  [WARN] referenced path does not exist yet: src/migration_preflight.rs
+  [WARN] referenced path does not exist yet: src/bin/kan-v2.rs
+  [WARN] the log withholds 2 claim(s) without naming their subjects, so `kan-v2-human-frontend` may be absent or omitted
+  [OPEN] 1 unresolved open question(s) remain
