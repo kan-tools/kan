@@ -1,0 +1,16 @@
+TAP version 13
+# Subtest: unsampled sessions and summary loss units are explicit
+ok 1 - unsampled sessions and summary loss units are explicit
+  ---
+  duration_ms: 13.119875
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 46.011666

@@ -25,6 +25,7 @@ jobs:
       - run: ./scripts/check-citations.sh
       - run: python3 scripts/evidence_reference.py --check
       - run: node --test tests/operations_ui.test.cjs tests/theme_ui.test.cjs
+      - run: python3 tests/test_revert_v2.py
 
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --all-targets
