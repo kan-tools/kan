@@ -59,7 +59,10 @@
     showSource(value); tab('source'); $('source-tab').focus();
   }
   async function page(position) {
-    clearInspector(); notice('Reading the selected snapshot…');
+    clearInspector(); buttons.clear(); $('rows').replaceChildren();
+    $('count').textContent = ''; $('coverage').textContent = ''; $('page-position').textContent = 'Loading…';
+    $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
+    notice('Reading the selected snapshot…');
     const value = await rpc({action:'page', pin, after:position, limit:20}); if (!value) return;
     after = position; next = value.next; buttons.clear(); $('rows').replaceChildren();
     for (const row of value.records) {

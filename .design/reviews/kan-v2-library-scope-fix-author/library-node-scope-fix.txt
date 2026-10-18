@@ -1,0 +1,38 @@
+✔ real endpoint uses header auth and untrusted source stays text (3.404708ms)
+✔ lock aborts pending source and clears every private view (1.3375ms)
+✔ page and scope navigation carry only the selected authenticated pin (1.118875ms)
+✔ download rechecks authorization and denied export clears prior plaintext (1.097542ms)
+✔ old transport errors cannot lock a newer session (0.662708ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.739709ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.570083ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.60675ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (1.886083ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.957917ms)
+✔ auth is header-only; gap filtering and untrusted values use text (31.298ms)
+✔ late authenticated response cannot unlock a locked view (0.603375ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.600375ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.610041ms)
+✔ fresh active sessions are current while historical losses remain visible (0.577541ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.688625ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.609542ms)
+✔ unsampled sessions and summary loss units are explicit (0.48125ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.802916ms)
+✔ unsupported status version retains visibly disconnected values (0.578709ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.671083ms)
+✔ locking clears rendered private metadata and closes the inspector (0.735875ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.563458ms)
+✔ future persistence timestamps stay unknown (0.414542ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.550583ms)
+✔ unchanged notices are not announced again on every poll (0.557834ms)
+✔ first paint defaults to platform; System follows live platform changes (1.148ms)
+✔ explicit choice persists only the theme and overrides platform until System selected (0.75725ms)
+✔ invalid preference, unavailable storage and cross-tab updates degrade safely (0.800667ms)
+✔ production and preview load the same theme controller before content (1.081416ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 70.736708
