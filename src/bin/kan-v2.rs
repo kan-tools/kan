@@ -42,6 +42,31 @@ enum Command {
     /// Read the same operations snapshot used by the dashboard.
     #[cfg(feature = "v2-crypto")]
     OpsStatus { journal: PathBuf },
+    /// Copy a stopped standalone journal into a new collection, preserving the source.
+    #[cfg(feature = "v2-crypto")]
+    OpsAdopt {
+        source: PathBuf,
+        collection: PathBuf,
+    },
+    /// Select a fresh health generation, retaining sealed history; stop writers first.
+    #[cfg(feature = "v2-crypto")]
+    OpsRotate { collection: PathBuf },
+    /// List retained generations in bounded pages; counts are not additive.
+    #[cfg(feature = "v2-crypto")]
+    OpsGenerations {
+        collection: PathBuf,
+        #[arg(long, default_value_t = 0)]
+        after: usize,
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+    },
+    /// Read one hash-verified sealed generation, without modifying it.
+    #[cfg(feature = "v2-crypto")]
+    OpsHistory {
+        collection: PathBuf,
+        #[arg(long)]
+        generation: String,
+    },
     /// Continuously deliver retained signed requests, with bounded retry backoff.
     #[cfg(feature = "v2-crypto")]
     SpoolWatch {
@@ -324,6 +349,39 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .and_then(|mut j| j.snapshot())
                 .map_err(|_| "operations status unavailable")?;
             print_json(&serde_json::to_value(&snapshot)?)?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::OpsAdopt { source, collection } => {
+            kan::evidence_operations_collection::adopt(&source, &collection).map_err(|_| {
+                "operations adoption failed; preserve partial output and inspect source/collection"
+            })?;
+            print_json(&serde_json::json!({"adopted":true,"source_preserved":true}))?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::OpsRotate { collection } => {
+            kan::evidence_operations_collection::rotate(&collection).map_err(|_| {
+                "operations rotation failed or commit uncertain; inspect collection before retrying"
+            })?;
+            print_json(&serde_json::json!({"rotated":true,"history_preserved":true}))?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::OpsGenerations {
+            collection,
+            after,
+            limit,
+        } => {
+            let page = kan::evidence_operations_collection::generations(&collection, after, limit)
+                .map_err(|_| "operations collection unavailable")?;
+            print_json(&serde_json::to_value(page)?)?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::OpsHistory {
+            collection,
+            generation,
+        } => {
+            let history = kan::evidence_operations_collection::history(&collection, &generation)
+                .map_err(|_| "operations generation unavailable or not verified")?;
+            print_json(&serde_json::to_value(history)?)?;
         }
         #[cfg(feature = "v2-crypto")]
         Command::SpoolWatch {

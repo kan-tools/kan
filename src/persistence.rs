@@ -34,6 +34,7 @@ pub enum SurfaceWrite {
     /// Exact encrypted requests; prepared requests reserve the writer through commit.
     EvidenceSpool,
     EvidenceOperations,
+    EvidenceOperationsCollection,
     EvidenceArchive,
     EvidenceBackup,
     EvidenceRecovery,
@@ -65,6 +66,7 @@ impl SurfaceWrite {
         Self::Sqlite,
         Self::EvidenceSpool,
         Self::EvidenceOperations,
+        Self::EvidenceOperationsCollection,
         Self::EvidenceArchive,
         Self::EvidenceBackup,
         Self::EvidenceRecovery,
@@ -126,9 +128,17 @@ impl SurfaceWrite {
                 "overlay:LOCK",
             ],
             Self::Sqlite => &["sqlite:meta"],
+            Self::EvidenceOperationsCollection => &[
+                "evidence-operations-collection:directory",
+                "evidence-operations-collection:LOCK",
+                "evidence-operations-collection:manifest.json",
+                "evidence-operations-collection:.manifest-*",
+                "evidence-operations-collection:generation-*.sqlite",
+            ],
             Self::EvidenceOperations => &[
                 "evidence-operations:database",
                 "evidence-operations:database-journal",
+                "evidence-operations:database-lock",
             ],
             Self::EvidenceSpool => &[
                 "evidence-spool:database",

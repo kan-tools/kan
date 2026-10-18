@@ -14,6 +14,18 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    (
+        "operations-observations-v1-v2",
+        "tests/evidence_operations.rs",
+    ),
+    (
+        "operations-generation-membership",
+        "tests/evidence_operations_collection.rs",
+    ),
+    (
+        "operations-lifetime-lock",
+        "tests/evidence_operations_collection.rs",
+    ),
     ("browser-theme", "tests/theme_ui.test.cjs"),
     ("operations-observations", "tests/evidence_operations.rs"),
     ("verified-import-restore", "tests/evidence_restore.rs"),
@@ -64,6 +76,26 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("connection-config", ".design/medium-architecture.md"),
 ];
 const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
+    (
+        "src/evidence_operations_collection.rs",
+        "MANIFEST",
+        "collection manifest",
+    ),
+    (
+        "src/evidence_operations_collection.rs",
+        "LOCK",
+        "collection lock",
+    ),
+    (
+        "src/evidence_operations_collection.rs",
+        "format!(\"generation-{id}.sqlite\")",
+        "collection generation",
+    ),
+    (
+        "src/evidence_operations_collection.rs",
+        "format!(\".manifest-{}\", id())",
+        "collection staging manifest",
+    ),
     (
         "src/evidence_restore.rs",
         "\"files\"",
@@ -383,6 +415,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", "\"; \"", "not a path"),
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
+    "src/evidence_operations_collection.rs",
     "src/evidence_operations.rs",
     "src/evidence_restore.rs",
     "src/evidence_spool.rs",
@@ -400,6 +433,24 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_operations_collection.rs",
+        "create_dir_owner_only",
+        "EvidenceOperationsCollection",
+        1,
+    ),
+    (
+        "src/evidence_operations_collection.rs",
+        "write_new_owner_only",
+        "EvidenceOperationsCollection",
+        3,
+    ),
+    (
+        "src/evidence_operations_collection.rs",
+        "rename",
+        "EvidenceOperationsCollection",
+        1,
+    ),
     (
         "src/evidence_restore.rs",
         "create_dir_owner_only",
@@ -422,7 +473,7 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         "src/evidence_operations.rs",
         "write_new_owner_only",
         "EvidenceOperations",
-        1,
+        2,
     ),
     (
         "src/evidence_spool.rs",
@@ -1179,7 +1230,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "ef682997bd2b789be63f0f75d49e45699941af8492431a0a3936e46067c487a3",
+                "17136afe4612d3a6b906b8a3afb9290826e8fc15643a072836c865e198f3d7a3",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

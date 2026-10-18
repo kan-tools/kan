@@ -57,3 +57,6 @@ pub mod evidence_gateway;
 pub mod evidence_dashboard;
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_operations;
+
+#[cfg(feature = "v2-crypto")]
+pub mod evidence_operations_collection;
