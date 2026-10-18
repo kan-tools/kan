@@ -266,27 +266,50 @@ impl Spool {
     pub fn open(path: &Path) -> Result<Self> {
         Self::open_with_wait(path, Duration::from_secs(5))
     }
-    /// Capture must not wait for SQLite locks, including during initial audit.
+    /// Capture tolerates brief SQLite contention, including initial WAL setup.
     /// Filesystem I/O and the audit itself are not hard real-time operations.
     pub fn open_for_capture(path: &Path) -> Result<Self> {
-        Self::open_with_wait(path, Duration::ZERO)
+        Self::open_with_wait(path, Duration::from_millis(100))
     }
-    pub(crate) fn without_busy_wait<T, E: From<Error>>(
+    pub(crate) fn with_capture_wait<T, E: From<Error>>(
         &mut self,
+        wait: Duration,
         operation: impl FnOnce(&mut Self) -> std::result::Result<T, E>,
-    ) -> std::result::Result<T, E> {
-        let previous: u32 = self
-            .conn
-            .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
-            .map_err(Error::from)?;
-        self.conn
-            .busy_timeout(Duration::ZERO)
-            .map_err(Error::from)?;
-        let result = operation(self);
-        self.conn
-            .busy_timeout(Duration::from_millis(u64::from(previous)))
-            .map_err(Error::from)?;
-        result
+    ) -> (std::result::Result<T, E>, Duration) {
+        let mut spent = Duration::ZERO;
+        let result = (|| {
+            let previous: u32 = self
+                .conn
+                .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+                .map_err(Error::from)?;
+            self.conn
+                .busy_handler(Some(capture_busy))
+                .map_err(Error::from)?;
+            let prior = CAPTURE_WAIT.with(|state| {
+                state.replace(Some(CaptureWait {
+                    remaining: wait.min(Duration::from_millis(100)),
+                    spent: Duration::ZERO,
+                }))
+            });
+            // The operation is synchronous and cannot move threads. Restore both
+            // the thread-local callback state and caller policy even on unwind.
+            let outcome =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| operation(self)));
+            spent = CAPTURE_WAIT
+                .with(|state| state.replace(prior).expect("capture wait installed").spent);
+            let restored = self
+                .conn
+                .busy_timeout(Duration::from_millis(u64::from(previous)))
+                .map_err(Error::from);
+            match outcome {
+                Err(panic) => std::panic::resume_unwind(panic),
+                Ok(result) => {
+                    restored?;
+                    result
+                }
+            }
+        })();
+        (result, spent)
     }
     fn open_with_wait(path: &Path, wait: Duration) -> Result<Self> {
         let mut conn = connection(path, wait)?;
@@ -540,6 +563,27 @@ fn audit(conn: &Connection) -> Result<()> {
 mod tests {
     use super::*;
     #[test]
+    fn capture_wait_restores_policy_and_thread_state_after_unwind() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.busy_timeout(Duration::from_secs(5)).unwrap();
+        let mut spool = Spool { conn };
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _: (Result<()>, Duration) =
+                spool.with_capture_wait(Duration::from_millis(20), |_| panic!("fixture unwind"));
+        }));
+        assert!(panicked.is_err());
+        let wait: u32 = spool
+            .conn
+            .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(wait, 5000);
+        assert!(CAPTURE_WAIT.with(|s| s.borrow().is_none()));
+        let (result, spent): (Result<()>, Duration) =
+            spool.with_capture_wait(Duration::ZERO, |_| Ok(()));
+        assert!(result.is_ok());
+        assert_eq!(spent, Duration::ZERO);
+    }
+    #[test]
     fn physical_sqlite_full_is_explicit_and_atomic() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("spool.sqlite");
@@ -586,4 +630,30 @@ mod tests {
         drop(spool);
         assert_eq!(Spool::open(&path).unwrap().frontier().unwrap().next, 0);
     }
+}
+
+// rusqlite's busy callback accepts a function pointer. Thread-local state scopes
+// its budget to one synchronous capture admission without unsafe FFI or shared
+// process-global mutable state. The callback never calls SQLite.
+struct CaptureWait {
+    remaining: Duration,
+    spent: Duration,
+}
+thread_local! { static CAPTURE_WAIT:std::cell::RefCell<Option<CaptureWait>>=const {std::cell::RefCell::new(None)}; }
+fn capture_busy(_: i32) -> bool {
+    CAPTURE_WAIT.with(|state| {
+        let mut state = state.borrow_mut();
+        let Some(wait) = state.as_mut() else {
+            return false;
+        };
+        if wait.remaining.is_zero() {
+            return false;
+        }
+        let started = std::time::Instant::now();
+        std::thread::sleep(wait.remaining.min(Duration::from_millis(2)));
+        let elapsed = started.elapsed();
+        wait.remaining = wait.remaining.saturating_sub(elapsed);
+        wait.spent = wait.spent.saturating_add(elapsed);
+        true
+    })
 }

@@ -232,3 +232,44 @@ async fn r3_boundary_blocking_output_observation() {
         Some(Outcome::OutcomeUnknown)
     );
 }
+
+struct BlockingFlush(Vec<u8>);
+impl AsyncWrite for BlockingFlush {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+        b: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        self.0.extend_from_slice(b);
+        Poll::Ready(Ok(b.len()))
+    }
+    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+        std::thread::sleep(Duration::from_millis(300));
+        Poll::Ready(Ok(()))
+    }
+    fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn blocking_final_flush_over_budget_is_unknown() {
+    let p = drip(vec![b"z".to_vec()], Duration::from_millis(1)).await;
+    let mut sink = Ok_::default();
+    let mut out = BlockingFlush(Vec::new());
+    let mut states = Vec::new();
+    let result = capture::forward(
+        &Route::new(&p.url).unwrap(),
+        vec![],
+        &mut sink,
+        &mut |h| states.push(h.clone()),
+        &mut out,
+        Duration::from_millis(200),
+    )
+    .await;
+    assert!(result.is_err());
+    assert_eq!(out.0, b"z");
+    assert_eq!(
+        states.last().unwrap().outcome,
+        Some(Outcome::OutcomeUnknown)
+    );
+}

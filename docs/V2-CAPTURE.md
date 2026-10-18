@@ -94,10 +94,8 @@ control reserves. Production key custody, independent-host backup drills and
 explicit cutover remain required before using v2 as the primary archive.
 
 
-Capture now opens its spool with zero SQLite busy timeout and makes admission
-without lock waits. The first unconfirmed encrypted admission suspends that
-sink for the rest of its lifetime; subsequent observations report gaps. A new
-attempt may recover with a fresh sink. No queued bytes or frontiers are removed.
-This bounds lock-wait policy, not fsync, startup audit or arbitrary callbacks.
-The deadline flag is a cumulative awaited network/output budget, not elapsed
-wall time. Ordinary offline spool queue/drain retain their existing wait policy.
+Capture opens its spool with a 100 ms SQLite busy timeout to tolerate brief WAL
+setup contention. Each Recorder allocates at most 100 ms of busy wait per
+admission from a one-second allowance, debited only by actual busy-handler sleep. Once spent, immediate admission continues. Failure reports a gap but never
+latches off the rest of an attempt; later observations can recover. The scoped handler shares each admission allowance across statements and restores caller policy on unwind. OS sleep overruns remain possible; this is not a hard wall-clock deadline. Startup audit, fsync, crypto and reporting
+remain synchronous. Ordinary offline spool operations retain their wait policy.
