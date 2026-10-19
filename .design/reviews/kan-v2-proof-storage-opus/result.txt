@@ -1,0 +1,43 @@
+**Verdict: APPROVE WITH FOLLOW-UPS** for the owner-side profile-2 storage checkpoint only. All six parent acceptance criteria stay open.
+
+The full report is in `review-evidence/REPORT.txt`, with raw logs, probes and mutant output alongside it.
+
+**What I ran** (after `cargo clean -p kan`, one heavy job at a time, all compiled from this export):
+- **Targeted suites:** 106 checks pass (7 codec, 10 storage, 7 contract, 18 reader, 11 service, 34 legacy store, 19 surface), matching the author's counts.
+- **Related lifecycle suites:** restore, import, recovery CLI, migration preflight, spool, HTTP and library CLI; 58 pass.
+- **Lint and format:** strict v2 all-target Clippy, default-feature Clippy and fmt all pass.
+- **Author's six mutants, rerun on the final code:** all six fail named tests. Their saved logs were older than the final two edits, so this closes that gap.
+- **Sources:** byte-identical before and after (287 files), and the export still matches `git archive 9f1dffa`.
+
+**What holds up:**
+- Metadata and proof are written in one transaction, and the eight process-kill points leave both or neither.
+- Exact retries return the stored proof and receipt. Wrong owner binding, purpose order, metadata damage and missing payloads are all refused.
+- Profile-1 openers refuse profile 2, and the new opener refuses profile 1 without changing its bytes.
+- My extra probes pass:
+  - A second handle appending a proven record mid-admission gets a conflict.
+  - A realistic upgrade shape (historical issuer different from the current one) is accepted.
+  - A prefix that mixes two historical issuers is refused.
+
+**The concurrency boundary is reasonable, not a hidden narrowing.** It is the same fence the existing service already uses, plus the tip's statement ID. Every statement chains to the previous one by hash, so rewriting an earlier row can't be made consistent with the fenced tip. The only changes that keep the tip intact are payload loss or derived columns, and the next strict audit catches both.
+
+**Main follow-ups:**
+- **F1 – untested checks:** four real checks have no committed test. The author's suite passes 10/10 with each one deleted, and only my probes fail:
+  - the retry compares the stored proof
+  - the retry re-checks the stored receipt
+  - all imported rows must share one historical issuer
+  - the archive issuer must be a P-256 key
+- **F3 – old binaries still write:** they do refuse profile 2, but if a crash left a WAL file, `Ledger::open` and `resume_initialization` merge it into the database and delete it when they close. Nothing is lost, but AC-3's "refuse before writes" is only true logically.
+- **F4 – interrupted create:** if `Archive::create` dies after writing its empty file, profile-2 code can't resume it, but the legacy resume quietly turns it into a profile-1 archive.
+- **F5 – SQL boundary not enforced:** a raw `UPDATE attestations` added to the store passes every check, and so does an undeclared index (AC-5 asks for index coverage). Adding a second helper call, changing the helper to `INSERT OR REPLACE`, or adding an undeclared table are all caught.
+- **F6 – memory on hostile archives:** a 96 MiB oversized payload row pushes memory to about 113 MB during the integrity check before the open is refused. Legacy `Ledger::open` does exactly the same, so it isn't a regression, but the future read-only degraded mode must avoid it.
+- **Minor:**
+  - A retry race surfaces as `Invalid` rather than `Conflict`.
+  - The author's "signature" mutation actually changes the statement, not the signature.
+  - RFC 4 still says storage will be implemented and qualified "together".
+- **Before later slices:**
+  - `admit` takes one caller-chosen grant; holding the configured grant table, as the existing service does, would make misuse harder.
+  - The profile-2 schema is pinned before its upgrade-plan and recovery tables exist.
+  - Profile 2 has no backup or recovery path yet.
+  - The full scan on every append is a known cost that pulls against the performance-at-scale goal.
+
+**Coverage limits:** process death was simulated by exiting at fixed points, not power loss. Concurrency was tested with fixed interleavings, not stress. Uniqueness of records across heights was checked by reading the schema only. I didn't run the full CI list, the Python or Node checks, or MSRV. I recorded nothing in kan or day, as you asked. My probe file was moved out of `tests/` into `review-evidence/probes/`. Its stale test binaries remain in the shared target, which I left untouched.

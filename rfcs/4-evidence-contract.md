@@ -141,9 +141,10 @@ verify metadata chain linkage before exposing rows. Legacy Snapshot/Page/Read
 remain unchanged. A reader explicitly configured for `proof-inventory-v1` must
 refuse unknown/unsupported profile responses; it must never fall back silently.
 
-The new SQLite profile and atomic proof insertion, upgrade plan, proof-preserving
-backup/recovery, RPC framing and reader wiring remain to be implemented and
-qualified together. In particular, these vectors do not authorize removing
+The owner-side SQLite profile and atomic proof insertion have a separately
+reviewed experimental checkpoint. Upgrade planning, proof-preserving backup/recovery,
+RPC framing and reader wiring remain to be implemented and qualified before real
+evidence is stored in that profile. In particular, these vectors do not authorize removing
 legacy payload/admission checks. Initial damaged-archive browsing is explicitly
 read-only; strict writable store verification remains unchanged. Read-only here
 means no authoritative evidence/schema/index mutation. As with RecoveryReader,

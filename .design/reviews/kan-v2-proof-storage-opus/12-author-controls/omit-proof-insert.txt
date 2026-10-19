@@ -1,0 +1,22 @@
+
+running 1 test
+test atomic_admission_retry_and_legacy_refusal ... FAILED
+
+failures:
+
+---- atomic_admission_retry_and_legacy_refusal stdout ----
+
+thread 'atomic_admission_retry_and_legacy_refusal' (9410811) panicked at tests/evidence_attested_store.rs:65:64:
+called `Result::unwrap()` on an `Err` value: Corrupt("attestation cardinality")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    atomic_admission_retry_and_legacy_refusal
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.09s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-storage/.local-state/reviews/storage)
+    Finished `test` profile [unoptimized] target(s) in 6.66s
+     Running tests/evidence_attested_store.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_store-a792e1b4f0d5a339)
+error: test failed, to rerun pass `--test evidence_attested_store`

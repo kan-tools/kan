@@ -146,7 +146,7 @@ fn authorization_precedes_storage_and_retries() {
 fn proof_mutations_and_payload_loss_refuse_writable_open() {
     for mutation in [
         "missing",
-        "signature",
+        "statement",
         "archive",
         "receipt",
         "extra",
@@ -165,7 +165,7 @@ fn proof_mutations_and_payload_loss_refuse_writable_open() {
             "missing" => {
                 conn.execute("DELETE FROM attestations", []).unwrap();
             }
-            "signature" => {
+            "statement" => {
                 let mut bytes = row.attestation.bytes().to_vec();
                 let last = bytes.len() - 1;
                 bytes[last] ^= 1;
@@ -387,6 +387,21 @@ fn database_columns_match_independent_surface_catalog() {
             .unwrap();
         for column in columns.query_map([], |r| r.get::<_, String>(1)).unwrap() {
             actual.insert((format!("{prefix}:{table}"), column.unwrap()));
+        }
+        if prefix == "evidence-proof-sqlite" {
+            let mut indexes=conn.prepare("SELECT name,sql FROM sqlite_schema WHERE type='index' AND tbl_name=? ORDER BY name").unwrap();
+            for index in indexes
+                .query_map([&table], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+                })
+                .unwrap()
+            {
+                let (name, definition) = index.unwrap();
+                actual.insert((
+                    format!("{prefix}:{table}"),
+                    format!("index:{name}:{}", definition.unwrap_or_default()),
+                ));
+            }
         }
     }
     let expected = include_str!("fixtures/read-write-surface.tsv")

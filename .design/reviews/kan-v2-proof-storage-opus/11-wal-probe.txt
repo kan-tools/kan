@@ -1,0 +1,30 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-storage/.local-state/reviews/storage)
+warning: variable does not need to be mutable
+   --> tests/zz_review_storage_probe.rs:522:13
+    |
+522 |         let mut a = Archive::open(temp.path(), binding()).unwrap();
+    |             ----^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (test "zz_review_storage_probe") generated 1 warning (run `cargo fix --test "zz_review_storage_probe" -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 6.76s
+     Running tests/zz_review_storage_probe.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_storage_probe-c4744dbbf47b2617)
+
+running 1 test
+
+running 1 test
+P10 Ledger::open: refused=true main_changed=true wal_before=true wal_after=None
+
+running 1 test
+P10 Ledger::resume_initialization: refused=true main_changed=true wal_before=true wal_after=None
+
+running 1 test
+P10 RecoveryReader::open: refused=true main_changed=false wal_before=true wal_after=Some(true)
+test p10_legacy_refusal_physical_media_effects ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.32s
+
+exit 0

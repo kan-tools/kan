@@ -71,7 +71,11 @@ short-key and descending-error-label regressions address review F1/F2; the Verif
 doc now states its relative authority. Author evidence is preserved in `.design/reviews/kan-v2-proof-storage-author/`: ten
 storage checks, seven codec checks, existing compatibility suites, nineteen surface
 checks, strict Clippy, and six compiled negative controls. Fresh storage review
-remains pending.
+approved 9f1dffa with follow-ups (106 core + 58 lifecycle/service checks). The
+original report is retained in `.design/reviews/kan-v2-proof-storage-opus/`. Its
+non-tip retry, historical-issuer and canonical-key regressions are incorporated;
+small error-class/limit-propagation corrections pass 37 storage/surface checks and
+strict all-target v2 Clippy. Fresh review of those corrections remains pending.
 The complete pre-admission audit is deliberately unoptimized; see the storage
 checkpoint scope in the governing design for its concurrency threat boundary.
 
