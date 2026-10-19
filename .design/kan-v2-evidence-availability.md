@@ -916,3 +916,40 @@ The plan/copy schemas and CLI are being qualified in the dedicated permanent
 `kan-v2-copy-destination` worktree. Fresh independent review and CI are required
 before treating this checkpoint as accepted. Host power-loss, production-size
 throughput, cross-host fencing and live migration are not demonstrated here.
+
+### Owner-copy review follow-ups (2026-10-19)
+
+The cold Opus review of d9b2110 approved this storage checkpoint with follow-ups;
+its unmodified report and probes are retained in
+`reviews/kan-v2-copy-destination-opus/evidence/REPORT.txt`. No parent acceptance
+criterion is closed by that verdict.
+
+Plan custody now uses the same SQLite family and filesystem-alias collision
+rules as archive outputs. `retain_plan` takes the verified source, rejects its
+main/sidecar names before creating a file, and still retains private exact bytes.
+`read_plan_for_copy` checks both source and destination families before the CLI
+opens either database. The bare `read_plan` function is only a bounded decoder;
+it confers no path-safety guarantee. These checks retain the trusted-filesystem
+assumption; they do not fence hostile concurrent filesystem replacement.
+
+Schema-drift tests name the exact refusal at open, file verification, resume,
+existing-handle verification and backup. Two additional resume tests use valid
+foreign object membership and a valid historical receipt with a current retained
+proof: local verification succeeds, but advancing against a different exact
+source prefix refuses before writing. The earlier wrong-length test is renamed
+to describe the earlier guard it actually exercises. CLI tests attribute explicit
+profile/pins, key identity, private plan permissions, byte budget, missing resume
+output, initialization path and SQLite-path refusals.
+
+`copied::Archive::create` initializes an empty archive without proving signing-key
+possession. API executors requiring no output before that check must verify the
+key first; the owner CLI does. Every copying batch verifies the signer.
+`copy_batch(issued_at)` takes Unix milliseconds, whereas `admit(now)` uses Unix
+seconds for the service expiry contract. Those units are now documented at the
+API boundary. Non-private recipe errors name the plan rather than a database.
+
+The original report's claim that copy batches perform per-object NOT INDEXED
+reads is inaccurate: `src` is `&source.reader().ledger` and uses indexed
+`Ledger::read_object`; `RecoveryReader::read_object` is not called there. The
+unmodified review remains intact. Full source/destination audits still run, and
+no bounded latency or large-archive performance claim is made.

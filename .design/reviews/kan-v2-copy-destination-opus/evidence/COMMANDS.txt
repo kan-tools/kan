@@ -1,0 +1,34 @@
+Reviewer command log (cold review of d9b2110). Env: review-evidence/scripts/env.sh
+(shared CARGO_TARGET_DIR=.../kan-v2-library-resilience/.local-state/target, CARGO_BUILD_JOBS=4,
+debug info off, one heavy cargo job at a time). Raw outputs in raw/.
+
+00  identity before: python3 -I scripts/verify_export.py <export> ../destination-identity.json <repo>
+      -> raw/verify-before.txt (git ls-tree -r --full-tree d9b2110 + cat-file blob sha256)
+    diff provenance: git -C <repo> diff --no-color d9b2110^ d9b2110 -- . ':(exclude).design/reviews'
+      | cmp - ../destination-change.diff  -> identical (noted in verify-before.txt)
+    git -C <repo> show {d9b2110^,2c7c6cb,7e956e8}:.design/kan-v2-evidence-availability.md | grep ...
+      (predeclaration of deferrals; see REPORT section 5)
+00  cargo clean -p kan                                     -> raw/00-clean.txt (910 files)
+01  cargo test --features v2-crypto --test {10 targets}    -> raw/01-targeted.txt
+      FAILED first attempt kept: raw/01-targeted-attempt1-FAILED-zsh-wordsplit.txt (zsh did not
+      split $T; cargo rejected the argument; nothing ran)
+10  probes/zz_review_destination.rs copied to tests/, run, removed
+      cargo test --features v2-crypto --test zz_review_destination -- --nocapture --test-threads=1
+      -> raw/10-probes-attempt1-probeE-helper-bug.txt (probe E helper built an invalid
+         position-1/no-previous request AFTER its matrix passed; reviewer bug, not product)
+      -> raw/10-probes.txt (same run; A,B,C,D,F,G,H,I,K results)
+11  probe E fixed (fresh position-0 writers) -> raw/11-probe-e.txt
+12  probes/zz_review_destination2.rs (probe L) copied, run, removed -> raw/12-probes2.txt
+20  python3 -I scripts/mutate.py <export> ../destination-identity.json
+      -> raw/20-mutants-stdout.txt (stopped after 7 cases: my runner required a unique pattern;
+         the author's control replaces the first of 3 occurrences; no file had been mutated;
+         copy kept as raw/20-mutants-attempt1-stopped-pattern-count.txt)
+21  runner patched (first-occurrence allowed for A-* only), remaining 11 cases
+      -> raw/21-mutants-stdout.txt ; per-mutant logs raw/mutants/*.txt
+      (every mutated file restored and sha256-checked against the manifest inside the runner)
+30  cargo clippy --features v2-crypto --all-targets -- -D warnings -> raw/30-clippy.txt
+      (136 fresh .rmeta written after the probe run: a real re-check, not a stale cache)
+31  cargo fmt --all -- --check                             -> raw/31-fmt.txt
+32  cargo check --features v2-storage --bin kan-v2         -> raw/32-storage-bin.txt
+40  cargo test --features v2-crypto --test {10 targets} (restored tree) -> raw/40-final-targeted.txt
+90  identity after + git HEAD/status + stray files + processes -> raw/90-verify-after.txt

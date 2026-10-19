@@ -1,0 +1,49 @@
+$ cargo test --features v2-crypto --test evidence_copy_destination
+exit=0
+
+running 22 tests
+test copy_death_child ... ok
+test initialization_death_child ... ok
+test independent_sqlite_inventory_matches_the_copy_surface_catalog ... ok
+test admission_rechecks_original_membership_after_staging_under_writer_transaction ... ok
+test later_admission_can_share_an_original_staged_object_without_changing_membership ... ok
+test incomplete_copy_backup_remains_incomplete_and_resume_checks_the_exact_prefix ... ok
+test empty_record_history_is_incomplete_until_all_staged_objects_are_copied ... ok
+test concurrent_owner_batches_revalidate_under_the_writer_transaction ... ok
+test owner_recipe_signer_and_profile_are_required_before_mutation ... ok
+test rebuild_death_child ... ok
+test owner_recipe_refusals_happen_before_destination_creation ... ok
+test pinned_wal_source_copies_its_original_snapshot_and_later_confirmation_refuses ... ok
+test bounded_copy_preserves_original_bytes_and_acknowledged_proofs_before_new_admission ... ok
+test profile3_rejects_mixed_historical_issuers_with_a_specific_reason ... ok
+test profile3_rejects_retained_after_admission_and_admission_inside_original_prefix ... ok
+test owner_cli_pins_private_recipe_and_explicit_profile_through_lifecycle ... ok
+test interrupted_initialization_requires_explicit_resume_with_retained_recipe ... ok
+test rebuild_repairs_derived_columns_and_keeps_authoritative_copy_bytes ... ok
+test rebuild_refuses_lost_or_replaced_authoritative_evidence_without_publishing_profile ... ok
+test rebuild_process_death_publishes_all_copy_authority_or_no_profile ... ok
+test byte_budget_never_splits_objects_or_admits_before_complete_source ... ok
+test every_copy_transaction_boundary_resumes_without_replacing_acknowledged_bytes ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.49s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/destination)
+    Finished `test` profile [unoptimized] target(s) in 6.93s
+     Running tests/evidence_copy_destination.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_destination-e9770359e29db79f)
+
+$ cargo test --features v2-crypto --test recovery_cli
+exit=0
+
+running 6 tests
+test cli_recovery_rejects_non_utf8_output_before_creating_it ... ok
+test cli_recovery_fails_explicitly_on_bad_raw_data_and_retains_incomplete_output ... ok
+test cli_init_and_backup_reject_non_utf8_output_before_mutation ... ok
+test cli_missing_or_corrupt_evidence_is_never_empty_success ... ok
+test cli_reads_and_rebuilds_damaged_derived_data_without_touching_original ... ok
+test cli_init_resume_is_explicit_and_preserves_existing_evidence ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/destination)
+    Finished `test` profile [unoptimized] target(s) in 0.38s
+     Running tests/recovery_cli.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/recovery_cli-8f2c94a09c387bb5)

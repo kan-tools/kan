@@ -1,0 +1,96 @@
+$ cargo test --features v2-crypto --test evidence_copy_destination
+exit=0
+
+running 22 tests
+test initialization_death_child ... ok
+test copy_death_child ... ok
+test independent_sqlite_inventory_matches_the_copy_surface_catalog ... ok
+test admission_rechecks_original_membership_after_staging_under_writer_transaction ... ok
+test later_admission_can_share_an_original_staged_object_without_changing_membership ... ok
+test empty_record_history_is_incomplete_until_all_staged_objects_are_copied ... ok
+test incomplete_copy_backup_remains_incomplete_and_resume_checks_the_exact_prefix ... ok
+test concurrent_owner_batches_revalidate_under_the_writer_transaction ... ok
+test owner_recipe_signer_and_profile_are_required_before_mutation ... ok
+test rebuild_death_child ... ok
+test owner_recipe_refusals_happen_before_destination_creation ... ok
+test pinned_wal_source_copies_its_original_snapshot_and_later_confirmation_refuses ... ok
+test bounded_copy_preserves_original_bytes_and_acknowledged_proofs_before_new_admission ... ok
+test profile3_rejects_mixed_historical_issuers_with_a_specific_reason ... ok
+test profile3_rejects_retained_after_admission_and_admission_inside_original_prefix ... ok
+test owner_cli_pins_private_recipe_and_explicit_profile_through_lifecycle ... ok
+test interrupted_initialization_requires_explicit_resume_with_retained_recipe ... ok
+test rebuild_repairs_derived_columns_and_keeps_authoritative_copy_bytes ... ok
+test rebuild_refuses_lost_or_replaced_authoritative_evidence_without_publishing_profile ... ok
+test rebuild_process_death_publishes_all_copy_authority_or_no_profile ... ok
+test byte_budget_never_splits_objects_or_admits_before_complete_source ... ok
+test every_copy_transaction_boundary_resumes_without_replacing_acknowledged_bytes ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.49s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/destination)
+    Finished `test` profile [unoptimized] target(s) in 7.00s
+     Running tests/evidence_copy_destination.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_destination-e9770359e29db79f)
+
+$ cargo test --features v2-crypto --test evidence_attested_followups
+exit=0
+
+running 10 tests
+test p7_non_p256_issuer_binding_is_refused_at_create ... ok
+test p1_profile1_archive_is_refused_by_attested_open_without_writes ... ok
+test p2_signature_only_mutation_refuses_open_with_named_audit_error ... ok
+test p3_retry_of_earlier_row_detects_proof_replacement_under_lock ... ok
+test p6_concurrent_proven_append_from_second_handle_conflicts ... ok
+test p4_retry_of_earlier_row_detects_receipt_replacement_under_lock ... ok
+test p5a_single_historical_issuer_prefix_requires_copy_profile ... ok
+test p5b_mixed_historical_issuers_in_prefix_are_refused ... ok
+test p5c_planless_historical_proofs_refuse_verification_and_rebuild_without_rewriting ... ok
+test profile2_cli_refuses_planless_retained_history_with_named_reason ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.14s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/destination)
+    Finished `test` profile [unoptimized] target(s) in 0.40s
+     Running tests/evidence_attested_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_followups-a0c68bfd07b1cb59)
+
+$ cargo test --features v2-crypto --test evidence_attested_store
+exit=0
+
+running 10 tests
+test proof_crash_worker ... ok
+test database_columns_match_independent_surface_catalog ... ok
+test owner_binding_is_not_selected_by_database ... ok
+test same_height_proof_fork_between_audit_and_commit_is_rejected ... ok
+test atomic_admission_retry_and_legacy_refusal ... ok
+test authorization_precedes_storage_and_retries ... ok
+test purpose_order_is_a_store_invariant_not_just_a_signature_check ... ok
+test unproven_raw_append_between_audit_and_commit_conflicts ... ok
+test proof_mutations_and_payload_loss_refuse_writable_open ... ok
+test process_death_keeps_both_metadata_and_proof_or_neither ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.38s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/destination)
+    Finished `test` profile [unoptimized] target(s) in 0.41s
+     Running tests/evidence_attested_store.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_store-a792e1b4f0d5a339)
+
+$ cargo test --features v2-crypto --test evidence_attested_lifecycle
+exit=0
+
+running 11 tests
+test lifecycle_crash_child ... ok
+test corrupt_source_proofs_are_rejected_before_output_profile_is_committed ... ok
+test backup_success_requires_verifying_the_copied_proof_chain ... ok
+test recovery_pins_source_before_later_admission ... ok
+test owner_binding_profile_and_destination_are_explicit ... ok
+test proof_bytes_survive_backup_rebuild_and_derived_repair ... ok
+test standalone_proof_verification_and_backup_refuse_undeclared_schema ... ok
+test owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle ... ok
+test interrupted_initialization_resumes_only_by_explicit_owner_action ... ok
+test rebuild_process_death_never_publishes_partial_profile ... ok
+test recovery_refuses_missing_or_corrupt_proofs_and_payloads ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.65s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/destination)
+    Finished `test` profile [unoptimized] target(s) in 0.40s
+     Running tests/evidence_attested_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_lifecycle-02231a6624d7c1e3)

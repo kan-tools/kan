@@ -236,6 +236,9 @@ pub struct Archive {
 impl Archive {
     /// The owner must retain the exact plan artifact and external binding before
     /// calling. The verified source is required even for empty initialization.
+    /// This initializes an empty archive; it does not certify possession of the
+    /// signing key. An executor that requires no output before key verification
+    /// must check that key first (the owner CLI does). Batches check the signer.
     pub fn create(root: &Path, source: &PlannedCopy, binding: attested::Binding) -> Result<Self> {
         Self::create_observed(root, source, binding, &mut |_| {})
     }
@@ -345,6 +348,7 @@ impl Archive {
         let destination = self.inner.ledger.backup_copy(destination, observe)?;
         Self::verify_file(&destination, self.binding().clone())
     }
+    /// `now` is Unix seconds, matching service request expiry.
     pub fn admit(
         &mut self,
         bytes: &[u8],
@@ -366,6 +370,7 @@ impl Archive {
         self.inner
             .admit_observed(bytes, signer, grant, now, observe)
     }
+    /// `issued_at` is Unix milliseconds, matching retained proof timestamps.
     pub fn copy_batch(
         &mut self,
         source: &PlannedCopy,

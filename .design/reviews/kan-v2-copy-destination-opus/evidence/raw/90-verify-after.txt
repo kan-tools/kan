@@ -1,0 +1,9 @@
+commit d9b2110643dfa12ab50e871dbdd593db15878673
+manifest files 2223; tree blobs 2223
+extra paths outside manifest (top-level grouping): ['north-star.json', 'review-evidence/']
+extra non-evidence files: ['north-star.json']
+problems 0
+verify_exit=0
+d9b2110643dfa12ab50e871dbdd593db15878673
+ 2937 /Users/m/.cargo/bin/day mcp
+ 2943 /Users/m/.cargo/bin/kan mcp

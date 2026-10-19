@@ -280,7 +280,7 @@ fn owner_recipe_signer_and_profile_are_required_before_mutation() {
     assert!(Archive::open(&root, binding(&s)).is_err());
 }
 #[test]
-fn incomplete_copy_backup_remains_incomplete_and_resume_checks_the_exact_prefix() {
+fn incomplete_copy_backup_remains_incomplete_and_resume_rejects_wrong_object_length() {
     let t = tempfile::tempdir().unwrap();
     let path = fixture(t.path(), 2, 2);
     let s = source(&path);
@@ -667,8 +667,8 @@ fn owner_recipe_refusals_happen_before_destination_creation() {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
-    kan::evidence_store::copy_upgrade::retain_plan(&plan, s.plan()).unwrap();
-    assert!(kan::evidence_store::copy_upgrade::retain_plan(&plan, s.plan()).is_err());
+    kan::evidence_store::copy_upgrade::retain_plan(&plan, &s).unwrap();
+    assert!(kan::evidence_store::copy_upgrade::retain_plan(&plan, &s).is_err());
     let exact = std::fs::read(&plan).unwrap();
     let pin = hex(&s.plan().archive_id());
     let scope = hex(&[1; 32]);
@@ -1031,4 +1031,386 @@ fn pinned_wal_source_copies_its_original_snapshot_and_later_confirmation_refuses
         .unwrap();
     assert_eq!(found, 0);
     assert!(PlannedCopy::confirm(&path, s.plan(), &s.plan().archive_id()).is_err());
+}
+
+#[test]
+fn plan_custody_refuses_sqlite_families_before_opening_or_writing() {
+    use kan::evidence_store::copy_upgrade::{read_plan_for_copy, retain_plan};
+    let t = tempfile::tempdir().unwrap();
+    let db = fixture(t.path(), 1, 0);
+    let source = source(&db);
+    let before = std::fs::read(&db).unwrap();
+    let root = t.path().join("copy");
+    for suffix in ["", "-journal", "-wal", "-shm", "-JOURNAL"] {
+        let plan = PathBuf::from(format!("{}{suffix}", db.display()));
+        assert!(retain_plan(&plan, &source).is_err(), "accepted {suffix}");
+    }
+    assert!(!db.with_file_name("archive.sqlite-journal").exists());
+    assert_eq!(std::fs::read(&db).unwrap(), before);
+    // A pre-existing artifact must also be protected before SQLite gets opened.
+    drop(source);
+    let source = self::source(&db);
+    let bytes = source.plan().bytes().to_vec();
+    let pin = source.plan().archive_id();
+    drop(source);
+    for base in [&db, &root.join("archive.sqlite")] {
+        std::fs::create_dir_all(base.parent().unwrap()).unwrap();
+        for suffix in ["-journal", "-wal", "-shm", "-JOURNAL"] {
+            let path = PathBuf::from(format!("{}{suffix}", base.display()));
+            // Source may have retained empty WAL sidecars; do not overwrite them.
+            if path.exists() {
+                continue;
+            }
+            std::fs::write(&path, &bytes).unwrap();
+            let error = read_plan_for_copy(&path, &db, &root, &pin)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("overlaps source SQLite files"), "{error}");
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+            std::fs::remove_file(&path).unwrap();
+        }
+    }
+    // Filesystem aliases must not make sidecar paths safe.
+    let alias = t.path().join("alias.sqlite");
+    std::fs::hard_link(&db, &alias).unwrap();
+    let alias_plan = alias.with_file_name("alias.sqlite-journal");
+    let source = self::source(&db);
+    assert!(retain_plan(&alias_plan, &source)
+        .unwrap_err()
+        .to_string()
+        .contains("aliases source SQLite sidecar"));
+    assert!(!alias_plan.exists());
+    assert!(read_plan_for_copy(&alias, &db, &root, &pin)
+        .unwrap_err()
+        .to_string()
+        .contains("plan aliases"));
+    let good = t.path().join("recipe.cbor");
+    retain_plan(&good, &source).unwrap();
+    assert_eq!(
+        read_plan_for_copy(&good, &db, &root, &pin).unwrap().bytes(),
+        bytes
+    );
+}
+
+#[test]
+fn profile3_schema_drift_refuses_open_verify_resume_and_stale_handle_backup() {
+    for sql in [
+        "CREATE INDEX extra_index ON commits(cid)",
+        "CREATE TRIGGER extra_trigger AFTER INSERT ON objects BEGIN SELECT 1; END",
+        "CREATE VIEW extra_view AS SELECT cid FROM objects",
+        "CREATE TABLE extra_table(x)",
+    ] {
+        let t = tempfile::tempdir().unwrap();
+        let db = fixture(t.path(), 2, 1);
+        let source = source(&db);
+        let root = t.path().join("copy");
+        let archive = Archive::create(&root, &source, binding(&source)).unwrap();
+        let c = rusqlite::Connection::open(root.join("archive.sqlite")).unwrap();
+        c.execute_batch(sql).unwrap();
+        drop(c);
+        let expected = "invalid input: unsupported writable archive schema";
+        assert_eq!(
+            Archive::open(&root, binding(&source))
+                .err()
+                .unwrap()
+                .to_string(),
+            expected
+        );
+        assert_eq!(
+            Archive::verify_file(&root.join("archive.sqlite"), binding(&source))
+                .unwrap_err()
+                .to_string(),
+            expected
+        );
+        assert_eq!(
+            Archive::resume_initialization(&root, &source, binding(&source))
+                .err()
+                .unwrap()
+                .to_string(),
+            expected
+        );
+        assert_eq!(archive.verify().unwrap_err().to_string(), expected);
+        assert_eq!(
+            archive
+                .backup(&t.path().join("backup.sqlite"))
+                .unwrap_err()
+                .to_string(),
+            expected
+        );
+    }
+}
+
+#[test]
+fn resume_refuses_self_consistent_foreign_object_prefix_before_advancing() {
+    let t = tempfile::tempdir().unwrap();
+    let db = fixture(t.path(), 2, 1);
+    let source = source(&db);
+    let root = t.path().join("copy");
+    let mut a = Archive::create(&root, &source, binding(&source)).unwrap();
+    let foreign = b"valid hash and length, absent from planned source";
+    let cid = kan::evidence_store::ciphertext_cid(foreign).to_string();
+    let c = rusqlite::Connection::open(root.join("archive.sqlite")).unwrap();
+    c.execute(
+        "INSERT INTO objects VALUES(?,?)",
+        rusqlite::params![cid, foreign],
+    )
+    .unwrap();
+    c.execute(
+        "INSERT INTO upgrade_objects VALUES(?,?)",
+        rusqlite::params![cid, foreign.len() as i64],
+    )
+    .unwrap();
+    // Local consistency passes: refusal must compare with the exact source.
+    assert!(!a.verify().unwrap().copy.source_copy_complete);
+    let before = rows(&root);
+    assert_eq!(
+        a.copy_batch(&source, &identity(8), 1000, small())
+            .unwrap_err()
+            .to_string(),
+        "corrupt evidence: original object inventory differs from source prefix"
+    );
+    assert_eq!(rows(&root), before);
+    assert_eq!(
+        c.query_row("SELECT count(*) FROM objects", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+}
+
+#[test]
+fn resume_refuses_valid_foreign_receipt_prefix_before_signing_more_proofs() {
+    use kan::evidence_attestation::{self as proof, Context, Frontier, Purpose};
+    let t = tempfile::tempdir().unwrap();
+    let db = fixture(t.path(), 2, 0);
+    let source = source(&db);
+    let root = t.path().join("copy");
+    let pins = binding(&source);
+    let mut a = Archive::create(&root, &source, pins.clone()).unwrap();
+    a.copy_batch(
+        &source,
+        &identity(8),
+        1000,
+        Budget {
+            objects: 10,
+            records: 1,
+            bytes: MAX_CHUNK,
+        },
+    )
+    .unwrap();
+    let foreign_root = t.path().join("foreign");
+    let mut s = Service::new(
+        Ledger::create(&foreign_root).unwrap(),
+        [1; 32],
+        identity(7),
+        vec![grant(6)],
+    )
+    .unwrap();
+    assert!(s
+        .dispatch(&request(6, 7, 0, None), 999)
+        .unwrap()
+        .reply
+        .result
+        .is_ok());
+    drop(s);
+    let r = RecoveryReader::open(&foreign_root.join("archive.sqlite"))
+        .unwrap()
+        .record(1)
+        .unwrap();
+    let ctx = Context {
+        archive: pins.archive,
+        scope: pins.scope,
+        issuer: &pins.issuer,
+    };
+    let envelope = proof::issue(
+        &identity(8),
+        &ctx,
+        &r.manifest,
+        &r.receipt,
+        &Frontier::default(),
+        Purpose::RetainedVerified,
+        1000,
+    )
+    .unwrap();
+    let original = rows(&root);
+    assert_eq!(original[0].0, r.manifest.bytes());
+    assert_ne!(original[0].1, r.receipt.bytes());
+    let c = rusqlite::Connection::open(root.join("archive.sqlite")).unwrap();
+    c.execute(
+        "UPDATE commits SET receipt=? WHERE sequence=1",
+        [r.receipt.bytes()],
+    )
+    .unwrap();
+    c.execute(
+        "UPDATE attestations SET envelope=? WHERE sequence=1",
+        [envelope.bytes()],
+    )
+    .unwrap();
+    assert_eq!(a.verify().unwrap().copy.copied_records, 1);
+    let before = rows(&root);
+    assert_eq!(
+        a.copy_batch(&source, &identity(8), 2000, small())
+            .unwrap_err()
+            .to_string(),
+        "corrupt evidence: copied record differs from source"
+    );
+    assert_eq!(rows(&root), before);
+}
+
+#[test]
+fn owner_cli_copy_preconditions_refuse_without_creating_output() {
+    use kan::evidence_service::hex;
+    let t = tempfile::tempdir().unwrap();
+    let db = fixture(t.path(), 1, 0);
+    let source = source(&db);
+    let plan = t.path().join("plan.cbor");
+    kan::evidence_store::copy_upgrade::retain_plan(&plan, &source).unwrap();
+    let key = t.path().join("key");
+    let wrong_key = t.path().join("wrong-key");
+    for (path, n) in [(&key, 8), (&wrong_key, 5)] {
+        std::fs::write(path, [n; 32]).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+    let pin = hex(&source.plan().archive_id());
+    let scope = hex(&[1; 32]);
+    let issuer = identity(8).did().to_string();
+    let pins = [
+        "--proof-archive",
+        &pin,
+        "--proof-scope",
+        &scope,
+        "--proof-issuer",
+        &issuer,
+    ];
+    for case in 0..7 {
+        let root = t.path().join(format!("refused-{case}"));
+        let selected_key = if case == 2 { &wrong_key } else { &key };
+        let mut args = vec![
+            "copy-batch",
+            db.to_str().unwrap(),
+            root.to_str().unwrap(),
+            "--plan",
+            plan.to_str().unwrap(),
+            "--key",
+            selected_key.to_str().unwrap(),
+        ];
+        if case != 0 {
+            args.push("--copy-profile");
+        }
+        if case != 1 {
+            args.extend(pins);
+        }
+        let expected = match case {
+            0 => "copy-batch requires --copy-profile and all owner pins",
+            1 => "the following required arguments were not provided",
+            2 => "copy signer differs from owner issuer",
+            3 => {
+                args.extend(["--bytes", "4194303"]);
+                "invalid input: copy budget"
+            }
+            4 => {
+                args.push("--resume");
+                "No such file or directory"
+            }
+            5 => {
+                args = vec!["init", root.to_str().unwrap(), "--copy-profile"];
+                args.extend(pins);
+                "profile 3 initialization requires copy-batch"
+            }
+            6 => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(&plan, std::fs::Permissions::from_mode(0o644))
+                        .unwrap();
+                }
+                #[cfg(not(unix))]
+                {
+                    continue;
+                }
+                "plan must be owner-only"
+            }
+            _ => unreachable!(),
+        };
+        let output = cli(&args);
+        assert!(!output.status.success(), "case {case} accepted");
+        assert!(output.stdout.is_empty());
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(expected),
+            "case {case}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!root.exists(), "case {case} created output");
+    }
+    assert_eq!(std::fs::read(&plan).unwrap(), source.plan().bytes());
+}
+
+#[test]
+fn owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars() {
+    use kan::evidence_service::hex;
+    let t = tempfile::tempdir().unwrap();
+    let db = fixture(t.path(), 1, 0);
+    let source = source(&db);
+    let before = std::fs::read(&db).unwrap();
+    let scope = hex(&[1; 32]);
+    let issuer = identity(8).did().to_string();
+    let historical = identity(7).did().to_string();
+    let nonce = hex(&[9; 32]);
+    let pin = hex(&source.plan().archive_id());
+    let key = t.path().join("key");
+    std::fs::write(&key, [8; 32]).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let journal = db.with_file_name("archive.sqlite-journal");
+    for path in [&db, &journal] {
+        let o = cli(&[
+            "copy-plan",
+            db.to_str().unwrap(),
+            path.to_str().unwrap(),
+            "--scope",
+            &scope,
+            "--issuer",
+            &issuer,
+            "--historical-issuer",
+            &historical,
+            "--nonce",
+            &nonce,
+        ]);
+        assert!(!o.status.success());
+        assert!(o.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&o.stderr).contains("SQLite"));
+    }
+    assert!(!journal.exists());
+    let root = t.path().join("copy");
+    std::fs::create_dir(&root).unwrap();
+    let plan = root.join("archive.sqlite-journal");
+    kan::evidence_store::copy_upgrade::retain_plan(&plan, &source).unwrap();
+    let bytes = std::fs::read(&plan).unwrap();
+    let o = cli(&[
+        "copy-batch",
+        db.to_str().unwrap(),
+        root.to_str().unwrap(),
+        "--plan",
+        plan.to_str().unwrap(),
+        "--key",
+        key.to_str().unwrap(),
+        "--copy-profile",
+        "--proof-archive",
+        &pin,
+        "--proof-scope",
+        &scope,
+        "--proof-issuer",
+        &issuer,
+    ]);
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("overlaps source SQLite files"));
+    assert!(!root.join("archive.sqlite").exists());
+    assert_eq!(std::fs::read(&plan).unwrap(), bytes);
+    assert_eq!(std::fs::read(&db).unwrap(), before);
 }
