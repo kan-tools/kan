@@ -1,0 +1,32 @@
+{
+  "qualified_commit": "bdbf136e06835aa7dfc83f7b5400a71e764b5b4a",
+  "run_base": "4e3a74092dc1f13c5aa64eb62f44df8e8bae6499",
+  "working_change_during_run": "Only tests/support/proof_reader_tests.rs: synthetic copy budget raised from1MiB to16MiB; committed in qualified_commit after passing.",
+  "code_sha256": {
+    "src/evidence_proof_service.rs": "e9218ceed24d9e56489110c4d5dcfa2bda910b55db9ac52a0240892612370a80",
+    "src/evidence_reader/proof.rs": "8467976bba35455a61a81e96e6fe019841ac2de4aa9e38a1cc2b76ad4a39acd0",
+    "src/evidence_http.rs": "efc33a5d89b2dc6ac157ed01d97959e1bcb36c91b50db7979018644c0e6925b6",
+    "tests/support/proof_service_tests.rs": "0831b0725ec69fd2217b0d87dcae01e1f2711b92d222a109f06bacded05ed54a",
+    "tests/support/proof_reader_tests.rs": "eb97c55bfc9bf8b54985ba282a69f47f6ca8ade7cd8a47915a1b353efacca52c"
+  },
+  "checks": {
+    "evidence_http": "ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s",
+    "evidence_inventory": "ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.42s",
+    "evidence_library_cli": "ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s",
+    "evidence_reader": "ok. 27 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 12.02s",
+    "surface_conformance": "ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.23s",
+    "strict_v2_all_target_clippy": "passed",
+    "format": "passed"
+  },
+  "retained_log_sha256": {
+    ".local-state/proof-author/attempt-3/03-clippy.txt": "68767e97c3031a15af6ad4a28af0c3fddfd05efd4b4977484bdb71368089f5c9",
+    ".local-state/proof-author/attempt-3/04-format.txt": "6af71d4eb79c367a78c0543b3baaf7fee12b6f15f7e614602e41a8738b3615e0",
+    ".local-state/proof-author/attempt-3/02-tests.txt": "973bb47b1c021511a2064f809c2db4304851552e94f82363f5e57544358c8bf8"
+  },
+  "prior_attempts": {
+    "attempt-1": "33 of34 inventory tests passed; empty-copy fixture used bytes below existing copy minimum; corrected fixture only.",
+    "attempt-2": "Disk guard stopped before any new build below15GiB."
+  },
+  "independent_review": "pending",
+  "human_ui_and_cli_integration": "open"
+}
