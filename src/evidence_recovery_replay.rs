@@ -82,6 +82,94 @@ pub struct Replay {
     restorations: Vec<Restoration>,
     attempts: Vec<Attempt>,
 }
+/// Owned coordinates with borrowed authenticated bytes. Only the full replay
+/// below can construct this selection; callers cannot supply a candidate subset.
+pub(crate) struct PublicationSelection<'a> {
+    pub replay: Replay,
+    pub objects: Vec<(Cid, &'a [u8])>,
+    pub restorations: [u8; 32],
+    pub output: [u8; 32],
+    pub intent: Option<Authenticated>,
+}
+
+pub(crate) fn publication_selection<'a>(
+    input: Input<'a>,
+    candidates: &'a [Object<'a>],
+    observations: &[&[u8]],
+    external: &Checkpoint,
+    attempt: Option<[u8; 16]>,
+    limits: Limits,
+) -> Result<PublicationSelection<'a>> {
+    let mut work = Work::new(limits.clone())?;
+    // Check the entire retained history, including events after an old intent.
+    let replay = verify(input, candidates, observations, Some(external), limits)?;
+    work.check()?;
+    let keys = keys(input, replay.member().recipe_metadata_complete(), &mut work)?;
+    let physical: BTreeMap<_, _> = candidates
+        .iter()
+        .map(|c| (c.cid.to_string(), c.bytes))
+        .collect();
+    let mut selected = BTreeMap::new();
+    let mut prior = None;
+    let mut intent = None;
+    for raw in observations {
+        work.charge(1, raw.len() as u64)?;
+        let auth = observation::authenticate(raw, input.context, prior.as_ref())
+            .map_err(|_| Error::Invalid("publication history changed"))?;
+        let st = fields(auth.statement())?;
+        let b = fields(&st["body"])?;
+        if st["event"] == Ipld::String("restored".into()) {
+            let name = link(&b["cid"])?.to_string();
+            selected.insert(name.clone(), physical[&name]);
+        } else if st["event"] == Ipld::String("publication-intent".into())
+            && attempt == Some(bytes::<16>(&b["attempt"])?)
+        {
+            intent = Some(auth);
+            break;
+        }
+        prior = Some(auth);
+    }
+    require(
+        attempt.is_none() || intent.is_some(),
+        "unknown publication attempt",
+    )?;
+    let (restorations, output) =
+        output_commitments(input, replay.member(), &keys, &selected, &mut work)?;
+    if let Some(intent) = &intent {
+        let b = fields(&fields(intent.statement())?["body"])?;
+        require(
+            bytes::<32>(&b["restorations"])? == restorations
+                && bytes::<32>(&b["output"])? == output,
+            "publication selection changed",
+        )?;
+    }
+    let mut objects = Vec::with_capacity(keys.len());
+    for (name, key) in keys {
+        work.charge(1, 36)?;
+        objects.push((
+            key.cid,
+            selected
+                .get(&name)
+                .copied()
+                .or(key.original)
+                .ok_or(Error::Invalid("publication-blocked-unavailable-object"))?,
+        ));
+    }
+    Ok(PublicationSelection {
+        replay,
+        objects,
+        restorations,
+        output,
+        intent,
+    })
+}
+
+pub(crate) fn published_output_commitment(input: Input<'_>, limits: Limits) -> Result<[u8; 32]> {
+    let mut work = Work::new(limits)?;
+    let member = audit(input, &mut work)?;
+    let keys = keys(input, member.recipe_metadata_complete(), &mut work)?;
+    output_commitments(input, &member, &keys, &BTreeMap::new(), &mut work).map(|(_, output)| output)
+}
 impl Replay {
     pub fn member(&self) -> &Member {
         &self.member

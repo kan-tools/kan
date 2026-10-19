@@ -112,3 +112,47 @@ Remote APIs, durable owner jobs, human recovery controls, backup placement and
 writer cutover remain subsequent slices of the approved full frontend roadmap.
 No live archive, keys, migration, installation or activation is authorized by a
 passing development publication test.
+
+
+## Implementation candidate
+
+The permanent `feat/kan-v2-recovery-publication` worktree starts at the frozen
+parent review checkpoint bf3c44e. Parent review runs in a separate immutable
+export; this candidate cannot change its evidence. No compilation runs while
+that review owns the shared target.
+
+The prepared API uses an explicit New/Resume mode. New requires the latest
+checkpoint and an unused attempt; Resume requires the independently retained
+checkpoint to occur in the complete current history and selects candidates
+strictly before the named intent. Both recompute R1/O1. Paths remain routing
+information: the signed protocol identifies content and attempt, not a pathname.
+An explicitly resumed attempt can create a missing output at the owner-selected
+path; it cannot replace an existing artifact. An already-observed retry still
+reverifies the actual selected output and returns the original observation.
+
+Shared mutation opening preserves restoration's read-only preflight, private
+participant checks, DELETE/4096 mode and bounded writer configuration. Under
+BEGIN IMMEDIATE the caller still reacquires and replays; the preflight is not
+mutation authority. Publication signs intent only after a complete selection
+is verified. The intent commit is synchronized and independently reopened
+before output reservation. A new output's rows, ordinary profile markers and
+verification share one transaction. Original raw metadata/proofs/plan/membership
+are copied exactly; derived columns are rebuilt from authenticated records.
+
+After output synchronization, a fresh DELETE-mode read transaction performs
+bounded raw acquisition, exact O1 comparison and ordinary profile verification.
+That transaction stays open through publication-observed commit/reopen, preventing
+normal SQLite writers from changing the verified snapshot during attribution.
+This is not a fence against hostile filesystem replacement. A separate explicit
+failure API appends only a closed-reason attributed unsuccessful check, which
+never asserts output absence. Failed output files and uncertain checkpoints are
+retained; explicit resume can later observe the same intent after failure.
+
+Prepared tests cover both complete profiles, blocked missing evidence and partial
+copies, history-preserving retries after later restoration/failure, pins/aliases/
+resource refusal, conflicting or altered outputs, the held output snapshot, and
+18 abrupt-death phases. A Python oracle independently authenticates actual
+bundle history and compares the actual standalone output's framing commitment.
+These are prepared checks, not passing results. Power loss and indefinitely
+blocked filesystem operations remain unqualified. Publication, backup/rebuild
+and full human recovery acceptance stay open pending execution and fresh review.

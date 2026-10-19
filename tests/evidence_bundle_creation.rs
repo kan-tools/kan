@@ -1392,3 +1392,548 @@ fn restoration_budgets_and_participant_aliases_refuse_without_appending() {
         assert_eq!(std::fs::read(&dst).unwrap(), before);
     }
 }
+
+fn complete_publication_bundle(
+    parent: &Path,
+    profile: Profile,
+) -> (Fixture, PathBuf, kan::evidence_recovery_replay::Checkpoint) {
+    let f = fixture_with_staged(parent, profile, profile == Profile::Copied);
+    let source = f.root.join("archive.sqlite");
+    let path = parent.join("bundle.sqlite");
+    let observer = identity(10);
+    let created = bundle::create(create(&f, &source, &path, &observer)).unwrap();
+    let pin = created.replay().latest().clone();
+    (f, path, pin)
+}
+fn publication<'a>(
+    path: &'a Path,
+    pin: &'a kan::evidence_recovery_replay::Checkpoint,
+    observer: &'a Identity,
+    output: &'a Path,
+) -> bundle::Publication<'a> {
+    bundle::Publication {
+        path,
+        expected: pin,
+        observer,
+        attempt: [42; 16],
+        destination: output,
+        mode: bundle::PublicationMode::New,
+        sampled_at: 300,
+        budget: budget(),
+        bundle_bytes: 64 * 1024 * 1024,
+        output_bytes: 64 * 1024 * 1024,
+    }
+}
+fn publication_oracle(path: &Path, output: &Path) {
+    let r = std::process::Command::new(
+        std::env::var_os("KAN_CRYPTO_ORACLE_PYTHON").unwrap_or_else(|| "python3".into()),
+    )
+    .args(["-B", ".design/tools/recovery_publication_oracle.py"])
+    .arg(path)
+    .arg(output)
+    .arg(service::hex(&[42; 16]))
+    .output()
+    .unwrap();
+    assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+    let result: serde_json::Value = serde_json::from_slice(&r.stdout).unwrap();
+    assert!(result["attempt"]["observedAt"].as_u64().unwrap() > 1);
+}
+#[test]
+fn publication_builds_exact_complete_profiles_and_retries_without_new_history() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = tempfile::tempdir().unwrap();
+        let (f, path, pin) = complete_publication_bundle(dir.path(), profile);
+        let original = std::fs::read(f.root.join("archive.sqlite")).unwrap();
+        let observer = identity(10);
+        let output = dir.path().join("published.sqlite");
+        let mut phases = Vec::new();
+        let result = bundle::publish_observed(publication(&path, &pin, &observer, &output), |p| {
+            phases.push(p)
+        })
+        .unwrap();
+        assert!(!result.duplicate);
+        assert_eq!(
+            result.inspection.replay().latest().sequence,
+            pin.sequence + 2
+        );
+        assert_eq!(phases.first(), Some(&bundle::PublicationBoundary::Acquired));
+        assert_eq!(phases.last(), Some(&bundle::PublicationBoundary::Reopened));
+        assert!(
+            phases
+                .iter()
+                .position(|p| *p == bundle::PublicationBoundary::IntentReopened)
+                .unwrap()
+                < phases
+                    .iter()
+                    .position(|p| *p == bundle::PublicationBoundary::OutputReserved)
+                    .unwrap()
+        );
+        if profile == Profile::Admitted {
+            assert_eq!(
+                attested::Archive::verify_file(&output, f.binding.clone())
+                    .unwrap()
+                    .snapshot
+                    .through,
+                3
+            );
+        } else {
+            assert!(
+                copied::Archive::verify_file(&output, f.binding.clone())
+                    .unwrap()
+                    .copy
+                    .source_copy_complete
+            );
+        }
+        publication_oracle(&path, &output);
+        let mut retry = publication(&path, &pin, &observer, &output);
+        retry.mode = bundle::PublicationMode::Resume;
+        let retried = bundle::publish(retry).unwrap();
+        assert!(retried.duplicate);
+        assert_eq!(retried.observation.bytes(), result.observation.bytes());
+        assert_eq!(retried.intent.bytes(), result.intent.bytes());
+        assert_eq!(
+            retried.inspection.replay().latest(),
+            result.inspection.replay().latest()
+        );
+        assert_eq!(
+            std::fs::read(f.root.join("archive.sqlite")).unwrap(),
+            original
+        );
+        assert!(bundle::publish(publication(&path, &pin, &observer, &output)).is_err());
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM restored_objects", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+}
+#[test]
+fn publication_refuses_unavailable_originals_and_incomplete_copies_before_intent() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture_with_staged(dir.path(), profile, profile == Profile::Copied);
+        let source = f.root.join("archive.sqlite");
+        let conn = rusqlite::Connection::open(&source).unwrap();
+        conn.execute(
+            "DELETE FROM objects WHERE cid=?",
+            [store::ciphertext_cid(&f.requests[0]).to_string()],
+        )
+        .unwrap();
+        drop(conn);
+        let path = dir.path().join("bundle.sqlite");
+        let observer = identity(10);
+        let created = bundle::create(create(&f, &source, &path, &observer)).unwrap();
+        let pin = created.replay().latest().clone();
+        let before = std::fs::read(&path).unwrap();
+        let output = dir.path().join("output.sqlite");
+        assert!(matches!(
+            bundle::publish(publication(&path, &pin, &observer, &output)),
+            Err(bundle::PublicationError::Refused(_))
+        ));
+        assert!(!output.exists());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        let cid = store::ciphertext_cid(&f.requests[0]);
+        let restored =
+            bundle::restore(restoration(&path, &pin, &observer, &cid, &f.requests[0])).unwrap();
+        assert!(bundle::publish(publication(
+            &path,
+            restored.inspection.replay().latest(),
+            &observer,
+            &output
+        ))
+        .is_ok());
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let f = fixture(dir.path(), Profile::Copied);
+    let source = f.root.join("archive.sqlite");
+    let db = rusqlite::Connection::open(&source).unwrap();
+    db.execute("DELETE FROM attestations WHERE sequence=3", [])
+        .unwrap();
+    db.execute("DELETE FROM commits WHERE sequence=3", [])
+        .unwrap();
+    drop(db);
+    let path = dir.path().join("bundle.sqlite");
+    let observer = identity(10);
+    let created = bundle::create(create(&f, &source, &path, &observer)).unwrap();
+    let output = dir.path().join("output.sqlite");
+    assert!(bundle::publish(publication(
+        &path,
+        created.replay().latest(),
+        &observer,
+        &output
+    ))
+    .is_err());
+    assert!(!output.exists());
+}
+#[test]
+fn publication_resume_keeps_historical_selection_after_failure_and_later_restoration() {
+    let dir = tempfile::tempdir().unwrap();
+    let (f, path, pin) = complete_publication_bundle(dir.path(), Profile::Admitted);
+    let observer = identity(10);
+    let output = dir.path().join("output.sqlite");
+    let req = publication(&path, &pin, &observer, &output);
+    let cancel = req.budget.cancelled.clone();
+    let interrupted = bundle::publish_observed(req, |p| {
+        if p == bundle::PublicationBoundary::IntentReopened {
+            cancel.store(true, Ordering::Relaxed)
+        }
+    });
+    assert!(matches!(
+        interrupted,
+        Err(bundle::PublicationError::Interrupted {
+            phase: bundle::PublicationBoundary::IntentReopened,
+            ..
+        })
+    ));
+    assert!(!output.exists());
+    let pending = bundle::inspect(&path, pin.context.clone(), Some(&pin), budget()).unwrap();
+    let intent = pending.replay().attempts()[0].clone();
+    let failure = bundle::record_publication_failure(bundle::PublicationFailure {
+        path: &path,
+        expected: pending.replay().latest(),
+        observer: &observer,
+        attempt: [42; 16],
+        reason: bundle::PublicationFailureReason::Io,
+        sampled_at: 301,
+        budget: budget(),
+        bundle_bytes: 64 * 1024 * 1024,
+    })
+    .unwrap();
+    assert_eq!(failure.inspection.replay().attempts()[0].failure_count, 1);
+    let cid = store::ciphertext_cid(&f.requests[0]);
+    let restored = bundle::restore(restoration(
+        &path,
+        failure.inspection.replay().latest(),
+        &observer,
+        &cid,
+        &f.requests[0],
+    ))
+    .unwrap();
+    assert_eq!(restored.inspection.replay().restored(), 1);
+    let mut resume = publication(&path, &pin, &observer, &output);
+    resume.mode = bundle::PublicationMode::Resume;
+    let result = bundle::publish(resume).unwrap();
+    assert!(!result.duplicate);
+    let attempt = &result.inspection.replay().attempts()[0];
+    assert_eq!(attempt.restorations, intent.restorations);
+    assert_eq!(attempt.intent, intent.intent);
+    assert_eq!(attempt.failure_count, 1);
+    publication_oracle(&path, &output);
+    let before = std::fs::read(&path).unwrap();
+    assert!(
+        bundle::record_publication_failure(bundle::PublicationFailure {
+            path: &path,
+            expected: result.inspection.replay().latest(),
+            observer: &observer,
+            attempt: [42; 16],
+            reason: bundle::PublicationFailureReason::Io,
+            sampled_at: 302,
+            budget: budget(),
+            bundle_bytes: 64 * 1024 * 1024
+        })
+        .is_err()
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+#[test]
+fn publication_refuses_conflicting_outputs_pins_observers_aliases_and_limits() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, path, pin) = complete_publication_bundle(dir.path(), Profile::Admitted);
+    let observer = identity(10);
+    let output = dir.path().join("output.sqlite");
+    let before = std::fs::read(&path).unwrap();
+    std::fs::write(&output, b"retain this conflicting output").unwrap();
+    assert!(bundle::publish(publication(&path, &pin, &observer, &output)).is_err());
+    assert_eq!(
+        std::fs::read(&output).unwrap(),
+        b"retain this conflicting output"
+    );
+    let absent = dir.path().join("absent.sqlite");
+    let wrong = identity(11);
+    assert!(bundle::publish(publication(&path, &pin, &wrong, &absent)).is_err());
+    let mut wrong_pin = pin.clone();
+    wrong_pin.context.archive = [99; 32];
+    assert!(bundle::publish(publication(&path, &wrong_pin, &observer, &absent)).is_err());
+    assert!(bundle::publish(publication(&path, &pin, &observer, &path)).is_err());
+    assert!(bundle::publish(publication(
+        &path,
+        &pin,
+        &observer,
+        &dir.path().join("bundle.sqlite-wal")
+    ))
+    .is_err());
+    let mut req = publication(&path, &pin, &observer, &absent);
+    req.budget.acquired_bytes = 1;
+    assert!(bundle::publish(req).is_err());
+    let req = publication(&path, &pin, &observer, &absent);
+    req.budget.cancelled.store(true, Ordering::Relaxed);
+    assert!(bundle::publish(req).is_err());
+    let mut req = publication(&path, &pin, &observer, &absent);
+    req.mode = bundle::PublicationMode::Resume;
+    assert!(bundle::publish(req).is_err());
+    assert!(!absent.exists());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+#[test]
+fn publication_verifies_actual_output_on_retry_and_keeps_failed_artifacts() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, path, pin) = complete_publication_bundle(dir.path(), Profile::Admitted);
+    let observer = identity(10);
+    let output = dir.path().join("output.sqlite");
+    let req = publication(&path, &pin, &observer, &output);
+    let cancel = req.budget.cancelled.clone();
+    assert!(bundle::publish_observed(req, |p| {
+        if p == bundle::PublicationBoundary::OutputReserved {
+            cancel.store(true, Ordering::Relaxed)
+        }
+    })
+    .is_err());
+    assert!(output.exists());
+    let failed = std::fs::read(&output).unwrap();
+    let mut retry = publication(&path, &pin, &observer, &output);
+    retry.mode = bundle::PublicationMode::Resume;
+    assert!(bundle::publish(retry).is_err());
+    assert_eq!(std::fs::read(&output).unwrap(), failed);
+    let next = dir.path().join("fresh.sqlite");
+    let current = bundle::inspect(&path, pin.context.clone(), Some(&pin), budget()).unwrap();
+    let mut new = publication(&path, current.replay().latest(), &observer, &next);
+    new.attempt = [43; 16];
+    let completed = bundle::publish(new).unwrap();
+    let db = rusqlite::Connection::open(&next).unwrap();
+    db.execute(
+        "INSERT INTO objects VALUES(?1,?2)",
+        rusqlite::params![
+            store::ciphertext_cid(b"unexpected valid orphan").to_string(),
+            b"unexpected valid orphan".as_slice()
+        ],
+    )
+    .unwrap();
+    drop(db);
+    let before = std::fs::read(&path).unwrap();
+    let mut retry = publication(
+        &path,
+        completed.inspection.replay().latest(),
+        &observer,
+        &next,
+    );
+    retry.mode = bundle::PublicationMode::Resume;
+    retry.attempt = [43; 16];
+    assert!(bundle::publish(retry).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+#[test]
+fn publication_holds_verified_output_snapshot_through_observed_commit() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, path, pin) = complete_publication_bundle(dir.path(), Profile::Admitted);
+    let observer = identity(10);
+    let output = dir.path().join("output.sqlite");
+    let mut checked = false;
+    bundle::publish_observed(publication(&path,&pin,&observer,&output),|p|if p==bundle::PublicationBoundary::BeforeObservedCommit {
+        let db=rusqlite::Connection::open(&output).unwrap();db.busy_timeout(Duration::ZERO).unwrap();let error=db.execute("DELETE FROM objects",[]).unwrap_err();assert!(matches!(error,rusqlite::Error::SqliteFailure(ref e,_) if e.code==rusqlite::ErrorCode::DatabaseBusy));checked=true;
+    }).unwrap();
+    assert!(checked);
+    publication_oracle(&path, &output);
+}
+#[test]
+#[ignore = "explicit synthetic publication crash child"]
+fn publication_crash_child() {
+    let root = PathBuf::from(std::env::var_os("KAN_PUBLICATION_CRASH_ROOT").unwrap());
+    let wanted = std::env::var("KAN_PUBLICATION_CRASH_POINT").unwrap();
+    let (_, path, pin) = complete_publication_bundle(&root, Profile::Admitted);
+    let observer = identity(10);
+    let output = root.join("output.sqlite");
+    let _ = bundle::publish_observed(publication(&path, &pin, &observer, &output), |point| {
+        if format!("{point:?}") == wanted {
+            std::fs::write(root.join("at-publication-boundary"), wanted.as_bytes()).unwrap();
+            loop {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    });
+    panic!("boundary not reached");
+}
+#[test]
+fn publication_abrupt_death_preserves_intent_output_and_observation_order() {
+    use bundle::PublicationBoundary::*;
+    let points = [
+        Acquired,
+        IntentInserted,
+        BeforeIntentCommit,
+        IntentCommitted,
+        IntentSynced,
+        IntentReopened,
+        OutputReserved,
+        OutputRowsInserted,
+        OutputChecked,
+        BeforeOutputCommit,
+        OutputCommitted,
+        OutputSynced,
+        OutputVerified,
+        ObservedInserted,
+        BeforeObservedCommit,
+        ObservedCommitted,
+        ObservedSynced,
+        Reopened,
+    ];
+    for (i, phase) in points.into_iter().enumerate() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "publication_crash_child",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("KAN_PUBLICATION_CRASH_ROOT", dir.path())
+            .env("KAN_PUBLICATION_CRASH_POINT", format!("{phase:?}"))
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let end = std::time::Instant::now() + Duration::from_secs(20);
+        while !dir.path().join("at-publication-boundary").exists() {
+            if child.try_wait().unwrap().is_some() {
+                let out = child.wait_with_output().unwrap();
+                panic!(
+                    "{phase:?}: {} {}",
+                    String::from_utf8_lossy(&out.stdout),
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            }
+            if std::time::Instant::now() >= end {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("timeout {phase:?}");
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        child.kill().unwrap();
+        assert!(!child.wait().unwrap().success());
+        let path = dir.path().join("bundle.sqlite");
+        let output = dir.path().join("output.sqlite");
+        // Disposable crash fixture only: permit SQLite rollback of any hot
+        // journals. Production read-only inspection never repairs them.
+        let db = rusqlite::Connection::open(&path).unwrap();
+        let count = db
+            .query_row("SELECT count(*) FROM observations", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .unwrap();
+        assert_eq!(
+            count,
+            if i < 3 {
+                1
+            } else if i < 15 {
+                2
+            } else {
+                3
+            },
+            "{phase:?}"
+        );
+        drop(db);
+        if i < 6 {
+            assert!(!output.exists());
+        } else {
+            assert!(output.exists());
+            let db = rusqlite::Connection::open(&output).unwrap();
+            let app = db
+                .query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))
+                .unwrap();
+            assert_eq!(app, if i < 10 { 0 } else { 1263940097 }, "{phase:?}");
+            drop(db);
+        }
+        let ctx = Context {
+            bundle: [31; 32],
+            profile: 2,
+            archive: [2; 32],
+            scope: [1; 32],
+            issuer: identity(8).did(),
+            observer: identity(10).did(),
+        };
+        let checked = bundle::inspect(&path, ctx, None, budget()).unwrap();
+        assert_eq!(checked.replay().attempts().len(), usize::from(i >= 3));
+        if i >= 15 {
+            publication_oracle(&path, &output);
+        } else if i >= 3 {
+            assert!(checked.replay().attempts()[0]
+                .observed_at_sequence
+                .is_none());
+        }
+    }
+}
+
+#[test]
+fn publication_cannot_omit_corrupt_orphan_or_staged_copy_objects() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture_with_staged(dir.path(), profile, profile == Profile::Copied);
+        let source = f.root.join("archive.sqlite");
+        let db = rusqlite::Connection::open(&source).unwrap();
+        if profile == Profile::Admitted {
+            db.execute(
+                "INSERT INTO objects VALUES(?1,?2)",
+                rusqlite::params![
+                    store::ciphertext_cid(b"orphan").to_string(),
+                    b"corrupt".as_slice()
+                ],
+            )
+            .unwrap();
+        } else {
+            assert_eq!(
+                db.execute(
+                    "UPDATE objects SET bytes=?1 WHERE cid=?2",
+                    rusqlite::params![
+                        b"corrupt".as_slice(),
+                        store::ciphertext_cid(b"staged original").to_string()
+                    ]
+                )
+                .unwrap(),
+                1
+            );
+        }
+        drop(db);
+        let path = dir.path().join("bundle.sqlite");
+        let observer = identity(10);
+        let checked = bundle::create(create(&f, &source, &path, &observer)).unwrap();
+        let output = dir.path().join("output.sqlite");
+        let before = std::fs::read(&path).unwrap();
+        assert!(matches!(
+            bundle::publish(publication(
+                &path,
+                checked.replay().latest(),
+                &observer,
+                &output
+            )),
+            Err(bundle::PublicationError::Refused(_))
+        ));
+        assert!(!output.exists());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+}
+#[test]
+fn publication_retry_requires_ordinary_derived_columns_as_well_as_output_commitment() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, path, pin) = complete_publication_bundle(dir.path(), Profile::Admitted);
+    let observer = identity(10);
+    let output = dir.path().join("output.sqlite");
+    let result = bundle::publish(publication(&path, &pin, &observer, &output)).unwrap();
+    let db = rusqlite::Connection::open(&output).unwrap();
+    assert!(
+        db.execute("UPDATE bindings SET length=length+1", [])
+            .unwrap()
+            > 0
+    );
+    drop(db);
+    let before = std::fs::read(&path).unwrap();
+    let mut retry = publication(
+        &path,
+        result.inspection.replay().latest(),
+        &observer,
+        &output,
+    );
+    retry.mode = bundle::PublicationMode::Resume;
+    assert!(bundle::publish(retry).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}

@@ -54,87 +54,15 @@ pub fn restore_observed(
     let result = (|| -> Result<Restored> {
         require(request.observer.did() == context.observer, "observer pin")?;
         require(request.sampled_at <= MAX_SAFE as u64, "sample time")?;
-        require(
-            !request.budget.duration.is_zero()
-                && request.budget.duration <= Duration::from_secs(3600),
-            "duration",
+        let mut work = mutation::work(request.budget.clone(), request.output_bytes)?;
+        let deadline = work.deadline;
+        let (path, mut conn) = mutation::open(
+            request.path,
+            request.expected,
+            request.output_bytes,
+            &mut work,
         )?;
-        require(
-            request.output_bytes / 4096 >= 8 && request.output_bytes / 4096 <= u32::MAX as u64,
-            "output page bound",
-        )?;
-        let deadline = Instant::now()
-            .checked_add(request.budget.duration)
-            .ok_or(Error::Budget("duration"))?;
-        let mut work = Work {
-            budget: request.budget.clone(),
-            deadline,
-            items: 0,
-            bytes: 0,
-        };
-        work.check()?;
-        let path = create::source_path(request.path, &work)?;
         actual_path = path.clone();
-        // Read-only preflight refuses damaged/hot-journal inputs before opening a
-        // writer. Its result is not the mutation authority: replay again under
-        // BEGIN IMMEDIATE below, including the independently supplied checkpoint.
-        inspect(
-            &path,
-            context.clone(),
-            Some(request.expected),
-            request.budget.clone(),
-        )?;
-        work.check()?;
-        create::source_path(&path, &work)?;
-        // Refuse unsupported journal/page modes on a read-only connection, before
-        // the mutation opener could initialize coordination files.
-        // surface-write: evidence-bundle-source:database-wal,evidence-bundle-source:database-shm
-        let preflight = crate::persistence::open_sqlite_recovery_source(
-            crate::persistence::SurfaceWrite::EvidenceBundleSource,
-            &path,
-        )?;
-        let mode: String = preflight.query_row("PRAGMA journal_mode", [], |r| r.get(0))?;
-        let page: i64 = preflight.query_row("PRAGMA page_size", [], |r| r.get(0))?;
-        require(
-            mode.eq_ignore_ascii_case("delete") && page == 4096,
-            "restoration journal/page mode",
-        )?;
-        drop(preflight);
-        work.check()?;
-        // surface-write: evidence-bundle:database,evidence-bundle:database-journal
-        let mut conn = crate::persistence::open_sqlite_bundle_mutation(
-            crate::persistence::SurfaceWrite::EvidenceBundle,
-            &path,
-        )?;
-        conn.set_limit(
-            rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
-            5 * 1024 * 1024,
-        )?;
-        conn.busy_timeout(
-            deadline
-                .saturating_duration_since(Instant::now())
-                .min(Duration::from_millis(250)),
-        )?;
-        let cancel = work.budget.cancelled.clone();
-        conn.progress_handler(
-            1000,
-            Some(move || cancel.load(Ordering::Relaxed) || Instant::now() >= deadline),
-        )?;
-        let mode: String = conn.query_row("PRAGMA journal_mode", [], |r| r.get(0))?;
-        require(
-            mode.eq_ignore_ascii_case("delete"),
-            "restoration requires DELETE journal",
-        )?;
-        let page: i64 = conn.query_row("PRAGMA page_size", [], |r| r.get(0))?;
-        require(page == 4096, "restoration page size")?;
-        let pages = request.output_bytes / 4096;
-        let applied: i64 =
-            conn.query_row(&format!("PRAGMA max_page_count={pages}"), [], |r| r.get(0))?;
-        require(
-            u64::try_from(applied).ok() == Some(pages),
-            "output page limit",
-        )?;
-        conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA trusted_schema=OFF; PRAGMA cache_size=-4096; PRAGMA mmap_size=0;")?;
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         schema(&tx, &mut work)?;
         identity(&tx, context, &mut work)?;

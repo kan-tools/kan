@@ -15,6 +15,10 @@ use sha2::{Digest, Sha256};
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
     (
+        "checkpointed-bundle-publication",
+        "tests/evidence_bundle_creation.rs",
+    ),
+    (
         "owner-pinned-knb1-creation",
         "tests/evidence_bundle_creation.rs",
     ),
@@ -537,13 +541,25 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         1,
     ),
     (
-        "src/evidence_store/bundle/restore.rs",
+        "src/evidence_store/bundle/publish.rs",
+        "write_new_owner_only",
+        "EvidencePublication",
+        1,
+    ),
+    (
+        "src/evidence_store/bundle/publish.rs",
+        "open_sqlite_recovery_source",
+        "EvidencePublicationSource",
+        1,
+    ),
+    (
+        "src/evidence_store/bundle/mutation.rs",
         "open_sqlite_bundle_mutation",
         "EvidenceBundle",
         1,
     ),
     (
-        "src/evidence_store/bundle/restore.rs",
+        "src/evidence_store/bundle/mutation.rs",
         "open_sqlite_recovery_source",
         "EvidenceBundleSource",
         1,
@@ -1315,7 +1331,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "07180dc92543d5420a8aecea95de2fe558bcdbf16be2cd8bda23d053fcc95fc4",
+                "db43c8521011981d9cbe6e1ec1ed54b5657c06d93576c39714adb9603c30b9f5",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

@@ -44,6 +44,8 @@ pub enum SurfaceWrite {
     EvidenceRecoverySource,
     EvidenceBundleSource,
     EvidenceBundle,
+    EvidencePublication,
+    EvidencePublicationSource,
     EvidenceRestore,
     Count,
 }
@@ -81,6 +83,8 @@ impl SurfaceWrite {
         Self::EvidenceRecoverySource,
         Self::EvidenceBundleSource,
         Self::EvidenceBundle,
+        Self::EvidencePublication,
+        Self::EvidencePublicationSource,
         Self::EvidenceRestore,
     ];
 
@@ -194,6 +198,14 @@ impl SurfaceWrite {
             Self::EvidenceBundle => &[
                 "evidence-bundle:database",
                 "evidence-bundle:database-journal",
+            ],
+            Self::EvidencePublication => &[
+                "evidence-publication:database",
+                "evidence-publication:database-journal",
+            ],
+            Self::EvidencePublicationSource => &[
+                "evidence-publication-source:database-wal",
+                "evidence-publication-source:database-shm",
             ],
             Self::EvidenceRestore => &[
                 "evidence-restore:files",
