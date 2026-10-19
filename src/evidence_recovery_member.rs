@@ -387,6 +387,10 @@ pub fn verify(input: Input<'_>, budget: Budget) -> Result<Member> {
             .map_err(|_| Error::Invalid("entry"))?;
         let cid =
             evidence::link(&e["ciphertext"], 0x55).map_err(|_| Error::Invalid("entry CID"))?;
+        require(
+            cid != &crate::evidence_store::ciphertext_cid(b""),
+            "empty service request CID",
+        )?;
         let n = evidence::uint(&e["length"]).map_err(|_| Error::Invalid("entry length"))? as u64;
         let k = key(cid)?;
         let c = keys.entry(k.clone()).or_insert_with(|| coordinate(cid));

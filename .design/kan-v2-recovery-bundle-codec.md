@@ -109,8 +109,11 @@ with both links null iff `through=0`. Nonempty links have DAG-CBOR/SHA256 codec.
   `corrupt`. No metadata-corruption state pretends a broken proof is trustworthy.
 - `restored`: `{member: digest, cid, length, candidate}`. `candidate` is the raw/SHA256 CID of the
   verified candidate and equals `cid`; length is 1..4 MiB. The target must exist
-  in member metadata, original membership or original object keys. Any known
-  expected lengths must agree; conflicting references refuse. Unknown orphan
+  in member metadata, original membership or original object keys. Every member-derived authenticated expected length must agree; conflicting
+  references refuse. Do not read an incomplete-copy membership length as an
+  expected length. Restoration inherits and exposes the coordinate basis,
+  including UnverifiedMembership; content-address verification does not authenticate
+  source membership, even when valid original bytes were already present. Unknown orphan
   length is established by this verified candidate, not invented historical data.
 - `publication-intent`: `{attempt, member: digest, restorations: digest,
   output: digest, frontier}`. `output` is the expected O1 of the deterministic
@@ -127,8 +130,7 @@ with both links null iff `through=0`. Nonempty links have DAG-CBOR/SHA256 codec.
 The 32-entry limit is subordinate to the 16 KiB envelope bound. Use another
 linked observation when encoding would exceed that bound. All created/member
 references must equal the independently recomputed original M1. Unavailable
-entries must match the sampled original rows and authenticated expected
-coordinates; restoration never deletes them. Restore and publication events
+entries must match the sampled original rows and the member-derived coordinates, lengths and basis; restoration never deletes them. Restore and publication events
 must reference the member fixed at creation, not a silently revised member.
 
 R1 is `SHA256(domain || N(count) || items)`, where domain is ASCII
@@ -136,7 +138,7 @@ R1 is `SHA256(domain || N(count) || items)`, where domain is ASCII
 text lexical order are `F(binary CID) || N(length) || F(candidate bytes)`.
 R1 includes every candidate with a matching restored observation strictly before
 that intent's sequence. There is no optional unsigned selection list. Each must
-verify against its content address and all known expected lengths. A verifier
+verify against its content address and all member-derived authenticated expected lengths. A verifier
 replays the chain to reconstruct this exact historical set; candidates appended
 after the intent never enter its R1. A different candidate set requires a new
 attempt and intent. This makes restart verification independent of a lost job
@@ -144,7 +146,7 @@ process or an externally remembered subset.
 
 The virtual standalone output contains exactly the union of original object
 keys, authenticated record object references and original membership keys.
-Every key needs verified bytes of all known expected lengths: use its verified
+Every key needs verified bytes of all member-derived authenticated expected lengths: use its verified
 restoration candidate from this R1 set when present, otherwise its valid original
 bytes. A still-missing/corrupt key refuses publication, including staged/orphan
 keys. Never drop a corrupt orphan to make verification pass, add an unreferenced
@@ -160,8 +162,9 @@ a retained recovery artifact until a separate metadata-extension design exists.
 Derive one expected coordinate for each `(occurrence sequence, object CID)` in
 member metadata. The coordinate algorithm preserves occurrences; it does not
 collapse history by CID. The current service-request profile additionally refuses
-a request CID referenced by two distinct occurrences: exact request bytes fix one
-writer, operation and position, so such metadata cannot be satisfied. A future
+an empty-request CID or a request CID referenced by two distinct occurrences: exact request bytes fix one
+writer, operation and position, and an empty byte string cannot be a signed
+service request, so such metadata cannot be satisfied. A future
 payload profile permitting shared bytes needs its own reviewed binding rules. Add a null-occurrence coordinate for each
 original membership key or original object key that has no occurrence reference;
 never add a second null entry for a CID already represented by occurrences.
@@ -456,3 +459,16 @@ The wire's expectedLength is derived under these rules; basis is recomputed from
 the same fixed member, not trusted from an extra signed field. Any consuming
 API/UI must preserve the distinction, including when no external rollback
 checkpoint exists. These corrections still confer no publication authority.
+
+### Correction-review consumer follow-through
+
+The fresh review of b11cbf4 is retained in
+`.design/reviews/kan-v2-recovery-member-corrections-opus/` (APPROVE WITH
+FOLLOW-UPS). C-F1 defines restored/R1/output lengths as member-derived
+authenticated expectations, never unverified retained claims. A restoration must
+expose its recomputed basis even for an already-available key with no initial
+loss. C-F2 adds partial-copy occurrence-loss vectors and the independent CP11
+regression; C-F3 pins the exact MAX_REQUEST boundary. C-F4 refuses empty service
+request CIDs with or without an original row, in Rust and the projection oracle.
+C-F5 restores accurate probe comments and removes the vacuous immutable-input
+assertion. Fresh review of this follow-through accompanies the replay checkpoint.

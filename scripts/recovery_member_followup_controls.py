@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Selected compiled controls for review corrections, with restored source/logs."""
 from pathlib import Path
-import subprocess
+import subprocess,sys
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'.local-state/member-followup/controls'
 MEMBER=ROOT/'src/evidence_recovery_member.rs'
@@ -16,12 +16,17 @@ CASES=[
  ('membership-charge',MEMBER,'work.input(44)?;','',TARGET,'membership_bytes_are_charged_at_the_exact_input_boundary'),
  ('orphan-hash',MEMBER,'let hash_valid = actual == object.cid.to_bytes()[4..];','let hash_valid = true || actual == object.cid.to_bytes()[4..];',TARGET,'orphan_hash_mismatch_is_reported_without_rewriting_its_bytes'),
  ('issuer-utf8',FRAME,'!header.issuer.is_empty() && header.issuer.len() <= 80','!header.issuer.is_empty() && header.issuer.chars().count() <= 80','evidence_recovery_commitment_review_regressions','rv_a4_local_bounds_exact_edges'),
+ ('empty-request-cid',MEMBER,'cid != &crate::evidence_store::ciphertext_cid(b""),','true || cid != &crate::evidence_store::ciphertext_cid(b""),',TARGET,'empty_service_request_cid_refuses_without_an_original'),
+ ('retain-issuer-length',MEMBER,'if !c.referenced {','if true {',TARGET,'cp11_basis_deterministic'),
+ ('request-bound-edge',MEMBER,'n <= service::MAX_REQUEST as u64','n < service::MAX_REQUEST as u64',TARGET,'cp01_request_length_edges_without_bytes'),
 ]
 def main():
  if not __debug__:raise RuntimeError('assertions required')
  OUT.mkdir(parents=True,exist_ok=True);original={p:p.read_text() for p in [MEMBER,FRAME]}
+ selected=[c for c in CASES if not sys.argv[1:] or c[0] in sys.argv[1:]]
+ assert selected and all(n in {c[0] for c in CASES} for n in sys.argv[1:])
  try:
-  for name,path,old,new,target,test in CASES:
+  for name,path,old,new,target,test in selected:
    assert original[path].count(old)==1,(name,original[path].count(old))
    path.write_text(original[path].replace(old,new))
    r=subprocess.run(['cargo','test','--features','v2-crypto','--test',target,test,'--','--exact','--nocapture'],cwd=ROOT,capture_output=True,text=True,timeout=240)
@@ -34,5 +39,5 @@ def main():
   for path,s in original.items():path.write_text(s)
  r=subprocess.run(['cargo','test','--features','v2-crypto','--test','evidence_recovery_member','--test',TARGET,'--test','evidence_recovery_member_corrections','--test','evidence_recovery_commitment_review_regressions'],cwd=ROOT,capture_output=True,text=True,timeout=240)
  (OUT/'restored.txt').write_text(r.stdout+r.stderr+'\nexit='+str(r.returncode)+'\n');assert r.returncode==0
- print('8 compiled controls failed named assertions; restored suites passed. See raw failures for semantics.',flush=True)
+ print(f'{len(selected)} compiled controls failed named assertions; restored suites passed. See raw failures for semantics.',flush=True)
 if __name__=='__main__':main()

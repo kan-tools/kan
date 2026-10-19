@@ -1,0 +1,22 @@
+
+running 1 test
+test cp01_request_length_edges_without_bytes ... FAILED
+
+failures:
+
+failures:
+    cp01_request_length_edges_without_bytes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.04s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member)
+    Finished `test` profile [unoptimized] target(s) in 7.32s
+     Running tests/evidence_recovery_member_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_review_regressions-9f02720da46a1f05)
+RP cp01-len-2101248: REFUSE Invalid("service request length")
+
+thread 'cp01_request_length_edges_without_bytes' (10125917) panicked at tests/evidence_recovery_member_review_regressions.rs:1154:19:
+called `Result::unwrap()` on an `Err` value: Invalid("service request length")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_member_review_regressions`
+
+exit=101
