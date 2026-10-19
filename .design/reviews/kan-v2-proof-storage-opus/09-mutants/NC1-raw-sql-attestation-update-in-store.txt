@@ -1,0 +1,43 @@
+
+running 10 tests
+test proof_crash_worker ... ok
+test database_columns_match_independent_surface_catalog ... ok
+test owner_binding_is_not_selected_by_database ... ok
+test same_height_proof_fork_between_audit_and_commit_is_rejected ... ok
+test purpose_order_is_a_store_invariant_not_just_a_signature_check ... ok
+test authorization_precedes_storage_and_retries ... ok
+test atomic_admission_retry_and_legacy_refusal ... ok
+test unproven_raw_append_between_audit_and_commit_conflicts ... ok
+test proof_mutations_and_payload_loss_refuse_writable_open ... ok
+test process_death_keeps_both_metadata_and_proof_or_neither ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.32s
+
+
+running 19 tests
+test catalog_is_well_formed_and_cites_real_designs ... ok
+test compiler_resolves_filesystem_aliases_to_the_single_mutation_facade ... ok
+test persistence_modules_cannot_add_an_unreviewed_path_literal ... ok
+test every_implemented_value_has_exactly_one_catalog_row_and_no_row_is_fiction ... ok
+test every_filesystem_mutation_names_its_catalog_surface_at_the_call_site ... ok
+test every_module_that_mutates_the_filesystem_is_registered ... ok
+test every_persistence_facade_call_is_independently_inventoried ... ok
+test sqlite_is_recomputed_from_authoritative_claims_not_from_itself ... ok
+test the_catalog_represents_authority_source_and_scope_as_independent_axes ... ok
+test workspace_routes_overlay_io_through_overlay_capabilities ... ok
+test overlay_is_recomputed_from_authoritative_git_tree_claims ... ok
+test production_workspace_bypasses_an_unremovable_semantically_poisoned_projection ... ok
+test production_workspace_recovers_when_projection_metadata_has_the_wrong_type ... ok
+test production_workspace_bypasses_an_unremovable_corrupt_projection ... ok
+test production_workspace_recovers_when_a_projection_column_has_the_wrong_type ... ok
+test caller_selected_role_key_is_an_implemented_authoritative_surface ... ok
+test production_workspace_bypasses_an_unopenable_projection_path ... ok
+test production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json ... ok
+test production_workspace_recreates_a_malformed_projection_schema ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.21s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-storage/.local-state/reviews/storage)
+    Finished `test` profile [unoptimized] target(s) in 7.00s
+     Running tests/evidence_attested_store.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_store-a792e1b4f0d5a339)
+     Running tests/surface_conformance.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/surface_conformance-e9fd7d9feebd78e5)

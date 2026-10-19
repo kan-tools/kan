@@ -1,0 +1,110 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-storage/.local-state/reviews/storage)
+    Finished `test` profile [unoptimized] target(s) in 1.19s
+     Running tests/evidence_http.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_http-b27d3beb73eb859e)
+
+running 1 test
+test http_roundtrip_and_rejections ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s
+
+     Running tests/evidence_import.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_import-b28dcf3257ee0c32)
+
+running 8 tests
+test changed_chunk_after_plan_validation_cannot_be_sealed ... ok
+test pinned_inventory_detects_changes_and_route_identity_changes_before_admission ... ok
+test workspace_identity_empty_and_exact_boundary_sources_remain_distinct ... ok
+test importer_source_id_hex_requires_lowercase_letters ... ok
+test decoder_requires_external_plan_and_reports_provenance_and_omissions ... ok
+test decoder_optimization_cannot_disable_content_verification ... ok
+test full_queue_preserves_partial_progress_and_resumes_without_resealing ... ok
+test cli_resumes_large_malformed_snapshot_and_independent_decoder_recovers_exact_bytes has been running for over 60 seconds
+test cli_resumes_large_malformed_snapshot_and_independent_decoder_recovers_exact_bytes ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 62.91s
+
+     Running tests/evidence_library_cli.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_library_cli-95b26762f3467431)
+
+running 1 test
+test library_cli_browses_authenticated_retained_source_without_storage_authority ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running tests/evidence_restore.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_restore-80b4c44c34e2ccb8)
+
+running 9 tests
+test interrupted_restore_child ... ok
+test raw_frontier_and_records_remain_pinned_across_concurrent_owner_writes ... ok
+test explicit_pins_limits_and_occupied_output_fail_closed ... ok
+test nested_files_and_plan_namespace_are_preserved ... ok
+test missing_duplicate_and_corrupt_evidence_rejected ... ok
+test abrupt_process_exit_leaves_partial_output_without_completion ... ok
+test signed_hostile_frames_and_plans_never_publish_success ... ok
+test unsafe_paths_prefixes_and_filesystem_collisions_rejected ... ok
+test cli_restores_large_backup_with_derived_damage_and_independent_oracle ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 42.68s
+
+     Running tests/evidence_restore_adversarial.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_restore_adversarial-587d79c08d76d67e)
+
+running 11 tests
+test probe_noncanonical_but_pinned_plan_rejected ... ok
+test probe_receipt_issuer_rewrite_rejected ... ok
+test probe_destination_edges ... ok
+test probe_manifest_object_substitution_rejected ... ok
+test probe_record_limit_boundary_and_holes ... ok
+test probe_second_writer_cannot_substitute_or_block ... ok
+test probe_header_shape_rejected ... ok
+test probe_filesystem_alias_paths_never_silently_merge ... ok
+test probe_importer_exact_chunk_multiple ... ok
+test probe_multipart_inventory_roundtrip_and_archive_oracle ... ok
+test probe_multipart_inventory_tampering ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.11s
+
+     Running tests/evidence_spool.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_spool-85d26ae190c9287a)
+
+running 11 tests
+test crash_worker ... ok
+test encrypted_spool_has_no_plaintext_canary ... ok
+test concurrent_producers_serialize_one_frontier ... ok
+test operation_registry_damage_and_empty_route_damage_refuse_reopen ... ok
+test exact_bytes_restart_capacity_and_proven_remote_acknowledgment ... ok
+test wrong_binding_fork_and_reordered_ack_never_advance ... ok
+test acknowledged_operation_ids_cannot_be_reused ... ok
+test foreign_schema_and_queue_damage_fail_closed ... ok
+test abrupt_exit_before_and_after_publish_preserves_atomic_state ... ok
+test generated_encrypted_requests_reserve_frontier_before_preparation ... ok
+test actual_writer_lock_reports_storage_unavailable_without_advancing ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.52s
+
+     Running tests/migration_preflight.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/migration_preflight-66725b3488ff1f1a)
+
+running 11 tests
+test unknown_identity_entries_and_empty_selections_are_incomplete ... ok
+test symlink_sources_and_intermediate_scope_links_are_not_followed ... ok
+test malformed_and_unsupported_sources_are_explicit ... ok
+test selected_public_history_symlinks_and_bad_car_report_incomplete ... ok
+test publication_only_workspace_is_discovered_without_creating_a_store ... ok
+test discovery_and_preview_preserve_bytes_and_exclude_credentials ... ok
+test verification_discloses_structural_scope_without_admission_claim ... ok
+test real_cli_initialization_verification_and_backup_are_explicit ... ok
+test changed_sources_are_not_certified_as_stable ... ok
+test independent_car_frames_stream_beyond_ten_megabytes ... ok
+test explicit_store_and_public_identity_selection_exclude_private_material ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.70s
+
+     Running tests/recovery_cli.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/recovery_cli-8f2c94a09c387bb5)
+
+running 6 tests
+test cli_recovery_rejects_non_utf8_output_before_creating_it ... ok
+test cli_init_and_backup_reject_non_utf8_output_before_mutation ... ok
+test cli_recovery_fails_explicitly_on_bad_raw_data_and_retains_incomplete_output ... ok
+test cli_missing_or_corrupt_evidence_is_never_empty_success ... ok
+test cli_reads_and_rebuilds_damaged_derived_data_without_touching_original ... ok
+test cli_init_resume_is_explicit_and_preserves_existing_evidence ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+
+exit 0

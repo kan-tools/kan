@@ -1,0 +1,3 @@
+ 2937 /Users/m/.cargo/bin/day mcp
+ 2943 /Users/m/.cargo/bin/kan mcp
+--- (empty above = no owned cargo/test processes or listeners)

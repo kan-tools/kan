@@ -1,0 +1,26 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-storage/.local-state/reviews/storage)
+    Finished `test` profile [unoptimized] target(s) in 0.42s
+     Running tests/zz_review_storage_probe.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_storage_probe-c4744dbbf47b2617)
+
+running 11 tests
+test p1_profile1_archive_is_refused_by_attested_open_without_writes ... ok
+test p2_signature_only_mutation_refuses_open_with_named_audit_error ... ok
+test p3_retry_of_earlier_row_detects_proof_replacement_under_lock ... ok
+test p4_retry_of_earlier_row_detects_receipt_replacement_under_lock ... P4 failure class: Invalid
+ok
+test p5a_single_historical_issuer_prefix_then_admission_is_accepted ... ok
+test p5b_mixed_historical_issuers_in_prefix_are_refused ... ok
+test p6_concurrent_proven_append_from_second_handle_conflicts ... ok
+test p7_non_p256_issuer_binding_is_refused_at_create ... P7 error: invalid input: archive requires canonical P-256 issuer
+ok
+test p8_interrupted_profile2_create_is_adopted_by_legacy_resume_as_profile1 ... P8 Archive::create on interrupted dir: Some("File exists (os error 17)")
+P8 Archive::open on interrupted dir: Some("invalid input: unknown database profile")
+P8 legacy resume_initialization: ok=true
+P8 resulting user_version=1
+ok
+test p9_hostile_open_worker ... ok
+test p9_hostile_prepare ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.15s
+
+exit 0

@@ -219,10 +219,10 @@ impl Archive {
     pub fn create(root: &Path, binding: Binding) -> Result<Self> {
         binding.validate()?;
         let ledger = Ledger::create_profile(root, &mut |_| {}, Some(&binding))?;
-        let _ = ledger.conn.set_limit(
+        ledger.conn.set_limit(
             rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
             RECOVERY_SQLITE_LENGTH_LIMIT,
-        );
+        )?;
         Ok(Self { ledger, binding })
     }
     pub fn open(root: &Path, binding: Binding) -> Result<Self> {
@@ -230,10 +230,10 @@ impl Archive {
         let path = root.join("archive.sqlite");
         private_file(&path)?;
         let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
-        let _ = conn.set_limit(
+        conn.set_limit(
             rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
             RECOVERY_SQLITE_LENGTH_LIMIT,
-        );
+        )?;
         conn.busy_timeout(Duration::from_secs(5))?;
         let archive = Self {
             ledger: Ledger { conn },
@@ -340,7 +340,8 @@ impl Archive {
                     &row.manifest,
                     &row.receipt,
                     old.frontier(),
-                )?;
+                )
+                .map_err(|_| Error::Conflict("retry receipt changed"))?;
                 if old.purpose() != Purpose::Admitted {
                     return Err(Error::Conflict(
                         "imported retry requires explicit confirmation",

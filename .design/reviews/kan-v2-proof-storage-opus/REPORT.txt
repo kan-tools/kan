@@ -1,0 +1,202 @@
+Independent implementation review: profile-2 attested evidence storage checkpoint
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), in-session, no delegation, no subagents.
+Subject: 9f1dffa (feat/kan-v2-proof-storage) against 5784efa.
+Export: .local-state/reviews/storage. `diff -rq` against `git archive 9f1dffa` (enclosing worktree):
+identical except the harness-supplied untracked north-star.json, before and after the review.
+../storage-change.diff is byte-identical to `git diff 5784efa 9f1dffa`.
+Independence: I wrote none of this code. No kan/day reads or writes (user rule; Step 7 recording
+skipped). North star from the supplied north-star.json: telos/raw-data-and-projections (live,
+deliberately unwitnessed), which records InTensionWith telos/performance-at-scale.
+
+VERDICT: APPROVE WITH FOLLOW-UPS  (owner-side profile-2 storage checkpoint only)
+No parent acceptance criterion (AC-1..AC-6) may be checked off on this evidence; all remain open.
+
+----------------------------------------------------------------------------------------------
+COMMANDS RUN (shared CARGO_TARGET_DIR, CARGO_BUILD_JOBS=4, one heavy job at a time; first
+`cargo clean -p kan` removed 837 files, so every result was compiled from this export)
+03 cargo test --features v2-crypto: evidence_attestation 7, evidence_attested_store 10,
+   evidence_contract 7, evidence_reader 18 (+1 ignored manual browser fixture), evidence_service 11,
+   evidence_store 34, surface_conformance 19  => 106 passed, exit 0. Matches author counts.
+04 lifecycle/service: evidence_restore 9, evidence_restore_adversarial 11, evidence_import 8,
+   recovery_cli 6, migration_preflight 11, evidence_library_cli 1, evidence_http 1,
+   evidence_spool 11 => 58 passed, exit 0.
+05  cargo clippy --features v2-crypto --all-targets -- -D warnings: exit 0
+05b cargo clippy --all-targets -- -D warnings (default features): exit 0
+06  cargo fmt --all -- --check: exit 0
+07  reviewer probes (probes/zz_review_storage_probe.rs, temporarily in tests/): 11/11 pass on baseline
+08  hostile materialization RSS (/usr/bin/time -l); 11 WAL media probe
+09  13 reviewer compiled mutants / negative controls (probes/mutate.py), per-case logs in 09-mutants/
+12  author's scripts/attested_storage_negative_controls.py rerun on FINAL code: 6/6 DEMONSTRATED,
+    restored baseline passes (the author's retained logs predate two final edits; this closes that)
+13  restored-tree rerun: attestation 7, attested_store 10, surface 19, exit 0
+Source hashes for src/ tests/ scripts/ .github Cargo.*: 287 files, before == after (empty diff).
+No owned processes/listeners remain (14). /tmp scratch removed. Stale probe test binaries remain
+in the shared target (never delete the shared target); they are inert.
+Not run: full CI test list (gateway/capture/operations/delivery/harness suites), MSRV job,
+oracle python checks, Node UI tests, macOS canary. No .lake/Lean/Mathlib, no install/deploy/merge.
+
+----------------------------------------------------------------------------------------------
+CHECKPOINT-SCOPE CLAIMS vs EVIDENCE (design "Storage checkpoint scope")
+- Explicit owner Binding, never DB-selected: MET. Archive::open/create take Binding; check_binding
+  (attested.rs:88-105) requires DB row == config; validate() (38-59) canonical P-256 only.
+  Author test owner_binding_is_not_selected_by_database; my P7 shows a canonical secp256k1 did:key
+  is refused ONLY by the P-256 roundtrip in validate() (service::author accepts it).
+- Grant is caller-configured, never remote-selected: MET AS DOCUMENTED, not type-enforced.
+  admit() (284-292) checks grant.append, grant.principal == signed principal, scope, audience,
+  signer DID == binding issuer, after signature verification in SignedRequest::decode and before
+  any storage read/write (author test asserts zero objects). Matches legacy Service::execute
+  Append checks (evidence_service.rs:546-559). See F9.
+- Atomic metadata/proof insertion: MET. The proof hook runs inside commit_inner's IMMEDIATE tx
+  after commits/bindings insertion and before tx.commit() (evidence_store.rs:885-897); hook Err
+  drops the tx. Eight abrupt-exit phases leave both or neither (author). My RM5 (insert proof in a
+  separate tx after commit) is killed by process_death_... and same_height_... tests.
+- Exact stored proof+receipt retry: MET in code; PARTIALLY TESTED. Duplicate path returns the
+  audited Verified only if the stored envelope equals it and it re-verifies against the stored
+  receipt (attested.rs:326-349). My P3/P4 swap a NON-TIP row's proof/receipt between audit and lock;
+  both are refused. The author suite passes with either check deleted (RM1, RM2). See F1.
+- Full prior audit + proof/manifest frontier fences: MET. verify_for (254-263) = legacy
+  verify_contents + audit_prefix in one read tx before every admission. Under the writer lock:
+  legacy (through, tip) snapshot fence (evidence_store.rs:791-809), binding, proof cardinality,
+  verify_at of the tip envelope pinned to the audited statement CID (attested.rs:310-325).
+  Author fork test kills the tip fence; my P6 (a second Archive handle completing a fully proven
+  append between audit and lock) yields Conflict, and the loser's retry then lands at sequence 3.
+- Historical signature verification outside the lock: MET. Under the lock: one verify_at (tip),
+  one issue (sign+self-verify), plus one verify_at on retry. Bounded.
+- Purpose prefix ordering: MET. audit_prefix (190-207). Author test covers admitted->retained.
+  My P5a: realistic upgrade shape with historical issuer H != current issuer C (legacy Service
+  receipts, retained-verified by C) then ordinary admission is ACCEPTED (through=3). My P5b: prefix
+  mixing H1/H2 is REFUSED "retained-verified prefix". Author suite survives deletion of that
+  consistency check (RM3). See F1.
+- Strict full payload audit: MET. Legacy verify_contents reads every object; retained() requires
+  exactly one entry, bounded length, CID match, verify_retained_request, scope.
+- Unique manifest/operation identity: MET BY READING ONLY (schema UNIQUE(cid), UNIQUE(scope,writer,
+  operation) + exact sqlite_schema comparison + integrity_check). Not independently probed.
+- Profile-1 compatibility/refusal: MET logically. Ledger::open, resume_initialization,
+  RecoveryReader::open, verify_file all pin user_version 1; kan-v2 binary/restore/backup reach
+  archives only through these (grep of src). My P1: Archive::open refuses a profile-1 archive
+  "unknown database profile" with main DB bytes unchanged. Physical caveat: F3.
+- Writable profile-2 open requires all payloads: MET (author "payload" mutation). Consistent with
+  the design's decision that damaged-archive browsing is a later explicit read-only mode.
+- Bounded hostile materialization: PARTIAL. Attested reads are bounded (envelope substr 16384,
+  request substr 2101248, RAW_COMMITS 65536, 8 MiB SQLITE_LIMIT_LENGTH). A 96 MiB oversized
+  envelope refuses at ~12 MB RSS. A 96 MiB oversized OBJECT refuses at ~113 MB RSS (baseline
+  ~10 MB) inside PRAGMA integrity_check; legacy profile-1 Ledger::open is identical (~112 MB).
+  Pre-existing, not a regression. See F6.
+- Process death: MET for admission boundaries (8 phases, exact retry after AfterCommit returns the
+  stored envelope). Initialization death: F4.
+
+CONCURRENCY BOUNDARY (challenged; judged REASONABLE, not laundering)
+The disclosure says concurrent append and same-height tip replacement are fenced; an arbitrary
+privileged rewrite of an EARLIER row after audit, preserving tips, is not. Reasons this is sound:
+(1) REQ-2 demands "the existing audited-frontier transaction fence"; legacy Service has exactly
+the same audit-then-(through,tip) boundary, and this adds the tip statement CID. (2) Every
+statement commits to previousAttestation (statement CID), so all authoritative history (manifests,
+receipts, proofs, purposes, times) is hash-committed to the fenced tip statement. An earlier
+rewrite cannot be made chain-consistent; it is detected by the next strict audit and by any
+reader verifying from a pin. The only tip-preserving changes are payload deletion/corruption
+(an availability event the design handles as degraded state) and derived columns (re-derived by
+verify_contents). (3) The new proof is still truthful about what it signs. AC-2's "concurrent raw
+append conflicts" is met (author test + P6). The disclosure was added during implementation but
+narrows nothing the design required.
+
+----------------------------------------------------------------------------------------------
+FINDINGS (none blocks this storage checkpoint)
+F1 [medium, test gap] Four non-redundant checks lack committed regressions; the author suite passes
+   10/10 with each deleted, my probes fail at named assertion lines:
+   RM1 retry envelope equality (attested.rs:332)  -> killed only by P3 (probe line 171)
+   RM2 retry receipt re-verification (337-343)    -> killed only by P4 (probe line 221)
+   RM3 single historical issuer (199-201)         -> killed only by P5b (probe line 309)
+   RM4 P-256 issuer roundtrip in validate (50-56) -> killed only by P7 (probe line 374)
+   Commit P3/P4/P5a/P5b/P7 (or equivalents) before the next slice relies on these properties.
+F2 [low] A stored-receipt swap during retry (P4) returns Failure::Invalid: proof errors map
+   evidence::Error -> Error::Record -> Failure::Invalid. An integrity race should be Conflict or
+   Corrupt, not caller-invalid input; matters once an RPC exposes the class.
+F3 [medium, lifecycle; qualifies AC-3] Legacy openers "refuse" profile 2 but physically write it:
+   with a crash-left WAL, Ledger::open and Ledger::resume_initialization open read-write, refuse,
+   and on close checkpoint the WAL into archive.sqlite and delete it (P10: main_changed=true,
+   wal_after=None). RecoveryReader leaves media untouched. Logical content survives (Archive::open
+   verifies through=1 afterwards). Author test asserts only is_err. AC-3's "old binaries refuse the
+   new profile before writes" must be qualified as "before logical writes", or current openers
+   must probe the profile read-only first. Already-released binaries cannot be changed.
+F4 [low-medium, lifecycle] Interrupted Archive::create (empty file after FileCreated) is
+   unrecoverable through profile-2 APIs (create: EEXIST; open: unknown profile), but legacy
+   Ledger::resume_initialization adopts it as profile 1 (P8: user_version=1). No evidence is lost
+   (file was empty), but an owner who intended profile 2 silently gets profile 1. Design already
+   lists profile-2 initialization recovery as remaining; it should refuse or explicitly choose.
+F5 [low, surface/AC-5] The typed SQL helpers are inventoried, not enforced. NC1: a raw
+   `tx.execute("UPDATE attestations ...")` added to attested.rs passes surface_conformance (19/19)
+   and the store suite (10/10); there is no Clippy/SQL policy. NC5: an uncatalogued index on
+   attestations passes everything (catalog binds columns only), while AC-5 says "every new stored
+   field and index". Positive controls hold: NC2 (extra facade call) and NC3 (facade changed to
+   INSERT OR REPLACE, which would permit proof overwrite) are caught by the inventory/digest only
+   (store suite passes under NC3), and NC4 (uncatalogued table) is caught only by
+   evidence_attested_store::database_columns_match_independent_surface_catalog (surface 19/19).
+F6 [low, pre-existing] Hostile oversized WITHOUT ROWID object rows are fully materialized during
+   integrity_check on writable open, despite the new length limit (see above). The future degraded
+   read-only reader must not inherit this; the limit added to Archive is not what bounds the
+   envelope case (integrity_check's CHECK evaluation refuses first). `let _ = set_limit(..)`
+   silently ignores failure where RecoveryReader uses `?`.
+F7 [low, test fidelity] Author mutation "signature" flips the envelope's final byte, which lies in
+   the nested statement (DAG-CBOR orders "signature" before "statement"). P2 asserts the true
+   signature-only flip refuses with "invalid attestation chain". Store mutation tests assert is_err
+   only; most cases are also refused by legacy verify_contents, so attribution is weak.
+F8 [doc] RFC 4 still says "The new SQLite profile and atomic proof insertion ... remain to be
+   implemented and qualified together", contradicting this separately qualified checkpoint.
+F9 [prerequisite, auth] Archive::admit takes one caller-chosen &Grant. Nothing in the type stops
+   a future adapter building Grant{principal: request.principal, append: true}. Before the RPC
+   slice, hold the configured grant table in Archive (as Service::new does) or make Grant
+   constructible only from configuration.
+F10 [prerequisite, schema/migration] Profile 2 is pinned to an exact sqlite_schema at
+   user_version 2, but the design still requires authoritative surfaces this schema lacks: upgrade
+   plan/historical-issuer pin (the audit enforces a CONSISTENT historical issuer, not one pinned to a
+   plan), incomplete-recovery descriptor and resolution records. Profile 2 also has no backup,
+   rebuild or recovery path (all refuse it). Do not let any profile-2 archive hold real evidence
+   until those land, or plan an explicit profile bump.
+F11 [tension, disclosed] Each admission runs integrity_check, a full object scan and full chain
+   signature verification: O(archive) per append, O(n^2) cumulative. This is honest as a
+   correctness baseline but stands in tension with telos/performance-at-scale. A cached verified
+   prefix needs its own integrity review, as the design says.
+Equivalent/redundant (not defects): RM6 lock-time proof cardinality (subsumed by the snapshot fence
+   plus the attestations PK) and RM7 lock-time binding recheck (the signature always uses owner
+   config; the next audit refuses DB drift) both survive all tests.
+Codec follow-ups: F1 short-DID regression is CLOSED (catch_unwind + "issuer-encoding" for four
+   short DIDs; the author's control reproduces the dependency panic). F2 is substantially closed
+   (envelope-canonical, envelope-bound, row-after-genesis, pinned-frontier, chain-commitments
+   asserted; statement-canonical/-fields and envelope-fields labels exist but are unasserted).
+   The Verified doc now states relative authority. Detached-proof API (F3), independent oracle
+   source schema (F4) and page vectors (F5) remain open, as disclosed.
+
+SCOPE-NARROWING LANGUAGE (Step 4; 10-scope-narrowing-grep.txt)
+- concurrency "does not promise" (design +24): legitimate, see analysis above.
+- RetryImported "later explicit command" (+36): legitimate; named in the prior design correction.
+- codec oracle/page-vector follow-ups "remain open" (+42): legitimate; named by the codec review.
+- "All six parent acceptance criteria remain open" (+62): accurate.
+- author mutation logs "precede those two changes" (+92-94): honest; closed by my rerun (12).
+Forbidden patterns (Step 5): no subject destruction, no fold change, no new UI/surface, no cites
+handling, no blocking hooks. Proof bytes are authoritative raw data; indexed coordinates are
+declared derived/validated. That is consistent with the north star.
+
+REQ/AC STATUS (parent design; storage checkpoint contributes, closes nothing)
+REQ-1 partial (proof retained per commit with exact bindings; no reader). REQ-2 met at the
+storage layer (not service-wired). REQ-3 unmet. REQ-4 unmet (writable open still needs
+payloads, by design). REQ-5 unmet (store accepts and refuses the right upgrade shapes: P5a/P5b).
+REQ-6 partial (two tables catalogued; no proof-preserving backup/recovery; indexes unchecked: F5).
+REQ-7 unmet. REQ-8 partial (this review). AC-1..AC-6 open. AC-2's storage portion is
+substantially met. AC-3's refusal claim needs the F3 qualification. AC-5 is partial.
+
+COVERAGE LIMITS
+- Mutation sets are bounded samples (author 6 + mine 8 RM + 5 NC); no structured fuzzing.
+- Process death is std::process::exit at observer boundaries; no power-loss or fsync-reordering
+  test. SQLite atomicity is assumed.
+- Concurrency probes are deterministic interleavings at ObjectDurable, not stress or multi-process
+  races.
+- Uniqueness across heights is verified by reading the schema and integrity_check semantics only.
+- No RPC/CLI/upgrade/degraded-read/UI exists to review; no timing/side-channel review; atrium-crypto
+  not re-audited. The hostile RSS figures are single macOS measurements.
+
+EVIDENCE FILES (review-evidence/)
+01 env | 02 clean | 03 targeted tests | 04 lifecycle tests | 05/05b clippy | 06 fmt |
+07 probe baseline | 08 hostile materialization | 09-mutants/ (+SUMMARY.txt, 09-mutants.run.txt) |
+10 scope grep | 11 WAL media probe | 12-author-controls/ + 12 rerun log | 13 restored tests |
+14 processes | export-vs-archive(.txt, -after.txt) | source-hashes-before/after + diff (empty) |
+probes/zz_review_storage_probe.rs (P1-P10) | probes/mutate.py
