@@ -12,6 +12,7 @@ use std::{collections::BTreeMap, time::Duration};
 pub struct Readers {
     legacy: Option<legacy::Reader>,
     proof: BTreeMap<String, proof::Reader>,
+    workers: std::sync::Arc<tokio::sync::Semaphore>,
 }
 impl Readers {
     pub fn new(
@@ -42,6 +43,7 @@ impl Readers {
         Ok(Self {
             legacy,
             proof: selected,
+            workers: std::sync::Arc::new(tokio::sync::Semaphore::new(2)),
         })
     }
     fn selected(&self, id: &str) -> Result<&proof::Reader, Failure> {
@@ -53,8 +55,8 @@ impl Readers {
             if let Some(reader) = self.proof.get(id) {
                 let pin = reader.snapshot().await?;
                 Ok(json!({"id":id,"scope":reader.binding().scope,"binding":reader.binding(),
-                    "protocol":wire::PROTOCOL,"pin":pin,
-                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability"]}))
+                    "protocol":wire::PROTOCOL,"pin_wire":serde_json::to_string(&pin).map_err(|_|Failure::Invalid)?,"pin":pin,
+                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection"]}))
             } else {
                 let reader = self.legacy.as_ref().ok_or(Failure::Invalid)?;
                 let pin = reader.snapshot(id).await?;
@@ -65,6 +67,21 @@ impl Readers {
     }
     pub(super) async fn query(&self, request: Query) -> Result<Vec<u8>, ContentError> {
         let value = match request {
+            Query::ProofContent {
+                source,
+                pin,
+                selections,
+                format,
+            } => {
+                return content::proof_content(
+                    self.selected(&source)?,
+                    &pin,
+                    &selections,
+                    format,
+                    self.workers.clone(),
+                )
+                .await;
+            }
             Query::Catalog if !self.proof.is_empty() => {
                 let mut configured = self
                     .legacy
@@ -92,11 +109,12 @@ impl Readers {
                     }
                 }
                 json!({"version":2,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},
-                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability"],
+                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection"],
                     "unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]})
             }
             Query::ProofSnapshot { source } => {
-                json!({"pin":self.selected(&source)?.snapshot().await?})
+                let pin = self.selected(&source)?.snapshot().await?;
+                json!({"pin_wire":serde_json::to_string(&pin).map_err(|_|Failure::Invalid)?,"pin":pin})
             }
             Query::ProofPage {
                 source,

@@ -177,6 +177,81 @@ impl Reader {
             .map_err(|_| ContentError::Limited)?
     }
 }
+/// The same interpreter over metadata-verified proof selections, preserving loss.
+pub(crate) async fn proof_content(
+    reader: &crate::evidence_reader::proof::Reader,
+    pin: &crate::evidence_reader::proof::Pin,
+    selections: &[crate::evidence_reader::proof::Token],
+    format: Format,
+    workers: Arc<tokio::sync::Semaphore>,
+) -> Result<Vec<u8>, ContentError> {
+    use crate::evidence_reader::proof::Source;
+    if selections.is_empty() || selections.len() > PAGE_LIMIT {
+        return Err(Failure::Invalid.into());
+    }
+    let permit = workers
+        .try_acquire_owned()
+        .map_err(|_| ContentError::Busy)?;
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let _cancel = Cancel(cancelled.clone());
+    let deadline = Instant::now() + DEADLINE;
+    let work = async {
+        let mut selected = Vec::new();
+        let mut bytes = 0usize;
+        let mut seen = BTreeSet::new();
+        let scope = reader.binding().owner_binding()?.scope;
+        for selection in selections {
+            let (record, writer, payload) = match reader.source(pin, selection).await? {
+                Source::Available {
+                    record,
+                    writer,
+                    plaintext,
+                } => (record, Some(writer), Ok(plaintext)),
+                Source::Missing { record } => (record, None, Err(assembly::Unavailable::Missing)),
+                Source::Corrupt { record } => (record, None, Err(assembly::Unavailable::Corrupt)),
+            };
+            if !seen.insert(record.sequence.clone()) {
+                return Err(Failure::Invalid.into());
+            }
+            let length = payload.as_ref().ok().map(Vec::len);
+            bytes = bytes
+                .checked_add(length.unwrap_or(0))
+                .ok_or(ContentError::Limited)?;
+            if bytes > INPUT {
+                return Err(ContentError::Limited);
+            }
+            let metadata = json!({"scope":reader.binding().scope,"archive":reader.binding().archive,
+                "record":record,"writer":writer,"service_issuer":reader.binding().issuer,
+                "total_bytes":length.map(|n|n.to_string())});
+            selected.push(Selected {
+                scope,
+                writer,
+                payload,
+                metadata,
+            });
+        }
+        let wire = serde_json::to_string(pin).map_err(|_| Failure::Invalid)?;
+        let result = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            render_selected(selected, wire, format, cancelled, deadline, || {})
+        })
+        .await
+        .map_err(|_| ContentError::Limited)?
+        .map_err(|e| {
+            if e == Failure::Unavailable {
+                ContentError::Limited
+            } else {
+                ContentError::Read(e)
+            }
+        })?;
+        // Fresh service request: a historical selection token is never a grant.
+        reader.page(pin, None, 1).await?;
+        Ok(result)
+    };
+    tokio::time::timeout(DEADLINE, work)
+        .await
+        .map_err(|_| ContentError::Limited)?
+}
 struct Budget {
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
@@ -373,8 +448,28 @@ fn stream(
     result["coherent_stop_observed"] = json!(document.coherent_stop_observed);
     Ok(result)
 }
+struct Selected {
+    scope: [u8; 32],
+    writer: Option<String>,
+    payload: Result<Vec<u8>, assembly::Unavailable>,
+    metadata: Value,
+}
 fn render(
     acquired: Vec<Acquired>,
+    pin_wire: String,
+    format: Format,
+    cancelled: Arc<AtomicBool>,
+    deadline: Instant,
+    after_item: impl FnMut(),
+) -> Result<Vec<u8>, Failure> {
+    let selected = acquired.into_iter().map(|a| {
+        let metadata = json!({"scope":service::hex(&a.scope),"record":occurrence(&a.record),"writer":a.writer,"service_issuer":a.service_issuer,"total_bytes":a.plaintext.len().to_string()});
+        Selected { scope:a.scope, writer:Some(a.writer), payload:Ok(a.plaintext), metadata }
+    }).collect();
+    render_selected(selected, pin_wire, format, cancelled, deadline, after_item)
+}
+fn render_selected(
+    selected: Vec<Selected>,
     pin_wire: String,
     format: Format,
     cancelled: Arc<AtomicBool>,
@@ -389,12 +484,15 @@ fn render(
         items: ITEMS,
         citations: CITATIONS,
     };
-    let inputs: Vec<_> = acquired
+    let inputs: Vec<_> = selected
         .iter()
         .map(|a| assembly::Input {
             scope: a.scope,
-            writer: &a.writer,
-            payload: assembly::Payload::Available(&a.plaintext),
+            writer: a.writer.as_deref().unwrap_or(""),
+            payload: match &a.payload {
+                Ok(bytes) => assembly::Payload::Available(bytes),
+                Err(reason) => assembly::Payload::Unavailable(*reason),
+            },
         })
         .collect();
     let assembled = assembly::assemble(
@@ -455,7 +553,7 @@ fn render(
             "events_after_terminal":group.events_after_terminal,"unconfirmed_claim":group.unconfirmed_claim,
             "request":request,"response":response}));
     }
-    let occurrences: Vec<_> = acquired.iter().map(|a|json!({"scope":service::hex(&a.scope),"record":occurrence(&a.record),"writer":a.writer,"service_issuer":a.service_issuer,"total_bytes":a.plaintext.len().to_string()})).collect();
+    let occurrences: Vec<_> = selected.iter().map(|a| &a.metadata).collect();
     let value = json!({"version":VERSION,"assembly_version":assembly::VERSION,"adapter_version":provider::VERSION,
         "pin_wire":pin_wire,"occurrences":occurrences,"observations":observations,"groups":groups,
         "coverage":"explicit selection only; ordinal gaps mean no recognized capture, not absent inputs; protocol claims do not prove complete capture",

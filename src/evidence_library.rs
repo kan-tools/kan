@@ -21,6 +21,12 @@ use tokio::{
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 enum Query {
+    ProofContent {
+        source: String,
+        pin: verified::Pin,
+        selections: Vec<verified::Token>,
+        format: crate::evidence_content::Format,
+    },
     ProofSnapshot {
         source: String,
     },
@@ -87,9 +93,10 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
 async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
-        Query::ProofSnapshot { .. } | Query::ProofPage { .. } | Query::ProofSource { .. } => {
-            return Err(Failure::Invalid.into())
-        }
+        Query::ProofContent { .. }
+        | Query::ProofSnapshot { .. }
+        | Query::ProofPage { .. }
+        | Query::ProofSource { .. } => return Err(Failure::Invalid.into()),
         Query::Content {
             pin_wire,
             sequences,
@@ -229,7 +236,8 @@ async fn handle(
             _ => denied(StatusCode::NOT_FOUND),
         });
     }
-    if r.method() != hyper::Method::POST || path != Some("/api/library") {
+    let proof_content = path == Some("/api/library/proof-content");
+    if r.method() != hyper::Method::POST || (path != Some("/api/library") && !proof_content) {
         return Ok(denied(StatusCode::METHOD_NOT_ALLOWED));
     }
     let wanted = format!("Bearer {token}");
@@ -247,7 +255,7 @@ async fn handle(
     }
     let body = match tokio::time::timeout(
         Duration::from_secs(3),
-        Limited::new(r.into_body(), 16384).collect(),
+        Limited::new(r.into_body(), if proof_content { 65536 } else { 16384 }).collect(),
     )
     .await
     {
@@ -259,6 +267,9 @@ async fn handle(
         Ok(request) => request,
         Err(_) => return Ok(denied(StatusCode::BAD_REQUEST)),
     };
+    if matches!(&request, Query::ProofContent { .. }) != proof_content {
+        return Ok(denied(StatusCode::BAD_REQUEST));
+    }
     Ok(match reader.query(request).await {
         Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
         Err(ContentError::Read(Failure::AccessLimited)) => denied(StatusCode::FORBIDDEN),

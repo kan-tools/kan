@@ -41,11 +41,11 @@ Only configured server-side key files are read. A separate metadata-only proof
 read service CLI uses the owner binding and explicit grants; no append command
 or writable admission opener is introduced.
 
-Selected Content currently acquires legacy inputs through `evidence_content`.
-Proof selected Content must preserve unavailable selections and coverage instead
-of silently omitting them. Its adapter remains an explicit next integration in
-the overall human Library roadmap, not a claim of semantic completeness here.
-Per-source capability labels must expose that limitation. Archive-wide sessions,
+Selected Content uses `evidence_content` for legacy and proof inputs. The proof
+adapter preserves every selected occurrence and typed unavailable inputs, shares
+the existing bounded renderer, and rechecks access after interpretation. Source
+citations retain signed selection tokens. This implements selected interpretation;
+archive-wide discovery and complete session navigation remain the next layer. Archive-wide sessions,
 search, annotations and owner jobs remain in the approved roadmap.
 
 ## Process
@@ -78,3 +78,47 @@ Rust/real CLI qualification and independent review are pending. The required
 `day design check` refused this worktree's absent kan workspace; the exact error
 is in ignored `.local-state/design-check.txt`. This is unavailable validation,
 not a passing schema check. No live service has been started or migrated.
+
+## Integrated progress under the feature-complete SOP
+
+At c4e7f03 (with SOP documentation subsequently committed), the affected Rust
+run passed: 84 integrations including both real CLI profile paths, service-only
+feature compilation, strict v2 all-target Clippy and formatting. The real synthetic
+browser fixture showed missing/corrupt/available rows, exact binary source,
+pinned pagination 25–6 / 5–1 / 25–6, same-scope archive switching, historical
+receipt issuer versus current proof issuer, and lock clearing. No console warning
+or error was observed. The temporary browser tab and fixture were stopped.
+
+Actual file delivery remains unverified: the in-app browser download event timed
+out after 12 seconds; native browser access was unavailable because the Mac was
+locked. This does not block independent feature implementation and is not counted
+as successful delivery. The final integrated review remains deferred until the
+full product is implemented, per the standing SOP.
+
+### Selected Content integration
+
+Extend the existing bounded interpreter to accept verified proof selections.
+Retain every selected occurrence, including typed Missing/Corrupt inputs with no
+invented writer or plaintext. Reuse assembly and provider adapters; source indices
+and citations keep their original positions. A separate local POST route
+`/api/library/proof-content` permits a bounded 64 KiB request for up to 40 signed
+selection tokens; other Library requests keep the existing 16 KiB limit. It uses
+the same authentication/origin/connection protections and accepts only that action.
+Share two interpretation worker permits across configured proof archives, bound
+acquisition/interpretation to the existing 20-second/8-MiB/4-MiB limits, and recheck
+current access after processing before returning derived content. Cancellation
+releases borrowed reads and signals workers. No plaintext projection is persisted.
+
+The proof Content adapter passed both-profile integration tests for readable
+messages, source citation indices, loss after selection, duplicate refusal and
+revocation; the full affected inventory/Reader run passed 64 tests. All nine
+existing Content unit checks (including budgets/cancellation), 60 Library UI
+tests and strict all-target Clippy passed. This closes the earlier selected-Content
+integration gap, not archive-wide session discovery or full frontend completion.
+
+A subsequent real in-app browser pass selected all three records of a copied
+proof archive, displayed “Hello proof archive” as supplied user history, followed
+the citation to exact source bytes 251–313, and returned to Content. No console
+warnings/errors were observed. Lock cleared the view and the test tab/fixture
+were stopped. This demonstrates the selected reading workflow; it does not
+resolve the separately recorded browser-download limitation.

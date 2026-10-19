@@ -28,7 +28,11 @@ impl Ui {
             .no_proxy()
             .build()
             .unwrap()
-            .post(&self.url)
+            .post(if value["action"] == "proof-content" {
+                format!("{}/proof-content", self.url)
+            } else {
+                self.url.clone()
+            })
             .bearer_auth(TOKEN)
             .json(&value)
             .send()
@@ -296,7 +300,7 @@ async fn proof_library_browser_fixture() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
     let mut admitted = fixture_requests(a.path(), Profile::Admitted, encrypted);
-    let copied = fixture_requests(b.path(), Profile::Copied, encrypted);
+    let copied = fixture_requests(b.path(), Profile::Copied, captured_request);
     let mut previous = Some(
         service::append_manifest(admitted.requests.last().unwrap())
             .unwrap()
@@ -317,7 +321,6 @@ async fn proof_library_browser_fixture() {
         "UPDATE objects SET bytes=x'00' WHERE cid='{}'",
         admitted.id(23)
     ));
-    copied.remove(1);
     let mut tasks = Vec::new();
     let mut clients = Vec::new();
     for f in [&admitted, &copied] {
@@ -351,5 +354,101 @@ async fn proof_library_browser_fixture() {
     for task in tasks {
         task.abort();
         assert!(task.await.unwrap_err().is_cancelled());
+    }
+}
+
+fn captured_request(n: u8, audience: u8, previous: Option<String>) -> Vec<u8> {
+    let body = br#"{"messages":[{"role":"user","content":"Hello proof archive"}]}"#;
+    let event = match n {
+        0 => json!({"type":"started","method":"POST","route":"/v1/messages"}),
+        1 => json!({"type":"request-chunk","offset":0}),
+        _ => json!({"type":"request-end","bytes":body.len()}),
+    };
+    let header=serde_json::to_vec(&json!({"version":2,"attempt":"a".repeat(64),"observer":"collector","ordinal":n,"observed_at_unix_micros":null,"elapsed_micros":0,"unconfirmed_before":0,"event":event})).unwrap();
+    let mut frame = b"KANC2".to_vec();
+    frame.extend_from_slice(&(header.len() as u32).to_be_bytes());
+    frame.extend(header);
+    if n == 1 {
+        frame.extend_from_slice(body);
+    }
+    let mut req = service::SignedRequest::decode(&request(n, audience, previous))
+        .unwrap()
+        .request;
+    let service::Command::Append { ciphertext, .. } = &mut req.command else {
+        unreachable!()
+    };
+    *ciphertext = service::hex(
+        &kan::evidence_crypto::seal(
+            &kan::evidence_crypto::public_key(&PRIVATE).unwrap(),
+            &[1; 32],
+            &frame,
+        )
+        .unwrap(),
+    );
+    service::SignedRequest::sign(req, &identity(6))
+        .unwrap()
+        .bytes()
+        .unwrap()
+}
+#[tokio::test]
+async fn proof_content_preserves_missing_inputs_and_exact_source_citations() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture_requests(dir.path(), profile, captured_request);
+        let server = Server::start(&f).await;
+        let ui =
+            Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+                .await;
+        let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+        let entry = &catalog["scopes"][0];
+        assert!(entry["capabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("content-inspection")));
+        let page=ui.call(json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"cursor":null,"limit":40}),200).await;
+        let selections: Vec<_> = page["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["selection"].clone())
+            .collect();
+        let query = json!({"action":"proof-content","source":entry["id"],"pin":entry["pin"],"selections":selections,"format":"anthropic-messages-json"});
+        let content = ui.call(query.clone(), 200).await;
+        assert_eq!(content["pin_wire"], entry["pin_wire"]);
+        assert_eq!(content["occurrences"].as_array().unwrap().len(), 3);
+        assert_eq!(content["groups"][0]["request"]["state"], "interpreted");
+        assert!(content["groups"][0]["request"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["text"] == "Hello proof archive"));
+        let references = content["groups"][0]["request"]["citation_sets"]
+            .as_array()
+            .unwrap();
+        assert!(!references.is_empty());
+        for set in references {
+            for citation in set.as_array().unwrap() {
+                assert_eq!(citation["input"], "1");
+            }
+        }
+        f.remove(1);
+        let missing = ui.call(query.clone(), 200).await;
+        assert_eq!(missing["observations"][1]["kind"], "unavailable");
+        assert_eq!(missing["observations"][1]["reason"], "Missing");
+        assert_eq!(missing["occurrences"][1]["record"]["sequence"], "2");
+        assert!(missing["occurrences"][1]["writer"].is_null());
+        assert_eq!(missing["groups"][0]["request"]["state"], "unavailable");
+        let mut duplicate = query.clone();
+        duplicate["selections"] = json!([selections[0], selections[0]]);
+        ui.call(duplicate, 400).await;
+        server
+            .service
+            .lock()
+            .unwrap()
+            .replace_grants(Vec::new())
+            .unwrap();
+        ui.call(query, 403).await;
+        ui.stop().await;
+        server.stop().await;
     }
 }

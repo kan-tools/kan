@@ -326,3 +326,20 @@ test('proof refresh and lock preserve no stale source or selection',async()=>{
  const u=ui();await openProof(u);u.node('resnapshot').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'proof-snapshot',source:'archive-A'});await u.respond({pin:{...pin,request:'new-pin'}});assert.equal(JSON.parse(u.pending[0].opts.body).cursor,null);await u.respond(proofPage);
  u.node('rows').children[0].click();await tick();const pending=u.pending[0];u.node('lock').click();assert.equal(pending.opts.signal.aborted,true);await u.respond(proofSource);assert.equal(u.node('source').textContent,'');assert.equal(u.node('rows').children.length,0);assert.equal(u.node('download').disabled,true);
 });
+
+async function openProofContent(u){
+ await u.login();await u.respond({...proofCatalog,capabilities:[...proofCatalog.capabilities,'content-inspection'],scopes:[{...proofEntry('archive-A'),pin_wire:exactPin,capabilities:[...proofEntry('archive-A').capabilities,'content-inspection']}]});await u.respond(proofPage);
+ const check=u.node('rows').children[0].children[0];check.checked=true;check.events.change();
+}
+test('proof Content sends signed selections and citations return through proof source verification',async()=>{
+ const u=ui();await openProofContent(u);u.node('interpret').click();await tick();assert.equal(u.pending[0].url,'/api/library/proof-content');
+ const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'proof-content');assert.deepEqual(request.selections,[proofRow.selection]);assert.equal(request.source,'archive-A');
+ const value=clone(contentResult);value.occurrences[0].record=proofRow;await u.respond(value);
+ const citation=walk(u.node('content-panel')).find(n=>n.textContent.startsWith('Source 3 ·'));assert.ok(citation);citation.click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'proof-source');assert.deepEqual(JSON.parse(u.pending[0].opts.body).selection,proofRow.selection);await u.respond(proofSource);
+ u.node('content-tab').click();assert.equal(u.active(),citation);
+});
+test('proof Content keeps unavailable inputs visible and presentation limits preserve selection',async()=>{
+ const u=ui();await openProofContent(u);u.node('interpret').click();await tick();await u.respond({},422);assert.match(u.node('content-count').textContent,/1 selected/);assert.match(u.node('notice').textContent,/presentation limit/);
+ u.node('interpret').click();await tick();await u.respond({version:'kan-content/2',pin_wire:exactPin,occurrences:[{record:{...proofRow,availability:'missing'},writer:null}],observations:[{input:'0',kind:'unavailable',reason:'Missing'}],groups:[],coverage:'explicit selection only'});
+ assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('unavailable · Missing')));const inspect=walk(u.node('content-panel')).find(n=>n.textContent==='Inspect source');assert.ok(inspect);inspect.click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'proof-source');await u.respond({},403);assert.equal(u.node('library').hidden,true);assert.equal(u.node('content-panel').children.length,0);
+});
