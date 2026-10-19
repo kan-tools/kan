@@ -28,6 +28,19 @@ bundle writer is implemented. The owner-copy storage PR does not implement it.
 
 ## Architecture
 
+The provenance and non-destructive projection constraints originate in
+`docs/SPEC.md`; the v2 profile contracts below specialize its immutable-evidence
+principle without treating disposable query state as authoritative records.
+
+Preserve the append-only evidence and provenance rules in `CLAUDE.md`. The
+existing standalone lifecycle is in `src/evidence_store.rs`,
+`src/evidence_store/attested.rs` and `src/evidence_store/copied.rs`; the proposed
+bundle boundary must not call those openers as a fallback. Canonical service
+proofs in `src/evidence_attestation.rs` remain unchanged, while the new observer
+codec uses a separate domain. `tests/evidence_attested_lifecycle.rs` supplies the
+existing crash/byte-preservation test patterns; bundle-specific tests remain to
+be implemented after design approval.
+
 ### Encapsulated logical member
 
 Propose a separate SQLite application ID `0x4b4e4231` (KNB1), user_version 1.

@@ -27,6 +27,17 @@ No parent frontend criterion is closed.
 
 ## Architecture
 
+The provenance and non-destructive projection constraints originate in
+`docs/SPEC.md`; the v2 profile contracts below specialize its immutable-evidence
+principle without treating disposable query state as authoritative records.
+
+Preserve the raw-data/projection and provenance rules in `CLAUDE.md`. The concrete
+reader is `src/evidence_store/inventory.rs`, using proof verification from
+`src/evidence_attestation.rs` and explicit profile/binding helpers in
+`src/evidence_store/attested.rs` and `src/evidence_store/copied.rs`. Its direct
+regressions live in `tests/evidence_inventory.rs`; no fold or semantic log write
+is added by this reader.
+
 ### Authority and startup
 
 Use a separate owner-side `inventory` type rather than a flag on writable

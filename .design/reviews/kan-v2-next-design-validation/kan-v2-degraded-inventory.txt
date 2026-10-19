@@ -1,0 +1,18 @@
+Design doc validation:
+  [PASS] section present: Summary
+  [PASS] section present: Requirements
+  [PASS] section present: Acceptance Criteria
+  [PASS] section present: Architecture
+  [PASS] requirements: 6
+  [PASS] acceptance criteria: 6
+  [PASS] every requirement is referenced by an acceptance criterion
+  [PASS] no placeholder text
+  [PASS] 1 of 6 referenced path(s) exist (Architecture)
+  [WARN] referenced path does not exist yet: src/evidence_store/inventory.rs
+  [WARN] referenced path does not exist yet: src/evidence_attestation.rs
+  [WARN] referenced path does not exist yet: src/evidence_store/attested.rs
+  [WARN] referenced path does not exist yet: src/evidence_store/copied.rs
+  [WARN] referenced path does not exist yet: tests/evidence_inventory.rs
+  [WARN] the log withholds 2 claim(s) without naming their subjects, so `kan-v2-degraded-inventory` may be absent or omitted
+
+exit=0

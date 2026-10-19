@@ -1,0 +1,17 @@
+Design doc validation:
+  [PASS] section present: Summary
+  [PASS] section present: Requirements
+  [PASS] section present: Acceptance Criteria
+  [PASS] section present: Architecture
+  [PASS] requirements: 8
+  [PASS] acceptance criteria: 8
+  [PASS] every requirement is referenced by an acceptance criterion
+  [PASS] no placeholder text
+  [PASS] 1 of 5 referenced path(s) exist (Architecture)
+  [WARN] referenced path does not exist yet: src/evidence_capture.rs
+  [WARN] referenced path does not exist yet: src/evidence_reader.rs
+  [WARN] referenced path does not exist yet: src/evidence_store/inventory.rs
+  [WARN] referenced path does not exist yet: .design/kan-v2-human-frontend.md
+  [WARN] the log withholds 2 claim(s) without naming their subjects, so `kan-v2-session-reconstruction` may be absent or omitted
+
+exit=0
