@@ -1,0 +1,4 @@
+== ../alias-change.diff
+== ../inventory-change.diff
+11:36:+this first implementation does not claim indexed large-archive page latency.
+14:48:+This typed storage API has no wire encoding; the later RPC adapter must separately

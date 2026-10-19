@@ -5,8 +5,11 @@ Implement the read-only storage boundary required by
 `kan-v2-evidence-availability.md`: verified issuer metadata remains inspectable
 when retained payloads are absent or damaged. The owner supplies the exact profile
 and archive/scope/issuer pins. This serves `telos/raw-data-and-projections` without
-claiming that issuer metadata re-verifies a missing writer signature. The storage implementation now has author qualification under
-`reviews/kan-v2-inventory-author/`; independent acceptance is still pending.
+claiming that issuer metadata re-verifies a missing writer signature. The initial implementation has author qualification under
+`reviews/kan-v2-inventory-author/` and fresh independent APPROVE WITH FOLLOW-UPS
+under `reviews/kan-v2-inventory-opus/`. The type-corruption and test-coverage
+corrections have separate author evidence under
+`reviews/kan-v2-inventory-followups-author/`; their fresh review remains pending.
 No parent frontend criterion is closed.
 
 ## Requirements
@@ -78,8 +81,9 @@ checks this boundary, and the indexed-lookup negative control must fail it.
 Each sample therefore costs a linear object scan, subject to VM cancellation;
 this first implementation does not claim indexed large-archive page latency.
 
-A lookup with no object at its expected CID is missing. An existing bounded object
-with an invalid length or hash is corrupt. A SQLite error, invalid metadata or
+A lookup with no object at its expected CID is missing. An existing object with a non-BLOB SQL storage class, invalid length or hash
+is corrupt. Test the storage class before evaluating length or materializing
+bytes; corrupt TEXT can otherwise allocate a large value or fail an entire page. A SQLite error, invalid metadata or
 unsupported schema refuses the operation. Available means the sampled object
 matches its content address and declared length; it is not renewed writer
 verification, current authorization, decryption or semantic support. Unknown
@@ -148,3 +152,14 @@ page damage, unknown schemas and inaccessible media may still prevent inventory;
 the reader is not a forensic database repair tool. Same-ID forks and privileged
 arbitrary rewrites need explicit owner handling; signatures do not establish
 cross-host non-equivocation or persistent rollback protection.
+
+
+### Adapter lifetime and cancellation obligations
+
+The inventory pins a read transaction until its handle is dropped. In WAL mode a
+long-lived handle prevents checkpoint progress beyond that snapshot and can grow
+the WAL while capture continues. The later RPC/job adapter must enforce bounded
+handle lifetime, explicit expiration/reopen, and cancellation of abandoned work;
+it cannot retain one inventory forever as an invisible server cache. Map both
+explicit budget/cancellation errors and SQLite OperationInterrupted to a bounded
+operation failure, without reporting empty results or missing payloads.

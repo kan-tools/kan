@@ -977,3 +977,36 @@ record prefix against that source. Across a complete copy with fixed batch size,
 those repeated prefix passes can cost O(n² / batch-size) I/O. Indexed individual
 lookups do not remove that total-copy cost. Incremental audit optimization needs
 its own proof contract; no large-archive throughput qualification is claimed.
+
+### Follow-up: plan-output custody before source open
+
+The independent inventory checkpoint review reproduced an additional entry-point
+ordering defect: `copy-plan` opened its source before `retain_plan` could reject
+an already-existing output file under a reserved source sidecar name. A fresh
+SQLite reader can consume that file before returning the eventual refusal.
+`validate_plan_destination` now performs the filesystem-only source-family guard
+before `PlannedCopy::open` in the CLI. The retention-time guard remains defense in
+depth. This preserves owner-selected existing files and does not claim protection
+against concurrent hostile path replacement. Regression evidence and a fresh
+review are required before this correction is accepted.
+
+
+### Recovery-ledger placement refinement from C review
+
+The separate observer authority and append-only recovery history specified above
+remain required. KNB1 places that history in the same outer SQLite file as its
+encapsulated member, in separate canonical observations and restoration tables,
+rather than a second independently opened ledger file. This is one transaction
+boundary for creation/restoration and preserved whole-bundle backup custody.
+The owner checkpoint remains separately retained; publication creates a different
+standalone file and therefore still has explicit cross-file uncertainty. No
+standalone API may ignore the observations or open an extracted member implicitly.
+
+Partial profile-3 bundles remain retained and inspectable but cannot publish a
+complete archive in the first KNB1 protocol. With the full pinned original source
+available, an explicit owner restart uses the reviewed source-copy workflow with
+a new nonce/archive identity, records the old bundle/checkpoint as job provenance,
+and retains that bundle and all its history. In-bundle metadata continuation is
+an additional protocol requirement before that capability can be exposed; blob
+restoration never invents missing records. Track this capability in the full
+recovery roadmap rather than claiming it from the initial bundle writer.

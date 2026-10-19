@@ -1,0 +1,93 @@
+$ cargo test --features v2-crypto --test zz_review_probe -- --nocapture --test-threads=1
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory/.local-state/reviews/inventory)
+warning: variable does not need to be mutable
+   --> tests/zz_review_probe.rs:145:9
+    |
+145 |     let mut a = copied::Archive::create(
+    |         ----^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (test "zz_review_probe") generated 1 warning (run `cargo fix --test "zz_review_probe" -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 0.93s
+     Running tests/zz_review_probe.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_probe-5ac9d0272f6d8948)
+
+running 7 tests
+test probe_a1_all_observed_fs_aliases_refused_by_real_entry_points ... PROBE A1 retain_plan source-dir "archive.sqlite-Shm" existed=true -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "archive.sqlite-Shm" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "archive.sqlite-ſhm" existed=true -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "archive.sqlite-ſhm" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "archive.sqlite-sHm" existed=true -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "archive.sqlite-sHm" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "archive.sqlite-shM" existed=true -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "archive.sqlite-shM" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "archive.sqlite-ſHM" existed=true -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "archive.sqlite-ſHM" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "archive.sqlite-Wal" existed=true -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "archive.sqlite-Wal" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "archive.sqlite-WAL" existed=true -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "archive.sqlite-WAL" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "archive.sqlite-Journal" existed=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "archive.sqlite-Journal" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "archive.sqlite-JOURNAL" existed=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "archive.sqlite-JOURNAL" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "ARCHIVE.SQLITE-shm" existed=true -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "ARCHIVE.SQLITE-shm" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "Archive.SQLite-ſhm" existed=true -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "Archive.SQLite-ſhm" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "ARCHIVE.SQLITE" existed=true -> Some("invalid input: plan aliases a SQLite database")
+PROBE A1 read_plan_for_copy dest-dir "ARCHIVE.SQLITE" preexisting=true -> Some("invalid input: plan aliases a SQLite database")
+PROBE A1 retain_plan source-dir "archive.sqlite-shm" existed=true -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "archive.sqlite-shm" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "archive.sqlite-wal" existed=true -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "archive.sqlite-wal" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "archive.sqlite-journal" existed=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 read_plan_for_copy dest-dir "archive.sqlite-journal" preexisting=false -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A1 retain_plan source-dir "archive.sqlite" existed=true -> Some("invalid input: plan aliases a SQLite database")
+PROBE A1 read_plan_for_copy dest-dir "archive.sqlite" preexisting=true -> Some("invalid input: plan aliases a SQLite database")
+PROBE A1 legitimate "plan-shm.cbor" -> None
+PROBE A1 legitimate "archive.sqlite-shmx" -> None
+PROBE A1 legitimate "archive.sqlite.shm" -> None
+PROBE A1 legitimate "plan-ſ.cbor" -> None
+PROBE A1 unrelated absent-base sidecar-shaped name -> None
+ok
+test probe_a2_backup_and_rebuild_refuse_aliases ... PROBE A2 Ledger::backup "archive.sqlite-ſhm" -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A2 Ledger::backup "archive.sqlite-WAL" -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A2 Ledger::backup "ARCHIVE.SQLITE" -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A2 Ledger::backup "archive.sqlite-journal" -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A2 Ledger::backup "Archive.sqlite-ſhm" -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A2 RecoveryReader::rebuild "archive.sqlite-ſhm" -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A2 RecoveryReader::rebuild "ARCHIVE.sqlite-Wal" -> Some("invalid input: destination overlaps source SQLite files")
+PROBE A2 positive backup -> ok=true
+ok
+test probe_a3_cli_copy_plan_existing_alias_output_is_preserved ... PROBE A3 control-existing-ordinary: exit_ok=false stderr="error: File exists (os error 17)" target_preserved=true target_len_after=Some(379) db_unchanged=true
+PROBE A3 shm-unicode: exit_ok=false stderr="error: invalid input: destination overlaps source SQLite files" target_preserved=false target_len_after=Some(32768) db_unchanged=true
+PROBE A3 shm-case: exit_ok=false stderr="error: invalid input: destination overlaps source SQLite files" target_preserved=false target_len_after=Some(32768) db_unchanged=true
+PROBE A3 wal-case: exit_ok=false stderr="error: invalid input: destination overlaps source SQLite files" target_preserved=true target_len_after=Some(379) db_unchanged=true
+PROBE A3 journal-case: exit_ok=false stderr="error: attempt to write a readonly database" target_preserved=true target_len_after=Some(379) db_unchanged=true
+ok
+test probe_b1_text_typed_payload_classification ... PROBE B1 text-same-length (typeof=text): WHOLE PAGE REFUSED: Invalid column type Text at index: 0, name: substr(bytes,1,?2)
+PROBE B1 text-other-length (typeof=text): page ok, states=[(3, Available), (2, Corrupt), (1, Available)]
+PROBE B1 integer (typeof=integer): page ok, states=[(3, Available), (2, Corrupt), (1, Available)]
+ok
+test probe_b2_unrelated_object_row_damage_blast_radius ... PROBE B2 page ok: [Available, Available, Available]
+ok
+test probe_b3_page_scan_latency_and_production_cancellation ... PROBE B3 3-row page over 400k objects: 122.45ms, states=[Available, Available, Available]
+PROBE B3 cancel after 5ms: elapsed=7.560959ms result=Some("interrupted")
+PROBE B3 15ms deadline: elapsed=15.0135ms result=Some("interrupted")
+PROBE B3 reuse after interrupt ok=true
+ok
+test probe_b4_profile3_admitted_suffix_and_snapshot_isolation ... PROBE B4 frontier=3 recipe_metadata_match=Some(true)
+PROBE B4 seq=3 purpose=Admitted avail=Available source=Available writer=true
+PROBE B4 seq=2 purpose=RetainedVerified avail=Available source=Available writer=true
+PROBE B4 seq=1 purpose=RetainedVerified avail=Available source=Available writer=true
+PROBE B4 concurrent admit while inventory pinned -> ok=true
+PROBE B4 pinned snapshot still through=3 rows=3
+PROBE B4 new snapshot through=4; old cursor on new snapshot refused=true; old selection on fresh source=true
+ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.33s
+
+exit=0

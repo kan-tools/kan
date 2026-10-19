@@ -161,6 +161,14 @@ fn plan_outside_sqlite(database: &Path, plan: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Check an owner-selected plan output before opening the source database.
+/// Opening even a read-only SQLite source may consume a reserved sidecar. This
+/// filesystem-only preflight must precede `PlannedCopy::open`, not just retention.
+/// It shares the trusted-filesystem/no-concurrent-path-replacement boundary.
+pub fn validate_plan_destination(source: &Path, plan: &Path) -> Result<()> {
+    plan_outside_sqlite(&std::fs::canonicalize(source)?, plan)
+}
+
 /// Validate plan custody against both SQLite families before any database opens.
 /// An absent destination root must have an existing parent, as creation requires.
 /// This protects owner-selected paths under the same trusted-filesystem contract

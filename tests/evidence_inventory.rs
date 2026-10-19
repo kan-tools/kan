@@ -616,7 +616,7 @@ fn inventory_large_row_worker() {
 
 #[test]
 fn inventory_large_rows_stay_below_the_materialization_memory_ceiling() {
-    for kind in ["object", "manifest"] {
+    for kind in ["object", "text-object", "manifest"] {
         let t = tempfile::tempdir().unwrap();
         let f = fixture(t.path(), Profile::Admitted);
         let c = rusqlite::Connection::open(f.db()).unwrap();
@@ -625,6 +625,12 @@ fn inventory_large_rows_stay_below_the_materialization_memory_ceiling() {
         if kind == "object" {
             c.execute(
                 "UPDATE objects SET bytes=zeroblob(100663296) WHERE cid=?",
+                [f.id(1)],
+            )
+            .unwrap();
+        } else if kind == "text-object" {
+            c.execute(
+                "UPDATE objects SET bytes=replace(hex(zeroblob(50331648)),'0','x') WHERE cid=?",
                 [f.id(1)],
             )
             .unwrap();
@@ -981,4 +987,201 @@ fn empty_admitted_and_incomplete_retained_snapshots_do_not_claim_copy_readiness(
         .unwrap(),
         Source::Available { .. }
     ));
+}
+
+#[test]
+fn wrong_sql_payload_types_are_corrupt_without_failing_healthy_neighbours() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        for index in [1, 2] {
+            for expression in ["CAST(bytes AS TEXT)", "123", "1.25"] {
+                let t = tempfile::tempdir().unwrap();
+                let f = fixture(t.path(), profile);
+                let before = f.open();
+                let old = before.page(None, page_budget(), budget()).unwrap();
+                let selected = &old
+                    .records
+                    .iter()
+                    .find(|r| r.record.sequence == index as u64 + 1)
+                    .unwrap()
+                    .selection;
+                let c = rusqlite::Connection::open(f.db()).unwrap();
+                c.execute(
+                    &format!("UPDATE objects SET bytes={expression} WHERE cid=?"),
+                    [f.id(index)],
+                )
+                .unwrap();
+                drop(c);
+                // Fresh source cannot accept even byte-identical TEXT after selection.
+                assert!(matches!(
+                    inventory::source(
+                        &f.db(),
+                        f.profile,
+                        f.binding.clone(),
+                        selected,
+                        service::MAX_REQUEST,
+                        budget()
+                    )
+                    .unwrap(),
+                    Source::Unavailable(Availability::Corrupt)
+                ));
+                drop(before);
+                let restarted = f.open();
+                let page = restarted.page(None, page_budget(), budget()).unwrap();
+                assert_eq!(page.records.len(), 3);
+                for row in page.records {
+                    let expected = if row.record.sequence == index as u64 + 1 {
+                        Availability::Corrupt
+                    } else {
+                        Availability::Available
+                    };
+                    assert_eq!(row.availability, expected);
+                    if expected == Availability::Available {
+                        assert!(matches!(
+                            inventory::source(
+                                &f.db(),
+                                f.profile,
+                                f.binding.clone(),
+                                &row.selection,
+                                service::MAX_REQUEST,
+                                budget()
+                            )
+                            .unwrap(),
+                            Source::Available { .. }
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn startup_item_budget_counts_each_metadata_record_before_accepting_a_snapshot() {
+    let t = tempfile::tempdir().unwrap();
+    let f = fixture(t.path(), Profile::Admitted);
+    let mut limited = budget();
+    limited.items = 2;
+    assert_eq!(
+        Inventory::open(&f.db(), f.profile, f.binding.clone(), limited)
+            .err()
+            .unwrap()
+            .to_string(),
+        "invalid input: inventory audit budget exhausted"
+    );
+    let mut exact = budget();
+    exact.items = 3;
+    assert_eq!(
+        Inventory::open(&f.db(), f.profile, f.binding.clone(), exact)
+            .unwrap()
+            .frontier()
+            .through,
+        3
+    );
+}
+
+#[test]
+fn single_bit_blob_to_text_serial_type_damage_remains_browsable() {
+    // Regression derived from independent Opus probe_b5, whose two unsuccessful
+    // fixture attempts and final raw probe remain in the preserved review.
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let t = tempfile::tempdir().unwrap();
+        let f = fixture(t.path(), profile);
+        let c = rusqlite::Connection::open(f.db()).unwrap();
+        c.execute_batch("PRAGMA journal_mode=DELETE; VACUUM;")
+            .unwrap();
+        drop(c);
+        let id = f.id(1);
+        let n = f.requests[1].len() as u64;
+        let varint = |v: u64| {
+            assert!(v < 16384);
+            if v >= 128 {
+                vec![0x80 | (v >> 7) as u8, (v & 0x7f) as u8]
+            } else {
+                vec![v as u8]
+            }
+        };
+        let mut pattern = varint(2 * id.len() as u64 + 13);
+        pattern.extend(varint(2 * n + 12));
+        let serial_end = pattern.len();
+        pattern.extend(id.as_bytes());
+        let original = std::fs::read(f.db()).unwrap();
+        let mut damaged = original.clone();
+        let hits: Vec<_> = damaged
+            .windows(pattern.len())
+            .enumerate()
+            .filter(|(_, w)| *w == pattern)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(hits.len(), 1);
+        damaged[hits[0] + serial_end - 1] ^= 1;
+        assert_eq!(
+            original
+                .iter()
+                .zip(&damaged)
+                .filter(|(a, b)| a != b)
+                .count(),
+            1
+        );
+        std::fs::write(f.db(), &damaged).unwrap();
+        let c = rusqlite::Connection::open(f.db()).unwrap();
+        assert_eq!(
+            c.query_row(
+                "SELECT typeof(bytes) FROM objects WHERE cid=?",
+                [&id],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+            "text"
+        );
+        drop(c);
+        let a = f.open();
+        let first = a
+            .page(
+                None,
+                PageBudget {
+                    rows: 1,
+                    ..page_budget()
+                },
+                budget(),
+            )
+            .unwrap();
+        assert_eq!(first.records[0].availability, Availability::Available);
+        let rest = a
+            .page(first.next.as_ref(), page_budget(), budget())
+            .unwrap();
+        assert_eq!(
+            rest.records
+                .iter()
+                .map(|r| (r.record.sequence, r.availability))
+                .collect::<Vec<_>>(),
+            vec![(2, Availability::Corrupt), (1, Availability::Available)]
+        );
+        assert!(rest.next.is_none());
+        assert!(matches!(
+            inventory::source(
+                &f.db(),
+                f.profile,
+                f.binding.clone(),
+                &rest.records[0].selection,
+                service::MAX_REQUEST,
+                budget()
+            )
+            .unwrap(),
+            Source::Unavailable(Availability::Corrupt)
+        ));
+        assert!(matches!(
+            inventory::source(
+                &f.db(),
+                f.profile,
+                f.binding.clone(),
+                &rest.records[1].selection,
+                service::MAX_REQUEST,
+                budget()
+            )
+            .unwrap(),
+            Source::Available { .. }
+        ));
+        drop(a);
+        assert_eq!(std::fs::read(f.db()).unwrap(), damaged);
+    }
 }

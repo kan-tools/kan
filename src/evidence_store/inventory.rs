@@ -455,9 +455,12 @@ fn payload(
     // SQLite's value limit applies. Scan by the bounded CID field instead;
     // per-call VM cancellation bounds checked SQL work. This costs a linear
     // object scan per sample and makes no large-archive latency promise.
+    // Check the stored SQLite type before computing length: TEXT length can
+    // materialize an oversized corrupt cell and counts characters, not bytes.
+    // A wrong payload storage class is local payload corruption, not a page error.
     let length: Option<i64> = conn
         .query_row(
-            "SELECT length(bytes) FROM objects NOT INDEXED WHERE +cid=?",
+            "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects NOT INDEXED WHERE +cid=?",
             [id.to_string()],
             |r| r.get(0),
         )
@@ -593,5 +596,125 @@ mod tests {
                 matches!(result, Err(rusqlite::Error::SqliteFailure(e,_)) if e.code == rusqlite::ErrorCode::OperationInterrupted)
             );
         }
+    }
+
+    #[test]
+    fn page_installs_vm_limits_after_startup_removes_its_handler() {
+        let temp = tempfile::tempdir().unwrap();
+        let issuer = crate::sign::Identity::generate();
+        let writer = crate::sign::Identity::generate();
+        let binding = attested::Binding {
+            archive: [2; 32],
+            scope: [1; 32],
+            issuer: issuer.did().to_string(),
+        };
+        let root = temp.path().join("archive");
+        let mut archive = attested::Archive::create(&root, binding.clone()).unwrap();
+        let bytes = service::SignedRequest::sign(
+            service::Request {
+                version: 1,
+                scope: service::hex(&binding.scope),
+                principal: writer.did().to_string(),
+                audience: issuer.did().to_string(),
+                expires: None,
+                command: service::Command::Append {
+                    id: service::hex(&[1; 16]),
+                    position: 0,
+                    previous: None,
+                    ciphertext: service::hex(b"fixture"),
+                },
+            },
+            &writer,
+        )
+        .unwrap()
+        .bytes()
+        .unwrap();
+        archive
+            .admit(
+                &bytes,
+                &issuer,
+                &service::Grant {
+                    principal: writer.did().to_string(),
+                    append: true,
+                    inventory: true,
+                },
+                100,
+            )
+            .unwrap();
+        drop(archive);
+        let work = || Budget {
+            items: 100,
+            metadata_bytes: 1024 * 1024,
+            duration: Duration::from_secs(60),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        let a = Inventory::open(
+            &root.join("archive.sqlite"),
+            Profile::Admitted,
+            binding,
+            work(),
+        )
+        .unwrap();
+        // Test-only in-memory workload injection after successful real startup:
+        // no main database mutation or millions of fixture rows on disk. The
+        // recursive view makes the ordinary page payload lookup unyielding.
+        let conn = &a.reader.ledger.conn;
+        conn.execute_batch("PRAGMA query_only=OFF; CREATE TEMP VIEW objects AS WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<1000000000) SELECT 'probe-'||x AS cid,x'01' AS bytes FROM n; PRAGMA query_only=ON;").unwrap();
+        for cancel in [false, true] {
+            let mut budget = work();
+            if !cancel {
+                budget.duration = Duration::from_millis(20);
+            }
+            let flag = budget.cancelled.clone();
+            let interrupt = conn.get_interrupt_handle();
+            let (done, wait) = std::sync::mpsc::channel();
+            let watchdog = std::thread::spawn(move || {
+                if wait.recv_timeout(Duration::from_secs(3)).is_err() {
+                    interrupt.interrupt();
+                    true
+                } else {
+                    false
+                }
+            });
+            let cancellation = cancel.then(|| {
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(20));
+                    flag.store(true, Ordering::Relaxed);
+                })
+            });
+            let result = a.page(
+                None,
+                PageBudget {
+                    rows: 1,
+                    record_bytes: 1024 * 1024,
+                    payload_bytes: MAX_CHUNK,
+                },
+                budget,
+            );
+            let _ = done.send(());
+            let fallback = watchdog.join().unwrap();
+            if let Some(t) = cancellation {
+                t.join().unwrap();
+            }
+            assert!(!fallback, "page did not install its production VM callback");
+            assert!(
+                matches!(result,Err(Error::Sql(rusqlite::Error::SqliteFailure(e,_))) if e.code==rusqlite::ErrorCode::OperationInterrupted)
+            );
+        }
+        conn.progress_handler(0, None::<fn() -> bool>).unwrap();
+        conn.execute_batch("PRAGMA query_only=OFF; DROP VIEW temp.objects; PRAGMA query_only=ON;")
+            .unwrap();
+        let page = a
+            .page(
+                None,
+                PageBudget {
+                    rows: 1,
+                    record_bytes: 1024 * 1024,
+                    payload_bytes: MAX_CHUNK,
+                },
+                work(),
+            )
+            .unwrap();
+        assert_eq!(page.records[0].availability, Availability::Available);
     }
 }

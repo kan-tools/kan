@@ -1,0 +1,10 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory)
+    Finished `test` profile [unoptimized] target(s) in 6.19s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-480f4f845bac8ec9)
+
+running 2 tests
+test evidence_store::inventory::tests::sqlite_vm_deadline_and_cancel_interrupt_unyielding_queries ... ok
+test evidence_store::inventory::tests::page_installs_vm_limits_after_startup_removes_its_handler ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 77 filtered out; finished in 0.15s
+

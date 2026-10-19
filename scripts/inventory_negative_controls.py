@@ -2,12 +2,16 @@
 """Compiled inventory controls; run alone using the explicitly shared Cargo target."""
 from pathlib import Path
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / '.local-state/reviews/inventory-controls'
 FILE = ROOT / 'src/evidence_store/inventory.rs'
 CASES = [
-    ('indexed-large-row-materialization', 'SELECT length(bytes) FROM objects NOT INDEXED WHERE +cid=?', 'SELECT length(bytes) FROM objects WHERE cid=?', 'inventory_large_rows_stay_below_the_materialization_memory_ceiling'),
+    ('omit-payload-storage-class', "CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END", 'length(bytes)', 'wrong_sql_payload_types_are_corrupt_without_failing_healthy_neighbours'),
+    ('omit-page-vm-configuration', '        configure_read(&self.reader.ledger.conn, &work, deadline)?;\n', '', 'evidence_store::inventory::tests::page_installs_vm_limits_after_startup_removes_its_handler'),
+    ('omit-startup-record-budget', '            add_spent(&mut items, 1, budget.items)?;\n            let record = raw_commit(row)?;', '            let record = raw_commit(row)?;', 'startup_item_budget_counts_each_metadata_record_before_accepting_a_snapshot'),
+    ('indexed-large-row-materialization', "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects NOT INDEXED WHERE +cid=?", "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects WHERE cid=?", 'inventory_large_rows_stay_below_the_materialization_memory_ceiling'),
     ('omit-sqlite-vm-callback', '        1000,\n', '        0,\n', 'evidence_store::inventory::tests::sqlite_vm_deadline_and_cancel_interrupt_unyielding_queries'),
     ('require-payloads-at-startup', '        let plan = plan(&reader, profile, &binding)?;', '        reader.ledger.verify_contents()?;\n        let plan = plan(&reader, profile, &binding)?;', 'missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours'),
     ('omit-payload-hash', 'bytes.len() != expected || ciphertext_cid(&bytes) != *id', 'bytes.len() != expected', 'missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours'),
@@ -23,10 +27,13 @@ CASES = [
 def main():
     if not __debug__:
         raise RuntimeError('assertions required')
+    selected = set(sys.argv[1:])
+    assert selected <= {case[0] for case in CASES}, "unknown control"
+    cases = [case for case in CASES if not selected or case[0] in selected]
     OUT.mkdir(parents=True, exist_ok=True)
     original = FILE.read_text()
     try:
-        for name, old, new, test in CASES:
+        for name, old, new, test in cases:
             assert original.count(old) == 1, (name, original.count(old))
             FILE.write_text(original.replace(old, new))
             command = ['cargo', 'test', '--features', 'v2-crypto'] + (['--lib'] if '::' in test else ['--test', 'evidence_inventory']) + [test, '--', '--exact']
@@ -43,7 +50,10 @@ def main():
     run = subprocess.run(['cargo', 'test', '--features', 'v2-crypto', '--test', 'evidence_inventory'], cwd=ROOT, capture_output=True, text=True, timeout=180)
     (OUT / 'restored.txt').write_text(run.stdout + run.stderr)
     assert run.returncode == 0, 'restored baseline failed'
-    print(str(len(CASES)) + ' controls; restored suite passed.', flush=True)
+    run = subprocess.run(['cargo', 'test', '--features', 'v2-crypto', '--lib', 'evidence_store::inventory::tests'], cwd=ROOT, capture_output=True, text=True, timeout=180)
+    (OUT / 'restored-vm.txt').write_text(run.stdout + run.stderr)
+    assert run.returncode == 0, 'restored VM baseline failed'
+    print(str(len(cases)) + ' controls; restored integration and VM suites passed.', flush=True)
 
 
 if __name__ == '__main__':

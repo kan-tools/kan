@@ -1,0 +1,11 @@
+{
+  "reason": "Mutation runner completed exit 0. Its tail -f | grep -m1 waiter remained alive because tail waits for further data before detecting the closed grep pipe. Terminated only this verified frozen-export tail waiter; Claude and all review artifacts remain intact.",
+  "terminated": [
+    {
+      "pid": 98693,
+      "parent": 98691,
+      "command": "tail -n +1 -f review-evidence/mutations/runner-stdout.txt",
+      "cwd": "p98693\nfcwd\nn/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory/.local-state/reviews/inventory\n"
+    }
+  ]
+}

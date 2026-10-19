@@ -1,0 +1,21 @@
+
+running 1 test
+test single_bit_blob_to_text_serial_type_damage_remains_browsable ... FAILED
+
+failures:
+
+---- single_bit_blob_to_text_serial_type_damage_remains_browsable stdout ----
+
+thread 'single_bit_blob_to_text_serial_type_damage_remains_browsable' (9846006) panicked at tests/evidence_inventory.rs:1151:14:
+called `Result::unwrap()` on an `Err` value: Sql(InvalidColumnType(0, "substr(bytes,1,?2)", Text))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    single_bit_blob_to_text_serial_type_damage_remains_browsable
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.15s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_inventory.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_inventory-c64c1fa4419bff69)
+error: test failed, to rerun pass `--test evidence_inventory`

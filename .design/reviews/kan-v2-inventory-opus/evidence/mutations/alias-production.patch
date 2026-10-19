@@ -1,0 +1,72 @@
+diff --git a/src/evidence_store.rs b/src/evidence_store.rs
+index b322761..f29b769 100644
+--- a/src/evidence_store.rs
++++ b/src/evidence_store.rs
+@@ -415,6 +415,25 @@ fn same_existing_file(a: &Path, b: &Path) -> bool {
+     }
+ }
+ 
++// Conservative Unicode casing also rejects aliases such as long-s in `-ſhm`
++// before a file exists. This is not an emulation of every filesystem's collation;
++// existing-file identity below supplies the actual filesystem alias check.
++fn sqlite_name_eq(a: &std::ffi::OsStr, b: &std::ffi::OsStr) -> bool {
++    match (a.to_str(), b.to_str()) {
++        (Some(a), Some(b)) => a
++            .chars()
++            .flat_map(char::to_uppercase)
++            .flat_map(char::to_lowercase)
++            .eq(b
++                .chars()
++                .flat_map(char::to_uppercase)
++                .flat_map(char::to_lowercase)),
++        _ => a
++            .as_encoded_bytes()
++            .eq_ignore_ascii_case(b.as_encoded_bytes()),
++    }
++}
++
+ fn sqlite_destination(source: &Path, destination: &Path) -> Result<PathBuf> {
+     let parent = std::fs::canonicalize(parent_directory(destination))?;
+     let name = destination
+@@ -423,31 +442,22 @@ fn sqlite_destination(source: &Path, destination: &Path) -> Result<PathBuf> {
+     let destination = parent.join(name);
+     let target_paths = sqlite_paths(&destination);
+     let source_paths = sqlite_paths(source);
+-    // Conservative ASCII case comparison also protects case-insensitive volumes.
+     if target_paths.iter().any(|target| {
+         source_paths.iter().any(|source| {
+-            target
+-                .as_os_str()
+-                .as_encoded_bytes()
+-                .eq_ignore_ascii_case(source.as_os_str().as_encoded_bytes())
++            sqlite_name_eq(target.as_os_str(), source.as_os_str())
++                || same_existing_file(target, source)
+         })
+     }) {
+         return Err(Error::Invalid("destination overlaps source SQLite files"));
+     }
+-    // Resolve an existing base through filesystem aliases (including Unicode
+-    // spelling/case aliases on macOS and hard links on Unix), before a sidecar
+-    // that does not exist yet can be created under that base's name.
+-    if let Some(name) = name.to_str() {
+-        for suffix in ["-journal", "-wal", "-shm"] {
+-            if name.len() >= suffix.len()
+-                && name.as_bytes()[name.len() - suffix.len()..]
+-                    .eq_ignore_ascii_case(suffix.as_bytes())
+-            {
+-                let base = parent.join(&name[..name.len() - suffix.len()]);
+-                if same_existing_file(&base, source) {
+-                    return Err(Error::Invalid("destination aliases source SQLite sidecar"));
+-                }
+-            }
++    // Resolve the existing base before a currently absent sidecar can be
++    // created through an alternate basename (including Unicode and hard links).
++    if let Some((base, suffix)) = name.to_str().and_then(|name| name.rsplit_once('-')) {
++        if ["journal", "wal", "shm"].iter().any(|reserved| {
++            sqlite_name_eq(std::ffi::OsStr::new(suffix), std::ffi::OsStr::new(reserved))
++        }) && same_existing_file(&parent.join(base), source)
++        {
++            return Err(Error::Invalid("destination aliases source SQLite sidecar"));
+         }
+     }
+     unused_sqlite_sidecars(&destination)?;
