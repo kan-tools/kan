@@ -267,3 +267,5 @@ The same initial CI commit passed the requested performance rerun with ratio
 own CI results. API, provider interpretation and full browser acceptance remain
 open. The new actual IAB recheck confirms browser access but the download event
 still timed out; delivery remains unverified.
+
+Follow-through qualification at 2906902 passes 84 integrations, four units, strict Clippy/fmt and five selected semantic controls with restored 17 assembly tests. Evidence: `.design/reviews/kan-v2-assembly-followup-author/`.
