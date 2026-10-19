@@ -17,3 +17,10 @@ The ongoing cold review's nine independent UI probes are now incorporated as
 honors AbortSignal, so aborted polls actually execute catch/finally paths.
 The review export remains unchanged; its original restart failure is preserved.
 These author-run incorporated probes do not constitute a fresh review verdict.
+
+All 36 author and incorporated UI checks pass. Three independent-harness
+negative controls (restart cache collision, aborted-poll finally race,
+aborted-poll error repaint) fail assertions and the restored 36 checks pass.
+Raw outputs are under `abort-controls/`; the repeatable driver is
+`scripts/operations_review_negative_controls.py`. This is author qualification,
+not the pending fresh independent correction verdict.
