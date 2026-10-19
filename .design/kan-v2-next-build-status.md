@@ -14,11 +14,12 @@ full recovery or human-frontend acceptance criteria.
 
 | Layer | Current evidence | Still required |
 |---|---|---|
-| Pure KANC2 decoder (#297) | Strict decoder and promoted independent regressions; latest independent scope-C review APPROVE | Occurrence assembly, provider adapters, source spans and real session UI |
+| Pure KANC2 decoder (#297) | Strict decoder and promoted independent regressions; latest independent scope-C review APPROVE | Pure assembly #303 passes local qualification; provider adapters, API and real session UI remain |
 | Observation wire codec (#298) | Authenticated bounded envelopes and independent signed vectors; review APPROVE WITH FOLLOW-UPS | Semantic replay, physical format and publication checks |
 | Streaming M1/O1/R1 (#299) | Reviewed framing; promoted boundary and deterministic cancellation tests; current CI green | Fresh review returned APPROVE WITH FOLLOW-UPS; UTF-8 test follow-through is in #300; digests alone confer no authority |
 | Logical member (#300) | Fresh combined Opus scope-B review APPROVE for 5edb505; controls and whole-guard reversion reproduced | Physical consumers remain separate; replay constraint coverage is tracked in #301 |
 | Observation replay (#301) | Frozen b52aa48 review APPROVE WITH FOLLOW-UPS; correction immediately verifies restored request signatures/bindings and adds 23 design-derived cases | Fresh combined review scope B APPROVE WITH FOLLOW-UPS; writer-pass accounting and maximal-envelope labeling regressions added in #302; no physical publication authority |
+| Pure occurrence assembly (#303) | 13 integration checks plus deterministic cancellation unit; eight semantic controls; combined 79 integration + four units and strict lint pass | Fresh actual Opus review; provider interpretation, authorized API and human session browsing |
 | Physical recovery and delivery | Read-only opener #302 review BLOCK on empty original BLOB projection; guarded correction passes 49 integration checks, three units, strict lint, selected controls and whole-fix reversion | Fresh review of the correction; creator/restorer/publisher, crash/reconnect jobs, RPC, spool proof integration and Library unavailable-evidence UI |
 
 The Library's actual browser download remains unverified: native access is locked,
