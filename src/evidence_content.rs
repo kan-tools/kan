@@ -108,14 +108,16 @@ impl Reader {
         sequences: &[String],
         format: Format,
     ) -> Result<Vec<u8>, ContentError> {
-        self.content_observed(pin, sequences, format, || {}).await
+        self.content_observed(pin, sequences, format, || {}, || std::future::ready(()))
+            .await
     }
-    async fn content_observed(
+    async fn content_observed<F: std::future::Future<Output = ()> + Send>(
         &self,
         pin: &Pin,
         sequences: &[String],
         format: Format,
         after_item: impl FnMut() + Send + 'static,
+        mut after_acquired: impl FnMut() -> F + Send,
     ) -> Result<Vec<u8>, ContentError> {
         if sequences.is_empty() || sequences.len() > PAGE_LIMIT {
             return Err(Failure::Invalid.into());
@@ -143,6 +145,7 @@ impl Reader {
             let mut bytes = 0usize;
             for sequence in &sequences {
                 let row = self.acquire(pin, *sequence).await?;
+                after_acquired().await;
                 bytes = bytes
                     .checked_add(row.plaintext.len())
                     .ok_or(ContentError::Limited)?;
@@ -677,7 +680,10 @@ mod tests {
             seen, 121,
             "normalization must finish before the serialization refusal"
         );
-        assert_eq!(result, Err(Failure::Unavailable));
+        assert!(
+            matches!(result, Err(Failure::Unavailable)),
+            "serialized response must refuse after normalization"
+        );
     }
     #[test]
     fn dropping_request_guard_signals_the_worker() {

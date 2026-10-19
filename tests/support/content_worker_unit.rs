@@ -37,6 +37,7 @@ async fn cancelling_real_content_keeps_worker_admission_until_exit_and_stops_aft
                         .unwrap();
                 }
             },
+            || std::future::ready(()),
         )
         .await
     });
@@ -126,4 +127,82 @@ async fn busy_content_http_response_is_distinct_and_retry_succeeds_after_capacit
     assert_eq!(request().send().await.unwrap().status(), 200);
     fixture.revoke();
     assert_eq!(request().send().await.unwrap().status(), 403);
+}
+
+#[tokio::test]
+async fn overall_content_deadline_covers_acquisition_work_after_a_verified_read() {
+    use crate::evidence_content::{ContentError, Format};
+    let identity = Identity::generate();
+    let mut fixture = Fixture::new(94, &identity).await;
+    fixture.append(b"synthetic deadline acquisition");
+    let reader = Arc::new(Reader::new(identity, vec![fixture.access()]).unwrap());
+    let pin = reader.snapshot(&svc::hex(&fixture.scope)).await.unwrap();
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+    let r = reader.clone();
+    let mut job = tokio::spawn(async move {
+        let mut ready = Some(ready_tx);
+        r.content_observed(
+            &pin,
+            &["1".into()],
+            Format::AnthropicMessagesJson,
+            || {},
+            move || {
+                ready.take().unwrap().send(()).unwrap();
+                std::future::pending::<()>()
+            },
+        )
+        .await
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(10), ready_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    // Networking and all per-RPC timeouts have finished before virtual time
+    // advances. Only the real outer Content deadline can end this operation.
+    tokio::time::pause();
+    tokio::time::advance(std::time::Duration::from_secs(20)).await;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(1), &mut job).await;
+    job.abort();
+    assert_eq!(result.unwrap().unwrap(), Err(ContentError::Limited));
+    assert_eq!(reader.content_workers.available_permits(), 2);
+}
+
+#[tokio::test]
+async fn acquisition_cap_stops_before_fetching_the_next_selected_record() {
+    use crate::evidence_content::{ContentError, Format};
+    use std::sync::atomic::AtomicUsize;
+    let identity = Identity::generate();
+    let mut fixture = Fixture::new(95, &identity).await;
+    for _ in 0..10 {
+        fixture.append(&vec![b'x'; 1_000_000]);
+    }
+    let reader = Reader::new(identity, vec![fixture.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&fixture.scope)).await.unwrap();
+    let sequences = (1..=10).map(|n| n.to_string()).collect::<Vec<_>>();
+    let count = Arc::new(AtomicUsize::new(0));
+    let seen = count.clone();
+    let result = reader
+        .content_observed(
+            &pin,
+            &sequences,
+            Format::AnthropicMessagesJson,
+            || {},
+            move || {
+                seen.fetch_add(1, Ordering::Relaxed);
+                std::future::ready(())
+            },
+        )
+        .await;
+    assert_eq!(result, Err(ContentError::Limited));
+    assert_eq!(
+        count.load(Ordering::Relaxed),
+        9,
+        "never fetch the tenth selected record after exceeding8MiB"
+    );
+    let accepted = reader
+        .content(&pin, &sequences[..8], Format::AnthropicMessagesJson)
+        .await
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&accepted).unwrap();
+    assert_eq!(value["occurrences"].as_array().unwrap().len(), 8);
 }
