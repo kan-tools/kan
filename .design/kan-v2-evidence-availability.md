@@ -327,3 +327,63 @@ Test semantically valid alternate statements with changed purpose/time/receipt
 against a pinned successor. Keep envelope and nested-statement framing failures
 separate from signature failures. Assertion-removal mutation tests must fail the
 specific fixture check, not compilation or an unrelated signature check.
+
+### Correction review follow-ups and audience transition
+
+The second independent protocol review approves design readiness with follow-ups;
+its original report is retained in `.design/reviews/kan-v2-evidence-protocol-correction-opus/`.
+It is not runtime approval. Resolve its audience concern without changing normal
+Append authentication: every live command still addresses the current service C.
+
+For a retained-verified source row, the reader first verifies its C-signed proof
+and exact receipt CID at the selected pin. It then verifies the retained original
+request signature and its manifest binding with `verify_retained_request`, which
+already requires original request.audience == original receipt.issuer H. That
+historical equality replaces the legacy reader's audience == current C check
+ONLY for this proof-verified purpose. Admitted rows still require H == C. The
+current reader's live Read request always addresses C and rechecks its current
+grant. Never relax ordinary live request audience validation or infer a historical
+grant from H's name in an unsigned receipt.
+
+A pending request addressed to H cannot simply be sent as Append to C. A new,
+explicit proof-profile RetryImported command wraps the exact original signed
+request in a current-C signed request by the same writer. Require current append
+grant, current scope/archive configuration, valid outer authentication, matching
+inner writer, and a stored retained-verified proof whose manifest commits to the
+exact inner bytes and whose historical receipt binds their audience H. Return
+that exact existing receipt/proof; never stage payloads, insert a new record,
+re-sign an attestation, or accept a missing/mismatched operation through this
+command. Failure uses the same access-limited shape. This is a read-confirmation
+path for an already imported operation, not an audience-redirection exception.
+A legacy client cannot select it without explicit proof-profile configuration.
+
+Archive IDs come from the owner-create/upgrade plan, provisioned out of band in
+reader/spool configuration; never trust-on-first-use from a snapshot. Resume binds
+the exact destination archiveId. Source planning/copy covers a fixed tip, not a
+catch-up subscription. Live cutover must quiesce legacy admission before pinning
+its final plan and account for pending spools explicitly; later legacy appends
+are absent from that destination and cannot be silently treated as migrated.
+
+Proof purpose is a storage audit invariant in addition to individual signature
+validity: retained-verified occurs only in a contiguous upgrade prefix, all with
+one pinned historical receipt issuer; later admission creates admitted only.
+Normal admission never mints retained-verified (an exact retry can return one).
+The full-chain audit and descending pagination state must enforce that invariant.
+The pure per-proof codec can verify individually valid assertions in other
+orders; its mixed-purpose vectors do not demonstrate a producible archive.
+Timestamps are issuer observations, not ordering authority: issuedAt is bounded
+but may regress with the host clock. Sequence/chain commitments establish order.
+
+Availability and snapshot frontiers are signed service assertions. Missing/corrupt
+state is not independently verified by the reader. Available becomes reader-verified
+only when source bytes, writer signature and decryption pass. A receipt's historical
+issuer is an unsigned field committed by the current service's proof. UI labels
+must retain those distinctions; no view implies independent completeness or freshness.
+
+An incomplete-recovery descriptor is an append-only observation (observer, sampled
+time, source pin, unavailable references), not current availability authority.
+Owner recovery retains that observation and appends a resolution after verifying
+all payloads; it never deletes or overwrites the loss observation. Strict open is
+controlled by current full verification and the descriptor/resolution contract,
+not an unlabelled removal of the marker. Declare both physical record surfaces
+with the profile-2 implementation.

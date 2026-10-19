@@ -1,0 +1,31 @@
+0887ba46616aa19f21255d385827c630996b8b7d046a2cf22414c0c94f861388  .design/kan-v2-evidence-availability.md
+017701e54e2635337dbb8cdc31d3c36907c78aaa65a997057313ca5b3480da52  rfcs/4-evidence-contract.md
+9200dd97954d9b3e027482e3449b01356cc730860253af620391ced0a3f25946  .design/tools/attestation_vectors.py
+8f10e66dc04bb7f98bcdd6507de7c8ce00ef5b56ad9ae777ef88323af58608bc  .design/tools/attestation_mutations.py
+47538afd3edc551fbd6fbfd797146bb65abb58f3f56ebcc93ddc7f6946a87e5c  .design/fixtures/service-attestation-v1.json
+dbabe5a85c8d0abe18f269281bfcbd87ab7da51b3f21575db767f8269d73aa10  scripts/evidence_reference.py
+56519eecbbee98bbc7bc51206f71a3f7ad5fef19d2e6bd97a151bac21fae1035  tests/fixtures/evidence-v1/vectors.json
+ M .design/fixtures/service-attestation-v1.json
+ M .design/tools/attestation_vectors.py
+ M .github/workflows/ci.yml
+ M src/evidence.rs
+ M src/lib.rs
+ M tests/library_ui.test.cjs
+?? .design/reviews/kan-v2-library-scope-followup/browser-delivery.txt
+?? .design/reviews/kan-v2-library-scope-opus/
+?? src/evidence_attestation.rs
+?? tests/evidence_attestation.rs
+b81eb4f222b5bd70a4f11362f1df33092260fc70
+total 112
+drwx------@ 12 m  staff    384 Oct 19 00:46 .
+drwxr-xr-x@ 32 m  staff   1024 Oct 19 00:41 ..
+-rw-------@  1 m  staff   1949 Oct 19 00:44 mutate_extended.log
+-rw-------@  1 m  staff   4328 Oct 19 00:43 mutate_extended.py
+-rw-------@  1 m  staff    164 Oct 19 00:41 oracle-check.log
+-rw-------@  1 m  staff   1528 Oct 19 00:41 oracle-mutations.log
+-rw-------@  1 m  staff   3479 Oct 19 00:43 probe_correction.log
+-rw-------@  1 m  staff  12387 Oct 19 00:43 probe_correction.py
+-rw-------@  1 m  staff   1034 Oct 19 00:44 probe_survivors.log
+-rw-------@  1 m  staff   2914 Oct 19 00:44 probe_survivors.py
+-rw-------@  1 m  staff   1120 Oct 19 00:46 tree-state-after.log
+-rw-------@  1 m  staff   1659 Oct 19 00:41 tree-state-before.log

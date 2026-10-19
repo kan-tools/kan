@@ -1,0 +1,27 @@
+drop manifest-profile: SURVIVED
+drop receipt-profile: SURVIVED
+drop statement-bound: SURVIVED
+drop canonical re-encode of did: SURVIVED
+drop did length/prefix: SURVIVED
+drop signature verification: killed -> accepted negative wrong-valid-range-signature
+s<=n/2 -> s<n/2: SURVIVED
+drop r<n: SURVIVED
+receipt-binding: drop manifest equality: killed -> accepted negative receipt-for-other-manifest
+receipt-binding: drop operation: SURVIVED
+receipt-binding: drop position: SURVIVED
+receipt-binding: drop manifest scope==configured: SURVIVED
+record-binding: drop receipt CID: killed -> accepted negative wrong-receipt
+record-binding: drop manifest CID: killed -> wrong-manifest: expected record-binding, got receipt-binding
+chain-position: drop scope continuity: killed -> mid-chain-scope: expected chain-position, got receipt-binding
+chain-position: drop archive continuity: killed -> accepted negative mid-chain-archive
+chain-commitments: drop previousManifest: killed -> accepted negative wrong-previousManifest
+chain-commitments: drop previousAttestation: killed -> accepted negative wrong-previousAttestation
+genesis: drop sequence==1: SURVIVED
+admitted-issuer: compare principal only: SURVIVED
+purpose: accept any string: killed -> accepted negative unknown-purpose
+safe-integer: allow bool: killed -> accepted negative boolean-sequence
+sequence: drop >0: SURVIVED
+statementCid from envelope instead of statement: killed (non-assert Rejected: chain-commitments)
+preimage domain changed: killed -> exact fixture mismatch; no automatic rewrite
+
+12/25 killed; survivors: ['drop manifest-profile', 'drop receipt-profile', 'drop statement-bound', 'drop canonical re-encode of did', 'drop did length/prefix', 's<=n/2 -> s<n/2', 'drop r<n', 'receipt-binding: drop operation', 'receipt-binding: drop position', 'receipt-binding: drop manifest scope==configured', 'genesis: drop sequence==1', 'admitted-issuer: compare principal only', 'sequence: drop >0']

@@ -1,0 +1,31 @@
+✔ real endpoint uses header auth and untrusted source stays text (3.656166ms)
+✔ lock aborts pending source and clears every private view (0.757292ms)
+✔ page and scope navigation carry only the selected authenticated pin (0.944292ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.826291ms)
+✔ old transport errors cannot lock a newer session (0.586417ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.686458ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.629583ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.926209ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (1.9815ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.631958ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.385917ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.56ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.907208ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.514792ms)
+✔ partial catalog coverage persists while browsing and retry clears old authority (0.697917ms)
+✔ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (0.892166ms)
+✔ both authorization denial statuses lock an already open Library (1.099333ms)
+✔ Previous is disabled immediately when leaving a later page (0.821667ms)
+✔ malformed duplicate and inconsistent capabilities never open a Library (1.823167ms)
+✔ all directional control families default to exact hex with explicit text access (5.262917ms)
+✔ malformed retry clears partially rendered capabilities and keeps recovery available (0.710209ms)
+✔ malformed scope catalogs are rejected before any option or page request (4.586792ms)
+✔ malformed scope retry clears old plaintext and permits recovery (0.779708ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 60.277375

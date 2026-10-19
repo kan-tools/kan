@@ -57,3 +57,36 @@ test('malformed scope retry clears old plaintext and permits recovery',async()=>
  assert.equal(u.node('source').textContent,'');assert.equal(u.node('scope').children.length,0);assert.equal(u.node('rows').children.length,0);assert.equal(u.pending.length,0);
  u.node('retry-sources').click();await tick();await u.respond(catalog);await u.respond(page);assert.equal(u.node('rows').children.length,1);
 });
+
+// Boundary and state probes retained from the independent Opus review.
+const many=n=>Array.from({length:n},(_,i)=>({scope:String(i),pin}));
+const accepted=async scopes=>{const u=ui();await u.login();await u.respond({...catalog,scopes});return u;};
+test('PB1 boundary values are accepted, not falsely rejected',async()=>{
+ for(const scopes of [many(16),[{scope:'s'.repeat(256),pin}],[{scope:'a',pin:{request:'r'.repeat(8192),reply:{}}}]]){const u=await accepted(scopes);assert.equal(u.node('library').hidden,false);assert.equal(u.node('scope').children.length,scopes.length);assert.equal(u.pending.length,1);assert.equal(JSON.parse(u.pending[0].opts.body).action,'page');}
+});
+test('PB2 complete empty catalog still opens without page request',async()=>{const u=await accepted([]);assert.equal(u.node('library').hidden,false);assert.equal(u.pending.length,0);assert.match(u.node('notice').textContent,/No currently authorized/);});
+test('PB3 over-limit scope name and pin request are rejected',async()=>{
+ for(const scopes of [[{scope:'s'.repeat(257),pin}],[{scope:'a',pin:{request:'r'.repeat(8193),reply:{}}}]]){const u=await accepted(scopes);assert.equal(u.node('library').hidden,true,JSON.stringify(scopes).slice(0,40));assert.equal(u.pending.length,0);}
+});
+test('PB4 non-string scope/request with a length property are rejected',async()=>{
+ for(const scopes of [[{scope:['a'],pin}],[{scope:{length:1},pin}],[{scope:'a',pin:{request:['x'],reply:{}}}],[{scope:'a',pin:{request:7,reply:{}}}],[{scope:'a',pin:[]}]]){const u=await accepted(scopes);assert.equal(u.node('library').hidden,true,JSON.stringify(scopes));assert.equal(u.pending.length,0);assert.equal(u.node('scope').children.length,0);}
+});
+test('PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery',async()=>{
+ const u=ui();await u.login();await u.respond({...catalog,coverage:'partial'});await u.respond(page);u.node('rows').children[0].click();await tick();await u.respond(source);
+ assert.equal(u.node('catalog-status').className,'partial');
+ u.node('retry-sources').click();await tick();
+ assert.equal(u.node('source').textContent,'','plaintext cleared before recheck reply');assert.equal(u.node('rows').children.length,0);
+ await u.respond({...catalog,coverage:'partial',scopes:[{scope:'a',pin},{scope:'a',pin}]});
+ assert.equal(u.node('library').hidden,false);assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('scope').children.length,0);
+ assert.equal(u.node('catalog-status').className,'');assert.match(u.node('catalog-status').textContent,/coverage is unknown/);assert.equal(u.node('lock').disabled,false);assert.equal(u.pending.length,0);
+ u.node('scope').value='a';u.node('scope').events.change();await tick();assert.equal(u.pending.length,0,'old scopes array must not allow navigation');
+ u.node('next').click();await tick();assert.equal(u.pending.length,0,'next must not page with cleared pin');
+ u.node('resnapshot').click();await tick();assert.equal(u.pending.length,0,'resnapshot must not run without pin');
+});
+test('PB6 lock during malformed-catalog reply ignores the late reply',async()=>{const u=ui();await u.login();u.node('lock').click();const r=u.pending.shift();r.resolve({ok:true,status:200,json:async()=>({...catalog,scopes:[null]})});await tick();await tick();assert.equal(u.node('library').hidden,true);assert.equal(u.node('login').hidden,false);});
+test('PB7 after malformed retry, old scope names and pins cannot be navigated',async()=>{
+ const u=ui();await open(u);u.node('retry-sources').click();await tick();await u.respond({...catalog,scopes:[{scope:'x',pin},7]});
+ assert.equal(u.pending.length,0);
+ u.node('scope').value='allowed-A';u.node('scope').events.change();await tick();assert.equal(u.pending.length,0,'old scopes array still navigable');
+ u.node('resnapshot').click();await tick();assert.equal(u.pending.length,0,'old pin still usable');
+});

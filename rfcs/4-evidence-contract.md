@@ -180,6 +180,16 @@ public scalars 1 and 2 are synthetic fixture identities only. Rust parity and
 runtime admission/availability qualification are separate gates. The original
 blocking protocol review is retained in the design review directory.
 
+For proof-profile source reads only, after verifying the current issuer's proof,
+retained-verified original request.audience must equal the historical receipt
+issuer; admitted still requires the current issuer. Live Read/Append authentication
+always checks the current audience. A separate current-audience RetryImported
+command may confirm an exact already copied operation: require current writer
+append grant, same inner/outer writer, exact stored manifest/proof binding and
+retained-verified purpose. It cannot insert or stage data or mint a new proof.
+Normal Append never accepts another audience. Its detailed signed framing and
+failure fixtures are implementation gates; the legacy profile remains unchanged.
+
 ## Canonicalization and equivalence
 
 Use [DAG-CBOR](https://ipld.io/specs/codecs/dag-cbor/spec/): definite lengths, shortest integer/length encodings, text map keys ordered by encoded length then bytes, tag 42 only for CIDs, and one object without trailing bytes. The restricted scalar set above is additionally enforced. Record CID is CIDv1/DAG-CBOR/SHA2-256 over those exact bytes. No normalization or re-encoding of noncanonical input is accepted. Re-encoding must reproduce input byte for byte. Sorted-set fields reject duplicates and unsorted input rather than rewriting it; ordered fields retain order. Unknown positive versions or kinds are retained byte-exactly as unsupported after envelope/canonical/bounds validation. A malformed known kind is invalid, never relabeled unsupported.

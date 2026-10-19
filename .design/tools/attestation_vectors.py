@@ -89,6 +89,21 @@ def sign(statement,key=None):
     sig=r.to_bytes(32,'big')+min(s,ORDER-s).to_bytes(32,'big')
     return codec.encode({'statement':codec.blob(raw),'signature':codec.blob(sig)})
 
+def receipt_schema(receipt):
+    # Independent structural receipt check. Dynamic author resolution is not a
+    # signature claim; exact static author syntax is checked for these fixtures.
+    closed(receipt,['v','kind','body'],'receipt-canonical')
+    r=receipt['body']
+    closed(r,['issuer','manifest','scopeToken','operation','position','durability','issuedAt'],'receipt-canonical')
+    a=r['issuer'];closed(a,['principal','verificationMethod','identityVersion'],'receipt-canonical')
+    require(isinstance(a['principal'],str) and isinstance(a['verificationMethod'],str) and a['verificationMethod'].startswith(a['principal']+'#'),'receipt-canonical')
+    if a['principal'].startswith('did:key:'):
+        require(a['verificationMethod']==a['principal']+'#'+a['principal'][8:] and a['identityVersion']=={'kind':'static','value':None},'receipt-canonical')
+    else:
+        require(a['principal'].startswith(('did:web:','did:plc:','did:kan:')),'receipt-canonical')
+    require(r['durability']=='remote-durable' and isinstance(r['scopeToken'],bytes) and len(r['scopeToken'])==32 and isinstance(r['operation'],bytes) and len(r['operation'])==16,'receipt-canonical')
+    require(type(r['position'])is int and 0<=r['position']<=SAFE and type(r['issuedAt'])is int and 0<=r['issuedAt']<=SAFE,'receipt-canonical')
+
 def verify(raw,pinned,archive,scope,previous,manifest_raw,receipt_raw):
     require(len(raw)<=16384,'envelope-bound')
     env=decode(raw,'envelope-canonical')
@@ -114,12 +129,13 @@ def verify(raw,pinned,archive,scope,previous,manifest_raw,receipt_raw):
         require(b['sequence']==1 and b['previousManifest'] is None and b['previousAttestation'] is None,'genesis')
     else:
         record_link(b['previousManifest']);record_link(b['previousAttestation'])
-        require(b['previousSequence']==previous['sequence'] and b['scopeToken']==previous['scopeToken'] and b['archiveId']==previous['archiveId'],'chain-position')
+        require(b['previousSequence']==previous['sequence'] and b['scopeToken']==previous['scopeToken'] and b['archiveId']==previous['archiveId'] and b['issuer']==previous['issuer'],'chain-position')
         require(b['previousManifest']==previous['manifest'] and b['previousAttestation']==previous['statementCid'],'chain-commitments')
     manifest=decode(manifest_raw,'manifest-canonical');receipt=decode(receipt_raw,'receipt-canonical')
     require(isinstance(manifest,dict) and manifest.get('kind')=='manifest' and manifest.get('v')==1,'manifest-profile')
     require(isinstance(receipt,dict) and receipt.get('kind')=='receipt' and receipt.get('v')==1,'receipt-profile')
     require(b['manifest'].raw==codec.cid_bytes(codec.cid(manifest_raw)) and b['receipt'].raw==codec.cid_bytes(codec.cid(receipt_raw)),'record-binding')
+    receipt_schema(receipt)
     m,r=manifest['body'],receipt['body']
     require(r['manifest']==b['manifest'] and all(r[f]==m[f] for f in ['scopeToken','operation','position']) and m['scopeToken']==scope,'receipt-binding')
     require(b['purpose']!='admitted' or r['issuer']==b['issuer'],'admitted-issuer')
@@ -179,6 +195,8 @@ def vectors():
     for field,value in [('verificationMethod',current['principal']+'#different'),('identityVersion',{'kind':'versionId','value':'v1'})]:
         a=copy.deepcopy(current);a[field]=value;change('bad-'+field,'issuer-method' if field=='verificationMethod' else 'issuer-version','issuer',a)
     add('wrong-configured-issuer','pinned-issuer',pinnedIssuer=historical['principal'])
+    st=copy.deepcopy(rows[1]['statement']);st['body']['issuer']=historical
+    add('changed-chain-issuer','chain-position',1,env=sign(st,identity(2)[0]),pinnedIssuer=historical['principal'])
     a=copy.deepcopy(current);a['extra']=None;change('unknown-author','issuer-fields','issuer',a)
     a=author('did:key:u'+current['principal'][9:]);change('noncanonical-did','issuer-encoding','issuer',a,pinnedIssuer=a['principal'])
     secp=ec.derive_private_key(1,ec.SECP256K1());public=secp.public_key().public_bytes(serialization.Encoding.X962,serialization.PublicFormat.CompressedPoint)
@@ -188,10 +206,33 @@ def vectors():
         receipt=copy.deepcopy(rows[0]['receipt']);modify(receipt);rb=codec.encode(receipt)
         st=copy.deepcopy(rows[0]['statement']);st['body']['receipt']=codec.link(codec.cid(rb))
         add(name,label,st=st,receiptHex=rb.hex())
+    for field,value in [('operation',codec.blob(b'\x07'*16)),('position',42),('scopeToken',codec.blob(b'\x07'*32))]:
+        receipt=copy.deepcopy(rows[0]['receipt']);receipt['body'][field]=value;rb=codec.encode(receipt)
+        st=copy.deepcopy(rows[0]['statement']);st['body']['receipt']=codec.link(codec.cid(rb))
+        add('receipt-mismatched-'+field,'receipt-binding',st=st,receiptHex=rb.hex())
+    manifest=copy.deepcopy(rows[0]['manifest']);manifest['body']['scopeToken']=codec.blob(b'\x07'*32);mb=codec.encode(manifest)
+    receipt=copy.deepcopy(rows[0]['receipt']);receipt['body'].update(scopeToken=manifest['body']['scopeToken'],manifest=codec.link(codec.cid(mb)));rb=codec.encode(receipt)
+    st=copy.deepcopy(rows[0]['statement']);st['body'].update(manifest=codec.link(codec.cid(mb)),receipt=codec.link(codec.cid(rb)))
+    add('foreign-scope-metadata','receipt-binding',st=st,manifestHex=mb.hex(),receiptHex=rb.hex())
+    st=copy.deepcopy(rows[0]['statement']);st['body'].update(sequence=2,previousSequence=1)
+    add('nonfirst-genesis','genesis',st=st)
+    receipt=copy.deepcopy(rows[0]['receipt']);receipt['body']['issuer']['verificationMethod']=current['principal']+'#other';rb=codec.encode(receipt)
+    st=copy.deepcopy(rows[0]['statement']);st['body']['receipt']=codec.link(codec.cid(rb))
+    add('admitted-issuer-method','receipt-canonical',st=st,receiptHex=rb.hex())
+    for field,value in [('durability','best-effort'),('extra',None),('issuer',{'principal':'junk','verificationMethod':'junk#x','identityVersion':{'kind':'static','value':None}})]:
+        receipt=copy.deepcopy(rows[0]['receipt']);receipt['body'][field]=value;rb=codec.encode(receipt)
+        st=copy.deepcopy(rows[0]['statement']);st['body']['receipt']=codec.link(codec.cid(rb))
+        add('invalid-receipt-'+field,'receipt-canonical',st=st,receiptHex=rb.hex())
+    for field,version,label in [('manifest',2,'manifest-profile'),('receipt',2,'receipt-profile')]:
+        record=copy.deepcopy(rows[0][field]);record['v']=version;rb=codec.encode(record)
+        st=copy.deepcopy(rows[0]['statement']);st['body'][field]=codec.link(codec.cid(rb))
+        add('unsupported-'+field,label,st=st,**{field+'Hex':rb.hex()})
     env=bytes.fromhex(rows[0]['envelopeHex']);decoded=codec.decode(env);sig=decoded['signature']
     def signature(name,value,label):
         e=copy.deepcopy(decoded);e['signature']=value;add(name,label,env=codec.encode_value(e))
     signature('DER',utils.encode_dss_signature(int.from_bytes(sig[:32],'big'),int.from_bytes(sig[32:],'big')),'signature-encoding')
+    signature('r-at-order',ORDER.to_bytes(32,'big')+sig[32:],'signature-range')
+    signature('s-at-half-order',sig[:32]+(ORDER//2).to_bytes(32,'big'),'signature-invalid')
     signature('zero-r',bytes(32)+sig[32:],'signature-range');signature('zero-s',sig[:32]+bytes(32),'signature-range')
     signature('high-s',sig[:32]+(ORDER-int.from_bytes(sig[32:],'big')).to_bytes(32,'big'),'signature-range')
     signature('half-order-plus-one',sig[:32]+(ORDER//2+1).to_bytes(32,'big'),'signature-range')

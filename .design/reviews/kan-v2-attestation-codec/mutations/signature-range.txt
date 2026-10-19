@@ -1,0 +1,24 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next)
+    Finished `test` profile [unoptimized] target(s) in 7.18s
+     Running tests/evidence_attestation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attestation-cba5a126dc479c9c)
+
+running 1 test
+test independent_resigned_negative_vectors_fail_at_named_check ... FAILED
+
+failures:
+
+---- independent_resigned_negative_vectors_fail_at_named_check stdout ----
+
+thread 'independent_resigned_negative_vectors_fail_at_named_check' (9329428) panicked at tests/evidence_attestation.rs:154:9:
+assertion `left == right` failed: negative "zero-r" must trip its intended check
+  left: "signature-invalid"
+ right: String("signature-range")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    independent_resigned_negative_vectors_fail_at_named_check
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `--test evidence_attestation`

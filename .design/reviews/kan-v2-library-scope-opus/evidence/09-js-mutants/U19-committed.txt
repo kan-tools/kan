@@ -1,0 +1,49 @@
+✔ real endpoint uses header auth and untrusted source stays text (3.820083ms)
+✔ lock aborts pending source and clears every private view (0.747583ms)
+✔ page and scope navigation carry only the selected authenticated pin (0.980792ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.907208ms)
+✔ old transport errors cannot lock a newer session (0.6065ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.703458ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.611709ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.664542ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (2.048417ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.555458ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.381625ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.564917ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.969334ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.533041ms)
+✖ partial catalog coverage persists while browsing and retry clears old authority (0.990458ms)
+✔ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (1.160708ms)
+✔ both authorization denial statuses lock an already open Library (1.064042ms)
+✔ Previous is disabled immediately when leaving a later page (0.531292ms)
+✔ malformed duplicate and inconsistent capabilities never open a Library (2.128083ms)
+✔ all directional control families default to exact hex with explicit text access (5.160875ms)
+✔ malformed retry clears partially rendered capabilities and keeps recovery available (0.627334ms)
+✔ malformed scope catalogs are rejected before any option or page request (4.000083ms)
+✔ malformed scope retry clears old plaintext and permits recovery (0.744292ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 22
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 59.938625
+
+✖ failing tests:
+
+test at tests/library_ui.test.cjs:39:1
+✖ partial catalog coverage persists while browsing and retry clears old authority (0.990458ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  '<b>x' !== ''
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next/.local-state/reviews/library/tests/library_ui.test.cjs:39:462)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '<b>x',
+    expected: '',
+    operator: 'strictEqual'
+  }

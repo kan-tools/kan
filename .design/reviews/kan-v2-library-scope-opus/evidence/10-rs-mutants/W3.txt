@@ -1,0 +1,32 @@
+
+running 6 tests
+P1 reader blocked by exclusive holder: true
+test p5_concurrent_capture_opens ... ok
+P2 ordinary queue after capture: ok=true waited=409.587291ms
+test p2_admission_restores_callers_busy_timeout ... ok
+P1 elapsed=595.679208ms status=exit status: 0 stdout_len=8 last={"attempt":"a8b3953543d9c1653781df704d361c22c6fd376ab82d49d78b3ecb416cc2c5b4","observer":"gateway","observed":7,"locally_queued":0,"unconfirmed":7,"recording_gap":true,"remote_acknowledged":false,"status":200,"outcome":"completed"}
+test p1_cli_open_does_not_wait_on_exclusive_lock ... ok
+Q2 per-observation ms=[111, 111, 100, 101, 100, 100, 101, 100, 100, 95, 0, 0, 0, 0, 0] total=1.023212958s
+Q2 after unlock queued=1 unconfirmed=15
+test q2_per_observation_cap_and_allowance ... ok
+P3 A: observed=27 queued=27 unconfirmed=0 gap=false
+P3 B: observed=26 queued=26 unconfirmed=0 gap=false
+P3 spool pending=53
+test p3_concurrent_captures_share_spool ... ok
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.56s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next/.local-state/reviews/library)
+    Finished `test` profile [unoptimized] target(s) in 8.20s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread 'p4_capture_beside_brief_periodic_writer' (9306198) panicked at tests/evidence_capture_contention.rs:425:5:
+first admission must wait on the coordinated writer lock: 0ns
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_capture_contention`
