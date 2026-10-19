@@ -1,0 +1,17 @@
+{
+  "UPa-UPi": {
+    "preserved_commit": "3f4b403",
+    "original_path": ".design/reviews/kan-v2-overview-lifecycle-opus/evidence/probes/zz_review_operations_ui.test.cjs",
+    "target": "tests/operations_review_ui.test.cjs",
+    "original_sha256": "524c30f5b1de2816a57932f06676050a59bee5bb15e846ef251e662f494f05b3",
+    "target_sha256": "524c30f5b1de2816a57932f06676050a59bee5bb15e846ef251e662f494f05b3",
+    "identical": true
+  },
+  "RP1-RP12": {
+    "source": "evidence/probes/restart_review_probes.test.cjs",
+    "target": "tests/operations_restart_review.test.cjs",
+    "original_sha256": "f1bb86a14e3bd2b75da0e1203689197cef3a67092dfd9280c0d472f00ef78d66",
+    "original_byte_length": 12478,
+    "note": "Original probes form an exact prefix; subsequent author RP13 adds the named queue-repeat regression."
+  }
+}

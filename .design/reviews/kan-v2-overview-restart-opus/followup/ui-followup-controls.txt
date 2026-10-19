@@ -1,0 +1,12 @@
+DEMONSTRATED: restart-cache-collision
+DEMONSTRATED: aborted-poll-clears-action
+DEMONSTRATED: aborted-poll-repaints-error
+DEMONSTRATED: partial-time-key
+DEMONSTRATED: omit-source-rows
+DEMONSTRATED: partial-time-and-totals-key
+DEMONSTRATED: null-keeps-key
+DEMONSTRATED: lock-keeps-key
+DEMONSTRATED: timeout-label-lost
+DEMONSTRATED: cross-session-queued-action
+DEMONSTRATED: queued-action-repeats
+11 UI mutants fail assertions; restored 49 checks pass.
