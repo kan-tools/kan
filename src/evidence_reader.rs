@@ -1,4 +1,5 @@
 //! Bounded, explicitly authorized reads. No plaintext persistence or mutation API.
+pub mod proof;
 use crate::{
     evidence_crypto, evidence_http,
     evidence_service::{

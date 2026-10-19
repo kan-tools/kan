@@ -16,6 +16,8 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
+#[path = "support/proof_service_tests.rs"]
+mod proof_service_tests;
 fn identity(n: u8) -> Identity {
     let mut f = tempfile::NamedTempFile::new().unwrap();
     f.write_all(&[n; 32]).unwrap();
@@ -56,6 +58,13 @@ struct Fixture {
     profile: Profile,
 }
 fn fixture(parent: &Path, profile: Profile) -> Fixture {
+    fixture_requests(parent, profile, request)
+}
+fn fixture_requests(
+    parent: &Path,
+    profile: Profile,
+    mut make_request: impl FnMut(u8, u8, Option<String>) -> Vec<u8>,
+) -> Fixture {
     let root = parent.join("archive");
     let mut requests = Vec::new();
     let mut previous = None;
@@ -67,7 +76,7 @@ fn fixture(parent: &Path, profile: Profile) -> Fixture {
         };
         let mut a = attested::Archive::create(&root, binding.clone()).unwrap();
         for n in 0..3 {
-            let bytes = request(n, 8, previous);
+            let bytes = make_request(n, 8, previous);
             let r = a
                 .admit(&bytes, &identity(8), &grant(), 100 + n as u64)
                 .unwrap();
@@ -85,7 +94,7 @@ fn fixture(parent: &Path, profile: Profile) -> Fixture {
         )
         .unwrap();
         for n in 0..3 {
-            let bytes = request(n, 7, previous);
+            let bytes = make_request(n, 7, previous);
             assert!(a
                 .dispatch(&bytes, 100 + n as u64)
                 .unwrap()
