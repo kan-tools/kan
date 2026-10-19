@@ -3,7 +3,7 @@ use kan::{
     evidence::{self, Decoded},
     evidence_copy_plan::Target,
     evidence_service::{hex, Command, Grant, Output, Request, Service, SignedRequest},
-    evidence_store::{copy_upgrade::PlannedCopy, Ledger},
+    evidence_store::{copy_upgrade::PlannedCopy, Ledger, RecoveryReader},
     sign::Identity,
 };
 use std::{io::Write, path::Path};
@@ -238,4 +238,55 @@ fn source_fingerprint_matches_an_independent_python_byte_oracle() {
         String::from_utf8(output.stdout).unwrap().trim(),
         hex(&source.plan().source().digest)
     );
+}
+
+#[test]
+fn planning_and_confirmation_preserve_database_and_retained_wal_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("archive");
+    let mut s = service(&root);
+    append(&mut s, 1);
+    let db = root.join("archive.sqlite");
+    let wal = root.join("archive.sqlite-wal");
+    let before = (std::fs::read(&db).unwrap(), std::fs::read(&wal).unwrap());
+    assert!(!before.1.is_empty(), "fixture needs retained WAL frames");
+    let planned = PlannedCopy::open(&db, target(), s.issuer(), [9; 32]).unwrap();
+    let plan = planned.plan().clone();
+    drop(planned);
+    let confirmed = PlannedCopy::confirm(&db, &plan, &plan.archive_id()).unwrap();
+    assert_eq!(confirmed.plan().bytes(), plan.bytes());
+    drop(confirmed);
+    assert_eq!(std::fs::read(&db).unwrap(), before.0);
+    assert_eq!(std::fs::read(&wal).unwrap(), before.1);
+    // Keep the writer open until after the checks: its own close can checkpoint.
+    drop(s);
+}
+
+#[test]
+fn derived_damage_requires_separate_recovery_and_preserves_the_exact_recipe() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("archive");
+    let mut s = service(&root);
+    append(&mut s, 1);
+    let issuer = s.issuer();
+    drop(s);
+    let db = root.join("archive.sqlite");
+    let planned = PlannedCopy::open(&db, target(), issuer.clone(), [9; 32]).unwrap();
+    let plan = planned.plan().clone();
+    drop(planned);
+    let c = rusqlite::Connection::open(&db).unwrap();
+    c.execute_batch("PRAGMA foreign_keys=OFF; DELETE FROM bindings;")
+        .unwrap();
+    drop(c);
+    let damaged = std::fs::read(&db).unwrap();
+    assert!(PlannedCopy::open(&db, target(), issuer, [9; 32]).is_err());
+    assert_eq!(std::fs::read(&db).unwrap(), damaged);
+    let rebuilt = dir.path().join("recovered.sqlite");
+    RecoveryReader::open(&db)
+        .unwrap()
+        .rebuild(&rebuilt)
+        .unwrap();
+    let restored = PlannedCopy::confirm(&rebuilt, &plan, &plan.archive_id()).unwrap();
+    assert_eq!(restored.plan().bytes(), plan.bytes());
+    assert_eq!(std::fs::read(&db).unwrap(), damaged);
 }
