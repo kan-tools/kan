@@ -194,3 +194,9 @@ unknown KANC-family data is a limit refusal. Inputs without the KANC prefix rema
 opaque without parsing or copying, regardless of size. Downstream source-read
 budgets remain responsible for all input acquisition. These choices do not
 assert coverage or close the parent reconstruction acceptance criteria.
+
+The second cold review's PA1/PA2 probes are promoted into the normal test suite:
+accepted recognized frames must round-trip to the parsed JSON value across the
+mutation corpus, and absent clocks on unknown versions/observers/events/outcomes
+remain Unsupported. This pins classification precedence and catches future
+optional-field or unit-variant narrowing before a consumer is added.

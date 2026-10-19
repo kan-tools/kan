@@ -1,0 +1,12 @@
+
+running 2 tests
+test review_pa2_timestamp_distinction_and_unsupported_precedence ... ok
+test review_pa1_capture_projection_is_lossless_over_mutation_corpus ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction)
+    Finished `test` profile [unoptimized] target(s) in 8.22s
+     Running tests/evidence_reconstruction_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction_review_regressions-acb5054d59b89e25)
+
+exit=0
