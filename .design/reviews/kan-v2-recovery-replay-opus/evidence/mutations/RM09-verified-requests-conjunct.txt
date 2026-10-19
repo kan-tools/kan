@@ -1,0 +1,24 @@
+RM09-verified-requests-conjunct (expected redundant)
+--- old
+            && output.verified_requests() == original.frontier().through,
++++ new
+
+
+exit=101
+class=COMPILE-FAILURE
+tags=[]
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-replay/.local-state/reviews/recovery-replay)
+error: expected one of `)`, `,`, `.`, `?`, or an operator, found `"incomplete output"`
+   --> src/evidence_recovery_replay.rs:443:9
+    |
+441 |             && output.frontier() == original.frontier()
+    |                                                        -
+    |                                                        |
+    |                                                        expected one of `)`, `,`, `.`, `?`, or an operator
+    |                                                        help: missing `,`
+442 |
+443 |         "incomplete output",
+    |         ^^^^^^^^^^^^^^^^^^^ unexpected token
+
+error: could not compile `kan` (lib) due to 1 previous error

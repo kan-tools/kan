@@ -1,0 +1,40 @@
+scopeB whole reversion (cd0a9ff runtime) named regression: KILLED-SEMANTIC exit=101
+reverted sha256=955320849f1d30905c305b164d80d86cf9a84b4a2b5d6ac2fafe44a5e26a1b93
+diff --git a/src/evidence_recovery_member.rs b/src/evidence_recovery_member.rs
+index 47bd942..4ef00fc 100644
+--- a/src/evidence_recovery_member.rs
++++ b/src/evidence_recovery_member.rs
+@@ -387,6 +387,10 @@ pub fn verify(input: Input<'_>, budget: Budget) -> Result<Member> {
+             .map_err(|_| Error::Invalid("entry"))?;
+         let cid =
+             evidence::link(&e["ciphertext"], 0x55).map_err(|_| Error::Invalid("entry CID"))?;
++        require(
++            cid != &crate::evidence_store::ciphertext_cid(b""),
++            "empty service request CID",
++        )?;
+         let n = evidence::uint(&e["length"]).map_err(|_| Error::Invalid("entry length"))? as u64;
+         let k = key(cid)?;
+         let c = keys.entry(k.clone()).or_insert_with(|| coordinate(cid));
+
+
+
+running 1 test
+test empty_service_request_cid_refuses_without_an_original ... FAILED
+
+failures:
+
+failures:
+    empty_service_request_cid_refuses_without_an_original
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.04s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-replay/.local-state/reviews/recovery-replay)
+    Finished `test` profile [unoptimized] target(s) in 7.49s
+     Running tests/evidence_recovery_member_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_review_regressions-9f02720da46a1f05)
+
+thread 'empty_service_request_cid_refuses_without_an_original' (10194739) panicked at tests/evidence_recovery_member_review_regressions.rs:1220:5:
+assertion `left == right` failed
+  left: None
+ right: Some("empty service request CID")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_member_review_regressions`

@@ -1,0 +1,24 @@
+author control restoration-basis: KILLED-SEMANTIC exit=101
+--- basis: keys[name].basis
++++ basis: Basis::VerifiedCopyRecipe
+
+
+running 1 test
+test partial_membership_restoration_keeps_the_original_unverified_basis ... FAILED
+
+failures:
+
+failures:
+    partial_membership_restoration_keeps_the_original_unverified_basis
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.04s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-replay/.local-state/reviews/recovery-replay)
+    Finished `test` profile [unoptimized] target(s) in 7.49s
+     Running tests/evidence_recovery_replay.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_replay-4eb126a2c0172bbe)
+
+thread 'partial_membership_restoration_keeps_the_original_unverified_basis' (10193382) panicked at tests/evidence_recovery_replay.rs:324:5:
+assertion failed: r.restorations().iter().all(|r|
+        r.basis == Basis::UnverifiedMembership && r.length > 0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_replay`

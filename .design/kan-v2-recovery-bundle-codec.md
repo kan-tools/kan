@@ -472,3 +472,63 @@ regression; C-F3 pins the exact MAX_REQUEST boundary. C-F4 refuses empty service
 request CIDs with or without an original row, in Rust and the projection oracle.
 C-F5 restores accurate probe comments and removes the vacuous immutable-input
 assertion. Fresh review of this follow-through accompanies the replay checkpoint.
+
+## Next draft checkpoint: pure observation replay
+
+Replay is over immutable caller-acquired member, candidate and observation slices,
+under independent bundle/issuer/observer pins and an optional externally retained
+checkpoint. It first audits the member and fixes M1/frontier. It authenticates
+one contiguous observer chain from genesis, compares creation to that member,
+and requires the exact greedily partitioned initial loss vector before any
+restoration or publication. A late, omitted, repeated or altered loss refuses.
+The member-verifier review must be resolved before qualifying this consumer.
+
+Each physical candidate must have exactly one restored observation, target an
+existing member key/reference, match its content address and every authenticated
+expected length. Incomplete-copy membership-only lengths are retained claims,
+not candidate constraints. Replay returns the member-derived basis for every restoration, including
+an already-available key with no initial loss;
+restoration cannot promote UnverifiedMembership into authenticated source evidence.
+No unsigned candidate, duplicate restoration, hidden subset or new orphan is
+accepted. An intent commits to all candidates observed before it. Replay computes
+that historical R1 and deterministic output union, re-audits the virtual output
+(including writer signatures and complete profile-3 recipe) and only then computes
+O1. The virtual audit is not a physical standalone-schema or durability check.
+Originals and later candidates never silently replace historical selections.
+
+Track attempts by their explicit ID: one intent, failures before at most one
+observed result, no later failure or second observed for that same attempt.
+Other attempts remain independent. Pending or failed attempts do not establish
+that an output is absent; an observed claim does not activate a writer or prove
+that the output file is still present. Physical output verification/fsync and
+job reconciliation remain separate requirements.
+
+A supplied external checkpoint must match the complete context, sequence and
+statement CID in the verified chain. A missing or changed checkpoint prefix
+refuses. Return the latest verified frontier separately from the selected external
+pin; an extension is not automatically independently retained. No checkpoint
+means no rollback protection, and truncation after the latest retained checkpoint
+remains undetectable.
+
+Owner-selected item, scan-byte, time and cancellation limits cover this replay.
+Scan bytes count each audited member/virtual-output pass, each observation envelope,
+each candidate validation and each commitment pass; they are a documented work
+metric, not measured CPU cycles or RSS. Reuse a virtual-output result only while
+the selected candidate set is unchanged. All collections are bounded by charged
+input counts. This remains a pure draft until independent semantic vectors and
+fresh review qualify it; no SQLite opener/writer, job, RPC or UI is introduced.
+
+### Replay review follow-through
+
+A-F1 decision: choose immediate refusal. A candidate for an issuer-referenced
+service request must verify its writer signature and exact request/manifest/receipt
+binding before replay accepts any restoration history. A content-address match
+alone cannot report a repair for evidence that the member verifier would refuse.
+Unreferenced original-only or membership-only keys have no invented writer check;
+their derived basis remains explicit. This tightens the draft before format
+acceptance and adds no wire field. Publication still re-audits the entire output.
+
+Scan-byte work additionally charges each restored request's manifest, receipt
+and request bytes for that verification pass. This remains a bounded input-work
+metric, not exact CPU or RSS. A-F2 single-fault regressions and A-F3 envelope-size
+bounds require qualification and fresh review of this correction.

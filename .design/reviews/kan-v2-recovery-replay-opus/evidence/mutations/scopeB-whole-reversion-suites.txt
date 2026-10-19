@@ -1,0 +1,123 @@
+scopeB whole reversion affected suites: exit=101 failed=['test independently_constructed_python_members_match_commitments_losses_and_refusals ... FAILED', 'test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s', 'test empty_service_request_cid_refuses_without_an_original ... FAILED', 'test rp14_hash_valid_bytes_with_false_signed_length ... FAILED', 'test result: FAILED. 21 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s']
+
+
+running 16 tests
+test expected_oversized_length_refuses_without_a_physical_object ... ok
+test hash_valid_but_unsigned_bytes_are_not_treated_as_recoverable_loss ... ok
+test issuer_resigning_does_not_make_wrong_service_slot_valid_when_payload_is_missing ... ok
+test issuer_resigning_cannot_hide_invalid_writer_chain ... ok
+test bounded_acquisition_order_and_cancellation_refuse ... ok
+test copy_plan_cannot_relabel_a_different_complete_source_digest ... ok
+test complete_copy_accepts_new_admitted_suffix_without_rewriting_original_recipe ... ok
+test profile3_partial_metadata_does_not_claim_completion_or_accept_extra_objects ... ok
+test shared_missing_service_request_cid_refuses_before_restoration ... ok
+test time_and_physical_object_bounds_refuse ... ok
+test owner_pins_proofs_missing_membership_and_conflicting_lengths_refuse ... ok
+test both_profiles_verify_real_writer_requests_and_empty_members ... ok
+test valid_json_with_bad_writer_signature_and_resigned_manifest_substitution_refuse ... ok
+test independently_constructed_python_members_match_commitments_losses_and_refusals ... FAILED
+test shared_cid_lengths_and_duplicate_operations_refuse_even_when_all_bytes_missing ... ok
+test missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment ... ok
+
+failures:
+
+---- independently_constructed_python_members_match_commitments_losses_and_refusals stdout ----
+
+thread 'independently_constructed_python_members_match_commitments_losses_and_refusals' (10194889) panicked at tests/evidence_recovery_member.rs:588:13:
+assertion `left == right` failed: "empty-cid-false-authenticated-length"
+  left: "hash-valid bytes contradict authenticated length"
+ right: "empty service request CID"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    independently_constructed_python_members_match_commitments_losses_and_refusals
+
+test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+
+running 2 tests
+test incomplete_membership_has_no_authenticated_length_or_byte_classification ... ok
+test authentic_bytes_with_false_metadata_are_not_repairable_loss ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+
+running 23 tests
+test orphan_hash_mismatch_is_reported_without_rewriting_its_bytes ... ok
+test completed_copy_cannot_mislabel_hash_valid_orphan_with_false_length ... ok
+test membership_bytes_are_charged_at_the_exact_input_boundary ... ok
+test empty_service_request_cid_refuses_without_an_original ... FAILED
+test rp04_retained_receipts_from_wrong_issuer_refuse ... ok
+test rp06_plan_target_scope_and_issuer_binding ... ok
+test cp11_basis_deterministic ... ok
+test rp05_source_tip_mismatch_refuses ... ok
+test rp03_shared_request_cid_refuses_with_or_without_bytes ... ok
+test rp13_noncanonical_spelling_is_invisible_to_typed_api ... ok
+test rp02_partial_profile3_membership_is_labeled_unverified ... ok
+test rp15_empty_orphan_with_empty_cid_is_corrupt ... ok
+test rp01_staged_membership_key_null_coordinate ... ok
+test rp10a_precancelled_refuses_before_semantic_work ... ok
+test cp01_request_length_edges_without_bytes ... ok
+test rp07_proof_purpose_per_range ... ok
+test rp08_membership_order_duplicates_and_codec ... ok
+test rp16_partial_retained_reference_outside_membership_refuses ... ok
+test rp12_cross_scope_issuer_and_observer ... ok
+test rp17_writer_predecessor_without_bytes ... ok
+test rp14_hash_valid_bytes_with_false_signed_length ... FAILED
+test rp09_non_static_writer_refuses_without_bytes ... ok
+test rp11_caps_before_work ... ok
+
+failures:
+
+---- empty_service_request_cid_refuses_without_an_original stdout ----
+
+thread 'empty_service_request_cid_refuses_without_an_original' (10194909) panicked at tests/evidence_recovery_member_review_regressions.rs:1220:5:
+assertion `left == right` failed
+  left: None
+ right: Some("empty service request CID")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- rp14_hash_valid_bytes_with_false_signed_length stdout ----
+RP rp14a-genuine-bytes-false-length: REFUSE Invalid("hash-valid bytes contradict authenticated length")
+RP rp14a-control-honest-length: ACCEPT through=1 verified=1 complete=true losses=[]
+RP rp14b-empty-cid-signed-length-1: REFUSE Invalid("hash-valid bytes contradict authenticated length")
+
+thread 'rp14_hash_valid_bytes_with_false_signed_length' (10194925) panicked at tests/evidence_recovery_member_review_regressions.rs:1005:5:
+assertion `left == right` failed
+  left: Some("hash-valid bytes contradict authenticated length")
+ right: Some("empty service request CID")
+
+
+failures:
+    empty_service_request_cid_refuses_without_an_original
+    rp14_hash_valid_bytes_with_false_signed_length
+
+test result: FAILED. 21 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
+
+running 10 tests
+test item_scan_byte_time_and_cancel_limits_refuse_without_partial_acceptance ... ok
+test partial_membership_restoration_keeps_the_original_unverified_basis ... ok
+test wrong_bundle_or_observer_never_selects_unsigned_history ... ok
+test physical_candidate_duplicates_and_oversized_envelopes_refuse ... ok
+test restoration_does_not_rewrite_original_loss_or_assert_current_output_exists ... ok
+test retained_checkpoint_cannot_detect_removal_of_a_later_unpinned_suffix ... ok
+test historical_intents_keep_distinct_candidate_sets_and_independent_attempts ... ok
+test matching_external_checkpoint_does_not_skip_verification_of_the_suffix ... ok
+test rollback_before_external_checkpoint_and_foreign_checkpoint_refuse ... ok
+test independent_state_vectors_match_acceptance_commitments_attempts_and_checkpoints ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.09s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-replay/.local-state/reviews/recovery-replay)
+    Finished `test` profile [unoptimized] target(s) in 0.58s
+     Running tests/evidence_recovery_member.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member-9be305d24ad97b48)
+error: test failed, to rerun pass `--test evidence_recovery_member`
+     Running tests/evidence_recovery_member_corrections.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_corrections-139989e045e17eb4)
+     Running tests/evidence_recovery_member_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_review_regressions-9f02720da46a1f05)
+error: test failed, to rerun pass `--test evidence_recovery_member_review_regressions`
+     Running tests/evidence_recovery_replay.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_replay-4eb126a2c0172bbe)
+error: 2 targets failed:
+    `--test evidence_recovery_member`
+    `--test evidence_recovery_member_review_regressions`
