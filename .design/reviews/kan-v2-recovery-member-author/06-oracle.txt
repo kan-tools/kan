@@ -1,0 +1,1 @@
+16 independently constructed member cases; all constructed issuer chains independently verified; no full verifier claim

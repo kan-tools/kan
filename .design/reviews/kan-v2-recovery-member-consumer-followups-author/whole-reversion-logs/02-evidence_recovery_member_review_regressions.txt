@@ -1,0 +1,24 @@
+
+running 1 test
+test empty_service_request_cid_refuses_without_an_original ... FAILED
+
+failures:
+
+---- empty_service_request_cid_refuses_without_an_original stdout ----
+
+thread 'empty_service_request_cid_refuses_without_an_original' (10127731) panicked at tests/evidence_recovery_member_review_regressions.rs:1220:5:
+assertion `left == right` failed
+  left: None
+ right: Some("empty service request CID")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    empty_service_request_cid_refuses_without_an_original
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.03s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reversion/fa4f4fde3b414b7b97e93b099ef14922)
+    Finished `test` profile [unoptimized] target(s) in 8.51s
+     Running tests/evidence_recovery_member_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_review_regressions-9f02720da46a1f05)
+error: test failed, to rerun pass `--test evidence_recovery_member_review_regressions`

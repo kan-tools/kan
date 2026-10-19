@@ -1,0 +1,172 @@
+# date: 2026-10-19T15:56:17Z
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections
+# cmd: python3 -I review-evidence/scripts/promotion_diff.py tests/evidence_recovery_member_review_regressions.rs .design/reviews/kan-v2-recovery-member-opus/evidence/probes/zz_review_member_probes.rs .design/reviews/kan-v2-recovery-member-opus/evidence/probes/zz_review_member_probes2.rs
+# ---
+IDENTICAL author
+IDENTICAL budget
+DIFFERS build
+    --- original
+    +++ promoted
+    @@ -17,2 +17,2 @@
+    -let bytes = sign_request(&writer, &scope, &audience, [0x40 + i as u8;
+    -16], i as u64, previous.clone(), format!("reviewer payload {i}").as_bytes());
+    +let bytes = sign_request( &writer, &scope, &audience, [0x40 + i as u8;
+    +16], i as u64, previous.clone(), format!("reviewer payload {i}").as_bytes(), );
+    @@ -22 +22 @@
+    -f.records.push((m.bytes().to_vec(), r.bytes().to_vec(), vec![]));
+    +f.records .push((m.bytes().to_vec(), r.bytes().to_vec(), vec![]));
+    @@ -29 +29 @@
+    -f.membership = f.objects.iter().map(|(c, b)| (c.clone(), b.len() as u64)).collect();
+    +f.membership = f .objects .iter() .map(|(c, b)| (c.clone(), b.len() as u64)) .collect();
+    @@ -39 +39,2 @@
+    -resign(&mut f, |_| if profile == 3 {
+    +resign(&mut f, |_| {
+    +if profile == 3 {
+    @@ -41 +42 @@
+    -Purpose::Admitted });
+    +Purpose::Admitted } });
+IDENTICAL decode
+IDENTICAL did
+IDENTICAL entry_cid
+IDENTICAL frame
+IDENTICAL identity
+IDENTICAL invalid
+IDENTICAL receipt
+IDENTICAL record
+DIFFERS replace_manifest
+    --- original
+    +++ promoted
+    @@ -1 +1 @@
+    - fn replace_manifest(f: &mut F, index: usize, issuer: &str, mutate: impl FnOnce(&mut BTreeMap<String, Ipld>)) -> Result<(), String> {
+    + fn replace_manifest( f: &mut F, index: usize, issuer: &str, mutate: impl FnOnce(&mut BTreeMap<String, Ipld>), ) -> Result<(), String> {
+IDENTICAL resign
+DIFFERS rp01_staged_membership_key_null_coordinate
+    --- original
+    +++ promoted
+    @@ -17 +17 @@
+    -occurrence: None, cid: sc.clone(), expected_length: Some(staged.len() as u64), state: Availability::Missing }] );
+    +occurrence: None, cid: sc.clone(), expected_length: Some(staged.len() as u64), state: Availability::Missing, basis: Basis::VerifiedCopyRecipe }] );
+    @@ -25 +25 @@
+    -occurrence: None, cid: sc.clone(), expected_length: Some(staged.len() as u64), state: Availability::Corrupt }] );
+    +occurrence: None, cid: sc.clone(), expected_length: Some(staged.len() as u64), state: Availability::Corrupt, basis: Basis::VerifiedCopyRecipe }] );
+    @@ -36,3 +36,3 @@
+    -occurrence: Some(1), cid: c1, expected_length: Some(n1), state: Availability::Corrupt }, Loss {
+    -occurrence: Some(2), cid: c2, expected_length: Some(n2), state: Availability::Missing }, Loss {
+    -occurrence: None, cid: sc, expected_length: Some(staged.len() as u64), state: Availability::Missing }, ] );
+    +occurrence: Some(1), cid: c1, expected_length: Some(n1), state: Availability::Corrupt, basis: Basis::IssuerMetadata }, Loss {
+    +occurrence: Some(2), cid: c2, expected_length: Some(n2), state: Availability::Missing, basis: Basis::IssuerMetadata }, Loss {
+    +occurrence: None, cid: sc, expected_length: Some(staged.len() as u64), state: Availability::Missing, basis: Basis::VerifiedCopyRecipe }, ] );
+NOT-PROMOTED rp02_partial_profile3_membership_is_unauthenticated
+NOT-PROMOTED rp03_shared_request_cid_is_unsatisfiable_but_accepted_when_missing
+IDENTICAL rp04_retained_receipts_from_wrong_issuer_refuse
+IDENTICAL rp05_source_tip_mismatch_refuses
+IDENTICAL rp06_plan_target_scope_and_issuer_binding
+DIFFERS rp07_proof_purpose_per_range
+    --- original
+    +++ promoted
+    @@ -10 +10,2 @@
+    -resign(&mut f, |i| if i == 0 {
+    +resign(&mut f, |i| {
+    +if i == 0 {
+    @@ -12 +13 @@
+    -Purpose::Admitted });
+    +Purpose::Admitted } });
+    @@ -16 +17 @@
+    -diagnostic precedence is explicitly not a contract. assert!(matches!(invalid(&r), Some("proof purpose") | Some("historical receipt issuer")));
+    +diagnostic precedence is explicitly not a contract. assert!(matches!( invalid(&r), Some("proof purpose") | Some("historical receipt issuer") ));
+IDENTICAL rp08_membership_order_duplicates_and_codec
+DIFFERS rp09_non_static_writer_refuses_without_bytes
+    --- original
+    +++ promoted
+    @@ -3 +3 @@
+    -let variants: Vec<(&str, Ipld)> = vec![ ( "event-version", map([ ("principal", Ipld::String(writer.clone())), ("verificationMethod", Ipld::String(format!("{writer}#{}", &writer[8..]))), ("identityVersion", map([("kind", Ipld::String("event".into())), ("value", Ipld::Link(ciphertext_cid(b"e")))])), ]), ), ( "versionid", map([ ("principal", Ipld::String(writer.clone())), ("verificationMethod", Ipld::String(format!("{writer}#{}", &writer[8..]))), ("identityVersion", map([("kind", Ipld::String("versionId".into())), ("value", Ipld::String("v1".into()))])), ]), ), ( "other-fragment", map([ ("principal", Ipld::String(writer.clone())), ("verificationMethod", Ipld::String(format!("{writer}#key-1"))), ("identityVersion", map([("kind", Ipld::String("static".into())), ("value", Ipld::Null)])), ]), ), ( "did-web-documentcid", map([ ("principal", Ipld::String("did:web:example.com".into())), ("verificationMethod", Ipld::String("did:web:example.com#key-1".into())), ("identityVersion", map([("kind", Ipld::String("documentCid".into())), ("value", Ipld::Link(ciphertext_cid(b"doc")))])), ]), ), ( "did-web-static", map([ ("principal", Ipld::String("did:web:example.com".into())), ("verificationMethod", Ipld::String("did:web:example.com#key-1".into())), ("identityVersion", map([("kind", Ipld::String("static".into())), ("value", Ipld::Null)])), ]), ), ( "did-plc-versionid", map([ ("principal", Ipld::String("did:plc:ewvi7nxzyoun6zhxrhs64oiz".into())), ("verificationMethod", Ipld::String("did:plc:ewvi7nxzyoun6zhxrhs64oiz#atproto".into())), ("identityVersion", map([("kind", Ipld::String("versionId".into())), ("value", Ipld::String("bafyreib".into()))])), ]), ), ];
+    +let variants: Vec<(&str, Ipld)> = vec![ ( "event-version", map([ ("principal", Ipld::String(writer.clone())), ( "verificationMethod", Ipld::String(format!("{writer}#{}", &writer[8..])), ), ( "identityVersion", map([ ("kind", Ipld::String("event".into())), ("value", Ipld::Link(ciphertext_cid(b"e"))), ]), ), ]), ), ( "versionid", map([ ("principal", Ipld::String(writer.clone())), ( "verificationMethod", Ipld::String(format!("{writer}#{}", &writer[8..])), ), ( "identityVersion", map([ ("kind", Ipld::String("versionId".into())), ("value", Ipld::String("v1".into())), ]), ), ]), ), ( "other-fragment", map([ ("principal", Ipld::String(writer.clone())), ( "verificationMethod", Ipld::String(format!("{writer}#key-1")), ), ( "identityVersion", map([ ("kind", Ipld::String("static".into())), ("value", Ipld::Null), ]), ), ]), ), ( "did-web-documentcid", map([ ("principal", Ipld::String("did:web:example.com".into())), ( "verificationMethod", Ipld::String("did:web:example.com#key-1".into()), ), ( "identityVersion", map([ ("kind", Ipld::String("documentCid".into())), ("value", Ipld::Link(ciphertext_cid(b"doc"))), ]), ), ]), ), ( "did-web-static", map([ ("principal", Ipld::String("did:web:example.com".into())), ( "verificationMethod", Ipld::String("did:web:example.com#key-1".into()), ), ( "identityVersion", map([ ("kind", Ipld::String("static".into())), ("value", Ipld::Null), ]), ), ]), ), ( "did-plc-versionid", map([ ( "principal", Ipld::String("did:plc:ewvi7nxzyoun6zhxrhs64oiz".into()), ), ( "verificationMethod", Ipld::String("did:plc:ewvi7nxzyoun6zhxrhs64oiz#atproto".into()), ), ( "identityVersion", map([ ("kind", Ipld::String("versionId".into())), ("value", Ipld::String("bafyreib".into())), ]), ), ]), ), ];
+    @@ -9 +9 @@
+    -match replace_manifest(&mut f, 0, &issuer, |b| {
+    +if let Err(e) = replace_manifest(&mut f, 0, &issuer, |b| {
+    @@ -12 +11,0 @@
+    -Err(e) => {
+    @@ -15 +14 @@
+    -} Ok(()) => {} } resign(&mut f, |_| Purpose::Admitted);
+    +} resign(&mut f, |_| Purpose::Admitted);
+    @@ -19 +18 @@
+    -assert!(matches!(invalid(&r), Some("static writer") | Some("writer")), "{name}");
+    +assert!( matches!(invalid(&r), Some("static writer") | Some("writer")), "{name}" );
+IDENTICAL rp10a_precancelled_refuses_before_semantic_work
+NOT-PROMOTED rp10b_midflight_cancellation_is_prompt
+NOT-PROMOTED rp10c_deadline_inside_member_stage_is_prompt
+NOT-PROMOTED rp10d_cancellation_latency_is_below_one_object_hash
+IDENTICAL rp11_caps_before_work
+IDENTICAL rp12_cross_scope_issuer_and_observer
+DIFFERS rp13_noncanonical_spelling_is_invisible_to_typed_api
+    --- original
+    +++ promoted
+    @@ -8,2 +8,2 @@
+    -eprintln!("RP rp13: uppercase spelling parses;
+    -to_string()==canonical: {}", p.to_string() == canonical);
+    +eprintln!( "RP rp13: uppercase spelling parses;
+    +to_string()==canonical: {}", p.to_string() == canonical );
+DIFFERS rp14_hash_valid_bytes_with_false_signed_length
+    --- original
+    +++ promoted
+    @@ -17,4 +17 @@
+    -let m = r.expect("observed: accepted");
+    -assert_eq!(m.verified_requests(), 0);
+    -assert_eq!( m.losses(), &[Loss {
+    -occurrence: Some(1), cid: c.clone(), expected_length: Some(n + 1), state: Availability::Corrupt }] );
+    +assert_eq!( invalid(&r), Some("hash-valid bytes contradict authenticated length") );
+    @@ -42 +39 @@
+    -assert_eq!(r.unwrap().losses()[0].state, Availability::Corrupt);
+    +assert_eq!( invalid(&r), Some("hash-valid bytes contradict authenticated length") );
+DIFFERS rp15_empty_orphan_with_empty_cid_is_corrupt
+    --- original
+    +++ promoted
+    @@ -9 +9 @@
+    -occurrence: None, cid: empty, expected_length: None, state: Availability::Corrupt }] );
+    +occurrence: None, cid: empty, expected_length: None, state: Availability::Corrupt, basis: Basis::OriginalObject }] );
+DIFFERS rp16_partial_retained_reference_outside_membership_refuses
+    --- original
+    +++ promoted
+    @@ -10 +10 @@
+    -assert_eq!(invalid(&r), Some("retained reference absent from membership"));
+    +assert_eq!( invalid(&r), Some("retained reference absent from membership") );
+IDENTICAL rp17_writer_predecessor_without_bytes
+DIFFERS run
+    --- original
+    +++ promoted
+    @@ -3,5 +3,5 @@
+    -sequence: i as u64 + 1, manifest: m, receipt: r, proof: p }) .collect();
+    -let objects: Vec<_> = f.objects.iter().map(|(cid, bytes)| Object {
+    -cid, bytes }).collect();
+    -let membership: Vec<_> = f.membership.iter().map(|(cid, length)| Membership {
+    -cid, length: *length }).collect();
+    +sequence: i as u64 + 1, manifest: m, receipt: r, proof: p, }) .collect();
+    +let objects: Vec<_> = f .objects .iter() .map(|(cid, bytes)| Object {
+    +cid, bytes }) .collect();
+    +let membership: Vec<_> = f .membership .iter() .map(|(cid, length)| Membership {
+    +cid, length: *length, }) .collect();
+    @@ -9 +9 @@
+    -context: &f.context, plan: f.plan.as_deref(), membership: &membership, records: &rows, objects: &objects }, b, ) }
+    +context: &f.context, plan: f.plan.as_deref(), membership: &membership, records: &rows, objects: &objects, }, b, ) }
+IDENTICAL show
+DIFFERS sign_request
+    --- original
+    +++ promoted
+    @@ -1 +1 @@
+    - fn sign_request(writer: &Identity, scope: &[u8;
+    + fn sign_request( writer: &Identity, scope: &[u8;
+    @@ -3 +3 @@
+    -16], position: u64, previous: Option<String>, payload: &[u8]) -> Vec<u8> {
+    +16], position: u64, previous: Option<String>, payload: &[u8], ) -> Vec<u8> {
+DIFFERS source_digest
+    --- original
+    +++ promoted
+    @@ -1 +1 @@
+    - fn source_digest(records: &[(Vec<u8>, Vec<u8>, Vec<u8>)], through: u64, members: &[(Cid, u64)]) -> [u8;
+    + fn source_digest( records: &[(Vec<u8>, Vec<u8>, Vec<u8>)], through: u64, members: &[(Cid, u64)], ) -> [u8;
+PROMOTED-ONLY completed_copy_cannot_mislabel_hash_valid_orphan_with_false_length
+PROMOTED-ONLY membership_bytes_are_charged_at_the_exact_input_boundary
+PROMOTED-ONLY orphan_hash_mismatch_is_reported_without_rewriting_its_bytes
+PROMOTED-ONLY rp02_partial_profile3_membership_is_labeled_unverified
+PROMOTED-ONLY rp03_shared_request_cid_refuses_with_or_without_bytes
+# --- exit=0

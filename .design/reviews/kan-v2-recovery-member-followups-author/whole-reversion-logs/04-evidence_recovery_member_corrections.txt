@@ -1,0 +1,23 @@
+
+running 1 test
+test incomplete_membership_has_no_authenticated_length_or_byte_classification ... FAILED
+
+failures:
+
+---- incomplete_membership_has_no_authenticated_length_or_byte_classification stdout ----
+
+thread 'incomplete_membership_has_no_authenticated_length_or_byte_classification' (10083521) panicked at tests/evidence_recovery_member_corrections.rs:124:5:
+assertion `left == right` failed
+  left: Some(77)
+ right: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    incomplete_membership_has_no_authenticated_length_or_byte_classification
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.01s
+
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/evidence_recovery_member_corrections.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_corrections-139989e045e17eb4)
+error: test failed, to rerun pass `--test evidence_recovery_member_corrections`

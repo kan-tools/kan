@@ -1,0 +1,26 @@
+
+running 1 test
+test copy_plan_cannot_relabel_a_different_complete_source_digest ... FAILED
+
+failures:
+
+---- copy_plan_cannot_relabel_a_different_complete_source_digest stdout ----
+
+thread 'copy_plan_cannot_relabel_a_different_complete_source_digest' (9992656) panicked at tests/evidence_recovery_member.rs:503:5:
+assertion `left == right` failed
+  left: None
+ right: Some(Invalid("source metadata digest"))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    copy_plan_cannot_relabel_a_different_complete_source_digest
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.07s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member)
+    Finished `test` profile [unoptimized] target(s) in 7.26s
+     Running tests/evidence_recovery_member.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member-9be305d24ad97b48)
+error: test failed, to rerun pass `--test evidence_recovery_member`
+
+exit=101

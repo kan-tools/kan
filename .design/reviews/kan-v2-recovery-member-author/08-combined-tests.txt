@@ -1,0 +1,59 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member)
+    Finished `test` profile [unoptimized] target(s) in 7.17s
+     Running tests/evidence_recovery_commitment.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_commitment-5a89bc2efd1208f4)
+
+running 8 tests
+test skipped_extra_and_reordered_sections_never_finish ... ok
+test profile_plan_and_cid_shape_cannot_be_silently_reinterpreted ... ok
+test sorted_unique_cids_are_required_and_candidate_hashes_are_checked ... ok
+test missing_empty_corrupt_and_restored_bytes_remain_distinct ... ok
+test independent_python_member_output_and_restoration_framing_matches ... ok
+test local_limits_cancellation_and_failed_work_are_explicit ... ok
+test failure_mid_payload_and_candidate_verification_consumes_budget_and_poisons ... ok
+test maximum_objects_and_metadata_bounds_do_not_change_framing ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+     Running tests/evidence_recovery_commitment_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_commitment_review_regressions-5463b13d6f2b3ba3)
+
+running 2 tests
+test rv_a3_section_count_sequence_boundaries ... ok
+test rv_a4_local_bounds_exact_edges ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+     Running tests/evidence_recovery_member.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member-9be305d24ad97b48)
+
+running 16 tests
+test hash_valid_but_unsigned_bytes_are_not_treated_as_recoverable_loss ... ok
+test expected_oversized_length_refuses_without_a_physical_object ... ok
+test issuer_resigning_does_not_make_wrong_service_slot_valid_when_payload_is_missing ... ok
+test copy_plan_cannot_relabel_a_different_complete_source_digest ... ok
+test issuer_resigning_cannot_hide_invalid_writer_chain ... ok
+test bounded_acquisition_order_and_cancellation_refuse ... ok
+test complete_copy_accepts_new_admitted_suffix_without_rewriting_original_recipe ... ok
+test shared_missing_cid_keeps_each_occurrence_and_no_extra_null_coordinate ... ok
+test profile3_partial_metadata_does_not_claim_completion_or_accept_extra_objects ... ok
+test time_and_physical_object_bounds_refuse ... ok
+test valid_json_with_bad_writer_signature_and_resigned_manifest_substitution_refuse ... ok
+test both_profiles_verify_real_writer_requests_and_empty_members ... ok
+test shared_cid_lengths_and_duplicate_operations_refuse_even_when_all_bytes_missing ... ok
+test independently_constructed_python_members_match_commitments_losses_and_refusals ... ok
+test owner_pins_proofs_missing_membership_and_conflicting_lengths_refuse ... ok
+test missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+     Running tests/evidence_recovery_observation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_observation-d6de5ba9a7670a9d)
+
+running 7 tests
+test explicitly_pinned_same_key_roles_are_wire_valid_without_combining_authority ... ok
+test caller_pins_predecessors_and_signer_are_not_learned_from_envelope ... ok
+test signed_cross_context_chain_and_profile_confusion_refuse ... ok
+test independently_resigned_hostile_vectors_refuse_with_named_error ... ok
+test independent_python_bytes_signatures_and_predecessors_match ... ok
+test independent_maximum_shape_vectors_authenticate_without_claiming_semantics ... ok
+test truncation_and_oversized_envelopes_cannot_authenticate ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+

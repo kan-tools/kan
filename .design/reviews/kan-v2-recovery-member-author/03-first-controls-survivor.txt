@@ -1,0 +1,8 @@
+DEMONSTRATED: item-budget
+DEMONSTRATED: input-budget
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/scripts/recovery_member_negative_controls.py", line 37, in <module>
+    if __name__=='__main__':main()
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/scripts/recovery_member_negative_controls.py", line 29, in main
+    assert run.returncode!=0,name+' SURVIVED'
+AssertionError: cancelled SURVIVED
