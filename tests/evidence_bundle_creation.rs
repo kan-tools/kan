@@ -191,7 +191,7 @@ fn context(f: &Fixture, observer: &Identity) -> Context {
         archive: f.binding.archive,
         scope: f.binding.scope,
         issuer: f.binding.issuer.clone(),
-        observer: observer.did().into(),
+        observer: observer.did(),
     }
 }
 fn create<'a>(f: &Fixture, src: &'a Path, dst: &'a Path, observer: &'a Identity) -> Creation<'a> {
@@ -341,7 +341,7 @@ fn creation_refuses_stale_pins_invalid_physical_types_extra_proofs_and_existing_
         match mode {
             0 => request.frontier = Frontier::default(),
             1 => request.context.archive = [91; 32],
-            2 => request.context.observer = identity(11).did().into(),
+            2 => request.context.observer = identity(11).did(),
             3 => edit(
                 &src,
                 "UPDATE objects SET bytes='' WHERE cid=(SELECT cid FROM objects LIMIT 1)",
@@ -531,8 +531,8 @@ fn abrupt_death_never_publishes_a_partial_created_bundle() {
             profile: 2,
             archive: [2; 32],
             scope: [1; 32],
-            issuer: identity(8).did().into(),
-            observer: identity(10).did().into(),
+            issuer: identity(8).did(),
+            observer: identity(10).did(),
         };
         let out = dir.path().join("bundle.sqlite");
         assert!(out.exists());
