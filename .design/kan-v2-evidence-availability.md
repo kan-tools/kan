@@ -484,3 +484,54 @@ Omitting them preserves profile-1 behavior; it never guesses profile 2 from disk
 `init --resume` is the explicit interrupted-creation opt-in. JSON distinguishes
 proof-purpose-dependent verification from historical completeness and never
 labels a local backup independent or automatically promotes rebuilt output.
+
+## Next copy-upgrade schema decision (not implemented)
+
+Profile 2 has an exact schema and no durable upgrade-plan field. Copy migration
+will use a separately versioned profile 3 rather than silently enlarging profile 2
+or inferring an unfinished copy from whichever records happen to exist. Existing
+profile-2 APIs and archives retain their meanings; profile-3 support must be added
+explicitly to owner lifecycle, inventory and admission paths. This supersedes the
+earlier copy-plan destination-profile-2 placeholder only; attestation envelope
+version 1 and original manifest/receipt bytes remain unchanged.
+
+Profile 3 adds one authoritative `upgrade_plan` singleton containing a bounded
+canonical plan envelope. The plan names recipe version 1, source profile 1, exact
+source through/tip, a framed digest over every ordered source manifest, receipt
+and retained-request CID, one historical receipt issuer H, target scope, current
+issuer C, target profile 3, and an owner-generated 32-byte nonce. The fresh archive
+ID is the domain-separated SHA-256 commitment to those exact canonical plan bytes.
+The owner pins that ID out of band; the stored plan must recompute to it. This
+provides a durable binding for resume even before the first copied record, without
+a mutable progress/completion flag or a second authoritative sidecar. The raw
+plan is not historical admission evidence; C's retained-verified proofs continue
+to make only their stated present-time verification claim.
+
+Planning pins and fully verifies the entire legacy source, including all retained
+signed requests, before creating any destination. It refuses missing, damaged,
+foreign-scope, mixed-issuer or invalid requests. Copy execution recomputes the plan
+against a fresh pinned source and requires the exact expected commitment. Each
+record preserves sequence, signed request, manifest and receipt bytes and commits
+its new retained-verified proof atomically with destination metadata. Restart
+compares every existing destination-prefix record and proof against the same plan
+and source; it never replaces existing output bytes or re-signs an acknowledged
+row. Small explicit batches bound each invocation; incomplete output stays a
+visible resumable copy, not a capture-ready archive.
+
+Completion is derived by verifying the planned prefix length and complete framed
+digest, including H, before allowing new admission under C. An incomplete planned
+prefix cannot accept ordinary Append. The proof chain must contain exactly that
+retained-verified prefix followed only by admitted rows. Merely checking that all
+present payloads exist is insufficient. Owner CLI reports source-copy completeness
+separately from payload completeness and never promotes or erases automatically.
+Empty legacy sources require explicit H in the plan, since no receipt can supply
+it; empty history is not evidence of capture completeness.
+
+Before implementation, extend the typed SQL surface and independent catalog for
+the exact plan bytes and derived singleton coordinate. Backup/recovery must carry
+and verify the plan exactly, retain incomplete-copy state, and refuse a changed
+plan even when all individual proofs remain valid. Qualification needs independent
+canonical plan vectors, plan-field mutations, alternate valid source snapshots at
+the same through/tip, partial-copy admission refusal, concurrent destination
+changes, every interruption boundary, exact resume bytes, and source/WAL invariance.
+No profile-3 runtime or source migration is claimed by this design decision.

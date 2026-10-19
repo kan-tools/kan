@@ -221,9 +221,19 @@ fn recovery_pins_source_before_later_admission() {
     let original = raw(&db);
     let r = Recovery::open(&db, binding()).unwrap();
     append(&mut a, 4);
+    let before = source_bytes(&db);
+    assert!(
+        before[1].is_some(),
+        "fixture must retain nonempty WAL frames"
+    );
     let output = t.path().join("pinned.sqlite");
     assert_eq!(r.rebuild(&output).unwrap().commits, 2);
     assert_eq!(raw(&output), original);
+    assert_eq!(
+        before,
+        source_bytes(&db),
+        "rebuild must preserve retained source WAL frames"
+    );
     assert_eq!(a.verify().unwrap().through, 3);
 }
 
