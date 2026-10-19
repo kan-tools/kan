@@ -262,9 +262,9 @@ fn ignored_sqlite_sidecars_and_invalid_unique_health_rows_refuse() {
                 rusqlite::params![
                     h.attempt,
                     1,
-                    h.observed,
-                    h.locally_queued,
-                    h.unconfirmed,
+                    h.observed as i64,
+                    h.locally_queued as i64,
+                    h.unconfirmed as i64,
                     serde_json::to_string(&h).unwrap()
                 ],
             )
