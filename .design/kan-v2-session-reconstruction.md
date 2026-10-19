@@ -246,3 +246,24 @@ the restored assembly suite passes. Raw runs, the control-harness correction
 and initial CI performance failure are retained in
 `.design/reviews/kan-v2-session-assembly-author/`. Fresh independent review is
 still required; API, provider interpretation and browser acceptance stay open.
+
+### Fresh assembly review follow-through
+
+Actual cold Opus 5.5 reviewed frozen `eb4f471`: **APPROVE WITH FOLLOW-UPS**
+for assembly and the reader correction. The complete unchanged report, sixteen
+assembly probes, ten physical probes, all mutations and exact custody checks
+are retained in `.design/reviews/kan-v2-assembly-opening-opus/`.
+
+B-N1/N2/N3 add absolute decode/duplicate-comparison/copy scan accounting,
+out-of-ordinal-order offsets and every duplicate RequestEnd source to CI. B-N4
+clarifies that ordinal gaps mean no recognized capture at those ordinals, not
+proof that no input exists. Consumers must show unplaced unsupported, malformed
+and unavailable observations beside groups. A conflict can conservatively block
+both streams even when one has contiguous bytes; the UI must explain this.
+These changes are being qualified; no runtime assembly behavior changed.
+
+The same initial CI commit passed the requested performance rerun with ratio
+6.8 against unchanged bound 8; both runs are retained. Later commits need their
+own CI results. API, provider interpretation and full browser acceptance remain
+open. The new actual IAB recheck confirms browser access but the download event
+still timed out; delivery remains unverified.
