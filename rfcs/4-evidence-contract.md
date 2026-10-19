@@ -144,7 +144,11 @@ The new SQLite profile and atomic proof insertion, upgrade plan, proof-preservin
 backup/recovery, RPC framing and reader wiring remain to be implemented and
 qualified together. In particular, these vectors do not authorize removing
 legacy payload/admission checks. Initial damaged-archive browsing is explicitly
-read-only; strict writable store verification remains unchanged.
+read-only; strict writable store verification remains unchanged. Read-only here
+means no authoritative evidence/schema/index mutation. As with RecoveryReader,
+SQLite coordination WAL/SHM initialization must be explicitly surface-declared;
+no hidden checkpoint or immutable-mode bypass of a live WAL is permitted. Hot
+rollback journals or unusable sidecars fail closed; recovery uses a separate copy.
 
 Proposal byte fixtures are in `.design/fixtures/service-attestation-v1.json`,
 with `.design/tools/attestation_vectors.py --check` as an independent Python

@@ -129,9 +129,16 @@ unverified metadata row. A missing proof or invalid metadata chain remains an
 integrity failure, not a cosmetic unavailable badge.
 
 Opening for metadata inventory uses a read-only SQLite transaction and verifies
-schema/metadata/proof continuity without requiring object existence. It must not
-create WAL/temp/copy files or rebuild indexes while browsing. Existing full
-`Ledger::open` and full `verify` retain their strict meanings. First implementation
+schema/metadata/proof continuity without requiring object existence. Reuse the
+explicit read-source boundary of `RecoveryReader::open`: no schema/index repair,
+checkpoint, evidence write or plaintext copy. SQLite may initialize coordination
+WAL/SHM sidecars; declare those exact physical surfaces and capability at the open
+site, as the existing recovery reader does. Read-only media without usable
+sidecars and hot rollback journals fail closed. Never use immutable mode to
+silently ignore a live WAL. Crash recovery belongs on an explicit separate copy.
+Qualification must distinguish unchanged authoritative database/retained WAL
+bytes from permitted coordination-file changes. Existing full `Ledger::open` and
+full `verify` retain their strict meanings. First implementation
 runs damaged archives through this explicitly degraded read-only path; capture
 writes remain on the strict writable path until owner recovery restores payload
 integrity. Existing proxy spool/fail-open-with-visible-gap behavior covers write
