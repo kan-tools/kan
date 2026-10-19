@@ -17,3 +17,6 @@ remain required. No acceptance criterion is marked complete.
 Read-only day design validation from main passes 8 requirements/6 criteria,
 section/mapping/placeholder checks. Five branch-only path warnings correspond to
 files present here; two log claims remain withheld. No kan/day writes were made.
+
+The design branch runs the proposal oracle in CI after the already-pinned
+cryptography install. This checks fixture stability, not runtime support.
