@@ -523,6 +523,19 @@ fn abrupt_death_never_publishes_a_partial_created_bundle() {
                 inspected.is_err(),
                 "recognized incomplete state at {point:?}"
             );
+            // A hot journal may refuse read-only recognition. If SQLite can
+            // read a committed header, it must not advertise KNB1 yet.
+            if let Ok(db) = rusqlite::Connection::open_with_flags(
+                &out,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            ) {
+                if let Ok(app) = db.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0)) {
+                    assert_ne!(
+                        app, 0x4b4e4231,
+                        "recognized incomplete publication at {point:?}"
+                    );
+                }
+            }
         }
     }
 }
@@ -640,4 +653,24 @@ fn complete_bundle_remains_refused_by_standalone_openers_and_inventory() {
     )
     .is_err());
     assert_eq!(std::fs::read(&dst).unwrap(), before);
+}
+
+#[test]
+fn creation_keeps_the_selected_snapshot_when_source_appends_during_output_work() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = fixture(dir.path(), Profile::Admitted);
+    let src = f.root.join("archive.sqlite");
+    let dst = dir.path().join("bundle.sqlite");
+    let observer = identity(10);
+    let selected = frontier(&f);
+    let result = bundle::create_observed(create(&f, &src, &dst, &observer), &mut |boundary| {
+        if boundary == CreationBoundary::Reserved {
+            let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+            let bytes = request(3, 8, selected.manifest.as_ref().map(ToString::to_string));
+            archive.admit(&bytes, &identity(8), &grant(), 900).unwrap();
+        }
+    })
+    .unwrap();
+    assert_eq!(result.replay().member().frontier(), &selected);
+    assert_eq!(frontier(&f).through, 4);
 }

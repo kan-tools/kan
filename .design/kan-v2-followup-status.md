@@ -4,6 +4,49 @@ This is a navigation aid to implementation and review evidence, not an authority
 for acceptance. The complete human frontend remains required by
 `kan-v2-human-frontend.md`; partial slices do not close that design.
 
+## Current build position — 2026-10-19
+
+This section supersedes the historical status tables below. Accepted means the
+named review disposition, not a main merge or operational cutover.
+
+| Slice | Exact current checkpoint | Remaining acceptance |
+|---|---|---|
+| Library/codec follow-ups through inventory | #290–296, through `8b5fab90` | All current heads have green CI; prior named follow-ups remain in their reports |
+| Frame decoder, recovery codec/state/member/replay | #297–301, through `c0a74313` | Current CI green; physical mutation and remote/UI consumers remain separate |
+| Physical bundle reader | #302 `6bf681a1` | Fresh approval with follow-ups; promoted empty physical-type regressions pass; mutation custody/refusal obligations carry forward |
+| Capture assembly | #303 `a65e2a67` | Fresh approval with follow-ups; absolute accounting/order/duplicate regressions promoted; CI green |
+| Provider interpretation v2 | #304 `6667190f` | Original `0d04848` approved with follow-ups; required and related fixes qualified with12 controls+whole-fix reversion; current CI green; fresh review of v2 pending |
+| Authorized Content/Source/Provenance | #305 `bb1e0ab1` | 74 integration+7unit+35UI author checks,6backend+5UI controls, real browser evidence; fresh actual Opus review running; CI23success/1in-progress at this snapshot |
+| Physical bundle creation | Local `c155abd`, `feat/kan-v2-recovery-mutations` | Draft only: compilation, controls, independent oracle/crash execution and fresh review pending; no PR yet |
+
+The next implementation order is:
+
+1. Resolve the frozen provider+Content review and its final exact-head CI result.
+2. Qualify retained bundle creation; implement checkpointed atomic restoration,
+   publication, and bundle-aware backup/rebuild. Preserve all failed artifacts
+   and explicit uncertain outcomes; never activate a restored writer implicitly.
+3. Connect proof-bearing inventory/source and descending pinned cursors to remote
+   authorization. Carry Available/Missing/Corrupt evidence through Library,
+   including startup with lost historical objects. Preserve admission authority.
+4. Build archive-wide attempt/session discovery and navigation on the now-versioned
+   adapters. Explicit selection in #305 is not archive discovery or a full session.
+5. Add authorized search/facets, stable references and saved trust-aware views;
+   then the evidence/claim adapter and separately authorized append-only annotations.
+6. Implement inspectable background analysis runs, scheduler/worker grants and
+   quotas, dependency/frontier invalidation and day process-assessment integration.
+7. Connect typed owner plans/jobs to the human admin surface for storage, recovery,
+   import/migration, access, keys and explicit erasure, with retained job provenance.
+8. Complete actual browser download delivery and operational placement/cutover
+   qualification. Live keys, deployment and migration remain separate owner actions.
+
+Each substantive implementation/fix checkpoint receives fresh actual Claude Code
+Opus5.5 review. A draft or design does not close parent acceptance. Merge remains
+sequenced by PR bases, with exact-head checks and review evidence rechecked; no
+main merge was performed. Permanent worktrees are under `.worktrees/`; a single
+shared Cargo target is used, and no `.lake` or background preview server is left.
+
+## Historical roadmap snapshots
+
 | Workstream | Current evidence | Remaining work |
 |---|---|---|
 | Health admission/reporter reliability | #283, a04f288; fresh Opus approval with follow-ups; all CI green | Qualification under wider production load; no universal zero-loss claim |

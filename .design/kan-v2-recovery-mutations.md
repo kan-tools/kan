@@ -65,3 +65,19 @@ obligations, not properties established by read-only inspection.
 The first mutation slice is `bundle::create`/`create_observed` in `src/evidence_store/bundle/create.rs`. It acquires profile2/3 raw bytes in one read transaction, checks the selected frontier, constructs and replays the initial signed loss history, exclusively reserves a new output and commits member/history/markers together. After commit begins, failure carries the expected checkpoint as an uncertain outcome. Files are synchronized and independently reopened before success. The source and failed output remain retained. The creation result does not activate a writer.
 
 The draft exposes an explicit main-file page ceiling and names rollback-journal/RAM overhead separately; it does not promise a whole-filesystem quota. Acquisition counts include newly constructed history. Each semantic audit/replay is bounded by the configured replay limits, with a shared overall deadline and cancellation flag; the combined CPU/byte pass count is a fixed multiple of that per-pass ceiling, not an exact RSS measure. Reopen uses the output-size allowance and the remaining deadline. Tests drafted for loss preservation, physical types, pins/frontier, all-participant aliases, cancellation/outcome uncertainty, source invariance and abrupt process death at eight boundaries. Compilation, behavioral controls, independent oracle comparison and fresh review are pending. Restoration/publication/jobs/RPC/UI remain required next slices.
+
+Restoration follow-through must reuse the replay candidate validator rather than
+signing first and asking replay whether the claim was true afterward. Extract the
+existing membership/length/CID/writer-binding checks behind a bounded private
+helper and retain all existing hostile candidate controls. Under `BEGIN IMMEDIATE`,
+acquire and replay the exact bundle again with the caller's external checkpoint.
+Only an existing verified same-bytes restoration may resolve an older checkpoint
+as an idempotent retry; a new transition requires equality with the latest
+checkpoint. Return the original restoration observation and the actual latest
+checkpoint for a retry, not a newly signed claim. Candidate insertion and its
+observation share one transaction; uncertain commit results retain the intended
+checkpoint. Publication and writer activation remain distinct subsequent actions.
+
+The current worktree's repeated `day design check` still returns exit2 for the
+shared-workspace refusal. The diagnostic is preserved locally; it is not counted
+as successful validation and was not redirected to the main checkout's log.
