@@ -62,7 +62,7 @@ def member_digest(member, output=False):
     require(type(profile) is int and profile in (2,3), 'member-profile')
     for field in ('archive','scope'):
         require(type(member[field]) is bytes and len(member[field]) == 32, 'context-width')
-    require(isinstance(member['issuer'],str), 'issuer-text')
+    require(isinstance(member['issuer'],str) and 1 <= len(member['issuer'].encode()) <= 80, 'issuer-text')
     plan = member['plan']
     if profile == 2:
         require(plan is None and not member['membership'], 'profile2-plan')
@@ -168,6 +168,11 @@ def checks(value):
         try:member_digest(changed)
         except ValueError as e:require(str(e)==reason,'wrong rejection reason')
         else:raise AssertionError('accepted '+reason)
+    for issuer,accepted in [('x',True),('x'*80,True),('',False),('x'*81,False),('é'*40,True),('é'*41,False)]:
+        changed=copy.deepcopy(base);changed['issuer']=issuer
+        try:member_digest(changed)
+        except ValueError as e:require(not accepted and str(e)=='issuer-text','issuer byte bound')
+        else:require(accepted,'accepted invalid issuer byte length')
     try:restoration_digest([(key,b'wrong')])
     except ValueError as e:require(str(e)=='candidate-hash','wrong candidate rejection')
     else:raise AssertionError('accepted bad candidate')

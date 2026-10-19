@@ -67,6 +67,9 @@ struct Meter {
     deadline: Instant,
     bytes: u64,
     items: u64,
+    // Test-only cancellation injection after charged bytes, without timing sleeps.
+    #[cfg(test)]
+    cancel_after_bytes: std::cell::Cell<Option<u64>>,
 }
 impl Meter {
     fn new(limits: Limits, items: u64) -> Result<Self> {
@@ -85,11 +88,21 @@ impl Meter {
             deadline,
             bytes: 0,
             items: 0,
+            #[cfg(test)]
+            cancel_after_bytes: std::cell::Cell::new(None),
         };
         out.check()?;
         Ok(out)
     }
     fn check(&self) -> Result<()> {
+        #[cfg(test)]
+        if self
+            .cancel_after_bytes
+            .get()
+            .is_some_and(|limit| self.bytes >= limit)
+        {
+            self.limits.cancelled.store(true, Ordering::Relaxed);
+        }
         if self.limits.cancelled.load(Ordering::Relaxed) {
             return Err(Error::Cancelled);
         }
@@ -399,5 +412,68 @@ impl RestorationFraming {
         }
         shape(self.seen == self.count, "incomplete candidates")?;
         self.core.finish()
+    }
+}
+
+#[cfg(test)]
+mod polling_tests {
+    use super::*;
+    fn limits() -> Limits {
+        Limits {
+            items: 1,
+            bytes: 16 * 1024 * 1024,
+            duration: Duration::from_secs(10),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+    #[test]
+    fn cancellation_interrupts_member_hash_before_the_full_payload_is_charged() {
+        let data = vec![7; 4 * 1024 * 1024];
+        let cid = crate::evidence_store::ciphertext_cid(&data);
+        let mut member = MemberFraming::new(
+            Header {
+                profile: 2,
+                archive: [1; 32],
+                scope: [2; 32],
+                issuer: "test",
+                plan: None,
+            },
+            Counts {
+                membership: 0,
+                records: 0,
+                objects: 1,
+            },
+            Domain::Member,
+            limits(),
+        )
+        .unwrap();
+        member.begin_records().unwrap();
+        member.begin_objects().unwrap();
+        let before = member.core.meter.bytes;
+        // Wire framing: F(CID) = 44 bytes, N(actual length) = 8,
+        // F(payload)'s length = 8. Request cancellation after one payload chunk.
+        member
+            .core
+            .meter
+            .cancel_after_bytes
+            .set(Some(before + 60 + 65536));
+        assert_eq!(member.original_object(&cid, &data), Err(Error::Cancelled));
+        assert_eq!(member.core.meter.bytes - before, 60 + 65536);
+        assert_eq!(member.finish(), Err(Error::Poisoned));
+    }
+    #[test]
+    fn cancellation_interrupts_candidate_verification_before_the_full_payload_is_charged() {
+        let data = vec![7; 4 * 1024 * 1024];
+        let cid = crate::evidence_store::ciphertext_cid(&data);
+        let mut restore = RestorationFraming::new(1, limits()).unwrap();
+        let before = restore.core.meter.bytes;
+        restore
+            .core
+            .meter
+            .cancel_after_bytes
+            .set(Some(before + 65536));
+        assert_eq!(restore.candidate(&cid, &data), Err(Error::Cancelled));
+        assert_eq!(restore.core.meter.bytes - before, 65536);
+        assert_eq!(restore.finish(), Err(Error::Poisoned));
     }
 }

@@ -1,0 +1,12 @@
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state)
+error: unused import: `Error`
+ --> tests/evidence_recovery_commitment_review_regressions.rs:7:21
+  |
+7 |     Counts, Domain, Error, Header, Limits, MemberFraming, RestorationFraming,
+  |                     ^^^^^
+  |
+  = note: `-D unused-imports` implied by `-D warnings`
+  = help: to override `-D warnings` add `#[allow(unused_imports)]`
+
+error: could not compile `kan` (test "evidence_recovery_commitment_review_regressions") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
