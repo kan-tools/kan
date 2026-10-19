@@ -37,7 +37,7 @@ pub enum CreationError {
     #[error("bundle creation outcome uncertain; retain {path:?}: {cause}")]
     Uncertain {
         path: PathBuf,
-        checkpoint: Checkpoint,
+        checkpoint: Box<Checkpoint>,
         cause: Box<Error>,
     },
 }
@@ -633,7 +633,7 @@ pub fn create_observed(
         if commit_attempted {
             CreationError::Uncertain {
                 path: destination,
-                checkpoint,
+                checkpoint: Box::new(checkpoint),
                 cause: Box::new(cause),
             }
         } else {

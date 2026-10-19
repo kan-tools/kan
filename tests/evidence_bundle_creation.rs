@@ -411,7 +411,7 @@ fn precommit_cancellation_retains_unrecognized_artifact_and_postcommit_cancellat
                     let i =
                         bundle::inspect(&dst, context(&f, &observer), Some(&checkpoint), budget())
                             .unwrap();
-                    assert_eq!(i.replay().latest(), &checkpoint);
+                    assert_eq!(i.replay().latest(), checkpoint.as_ref());
                 }
                 _ => panic!("must report uncertain commit"),
             }
