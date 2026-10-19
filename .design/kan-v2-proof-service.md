@@ -42,6 +42,10 @@ startup is intentionally insufficient for admission, and the read service has
 no append command. Source bytes remain encrypted on this service boundary;
 scope decryption stays in the authorized local Reader. Present-time writer
 verification and issuer-attested purpose remain separate fields in the UI.
+One monotonic deadline spans a command's metadata opening, page verification and
+fresh source sampling. Item and metadata-byte budgets bound each of those passes
+separately; a source command can perform three bounded passes. These limits do
+not promise to preempt blocked filesystem calls or bound exact allocator RSS.
 
 The local Reader must not accept arbitrary browser frontier JSON as verified
 continuation or selected membership. It verifies pages from the authenticated
@@ -63,7 +67,7 @@ claiming a complete human browsing path. Archive discovery, annotations,
 background processing and owner jobs remain in the overall v2 roadmap.
 
 The service/wire, shared HTTP adapter and verified Reader candidates are now on
-disk. Seven service tests, a real loopback transport test and four Reader tests
+disk. Seven service tests, a real loopback transport test and five Reader tests
 cover both profiles, exact encrypted source decryption, faulty signed replies,
 tokens, revocation and later payload loss. Formatting and whitespace checks pass;
 compilation and review are pending. The human Library integration is still open.

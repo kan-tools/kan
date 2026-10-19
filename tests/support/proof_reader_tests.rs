@@ -387,3 +387,68 @@ async fn proof_reader_pins_and_tokens_never_replace_current_permission_or_decryp
     ));
     server.stop().await;
 }
+
+#[tokio::test]
+async fn proof_reader_can_browse_empty_copy_before_original_membership_is_complete() {
+    let dir = tempfile::tempdir().unwrap();
+    let legacy = dir.path().join("legacy");
+    let mut ledger = Ledger::create(&legacy).unwrap();
+    ledger.stage(b"retained staged orphan").unwrap();
+    drop(ledger);
+    let source = PlannedCopy::open(
+        &legacy.join("archive.sqlite"),
+        Target {
+            scope: [1; 32],
+            issuer: identity(8).did().to_string(),
+        },
+        identity(7).did().to_string(),
+        [9; 32],
+    )
+    .unwrap();
+    assert_eq!(source.plan().source().through, 0);
+    let root = dir.path().join("copy");
+    let binding = attested::Binding {
+        archive: source.plan().archive_id(),
+        scope: [1; 32],
+        issuer: identity(8).did().to_string(),
+    };
+    let mut copy = copied::Archive::create(&root, &source, binding.clone()).unwrap();
+    let f = Fixture {
+        root,
+        binding,
+        requests: vec![],
+        profile: Profile::Copied,
+    };
+    let server = Server::start(&f).await;
+    let reader = server.client(&f);
+    let pin = reader.snapshot().await.unwrap();
+    assert!(matches!(
+        pin.reply.reply.result,
+        Ok(wire::Output::Snapshot {
+            recipe_metadata_match: Some(false),
+            ..
+        })
+    ));
+    let page = reader.page(&pin, None, 1).await.unwrap();
+    assert!(page.records.is_empty() && page.next.is_none());
+    copy.copy_batch(
+        &source,
+        &identity(8),
+        1000,
+        copied::Budget {
+            objects: 10,
+            records: 10,
+            bytes: 1024 * 1024,
+        },
+    )
+    .unwrap();
+    let fresh = reader.snapshot().await.unwrap();
+    assert!(matches!(
+        fresh.reply.reply.result,
+        Ok(wire::Output::Snapshot {
+            recipe_metadata_match: Some(true),
+            ..
+        })
+    ));
+    server.stop().await;
+}

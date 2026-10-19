@@ -9,7 +9,7 @@ use crate::{
 use atproto_dasl::{Cid, Ipld};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, path::PathBuf, time::Instant};
 
 pub const PROTOCOL: &str = "kan-proof-reader/1";
 pub const MAX_REQUEST: usize = 32 * 1024;
@@ -409,7 +409,17 @@ impl Service {
         signed.bytes()?;
         Ok(signed)
     }
-    fn open(&self, pin: Option<&Coordinate>) -> Result<inventory::Inventory> {
+    fn remaining(&self, deadline: Instant) -> Result<inventory::Budget> {
+        let duration = deadline
+            .checked_duration_since(Instant::now())
+            .filter(|duration| !duration.is_zero())
+            .ok_or(Failure::Unavailable)?;
+        Ok(inventory::Budget {
+            duration,
+            ..self.budget.clone()
+        })
+    }
+    fn open(&self, pin: Option<&Coordinate>, deadline: Instant) -> Result<inventory::Inventory> {
         let binding = self.binding.owner_binding()?;
         Ok(if let Some(pin) = pin {
             inventory::Inventory::open_at(
@@ -417,14 +427,14 @@ impl Service {
                 self.binding.profile.inventory(),
                 binding,
                 &pin.frontier(&self.binding)?,
-                self.budget.clone(),
+                self.remaining(deadline)?,
             )?
         } else {
             inventory::Inventory::open(
                 &self.path,
                 self.binding.profile.inventory(),
                 binding,
-                self.budget.clone(),
+                self.remaining(deadline)?,
             )?
         })
     }
@@ -448,6 +458,9 @@ impl Service {
         {
             return Err(Failure::AccessLimited);
         }
+        let deadline = Instant::now()
+            .checked_add(self.budget.duration)
+            .ok_or(Failure::Invalid)?;
         match request.command {
             Command::Capabilities => Ok(Output::Capabilities {
                 protocol: PROTOCOL.into(),
@@ -456,7 +469,7 @@ impl Service {
                     .to_vec(),
             }),
             Command::Snapshot => {
-                let inventory = self.open(None)?;
+                let inventory = self.open(None, deadline)?;
                 Ok(Output::Snapshot {
                     frontier: Coordinate::from_frontier(inventory.frontier()),
                     plan: inventory.copy_plan().map(|p| service::hex(p.bytes())),
@@ -464,11 +477,11 @@ impl Service {
                 })
             }
             Command::Page { pin, next, limit } => {
-                let inventory = self.open(Some(&pin))?;
+                let inventory = self.open(Some(&pin), deadline)?;
                 let page = inventory.page_from(
                     &next.frontier(&self.binding)?,
                     Self::page_budget(limit),
-                    self.budget.clone(),
+                    self.remaining(deadline)?,
                 )?;
                 let next = page
                     .records
@@ -482,11 +495,11 @@ impl Service {
                 })
             }
             Command::Read { pin, selected } => {
-                let inventory = self.open(Some(&pin))?;
+                let inventory = self.open(Some(&pin), deadline)?;
                 let mut page = inventory.page_from(
                     &selected.frontier(&self.binding)?,
                     Self::page_budget(1),
-                    self.budget.clone(),
+                    self.remaining(deadline)?,
                 )?;
                 let row = page.records.pop().ok_or(Failure::Missing)?;
                 drop(inventory);
@@ -496,7 +509,7 @@ impl Service {
                     self.binding.owner_binding()?,
                     &row.selection,
                     service::MAX_REQUEST,
-                    self.budget.clone(),
+                    self.remaining(deadline)?,
                 )?;
                 let mut record = view(&row);
                 let source = match fresh {

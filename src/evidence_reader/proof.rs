@@ -188,7 +188,12 @@ impl Reader {
                 if plan.archive_id() != binding.archive
                     || plan.target().scope != binding.scope
                     || plan.target().issuer != binding.issuer
-                    || *recipe_metadata_match != Some(frontier.through >= plan.source().through)
+                    || recipe_metadata_match.is_none()
+                    || (frontier.through < plan.source().through
+                        && *recipe_metadata_match != Some(false))
+                    || ((frontier.through > plan.source().through
+                        || (frontier.through > 0 && frontier.through == plan.source().through))
+                        && *recipe_metadata_match != Some(true))
                 {
                     return Err(Failure::Corrupt);
                 }
