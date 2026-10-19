@@ -1,0 +1,27 @@
+
+running 3 tests
+test changing_each_owner_pin_or_source_coordinate_changes_archive_identity ... ok
+test malformed_or_unsupported_plans_refuse ... ok
+test independent_plan_bytes_and_archive_commitments_match ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 10 tests
+test staged_but_uncommitted_objects_are_part_of_the_source_commitment ... ok
+test planning_and_confirmation_preserve_database_and_retained_wal_bytes ... ok
+test unchanged_source_confirmation_still_requires_the_external_owner_pin ... ok
+test source_plan_is_pinned_and_reconfirmation_detects_later_admission ... ok
+test plans_require_explicit_scope_historical_issuer_and_all_source_payloads ... ok
+test same_frontier_with_a_changed_unsigned_receipt_fails_exact_plan_confirmation ... ok
+test derived_damage_requires_separate_recovery_and_preserves_the_exact_recipe ... ok
+test structurally_healthy_raw_archives_cannot_bypass_request_authentication ... ok
+test source_fingerprint_matches_an_independent_python_byte_oracle ... ok
+test source_planning_refuses_extra_schema_and_wrong_profiles_without_rewriting ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.91s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+    Finished `test` profile [unoptimized] target(s) in 6.90s
+     Running tests/evidence_copy_plan.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_plan-1aa9d01a6c5f6aca)
+     Running tests/evidence_copy_source.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_source-b92f66d790c08427)

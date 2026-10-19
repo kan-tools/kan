@@ -1,0 +1,322 @@
+FRESH INDEPENDENT REVIEW - three separate scopes at frozen export 2c7c6cb247c3c1007497590e3d8c304b1ff96857
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), fresh session, in-session, no delegation or subagents.
+Independence: I wrote none of the code under review. Every claim below comes from code I read or commands
+I ran in this export. There were no kan/day reads or writes (day#168/kan#197), so adversarial-review
+Step 7 recording was skipped. Git-first evidence is kept here. Date 2026-10-19.
+
+VERDICTS (separate, not blended)
+  A  C-F1 admitted-only profile-2 correction 648c8d7 (+ C-F3/C-F4 decisions):  APPROVE WITH FOLLOW-UPS
+  B  planner/lifecycle regression + oracle follow-ups b0f93bf:                 APPROVE WITH FOLLOW-UPS
+  C  backend/wrapper regression additions 219b6af/2c8ba2a (+ author evidence): APPROVE
+Not claimed or implied by any of these verdicts:
+  - profile-3 schema, writer or CLI
+  - bundle encoding/publication (C-F2 stays open)
+  - closure of a parent acceptance criterion or roadmap item
+  - release-binary or browser qualification
+  - production migration or cutover
+
+==============================================================================================
+0. NORTH STAR
+north-star.json -> telos/raw-data-and-projections:
+  - Decision bafyreied3rk...: "Raw attested data is retained in full and never collapsed in the
+    store. Every simplification ... is a determined projection computed on demand ..."
+  - Observation bafyreicakl3...: "THIS TELOS DECLARES NO WITNESSES, DELIBERATELY."
+I added no witnesses and did not reconstruct the 2 trust-excluded claims. The telos is
+InTensionWith telos/performance-at-scale.
+How each scope serves it:
+  - A: one meaning of "copied history". A plan-less retained-verified prefix is refused, never
+    relabelled or converted, and its stored bytes are kept.
+  - B: pins that make each refusal attributable to its stated check.
+  - C: a stale or busy projection is never shown under a fresh or "invalid" label.
+
+1. IDENTITY / HYGIENE (raw/)
+- Before and after, all 2077 identity files match their sha256, and every git blob of 2c7c6cb
+  (ls-tree --full-tree, blob SHA-1) matches (identity-before.txt, 90-identity-after.txt).
+  - The only extra file is the supplied north-star.json; my script reports that as exit=1.
+- Each supplied diff equals git diff of its range, excluding .design/reviews, byte for byte
+  (COMMANDS 00b):
+  - purpose = 77eaac7..648c8d7
+  - planner = 77eaac7..b0f93bf
+  - backend = 1c72b50..2c8ba2a
+- The backend .stat is for 1c72b50..d94359c, which also counts the two docs commits.
+- The merges add no code beyond these diffs.
+- Build hygiene:
+  - `cargo clean -p kan`: removed 867 files.
+  - Shared CARGO_TARGET_DIR, 4 jobs, one heavy job at a time.
+  - Compile lines show this export's path.
+- Every mutated source was restored and sha-verified (30-, 40-, 50-*.sha256 and the per-mutant
+  check in scripts/mutate.py).
+- Temporary probes tests/zz_review_*.rs were removed; copies are in probes/.
+- Author drivers' <export>/.local-state output was moved under raw/ and the directory removed.
+- Processes after (92): only the pre-existing day/kan mcp.
+- OBSERVATION: the PARENT worktree (outside the export) has uncommitted changes made concurrently
+  by another session: src/evidence_store/copied.rs (new), plus attested.rs, persistence.rs and
+  others. I did not read, review or touch them. They are not part of 2c7c6cb.
+- Synthetic fixtures only. No keys, archives, installs, provider traffic, deploy, merge or git write.
+
+RESULTS RUN (raw/)
+02 targeted: 79 passed across 8 targets
+   - 9 follow-ups, 11 lifecycle, 10 attested store, 3 plan, 10 source, 11 overview regressions,
+     6 recovery_cli, 19 surface
+   - Author A's 62 = 9+11+10+3+10+19. Author B's 49 = 3+10+11+6+19.
+03 lib: projection 2, window 1. evidence_capture_contention 7/7, including the wrapper test.
+   - Author C's 34 = 2+1+11+19+1.
+04 cargo clippy --features v2-crypto --all-targets -D warnings: exit 0. 05 cargo fmt --check: exit 0.
+52 Node CI line (5 files): 83/83 (Node v24.1.0).
+Unsuccessful attempt kept: 20-probeA-attempt1-FAILED. My probe did not compile (private Result
+alias, temporary lifetime). It was fixed and rerun as 20.
+
+==============================================================================================
+SCOPE A - C-F1 ADMITTED-ONLY CORRECTION 648c8d7
+
+Production change: src/evidence_store/attested.rs:194-196 now reads
+  `Purpose::RetainedVerified => return Err(corrupt("retained-verified prefix requires copy profile"))`
+The historical_issuer/admitted state was removed.
+
+Entry-point coverage (read): every profile-2 path reaches audit_prefix (attested.rs:156).
+  - Archive::open (:242) -> verify -> verify_for -> audit_prefix
+  - resume_initialization: version-2 files go through open (:256-257); others initialize EMPTY only
+  - verify_file (:285-290) -> verify_contents (:486) -> audit_prefix. Backup verifies the output here.
+  - backup (:272-281): CLI opens (and so audits) first (kan-v2.rs:896)
+  - Recovery::rebuild -> rebuild_profile (evidence_store.rs:349-352): pre-commit attested::verify_contents
+  - admit -> verify_for (:339) before stage
+  - The admit hook's tip recheck uses verify_at against the full Frontier, which includes the
+    attestation CID. A same-height tip swap to an RV proof therefore conflicts; no race found.
+  - No other consumer exists: no other src use of Purpose/proof::verify; the profile-1
+    Ledger/RecoveryReader/planner refuse profile 2.
+
+Execution:
+- PA1 (20) on a single-H plan-less prefix:
+  - open, resume_initialization, verify_file and Recovery::rebuild all fail with EXACTLY
+    "corrupt evidence: retained-verified prefix requires copy profile"
+  - source main DB + non-empty WAL bytes and all proofs are unchanged
+  - the rebuild output is a 0-byte file with user_version 0 and no schema objects: the
+    pre-commit refusal works and no profile marker is published
+  - Ledger::open, RecoveryReader::open and Ledger::verify_file also refuse, so there is no
+    profile-1 laundering route
+- PA2: an RV proof swapped under an already-verified handle:
+  - admit -> Failure::Corrupt, with object/commit/attestation counts unchanged (nothing staged
+    or written)
+  - verify -> exact reason
+  - Archive::backup -> exact reason, BUT the complete byte copy stays on disk. This is documented
+    ("any output is retained"). The copy is unpromoted and is itself refused by verify_file.
+- PA3: an admitted-only 4-row history stays valid:
+  - admit, open, verify, verify_file, backup and rebuild all succeed
+  - proofs are byte-identical
+  - an exact retry returns the stored Admitted proof
+- PA4 CLI with pins:
+  - verify, backup and recover exit 1 with no stdout and stderr carrying the exact reason
+  - backup creates NO output; recover leaves only an unmarked empty file
+  - unpinned verify/recover refuse with "unknown database profile"
+  - source bytes unchanged
+- 30: the author's whole-fix reversion (revert.py, inspected first; Path.cwd plus a fixed-bytes
+  assert) reproduced:
+  - 3 named assertions FAIL at the 77eaac7 bytes (not a compile failure)
+  - restored: 9 + 11 + 10 pass
+- 31 reviewer mutants:
+  - MA1 "RV arm accepts" is killed by purpose_order, p5a, p5b and p5c
+  - MA2 "drop the pre-commit proof audit in rebuild" is killed by p5c (user_version) and the
+    lifecycle test
+  - MA3 "open skips audit" and MA4 "verify_file skips proof audit" are each killed by several tests
+  - The lifecycle suite alone does not detect MA1. Only the store/follow-up tests pin the gate.
+- Author controls that remove all historical-purpose policy: none exist in scripts/. The 12
+  lifecycle and 11 source controls are unaffected by C1 and all reproduce (40/41).
+
+C-F3 / C-F4 (design text, lines 788-809): the decisions are recorded explicitly.
+- C-F3: original-membership permanence, shared CIDs, no FK cascade.
+- C-F4: explicit profile-3 type/option, no user_version trust selection, all-or-none pins keep
+  meaning profile 2, and takeover is an owner activation that copy/backup/verify/rebuild never
+  perform.
+- These are requirements only. No code exists, and none is claimed.
+- C-F2 is explicitly left open (810-821). Legitimate.
+
+Findings (Scope A)
+A-F1 [LOW-MEDIUM, governance] The commitment to RE-ESTABLISH the removed positives under profile 3
+     lives only in the author REPORT.md (.design/reviews/kan-v2-profile2-purpose-author). The
+     governing design says this "supersedes ... its synthetic acceptance fixture" (line 779-780).
+     Its profile-3 qualification list (531-537) names partial-copy refusal but not:
+       (a) a complete single-H RV prefix followed by ordinary admission under C is accepted, and
+           the frontier continues
+       (b) RV purpose and bytes survive backup and rebuild unchanged (formerly p5c's "must not
+           become admitted")
+       (c) a mixed-H prefix and RV-after-admitted refuse with their own reasons
+     Add these as named profile-3 qualification items before the destination slice is reviewed.
+A-F2 [LOW, attribution] Two tests no longer check what they name:
+     - p5b_mixed_historical_issuers_in_prefix_are_refused is now vacuous for mixed issuers. The
+       first RV row refuses, and its substring "retained-verified prefix" matches the new reason.
+     - purpose_order's "retained-verified after admitted must fail" is likewise now the generic gate.
+     Neither is wrong. Annotate or rename them, and restore the specific ordering/single-H checks
+     under profile 3 (see A-F1c).
+A-F3 [LOW, evidence precision] The new committed assertions are is_err() only:
+       - p5a open
+       - p5c verify_file/rebuild
+       - purpose_order verify/backup
+     They are attributable today via the reversion. Pin the exact reason as PA1 does, and add a
+     CLI refusal case (PA4); no committed test drives the CLI against an RV prefix.
+A-F4 [LOW, doc] Lines 366-370, 414-418 ("retained-verified prefix from one historical issuer
+     followed by admitted records" in the profile-2 storage checkpoint) and 494 ("Existing
+     profile-2 APIs and archives retain their meanings") are not annotated inline. The supersession
+     is only at 775-784.
+A-F5 [INFO] Two items to revisit with profile 3, without changing the label now:
+     - The profile-2 CLI label "cryptographic_admission":"proof-purpose-dependent" is now a
+       conservative under-claim, because only admitted proofs pass.
+     - Archive::backup on a stale handle retains a refused full copy, per its contract.
+
+Verdict A: APPROVE WITH FOLLOW-UPS.
+- The correction is sound as the prerequisite for building profile 3.
+- One funnel covers every profile-2 entry point, with the exact reason and pre-commit refusal.
+- Stored bytes are preserved, and there is no laundering via profile 1, rebuild or retry.
+- Admitted-only histories remain valid.
+- The author's reversion reproduces, and my independent mutants are killed.
+- Follow-ups A-F1..A-F4 concern recording and pinning; A-F1 should land before the profile-3
+  destination review.
+- Residuals:
+  - profile-3 positives are not yet re-established (by design)
+  - C-F2 is open
+
+==============================================================================================
+SCOPE B - PLANNER/LIFECYCLE REGRESSION AND ORACLE FOLLOW-UPS b0f93bf
+
+Production codec/planner/CLI are unchanged. b0f93bf touches only tests, fixture, tools, control
+scripts, TSV and docs (planner diff file list).
+
+A-F1 CLOSED. unchanged_source_confirmation_still_requires_the_external_owner_pin
+- It first proves the right pin confirms (so the source is unchanged), then the wrong pin
+  (last-byte flip) refuses, and a sibling plan using another plan's pin refuses.
+- PB2 (42): both refusals give "copy-plan owner archive mismatch", and the sibling with its own
+  pin is accepted.
+- Control confirm-skips-owner-pin DEMONSTRATED (40).
+- Note: the older vacuous `confirm(&db,&plan,&[0;32]).is_err()` at evidence_copy_source.rs:116
+  remains; harmless.
+A-F2 CLOSED.
+- PB1: index, trigger, view and table each refuse "unsupported writable archive schema", and
+  user_version 2/3 and application_id 7 refuse "unknown database profile".
+- MB0 (43): removing check_write_profile makes EACH of the 4 schema cases ACCEPTED, so every
+  case is individually attributable. The 3 profile cases are attributable to check_profile.
+- Residual: the committed test asserts is_err() without a reason (B-F2 below).
+A-F3 CLOSED.
+- 5 positive and 37 negative vectors. All 33 prior negatives keep identical hex (10); each
+  negative now carries expectedClass and expectedReason (9 canonical, 28 schema).
+- My own decoder (11) shows each of the 4 new noncanonical vectors decodes to EXACTLY
+  positive[0]'s logical value and differs only in encoding:
+    - reversed key order
+    - 0xb8 map length
+    - 0x18 0x01 recipe
+    - duplicate first key
+- MB1 (parser accepts a nonminimal header) and MB2 (accepts unordered keys) are KILLED by the
+  reason pins. They fall through to "noncanonical bytes", which is_err() alone would not have
+  caught. The pins work.
+- MB3 (drop the final re-encode byte-compare, evidence.rs:154-156) SURVIVES. It is defence in
+  depth behind the parser and no vector reaches it (INFO, like prior A-F5).
+A-F4 PARTIAL.
+- The oracle now sorts in Python (copy_source_digest.py), independent of SQL ORDER BY.
+- The fixture has 27 objects (PB2), all ASCII CIDs, so Python str order equals SQLite BINARY.
+- MB4 (Rust DESC) and MB7 (oracle reverse) are KILLED.
+- MB5 (Rust drops ORDER BY) and MB6 (oracle drops the sort) SURVIVE. A plain SELECT on the
+  WITHOUT ROWID objects table already returns cid order (PB2: unsorted scan == sorted), so
+  neither side's sort is exercised.
+- The mechanisms are independent, but the fixture cannot show it.
+B-R1 CLOSED. TSV rows evidence-db:archive.sqlite/-wal/-shm now name
+     {Ledger,attested::Archive} with validate:profile-selected-evidence-lifecycle. Surface 19/19.
+B-R2 CLOSED. The legacy verify JSON pins "structural-closure", "not-verified" and "not-checked".
+     The inflate-legacy-verify-proof-label and inflate-legacy-verify-admission-label controls
+     are DEMONSTRATED (41).
+Controls: 11/11 source (40) and 12/12 lifecycle (41) reproduced with named failures; restored
+suites pass.
+
+Findings (Scope B)
+B-F1 [LOW] Make the oracle's ordering test non-vacuous: have copy_source_digest.py read objects in
+     a deliberately different order (e.g. ORDER BY length(bytes) DESC or rowid-free random)
+     before its Python sort, so MB6 fails. Optionally add a planner query-plan or order assertion
+     for MB5.
+B-F2 [LOW] Pin the reason per case in source_planning_refuses_extra_schema_and_wrong_profiles.
+B-F3 [INFO] MB3 surviving is accepted defence in depth; it needs no action unless a parser
+     change removes the earlier checks.
+
+Verdict B: APPROVE WITH FOLLOW-UPS.
+- A-F1, A-F2, A-F3, B-R1 and B-R2 are closed with assertion-backed, attributable tests and
+  demonstrated controls. I verified the new vectors' encodings independently.
+- A-F4 is mechanism-independent but not exercised by its fixture (B-F1).
+- No production change.
+
+==============================================================================================
+SCOPE C - BACKEND/WRAPPER REGRESSION ADDITIONS 219b6af / 2c8ba2a
+
+Production overview behaviour is unchanged.
+- The src diff adds only #[cfg(test)] modules (projection.rs, overview.rs) and one blank line.
+- CI adds the two lib test lines.
+- web/operations/app.js sha256 650596...5f56 equals 7126848's blob and HEAD's.
+
+Seams read:
+- projection tests: real Journal::projection_copy with a real second connection.
+  - Deadline test: BEGIN EXCLUSIVE taken on the first check() AFTER open succeeded. It asserts
+    SourceBusy, checks > 1 (the loop is exercised) and elapsed >= 4.5 s.
+  - A 12 s watchdog inside check() bounds mutants. No hang: MC4/omit-copy-deadline end at 12.2 s.
+  - Revalidation test: user_version=0 and a deleted reserve row, written after open. It asserts
+    the result is not SourceBusy.
+- window test: the real overview::source() with a 1.1 s parse callback. now() has 1 s
+  resolution, so the strict copy_end < parsed_at is deterministic both ways.
+- regression test: a corrupted 'attempts' root page through the real Manager. The state is
+  "failed" with reason "source invalid or unavailable", and the active bytes are unchanged.
+- wrapper test: unit-tests the test-harness CoordinatedSink (test-only code).
+  - A plain `admit` panics.
+  - The returned wait and the diagnostic-channel wait are both asserted for success and failure.
+  - The lock channel is pre-signalled, so there is no blocking.
+
+Execution:
+- 50: all 5 author controls DEMONSTRATED with named assertions; restored suites pass (82 s total).
+- 51: 4 reviewer mutants, all KILLED:
+  - MC1: the revalidation error is relabelled SourceBusy -> "invalid source mislabeled busy"
+  - MC2: the wrapper reports ZERO on the diagnostic channel -> 0ns vs 7ms
+  - MC3: the wrapper calls non-wait admit -> panic
+  - MC4: the deadline is set to 30 s -> watchdog
+- 52: Node 83/83.
+
+Author evidence:
+- The backend REPORT counts match my runs.
+- The restart-browser REPORT states its limits exactly:
+  - author verification only
+  - the served app.js compared to 7126848 (fixture.py:66-67; fixture.jsonl app_sha256 equals
+    my hash)
+  - a frozen copy of the shared-target binary (binary_sha256 recorded), not release qualification
+  - polling not instrumented for missed nulls
+  - Library download unverified
+- restarted.png shows "2 distinct attempts · 3 observed", consistent with the report. I did not
+  rerun a browser.
+
+Residuals (disclosed, not follow-ups):
+- The revalidation test asserts !SourceBusy rather than the specific invalid error. The control
+  plus MC1 make it attributable.
+- SourceBusy under sustained writes, Library download delivery, release-binary qualification and
+  missed-null polling remain unverified. The author says so.
+
+Verdict C: APPROVE.
+- The test-only seams drive real production code paths with bounded waits.
+- All claimed controls reproduce, and my additional mutants are killed.
+- Production bytes are unchanged.
+- The browser evidence claims no more than it shows.
+
+==============================================================================================
+SCOPE NARROWING (raw/60)
+All hits are pre-named and recorded:
+  - C-F2 "remains a separate required checkpoint", "remain open for the bundle-specific design
+    review"
+  - "later service/admin integration must expose the explicit activation workflow"
+None defers the hard part of these scopes. Legitimate.
+Suspicious-adjacent: "supersedes ... its synthetic acceptance fixture" reads as discard. The
+re-establishment commitment exists only in a review artifact (A-F1).
+
+FORBIDDEN PATTERNS (from CLAUDE.md)
+- No subject or evidence destruction: refusal leaves files untouched, and nothing converts or
+  deletes them.
+- No fabricated provenance: no proof is minted or re-signed. Rebuild copies envelope bytes and
+  admission refuses.
+- No persisted projection.
+- No new surface: the TSV is updated alongside its types.
+- The v2 UI remains owner-authorized and unchanged.
+
+LIMITS
+- Bounded, hand-chosen probes and mutants; no fuzzing.
+- Debug builds on one Apple-silicon host.
+- No Linux CI, MSRV, default-feature clippy, real browser or power-loss testing.
+- I did not rerun the old 94/310 lists; no new concern warranted it.

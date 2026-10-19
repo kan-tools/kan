@@ -1,0 +1,19 @@
+
+running 11 tests
+test po3_missing_generation_lock_refuses_without_creating_it ... ok
+test po8_cancel_then_refresh_does_not_start_concurrent_build ... ok
+test corrupt_active_btree_is_invalid_not_busy_and_is_not_rewritten ... ok
+test po10_session_counter_overflow_refuses ... ok
+test po6_incomparable_rows_refuse_instead_of_componentwise_max ... ok
+test po7_u64_totals_beyond_i64_are_exact_decimal_strings ... ok
+test po2_build_changes_no_collection_file_or_metadata ... ok
+test po9_dashboard_overview_routes_refuse_hostile_requests ... ok
+test po4b_invalid_unique_active_attempt_is_refused_not_summed ... ok
+test po5_conflicts_are_classified_and_manager_labels_them ... ok
+test po4_hostile_active_rows_refuse_publication ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.54s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+    Finished `test` profile [unoptimized] target(s) in 6.75s
+     Running tests/evidence_overview_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_overview_review_regressions-5712576a46a30955)

@@ -1,0 +1,24 @@
+
+running 1 test
+test corrupt_active_btree_is_invalid_not_busy_and_is_not_rewritten ... FAILED
+
+failures:
+
+---- corrupt_active_btree_is_invalid_not_busy_and_is_not_rewritten stdout ----
+
+thread 'corrupt_active_btree_is_invalid_not_busy_and_is_not_rewritten' (9676188) panicked at tests/evidence_overview_review_regressions.rs:70:13:
+assertion `left == right` failed
+  left: Some("source busy or in use; retry refresh")
+ right: Some("source invalid or unavailable")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    corrupt_active_btree_is_invalid_not_busy_and_is_not_rewritten
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.70s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+    Finished `test` profile [unoptimized] target(s) in 6.86s
+     Running tests/evidence_overview_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_overview_review_regressions-5712576a46a30955)
+error: test failed, to rerun pass `--test evidence_overview_review_regressions`

@@ -1,0 +1,4 @@
+reversed-map-keys      consumed_all=True all_headers_minimal=True key_order_canonical=False duplicate_keys=False logical_value_equals_positive0=True nkeys=10
+nonminimal-map-length  consumed_all=True all_headers_minimal=False key_order_canonical=True duplicate_keys=False logical_value_equals_positive0=True nkeys=10
+nonminimal-recipe      consumed_all=True all_headers_minimal=False key_order_canonical=True duplicate_keys=False logical_value_equals_positive0=True nkeys=10
+duplicate-map-key      consumed_all=True all_headers_minimal=True key_order_canonical=False duplicate_keys=True logical_value_equals_positive0=True nkeys=11

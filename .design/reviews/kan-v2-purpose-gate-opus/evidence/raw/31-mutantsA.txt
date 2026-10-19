@@ -1,0 +1,15 @@
+MA1-rv-arm-accepts-everything: KILLED
+  evidence_attested_store/None: rc=101 compile_error=False failed=['purpose_order_is_a_store_invariant_not_just_a_signature_check'] test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.21s (9.4s)
+  evidence_attested_followups/None: rc=101 compile_error=False failed=['p5a_single_historical_issuer_prefix_requires_copy_profile', 'p5b_mixed_historical_issuers_in_prefix_are_refused', 'p5c_planless_historical_proofs_refuse_verification_and_rebuild_without_rewriting'] test result: FAILED. 6 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.27s (2.0s)
+  evidence_attested_lifecycle/None: rc=0 compile_error=False failed=[] test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.97s (4.8s)
+MA2-drop-precommit-proof-audit-in-rebuild: KILLED
+  evidence_attested_followups/p5c: rc=101 compile_error=False failed=['p5c_planless_historical_proofs_refuse_verification_and_rebuild_without_rewriting'] test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.25s (7.4s)
+  evidence_attested_lifecycle/None: rc=101 compile_error=False failed=['corrupt_source_proofs_are_rejected_before_output_profile_is_committed'] test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.72s (4.5s)
+MA3-open-skips-audit: KILLED
+  evidence_attested_followups/None: rc=101 compile_error=False failed=['p2_signature_only_mutation_refuses_open_with_named_audit_error', 'p5a_single_historical_issuer_prefix_requires_copy_profile', 'p5b_mixed_historical_issuers_in_prefix_are_refused'] test result: FAILED. 6 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.28s (8.6s)
+  evidence_attested_store/None: rc=101 compile_error=False failed=['owner_binding_is_not_selected_by_database', 'proof_mutations_and_payload_loss_refuse_writable_open'] test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.77s (2.5s)
+  evidence_attested_lifecycle/None: rc=101 compile_error=False failed=['owner_binding_profile_and_destination_are_explicit'] test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.69s (4.4s)
+MA4-verify-file-skips-proof-audit: KILLED
+  evidence_attested_followups/None: rc=101 compile_error=False failed=['p5c_planless_historical_proofs_refuse_verification_and_rebuild_without_rewriting'] test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.27s (8.5s)
+  evidence_attested_store/None: rc=101 compile_error=False failed=['purpose_order_is_a_store_invariant_not_just_a_signature_check'] test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.21s (2.9s)
+  evidence_attested_lifecycle/None: rc=101 compile_error=False failed=['backup_success_requires_verifying_the_copied_proof_chain', 'recovery_refuses_missing_or_corrupt_proofs_and_payloads'] test result: FAILED. 9 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.09s (3.8s)

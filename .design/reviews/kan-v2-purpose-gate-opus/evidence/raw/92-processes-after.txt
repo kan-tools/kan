@@ -1,0 +1,2 @@
+ 2937  2601 03-23:38:05 /Users/m/.cargo/bin/day mcp
+ 2943  2601 03-23:38:05 /Users/m/.cargo/bin/kan mcp

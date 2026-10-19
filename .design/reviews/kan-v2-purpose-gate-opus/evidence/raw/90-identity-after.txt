@@ -1,0 +1,6 @@
+commit 2c7c6cb247c3c1007497590e3d8c304b1ff96857
+identity_files 2077 identity_bad 0 []
+tree_blobs 2077 nonblob {} git_bad 0 []
+identity_not_in_tree [] tree_not_in_identity 0 []
+extra_untracked_in_export 1 ['north-star.json']
+exit=1

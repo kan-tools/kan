@@ -1,0 +1,22 @@
+
+running 1 test
+test evidence_operations_collection::overview::tests::active_snapshot_reports_the_copy_window_not_later_parsing ... FAILED
+
+failures:
+
+---- evidence_operations_collection::overview::tests::active_snapshot_reports_the_copy_window_not_later_parsing stdout ----
+
+thread 'evidence_operations_collection::overview::tests::active_snapshot_reports_the_copy_window_not_later_parsing' (9675914) panicked at src/evidence_operations_collection/overview.rs:607:9:
+snapshot end must describe the earlier active copy, not row parsing
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_operations_collection::overview::tests::active_snapshot_reports_the_copy_window_not_later_parsing
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 76 filtered out; finished in 1.54s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+    Finished `test` profile [unoptimized] target(s) in 5.94s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-7f955e5e00633d5f)
+error: test failed, to rerun pass `--lib`
