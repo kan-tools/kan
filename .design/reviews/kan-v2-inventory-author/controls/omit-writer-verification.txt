@@ -1,0 +1,22 @@
+
+running 1 test
+test issuer_attested_available_metadata_does_not_replace_original_writer_verification ... FAILED
+
+failures:
+
+---- issuer_attested_available_metadata_does_not_replace_original_writer_verification stdout ----
+
+thread 'issuer_attested_available_metadata_does_not_replace_original_writer_verification' (9802407) panicked at tests/evidence_inventory.rs:497:10:
+called `Option::unwrap()` on a `None` value
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    issuer_attested_available_metadata_does_not_replace_original_writer_verification
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.24s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory)
+    Finished `test` profile [unoptimized] target(s) in 7.10s
+     Running tests/evidence_inventory.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_inventory-c64c1fa4419bff69)
+error: test failed, to rerun pass `--test evidence_inventory`

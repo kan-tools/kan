@@ -16,6 +16,7 @@ use crate::evidence::{self, Decoded, Kind, Record};
 pub mod attested;
 pub mod copied;
 pub mod copy_upgrade;
+pub mod inventory;
 
 type CommitProofHook<'a> =
     dyn FnMut(&rusqlite::Transaction<'_>, &Committed, &mut dyn FnMut(Boundary)) -> Result<()> + 'a;
@@ -176,6 +177,15 @@ impl RecoveryReader {
         Self::open_profile(path, 1)
     }
     fn open_profile(path: &Path, profile: i64) -> Result<Self> {
+        Self::open_profile_configured(path, profile, |_| Ok(()))
+    }
+    // Inventory installs stricter limits and cancellation before the first SQL
+    // read; ordinary recovery keeps its existing defaults.
+    fn open_profile_configured(
+        path: &Path,
+        profile: i64,
+        before_read: impl FnOnce(&Connection) -> Result<()>,
+    ) -> Result<Self> {
         private_file(path)?;
         let source = std::fs::canonicalize(path)?;
         let ledger = Ledger {
@@ -190,6 +200,7 @@ impl RecoveryReader {
             RECOVERY_SQLITE_LENGTH_LIMIT,
         )?;
         ledger.conn.busy_timeout(Duration::from_secs(5))?;
+        before_read(&ledger.conn)?;
         ledger.conn.execute_batch("PRAGMA query_only=ON; BEGIN;")?;
         // Reading the profile pins the transaction before the handle escapes.
         ledger.check_profile(profile)?;

@@ -1,0 +1,38 @@
+   Compiling rusqlite v0.40.1
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory)
+error[E0277]: the trait bound `Vec<i32>: ToSql` is not satisfied
+   --> tests/evidence_inventory.rs:185:25
+    |
+185 |                         rusqlite::params![vec![0; f.requests[n].len()], f.id(n)],
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ToSql` is not implemented for `Vec<i32>`
+    |
+help: the trait `ToSql` is implemented for `Vec<u8>`
+   --> /Users/m/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.1/src/types/to_sql.rs:306:1
+    |
+306 | impl ToSql for Vec<u8> {
+    | ^^^^^^^^^^^^^^^^^^^^^^
+    = note: required for the cast from `&Vec<i32>` to `&dyn ToSql`
+    = note: this error originates in the macro `rusqlite::params` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `u64: ToSql` is not satisfied
+   --> tests/evidence_inventory.rs:697:9
+    |
+697 |         rusqlite::params![receipt.bytes(), sequence],
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ToSql` is not implemented for `u64`
+    |
+    = help: the following other types implement trait `ToSql`:
+              f32
+              f64
+              i16
+              i32
+              i64
+              i8
+              isize
+              u16
+            and 2 others
+    = note: required for the cast from `&u64` to `&dyn ToSql`
+    = note: this error originates in the macro `rusqlite::params` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `kan` (test "evidence_inventory") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

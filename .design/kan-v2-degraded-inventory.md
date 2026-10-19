@@ -5,8 +5,9 @@ Implement the read-only storage boundary required by
 `kan-v2-evidence-availability.md`: verified issuer metadata remains inspectable
 when retained payloads are absent or damaged. The owner supplies the exact profile
 and archive/scope/issuer pins. This serves `telos/raw-data-and-projections` without
-claiming that issuer metadata re-verifies a missing writer signature. This is a
-build contract, not an implemented capability or closed parent criterion.
+claiming that issuer metadata re-verifies a missing writer signature. The storage implementation now has author qualification under
+`reviews/kan-v2-inventory-author/`; independent acceptance is still pending.
+No parent frontend criterion is closed.
 
 ## Requirements
 - REQ-1: Select profile 2 or 3 explicitly, validate its canonical schema and owner binding, and preserve authoritative database and retained WAL bytes. Never invoke writable open, integrity_check over objects, schema repair, immutable SQLite mode, or profile autodetection.
@@ -30,7 +31,8 @@ build contract, not an implemented capability or closed parent criterion.
 
 Use a separate owner-side `inventory` type rather than a flag on writable
 `Archive`. A constructor takes explicit profile and Binding. The SQLite connection
-uses the existing declared read-source capability and starts a read transaction
+uses the existing declared read-source capability, installs metadata allocation,
+busy-wait and VM cancellation limits before the first SQL read, and starts a read transaction
 before reading its profile. Validate the exact schema using bounded schema fields;
 do not use the writable `verify_contents` / `PRAGMA integrity_check` path, which
 materializes payloads and can encounter oversized WITHOUT ROWID rows.
@@ -58,6 +60,13 @@ predecessor. The empty predecessor terminates, never an empty page before genesi
 Return exact proof/record bytes, purpose/time and sampled state. Each manifest in
 this service profile must name exactly one bounded retained signed request.
 
+Payload lookup deliberately scans by CID with `NOT INDEXED` / unary `+cid`:
+SQLite's WITHOUT ROWID key lookup can allocate a corrupt oversized payload before
+its configured value limit applies. The independent child-process memory fixture
+checks this boundary, and the indexed-lookup negative control must fail it.
+Each sample therefore costs a linear object scan, subject to VM cancellation;
+this first implementation does not claim indexed large-archive page latency.
+
 A lookup with no object at its expected CID is missing. An existing bounded object
 with an invalid length or hash is corrupt. A SQLite error, invalid metadata or
 unsupported schema refuses the operation. Available means the sampled object
@@ -65,8 +74,11 @@ matches its content address and declared length; it is not renewed writer
 verification, current authorization, decryption or semantic support. Unknown
 content remains available raw bytes when those checks pass.
 
-Budgets include count, encoded response bytes and sampled payload bytes; the API
+Storage budgets include count, canonical record/proof bytes and sampled payload bytes; the API
 must not promise forty maximum-sized payload hash checks inside a tiny byte cap.
+This typed storage API has no wire encoding; the later RPC adapter must separately
+bound its encoded response, including routing/selection overhead. Each storage
+row has bounded decoded fields and the row-count cap also bounds that overhead.
 Either a smaller nonempty page with an exact next frontier fits, or return a named
 budget error. Never partially expose a page that failed metadata verification.
 Staged orphan objects are outside ordinary occurrence browsing. Owner recovery
