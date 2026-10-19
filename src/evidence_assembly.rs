@@ -115,7 +115,9 @@ pub struct Group {
     pub observer: Observer,
     pub attempt: String,
     pub ordinals: Vec<Ordinal>,
-    /// Observed holes before/between ordinals; no invented trailing extent.
+    /// No recognized capture at these ordinals; not proof of missing inputs.
+    /// Unplaced unsupported/malformed/unavailable observations stay in Assembly.
+    /// No invented trailing extent.
     pub ordinal_gaps: Vec<Range<u64>>,
     pub missing_start: bool,
     pub unexpected_starts: Vec<usize>,

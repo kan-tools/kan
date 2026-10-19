@@ -1,0 +1,8 @@
+export_files 3632 manifest_files 3631
+extra ['north-star.json']
+missing []
+sha256_mismatches 0 blob_mismatches 0
+commit_tree_entries 3631 matches_pinned True
+source_HEAD eb4f471248939f7684d710501e458f9cf3375fd7 pinned eb4f471248939f7684d710501e458f9cf3375fd7 equal True
+source_tracked_status_porcelain ''
+RESULT PASS

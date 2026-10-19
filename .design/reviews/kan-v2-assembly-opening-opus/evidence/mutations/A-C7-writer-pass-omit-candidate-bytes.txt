@@ -1,0 +1,36 @@
+# A-C7-writer-pass-omit-candidate-bytes: src/evidence_recovery_replay.rs
+# expect: KILL by pinned scan-charge
+# old occurrences=1
+--- old
+(row.manifest.len() + row.receipt.len() + c.bytes.len()) as u64,
++++ new
+(row.manifest.len() + row.receipt.len()) as u64,
+
+$ cargo test --features v2-crypto --test evidence_recovery_replay_review_regressions reviewer_budget_monotonicity_and_bounds -- --nocapture  env=None
+
+running 1 test
+test reviewer_budget_monotonicity_and_bounds ... FAILED
+
+failures:
+
+failures:
+    reviewer_budget_monotonicity_and_bounds
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.62s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening)
+    Finished `test` profile [unoptimized] target(s) in 7.52s
+     Running tests/evidence_recovery_replay_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_replay_review_regressions-80b46206524a2950)
+
+thread 'reviewer_budget_monotonicity_and_bounds' (10331040) panicked at tests/evidence_recovery_replay_review_regressions.rs:347:9:
+assertion `left == right` failed: scan-charge accounting: profile2-restored-failure-observed
+  left: 30744
+ right: 31919
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_replay_review_regressions`
+
+exit=101
+
+
+VERDICT KILLED by test reviewer_budget_monotonicity_and_bounds ... FAILED
+restored_exact=True

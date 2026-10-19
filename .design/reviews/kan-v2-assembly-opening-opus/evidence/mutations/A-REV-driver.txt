@@ -1,0 +1,25 @@
+pinned sha256=5cc60260f96cb1e8760297cb0abb661a03cfda440558b374c5a207090829829a blob=8d6e4410d04f7e690c2138c1d18dcd443993a22c
+reverted-to db1bb06:src/evidence_store/bundle.rs blob=bc1fb7f1b3666559572d36012345fc472ff5f4d2 sha256=47d9bbb0a03d75c965990da6a7f22351596e4f4b8ebc5b76a56157b896afae07
+A-REV-1-empty-original-reverted.txt: exit=101
+  compiled=True FAILED=True
+A-REV-2-full-bundle-suite-reverted.txt: exit=101
+  test public_mode_and_symlink_source_refuse_before_sqlite_open ... ok
+  test empty_originals_remain_exact_evidence_before_and_after_restoration ... FAILED
+  test hot_rollback_journal_refuses_without_recovering_source_media ... ok
+  test oversized_and_malformed_physical_media_retain_sqlite_refusal_codes ... ok
+  test restored_bundle_is_still_refused_by_all_standalone_readers ... ok
+  test existing_sqlite_sidecar_symlink_or_hardlink_refuses_before_open ... ok
+  test foreign_external_pins_and_checkpoint_refuse ... ok
+  test acquisition_budgets_have_exact_edges_and_replay_has_separate_limits ... ok
+  test utf16_refuses_despite_identical_logical_columns ... ok
+  test parser_accepted_noncanonical_spellings_refuse_in_every_key_table ... ok
+  test busy_source_refuses_with_bounded_wait_and_no_recovery_write ... ok
+  test sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation ... ok
+  test schema_marker_history_identity_and_physical_cell_damage_refuse ... ok
+  test python_sqlite_histories_match_independent_state_results_and_preserve_source ... ok
+  thread 'empty_originals_remain_exact_evidence_before_and_after_restoration' (10324940) panicked at tests/evidence_recovery_bundle.rs:359:33:
+  E1-empty-original-initial-loss: invalid recovery bundle: projected cell storage class
+  test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.46s
+restored sha256=5cc60260f96cb1e8760297cb0abb661a03cfda440558b374c5a207090829829a equal_pinned=True
+A-REV-3-restored.txt: exit=0
+  test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.45s

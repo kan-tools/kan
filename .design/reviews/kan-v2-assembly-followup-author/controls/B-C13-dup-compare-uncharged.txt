@@ -1,0 +1,26 @@
+
+running 4 tests
+test stream_offset_order_can_differ_from_observer_ordinal_order ... ok
+test duplicate_request_end_retains_every_extent_source ... ok
+test ordinal_gaps_do_not_mean_unplaced_inputs_are_absent ... ok
+test scan_accounting_pins_decode_duplicate_comparison_and_copy ... FAILED
+
+failures:
+
+failures:
+    scan_accounting_pins_decode_duplicate_comparison_and_copy
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly)
+    Finished `test` profile [unoptimized] target(s) in 7.66s
+     Running tests/evidence_assembly_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_assembly_review_regressions-bfce74943978b5ce)
+
+thread 'scan_accounting_pins_decode_duplicate_comparison_and_copy' (10360314) panicked at tests/evidence_assembly_review_regressions.rs:57:5:
+assertion `left == right` failed: absolute decode/comparison/copy accounting
+  left: 1282
+ right: 1792
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_assembly_review_regressions`
+
+exit=101

@@ -1,0 +1,10 @@
+PA1-p3-complete-empty-original-initial-loss designExpect=accept pythonOracle(pre-mutation history)=accept sqlChanged=None emptyOriginals=1
+PA2-p3-complete-empty-original-restored designExpect=accept pythonOracle(pre-mutation history)=accept sqlChanged=None emptyOriginals=1
+PA3-p3-partial-two-empty-one-restored designExpect=accept pythonOracle(pre-mutation history)=accept sqlChanged=None emptyOriginals=2
+PA4-p2-two-empty-both-restored designExpect=accept pythonOracle(pre-mutation history)=accept sqlChanged=None emptyOriginals=2
+PH1-empty-original-stored-as-TEXT designExpect=refuse pythonOracle(pre-mutation history)=accept sqlChanged=1 emptyOriginals=1
+PH2-empty-candidate-blob designExpect=refuse pythonOracle(pre-mutation history)=accept sqlChanged=1 emptyOriginals=1
+PH3-empty-candidate-TEXT designExpect=refuse pythonOracle(pre-mutation history)=accept sqlChanged=1 emptyOriginals=1
+PH4-empty-original-rewritten-as-zeroblob0 designExpect=accept pythonOracle(pre-mutation history)=accept sqlChanged=1 emptyOriginals=1
+PH5-nonempty-original-truncated-to-empty-after-signing designExpect=refuse pythonOracle(pre-mutation history)=accept sqlChanged=1 emptyOriginals=1
+PH6-empty-original-replaced-by-one-byte designExpect=refuse pythonOracle(pre-mutation history)=accept sqlChanged=1 emptyOriginals=1
