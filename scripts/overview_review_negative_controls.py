@@ -6,6 +6,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 PROJECTION = ROOT / 'src/evidence_operations/projection.rs'
 OVERVIEW = ROOT / 'src/evidence_operations_collection/overview.rs'
+CONTENTION = ROOT / 'tests/evidence_capture_contention.rs'
 OUT = ROOT / '.local-state/reviews/overview-backend-controls'
 
 
@@ -13,7 +14,7 @@ def main():
     if not __debug__:
         raise RuntimeError('assertions required')
     OUT.mkdir(parents=True, exist_ok=True)
-    original = {p: p.read_text() for p in (PROJECTION, OVERVIEW)}
+    original = {p: p.read_text() for p in (PROJECTION, OVERVIEW, CONTENTION)}
     cases = [
         ('omit-copy-deadline', PROJECTION,
          'if std::time::Instant::now() >= deadline {',
@@ -31,6 +32,11 @@ def main():
          'true || error.is::<operations::projection::SourceBusy>()',
          ['--test', 'evidence_overview_review_regressions'],
          'corrupt_active_btree_is_invalid_not_busy_and_is_not_rewritten'),
+        ('wrapper-discards-returned-wait', CONTENTION,
+         '        result\n    }\n}\n\n/// The contention wrapper',
+         '        (result.0, Duration::ZERO)\n    }\n}\n\n/// The contention wrapper',
+         ['--test', 'evidence_capture_contention'],
+         'coordinated_sink_returns_inner_wait_to_its_caller'),
     ]
     try:
         for name, path, before, after, suite, test in cases:
@@ -53,13 +59,15 @@ def main():
         ('projection', ['--lib', 'evidence_operations::projection::tests']),
         ('window', ['--lib', 'evidence_operations_collection::overview::tests']),
         ('integration', ['--test', 'evidence_overview_review_regressions']),
+        ('wrapper', ['--test', 'evidence_capture_contention',
+                     'coordinated_sink_returns_inner_wait_to_its_caller']),
     ]
     for name, args in suites:
         run = subprocess.run(['cargo', 'test', '--features', 'v2-crypto', *args],
                              cwd=ROOT, capture_output=True, text=True)
         (OUT / ('restored-' + name + '.txt')).write_text(run.stdout + run.stderr)
         assert run.returncode == 0, 'restored ' + name + ' failed'
-    print('Four compiled mutants fail assertions; restored backend checks pass.', flush=True)
+    print('Five compiled mutants fail assertions; restored backend/wrapper checks pass.', flush=True)
 
 
 if __name__ == '__main__':
