@@ -214,6 +214,28 @@ impl Inventory {
         binding: attested::Binding,
         budget: Budget,
     ) -> Result<Self> {
+        Self::open_selected(path, profile, binding, None, budget)
+    }
+    /// Reopen a retained older prefix without holding a transaction between
+    /// human page requests. The whole current metadata chain is still audited;
+    /// the requested frontier must occur in that same verified chain.
+    /// This is owner-selected metadata, not a grant or a wire-pin verifier.
+    pub fn open_at(
+        path: &Path,
+        profile: Profile,
+        binding: attested::Binding,
+        selected: &Frontier,
+        budget: Budget,
+    ) -> Result<Self> {
+        Self::open_selected(path, profile, binding, Some(selected), budget)
+    }
+    fn open_selected(
+        path: &Path,
+        profile: Profile,
+        binding: attested::Binding,
+        selected: Option<&Frontier>,
+        budget: Budget,
+    ) -> Result<Self> {
         binding.validate()?;
         let deadline = budget.deadline()?;
         budget.check(deadline)?;
@@ -227,6 +249,7 @@ impl Inventory {
             .prepare(&format!("{RAW_COMMITS} ORDER BY sequence"))?;
         let mut rows = query.query([])?;
         let mut frontier = Frontier::default();
+        let mut selected_found = selected.is_none_or(|pin| *pin == Frontier::default());
         let mut items = 0;
         let mut bytes = 0;
         let mut hash = Sha256::new();
@@ -271,6 +294,9 @@ impl Inventory {
                 }
             }
             frontier = verified.frontier().clone();
+            if selected == Some(&frontier) {
+                selected_found = true;
+            }
         }
         drop(rows);
         drop(query);
@@ -328,6 +354,20 @@ impl Inventory {
         } else {
             None
         };
+        if !selected_found {
+            return Err(corrupt("selected inventory frontier not retained"));
+        }
+        if let Some(selected) = selected {
+            frontier = selected.clone();
+        }
+        // The current source may have completed copying after this selected
+        // prefix. Do not report that later completion as a property of the pin.
+        let recipe_metadata_match = recipe_metadata_match.map(|matches| {
+            matches
+                && plan
+                    .as_ref()
+                    .is_some_and(|p| frontier.through >= p.source().through)
+        });
         budget.check(deadline)?;
         reader
             .ledger
@@ -348,6 +388,29 @@ impl Inventory {
     /// Metadata/inventory commitment only; not payload completeness or admission readiness.
     pub fn recipe_metadata_match(&self) -> Option<bool> {
         self.recipe_metadata_match
+    }
+    /// Stateless descending continuation. Only this method constructs a cursor
+    /// from caller coordinates; page() verifies its first proof against `next`
+    /// before returning any occurrence. The current opening already audited the
+    /// full chain, so a checked row at/below the pin belongs to that prefix.
+    pub fn page_from(&self, next: &Frontier, limit: PageBudget, work: Budget) -> Result<Page> {
+        if next.through > self.frontier.through
+            || (next.through == 0 && *next != Frontier::default())
+        {
+            return Err(Error::Invalid(
+                "inventory continuation outside selected prefix",
+            ));
+        }
+        self.page(
+            Some(&Cursor {
+                snapshot: self.frontier.clone(),
+                next: next.clone(),
+                profile: self.profile,
+                binding: self.binding.clone(),
+            }),
+            limit,
+            work,
+        )
     }
     pub fn page(&self, cursor: Option<&Cursor>, limit: PageBudget, work: Budget) -> Result<Page> {
         if limit.rows == 0

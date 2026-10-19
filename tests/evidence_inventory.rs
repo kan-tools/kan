@@ -173,6 +173,161 @@ impl Fixture {
             .unwrap();
     }
 }
+
+#[test]
+fn reopening_an_older_proof_pin_excludes_later_appends_and_resumes_descending() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let t = tempfile::tempdir().unwrap();
+        let f = fixture(t.path(), profile);
+        let opened = f.open();
+        let page = opened.page(None, page_budget(), budget()).unwrap();
+        let pin = page.records[1].proof.frontier().clone();
+        let tail = page.records[1].proof.previous().clone();
+        let previous = page.records[0].record.manifest.cid().to_string();
+        drop(opened);
+        let bytes = request(3, 8, Some(previous));
+        if profile == Profile::Admitted {
+            attested::Archive::open(&f.root, f.binding.clone())
+                .unwrap()
+                .admit(&bytes, &identity(8), &grant(), 200)
+                .unwrap();
+        } else {
+            copied::Archive::open(&f.root, f.binding.clone())
+                .unwrap()
+                .admit(&bytes, &identity(8), &grant(), 200)
+                .unwrap();
+        }
+        let selected =
+            Inventory::open_at(&f.db(), profile, f.binding.clone(), &pin, budget()).unwrap();
+        assert_eq!(selected.frontier(), &pin);
+        assert_eq!(
+            selected.recipe_metadata_match(),
+            if profile == Profile::Copied {
+                Some(false)
+            } else {
+                None
+            }
+        );
+        let first = selected
+            .page_from(
+                &pin,
+                PageBudget {
+                    rows: 1,
+                    ..page_budget()
+                },
+                budget(),
+            )
+            .unwrap();
+        assert_eq!(first.records.len(), 1);
+        assert_eq!(first.records[0].record.sequence, 2);
+        assert_eq!(first.records[0].selection.snapshot(), &pin);
+        drop(selected);
+        let resumed =
+            Inventory::open_at(&f.db(), profile, f.binding.clone(), &pin, budget()).unwrap();
+        let next = resumed.page_from(&tail, page_budget(), budget()).unwrap();
+        assert_eq!(
+            next.records
+                .iter()
+                .map(|r| r.record.sequence)
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+        assert!(next.next.is_none());
+        let fresh = f.open();
+        assert_eq!(fresh.frontier().through, 4);
+        assert_eq!(
+            fresh.recipe_metadata_match(),
+            if profile == Profile::Copied {
+                Some(true)
+            } else {
+                None
+            }
+        );
+    }
+}
+
+#[test]
+fn proof_pin_and_stateless_continuation_reject_forks_future_and_malformed_empty() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let t = tempfile::tempdir().unwrap();
+        let f = fixture(t.path(), profile);
+        let opened = f.open();
+        let page = opened.page(None, page_budget(), budget()).unwrap();
+        let pin = page.records[1].proof.frontier().clone();
+        let newer = page.records[0].proof.frontier().clone();
+        drop(opened);
+        let mut forged = pin.clone();
+        forged.attestation = Some(store::ciphertext_cid(b"forged statement"));
+        assert!(
+            Inventory::open_at(&f.db(), profile, f.binding.clone(), &forged, budget()).is_err()
+        );
+        let selected =
+            Inventory::open_at(&f.db(), profile, f.binding.clone(), &pin, budget()).unwrap();
+        assert!(selected.page_from(&newer, page_budget(), budget()).is_err());
+        assert!(selected
+            .page_from(&forged, page_budget(), budget())
+            .is_err());
+        forged.through = 0;
+        assert!(selected
+            .page_from(&forged, page_budget(), budget())
+            .is_err());
+        assert!(
+            Inventory::open_at(&f.db(), profile, f.binding.clone(), &forged, budget()).is_err()
+        );
+        let empty = kan::evidence_attestation::Frontier::default();
+        let at_empty =
+            Inventory::open_at(&f.db(), profile, f.binding.clone(), &empty, budget()).unwrap();
+        assert!(at_empty
+            .page_from(&empty, page_budget(), budget())
+            .unwrap()
+            .records
+            .is_empty());
+        assert!(at_empty.page_from(&pin, page_budget(), budget()).is_err());
+        drop(selected);
+        drop(at_empty);
+        f.edit("DELETE FROM attestations WHERE sequence>1; DELETE FROM commits WHERE sequence>1;");
+        assert!(Inventory::open_at(&f.db(), profile, f.binding.clone(), &pin, budget()).is_err());
+    }
+}
+
+#[test]
+fn old_proof_pin_still_audits_current_metadata_and_browses_payload_loss() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let t = tempfile::tempdir().unwrap();
+        let f = fixture(t.path(), profile);
+        let opened = f.open();
+        let page = opened.page(None, page_budget(), budget()).unwrap();
+        let pin = page.records[1].proof.frontier().clone();
+        drop(opened);
+        f.remove(1);
+        let reopened =
+            Inventory::open_at(&f.db(), profile, f.binding.clone(), &pin, budget()).unwrap();
+        let rows = reopened.page_from(&pin, page_budget(), budget()).unwrap();
+        assert_eq!(rows.records[0].availability, Availability::Missing);
+        assert_eq!(rows.records[1].availability, Availability::Available);
+        assert!(matches!(
+            inventory::source(
+                &f.db(),
+                profile,
+                f.binding.clone(),
+                &rows.records[0].selection,
+                service::MAX_REQUEST,
+                budget()
+            )
+            .unwrap(),
+            Source::Unavailable(Availability::Missing)
+        ));
+        drop(reopened);
+        let mut limited = budget();
+        limited.items = 2;
+        assert!(Inventory::open_at(&f.db(), profile, f.binding.clone(), &pin, limited).is_err());
+        f.edit("UPDATE attestations SET envelope=x'00' WHERE sequence=3;");
+        assert!(
+            Inventory::open_at(&f.db(), profile, f.binding.clone(), &pin, budget()).is_err(),
+            "old pins do not bypass current metadata integrity"
+        );
+    }
+}
 #[test]
 fn missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours() {
     for profile in [Profile::Admitted, Profile::Copied] {
