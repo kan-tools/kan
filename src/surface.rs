@@ -18,6 +18,12 @@ impl SurfaceValue {
 
 /// Experimental v2 artifacts; schema columns are also inspected from SQLite in feature tests.
 pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
+    SurfaceValue::new("evidence-proof-sqlite:archive_identity", "singleton"),
+    SurfaceValue::new("evidence-proof-sqlite:archive_identity", "archive"),
+    SurfaceValue::new("evidence-proof-sqlite:archive_identity", "scope"),
+    SurfaceValue::new("evidence-proof-sqlite:archive_identity", "issuer"),
+    SurfaceValue::new("evidence-proof-sqlite:attestations", "sequence"),
+    SurfaceValue::new("evidence-proof-sqlite:attestations", "envelope"),
     SurfaceValue::new("evidence-reader-config:scopes", "*"),
     SurfaceValue::new("evidence-reader-config:signing-key", "*"),
     SurfaceValue::new("evidence-reader-config:access-token", "*"),

@@ -387,3 +387,40 @@ all payloads; it never deletes or overwrites the loss observation. Strict open i
 controlled by current full verification and the descriptor/resolution contract,
 not an unlabelled removal of the marker. Declare both physical record surfaces
 with the profile-2 implementation.
+
+## Storage checkpoint scope
+
+The first runtime slice lives in `src/evidence_store/attested.rs`: an owner-side
+profile-2 storage API with explicit configured archive/scope/issuer binding,
+atomic metadata/proof insertion, and exact stored-proof retry. It is not wired
+into an HTTP listener or CLI yet. A trusted caller supplies the current grant;
+a remote request must never select that grant. Existing profile-1 service and
+raw Ledger APIs cannot open profile 2, including through initialization resume
+or recovery. Writable profile-2 open still requires all retained payloads.
+
+This checkpoint performs a complete read-transaction audit before each append,
+then checks the manifest frontier, proof frontier and proof count under the
+immediate transaction. Historical signature verification remains outside the
+write lock. As with the existing append-only service fence, this protects against
+concurrent append and tip replacement; it does not promise safety against an
+arbitrary privileged process rewriting an earlier row after its audit while
+preserving the observed tips. No finite endpoint fence establishes that stronger
+filesystem threat model. The strict next audit refuses such corruption.
+The full pre-admission scan is a correctness baseline, not a large-archive
+throughput qualification. A cached verified-prefix optimization needs its own
+integrity and performance review before production use.
+
+Full store audit also enforces unique manifest and writer-operation identities
+through exact schema validation plus integrity checks, contiguous sequence,
+retained request verification, and a retained-verified prefix from one historical
+issuer followed by admitted records. Ordinary Append cannot confirm a retained
+record; RetryImported remains a later explicit command. Time regression is
+allowed: signed sequence, not wall-clock time, determines ordering.
+
+No full acceptance criterion is closed solely by this checkpoint. Copy upgrade,
+initialization recovery for profile 2, proof-preserving backup/rebuild, degraded
+read-only inventory, framed cursors, proof-aware spool release and Library UI
+integration remain required. The independent codec review's source-oracle and
+page-vector follow-ups remain open; its short-key regression and framing labels
+are incorporated here. A separate detached proof API is required before spool
+release consumes the codec.

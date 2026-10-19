@@ -84,7 +84,7 @@ The local snapshot coordinate is `(through, tip)`: the global journal sequence a
 
 Backups use the [SQLite online backup API](https://www.sqlite.org/backup.html), finish into a self-contained owner-only destination, and verify hashes, closure, chain, receipt bindings and indexed coordinates. Copying an active main database without its WAL is not backup. A failed or interrupted backup is incomplete, never overwritten or certified by file existence. A local verified backup is not evidence of independent off-machine recovery.
 
-### Proposed payload-independent admission attestation (not implemented)
+### Payload-independent admission attestation (codec implemented; runtime integration pending)
 
 This extension is a proposal for `.design/kan-v2-evidence-availability.md`.
 Schema-1 receipts and manifests remain byte-identical and unsigned as defined

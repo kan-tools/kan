@@ -418,7 +418,7 @@ fn manifest(request: &SignedRequest, bytes: &[u8]) -> Result<Record> {
         ]),
     )
 }
-fn receipt(manifest: &Record, issuer: &str, now: u64) -> Result<Record> {
+pub(crate) fn receipt(manifest: &Record, issuer: &str, now: u64) -> Result<Record> {
     // dispatch accepts Unix seconds for request expiry; RFC 4 stores milliseconds.
     let now = now.checked_mul(1000).ok_or(Failure::Invalid)?;
     if now > evidence::MAX_SAFE_INTEGER as u64 {

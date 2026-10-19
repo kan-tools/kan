@@ -42,7 +42,7 @@ def main():
          'open_rejects_corrupt_content_before_journal_conversion'),
         ('no-create-sidecar-guard', original.replace('unused_sqlite_sidecars(&path)?;', ''),
          'evidence_store', 'lifecycle_destinations_preserve_existing_sqlite_namespaces'),
-        ('no-initialization-resume', original.replace('Self::initialize_empty(root, &path, &mut |_| {})',
+        ('no-initialization-resume', original.replace('Self::initialize_empty(root, &path, &mut |_| {}, None)',
          'Self::open(root)'), 'evidence_store',
          'initialization_resumes_each_publication_boundary_without_resetting_evidence'),
         ('adopt-foreign-version', original.replace('if app != 0 || version != 0 || tables != 0 {',

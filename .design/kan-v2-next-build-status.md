@@ -54,6 +54,27 @@ No profile-2 table, admission transaction, copy upgrade, backup/restore extensio
 Inventory RPC, cursor MAC, proof-aware spool release or unavailable-evidence UI is
 implemented by the codec. All six storage-design acceptance criteria remain open.
 
+## Profile-2 storage checkpoint (under qualification)
+
+Permanent worktree `.worktrees/kan-v2-proof-storage` adds an owner-side Archive API,
+explicit archive binding, atomic proof insertion, stored-byte retries and strict
+whole-chain audit. The legacy Ledger, recovery and resume APIs refuse the new
+profile. Fresh capture requires a current matching append grant and issuer.
+The schema, typed SQL mutations, independent surface catalog and CI test list
+are extended together. No RPC, CLI, migration, degraded-read or UI behavior is
+claimed from this storage API alone. All six parent acceptance criteria remain open.
+
+Ten storage checks include eight abrupt-exit phases, restart/retry byte identity,
+valid same-height proof replacement, unproven concurrent raw append, purpose
+ordering, wrong owner binding, metadata damage and missing payload refusal. Codec
+short-key and descending-error-label regressions address review F1/F2; the Verified
+doc now states its relative authority. Author evidence is preserved in `.design/reviews/kan-v2-proof-storage-author/`: ten
+storage checks, seven codec checks, existing compatibility suites, nineteen surface
+checks, strict Clippy, and six compiled negative controls. Fresh storage review
+remains pending.
+The complete pre-admission audit is deliberately unoptimized; see the storage
+checkpoint scope in the governing design for its concurrency threat boundary.
+
 ## Remaining ordered build
 
 1. Profile-2 authoritative proof storage in permanent worktree
