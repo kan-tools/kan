@@ -9,7 +9,7 @@ for acceptance. The complete human frontend remains required by
 | Health admission/reporter reliability | #283, a04f288; fresh Opus approval with follow-ups; all CI green | Qualification under wider production load; no universal zero-loss claim |
 | Capacity and owner rotation | #284, 771341e; fresh Opus approval with follow-ups; all CI green | Merge only with #285 corrections; whole-device/power-loss qualification remains distinct |
 | Session-cap continuation, WAL refusal, runner cleanup | #285, 9d300b4; fresh Opus approval with follow-ups; all CI green | Commit the surviving focused test improvements listed below |
-| Real Library reader and source/provenance UI | #286, df74506 independently approved with follow-ups; corrections through a8cbf21 | Fresh correction review in progress; per-record unavailable evidence and browser file delivery remain open |
+| Real Library reader and source/provenance UI | #286, df74506 and corrections through a8cbf21 independently approved with follow-ups; record 21c883d | Per-record unavailable evidence, partial catalog recovery, stronger boundary tests and browser file delivery remain open |
 | Deduplicated collection overview | `kan-v2-collection-overview.md` | Implement and qualify the bounded projection, typed status, refresh/cancel and human states |
 | Normalized sessions and navigation | Parent human-frontend design | Versioned adapters and exact source mapping for messages, tools, branches, attachments and gaps |
 | Search and views | Parent human-frontend design | Authorized encrypted projections, filters, frontiers, saved trust-aware views and stable URI extensions |
@@ -41,6 +41,48 @@ The authoritative report and disposition are
 Older v2 session-limited journals with a released reserve are deliberately
 accepted and writable; this compatibility decision is documented in #285. No
 source repair or automatic reserve rewrite is implied.
+
+## Exact #286 correction-review follow-ups
+
+The authoritative report and disposition are
+`reviews/kan-v2-library-correction-2026-10-18.txt` and `.md`. Fresh actual Opus 5.5
+session efa9d730-4e15-4369-b0cd-ca2869a01b29 approved the corrections with follow-ups.
+The review does not close any missing full-frontend workflow.
+
+1. Per-occurrence unavailable evidence, including startup and snapshot behavior
+   when historical payloads are absent (see the admission boundary below).
+2. Per-scope catalog errors so one unreachable or unverifiable scope does not
+   prevent inspection of valid neighbours.
+3. Deterministic tests of four executing requests, twelve accepted sockets,
+   queue timeout and whole-connection timeout. The committed fifth-socket test
+   does not distinguish queuing from unbounded execution; reviewer timing probes
+   are retained as separate evidence.
+4. API-side capability-list assertions and client malformed/duplicate cases.
+5. UI 401 locking, Previous-during-loading and remaining Unicode-control cases.
+   The production 401 branch is present; K03 is a surviving mutant, not a
+   demonstrated current 401 disclosure.
+6. Real browser file-delivery and remaining state/external-request qualification.
+7. Composed call/connection deadlines and constant-time token comparison.
+
+## Missing-source browsing: preserve the admission boundary
+
+The Library follow-up is more than replacing one error with a placeholder.
+`Service::new` and `Service::execute` in `src/evidence_service.rs` audit retained
+signed requests before advancing the admitted frontier. `Page` revalidates those
+objects, and `Snapshot` revalidates the tip. After restart, a missing historical
+object can therefore prevent service startup; after startup, a missing tip can
+prevent a fresh snapshot. A page-local UI change alone does not solve this.
+
+The next source-availability design must separate authenticated retained metadata
+from payload availability without promoting a privileged raw-ledger append to
+verified service admission. Preserve the current foreign-partition, writer-signature,
+and audited-frontier negative controls. Specify what independent retained proof
+allows a missing payload to be represented after restart, how old stores acquire
+that proof without inventing historical signatures, and how authenticated absence
+differs from corrupted metadata. Until that contract is implemented and reviewed,
+retain the explicit unavailable-page state; do not remove `read_signed` checks to
+make the UI appear complete. The current read-only Library cannot manufacture the
+missing authority.
 
 ## Review and merge discipline
 
