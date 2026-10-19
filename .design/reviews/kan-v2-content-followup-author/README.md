@@ -39,3 +39,13 @@ is pending. It still uses real encrypted1MB records and the production8MiB cap;
 it asserts nine reads at refusal, successful eight-record selection and no
 virtual-time advancement. The separate deadline test remains unchanged.
 This test correction has not yet been independently reviewed or requalified.
+
+
+Follow-up inspection found that pausing Tokio does not pause the renderer's
+`std::time::Instant` deadline. The acquisition-cutoff test therefore no longer
+starts a second eight-record interpretation and assumes it will finish within
+20 wall-clock seconds. It still acquires real encrypted records, requires the
+Limited result and exactly nine fetches, and checks that the outer virtual
+clock did not advance. A removed/raised/lowered acquisition cap changes the
+fetch count. Successful bounded rendering remains separately covered. This is
+a test isolation correction, not a change to either production deadline.
