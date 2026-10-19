@@ -1,0 +1,13 @@
+
+running 6 tests
+test cli_recovery_rejects_non_utf8_output_before_creating_it ... ok
+test cli_recovery_fails_explicitly_on_bad_raw_data_and_retains_incomplete_output ... ok
+test cli_missing_or_corrupt_evidence_is_never_empty_success ... ok
+test cli_init_and_backup_reject_non_utf8_output_before_mutation ... ok
+test cli_reads_and_rebuilds_damaged_derived_data_without_touching_original ... ok
+test cli_init_resume_is_explicit_and_preserves_existing_evidence ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/recovery_cli.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/recovery_cli-8f2c94a09c387bb5)

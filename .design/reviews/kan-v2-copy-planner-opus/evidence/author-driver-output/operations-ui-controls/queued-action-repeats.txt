@@ -1,0 +1,27 @@
+✖ RP13: a queued Cancel is dispatched once and then removed (13.705709ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 42.088
+
+✖ failing tests:
+
+test at tests/operations_restart_review.test.cjs:119:1
+✖ RP13: a queued Cancel is dispatched once and then removed (13.705709ms)
+  AssertionError [ERR_ASSERTION]: completed queued Cancel must not dispatch itself again
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner/tests/operations_restart_review.test.cjs:126:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual'
+  }

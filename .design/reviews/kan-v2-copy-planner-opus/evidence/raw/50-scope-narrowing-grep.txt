@@ -1,0 +1,34 @@
+== copy-planner
+273:+Declare both physical record surfaces and bundle validation with the future
+305:+Compilation, semantic negative controls and fresh review remain required. No
+337:+while later WAL admissions occur. Full source auditing retains the existing
+340:+is not the future bounded degraded-inventory reader.
+342:+Runtime draft tests target pinned-source/later-append refusal, same-frontier
+361:+admission never changes this table. Full audits after later admission recompute
+370:+partial-prefix crash tests, later-admission tests and degraded-read behavior all
+382:+or relabels pending traffic. Deployment and live cutover remain separately
+385:+### Destination execution order (proposed; not implemented)
+400:+Their present-time issuance timestamps need not equal those of later batches.
+417:+completed destination may contain later admitted rows; those must be independently
+440:+re-planning or a guessed nonce. The future CLI must durably write and verify the
+496:+visible and can be quadratic across many tiny process invocations. A future
+600:+        ('unpin-source-transaction',STORE,originals[STORE].replace('PRAGMA query_only=ON; BEGIN;','PRAGMA query_only=ON;'),'evidence_copy_source','source_plan_is_pinned_and_reconfirmation_detects_later_admission'),
+615:+//! Owner-pinned recipe for a future profile-1 to profile-3 copy.
+1065:+fn source_plan_is_pinned_and_reconfirmation_detects_later_admission() {
+1099:+                ciphertext: hex(b"later"),
+== lifecycle-followup
+2:+### Restart rendering follow-up
+10:+Fresh review of this correction remains required.
+11:+in `.design/reviews/kan-v2-proof-lifecycle-author/`. Fresh actual Opus5.5 review at7ab1afa returned APPROVE WITH FOLLOW-UPS;
+13:+Follow-up qualification at9aca45d closes the named test, CLI and catalog gaps
+17:+## Authenticated overview browser follow-up
+30:+at7ab1afa with follow-ups; required writer exclusion is resolved. Full compatibility
+34:+seams remain follow-ups.
+37:+follow-ups. Its12 probes plus an author queue-repeat regression are now in CI;
+258:+ // Headers arrive now; body is delivered later and rejects with AbortError if the signal aborts first (browser semantics).
+356:+// Author follow-up to reviewer A13: deterministic timers make a retained queued
+436:+test('UPf: superseded label survives later overview polls and a failed status poll',async()=>{
+447:+test('UPg: future-dated sample says its clock is ahead, not "0s old"',async()=>{
+== ui-test-followup
+61:+ // Headers arrive now; body is delivered later and rejects with AbortError if the signal aborts first (browser semantics).
+159:+// Author follow-up to reviewer A13: deterministic timers make a retained queued

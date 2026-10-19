@@ -1,0 +1,683 @@
+diff --git a/.design/kan-v2-collection-overview.md b/.design/kan-v2-collection-overview.md
+index 2cc2309..2f16069 100644
+--- a/.design/kan-v2-collection-overview.md
++++ b/.design/kan-v2-collection-overview.md
+@@ -232,3 +232,13 @@ new HTTP socket regression checks eight held header requests, refusal of a ninth
+ and permit reuse after completion. The 40,000-row active-source regression runs
+ 100 real health writes during refresh. Qualification and fresh review of these
+ corrections must be recorded before closing their acceptance criteria.
++
++### Restart rendering follow-up
++
++The ongoing cold correction review reproduced a collision when a restarted
++service reused a job number with the same collection manifest. The UI now keys
++rendering by the full immutable sample; new totals, source digests and timestamps
++cannot be paired with the prior rendered body. The new regression passes, the
++whole production fix reverted fails, and all 27 Operations UI checks pass after
++restoration. Evidence is in `.design/reviews/kan-v2-overview-restart-author/`.
++Fresh review of this correction remains required.
+diff --git a/.design/kan-v2-next-build-status.md b/.design/kan-v2-next-build-status.md
+index da5d96e..b97088a 100644
+--- a/.design/kan-v2-next-build-status.md
++++ b/.design/kan-v2-next-build-status.md
+@@ -93,8 +93,11 @@ legacy-profile refusal, copied-proof verification, pinned source transactions,
+ process death at initialization/rebuild boundaries and real CLI output. Five
+ semantic negative controls fail named assertions and restored checks pass. Local
+ qualification passes 81 Rust checks and strict all-target v2 Clippy; evidence is
+-in `.design/reviews/kan-v2-proof-lifecycle-author/`. Fresh review is pending;
+-no parent acceptance criterion is closed from this draft.
++in `.design/reviews/kan-v2-proof-lifecycle-author/`. Fresh actual Opus5.5 review at7ab1afa returned APPROVE WITH FOLLOW-UPS;
++the raw report is in `.design/reviews/kan-v2-overview-lifecycle-opus/`.
++Follow-up qualification at9aca45d closes the named test, CLI and catalog gaps
++(`.design/reviews/kan-v2-proof-lifecycle-followup-author/`); its fresh correction
++review is pending. No parent acceptance criterion is closed by this slice.
+ 
+ ## Remaining ordered build
+ 
+@@ -132,3 +135,29 @@ working reserve; capacity refusal is explicit. Source copy can refuse after five
+ seconds when busy. Tests target writer progress, post-read sealed changes, invalid
+ unique health rows, historical worker separation and UI request races. Author qualification now passes 74 Rust checks, 26 Operations Node checks, strict all-target v2 Clippy and 13 semantic mutants with restored assertions. Evidence is in `.design/reviews/kan-v2-overview-correction-author/`; fresh re-review remains pending.
+ The final cold review returned APPROVE WITH FOLLOW-UPS for the overview, with O1 a required code correction, and APPROVE for the storage corrections. The raw report and independent probes are preserved unchanged in `.design/reviews/kan-v2-overview-opus/`. Fresh review of the corrected overview remains required.
++
++## Authenticated overview browser follow-up
++
++The merged source now has author-run browser evidence for unavailable, building,
++completed, failed, cancelling, cancelled, capacity-limited and client-derived
++superseded states. Old totals survive failed/cancelled/capacity-limited refreshes
++with explicit labels. Light/dark and 390-pixel wrapping were inspected; lock clears
++metadata. Evidence and exact fixture limitations are preserved in
++`.design/reviews/kan-v2-overview-browser-followup/`. This was collected after the
++7ab1afa independent-review export; it does not change that review's scope or verdict.
++
++## Current cold-review disposition
++
++The fresh combined review approved the overview correction at262cad3 and lifecycle
++at7ab1afa with follow-ups; required writer exclusion is resolved. Full compatibility
++execution passed310 checks on macOS. Sustained back-to-back writers can still
++starve overview refresh, and practical overview capacity remains about64.5k
++identities; refusal is visible. Backend deadline/revalidation/window regression
++seams remain follow-ups.
++
++A separate cold review approved the restart rendering fix at7126848 with
++follow-ups. Its12 probes plus an author queue-repeat regression are now in CI;
++49operations checks pass and11UI mutants fail named assertions. Evidence and
++provenance are in `.design/reviews/kan-v2-overview-restart-opus/`. The production
++fix has not changed after that review. The broader browser matrix was collected
++before the restart fix; actual file download delivery remains unverified.
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 311e10a..cb1d4e1 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -24,7 +24,7 @@ jobs:
+       - run: ./scripts/check-citations.sh --self-test
+       - run: ./scripts/check-citations.sh
+       - run: python3 scripts/evidence_reference.py --check
+-      - run: node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/theme_ui.test.cjs
++      - run: node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs tests/operations_restart_review.test.cjs tests/theme_ui.test.cjs
+       - run: python3 tests/test_revert_v2.py
+ 
+       - uses: Swatinem/rust-cache@v2
+diff --git a/scripts/attested_lifecycle_negative_controls.py b/scripts/attested_lifecycle_negative_controls.py
+index 9d90f6b..5c6a638 100644
+--- a/scripts/attested_lifecycle_negative_controls.py
++++ b/scripts/attested_lifecycle_negative_controls.py
+@@ -5,14 +5,21 @@ import subprocess
+ ROOT=Path(__file__).resolve().parents[1]
+ STORE=ROOT/'src/evidence_store.rs'
+ PROOF=ROOT/'src/evidence_store/attested.rs'
++BIN=ROOT/'src/bin/kan-v2.rs'
+ OUT=ROOT/'.local-state/reviews/lifecycle-controls'
+ 
+ def main():
++    if not __debug__: raise RuntimeError('assertions required')
+     OUT.mkdir(parents=True,exist_ok=True)
+-    originals={p:p.read_text() for p in (STORE,PROOF)}
++    originals={p:p.read_text() for p in (STORE,PROOF,BIN)}
+     for p,s in originals.items(): (OUT/(p.name+'.original')).write_text(s)
+-    store=originals[STORE]; proof=originals[PROOF]
++    store=originals[STORE]; proof=originals[PROOF]; binary=originals[BIN]
+     cases=[
++        ('inflate-verify-admission-label',BIN,binary.replace('"cryptographic_admission":if attested {"proof-purpose-dependent"} else {"not-verified"}', '"cryptographic_admission":if attested {"admitted-verified"} else {"not-verified"}',1),'owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle'),
++        ('inflate-recover-history-label',BIN,binary.replace('"historical_completeness":"not-verified",\n                    "independent_backup"', '"historical_completeness":"complete",\n                    "independent_backup"'),'owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle'),
++        ('drop-source-error-context',BIN,binary.replace('format!("cannot read recovery source {}: {e}", database.display())','format!("{e}")'),'owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle'),
++        ('drop-exact-standalone-schema',PROOF,proof.replace('reader.reader.ledger.check_write_profile(true)?;', 'let _ = &reader.reader.ledger;'),'standalone_proof_verification_and_backup_refuse_undeclared_schema'),
++        ('drop-precommit-proof-audit',STORE,store.replace('attested::verify_contents(&target, binding, &expected)?;', 'let _ = binding;'),'corrupt_source_proofs_are_rejected_before_output_profile_is_committed'),
+         ('drop-proof-copy',STORE,store.replace('attested::copy_proof(&self.ledger.conn, &tx, raw.sequence)?;','let _ = &tx;'),'proof_bytes_survive_backup_rebuild_and_derived_repair'),
+         ('drop-extra-proof-check',PROOF,proof.replace('if u64::try_from(count).ok() != Some(through) {','if false && u64::try_from(count).ok() != Some(through) {'),'recovery_refuses_missing_or_corrupt_proofs_and_payloads'),
+         ('resume-as-legacy',PROOF,proof.replace('Ledger::initialize_empty(root, &path, &mut |_| {}, Some(&binding))?','Ledger::initialize_empty(root, &path, &mut |_| {}, None)?'),'interrupted_initialization_resumes_only_by_explicit_owner_action'),
+@@ -36,5 +43,5 @@ def main():
+     run=subprocess.run(args,cwd=ROOT,capture_output=True,text=True)
+     (OUT/'restored.txt').write_text(run.stdout+run.stderr)
+     assert run.returncode==0,'restored baseline failed'
+-    print('Five compiled mutants fail; restored lifecycle/store/surface pass.',flush=True)
++    print(f'{len(cases)} compiled mutants fail; restored lifecycle/store/surface pass.',flush=True)
+ if __name__=='__main__':main()
+diff --git a/scripts/operations_review_negative_controls.py b/scripts/operations_review_negative_controls.py
+new file mode 100644
+index 0000000..10d0aab
+--- /dev/null
++++ b/scripts/operations_review_negative_controls.py
+@@ -0,0 +1,86 @@
++#!/usr/bin/env python3
++"""Exercise the independent abort-aware UI probes; restore source in finally."""
++from pathlib import Path
++import subprocess
++import os
++import signal
++
++ROOT = Path(__file__).resolve().parents[1]
++APP = ROOT / 'web/operations/app.js'
++OUT = ROOT / '.local-state/reviews/operations-ui-controls'
++
++
++def run_bounded(command, name, timeout_seconds=60):
++    process = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.PIPE,
++                               stderr=subprocess.PIPE, text=True, start_new_session=True)
++    try:
++        out, err = process.communicate(timeout=timeout_seconds)
++    except subprocess.TimeoutExpired:
++        try:
++            os.killpg(process.pid, signal.SIGKILL)
++        except ProcessLookupError:
++            pass
++        out, err = process.communicate()
++        (OUT / (name + '.timeout.txt')).write_text(out + err)
++        raise RuntimeError(name + ' timed out; process group stopped; not a demonstrated assertion')
++    return subprocess.CompletedProcess(command, process.returncode, out, err)
++
++
++def main():
++    if not __debug__:
++        raise RuntimeError('assertions required')
++    OUT.mkdir(parents=True, exist_ok=True)
++    original = APP.read_text()
++    cases = [
++        ('restart-cache-collision', "s.last_job+':'+JSON.stringify(v)",
++         "s.last_job+':'+v.manifest_sha256", 'UPb:'),
++        ('aborted-poll-clears-action',
++         'finally{clearTimeout(timeout);if(current===generation&&serial===overviewSerial){',
++         'finally{clearTimeout(timeout);if(current===generation){', 'UPi:'),
++        ('aborted-poll-repaints-error',
++         'catch(e){if(current===generation&&serial===overviewSerial){',
++         'catch(e){if(current===generation){', 'UPa:'),
++        ('partial-time-key', "s.last_job+':'+JSON.stringify(v)",
++         "s.last_job+':'+v.built_at", 'RP2:'),
++        ('omit-source-rows', 'JSON.stringify(v)',
++         'JSON.stringify({...v,sources:[]})', 'RP1:'),
++        ('partial-time-and-totals-key', "s.last_job+':'+JSON.stringify(v)",
++         "s.last_job+':'+v.built_at+':'+JSON.stringify(v.totals)", 'RP3:'),
++        ('null-keeps-key', "if(!s.last){overviewKey='';",
++         'if(!s.last){', 'RP5:'),
++        ('lock-keeps-key', "overviewEnabled=false;overviewKey='';",
++         'overviewEnabled=false;', 'RP4:'),
++        ('timeout-label-lost', "'Overview request timed out.'",
++         "'Overview unavailable.'", 'RP6:'),
++        ('cross-session-queued-action', "overviewSerial++;overviewQueued='';",
++         'overviewSerial++;', 'RP7:'),
++        ('queued-action-repeats', "const queued=overviewQueued;overviewQueued='';if(queued)",
++         'const queued=overviewQueued;if(queued)', 'RP13:'),
++    ]
++    try:
++        for name, before, after, test in cases:
++            assert original.count(before) == 1, name + ' anchor is not unique'
++            APP.write_text(original.replace(before, after))
++            suite = 'tests/operations_restart_review.test.cjs' if test.startswith('RP') else 'tests/operations_review_ui.test.cjs'
++            run = run_bounded(
++                ['node', '--test', '--test-name-pattern=' + test,
++                 suite], name)
++            log = run.stdout + run.stderr
++            (OUT / (name + '.txt')).write_text(log)
++            assert run.returncode != 0, name + ' SURVIVED'
++            assert 'AssertionError' in log and test in log, name + ' no assertion'
++            print('DEMONSTRATED:', name, flush=True)
++            APP.write_text(original)
++    finally:
++        APP.write_text(original)
++    run = run_bounded(
++        ['node', '--test', 'tests/operations_ui.test.cjs',
++         'tests/operations_review_ui.test.cjs', 'tests/operations_restart_review.test.cjs'],
++        'restored')
++    (OUT / 'restored.txt').write_text(run.stdout + run.stderr)
++    assert run.returncode == 0, 'restored baseline failed'
++    print(f'{len(cases)} UI mutants fail assertions; restored 49 checks pass.', flush=True)
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/scripts/overview_negative_controls.py b/scripts/overview_negative_controls.py
+index 8d2f515..9e1b9a1 100644
+--- a/scripts/overview_negative_controls.py
++++ b/scripts/overview_negative_controls.py
+@@ -15,6 +15,7 @@ def main():
+     for path,value in originals.items(): (OUT/(path.name+'.original')).write_text(value)
+     s=originals[SOURCE]
+     cases=[
++      ('restart-render-collision',JS,originals[JS].replace("s.last_job+':'+JSON.stringify(v)","s.last_job+':'+v.manifest_sha256"),'a reused job number after restart cannot retain old overview totals'),
+       ('remove-connection-bound',DASHBOARD,originals[DASHBOARD].replace('Semaphore::new(8)', 'Semaphore::new(16)'),'overview_http_connection_limit_releases_slots_after_requests'),
+       ('no-deduplication',SOURCE,s.replace('        if let Some(old) = map.get(&key) {','        let key = format!("{key}:{}",map.len());\n        if let Some(old) = map.get(&key) {'),'cumulative_rows_are_deduplicated_without_rewriting_sources'),
+       ('no-dominance',SOURCE,s.replace('if !dominates {','if false && !dominates {'),'intermediate_regressions_conflicting_observers_and_terminals_refuse_publication'),
+diff --git a/src/bin/kan-v2.rs b/src/bin/kan-v2.rs
+index 92c1200..7e5cb59 100644
+--- a/src/bin/kan-v2.rs
++++ b/src/bin/kan-v2.rs
+@@ -962,10 +962,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
+                 .to_str()
+                 .ok_or("recovery JSON requires a UTF-8 destination path")?;
+             let result = if let Some(binding) = binding {
+-                kan::evidence_store::attested::Recovery::open(&database, binding)?
++                kan::evidence_store::attested::Recovery::open(&database, binding)
++                    .map_err(|e| {
++                        format!("cannot read recovery source {}: {e}", database.display())
++                    })?
+                     .rebuild(&destination)
+             } else {
+-                RecoveryReader::open(&database)?.rebuild(&destination)
++                RecoveryReader::open(&database)
++                    .map_err(|e| {
++                        format!("cannot read recovery source {}: {e}", database.display())
++                    })?
++                    .rebuild(&destination)
+             };
+             let report = result.map_err(|e| format!(
+                 "recovery into {} failed: {e}; destination must be a new file; any output is retained",
+diff --git a/tests/evidence_attested_lifecycle.rs b/tests/evidence_attested_lifecycle.rs
+index 680b535..131a15e 100644
+--- a/tests/evidence_attested_lifecycle.rs
++++ b/tests/evidence_attested_lifecycle.rs
+@@ -258,6 +258,67 @@ fn backup_success_requires_verifying_the_copied_proof_chain() {
+     assert!(Archive::verify_file(&output, binding()).is_err());
+ }
+ 
++#[test]
++fn standalone_proof_verification_and_backup_refuse_undeclared_schema() {
++    for extra in [
++        "CREATE TABLE undeclared_notes(body BLOB NOT NULL)",
++        "CREATE INDEX undeclared_proof_index ON attestations(envelope)",
++    ] {
++        let t = tempfile::tempdir().unwrap();
++        let root = t.path().join("source");
++        let a = populate(&root);
++        let db = root.join("archive.sqlite");
++        let c = Connection::open(&db).unwrap();
++        c.execute_batch(extra).unwrap();
++        drop(c);
++        assert!(
++            Archive::verify_file(&db, binding()).is_err(),
++            "standalone verification must refuse extra schema: {extra}"
++        );
++        let output = t.path().join("backup.sqlite");
++        assert!(
++            a.backup(&output).is_err(),
++            "a copied unknown schema cannot be reported as a verified backup"
++        );
++        // A failed backup can leave output; it must still fail verification.
++        if output.exists() {
++            assert!(Archive::verify_file(&output, binding()).is_err());
++        }
++    }
++}
++
++#[test]
++fn corrupt_source_proofs_are_rejected_before_output_profile_is_committed() {
++    let t = tempfile::tempdir().unwrap();
++    let root = t.path().join("source");
++    drop(populate(&root));
++    let db = root.join("archive.sqlite");
++    let c = Connection::open(&db).unwrap();
++    c.execute(
++        "UPDATE attestations SET envelope=X'00' WHERE sequence=1",
++        [],
++    )
++    .unwrap();
++    drop(c);
++    let output = t.path().join("refused.sqlite");
++    assert!(Recovery::open(&db, binding())
++        .unwrap()
++        .rebuild(&output)
++        .is_err());
++    let result = Connection::open(&output).unwrap();
++    let version: i64 = result
++        .query_row("PRAGMA user_version", [], |r| r.get(0))
++        .unwrap();
++    assert_eq!(
++        version, 0,
++        "invalid proofs must not commit a profile marker"
++    );
++    let tables: i64 = result
++        .query_row("SELECT count(*) FROM sqlite_schema", [], |r| r.get(0))
++        .unwrap();
++    assert_eq!(tables, 0, "failed proof audit rolls back output schema too");
++}
++
+ #[test]
+ fn lifecycle_crash_child() {
+     let Ok(mode) = std::env::var("KAN_PROOF_LIFECYCLE_CHILD") else {
+@@ -417,6 +478,8 @@ fn owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle() {
+     );
+     let json: serde_json::Value = serde_json::from_slice(&recovered.stdout).unwrap();
+     assert_eq!(json["cryptographic_admission"], "proof-purpose-dependent");
++    assert_eq!(json["historical_completeness"], "not-verified");
++    assert_eq!(json["independent_backup"], false);
+     assert_eq!(json["promoted"], false);
+     assert_eq!(raw(&rebuilt), original);
+     let verified = run(&[vec!["verify", rebuilt.to_str().unwrap()], pins.to_vec()].concat());
+@@ -427,8 +490,28 @@ fn owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle() {
+         "payloads-writer-requests-and-issuer-proofs"
+     );
+     assert_eq!(json["historical_completeness"], "not-verified");
++    assert_eq!(json["cryptographic_admission"], "proof-purpose-dependent");
++    assert_eq!(json["writable_admission"], "not-checked");
+     assert!(
+         !run(&["verify", rebuilt.to_str().unwrap()]).status.success(),
+         "legacy CLI must not guess proof profile"
+     );
++    let missing = t.path().join("missing.sqlite");
++    let refused = t.path().join("refused.sqlite");
++    for owner_pins in [vec![], pins.to_vec()] {
++        let result = run(&[
++            vec![
++                "recover",
++                missing.to_str().unwrap(),
++                refused.to_str().unwrap(),
++            ],
++            owner_pins,
++        ]
++        .concat());
++        assert!(!result.status.success());
++        assert!(!refused.exists());
++        let stderr = String::from_utf8_lossy(&result.stderr);
++        assert!(stderr.contains("cannot read recovery source"), "{stderr}");
++        assert!(stderr.contains(missing.to_str().unwrap()), "{stderr}");
++    }
+ }
+diff --git a/tests/fixtures/read-write-surface.tsv b/tests/fixtures/read-write-surface.tsv
+index b2719d9..4770337 100644
+--- a/tests/fixtures/read-write-surface.tsv
++++ b/tests/fixtures/read-write-surface.tsv
+@@ -74,7 +74,7 @@ planned	authoritative-kan	system-config	system	system-config:connections	*	.desi
+ implemented	authoritative-kan	evidence-store	system	evidence-db:archive.sqlite	*	src/evidence_store.rs	crate::evidence_store::Ledger	validate:opaque-evidence-store	retain-until-explicit-owner-erasure	.design/kan-v2-storage.md#architecture
+ implemented	authoritative-kan	evidence-store	system	evidence-db:archive.sqlite-wal	*	src/evidence_store.rs	crate::evidence_store::Ledger	validate:opaque-evidence-store	retain-until-explicit-owner-erasure	.design/kan-v2-storage.md#architecture
+ implemented	derived	evidence-store	system	evidence-db:archive.sqlite-shm	*	src/evidence_store.rs	crate::evidence_store::Ledger	validate:opaque-evidence-store	retain-until-explicit-owner-erasure	.design/kan-v2-storage.md#architecture
+-implemented	authoritative-kan	evidence-store	system	evidence-backup:archive.sqlite	*	src/evidence_store.rs	crate::evidence_store::Ledger	validate:opaque-evidence-store	retain-until-explicit-owner-erasure	.design/kan-v2-storage.md#architecture
++implemented	authoritative-kan	evidence-store	system	evidence-backup:archive.sqlite	*	src/evidence_store.rs	crate::evidence_store::{Ledger,attested::Archive}	validate:profile-selected-evidence-lifecycle	retain-until-explicit-owner-erasure	.design/kan-v2-evidence-availability.md#proof-lifecycle-build-contract
+ implemented	authoritative-kan	evidence-store	system	evidence-sqlite:objects	cid	src/evidence_store.rs	crate::evidence_store::Ledger	validate:opaque-evidence-store	validate-against-canonical-records	.design/kan-v2-storage.md#architecture
+ implemented	authoritative-kan	evidence-store	system	evidence-sqlite:objects	bytes	src/evidence_store.rs	crate::evidence_store::Ledger	validate:opaque-evidence-store	validate-against-canonical-records	.design/kan-v2-storage.md#architecture
+ implemented	authoritative-kan	evidence-store	system	evidence-sqlite:commits	sequence	src/evidence_store.rs	crate::evidence_store::Ledger	validate:opaque-evidence-store	validate-against-canonical-records	.design/kan-v2-storage.md#architecture
+@@ -93,13 +93,13 @@ implemented	derived	evidence-store	system	evidence-sqlite:bindings	ciphertext	sr
+ implemented	derived	evidence-store	system	evidence-sqlite:bindings	length	src/evidence_store.rs	crate::evidence_store::Ledger	validate:opaque-evidence-store	validate-against-canonical-records	.design/kan-v2-storage.md#architecture
+ implemented	derived	evidence-store	system	evidence-sqlite:bindings	first_manifest	src/evidence_store.rs	crate::evidence_store::Ledger	validate:opaque-evidence-store	validate-against-canonical-records	.design/kan-v2-storage.md#architecture
+ implemented	authoritative-kan	evidence-store	system	evidence-db:archive.sqlite-journal	*	src/evidence_store.rs	crate::evidence_store::Ledger	validate:opaque-evidence-store	sqlite-managed-crash-recovery	.design/kan-v2-storage.md#architecture
+-implemented	authoritative-kan	evidence-store	system	evidence-backup:archive.sqlite-journal	*	src/evidence_store.rs	crate::evidence_store::Ledger	validate:opaque-evidence-store	sqlite-managed-crash-recovery	.design/kan-v2-storage.md#architecture
+-implemented	authoritative-kan	evidence-store	system	evidence-recovery:archive.sqlite	*	src/evidence_store.rs	crate::evidence_store::RecoveryReader	validate:opaque-evidence-store	retain-source-and-incomplete-output	.design/kan-v2-derived-recovery.md#architecture
+-implemented	authoritative-kan	evidence-store	system	evidence-recovery:archive.sqlite-journal	*	src/evidence_store.rs	crate::evidence_store::RecoveryReader	validate:opaque-evidence-store	sqlite-managed-crash-recovery	.design/kan-v2-derived-recovery.md#architecture
+-implemented	authoritative-kan	evidence-store	system	evidence-recovery-source:database-wal	*	src/evidence_store.rs	crate::evidence_store::RecoveryReader	validate:opaque-evidence-store	sqlite-coordination-no-source-record-rewrite	.design/kan-v2-derived-recovery.md#architecture
+-implemented	derived	evidence-store	system	evidence-recovery-source:database-shm	*	src/evidence_store.rs	crate::evidence_store::RecoveryReader	validate:opaque-evidence-store	sqlite-coordination-no-source-record-rewrite	.design/kan-v2-derived-recovery.md#architecture
+-implemented	authoritative-kan	evidence-store	system	evidence-backup:archive.sqlite-wal	*	src/evidence_store.rs	crate::evidence_store::Ledger	validate:opaque-evidence-store	sqlite-managed-crash-recovery	.design/kan-v2-storage-lifecycle.md#architecture
+-implemented	derived	evidence-store	system	evidence-backup:archive.sqlite-shm	*	src/evidence_store.rs	crate::evidence_store::Ledger	validate:opaque-evidence-store	sqlite-managed-coordination	.design/kan-v2-storage-lifecycle.md#architecture
++implemented	authoritative-kan	evidence-store	system	evidence-backup:archive.sqlite-journal	*	src/evidence_store.rs	crate::evidence_store::{Ledger,attested::Archive}	validate:profile-selected-evidence-lifecycle	sqlite-managed-crash-recovery	.design/kan-v2-evidence-availability.md#proof-lifecycle-build-contract
++implemented	authoritative-kan	evidence-store	system	evidence-recovery:archive.sqlite	*	src/evidence_store.rs	crate::evidence_store::{RecoveryReader,attested::Recovery,attested::Archive}	validate:profile-selected-evidence-lifecycle	retain-source-and-incomplete-output	.design/kan-v2-evidence-availability.md#proof-lifecycle-build-contract
++implemented	authoritative-kan	evidence-store	system	evidence-recovery:archive.sqlite-journal	*	src/evidence_store.rs	crate::evidence_store::{RecoveryReader,attested::Recovery,attested::Archive}	validate:profile-selected-evidence-lifecycle	sqlite-managed-crash-recovery	.design/kan-v2-evidence-availability.md#proof-lifecycle-build-contract
++implemented	authoritative-kan	evidence-store	system	evidence-recovery-source:database-wal	*	src/evidence_store.rs	crate::evidence_store::{RecoveryReader,attested::Recovery,attested::Archive}	validate:profile-selected-evidence-lifecycle	sqlite-coordination-no-source-record-rewrite	.design/kan-v2-evidence-availability.md#proof-lifecycle-build-contract
++implemented	derived	evidence-store	system	evidence-recovery-source:database-shm	*	src/evidence_store.rs	crate::evidence_store::{RecoveryReader,attested::Recovery,attested::Archive}	validate:profile-selected-evidence-lifecycle	sqlite-coordination-no-source-record-rewrite	.design/kan-v2-evidence-availability.md#proof-lifecycle-build-contract
++implemented	authoritative-kan	evidence-store	system	evidence-backup:archive.sqlite-wal	*	src/evidence_store.rs	crate::evidence_store::{Ledger,attested::Archive}	validate:profile-selected-evidence-lifecycle	sqlite-managed-crash-recovery	.design/kan-v2-evidence-availability.md#proof-lifecycle-build-contract
++implemented	derived	evidence-store	system	evidence-backup:archive.sqlite-shm	*	src/evidence_store.rs	crate::evidence_store::{Ledger,attested::Archive}	validate:profile-selected-evidence-lifecycle	sqlite-managed-coordination	.design/kan-v2-evidence-availability.md#proof-lifecycle-build-contract
+ implemented	authoritative-kan	evidence-store	system	evidence-service:request	request.version	src/evidence_service.rs	crate::evidence_service::Service	validate:signed-service-request	retained-inside-referenced-opaque-object	.design/kan-v2-service-boundary.md#architecture
+ implemented	authoritative-kan	evidence-store	system	evidence-service:request	request.scope	src/evidence_service.rs	crate::evidence_service::Service	validate:signed-service-request	retained-inside-referenced-opaque-object	.design/kan-v2-service-boundary.md#architecture
+ implemented	authoritative-kan	evidence-store	system	evidence-service:request	request.principal	src/evidence_service.rs	crate::evidence_service::Service	validate:signed-service-request	retained-inside-referenced-opaque-object	.design/kan-v2-service-boundary.md#architecture
+diff --git a/tests/operations_restart_review.test.cjs b/tests/operations_restart_review.test.cjs
+new file mode 100644
+index 0000000..f933cda
+--- /dev/null
++++ b/tests/operations_restart_review.test.cjs
+@@ -0,0 +1,128 @@
++// Independent review probes (Opus 5.5, fresh) for the 7126848 restart correction.
++// Runs the real web/operations/app.js (path from APP env or cwd). Node DOM stub only:
++// this is NOT browser qualification. Harness differences from the imported one:
++//  - fetch honours AbortSignal (as there) AND the body json() honours it too;
++//  - setTimeout is controllable so the 8 s request timeout can be fired on demand.
++const {test}=require('node:test');const assert=require('node:assert/strict');const vm=require('node:vm');const fs=require('node:fs');const path=require('node:path');
++const APP=process.env.APP||path.resolve('web/operations/app.js');
++function ui(){const nodes=new Map();class Element{constructor(){this.value='';this.hidden=false;this.events={};this.children=[];this.checked=false;this.open=false;this.isConnected=true;this.textWrites=0;}set textContent(v){this._text=v;this.textWrites++;}get textContent(){return this._text;}getAttribute(k){return this[k]??null;}setAttribute(k,v){this[k]=v;}showModal(){this.open=true;}close(){this.open=false;}focus(){this.focused=true;document.activeElement=this;}select(){this.selected=true;}addEventListener(k,f){this.events[k]=f;}replaceChildren(){const d=n=>{n.isConnected=false;for(const c of n.children)d(c);};for(const c of this.children)d(c);this.children=[];}append(x){this.children.push(x);}}
++ const node=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};const pending=[];const log=[];const document={getElementById:node,createElement:()=>new Element(),activeElement:null};
++ const abortErr=()=>{const e=new Error('aborted');e.name='AbortError';return e;};
++ const fetch=(url,opts)=>new Promise((resolve,reject)=>{const p={url,opts,resolve,reject};log.push(url);opts.signal?.addEventListener('abort',()=>{const i=pending.indexOf(p);if(i>=0)pending.splice(i,1);reject(abortErr());});pending.push(p);});
++ const timers=new Map();let tid=0;
++ const setTimeoutC=(f,ms)=>{const id=++tid;timers.set(id,{f,ms});return id;};const clearTimeoutC=id=>{timers.delete(id);};
++ const fireTimeouts=()=>{const all=[...timers];timers.clear();for(const [,t] of all)t.f();};
++ const context={document,fetch,setInterval:()=>{},setTimeout:setTimeoutC,clearTimeout:clearTimeoutC,AbortController,Date,Number};vm.createContext(context);vm.runInContext(fs.readFileSync(APP,'utf8'),context);
++ const settle=async()=>{for(let i=0;i<4;i++)await new Promise(setImmediate);};
++ const login=()=>{node('token').value='synthetic-operator-token';node('connect').events.submit({preventDefault(){}});};
++ const respondTo=async(pred,s,status=200)=>{const i=pending.findIndex(pred);assert.ok(i>=0,'no pending request matches');const [p]=pending.splice(i,1);p.resolve({ok:status===200,status,json:async()=>s});await settle();};
++ // Headers arrive now; body is delivered later and rejects with AbortError if the signal aborts first (browser semantics).
++ const respondHeaders=async(pred)=>{const i=pending.findIndex(pred);assert.ok(i>=0,'no pending request matches');const [p]=pending.splice(i,1);let deliver;const body=new Promise((res,rej)=>{deliver=res;p.opts.signal?.addEventListener('abort',()=>rej(abortErr()));});p.resolve({ok:true,status:200,json:()=>body});await settle();return s=>{deliver(s);return settle();};};
++ return{node,pending,log,login,respondTo,respondHeaders,settle,fireTimeouts,timers};}
++const snapshot=(active='a'.repeat(32))=>({version:2,active_generation:active,journal:{schema:2,pages_used:80,pages_limit:8192,free_pages:0,page_size:4096,attempts_used:1,attempts_limit:100000,sessions_used:1,sessions_limit:1024,reserve_bytes:262144,exhausted_observed:false,last_success_at:Date.now()/1000,scope:'active generation'},read_at:Date.now()/1000,worker:{sampled_at:Date.now()/1000,state:'idle',queue:{next:9,pending:2,pending_bytes:64,budget:128}},attempts:1,unconfirmed:1,telemetry_dropped:0,unclosed_sessions:0,reporters:[],recent:[]});
++// Server-faithful shape: includes the Rust fields the UI does not render (accounted_bytes, memory_limit, scan window, worker).
++const scan=d=>({started_at:1000,finished_at:1001,digest:d,worker:{sampled_at:999,state:'idle',queue:null,nonempty_since:null,last_ack_at:null,last_ack_position:null,consecutive_failures:0,retry_seconds:0,telemetry_failures:0},exhausted_observed:false});
++const overview=(o={})=>({version:1,state:'completed',job:1,reason:null,last_job:1,last:{version:1,coverage:'observations-only',capture_completeness:'unknown',built_at:Math.floor(Date.now()/1000)-30,manifest_sha256:'b'.repeat(64),active:'a'.repeat(32),sources:[{generation:'a'.repeat(32),sealed_sha256:null,snapshot:scan('c'.repeat(64))}],totals:{attempts:'1',sessions:'1',observed:'3',locally_queued:'2',unconfirmed:'1',attempts_with_gaps:'1',telemetry_dropped_lower_bound:'8',unclosed_sessions:'0'},accounted_bytes:4096,memory_limit:134217728},...o});
++const isOv=p=>p.url.startsWith('/api/overview');
++const clone=x=>JSON.parse(JSON.stringify(x));
++const body=u=>({summary:u.node('overview-summary').textContent,coverage:u.node('overview-coverage').textContent,sources:u.node('overview-sources').children.map(c=>c.textContent)});
++async function loaded(){const u=ui();u.login();await u.respondTo(p=>p.url==='/api/status',snapshot());u.node('overview-load').events.click();const first=overview();await u.respondTo(isOv,first);return{u,first};}
++
++test('RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints',async()=>{
++ const {u,first}=await loaded();const fresh=clone(first);fresh.last.sources[0].snapshot.digest='e'.repeat(64);
++ u.node('overview-load').events.click();await u.respondTo(isOv,fresh);
++ assert.match(u.node('overview-sources').children[0].textContent,/row digest e{64}$/,'source digest from pre-restart sample still shown');
++});
++test('RP2: restart, same job/manifest/built_at, only totals differ -> totals repaint',async()=>{
++ const {u,first}=await loaded();const fresh=clone(first);fresh.last.totals.attempts='5';
++ u.node('overview-load').events.click();await u.respondTo(isOv,fresh);
++ assert.match(u.node('overview-summary').textContent,/^5 distinct attempts/,'pre-restart totals retained beside new sample');
++});
++test('RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint',async()=>{
++ const {u,first}=await loaded();const fresh=clone(first);fresh.last.sources.unshift({generation:'f'.repeat(32),sealed_sha256:'9'.repeat(64),snapshot:scan('8'.repeat(64))});
++ u.node('overview-load').events.click();await u.respondTo(isOv,fresh);
++ assert.equal(u.node('overview-sources').children.length,2);assert.match(u.node('overview-coverage').textContent,/Complete for 2 selected/);
++});
++test('RP4: lock -> relogin -> load returns the SAME cached sample -> body is repainted, not left blank',async()=>{
++ const {u,first}=await loaded();const shown=body(u);
++ u.node('lock').events.click();assert.equal(u.node('overview-summary').textContent,'');
++ u.login();await u.respondTo(p=>p.url==='/api/status',snapshot());
++ u.node('overview-load').events.click();await u.respondTo(isOv,first);
++ assert.deepEqual(body(u),shown,'label says cached sample but body stayed blank after relogin');
++ assert.match(u.node('overview-state').textContent,/Cached sample/);
++});
++test('RP5: restart observed via last:null in between, then identical-looking sample -> body repainted',async()=>{
++ const {u,first}=await loaded();const shown=body(u);
++ u.node('overview-load').events.click();await u.respondTo(isOv,{version:1,state:'unavailable',job:0,reason:null,last_job:null,last:null});
++ assert.equal(u.node('overview-summary').textContent,'');
++ u.node('overview-load').events.click();await u.respondTo(isOv,first);
++ assert.deepEqual(body(u),shown,'body left blank after null-last then identical sample');
++});
++test('RP6: the 8 s timeout labels "timed out", retains prior sample, and releases the request slot',async()=>{
++ const {u}=await loaded();const shown=body(u);
++ u.node('overview-load').events.click();assert.equal(u.pending.filter(isOv).length,1);
++ u.fireTimeouts();await u.settle();
++ assert.match(u.node('overview-state').textContent,/^Overview request timed out\. Prior sample retained\./);
++ assert.deepEqual(body(u),shown);
++ u.node('overview-load').events.click();assert.equal(u.pending.filter(isOv).length,1,'slot not released after timeout');
++});
++test('RP7: a queued action does not leak across lock/relogin into the next session',async()=>{
++ const u=ui();u.login();await u.respondTo(p=>p.url==='/api/status',snapshot());
++ u.node('overview-build').events.click();u.node('overview-cancel').events.click();assert.match(u.node('overview-state').textContent,/queued/);
++ u.node('lock').events.click();await u.settle();
++ u.login();await u.respondTo(p=>p.url==='/api/status',snapshot());
++ u.node('overview-load').events.click();await u.respondTo(isOv,overview());
++ assert.equal(u.pending.filter(isOv).length,0,'stale queued action from the locked session was dispatched: '+JSON.stringify(u.log));
++});
++test('RP8: Build preempts a poll whose headers arrived but whose body is still streaming',async()=>{
++ const {u}=await loaded();const shown=body(u);
++ u.node('overview-load').events.click();const deliver=await u.respondHeaders(isOv);
++ u.node('overview-build').events.click();await u.settle();
++ assert.doesNotMatch(u.node('overview-state').textContent,/timed out/);
++ const stale=overview();stale.last.totals.attempts='77';await deliver(stale); // already rejected by abort: no effect
++ assert.deepEqual(body(u),shown);
++ await u.respondTo(isOv,overview({state:'building',job:2}));assert.match(u.node('overview-state').textContent,/Overview building/);
++});
++test('RP9: valid A, invalid reply, then valid B (same job/manifest) -> B repaints',async()=>{
++ const {u,first}=await loaded();const bad=clone(first);bad.last.sources=[];
++ u.node('overview-load').events.click();await u.respondTo(isOv,bad);assert.match(u.node('overview-state').textContent,/Invalid/);
++ const b=clone(first);b.last.totals.observed='42';
++ u.node('overview-load').events.click();await u.respondTo(isOv,b);
++ assert.match(u.node('overview-summary').textContent,/42 observed/);assert.doesNotMatch(u.node('overview-state').textContent,/Invalid/);
++});
++test('RP10: identical sample repeated: neither summary, coverage nor sources are rewritten (no announce churn)',async()=>{
++ const {u,first}=await loaded();const w={s:u.node('overview-summary').textWrites,c:u.node('overview-coverage').textWrites};const kids=u.node('overview-sources').children;
++ for(let i=0;i<3;i++){u.node('overview-load').events.click();await u.respondTo(isOv,clone(first));}
++ assert.equal(u.node('overview-summary').textWrites,w.s);assert.equal(u.node('overview-coverage').textWrites,w.c);assert.equal(u.node('overview-sources').children,kids);
++});
++test('RP11 (informational): same sample re-serialised with different key order re-renders but shows identical content',async()=>{
++ const {u,first}=await loaded();const shown=body(u);const w=u.node('overview-summary').textWrites;
++ const re=clone(first);const l=re.last;re.last=Object.fromEntries(Object.entries(l).reverse());
++ u.node('overview-load').events.click();await u.respondTo(isOv,re);
++ assert.deepEqual(body(u),shown);console.log('RP11 summary rewrites after key reorder:',u.node('overview-summary').textWrites-w);
++});
++test('RP12: bounds - 1024 server-shaped sources render; key work is small; 1025 sources are rejected',async()=>{
++ const big=overview();const src=[];for(let i=0;i<1023;i++){const h=i.toString(16).padStart(32,'0');src.push({generation:h,sealed_sha256:'1'.repeat(64),snapshot:scan(h+h)});}
++ big.last.sources=[...src,big.last.sources[0]];
++ const {u}=await loaded();const t0=process.hrtime.bigint();
++ for(let i=0;i<10;i++){const b=clone(big);b.last.built_at-=i;u.node('overview-load').events.click();await u.respondTo(isOv,b);}
++ const ms=Number(process.hrtime.bigint()-t0)/1e6;
++ assert.equal(u.node('overview-sources').children.length,1024);
++ const keyBytes=String(big.last_job).length+1+JSON.stringify(big.last).length;console.log('RP12 key bytes at 1024 sources:',keyBytes,'10 distinct renders ms:',ms.toFixed(1));
++ assert.ok(keyBytes<1_000_000,'key exceeds 1 MB');
++ const over=clone(big);over.last.sources.unshift({generation:'e'.repeat(32),sealed_sha256:'1'.repeat(64),snapshot:scan('2'.repeat(64))});
++ u.node('overview-load').events.click();await u.respondTo(isOv,over);assert.match(u.node('overview-state').textContent,/Invalid overview snapshot/);assert.equal(u.node('overview-sources').children.length,1024);
++});
++
++// Author follow-up to reviewer A13: deterministic timers make a retained queued
++// action fail a named assertion, rather than leaving a real timeout loop alive.
++test('RP13: a queued Cancel is dispatched once and then removed',async()=>{
++ const u=ui();u.login();await u.respondTo(p=>p.url==='/api/status',snapshot());
++ u.node('overview-build').events.click();u.node('overview-cancel').events.click();
++ await u.respondTo(isOv,overview({state:'building',job:2}));
++ assert.equal(u.pending.filter(isOv).length,1);
++ assert.equal(u.pending.find(isOv).url,'/api/overview/cancel');
++ await u.respondTo(isOv,overview({state:'cancelled',job:2}));
++ assert.equal(u.pending.filter(isOv).length,0,'completed queued Cancel must not dispatch itself again');
++ assert.deepEqual(u.log.filter(url=>url.startsWith('/api/overview')),['/api/overview/refresh','/api/overview/cancel']);
++});
+diff --git a/tests/operations_review_ui.test.cjs b/tests/operations_review_ui.test.cjs
+new file mode 100644
+index 0000000..8299992
+--- /dev/null
++++ b/tests/operations_review_ui.test.cjs
+@@ -0,0 +1,105 @@
++// Reviewer UI probes for 262cad3 (Scope A). Runs the real web/operations/app.js.
++// Difference from the author harness: fetch HONOURS AbortSignal (rejects with an
++// AbortError like a browser), so abort/catch/finally paths are actually exercised.
++const {test}=require('node:test');const assert=require('node:assert/strict');const vm=require('node:vm');const fs=require('node:fs');
++function ui(){const nodes=new Map();class Element{constructor(){this.value='';this.hidden=false;this.events={};this.children=[];this.checked=false;this.open=false;this.isConnected=true;this.textWrites=0;}set textContent(v){this._text=v;this.textWrites++;}get textContent(){return this._text;}getAttribute(k){return this[k]??null;}setAttribute(k,v){this[k]=v;}showModal(){this.open=true;}close(){this.open=false;}focus(){this.focused=true;document.activeElement=this;}select(){this.selected=true;}addEventListener(k,f){this.events[k]=f;}replaceChildren(){const d=n=>{n.isConnected=false;for(const c of n.children)d(c);};for(const c of this.children)d(c);this.children=[];}append(x){this.children.push(x);}}
++ const node=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};const pending=[];const log=[];const document={getElementById:node,createElement:()=>new Element(),activeElement:null};
++ const fetch=(url,opts)=>new Promise((resolve,reject)=>{const p={url,opts,resolve,reject,aborted:false};log.push(url);opts.signal?.addEventListener('abort',()=>{p.aborted=true;const i=pending.indexOf(p);if(i>=0)pending.splice(i,1);const e=new Error('aborted');e.name='AbortError';reject(e);});pending.push(p);});
++ const context={document,fetch,setInterval:()=>{},setTimeout,clearTimeout,AbortController,Date,Number};vm.createContext(context);vm.runInContext(fs.readFileSync('web/operations/app.js','utf8'),context);
++ const login=()=>{node('token').value='synthetic-operator-token';node('connect').events.submit({preventDefault(){}});};
++ const respondTo=async(pred,s,status=200)=>{const i=pending.findIndex(pred);assert.ok(i>=0,'no pending request matches');const [p]=pending.splice(i,1);p.resolve({ok:status===200,status,json:async()=>s});await new Promise(setImmediate);await new Promise(setImmediate);};
++ const respond=(s,status)=>respondTo(()=>true,s,status);
++ const settle=async()=>{await new Promise(setImmediate);await new Promise(setImmediate);};
++ return{node,pending,log,login,respond,respondTo,settle};}
++const snapshot=()=>({version:2,active_generation:'a'.repeat(32),journal:{schema:2,pages_used:80,pages_limit:8192,free_pages:0,page_size:4096,attempts_used:1,attempts_limit:100000,sessions_used:1,sessions_limit:1024,reserve_bytes:262144,exhausted_observed:false,last_success_at:Date.now()/1000,scope:"active generation"},read_at:Date.now()/1000,worker:{sampled_at:Date.now()/1000,state:'idle',queue:{next:9,pending:2,pending_bytes:64,budget:128}},attempts:1,unconfirmed:1,telemetry_dropped:0,unclosed_sessions:0,reporters:[],recent:[]});
++const overview=(o={})=>({version:1,state:'completed',job:1,reason:null,last_job:1,last:{version:1,coverage:'observations-only',capture_completeness:'unknown',built_at:Math.floor(Date.now()/1000)-30,active:'a'.repeat(32),manifest_sha256:'b'.repeat(64),sources:[{generation:'a'.repeat(32),sealed_sha256:null,snapshot:{digest:'c'.repeat(64)}}],totals:{attempts:'1',sessions:'1',observed:'3',locally_queued:'2',unconfirmed:'1',attempts_with_gaps:'1',telemetry_dropped_lower_bound:'8',unclosed_sessions:'0'}},...o});
++const isOv=p=>p.url.startsWith('/api/overview');
++
++test('UPa: a poll aborted by a preempting Build never labels the view as timed out/failed',async()=>{
++ const u=ui();u.login();await u.respond(snapshot());
++ u.node('overview-load').events.click();
++ u.node('overview-build').events.click();await u.settle();
++ assert.doesNotMatch(u.node('overview-state').textContent||'',/timed out|unavailable|Token/,'aborted poll leaked into the label');
++ assert.equal(u.pending.filter(isOv).length,1);assert.equal(u.pending.find(isOv).url,'/api/overview/refresh');
++ await u.respondTo(isOv,overview({state:'building',job:2}));
++ assert.match(u.node('overview-state').textContent,/Overview building/);
++ assert.doesNotMatch(u.node('overview-state').textContent,/timed out/);
++});
++
++test('UPb: after a service restart, a new sample with the same job number and manifest must repaint totals',async()=>{
++ const u=ui();u.login();await u.respond(snapshot());
++ u.node('overview-load').events.click();await u.respondTo(isOv,overview());
++ assert.match(u.node('overview-summary').textContent,/^1 distinct attempts/);
++ // Restarted process: job counter restarts at 1, manifest unchanged (no rotation), new active rows.
++ const fresh=overview();fresh.last.built_at=Math.floor(Date.now()/1000)-1;fresh.last.totals.attempts='5';fresh.last.totals.observed='9';fresh.last.sources[0].snapshot.digest='e'.repeat(64);
++ u.node('overview-load').events.click();await u.respondTo(isOv,fresh);
++ assert.match(u.node('overview-state').textContent,/1s old|0s old|2s old/,'label is from the new sample');
++ assert.match(u.node('overview-summary').textContent,/^5 distinct attempts/,'summary still shows the pre-restart sample beside the new label');
++});
++
++test('UPc: lock with a queued action dispatches nothing and repaints nothing afterwards',async()=>{
++ const u=ui();u.login();await u.respond(snapshot());
++ u.node('overview-build').events.click();u.node('overview-cancel').events.click();
++ assert.match(u.node('overview-state').textContent,/queued/);
++ const before=u.log.length;u.node('lock').events.click();await u.settle();
++ assert.equal(u.pending.filter(isOv).length,0,'lock aborts the in-flight action');
++ assert.equal(u.log.length,before,'queued Cancel must not be dispatched after lock');
++ assert.equal(u.node('overview-state').textContent,'No overview loaded.');
++});
++
++test('UPd: Build, Cancel, Build while an action is in flight: only the last queued action is sent',async()=>{
++ const u=ui();u.login();await u.respond(snapshot());
++ u.node('overview-build').events.click();u.node('overview-cancel').events.click();u.node('overview-build').events.click();
++ await u.respondTo(isOv,overview({state:'building',job:2,last:null,last_job:null}));
++ const sent=u.log.filter(x=>x.startsWith('/api/overview'));
++ console.log('UPd dispatched actions:',JSON.stringify(sent));
++ assert.deepEqual(sent,['/api/overview/refresh','/api/overview/refresh'],'observed queue semantics');
++});
++
++test('UPe: a failing action still dispatches the queued action and keeps the prior-sample label',async()=>{
++ const u=ui();u.login();await u.respond(snapshot());
++ u.node('overview-load').events.click();await u.respondTo(isOv,overview());
++ u.node('overview-build').events.click();u.node('overview-cancel').events.click();
++ await u.respondTo(isOv,{},503);
++ assert.match(u.node('overview-state').textContent,/Overview unavailable\. Prior sample retained\./);
++ assert.equal(u.pending.find(isOv)?.url,'/api/overview/cancel','queued cancel dispatched after failure');
++ assert.match(u.node('overview-summary').textContent,/^1 distinct attempts/);
++});
++
++test('UPf: superseded label survives later overview polls and a failed status poll',async()=>{
++ const u=ui();u.login();const st=snapshot();await u.respond(st);
++ u.node('overview-load').events.click();await u.respondTo(isOv,overview());
++ st.active_generation='d'.repeat(32);u.node('refresh').events.click();await u.respondTo(p=>p.url==='/api/status',st);
++ assert.match(u.node('overview-state').textContent,/Superseded by active generation d+/);
++ u.node('overview-load').events.click();await u.respondTo(isOv,overview());
++ assert.match(u.node('overview-state').textContent,/Superseded/,'an overview poll dropped the superseded label');
++ u.node('refresh').events.click();await u.respondTo(p=>p.url==='/api/status',{},503);
++ assert.match(u.node('overview-state').textContent,/Superseded/,'status failure dropped the superseded label');
++});
++
++test('UPg: future-dated sample says its clock is ahead, not "0s old"',async()=>{
++ const u=ui();u.login();await u.respond(snapshot());
++ const s=overview();s.last.built_at=Math.floor(Date.now()/1000)+3600;
++ u.node('overview-load').events.click();await u.respondTo(isOv,s);
++ assert.match(u.node('overview-state').textContent,/sample clock is ahead/);
++});
++
++test('UPh: relogin after lock ignores the old session\'s late action reply',async()=>{
++ const u=ui();u.login();await u.respond(snapshot());
++ u.node('overview-build').events.click();const old=u.pending.find(isOv);
++ u.node('lock').events.click();u.login();await u.respondTo(p=>p.url==='/api/status',snapshot());
++ // the old request was aborted by lock; a browser could still have delivered bytes - simulate a late resolve
++ old.resolve({ok:true,status:200,json:async()=>overview()});await u.settle();
++ assert.equal(u.node('overview-summary').textContent||'','');
++});
++
++test('UPi: after a Build preempts a poll, a following Cancel is still queued (one action in flight)',async()=>{
++ const u=ui();u.login();await u.respond(snapshot());
++ u.node('overview-load').events.click();
++ u.node('overview-build').events.click();await u.settle(); // aborted poll's catch/finally run here
++ u.node('overview-cancel').events.click();
++ assert.equal(u.pending.filter(isOv).length,1,'a second action was dispatched concurrently with Build');
++ assert.match(u.node('overview-state').textContent,/queued/);
++ await u.respondTo(isOv,overview({state:'building',job:2,last:null,last_job:null}));
++ assert.equal(u.pending.find(isOv)?.url,'/api/overview/cancel');
++});
+diff --git a/tests/operations_ui.test.cjs b/tests/operations_ui.test.cjs
+index ad8b098..240b83d 100644
+--- a/tests/operations_ui.test.cjs
++++ b/tests/operations_ui.test.cjs
+@@ -40,3 +40,18 @@ test('a second action is queued behind an unfinished action, then dispatched',as
+ test('cached overview shows its age and becomes visibly superseded after rotation',async()=>{const u=ui();u.login();const status=snapshot();status.active_generation='a'.repeat(32);await u.respond(status);u.node('overview-load').events.click();await u.respond(overview());assert.match(u.node('overview-state').textContent,/Cached sample.*old/);assert.doesNotMatch(u.node('overview-state').textContent,/Superseded/);status.active_generation='d'.repeat(32);u.node('refresh').events.click();await u.respond(status);assert.match(u.node('overview-state').textContent,/Superseded by active generation d+/);});
+ test('invalid overview replies label retained totals and restart clears them',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('overview-load').events.click();await u.respond(overview());u.node('overview-load').events.click();const bad=overview();bad.last.sources=[];await u.respond(bad);assert.match(u.node('overview-state').textContent,/Invalid.*Prior sample retained/);assert.match(u.node('overview-summary').textContent,/1 distinct attempts/);u.node('overview-load').events.click();await u.respond({version:1,state:'unavailable',job:0,reason:null,last_job:null,last:null});assert.equal(u.node('overview-summary').textContent,'');assert.equal(u.node('overview-sources').children.length,0);assert.match(u.node('overview-state').textContent,/unavailable/);});
+ test('late overview transport errors cannot repaint after lock',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('overview-load').events.click();u.node('lock').events.click();await u.respond({},503);assert.equal(u.node('overview-state').textContent,'No overview loaded.');});
++
++// Incorporated from the cold Opus correction review's restart probe UPb.
++test('a reused job number after restart cannot retain old overview totals',async()=>{
++ const u=ui();u.login();await u.respond(snapshot());u.node('overview-load').events.click();await u.respond(overview());
++ const fresh=overview();fresh.last.built_at=200;fresh.last.totals.attempts='5';fresh.last.sources[0].snapshot.digest='e'.repeat(64);
++ u.node('overview-load').events.click();await u.respond(fresh);
++ assert.match(u.node('overview-summary').textContent,/^5 distinct attempts/,'new sample must replace pre-restart totals');
++ assert.match(u.node('overview-sources').children[0].textContent,/e{64}/);
++ const priorCoverage=u.node('overview-coverage').textContent;fresh.last.built_at=300;
++ u.node('overview-load').events.click();await u.respond(fresh);
++ assert.notEqual(u.node('overview-coverage').textContent,priorCoverage,'new sample time must replace prior coverage time even with identical rows');
++ const writes=u.node('overview-summary').textWrites;
++ u.node('overview-load').events.click();await u.respond(fresh);
++ assert.equal(u.node('overview-summary').textWrites,writes,'identical cached sample should not rewrite totals');
++});
+diff --git a/tests/surface_conformance.rs b/tests/surface_conformance.rs
+index da38681..370169c 100644
+--- a/tests/surface_conformance.rs
++++ b/tests/surface_conformance.rs
+@@ -14,6 +14,10 @@ use sha2::{Digest, Sha256};
+ 
+ const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
+ const RULE_EVIDENCE: &[(&str, &str)] = &[
++    (
++        "profile-selected-evidence-lifecycle",
++        "tests/evidence_attested_lifecycle.rs",
++    ),
+     (
+         "attested-evidence-store",
+         "tests/evidence_attested_store.rs",
+diff --git a/web/operations/app.js b/web/operations/app.js
+index ecd4b53..b042c08 100644
+--- a/web/operations/app.js
++++ b/web/operations/app.js
+@@ -122,7 +122,8 @@ function labelOverview(){
+ }
+ function renderOverview(s){validateOverview(s);overviewData=s;overviewError='';const building=s.state==='building'||s.state==='cancelling';$('overview-cancel').disabled=!building;$('overview-build').disabled=building;labelOverview();
+  if(!s.last){overviewKey='';for(const id of ['overview-summary','overview-coverage'])$(id).textContent='';$('overview-sources').replaceChildren();return;}
+- const v=s.last,key=s.last_job+':'+v.manifest_sha256;if(key===overviewKey)return;overviewKey=key;
++ // Job counters restart with the service; identify the entire immutable sample.
++ const v=s.last,key=s.last_job+':'+JSON.stringify(v);if(key===overviewKey)return;overviewKey=key;
+  const t=v.totals,n=k=>BigInt(t[k]).toLocaleString();
+  $('overview-summary').textContent=n('attempts')+' distinct attempts · '+n('observed')+' observed · '+n('locally_queued')+' locally queued · '+n('unconfirmed')+' unconfirmed · '+n('attempts_with_gaps')+' attempts with gaps · '+n('sessions')+' reporter sessions · at least '+n('telemetry_dropped_lower_bound')+' dropped telemetry observations · '+n('unclosed_sessions')+' unclosed sessions';
+  $('overview-coverage').textContent='Complete for '+v.sources.length+' selected observation snapshots, built '+time(v.built_at)+'. Raw capture completeness remains unknown. Active generation: '+v.active+'.';

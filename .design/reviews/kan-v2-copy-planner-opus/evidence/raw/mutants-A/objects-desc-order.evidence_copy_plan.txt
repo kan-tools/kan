@@ -1,0 +1,11 @@
+
+running 3 tests
+test changing_each_owner_pin_or_source_coordinate_changes_archive_identity ... ok
+test independent_plan_bytes_and_archive_commitments_match ... ok
+test malformed_or_unsupported_plans_refuse ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner)
+    Finished `test` profile [unoptimized] target(s) in 6.85s
+     Running tests/evidence_copy_plan.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_plan-1aa9d01a6c5f6aca)

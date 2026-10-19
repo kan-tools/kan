@@ -1,0 +1,15 @@
+8244375 Merge branch 'feat/kan-v2-proof-lifecycle' into feat/kan-v2-copy-upgrade
+e0e2e64 Record lifecycle review corrections and current qualification state
+2e462a2 Merge branch 'feat/kan-v2-collection-build' into feat/kan-v2-proof-lifecycle
+1c72b50 Preserve fresh restart review and close named UI regression gaps
+405fb9d Merge branch 'feat/kan-v2-proof-lifecycle' into feat/kan-v2-copy-upgrade
+9aca45d Restore recovery diagnostics and pin lifecycle claims and catalog rules
+3f4b403 Preserve independent overview lifecycle and migration-design review
+4ec4698 Record copy-source qualification and resolve migration trust contracts
+da12652 Challenge source request signatures and exact manifest binding
+8e26870 Merge branch 'feat/kan-v2-proof-lifecycle' into feat/kan-v2-copy-upgrade
+ca53c1d Cover exact standalone schema and precommit proof rejection
+1fda5d4 Specify copy batch ordering and exact resume boundaries
+1cfa593 Merge branch 'feat/kan-v2-proof-lifecycle' into feat/kan-v2-copy-upgrade
+3471ada Merge branch 'feat/kan-v2-collection-build' into feat/kan-v2-proof-lifecycle
+4dca223 Specify nonmutating source planning and explicit derived recovery

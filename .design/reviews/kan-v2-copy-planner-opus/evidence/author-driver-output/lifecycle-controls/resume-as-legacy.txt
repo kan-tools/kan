@@ -1,0 +1,22 @@
+
+running 1 test
+test interrupted_initialization_resumes_only_by_explicit_owner_action ... FAILED
+
+failures:
+
+---- interrupted_initialization_resumes_only_by_explicit_owner_action stdout ----
+
+thread 'interrupted_initialization_resumes_only_by_explicit_owner_action' (9622571) panicked at tests/evidence_attested_lifecycle.rs:367:31:
+called `Result::unwrap()` on an `Err` value: Sql(SqliteFailure(Error { code: Unknown, extended_code: 1 }, Some("no such table: archive_identity")))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    interrupted_initialization_resumes_only_by_explicit_owner_action
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.08s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner)
+    Finished `test` profile [unoptimized] target(s) in 6.95s
+     Running tests/evidence_attested_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_lifecycle-02231a6624d7c1e3)
+error: test failed, to rerun pass `--test evidence_attested_lifecycle`

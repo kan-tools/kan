@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use crate::evidence::{self, Decoded, Kind, Record};
 
 pub mod attested;
+pub mod copy_upgrade;
 
 type CommitProofHook<'a> =
     dyn FnMut(&rusqlite::Transaction<'_>, &Committed, &mut dyn FnMut(Boundary)) -> Result<()> + 'a;

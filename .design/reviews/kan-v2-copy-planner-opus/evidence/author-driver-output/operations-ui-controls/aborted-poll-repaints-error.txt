@@ -1,0 +1,24 @@
+✖ UPa: a poll aborted by a preempting Build never labels the view as timed out/failed (14.053125ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8055.836959
+
+✖ failing tests:
+
+test at tests/operations_review_ui.test.cjs:18:1
+✖ UPa: a poll aborted by a preempting Build never labels the view as timed out/failed (14.053125ms)
+  AssertionError [ERR_ASSERTION]: aborted poll leaked into the label
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner/tests/operations_review_ui.test.cjs:22:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Overview request timed out.',
+    expected: /timed out|unavailable|Token/,
+    operator: 'doesNotMatch'
+  }

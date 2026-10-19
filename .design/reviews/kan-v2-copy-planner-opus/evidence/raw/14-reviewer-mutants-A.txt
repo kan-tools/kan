@@ -1,0 +1,8 @@
+drop-exact-source-schema | evidence_copy_plan=survived | evidence_copy_source=survived | zz_review_copy_planner=KILLED ra5_unsupported_schema_and_profiles_refuse_without_writes
+confirm-skips-owner-pin | evidence_copy_plan=survived | evidence_copy_source=survived | zz_review_copy_planner=survived
+drop-one-entry-check | evidence_copy_plan=survived | evidence_copy_source=survived | zz_review_copy_planner=survived
+drop-did-canonical-check | evidence_copy_plan=survived | evidence_copy_source=survived | zz_review_copy_planner=survived
+objects-desc-order | evidence_copy_plan=survived | evidence_copy_source=KILLED source_fingerprint_matches_an_independent_python_byte_oracle | zz_review_copy_planner=KILLED ra3_digest_matches_independent_oracles_on_richer_fixture
+omit-object-length | evidence_copy_plan=survived | evidence_copy_source=KILLED source_fingerprint_matches_an_independent_python_byte_oracle | zz_review_copy_planner=KILLED ra3_digest_matches_independent_oracles_on_richer_fixture
+restored ['src/evidence_store/copy_upgrade.rs', 'src/evidence_copy_plan.rs']
+exit=0

@@ -1,0 +1,10 @@
+✔ UPa: a poll aborted by a preempting Build never labels the view as timed out/failed (13.548458ms)
+✔ UPb: after a service restart, a new sample with the same job number and manifest must repaint totals (1.155791ms)
+✔ UPc: lock with a queued action dispatches nothing and repaints nothing afterwards (0.691583ms)
+UPd dispatched actions: ["/api/overview/refresh","/api/overview/refresh"]
+✔ UPd: Build, Cancel, Build while an action is in flight: only the last queued action is sent (0.899917ms)
+✔ UPe: a failing action still dispatches the queued action and keeps the prior-sample label (0.762916ms)
+✔ UPf: superseded label survives later overview polls and a failed status poll (0.83225ms)
+✔ UPg: future-dated sample says its clock is ahead, not "0s old" (0.575083ms)
+✔ UPh: relogin after lock ignores the old session's late action reply (0.637791ms)
+✔ UPi: after a Build preempts a poll, a following Cancel is still queued (one action in flight) (0.700584ms)

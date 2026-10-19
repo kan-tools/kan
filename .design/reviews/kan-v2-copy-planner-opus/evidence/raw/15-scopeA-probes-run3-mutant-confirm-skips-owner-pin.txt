@@ -1,0 +1,117 @@
+
+running 9 tests
+test ra1_noncanonical_and_hostile_plans ... RA1 reviewer-canonical-roundtrip: ACCEPT archive=2d7e1d8428a1e8ad148c65db710c47a8f23fc2bdf84825baf702c87fe9104197
+RA1 keys-lexical-order: REFUSE invalid canonical evidence: duplicate or unordered map key
+RA1 keys-json-insertion-order: REFUSE invalid canonical evidence: duplicate or unordered map key
+RA1 keys-insertion-reversed: REFUSE invalid canonical evidence: duplicate or unordered map key
+RA1 nonminimal-through-1byte: REFUSE invalid canonical evidence: nonminimal header
+RA1 nonminimal-through-8byte: REFUSE invalid canonical evidence: nonminimal header
+RA1 nonminimal-recipe: REFUSE invalid canonical evidence: nonminimal header
+RA1 indefinite-map: REFUSE invalid canonical evidence: indefinite or reserved header
+RA1 duplicate-nonce: REFUSE invalid canonical evidence: duplicate or unordered map key
+RA1 float-through: REFUSE invalid canonical evidence: unsupported scalar or tag
+RA1 historical-with-fragment: REFUSE invalid evidence schema: copy-plan issuer key
+RA1 issuer-uppercase-multibase: REFUSE invalid evidence schema: copy-plan issuer encoding
+RA1 issuer-trailing-space: REFUSE invalid evidence schema: copy-plan issuer key
+RA1 historical-ed25519: REFUSE invalid evidence schema: copy-plan issuer key
+RA1 tip-sha512: REFUSE invalid evidence schema: wrong CID profile
+RA1 tag42-missing-identity-prefix: REFUSE invalid canonical evidence: CID requires identity prefix
+RA1 long-digest: REFUSE invalid evidence schema: wrong byte string length
+RA1 empty-nonce: REFUSE invalid evidence schema: wrong byte string length
+RA1 empty-source: ACCEPT archive=5c3e2dd1f01b4b8a654e9a8efdf92ca37aafeb9775094e819d428700ed3c4a80
+RA1 negative-recipe: REFUSE invalid canonical evidence: unsupported scalar or tag
+RA1 issuer-uncompressed-p256: REFUSE invalid evidence schema: wrong string length or type
+RA1 historicalIssuer-uncompressed-p256: REFUSE invalid evidence schema: wrong string length or type
+ok
+test ra2_author_negative_vector_reasons ... RA2 missing-recipe: invalid evidence schema: missing or unknown field
+RA2 missing-sourceProfile: invalid evidence schema: missing or unknown field
+RA2 missing-targetProfile: invalid evidence schema: missing or unknown field
+RA2 missing-sourceThrough: invalid evidence schema: missing or unknown field
+RA2 missing-sourceTip: invalid evidence schema: missing or unknown field
+RA2 missing-sourceDigest: invalid evidence schema: missing or unknown field
+RA2 missing-historicalIssuer: invalid evidence schema: missing or unknown field
+RA2 missing-scopeToken: invalid evidence schema: missing or unknown field
+RA2 missing-issuer: invalid evidence schema: missing or unknown field
+RA2 missing-nonce: invalid evidence schema: missing or unknown field
+RA2 unknown-field: invalid evidence schema: missing or unknown field
+RA2 recipe: invalid evidence schema: unsupported copy-plan profile or recipe
+RA2 source-profile: invalid evidence schema: unsupported copy-plan profile or recipe
+RA2 target-profile: invalid evidence schema: unsupported copy-plan profile or recipe
+RA2 negative-through: invalid canonical evidence: unsupported scalar or tag
+RA2 unsafe-through: invalid canonical evidence: integer outside safe unsigned range
+RA2 boolean-through: invalid evidence schema: expected unsigned safe integer
+RA2 empty-with-tip: invalid evidence schema: copy-plan empty source frontier
+RA2 nonempty-no-tip: invalid evidence schema: wrong CID profile
+RA2 tip-as-bytes: invalid evidence schema: wrong CID profile
+RA2 tip-as-string: invalid evidence schema: wrong CID profile
+RA2 wrong-tip-codec: invalid evidence schema: wrong CID profile
+RA2 short-digest: invalid evidence schema: wrong byte string length
+RA2 long-scope: invalid evidence schema: wrong byte string length
+RA2 nonce-string: invalid evidence schema: wrong byte string length
+RA2 short-current-key: invalid evidence schema: copy-plan issuer encoding
+RA2 short-historical-key: invalid evidence schema: copy-plan issuer encoding
+RA2 dynamic-issuer: invalid evidence schema: copy-plan issuer encoding
+RA2 issuer-as-map: invalid evidence schema: wrong string length or type
+RA2 current-k256: invalid evidence schema: copy-plan current issuer must use P-256
+RA2 trailing-byte: invalid canonical evidence: trailing bytes
+RA2 truncated: invalid canonical evidence: declared length exceeds remaining input
+RA2 over-bound: invalid canonical evidence: value exceeds byte limit
+ok
+test ra3_digest_matches_independent_oracles_on_richer_fixture ... RA3 rust=712b23eff1217e3405a5c958c16ba5d60cce41a5d82172dc9d7be7c0bc7f5a27 reviewer=712b23eff1217e3405a5c958c16ba5d60cce41a5d82172dc9d7be7c0bc7f5a27 author=712b23eff1217e3405a5c958c16ba5d60cce41a5d82172dc9d7be7c0bc7f5a27 commits=8 objects=33
+ok
+test ra4_mixed_historical_issuers_refuse ... RA4 H=did:key:zDnaejgmAHML -> Some("invalid input: copy source scope or historical issuer mismatch")
+RA4 H=did:key:zDnaeY3trVxV -> Some("invalid input: copy source scope or historical issuer mismatch")
+ok
+test ra5_unsupported_schema_and_profiles_refuse_without_writes ... RA5 extra-index: Some("invalid input: unsupported writable archive schema")
+RA5 extra-index media before=[("archive.sqlite", 32768)] after=[("archive.sqlite", 32768), ("archive.sqlite-shm", 32768), ("archive.sqlite-wal", 0)]
+RA5 extra-trigger: Some("invalid input: unsupported writable archive schema")
+RA5 extra-trigger media before=[("archive.sqlite", 28672)] after=[("archive.sqlite", 28672), ("archive.sqlite-shm", 32768), ("archive.sqlite-wal", 0)]
+RA5 extra-view: Some("invalid input: unsupported writable archive schema")
+RA5 extra-view media before=[("archive.sqlite", 28672)] after=[("archive.sqlite", 28672), ("archive.sqlite-shm", 32768), ("archive.sqlite-wal", 0)]
+RA5 extra-table: Some("invalid input: unsupported writable archive schema")
+RA5 extra-table media before=[("archive.sqlite", 32768)] after=[("archive.sqlite", 32768), ("archive.sqlite-shm", 32768), ("archive.sqlite-wal", 0)]
+RA5 user-version-2: Some("invalid input: unknown database profile")
+RA5 user-version-2 media before=[("archive.sqlite", 28672)] after=[("archive.sqlite", 28672), ("archive.sqlite-shm", 32768), ("archive.sqlite-wal", 0)]
+RA5 user-version-3: Some("invalid input: unknown database profile")
+RA5 user-version-3 media before=[("archive.sqlite", 28672)] after=[("archive.sqlite", 28672), ("archive.sqlite-shm", 32768), ("archive.sqlite-wal", 0)]
+RA5 application-id: Some("invalid input: unknown database profile")
+RA5 application-id media before=[("archive.sqlite", 28672)] after=[("archive.sqlite", 28672), ("archive.sqlite-shm", 32768), ("archive.sqlite-wal", 0)]
+RA5 profile-2-source: Some("invalid input: unknown database profile")
+ok
+test ra6_failure_handling_is_closed_and_labelled ... RA6 flip-object-byte: REFUSE corrupt evidence: bafkreieav3xlzdaqrwgwvgn3hhr7f73rhwz2xm2husxsidn6r6aciflgiq in 3.012291ms
+RA6 delete-request-object: REFUSE corrupt evidence: foreign keys in 2.821292ms
+RA6 oversized-staged-5MiB: REFUSE corrupt evidence: bafkreizzzz in 5.01775ms
+RA6 oversized-staged-9MiB: REFUSE string or blob too big in 4.673834ms
+RA6 bad-cid-staged: REFUSE corrupt evidence: not-a-cid in 2.30225ms
+RA6 gap-sequence: REFUSE corrupt evidence: bafyreidxg5puzun37n2wuk7godlfrotn5gmchnvsa5rclepcdcpgqo4tcy in 2.465459ms
+RA6 group-readable: Some("invalid input: database must be owner-only")
+RA6 symlink: Some("invalid input: expected regular database file")
+RA6 bad-current-issuer-on-missing-path: Some("invalid evidence schema: copy-plan issuer key")
+ok
+test ra7_pinning_reserved_writer_and_backup_substitution ... RA7 planned beside RESERVED writer in 6.195084ms
+RA7 backup confirms same recipe: true
+RA7 independent identical archive digest equal: true
+ok
+test ra8_audit_cost_scaling ... RA8 records=100 open=354.1045ms confirm=351.338542ms
+RA8 records=200 open=704.649792ms confirm=700.017916ms
+RA8 records=400 open=1.398256709s confirm=1.404843625s
+RA8 records=800 open=2.802844708s confirm=2.813738541s
+ok
+test ra9_confirm_requires_owner_pin_on_unchanged_source ... RA9 wrong pin, unchanged source: None
+FAILED
+
+failures:
+
+failures:
+    ra9_confirm_requires_owner_pin_on_unchanged_source
+
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.22s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner)
+    Finished `test` profile [unoptimized] target(s) in 6.74s
+     Running tests/zz_review_copy_planner.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_copy_planner-103957df795f3682)
+
+thread 'ra9_confirm_requires_owner_pin_on_unchanged_source' (9619956) panicked at tests/zz_review_copy_planner.rs:428:5:
+assertion failed: r.is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_copy_planner`

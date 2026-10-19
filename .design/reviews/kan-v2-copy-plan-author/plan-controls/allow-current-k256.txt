@@ -1,0 +1,22 @@
+
+running 1 test
+test malformed_or_unsupported_plans_refuse ... FAILED
+
+failures:
+
+---- malformed_or_unsupported_plans_refuse stdout ----
+
+thread 'malformed_or_unsupported_plans_refuse' (9580411) panicked at tests/evidence_copy_plan.rs:38:9:
+"current-k256"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    malformed_or_unsupported_plans_refuse
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.01s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade)
+    Finished `test` profile [unoptimized] target(s) in 6.85s
+     Running tests/evidence_copy_plan.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_plan-1aa9d01a6c5f6aca)
+error: test failed, to rerun pass `--test evidence_copy_plan`
