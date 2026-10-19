@@ -1,0 +1,20 @@
+{
+  "head": "497065aacc7f61f9606edfd39f74d5e659a03b82",
+  "run": "https://github.com/kan-tools/kan/actions/runs/39336616906",
+  "job": "118347591043",
+  "result": "success",
+  "raw_log_sha256": "e4c1753460d5aeffda0fee26582d2ea6e15e6c0ded2cf36716869ff10c8f3e4f",
+  "integration_results": {
+    "tests/evidence_bundle_creation.rs": "ok. 46 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 36.53s",
+    "tests/evidence_inventory.rs": "ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.50s",
+    "tests/surface_conformance.rs": "ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.92s"
+  },
+  "checks": [
+    "full workspace/v2 suite",
+    "strict workspace/v2 all-target Clippy",
+    "format",
+    "MSRV",
+    "canary"
+  ],
+  "semantic_controls": "prepared; independent execution/review pending"
+}
