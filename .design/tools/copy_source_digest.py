@@ -14,7 +14,8 @@ def digest(path):
     conn=sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro',uri=True)
     conn.execute('BEGIN')
     records=conn.execute('SELECT sequence,manifest,receipt FROM commits ORDER BY sequence').fetchall()
-    objects=conn.execute('SELECT cid,bytes FROM objects ORDER BY cid').fetchall()
+    # Independent lexical ordering: do not share Rust's SQL ORDER BY mechanism.
+    objects=sorted(conn.execute('SELECT cid,bytes FROM objects').fetchall(),key=lambda row:row[0])
     value=hashlib.sha256(b'tools.kan.archive.copy-source.v1\0')
     def number(n):value.update(n.to_bytes(8,'big'))
     def frame(b):number(len(b));value.update(b)

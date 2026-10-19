@@ -26,6 +26,40 @@ def vectors():
         value=copy.deepcopy(base);value.update(changes);add(name,value)
     raw=bytes.fromhex(positive[0]['hex'])
     negative.extend([{'name':'trailing-byte','hex':(raw+b'\0').hex()},{'name':'truncated','hex':raw[:-1].hex()},{'name':'over-bound','hex':(raw+b'\0'*4096).hex()}])
+    # Encode these deliberately outside the reference encoder's canonical path.
+    pairs=sorted([(codec.encode(k),codec.encode(v)) for k,v in base.items()],key=lambda p:(len(p[0]),p[0]))
+    noncanonical=[
+        ('reversed-map-keys',codec.head(5,len(pairs))+b''.join(k+v for k,v in reversed(pairs)),'duplicate or unordered map key'),
+        ('nonminimal-map-length',b'\xb8'+bytes([len(pairs)])+raw[1:],'nonminimal header'),
+        ('nonminimal-recipe',codec.head(5,len(pairs))+b''.join(k+(b'\x18\x01' if k==codec.encode('recipe') else v) for k,v in pairs),'nonminimal header'),
+        ('duplicate-map-key',codec.head(5,len(pairs)+1)+pairs[0][0]+pairs[0][1]+b''.join(k+v for k,v in pairs),'duplicate or unordered map key'),
+    ]
+    reasons={
+        'unknown-field':'missing or unknown field',
+        'recipe':'unsupported copy-plan profile or recipe',
+        'source-profile':'unsupported copy-plan profile or recipe',
+        'target-profile':'unsupported copy-plan profile or recipe',
+        'negative-through':'unsupported scalar or tag',
+        'unsafe-through':'integer outside safe unsigned range',
+        'boolean-through':'expected unsigned safe integer',
+        'empty-with-tip':'copy-plan empty source frontier',
+        'nonempty-no-tip':'wrong CID profile',
+        'tip-as-bytes':'wrong CID profile','tip-as-string':'wrong CID profile',
+        'wrong-tip-codec':'wrong CID profile','short-digest':'wrong byte string length',
+        'long-scope':'wrong byte string length','nonce-string':'wrong byte string length',
+        'short-current-key':'copy-plan issuer encoding','short-historical-key':'copy-plan issuer encoding',
+        'dynamic-issuer':'copy-plan issuer encoding','issuer-as-map':'wrong string length or type',
+        'current-k256':'copy-plan current issuer must use P-256',
+        'trailing-byte':'trailing bytes','truncated':'declared length exceeds remaining input',
+        'over-bound':'value exceeds byte limit',
+    }
+    canonical={'negative-through','unsafe-through','trailing-byte','truncated','over-bound'}
+    for vector in negative:
+        name=vector['name']
+        vector['expectedClass']='canonical' if name in canonical else 'schema'
+        vector['expectedReason']='missing or unknown field' if name.startswith('missing-') else reasons[name]
+    for name,data,reason in noncanonical:
+        negative.append({'name':name,'hex':data.hex(),'expectedClass':'canonical','expectedReason':reason})
     return {'status':'proposal only; structural recipe and commitment, not verified source or migration','domainHex':DOMAIN.hex(),'positive':positive,'negative':negative}
 
 def main():

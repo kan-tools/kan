@@ -115,6 +115,58 @@ fn source_plan_is_pinned_and_reconfirmation_detects_later_admission() {
     assert!(PlannedCopy::confirm(&db, &plan, &plan.archive_id()).is_err());
     assert!(PlannedCopy::confirm(&db, &plan, &[0; 32]).is_err());
 }
+// Isolate owner pin enforcement from source-change refusal (review RA9).
+#[test]
+fn unchanged_source_confirmation_still_requires_the_external_owner_pin() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("archive");
+    let mut s = service(&root);
+    append(&mut s, 1);
+    let issuer = s.issuer();
+    drop(s);
+    let db = root.join("archive.sqlite");
+    let planned = PlannedCopy::open(&db, target(), issuer.clone(), [9; 32]).unwrap();
+    let plan = planned.plan();
+    assert!(PlannedCopy::confirm(&db, plan, &plan.archive_id()).is_ok());
+    let mut wrong = plan.archive_id();
+    wrong[31] ^= 1;
+    assert!(PlannedCopy::confirm(&db, plan, &wrong).is_err());
+    let sibling = PlannedCopy::open(&db, target(), issuer, [10; 32]).unwrap();
+    assert!(PlannedCopy::confirm(&db, sibling.plan(), &plan.archive_id()).is_err());
+}
+
+// A source that passes its raw content audit can still have an unsupported
+// schema. These cases preserve the distinct schema check (review RA5).
+#[test]
+fn source_planning_refuses_extra_schema_and_wrong_profiles_without_rewriting() {
+    for sql in [
+        "CREATE INDEX extra ON commits(writer)",
+        "CREATE TRIGGER extra AFTER INSERT ON objects BEGIN SELECT 1; END",
+        "CREATE VIEW extra AS SELECT 1",
+        "CREATE TABLE extra(x)",
+        "PRAGMA user_version=2",
+        "PRAGMA user_version=3",
+        "PRAGMA application_id=7",
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("archive");
+        let mut s = service(&root);
+        append(&mut s, 1);
+        let issuer = s.issuer();
+        drop(s);
+        let db = root.join("archive.sqlite");
+        let c = rusqlite::Connection::open(&db).unwrap();
+        c.execute_batch(sql).unwrap();
+        c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").unwrap();
+        drop(c);
+        let before = std::fs::read(&db).unwrap();
+        assert!(
+            PlannedCopy::open(&db, target(), issuer, [9; 32]).is_err(),
+            "{sql}"
+        );
+        assert_eq!(std::fs::read(&db).unwrap(), before, "source changed: {sql}");
+    }
+}
 #[test]
 fn same_frontier_with_a_changed_unsigned_receipt_fails_exact_plan_confirmation() {
     let dir = tempfile::tempdir().unwrap();
@@ -217,6 +269,9 @@ fn source_fingerprint_matches_an_independent_python_byte_oracle() {
     ledger
         .stage(b"uncommitted object preserved separately")
         .unwrap();
+    for n in 1..=25 {
+        ledger.stage(&vec![n as u8; n * 13]).unwrap();
+    }
     drop(ledger);
     let db = root.join("archive.sqlite");
     let source = PlannedCopy::open(&db, target(), issuer, [9; 32]).unwrap();

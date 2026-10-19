@@ -763,3 +763,56 @@ owner-supplied decoded plan is not itself proof of valid request signatures.
 Recipe 1 refuses raw or imported records without exactly one valid retained
 signed service request matching the manifest. Such sources must use the separate
 legacy import/salvage workflows; no synthetic historical admission is minted.
+
+### Final review decisions for the first profile-3 storage slice
+
+Fresh actual Opus 5.5 at 8244375 approved destination implementation readiness
+with follow-ups; the unmodified report is preserved in
+`.design/reviews/kan-v2-copy-planner-opus/`. These decisions resolve C-F1, C-F3
+and C-F4 before any profile-3 destination write. They are implementation
+requirements, not claims that the destination runtime exists.
+
+**One meaning of copied history (C-F1).** Profile 2 is admitted-only. Its audit,
+writable opener, verification, backup and rebuild must refuse retained-verified
+proofs. Profile 3 is the only recipe-1 copy target and the only profile permitted
+to contain a retained-verified prefix. RetryImported targets profile 3 only.
+This supersedes the earlier profile-2 allowance for a plan-less upgrade prefix
+and its synthetic acceptance fixture. No production profile-2 archive has been
+provisioned in this work; there is no silent conversion or deletion. Any existing
+experimental file refused by the stricter rule stays untouched. The next storage
+slice must implement and independently review this distinction before writing a
+profile-3 destination.
+
+**Original membership and deduplication (C-F3).** An original object's CID remains
+in upgrade_objects permanently even if a later current-issuer admission uses the
+same CID. There is one content-addressed payload, with both original membership
+and later occurrence lineage. Audits allow shared CIDs; they never subtract or
+re-attribute original membership. No foreign-key cascade may destroy inventory
+metadata when a payload becomes unavailable.
+
+**Explicit profile selection and takeover (C-F4).** Owner APIs select profile 3 by
+its distinct type; owner CLI lifecycle commands require explicit profile 3 along
+with archive/scope/issuer pins. Existing all-or-none pins continue to mean profile
+2 unless the new profile option is supplied. No user_version auto-detection
+selects trust. Create/resume additionally require the retained exact plan artifact
+and external archive pin. Verify/backup/rebuild may read the stored plan only to
+check it against the explicit configured profile and pins.
+
+Takeover means the owner stops or fences the old admitting service and configures
+one replacement as the sole write destination. Copy, backup, verify and rebuild
+never perform that activation or claim to establish cross-host fencing. Their
+outputs remain unpromoted. The later service/admin integration must expose the
+explicit activation workflow; an ordinary backup is not an independent archive.
+The owner-side API assumes its signer/grants come from that trusted configuration.
+
+**Bundle boundary remains a separate required checkpoint (C-F2).** Before any
+bundle writer exists, define an encapsulation/publication format that cannot be
+selected as a standalone archive member through the product's ordinary writable
+configuration. Filling missing blobs inside a bundle must not bypass the retained
+observation/resolution history. A privileged owner manually extracting bytes is
+outside that product boundary, not something local locks can prevent.
+Resolution preserves source-copy completeness independently of payload completeness:
+a payload-complete but unfinished profile-3 copy remains unfinished and cannot
+admit. Publishing it does not finish migration or authorize a second writer.
+Physical encoding, atomic publication and activation tests remain open for the
+bundle-specific design review; the copy-only schema approval does not close them.

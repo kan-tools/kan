@@ -1,0 +1,24 @@
+
+running 1 test
+test staged_but_uncommitted_objects_are_part_of_the_source_commitment ... FAILED
+
+failures:
+
+---- staged_but_uncommitted_objects_are_part_of_the_source_commitment stdout ----
+
+thread 'staged_but_uncommitted_objects_are_part_of_the_source_commitment' (9643282) panicked at tests/evidence_copy_source.rs:256:5:
+assertion `left != right` failed
+  left: [182, 240, 30, 36, 216, 47, 194, 177, 93, 89, 136, 28, 109, 132, 227, 204, 158, 228, 125, 180, 246, 76, 159, 209, 109, 245, 193, 66, 245, 156, 251, 26]
+ right: [182, 240, 30, 36, 216, 47, 194, 177, 93, 89, 136, 28, 109, 132, 227, 204, 158, 228, 125, 180, 246, 76, 159, 209, 109, 245, 193, 66, 245, 156, 251, 26]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    staged_but_uncommitted_objects_are_part_of_the_source_commitment
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.11s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade)
+    Finished `test` profile [unoptimized] target(s) in 7.00s
+     Running tests/evidence_copy_source.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_source-b92f66d790c08427)
+error: test failed, to rerun pass `--test evidence_copy_source`

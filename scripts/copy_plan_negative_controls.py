@@ -13,6 +13,8 @@ def main():
     originals={p:p.read_text() for p in (PLAN,SOURCE,STORE)}
     for p,s in originals.items():(OUT/(p.name+'.original')).write_text(s)
     cases=[
+        ('confirm-skips-owner-pin',SOURCE,originals[SOURCE].replace('plan.check_archive(expected_archive)?;', 'let _ = expected_archive;'),'evidence_copy_source','unchanged_source_confirmation_still_requires_the_external_owner_pin'),
+        ('omit-source-schema-check',SOURCE,originals[SOURCE].replace('reader.ledger.check_write_profile(false)?;', ''),'evidence_copy_source','source_planning_refuses_extra_schema_and_wrong_profiles_without_rewriting'),
         ('skip-request-authentication',SOURCE,originals[SOURCE].replace('service::verify_retained_request(&record, &request_bytes)','serde_json::from_slice::<service::SignedRequest>(&request_bytes)'),'evidence_copy_source','structurally_healthy_raw_archives_cannot_bypass_request_authentication'),
         ('allow-current-k256',PLAN,originals[PLAN].replace('if require_p256 && algorithm != atrium_crypto::Algorithm::P256 {','if false && require_p256 && algorithm != atrium_crypto::Algorithm::P256 {'),'evidence_copy_plan','malformed_or_unsupported_plans_refuse'),
         ('omit-staged-object-inventory',SOURCE,originals[SOURCE][:originals[SOURCE].index('        // Bind staged-but-uncommitted objects')]+originals[SOURCE][originals[SOURCE].index('        let plan = Plan::new('):],'evidence_copy_source','staged_but_uncommitted_objects_are_part_of_the_source_commitment'),

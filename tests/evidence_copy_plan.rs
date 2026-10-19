@@ -35,8 +35,21 @@ fn independent_plan_bytes_and_archive_commitments_match() {
 fn malformed_or_unsupported_plans_refuse() {
     let fixtures = fixture();
     for vector in fixtures["negative"].as_array().unwrap() {
-        assert!(
-            Plan::decode(&unhex(vector["hex"].as_str().unwrap())).is_err(),
+        let error = Plan::decode(&unhex(vector["hex"].as_str().unwrap())).unwrap_err();
+        assert_eq!(
+            error.class(),
+            vector["expectedClass"].as_str().unwrap(),
+            "{}",
+            vector["name"]
+        );
+        let reason = match error {
+            kan::evidence::Error::Canonical(reason) | kan::evidence::Error::Schema(reason) => {
+                reason
+            }
+        };
+        assert_eq!(
+            reason,
+            vector["expectedReason"].as_str().unwrap(),
             "{}",
             vector["name"]
         );
