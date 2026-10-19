@@ -132,3 +132,13 @@ working reserve; capacity refusal is explicit. Source copy can refuse after five
 seconds when busy. Tests target writer progress, post-read sealed changes, invalid
 unique health rows, historical worker separation and UI request races. Author qualification now passes 74 Rust checks, 26 Operations Node checks, strict all-target v2 Clippy and 13 semantic mutants with restored assertions. Evidence is in `.design/reviews/kan-v2-overview-correction-author/`; fresh re-review remains pending.
 The final cold review returned APPROVE WITH FOLLOW-UPS for the overview, with O1 a required code correction, and APPROVE for the storage corrections. The raw report and independent probes are preserved unchanged in `.design/reviews/kan-v2-overview-opus/`. Fresh review of the corrected overview remains required.
+
+## Authenticated overview browser follow-up
+
+The merged source now has author-run browser evidence for unavailable, building,
+completed, failed, cancelling, cancelled, capacity-limited and client-derived
+superseded states. Old totals survive failed/cancelled/capacity-limited refreshes
+with explicit labels. Light/dark and 390-pixel wrapping were inspected; lock clears
+metadata. Evidence and exact fixture limitations are preserved in
+`.design/reviews/kan-v2-overview-browser-followup/`. This was collected after the
+7ab1afa independent-review export; it does not change that review's scope or verdict.
