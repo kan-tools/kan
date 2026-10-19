@@ -1,0 +1,1 @@
+Initial direct invocation of .local-state/cargo.sh failed with PermissionError errno13 (wrapper not executable). No Cargo command ran. Use sh to invoke the existing wrapper.

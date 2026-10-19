@@ -492,3 +492,84 @@ fn oversized_and_malformed_physical_media_retain_sqlite_refusal_codes() {
         assert_eq!(std::fs::read(&path).unwrap(),before);
     }
 }
+
+#[test]
+fn physical_empty_text_original_and_empty_candidates_refuse_without_rewrite() {
+    // Fresh-review A-N1: physical files, not only the cell() unit seam. Assert
+    // refusal rather than a label: replay independently backstops candidate min.
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../.design/fixtures/recovery-bundle-review-v1.json"
+    ))
+    .unwrap();
+    for (name, table, value, expected_type) in [
+        (
+            "E1-empty-original-initial-loss",
+            "member_objects",
+            "''",
+            "text",
+        ),
+        (
+            "E2-empty-original-restored",
+            "restored_objects",
+            "x''",
+            "blob",
+        ),
+        (
+            "E2-empty-original-restored",
+            "restored_objects",
+            "''",
+            "text",
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let python = std::env::var_os("KAN_TLS_ORACLE_PYTHON").unwrap_or_else(|| "python3".into());
+        let output = Command::new(python)
+            .args([
+                ".design/tools/recovery_bundle_files.py",
+                dir.path().to_str().unwrap(),
+                "--vectors",
+                ".design/fixtures/recovery-bundle-review-v1.json",
+                "--case",
+                name,
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let path = dir.path().join(format!("{name}.sqlite"));
+        let vector = vectors["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["name"] == name)
+            .unwrap();
+        bundle::inspect(&path, pins(vector), None, budget()).unwrap();
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch("PRAGMA ignore_check_constraints=ON")
+            .unwrap();
+        assert!(
+            db.execute(&format!("UPDATE {table} SET bytes={value}"), [])
+                .unwrap()
+                > 0
+        );
+        let (kind, len): (String, i64) = db
+            .query_row(
+                &format!("SELECT typeof(bytes),length(bytes) FROM {table} LIMIT 1"),
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, expected_type);
+        assert_eq!(len, 0);
+        drop(db);
+        let before = std::fs::read(&path).unwrap();
+        assert!(
+            bundle::inspect(&path, pins(vector), None, budget()).is_err(),
+            "accepted {table} {expected_type} zero-byte cell"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+}
