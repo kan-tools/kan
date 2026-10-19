@@ -46,3 +46,20 @@ continues under day#168/kan#197; no live log reads, migrations, key access,
 reconstructed excluded claims or invented witnesses. Current tests and code
 are prepared but have not yet been compiled; the shared target is reserved for
 the independent Content/creation reviewer.
+
+
+## Failure evidence follow-through
+The performance generator now optionally retains only its synthetic `repo.car`
+and `HEAD`, with sizes and SHA-256 hashes, before deleting its disposable workspace.
+The workflow enables this and uploads it with the existing result table even on
+failure. The collector is capped at 64 MiB total, reports oversized/absent inputs
+explicitly, refuses final-component symlinks and never overwrites an earlier
+attempt. It does not export the scratch signing identity or whole workspace.
+Three Python checks pass, including driving the actual shell generator with a
+failing fake CLI; generation remains failed and retained bytes match. This makes
+a future recurrence diagnosable. It does not recover the already-deleted record
+from run39315201306 or prove that run's root cause.
+
+`day design check` was attempted in this worktree and refused its missing local
+kan workspace under day#168/kan#197. That is unavailable validation, not a passing
+check, and no redirect to the main checkout's log was attempted.

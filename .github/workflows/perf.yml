@@ -24,6 +24,8 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "scripts/run-perf-grid.sh"
+      - "scripts/perf_failure_evidence.py"
+      - "scripts/test_perf_failure_evidence.py"
       - "tests/fixtures/perf-bounds.tsv"
       - ".github/workflows/perf.yml"
   workflow_dispatch:
@@ -50,10 +52,15 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Check failure evidence retention
+        run: python3 scripts/test_perf_failure_evidence.py
+
       - name: Build the binary being measured
         run: cargo build --release --locked
 
       - name: Measure the grid
+        env:
+          KAN_PERF_FAILURE_DIR: ${{ github.workspace }}/perf-failure
         run: |
           scripts/run-perf-grid.sh measure target/release/kan > perf-results.tsv
           echo "## Perf grid (raw, ms)" >> "$GITHUB_STEP_SUMMARY"
@@ -68,7 +75,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: perf-grid-report
-          path: perf-results.tsv
+          path: |
+            perf-results.tsv
+            perf-failure/
           if-no-files-found: error
 
       # NO PIPE AROUND THE GATE. The first version piped it into `tee`, and
