@@ -14,7 +14,7 @@ def vectors():
     tip=codec.cid(codec.encode(proofs['positive'][0]['manifest']))
     base={'recipe':1,'sourceProfile':1,'targetProfile':3,'sourceThrough':1,'sourceTip':codec.link(tip),'sourceDigest':codec.blob(bytes(range(32))),'historicalIssuer':h,'scopeToken':codec.blob(b'\x03'*32),'issuer':c,'nonce':codec.blob(b'\x07'*32)}
     positive=[]
-    for name,changes in [('one-retained',{}),('empty',{'sourceThrough':0,'sourceTip':None}),('safe-integer-limit',{'sourceThrough':2**53-1}),('same-issuer',{'historicalIssuer':c})]:
+    for name,changes in [('one-retained',{}),('empty',{'sourceThrough':0,'sourceTip':None}),('safe-integer-limit',{'sourceThrough':2**53-1}),('same-issuer',{'historicalIssuer':c}),('historical-k256',{'historicalIssuer':'did:key:zQ3shokFTS3brHcDQrn82RUDfCZESWL1ZdCEJwekUDPQiYBme'})]:
         value=copy.deepcopy(base);value.update(changes);raw=codec.encode(value)
         assert codec.encode_value(codec.decode(raw))==raw
         positive.append({'name':name,'plan':value,'hex':raw.hex(),'archiveHex':hashlib.sha256(DOMAIN+raw).hexdigest()})
@@ -22,7 +22,7 @@ def vectors():
     def add(name,value):negative.append({'name':name,'hex':codec.encode(value).hex()})
     for field in base:
         value=copy.deepcopy(base);del value[field];add('missing-'+field,value)
-    for name,changes in [('unknown-field',{'unexpected':True}),('recipe',{'recipe':2}),('source-profile',{'sourceProfile':2}),('target-profile',{'targetProfile':2}),('negative-through',{'sourceThrough':-1}),('unsafe-through',{'sourceThrough':2**53}),('boolean-through',{'sourceThrough':True}),('empty-with-tip',{'sourceThrough':0}),('nonempty-no-tip',{'sourceTip':None}),('tip-as-bytes',{'sourceTip':codec.blob(codec.cid_bytes(tip))}),('tip-as-string',{'sourceTip':tip}),('wrong-tip-codec',{'sourceTip':codec.link(codec.cid(b'test',0x55))}),('short-digest',{'sourceDigest':codec.blob(b'\0'*31)}),('long-scope',{'scopeToken':codec.blob(b'\0'*33)}),('nonce-string',{'nonce':'07'*32}),('short-current-key',{'issuer':'did:key:z'}),('short-historical-key',{'historicalIssuer':'did:key:z'}),('dynamic-issuer',{'issuer':'did:web:example.com'}),('issuer-as-map',{'issuer':{'principal':c}})]:
+    for name,changes in [('unknown-field',{'unexpected':True}),('recipe',{'recipe':2}),('source-profile',{'sourceProfile':2}),('target-profile',{'targetProfile':2}),('negative-through',{'sourceThrough':-1}),('unsafe-through',{'sourceThrough':2**53}),('boolean-through',{'sourceThrough':True}),('empty-with-tip',{'sourceThrough':0}),('nonempty-no-tip',{'sourceTip':None}),('tip-as-bytes',{'sourceTip':codec.blob(codec.cid_bytes(tip))}),('tip-as-string',{'sourceTip':tip}),('wrong-tip-codec',{'sourceTip':codec.link(codec.cid(b'test',0x55))}),('short-digest',{'sourceDigest':codec.blob(b'\0'*31)}),('long-scope',{'scopeToken':codec.blob(b'\0'*33)}),('nonce-string',{'nonce':'07'*32}),('short-current-key',{'issuer':'did:key:z'}),('short-historical-key',{'historicalIssuer':'did:key:z'}),('dynamic-issuer',{'issuer':'did:web:example.com'}),('issuer-as-map',{'issuer':{'principal':c}}),('current-k256',{'issuer':'did:key:zQ3shokFTS3brHcDQrn82RUDfCZESWL1ZdCEJwekUDPQiYBme'})]:
         value=copy.deepcopy(base);value.update(changes);add(name,value)
     raw=bytes.fromhex(positive[0]['hex'])
     negative.extend([{'name':'trailing-byte','hex':(raw+b'\0').hex()},{'name':'truncated','hex':raw[:-1].hex()},{'name':'over-bound','hex':(raw+b'\0'*4096).hex()}])

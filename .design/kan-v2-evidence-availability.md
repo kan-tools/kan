@@ -561,7 +561,7 @@ its presence is a source/audience pin, not authentication of an unsigned old
 receipt. The source planner must verify every signed request against that H and
 all records against the target scope before returning a usable execution plan.
 
-Four independently encoded positive byte/commitment vectors and 32 labelled
+Five independently encoded positive byte/commitment vectors and 33 labelled
 malformed plans are proposed under `.design/fixtures/copy-plan-v1.json`; the
 stdlib-only generator imports no Rust and invokes no archive. The Rust draft
 checks exact bytes, all owner/source-field commitment changes, and refusal cases.
@@ -604,3 +604,42 @@ is not the future bounded degraded-inventory reader.
 Runtime draft tests target pinned-source/later-append refusal, same-frontier
 receipt changes, explicit owner/audience/scope selection and missing payloads.
 No copy/resume destination or profile-3 mutation is implemented yet.
+
+### Original-object inventory in profile 3 (design refinement)
+
+Preserving staged objects also requires retaining their original membership after
+new capture adds more objects. Profile 3 therefore needs an immutable
+`upgrade_objects` table alongside `upgrade_plan`: canonical original object CID
+as the key, plus its original byte length. These are authoritative copy-plan
+inputs bound by the owner-pinned source digest, not inferred from current objects
+or timestamps. The table must not impose a foreign key that destroys inventory
+metadata when payloads become unavailable. Writable opens still require payloads.
+
+The source digest's object section uses the exact ordered inventory and its row
+count. Copy/resume validates that the partial inventory is an exact prefix of
+the pinned source inventory; completed inventory and the planned record prefix
+must reproduce the complete source digest before admission is allowed. Every
+inventory row and its copied payload commit atomically. Once complete, ordinary
+admission never changes this table. Full audits after later admission recompute
+the original source commitment from the planned record prefix and this immutable
+inventory, while separately validating newer admitted rows and objects.
+
+Backup/recovery must preserve both plan and original-object inventory exactly,
+including an incomplete-copy state. Missing/corrupt original payloads remain
+distinct from unavailable metadata. A copied staged blob carries no fabricated
+admission or capture assertion and cannot appear in scoped occurrence inventory
+until a real committed record references it. Mutation surfaces, catalog entries,
+partial-prefix crash tests, later-admission tests and degraded-read behavior all
+need qualification before profile-3 destination writes are implemented.
+
+A copy recipe pins one old-source snapshot. Reopening after additional legacy
+admissions or staging refuses the old recipe; it does not silently extend the
+planned prefix. Operational cutover must therefore settle legacy delivery and
+freeze that source before the final plan. New capture can queue under the new
+issuer while the fixed copy completes, subject to the existing visible-gap
+policy if durable capture capacity is exhausted. Unadmitted historical-audience
+requests are not converted by RetryImported, which only confirms already retained
+records. The eventual cutover plan must inventory such pending requests and
+resolve them explicitly; this source planner neither stops a process nor drops
+or relabels pending traffic. Deployment and live cutover remain separately
+authorized operational work.

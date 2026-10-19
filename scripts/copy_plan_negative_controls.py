@@ -13,6 +13,7 @@ def main():
     originals={p:p.read_text() for p in (PLAN,SOURCE,STORE)}
     for p,s in originals.items():(OUT/(p.name+'.original')).write_text(s)
     cases=[
+        ('allow-current-k256',PLAN,originals[PLAN].replace('if require_p256 && algorithm != atrium_crypto::Algorithm::P256 {','if false && require_p256 && algorithm != atrium_crypto::Algorithm::P256 {'),'evidence_copy_plan','malformed_or_unsupported_plans_refuse'),
         ('omit-staged-object-inventory',SOURCE,originals[SOURCE][:originals[SOURCE].index('        // Bind staged-but-uncommitted objects')]+originals[SOURCE][originals[SOURCE].index('        let plan = Plan::new('):],'evidence_copy_source','staged_but_uncommitted_objects_are_part_of_the_source_commitment'),
         ('ignore-owner-archive',PLAN,originals[PLAN].replace('if &self.archive != expected {','if false && &self.archive != expected {'),'evidence_copy_plan','changing_each_owner_pin_or_source_coordinate_changes_archive_identity'),
         ('ignore-receipts-in-source-digest',SOURCE,originals[SOURCE].replace('frame(&mut hash, record.receipt.bytes());','let _ = record.receipt.bytes();'),'evidence_copy_source','same_frontier_with_a_changed_unsigned_receipt_fails_exact_plan_confirmation'),
@@ -32,5 +33,5 @@ def main():
         for p,s in originals.items():p.write_text(s)
     run=subprocess.run(['cargo','test','--features','v2-crypto','--test','evidence_copy_plan','--test','evidence_copy_source'],cwd=ROOT,capture_output=True,text=True)
     (OUT/'restored.txt').write_text(run.stdout+run.stderr);assert run.returncode==0,'restored baseline failed'
-    print('Seven compiled mutants fail; restored plan/source tests pass.',flush=True)
+    print('Eight compiled mutants fail; restored plan/source tests pass.',flush=True)
 if __name__=='__main__':main()
