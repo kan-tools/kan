@@ -438,7 +438,7 @@ async fn proof_reader_can_browse_empty_copy_before_original_membership_is_comple
         copied::Budget {
             objects: 10,
             records: 10,
-            bytes: 1024 * 1024,
+            bytes: 16 * 1024 * 1024,
         },
     )
     .unwrap();
