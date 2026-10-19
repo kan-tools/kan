@@ -1,0 +1,26 @@
+
+running 1 test
+test rp02_partial_profile3_membership_is_labeled_unverified ... FAILED
+
+failures:
+
+failures:
+    rp02_partial_profile3_membership_is_labeled_unverified
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.06s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member)
+    Finished `test` profile [unoptimized] target(s) in 7.56s
+     Running tests/evidence_recovery_member_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_review_regressions-9f02720da46a1f05)
+RP rp02-complete-fabricated: REFUSE Invalid("source metadata digest")
+RP rp02-partial-honest: ACCEPT through=1 verified=1 complete=false losses=[]
+RP rp02-partial-fabricated: ACCEPT through=1 verified=1 complete=false losses=[Loss { occurrence: None, cid: Cid(bafkreiav77l6pr75nrhn236watzfzttwg2khllxo4jy7sjv5pob5ybrl3i), expected_length: None, state: Missing, basis: VerifiedCopyRecipe }]
+
+thread 'rp02_partial_profile3_membership_is_labeled_unverified' (10077768) panicked at tests/evidence_recovery_member_review_regressions.rs:508:5:
+assertion `left == right` failed
+  left: [Loss { occurrence: None, cid: Cid(bafkreiav77l6pr75nrhn236watzfzttwg2khllxo4jy7sjv5pob5ybrl3i), expected_length: None, state: Missing, basis: VerifiedCopyRecipe }]
+ right: [Loss { occurrence: None, cid: Cid(bafkreiav77l6pr75nrhn236watzfzttwg2khllxo4jy7sjv5pob5ybrl3i), expected_length: None, state: Missing, basis: UnverifiedMembership }]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_member_review_regressions`
+
+exit=101

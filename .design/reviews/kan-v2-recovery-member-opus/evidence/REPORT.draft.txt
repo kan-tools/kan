@@ -1,0 +1,2 @@
+DRAFT — superseded by REPORT.txt (kept as a process artefact).
+Sections pending at draft time: member controls (logs/20), RP14 (logs/14), scope-B controls (logs/40), post-integrity.

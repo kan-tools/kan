@@ -1,0 +1,15 @@
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member
+# cmd: sh -c git -C /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member diff a8927a6 5e54513 -- src tests .design/kan-v2-recovery-bundle-codec.md .design/kan-v2-recovery-bundles.md .design/tools scripts | grep -n "^+" | grep -iE "out of scope|deferred|follow-up|future work|for now|TODO|later|remain|separate work|not yet|pending"; git -C /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member diff --stat 61b8667 99f1fba -- src/; git -C /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member diff --stat 3169a0a 5e54513 -- src/evidence_recovery_member.rs tests/evidence_recovery_member.rs
+# started: 2026-10-19T15:37:34Z
+37:+APPROVE WITH FOLLOW-UPS; full raw evidence is retained in
+41:+recorded limits remain preserved. These follow-through tests pass author qualification: ten integration functions,
+45:+the member-verifier checkpoint remains required.
+78:+remain unavailable, with writer verification still outstanding. Loss output is
+83:+checkpoints, physical schema and all storage mutations remain separate work.
+88:+cancellation control survives because framing refuses later), strict Clippy and
+91:+pending; this is not full bundle acceptance.
+513:+/// remain unverified. This result is NOT an authenticated recovery history.
+ src/evidence_recovery_commitment.rs | 76 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 76 insertions(+)
+
+# exit=0 elapsed_s=0

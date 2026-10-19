@@ -1,0 +1,10 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member)
+    Finished `test` profile [unoptimized] target(s) in 0.37s
+     Running tests/evidence_recovery_member_corrections.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_corrections-139989e045e17eb4)
+
+running 2 tests
+test incomplete_membership_has_no_authenticated_length_or_byte_classification ... ok
+test authentic_bytes_with_false_metadata_are_not_repairable_loss ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

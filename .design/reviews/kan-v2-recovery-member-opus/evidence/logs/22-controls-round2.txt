@@ -1,0 +1,12 @@
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member
+# cmd: python3 review-evidence/cmd/controls.py R03-slot-conflict R05-retained-membership R09-writer-predecessor R14-new-initial-check R15-membership-input-charge R17-nonempty-original R18-record-position
+# started: 2026-10-19T15:27:08Z
+R03-slot-conflict	SURVIVED	failed=-
+R05-retained-membership	KILLED	failed=independently_constructed_python_members_match_commitments_losses_and_refusals,owner_pins_proofs_missing_membership_and_conflicting_lengths_refuse,rp16_partial_retained_reference_outside_membership_refuses
+R09-writer-predecessor	KILLED	failed=issuer_resigning_cannot_hide_invalid_writer_chain,rp17_writer_predecessor_without_bytes
+R14-new-initial-check	SURVIVED	failed=-
+R15-membership-input-charge	SURVIVED	failed=-
+R17-nonempty-original	KILLED	failed=rp15_empty_orphan_with_empty_cid_is_corrupt
+R18-record-position	KILLED	failed=independently_constructed_python_members_match_commitments_losses_and_refusals
+
+# exit=0 elapsed_s=162

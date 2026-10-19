@@ -1,0 +1,35 @@
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member
+# cmd: cargo test --offline --features v2-crypto --test zz_review_member_probes2 -- --nocapture --test-threads=1
+# started: 2026-10-19T15:26:46Z
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member)
+warning: unused imports: `Instant` and `Ordering`
+  --> tests/zz_review_member_probes2.rs:23:30
+   |
+23 |         atomic::{AtomicBool, Ordering},
+   |                              ^^^^^^^^
+...
+26 |     time::{Duration, Instant},
+   |                      ^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (test "zz_review_member_probes2") generated 1 warning (run `cargo fix --test "zz_review_member_probes2" -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 7.21s
+     Running tests/zz_review_member_probes2.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_member_probes2-4029bde7572fe72f)
+
+running 4 tests
+test rp14_hash_valid_bytes_with_false_signed_length ... RP rp14a-genuine-bytes-false-length: ACCEPT through=1 verified=0 complete=true losses=[Loss { occurrence: Some(1), cid: Cid(bafkreid6zo5zmdm74tloedzg3huklmmco26rpjnfkqva2yqpss4pdi5wdi), expected_length: Some(556), state: Corrupt }]
+RP rp14a-control-honest-length: ACCEPT through=1 verified=1 complete=true losses=[]
+RP rp14b-empty-cid-signed-length-1: ACCEPT through=1 verified=0 complete=true losses=[Loss { occurrence: Some(1), cid: Cid(bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku), expected_length: Some(1), state: Corrupt }]
+ok
+test rp15_empty_orphan_with_empty_cid_is_corrupt ... RP rp15-empty-orphan-empty-cid: ACCEPT through=0 verified=0 complete=true losses=[Loss { occurrence: None, cid: Cid(bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku), expected_length: None, state: Corrupt }]
+ok
+test rp16_partial_retained_reference_outside_membership_refuses ... RP rp16-partial-retained-ref-not-member: REFUSE Invalid("retained reference absent from membership")
+ok
+test rp17_writer_predecessor_without_bytes ... RP rp17-writer-chain-missing-bytes: REFUSE Invalid("writer predecessor")
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+
+# exit=0 elapsed_s=7

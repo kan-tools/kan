@@ -53,15 +53,24 @@ def resign(m,purpose=None):
     return m
 
 def losses(m):
-    objects=dict(m['objects']);lengths=dict(m['membership']);coords=[];referenced=set()
+    objects=dict(m['objects']);membership=dict(m['membership']);coords=[];referenced=set()
+    complete=m['profile']==2 or len(m['records'])>=codec.decode(m['plan'])['sourceThrough']
     for seq,raw,_,_ in m['records']:
-        e=codec.decode(raw)['body']['entries'][0];cid='b'+framing.base64.b32encode(e['ciphertext'].raw).decode().lower().rstrip('=');length=e['length'];lengths[cid]=length;coords.append((seq,cid,length));referenced.add(cid)
-    coords += [(None,c,lengths.get(c)) for c in sorted(set(objects)|set(lengths)) if c not in referenced]
+        e=codec.decode(raw)['body']['entries'][0];cid='b'+framing.base64.b32encode(e['ciphertext'].raw).decode().lower().rstrip('=');length=e['length']
+        if length>2*1024*1024+4096:raise ValueError('service request length')
+        if cid in referenced:raise ValueError('reused service request CID')
+        coords.append((seq,cid,length,'IssuerMetadata'));referenced.add(cid)
+    for cid in sorted(set(objects)|set(membership)):
+        if cid in referenced:continue
+        basis='VerifiedCopyRecipe' if complete else 'UnverifiedMembership'
+        coords.append((None,cid,membership[cid] if cid in membership and complete else None,basis if cid in membership else 'OriginalObject'))
     result=[];available=0
-    for seq,c,n in coords:
-        b=objects.get(c)
-        state='missing' if b is None else ('available' if b and framing.raw_cid(b)==c and (n is None or n==len(b)) else 'corrupt')
-        if state!='available':result.append({'occurrence':seq,'cid':c,'expectedLength':n,'state':state})
+    for seq,c,n,basis in coords:
+        data=objects.get(c)
+        if data is not None and framing.raw_cid(data)==c and n is not None and n!=len(data):
+            raise ValueError('hash-valid bytes contradict authenticated length')
+        state='missing' if data is None else ('available' if data and framing.raw_cid(data)==c else 'corrupt')
+        if state!='available':result.append({'occurrence':seq,'cid':c,'expectedLength':n,'state':state,'basis':basis})
         elif seq is not None:available+=1
     return result,available
 
@@ -92,6 +101,36 @@ def vectors():
     def bad_digest(m):
         p=codec.decode(m['plan']);p['sourceDigest']=b'\xff'*32;m['plan']=cbor(p);m['archive']=hashlib.sha256(b'tools.kan.archive.copy-plan.v1\0'+m['plan']).digest();resign(m)
     negative('resigned-false-copy-source',3,bad_digest,'source metadata digest')
+    # Independently pin the corrected projection rules; these are not merely
+    # hand-labelled hostile inputs. The loss oracle must refuse each contradiction.
+    def contradiction(name,m,o,reason):
+        try:losses(m)
+        except ValueError as e:assert str(e)==reason
+        else:raise AssertionError(name+' accepted by projection oracle')
+        cases.append(pack(name,m,o,reason))
+    def edit_manifest(m,index,edit):
+        rec=codec.decode(m['records'][index][1]);edit(rec['body']);raw=cbor(rec)
+        receipt=codec.decode(m['records'][index][2]);receipt['body']['manifest']=codec.Link(codec.cid_bytes(codec.cid(raw)))
+        m['records'][index][1]=raw;m['records'][index][2]=cbor(receipt);resign(m)
+    m,o=build(2,1)
+    edit_manifest(m,0,lambda b:b['entries'][0].update(length=b['entries'][0]['length']+1))
+    contradiction('hash-valid-false-authenticated-length',m,o,'hash-valid bytes contradict authenticated length')
+    m,o=build(2,1);empty=framing.raw_cid(b'')
+    edit_manifest(m,0,lambda b:b['entries'][0].update(ciphertext=codec.Link(codec.cid_bytes(empty)),length=1));m['objects']=[[empty,b'']]
+    contradiction('empty-cid-false-authenticated-length',m,o,'hash-valid bytes contradict authenticated length')
+    m,o=build(2,1);edit_manifest(m,0,lambda b:b['entries'][0].update(length=2*1024*1024+4097));m['objects']=[]
+    contradiction('unrepresentable-service-request-length',m,o,'service request length')
+    m,o=build(2,2);e=codec.decode(m['records'][0][1])['body']['entries'][0]
+    edit_manifest(m,1,lambda b:b['entries'][0].update(ciphertext=e['ciphertext'],length=e['length']));m['objects']=[]
+    contradiction('reused-missing-service-request',m,o,'reused service request CID')
+    m,o=build(3,3);m['records']=m['records'][:1]
+    fabricated=framing.raw_cid(b'not authenticated source membership');m['membership'].append([fabricated,77]);m['membership'].sort()
+    cases.append(pack('partial-membership-fabrication-remains-unverified',m,o,complete=False))
+    m,o=build(3,3);m['records']=m['records'][:1]
+    referenced=codec.decode(m['records'][0][1])['body']['entries'][0]['ciphertext'].raw
+    for cidlength in m['membership']:
+        if codec.cid_bytes(cidlength[0])!=referenced:cidlength[1]+=1
+    cases.append(pack('partial-membership-length-does-not-corrupt-valid-bytes',m,o,complete=False))
     return {'status':'independent signed construction and M1/loss oracle; no complete second member validator','publicPrivateScalars':[3,4,5,6],'cases':cases}
 
 def main():

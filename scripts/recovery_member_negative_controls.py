@@ -12,7 +12,7 @@ CASES=[
  ('source-digest','require(digest == p.source().digest, "source metadata digest")?','require(true || digest == p.source().digest, "source metadata digest")?','copy_plan_cannot_relabel_a_different_complete_source_digest',1),
  ('expected-length','c.length.is_none_or(|old| old == n)','true || c.length.is_none_or(|old| old == n)','shared_cid_lengths_and_duplicate_operations_refuse_even_when_all_bytes_missing',1),
  ('duplicate-operation','operations.insert((writer.to_string(), op.to_vec()))','true || operations.insert((writer.to_string(), op.to_vec()))','shared_cid_lengths_and_duplicate_operations_refuse_even_when_all_bytes_missing',1),
- ('original-hash','&& actual == object.cid.to_bytes()[4..]','&& (true || actual == object.cid.to_bytes()[4..])','missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment',1),
+ ('original-hash','let hash_valid = actual == object.cid.to_bytes()[4..];','let hash_valid = true || actual == object.cid.to_bytes()[4..];','missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment',1),
  ('orphan-loss','if !c.referenced && c.state != Availability::Available','if false && !c.referenced && c.state != Availability::Available','missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment',1),
  ('writer-signature','.map_err(|_| Error::Invalid("retained writer request"))?;','.ok();','hash_valid_but_unsigned_bytes_are_not_treated_as_recoverable_loss',1),
 ]

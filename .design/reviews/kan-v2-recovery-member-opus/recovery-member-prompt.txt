@@ -1,0 +1,38 @@
+Fresh cold actual Claude Code Opus 5.5 independent review, no subagents. Frozen commit is in ../recovery-member-identity.json. Read CLAUDE.md, north-star.json and /Users/m/.codex/plugins/cache/kan-tools/day/0.12.0-beta.3/skills/adversarial-review/SKILL.md. Git-first recording due day#168/kan#197; do not invent witnesses or reconstruct excluded claims. Bound discovery to the export and named paths.
+
+Scope A: pure logical recovery-member verification in src/evidence_recovery_member.rs; tests/evidence_recovery_member.rs, independent Python construction .design/tools/recovery_member_vectors.py and fixture. Governing .design/kan-v2-recovery-bundle-codec.md section Next verifier checkpoint and parent .design/kan-v2-recovery-bundles.md. No SQLite/storage writer/history/output publication capability is added. Caller must acquire bounded immutable input slices and refuse noncanonical physical CID text before constructing typed CIDs. Exact ordered records/membership/originals are checked under independently supplied owner context. Audit issuer chain/purpose, static writer shape, per-writer predecessor, unique operations/slot relation, copy-plan binding/source metadata completion, expected-length agreement, original payload sampling, current writer signatures when bytes are present, M1 and every loss occurrence/null coordinate. A Member reports verified metadata and original loss, NOT observer history, full recoverability, complete source writer signatures when bytes are missing, nor durable publication.
+
+Challenge partial profile3, source digest forgery, false-but-signed metadata, duplicate/reordered coordinates, conflicting lengths, missing vs empty/corrupt bytes, orphan preservation, cross-scope/issuer, remaining writer-check uncertainty, byte/item/time/cancellation limits and bounds before allocation. Pure input bytes are already caller-owned; input_bytes is input accounting rather than measured RSS or exact hash-work accounting. CPU is bounded by item/byte caps and checked elapsed duration; cryptographic/JSON decoding operations are indivisibly bounded. Full state replay, greedy signed loss partition, historical candidate selection, output revalidation/checkpoints and all crash/physical surfaces remain unimplemented. Do not round those parent ACs up to met.
+
+Python builds real canonical signed requests, exact manifests/receipts/issuer proofs under public test keys, copy recipes, M1/loss cases and hostile variants, without Rust. It invokes the independent attestation verifier, but explicitly is NOT a full second member-semantic verifier. Independently challenge gaps beyond these fixtures. Add probes and selected compiled guard-removal controls; distinguish semantic acceptance from diagnostic-only test failures or redundant guards. Raw author qualification under .design/reviews/kan-v2-recovery-member-author must be reproduced, not trusted.
+
+One heavy job at a time, shared CARGO_TARGET_DIR/four jobs, cargo clean -p kan first. No own target/.lake/dependency installs. Verify manifest exact tracked set/hashes AND git blobs before/after using explicit repo /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member and pinned commit; git discovery would find parent. Only initial extra north-star.json. ALL commands/probes/mutations/failed methods/report under review-evidence. Restore tracked bytes and remove temporary probes outside that folder. No parent edits/Git writes/live archives/keys/traffic/network/merge/deploy/activation/unrelated process kills. Don't run revert_v2.py in export.
+
+Baseline: cargo test --features v2-crypto --test evidence_recovery_member --test evidence_recovery_commitment --test evidence_recovery_observation; Python member oracle (KAN_CRYPTO_ORACLE_PYTHON), strict alltarget v2 Clippy/fmt. Broaden only for concrete new concerns. Do not repeat enormous unchanged compatibility/performance/Node matrix. Preserve surviving controls and failed attempts. Write review-evidence/REPORT.txt with code/command evidence, requirement table and one hard APPROVE / APPROVE WITH FOLLOW-UPS / REDIRECT / BLOCK verdict. Keep the checkpoint distinction explicit and list remaining full-bundle work.
+
+
+Separate scope B: inherited framing review follow-through 99f1fba, relative to
+actual cold Opus report .design/reviews/kan-v2-recovery-commitment-opus/evidence/REPORT.txt.
+RA3/RA4 are promoted to tests/evidence_recovery_commitment_review_regressions.rs.
+Two unit probes in evidence_recovery_commitment::polling_tests use a cfg(test)-only
+cancellation injection at a charged-byte threshold, driving the actual public
+member-object/candidate operations. Check this is meaningful evidence of bounded
+interruption, has no production-build hook, and catches unchunked hashing and
+removed spend polling without sleeps/skips. Thirteen prior reviewer guard
+controls now fail assertions; raw results under
+.design/reviews/kan-v2-recovery-commitment-followups-author. The issuer framing
+rule is now explicit 1..80 UTF-8 bytes and the Python oracle has empty/overlong/
+multibyte edge checks; canonical DID and physical schema are stricter layers.
+UTF-8 create/open is now a proposed format requirement, not an implemented
+reader gate. O1 still confers no output verification authority. No non-test Rust
+runtime change occurred in 99f1fba. Recheck these changes, not the unchanged
+35-plus historical controls. Report A/B and overall verdicts separately.
+
+Final author baseline on merged tree: 33 integration functions (16 member,
+8 commitment, 2 promoted boundary, 7 observation) plus 2 polling units, strict
+all-target v2 Clippy/fmt and independent Python member fixture regeneration.
+Add the promoted target and --lib evidence_recovery_commitment::polling_tests
+to your bounded baseline. Explicit survivor: removing the early Work cancellation
+guard in member verification passes existing author tests because final framing
+still refuses cancellation. This is NOT evidence of prompt interruption; probe
+it independently. Retain this survivor even if you add a stronger probe.

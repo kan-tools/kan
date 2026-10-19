@@ -1,0 +1,24 @@
+
+running 1 test
+test rp03_shared_request_cid_refuses_with_or_without_bytes ... FAILED
+
+failures:
+
+failures:
+    rp03_shared_request_cid_refuses_with_or_without_bytes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.05s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member)
+    Finished `test` profile [unoptimized] target(s) in 7.85s
+     Running tests/evidence_recovery_member_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_review_regressions-9f02720da46a1f05)
+RP rp03-shared-missing: ACCEPT through=2 verified=0 complete=true losses=[Loss { occurrence: Some(1), cid: Cid(bafkreid6zo5zmdm74tloedzg3huklmmco26rpjnfkqva2yqpss4pdi5wdi), expected_length: Some(555), state: Missing, basis: IssuerMetadata }, Loss { occurrence: Some(2), cid: Cid(bafkreid6zo5zmdm74tloedzg3huklmmco26rpjnfkqva2yqpss4pdi5wdi), expected_length: Some(555), state: Missing, basis: IssuerMetadata }]
+
+thread 'rp03_shared_request_cid_refuses_with_or_without_bytes' (10078265) panicked at tests/evidence_recovery_member_review_regressions.rs:564:5:
+assertion `left == right` failed
+  left: None
+ right: Some("reused service request CID")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_member_review_regressions`
+
+exit=101
