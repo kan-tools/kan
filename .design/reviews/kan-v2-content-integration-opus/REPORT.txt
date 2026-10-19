@@ -1,0 +1,514 @@
+INDEPENDENT ADVERSARIAL REVIEW — provider version 2 follow-ups + first authorized Content integration
+=====================================================================================================
+Frozen commit  bb1e0ab1c43bfdd7351da30c2370d4c6f3369bb9 (feat/kan-v2-content-inspection)
+Source repo    /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection
+Export (cwd)   .local-state/reviews/content-integration (3952 manifest paths + north-star.json)
+Manifest       ../content-integration-identity.json  sha256 bc2b0cf91ecec2e2cc95b7f09e42d272eb8884eef2c5f493ae50abc2bf0d1b92
+North star     north-star.json sha256 64a00fe76d22f33b199d9191acbf21436190472eafb7b5680a12368777e1c19b
+Prompt         ../content-integration-prompt.txt sha256 7abc10cbb43075834dd114aa685cce1e942163e7d8ab3c2f302d034dd6f19f30
+Reviewer       Claude Code, Opus 5.5 (claude-opus-5-5); fresh cold session; no subagents (per instruction)
+Date           2026-10-19
+
+VERDICTS
+  Scope A (provider version 2 follow-ups, src/evidence_interpretation.rs + new tests, vs reviewed 0d04848)
+                                                                    ............ APPROVE WITH FOLLOW-UPS
+  Scope B (first authorized Content integration, 6667190..bb1e0ab)  ............ APPROVE WITH FOLLOW-UPS
+  Overall checkpoint bb1e0ab                                        ............ APPROVE WITH FOLLOW-UPS
+
+Independence statement. I did not write any of the reviewed code and had no prior context for it. This is
+the cold reviewer the adversarial-review atom asks for (Step 0), run in-context because the operator asked
+for no subagents. Every claim below rests on commands I ran or code I read in the frozen bytes. Author
+summaries, design checkpoints and commit messages were treated as claims and checked.
+
+-----------------------------------------------------------------------------
+0. CUSTODY, ENVIRONMENT AND METHOD
+-----------------------------------------------------------------------------
+BEFORE identity (identity/before.json): PASS. Export path set == manifest + north-star.json (3953). Every
+path matches its SHA256 and its Git blob id computed from bytes. `git ls-tree -r bb1e0ab` (read-only) has
+exactly the manifest path set and pinned blob ids, and `git cat-file --batch` bytes of every pinned blob hash
+to the recorded SHA256. Source worktree HEAD == bb1e0ab, `git status --porcelain --untracked-files=all`
+empty, and its on-disk bytes equal the manifest.
+AFTER identity: section 12.
+
+Ranges (raw/git_topology.txt, raw/git_scopeB_stat.txt, raw/42-range-src-scope.txt):
+  Scope A: 0d04848..6667190 (f8f8cfe review retention + 6667190 follow-ups), merged by 415c51e.
+           Production: src/evidence_interpretation.rs (+141/-24 incl. unit), CI; tests: followups (6),
+           review_regressions (19). No interpretation change after 6667190 (diff 6667190..bb1e0ab empty).
+  Scope B: 6667190..bb1e0ab via 1a9df4f, 0a271d3, 82aaf58, 415c51e, bb1e0ab. Production:
+           src/evidence_content.rs (new, 521), src/evidence_reader.rs (acquire refactor), src/evidence_library.rs
+           (content/content-page/source-exact + pin_wire), src/lib.rs, web/library/{app.js,index.html,style.css},
+           CI; tests: evidence_reader (+559), library_ui.test.cjs (+55).
+  No storage/lifecycle/recovery/assembly source changed in 0d04848..bb1e0ab, so prior evidence for those
+  stands and was read, not rerun (prior REPORT .design/reviews/kan-v2-provider-interpretation-opus/...).
+  main...bb1e0ab is the whole v2 stack (3767 files) and is not the unit under review.
+
+Environment: shared CARGO_TARGET_DIR=.../kan-v2-library-resilience/.local-state/target, CARGO_BUILD_JOBS=4,
+--offline --locked, one heavy cargo job at a time; `cargo clean -p kan` first (raw/11-clean.txt, 268 MiB
+removed). Free disk 15 GiB at start, 14 GiB after the first build; artifacts thereafter overwrite in place
+(no further growth observed). No network, downloads, installs, live archives/keys/traffic, kan/day invocations,
+live-log reads/writes, stash, or parent Git writes. Loopback fixtures only. kan/day were deliberately not
+run: `kan show`/`day review record` read or write the live log, which day#168/kan#197 Git-first recording
+forbids here; this is a declared deviation from skill Step 1/Step 7, not a failed read. Recording text for
+later operator backfill is in section 13.
+
+Failed methods (retained, not findings):
+  F1 raw/20-probes-run1.txt + probes/zz_review_content_probes.run1-failed-method.rs: my frames used non-hex
+     attempt ids ('r','s','t','m','g'), so the decoder classified them unsupported and groups were empty;
+     my SSE scan expectation omitted the JSON parse pass that `Limits.scan_bytes` documents; requests >64 KiB
+     must be split at evidence_capture::CHUNK; ordinal conflict correctly withholds BOTH streams (my
+     expectation listed only the gap). All four were probe errors; fixed in run 2 (raw/21).
+  F2 raw/23-ui-probes-run1.txt + probes/zz_ui_probes.run1-failed-method.cjs: u13 expected rows to vanish when
+     a refreshed snapshot lacks pin_wire; the UI instead refuses the refresh and keeps the old, still-signed
+     snapshot coherent (selection cleared, old exact pin used). Re-expressed as that assertion (raw/24).
+  F3 controls driver per-binary attribution: cargo writes "Running" headers to stderr and results to stdout,
+     so concatenation lost sections. Attribution was recomputed by exact test name (scripts/reclassify.py,
+     controls/summary-reclassified.json); the raw driver line (raw/30) is retained unedited.
+  F4 a foreground polling `sleep 25` was refused by the harness; I waited for the background notification.
+
+-----------------------------------------------------------------------------
+1. NORTH STAR
+-----------------------------------------------------------------------------
+Supplied frozen north-star.json (kan show was not run; see section 0) gives one subject,
+telos/raw-data-and-projections, Decision bafyreied3rklhs57...:
+  "Raw attested data is retained in full and never collapsed in the store. Every simplification ... is a
+   determined projection computed on demand over that raw data ... A field holding a computed value is the
+   failure mode: it asserts an output of the fold as if it were input, and it forecloses every other
+   projection."
+Its Retraction claim supersedes a different CID (bafyreiaezpl...), not the Decision, so the Decision is live
+on the record supplied. It also records InTensionWith telos/performance-at-scale and a deliberate
+no-witness maintenance observation. The file reports "excluded_by_trust": 2 at top level; those claims
+were not reconstructed.
+Purpose served here: Content is an on-demand, disposable projection ("kan-content/1" over
+"kan-capture-assembly/1" and "kan-anthropic-messages/2") of authorized retained occurrences, with every item
+citing raw bytes reachable through Source. Nothing is persisted. That is aligned with the telos.
+The tension with performance-at-scale is the decisive one in this checkpoint: the presentation budget is
+charged quadratically (finding B-F1), so the projection refuses on modest real-sized captures. That does not
+collapse raw data; it limits whether the projection is usable at all.
+Parent purpose: .design/kan-v2-human-frontend.md (AC-1..AC-10) and kan-v2-session-reconstruction.md
+(AC-1..AC-8). This checkpoint is one bounded slice of those. Every parent AC remains unchecked in the frozen
+docs (raw grep in this report's section 10), and I close none of them.
+
+-----------------------------------------------------------------------------
+2. BASELINE VERIFICATION (raw/ logs; all on frozen bytes)
+-----------------------------------------------------------------------------
+  12 cargo build --offline --locked --features v2-crypto --tests ............................ exit 0
+  13 integration: evidence_assembly 13, evidence_assembly_review_regressions 4, evidence_interpretation 13,
+     evidence_interpretation_followups 6, evidence_interpretation_review_regressions 19, evidence_reader 25
+     (+2 ignored manual browser fixtures), surface_conformance 19 = 99 passed, 0 failed ............. exit 0
+  14 lib: evidence_content::tests 4, evidence_library::budget_tests 3, evidence_interpretation::tests 2 ... exit 0
+  15 node --test tests/library_ui.test.cjs: 35 pass, 0 fail ................................... exit 0
+  16 cargo clippy --offline --locked --features v2-crypto --all-targets -- -D warnings ......... exit 0
+  17 cargo fmt --all -- --check .................................................................. exit 0
+Author count reconciliation (not trusted, reproduced):
+  Scope A "122 integrations + 6 units": attempt-2/03-tests.txt runs 11 targets = 13+4+13+6+19+15+2+15+10+6+19
+    = 122. The 6 units = evidence_interpretation::tests 2 + evidence_assembly::tests 1 +
+    evidence_store::bundle::snapshot_tests 3 (attempt-2/03b..03d). My run reproduces the overlapping targets
+    with identical counts (interpretation 2 units, and every overlapping integration target).
+  Scope B "74 integrations + 7 units + 35 Node": provider-v2-integration/02-tests.txt runs reader 25 +
+    interpretation 13 + assembly 13+4 + surface 19 = 74; 7 units = content 4 + budget 3; Node 35. Reproduced.
+    NOTE: that "74" run did not include the two new interpretation targets; my baseline does (all pass).
+CI (.github/workflows/ci.yml at bb1e0ab): --test evidence_reader, --test evidence_interpretation_followups,
+  --test evidence_interpretation_review_regressions (line 44), --lib evidence_interpretation::tests (50),
+  --lib evidence_content::tests (51), --lib evidence_library::budget_tests (56), node library_ui (27).
+Not rerun: default-feature workspace build/clippy and the storage/lifecycle/recovery history (no source in
+those areas changed in range; prior retained evidence read instead).
+-----------------------------------------------------------------------------
+3. SCOPE A — provider version 2: disposition of prior findings A-F1..A-F9
+-----------------------------------------------------------------------------
+Code read: src/evidence_interpretation.rs at bb1e0ab (full file). Diff vs 0d04848: raw/scopeA_src.diff.
+The promoted regressions file is a faithful copy of the prior reviewer's pass_* probes: raw/
+prior_probes_vs_promoted.diff shows only rustfmt reflow and removal of char_* (observation-only) tests;
+no assertion, loop bound, fuzz round count or fixture was weakened.
+
+A-F1 mapping/state guards unpinned ......................................................... CLOSED
+  M1-M7, S4, S6, S7, S8, J1, J2, J4, J7, J8, B1, B2 now run in CI (19 tests). The author re-ran R-C1..R-C12
+  (runs/controls-3: all twelve fail named tests; restored 13+19+6 pass). Independently, my controls on the
+  frozen bytes: R-C1, R-C6, R-C10 and R-C12 replayed and killed (section 6).
+A-F2 absolute output accounting unpinned ................................................... CLOSED
+  followups::absolute_output_accounting_covers_json_strings_and_sse_data pins Request and SSE absolutes and
+  the -1 refusal; it kills R-C10 (author controls-3). My pass_a5 adds independent absolutes for a Response
+  with bare-string blocks, nested tool_result children, BOM+comment SSE (scan = every line byte + the JSON
+  parse pass) and a tool stop (data copies + name + fragment text + fragment buffer + strict parse). A-M9
+  (BOM scan) and A-M10 (Framing label) are killed only by these reviewer probes (section 6).
+A-F3 heap vs counters: consumer obligations ................................................ PARTIAL (Scope B)
+  Content bounds items request-wide (1024), charges cumulative mapping work, holds the worker permit inside
+  spawn_blocking, and caps serialized output with a bounded writer. See Scope B for which of these are pinned.
+A-F4 citations_delta / empty-only fragments ................................................ CLOSED
+  :486 maps citations_delta to Text with Shape when "citation" is not an object (:506-514); :522 suppresses
+  DeltaType for unknown deltas. pass_a3: citations on a tool block -> [DeltaType]; missing/str citation ->
+  [Shape]; unknown delta on a tool block -> [Unknown] only and never feeds tool input; signature/input_json
+  deltas on a text block -> DeltaType. pass_a2: ["",""] -> ToolJson, no tool_input, not coherent; ["","{}"]
+  -> "{}"; "[1]", duplicate keys, 1e400 -> ToolJson; trailing whitespace accepted verbatim; no deltas -> the
+  {} placeholder is never exposed. The design records the primary references it rechecked; I did not fetch
+  them (no network), so the provider-protocol claim itself is UNVERIFIED here, but the behaviour matches it.
+  Residual INFO A-I1: citations_delta reads key "" as text (:486,:493): {"":"SMUGGLED"} surfaces as
+  Protocol text with no issue (char_a3b). Inert text; worth a fixed key.
+A-F5 human readability obligations ......................................................... MOSTLY CLOSED
+  (a) UI labels every request item "Supplied history · ..." (app.js:202; author Node test + my u4).
+  (b) array tool_result children render with root pointers (:249-258; author test; my pass_a6 40-deep chain
+      renders, 70-deep hits the 128 recursion limit and the whole body becomes one visible Malformed item).
+  (c) accumulated tool input exposed with a separate block-wide region (section 4).
+  (d) Malformed/Unsupported now always carry Shape/Unknown (:188-192). pass_a6 fuzzes 8000 request/response
+      bodies: no Malformed/Unsupported item lacks a reason, no duplicate Shape, every non-error pointer
+      resolves. Residuals: A-F10 and A-F11 below.
+A-F6 numeric fidelity ...................................................................... CLOSED (documented)
+  Parsed numbers outside i64/u64 round (char_a6b: 18446744073709551617 -> 1.8446744073709552e19; a 2^64 SSE
+  block index -> index None + BlockIndex, event display rounded). u64::MAX index is exact. The UI labels
+  parsed bodies/events "numbers may be rounded; Source preserves exact bytes" (app.js:206,:212). 1e400 still
+  turns a whole body Malformed (documented limitation; raw bytes stay citable).
+A-F7 empty chunks at covered offsets ....................................................... CLOSED
+  :767-775 accept zero-length segments at offset <= next and validate every source exactly like nonempty
+  ones; :839 next = max(next,end). pass_a1: empty chunk at the end and duplicated mid-stream map; nonempty
+  regions never cite empty bytes; zero-width at an empty chunk cites the covering segment and both empty
+  duplicates; NINE forgeries of the empty segment all refuse for both 3..3 and 0..6 (offset beyond cover,
+  other attempt, request direction, frame-claimed offset, nonempty body, span into header, unavailable input,
+  no sources, mixed-frame duplicate).
+A-F8 BOM / unknown fields / dataless blocks ............................................... CLOSED
+  :607-612 strips exactly one BOM, keeps it in the first region and charges scan; :650-657 Framing with a
+  fixed label; :688-691 id/retry are ordinary, any other field -> Unknown + not coherent. pass_a4: second BOM
+  -> Unknown; BOM-only -> Truncated 0..3; BOM+LF -> Framing 0..4; JSON formats do not strip BOM (Malformed
+  [Shape]); "Data:", "foo", Cyrillic "datа" -> Unknown; id/retry/comment/event-only -> issue-free Framing
+  that leaves a prior coherent stop intact; unknown field in a trailing unterminated event -> Truncated.
+A-F9 issue locality and empty-region rule .................................................. CLOSED
+  followups::sequence_issue_is_attached... pins R-C6; the doc comment at :735-741 states the zero-width rule
+  and the followups test pins it (R-C12). pass_a7 adds exact citation/item edges for zero-width regions.
+
+New Scope A findings (none blocking):
+A-F10 [LOW, reason code] A Response {"type":"error"} without an "error" object yields an Error item whose
+  fixed pointer "/error" (:340-343) does not exist in parsed JSON and carries no Shape issue. pass_a6 fuzz:
+  1365 such items; `{"type":"error"}` -> [(Protocol,"",[]),(Error,"/error",[])].
+A-F11 [LOW, readability] tool_result whose content is an object (neither string nor array) produces a
+  ToolResult with text None, no children and no issue (:231-234, :249) (char_a6b). The nested text is only
+  visible via raw JSON/Source.
+A-F12 [LOW, test adequacy] A-M12 (unknown_field not reset between events; every later item gets Unknown)
+  survives all suites including mine. Fail-safe direction (over-flagging), but unpinned.
+A-I2 [INFO] A-M1 (drop the `s.length == 0 && offset > next` guard) survives everything. For offset-sorted
+  segments, which assemble() guarantees (src/evidence_assembly.rs sort_by_key), the guard is redundant with
+  `bytes.get(offset..end)` and the following nonempty `offset != next` / final `next == len` checks, so this is
+  an equivalent mutation for real inputs; it only enforces ordering for forged unsorted streams.
+-----------------------------------------------------------------------------
+4. SCOPE B — interface checks, both sides (code read at bb1e0ab; anchors in raw/44-quoted-anchors.txt)
+-----------------------------------------------------------------------------
+Authority path (src/evidence_reader.rs acquire :289-334, called per selected sequence):
+  check_pin (signed Snapshot request/reply, principal/audience, page-shape) -> sequence <= pinned through
+  (else Missing) -> page(pin, seq-1, 1): a CURRENT signed service read that both exercises the current grant
+  and proves membership at the pinned snapshot -> Read -> decode_record (manifest/receipt bind, scope token,
+  issuer) -> record == membership row (:311) -> verify_retained_request (retained writer signature) -> scope
+  and audience of the retained request -> unhex (MAX_PAYLOAD) -> decrypt with the configured scope key.
+  The pin never substitutes for any of these. After render, content() performs page(pin, sequences[0]-1, 1)
+  again (:122-123) before returning bytes: a final current-permission read after decoding and work.
+  Source (v1 and exact) now shares acquire(); its behaviour/authorization tests are unchanged and pass.
+Content entry (src/evidence_content.rs):
+  :81-92 1..=40 (PAGE_LIMIT) canonical decimal strings, nonzero, unique (BTreeSet); coordinate() rejects
+  empty, >20 chars, non-ASCII digits, leading zeros, overflow. :94-98 try_acquire_owned on a 2-permit
+  semaphore: refuse, never queue. :100 Cancel drop guard sets the shared flag. :105-114 acquisition with
+  cumulative 8 MiB plaintext check after each record. :116-121 spawn_blocking moves the permit into the
+  worker (`let _permit = permit;`), so it is released only when render returns. :126-128 20 s timeout around
+  the whole async work. render(): assembly with the remaining scan budget; per stream interpret with the
+  remaining items/output/scan; per item map_citations charging a full-source validation pass (:218-237);
+  tool regions mapped separately (:286-293) and a tool_input/tool_region mismatch is Corrupt; finally
+  bounded_json with a 4 MiB writer that also polls cancellation/deadline per write (:385-414).
+Library wire (src/evidence_library.rs): content/content-page/source-exact actions inside the existing
+  Host/Origin/Bearer/content-type/16 KiB/no-store boundary; Query has deny_unknown_fields; new outputs use
+  decimal strings; v1 page/source and the v1 pin object are retained; catalog/snapshot add pin_wire.
+  All failures map to fixed non-disclosing bodies with 400/403/404/503 (:239-245).
+Browser (web/library/app.js): exact strings flow end to end: content-page `after` String(position),
+  checkbox values String(row.sequence), sequences:[...contentSelection], citations' offset c.bytes[0]
+  (string), source-exact sequence/offset strings, BigInt for range end (:61). showContent refuses a response
+  whose version, pin_wire, occurrence count (<=40) or arrays differ (:180). Every value is rendered through
+  textContent; Number() is applied only to input indices (<40). rpc() epochs + AbortController suppress late
+  replies (:33-47); lock/pagehide/scope/snapshot/format/selection/clear abort and clear.
+Fields the browser never renders (raw/43-ui-field-consumption.txt): unexpected_starts, extent_claims,
+  observed_bytes, expected_bytes, observation ordinal, scan_bytes, versions. Writer/scope provenance is reached
+  through Source -> Provenance rather than shown on the Content card (consistent with "keep provider claims
+  visually distinct from authenticated writer provenance").
+Test-only control: KAN_CONTENT_FIXTURE_CONTROL/KAN_LIBRARY_FIXTURE_INFO occur only in the #[ignore]
+  content_browser_fixture in tests/evidence_reader.rs:1455-1562; grep of src/ web/ scripts/ .github finds
+  nothing (raw/41-fixture-and-sinks.txt). evidence_content.rs has no fs/network/env/logging/process use; the
+  page script has no storage/innerHTML/eval/new Function sinks (only the pre-existing blob export href).
+No read-write-surface.tsv row is required: Content persists nothing.
+-----------------------------------------------------------------------------
+5. INDEPENDENT PROBES (probes/; raw/21-probes-run2.txt 15/15, raw/22 b7, raw/24 UI 11/11, raw/25-probe-b8-correct.txt)
+-----------------------------------------------------------------------------
+Rust probes, temporary tests/zz_review_content_probes.rs = verbatim copy of the reader test's signed and
+encrypted loopback Fixture header (tests/evidence_reader.rs:1-243, content_frame) + my body
+(probes/_probes_body.rs). pass_* assert; char_* print observations judged in findings.
+Scope A: pass_a1 empty-chunk matrix (2 valid layouts, 9 forgeries); pass_a2 tool_region/stop region,
+  3-chunk + duplicate mapping of both regions, fragment strictness table, late fragment, duplicate start,
+  BOM; pass_a3 delta labels; pass_a4 BOM/fields/framing; pass_a5 absolute accounting; pass_a6 8000-body
+  reason-code fuzz + nested chains; pass_a7 mapping bounds and exact citation/item edges.
+Scope B (real Reader + signed service + sealed payloads over loopback HTTP):
+  pass_b1 40 accepted / 41 Invalid; "+1"," 1","1 ","0x1","１","1e0","","-0","1_0","١" Invalid;
+    u64::MAX -> Missing; duplicate -> Invalid; selection order is preserved in occurrence lineage; repeated
+    requests do not leak budget.
+  pass_b2 ordinals 2^53+1, 2^53+3, u64::MAX-1, u64::MAX and SSE block index 2^53+1 come back as exact
+    strings; a recursive walk of the whole Content response finds ZERO bare JSON numbers; gaps are string
+    pairs up to 18446744073709551614; pin_wire round-trips exactly.
+  pass_b3 over HTTP: v1 page/source still served with numeric shape; pin_wire with an extra field, non-JSON,
+    >12000 bytes, unknown format, numeric sequences, unknown request keys -> 400; through bumped in the signed
+    reply -> refused; content-page limit 0/41, after > through, after u64::MAX -> 400; source-exact length 0,
+    >256 KiB, offset u64::MAX, sequence 0 -> 400; beyond snapshot -> 404; no refusal body contains plaintext;
+    success is no-store.
+  pass_b4 byte gap and ordinal conflict keep request AND response "unavailable" with string issues; the
+    coverage disclaimer is present; SSE bytes under an explicit JSON choice -> one Malformed [shape] item,
+    coherent false, no guessing; absent request stream -> unavailable; missing_start true.
+  pass_b7 8 x 999,800-byte records accepted; 9 (> 8 MiB) -> Unavailable.
+  char_b5 realistic sizes (single request per selection, 1000-char messages, 64 KiB chunks + request-end):
+      50 msgs / 51,601 B (2 occ) OK 101 items     100 msgs / 103,176 B (3 occ) OK 201 items
+      120 msgs / 123,806 B (3 occ) OK 241 items   130 msgs / 134,121 B (4 occ) Unavailable
+      160 / 250 / 480 msgs (165 KB..495 KB) Unavailable
+      SSE in 4 chunks: 200 deltas / 29 KB OK; 400 / 58 KB OK; 500 / 73 KB Unavailable; 800, 1500 Unavailable
+    Every refusal is the generic Unavailable (HTTP 503). See B-F1/B-F2.
+  char_b6 HTTP disconnect: two raw-socket Content requests stalled in acquisition held both permits (a third
+    request got 503); after closing both client sockets the next request succeeded 84-89 ms later (two runs).
+    Hyper drops the handler future on disconnect and the Content future releases its permit; this covers
+    the acquisition phase only.
+  char_b8 timing characterisation: inconclusive (section 6).
+UI probes (probes/zz_ui_probes.test.cjs; harness copied verbatim from tests/library_ui.test.cjs):
+  u2 late reply after resnapshot suppressed; u3 invalid citation index leaves no partial Content; u4 hostile
+  strings in role/kind/text/pointer/event/issues/index/tool/observer/terminal/attempt/reason/coverage all stay
+  text and no element gets a non-aria attribute; u5 page navigation clears selection; u7 duplicate lineage
+  citations navigate to each distinct occurrence (u64::MAX sequence string); u10 >40 occurrences or wrong
+  version refused; u11 format change keeps selection, clears Content; u12 v1 reader without content
+  capability keeps numeric v1 page/source and no checkboxes; u13 refreshed snapshot without pin_wire is
+  refused and the old exact pin stays in use (never a half-updated pin).
+  char_u1: a Content request superseded by a Source click is aborted (correct) but Interpret stays disabled
+    with "1 selected" until the selection changes (B-F6).
+  char_u6: a 503 (e.g. any budget refusal) shows "This response could not be verified. Retry, refresh the
+    snapshot, or choose another scope." and clears the selection (B-F2).
+-----------------------------------------------------------------------------
+6. SEMANTIC CONTROLS (scripts/controls.py; controls/<id>.txt; controls/summary-reclassified.json;
+   raw/30, raw/31, raw/32). One mutation at a time on frozen bytes; every file restored and re-hashed equal
+   to the manifest after each control. Attribution by exact failing test name. All kills listed are
+   behaviour assertions (panic text retained); no control was a compile error.
+-----------------------------------------------------------------------------
+Scope A (src/evidence_interpretation.rs; suites: interpretation 13 + followups 6 + review_regressions 19 +
+evidence_reader 25 + interpretation units 2 + reviewer probes)
+  A-M1  empty-chunk `offset > next` guard off ........ SURVIVED (equivalent for sorted segments; A-I2)
+  A-M3  tool_region = stop event only ................ KILLED author (reader + unit) and reviewer (pass_a2)
+  A-M4  tool_region skips block start ................ KILLED author unit and reviewer (pass_a2)
+  A-M5  non-object tool JSON exposed ................. KILLED author (S6, tool_fragments...) and reviewer
+  A-M6  citations_delta citation-shape check off ..... KILLED only by reviewer (pass_a3)
+  A-M7  DeltaType again raised for unknown deltas .... KILLED author (followups) and reviewer
+  A-M8  `retry` field flagged Unknown ................ KILLED only by reviewer (pass_a4)
+  A-M9  BOM bytes not charged to scan ................ KILLED only by reviewer (pass_a2, pass_a5)
+  A-M10 Framing label not charged to output .......... KILLED only by reviewer (pass_a4)
+  A-M11 unknown field leaves coherence asserted ...... KILLED author (followups, S8 fuzz) and reviewer
+  A-M12 unknown_field not reset per event ............ SURVIVED all suites (A-F12)
+  Replays of the prior review's controls on frozen bytes:
+  R-C1  duplicate full-frame equality off ............ KILLED author (pass_m2)
+  R-C6  block start after message_delta .............. KILLED author (followups::sequence_issue...)
+  R-C10 strict() output charge removed ............... KILLED author (absolute_output...) and reviewer (pass_a5)
+  R-C12 zero-width right boundary .................... KILLED author (empty_chunks...) and reviewer (a1, a7)
+Scope B (src/evidence_content.rs, src/evidence_reader.rs; suites: evidence_reader 25 + content units 4 +
+reviewer probes)
+  B-M1  permit dropped before the blocking worker .... SURVIVED all suites (B-F3)
+  B-M2  worker given a fresh never-set cancel flag ... SURVIVED all suites (B-F3)
+  B-M3  final current-grant check removed ............ KILLED author (content_rechecks_current_grant...)
+  B-M4  8 MiB acquisition check removed .............. SURVIVED, incl. pass_b7: assembly limits still refuse,
+                                                       so the outcome is identical, but up to 40 records are
+                                                       fetched/decrypted first. The resource bound is unpinned.
+  B-M5  sequence 0 allowed by Content ................ SURVIVED (equivalent: acquire refuses 0 as Invalid)
+  B-M6  20 s whole-request timeout removed ........... SURVIVED all suites (per-call 5 s timeouts and render's
+                                                       own deadline remain; overall deadline unpinned)
+  B-M7  tool citations mapped from stop region ....... KILLED author (content_accumulated_tool_input...)
+  B-M9  citation ceiling per call, not request-wide .. SURVIVED all suites
+  B-M10 normalized output not charged across streams . SURVIVED all suites
+  B-M11 item ceiling per stream, not request-wide .... SURVIVED all suites
+  B-M12 4 MiB serialized cap not wired to render ..... SURVIVED all suites (the unit tests bounded_json
+                                                       directly; the real response path is unpinned)
+  B-M14 occurrence lineage reversed .................. KILLED author (2 tests) and reviewer (pass_b1)
+  B-M17 Read reply need not equal membership row ..... KILLED author (mode 3; signed_reply_integrity...)
+UI (web/library/app.js; suites: library_ui 35 + reviewer UI probes 11)
+  U-M1  selection survives page navigation ........... KILLED only by reviewer (pass_u5)
+  U-M3  non-denial failure keeps partial Content ..... KILLED only by reviewer (pass_u3)
+  U-M4  >40-occurrence response accepted ............. KILLED only by reviewer (pass_u10)
+Timing probe char_b8 (labelled characterisation, not a test): correct code, B-M1 and B-M2 all show
+  0-of-2 refusals at every abort point in scenario X; scenario Y never aborted during the parse because the
+  acquisition of 37 records dominated (5.4 of 5.55 s). The method could NOT distinguish the mutations
+  (raw/25-probe-b8-correct.txt, controls/B8-under-B-M1.txt, B8-under-B-M2.txt). Retained as an
+  inconclusive method; B-F3 rests on the control survivals and code reading.
+Author controls: Scope A's twelve (runs/controls-3) are the prior R-C1..R-C12 and are current for the
+  interpreter (no interpreter change after 6667190). The four replays above confirm them. Scope B's six were
+  run on the 82aaf58-era test file (B-F4); B-M3 confirms final-grant, and their duplicate/exact-u64/
+  serialized-unit/items/mapping controls target pinned code paths. The five UI controls ran on the current
+  35-test suite.
+-----------------------------------------------------------------------------
+7. REQ / AC COVERAGE — .design/kan-v2-content-api.md
+-----------------------------------------------------------------------------
+REQ-1 pinned authorized selection via Reader; reverify permission, membership, writer signature,
+      ciphertext before decoding; no arbitrary-CID/plaintext bypass ..................... MET
+  Section 4 path; tests: author mode 1..9 tamper, forged through, revoke, mid-flight revocation (mode 11),
+  my b3 (pin_wire extra field / bumped through / oversize), B-M3 and B-M17 controls. Content consumes only a
+  pin_wire and sequence strings; there is no CID or plaintext input on the wire (Query deny_unknown_fields).
+REQ-2 bound cardinality, plaintext, assembly, interpretation, citations, serialized size; refuse incomplete
+      acquisition ........................................................................ MET (with B-F1)
+  Bounds exist and fail closed with no partial body (b1, b7, author item-limit and serialized-writer tests).
+  Which of the request-wide accumulations are pinned: only the mapping-work charge and per-call item ceiling are pinned; request-wide citations, items, normalized output, the wired 4 MiB serialized cap and the acquisition-time 8 MiB bound are not (B-M4/9/10/11/12 survive). Practical ceiling far below the
+  8 MiB input bound because mapping work is quadratic (B-F1).
+REQ-3 lineage through group/source refs; all u64 coordinates canonical decimal strings ...... MET
+  b2 (zero bare numbers anywhere, > 2^53 and u64::MAX exact), author exact-u64 control, b1 ordering, u7.
+REQ-4 user-selected format; malformed/opaque/unsupported/unavailable, gaps/conflicts, observer claims and
+      coarse regions visible; no completeness/provider-authorship claim .................. MET (B-F5 residual)
+  b4, author test (opaque/unsupported/malformed observations, gaps, duplicates), coverage string, UI
+  "Coherent protocol stop observed · capture completeness is unknown", coarse labels on every citation.
+  Residual: unexpected_starts and response prefix extent are on the wire but not rendered (B-F5).
+REQ-5 Content/Source/Provenance navigation; explicit bounded selection in tab memory; lock/scope/snapshot/
+      denial clear plaintext, selection, work and late replies ........................... MET (B-F6 UX)
+  Author Node tests (35) + my u2/u3/u5/u10/u11/u13 + U-M controls (section 6).
+REQ-6 cancellation into bounded synchronous work and network reads; no unbounded background task, plaintext
+      file/cache/index, external fetch or content execution ............................. MET in code; PARTIAL in tests
+  Drop guard + flag polled by assembly/interpretation/mapping/writer; permit owned by the worker; 20 s
+  timeout; b6 shows disconnect propagation during acquisition. B-M1/B-M2 (and B-M6, the 20 s timeout) survive every
+  suite: the worker-side guarantees are true by reading the code but are not pinned by any test (B-F3).
+REQ-7 qualify real API authorization, limits, tamper, revocation; real browser light/dark/mobile/focus/
+      source return/hostile content; fresh Opus review ................................... PARTIAL
+  API/limits/tamper/revocation qualified (above). Browser evidence is a narrative record
+  (browser-observations.md) with no retained screenshot, DOM dump or trace; it honestly says so. This report
+  is the fresh review.
+AC-1 signed fixtures accept selections; refuse foreign scope, forged pin, revoked grant, writer mismatch,
+     out-of-snapshot, truncated acquisition without snippets/counts ......................... MET
+AC-2 interleaved attempts, duplicates at distinct coordinates, exact identities/spans; >2^53 round trip ... MET
+AC-3 empty/oversized/duplicate selections, byte/item/work/output limits, cancellation -> explicit refusal;
+     nothing continues unbounded after disconnect ............................................ PARTIAL
+  Refusals happen and are bounded, but every limit/cancel/timeout outcome is the same generic 503 that the
+  UI words as a verification failure (B-F2); worker cancellation is unpinned (B-F3).
+AC-4 browser fixtures: multi-selection, groups, unsupported/corrupt, partial streams, navigation/return,
+     hostile strings, lock/revoke during network and interpretation, focus, mobile, themes ...... PARTIAL/UNVERIFIABLE
+  Node harness covers the logic; real-browser claims are narrative only. The author states revocation
+  during the synchronous worker was not browser-instrumented.
+AC-5 behavioural mutations fail named assertions; compatibility, lint, fresh review ............. PARTIAL
+  Lint/compat pass. The six retained backend controls ran against the 82aaf58-era test file (B-F4); I
+  re-demonstrated on frozen bytes (section 6), where two worker guarantees survive. Download delivery stays
+  separately visible as unverified (next-build-status.md:25,43,185).
+
+-----------------------------------------------------------------------------
+8. FINDINGS
+-----------------------------------------------------------------------------
+No BLOCK-level finding. No invariant violation: nothing is persisted, no subject is mutated, no cites are
+fabricated, the pin never replaces a current authorized read, and every refusal returns no plaintext.
+
+B-F1 [MEDIUM, fitness for purpose; tension with telos/performance-at-scale] Quadratic mapping charge makes
+  Content refuse modest real-sized captures. map_citations charges sum(original)+sum(body)(+duplicates) for
+  EVERY item (src/evidence_content.rs:218-237) because map_region revalidates the whole stream per call, and
+  request items are deliberately coarse whole-body regions. With the 64 MiB budget that limits
+  items x stream bytes to about 32 MiB: char_b5 refuses a 134 KB / 130-message request and a 73 KB / 500-delta
+  SSE response, far below the 8 MiB input and 1024-item bounds. Multi-turn agent requests that resend
+  history routinely exceed this, so on real archives Content will mostly refuse. Fail-closed, not unsafe.
+  Follow-up: validate each stream's sources once per request (cache the verified segment table, or add a
+  map_region variant over a pre-validated stream) and charge that once; then slice per item. Re-run char_b5.
+B-F2 [MEDIUM, explicitness/honesty] Every Content budget, timeout, admission and cancellation refusal is
+  Failure::Unavailable -> HTTP 503 with the fixed body, which the UI renders as "This response could not be
+  verified. Retry, refresh the snapshot, or choose another scope." (char_u6; app.js:40-42). After
+  authorization succeeded, telling a human that verified evidence "could not be verified" is wrong, and
+  "retry" cannot help a deterministic budget refusal. This contradicts AC-3 "explicit refusal" and the design's
+  "structured reason codes". Follow-up: a distinct non-disclosing limit status for post-authorization refusals
+  (e.g. 413/422 + fixed code such as "content-limit"/"busy"/"cancelled"), mapped to its own UI wording.
+B-F3 [LOW-MEDIUM, test adequacy] The two worker-side guarantees the prompt singles out are unpinned:
+  B-M1 (drop the permit before the blocking worker runs) and B-M2 (render ignores the cancel flag) survive
+  the author suite AND my probes; B-M4, B-M6, B-M9, B-M10, B-M11 and B-M12 (acquisition cap, overall deadline, request-wide citations/output/items, wired serialized cap) also survive everything. Code is correct as read; my timing probe char_b8 could not distinguish them (inconclusive method).
+  Follow-up: a deterministic seam (like interpretation's interpret_observed) that pauses render after its
+  first item, then asserts that dropping the request sets the flag, the worker exits with Unavailable, and the
+  permit is unavailable until then.
+B-F4 [LOW, evidence currency] The six retained backend controls cite tests/evidence_reader.rs:1557/:1597,
+  which match the 82aaf58 test layout (content_rechecks at :1540), not bb1e0ab (:1565/:1588); bb1e0ab changed
+  src/evidence_content.rs by 78 lines afterwards. The checkpoint text presents them as qualifying the provider
+  v2 integration. .design/reviews/kan-v2-content-author/README.md is also stale (says provider 0d04848 under
+  review, 34 UI tests, browser pending). Re-demonstrated here; correct the README/checkpoint wording.
+B-F5 [LOW, explicitness] unexpected_starts (duplicate start events) and observed/expected byte extents are on
+  the wire but never rendered. A response stream has no extent claim, so an interpreted response may be an
+  observed prefix ending on an event boundary; only the absence of the coherent-stop line hints at it.
+  Follow-up: render unexpected starts and "observed N bytes; extent unknown" for response streams.
+B-F6 [LOW, UX] Interpret stays disabled after a Content request is superseded by a Source click until the
+  selection changes (char_u1; app.js:222 disables, only updateSelection re-enables).
+B-I1 [INFO] A citation opens Source at the cited start with a 64 KiB window; the cited end is only in the
+  button label (author records this honestly in browser-observations.md).
+B-I2 [INFO] Observation reasons are Debug renderings of finite Copy enums (e.g. "Event", "Missing"):
+  bounded, but not a declared code vocabulary.
+B-I3 [INFO] The format control pre-selects the streamed option. The choice is visible, labelled and always
+  sent explicitly; the server never sniffs format. Acceptable as "explicit".
+-----------------------------------------------------------------------------
+9. SCOPE-NARROWING (raw/40-scope-narrowing-grep.txt) AND SEPARATE SLICES
+-----------------------------------------------------------------------------
+Added production/test code contains no TODO/for-now/deferred language. Design-level instances:
+  content-api.md:31 "Physical recovery jobs and proof-aware unavailable inventory must still be connected
+    ... Search/facets, annotations, saved views, broader session discovery, analysis/day and owner
+    administration remain required roadmap items." — pre-declared (ad21efd, before implementation), separable,
+    and stated as REQUIRED, not abandoned. LEGITIMATE.
+  content-api.md:37 Out of Scope (no cross-request session identity, archive scan, persistent projection,
+    recovery writers, deployment) — pre-declared. LEGITIMATE.
+  content-api.md:51 / provider-interpretation.md:68 "not an exact RSS bound" and "parsed Values may round" —
+    named limitations carried from the prior review (A-F3/A-F6), documented rather than hidden. LEGITIMATE.
+  content-api.md:45 "These are not retention limits" — LEGITIMATE as stated, but see B-F1: the presentation
+    budget as implemented is far tighter than its numbers suggest. This is drift in effect, not in wording.
+  Download delivery: next-build-status.md:25,43,185 keep "remains unverified". Not upgraded. Correct.
+Search, session discovery, annotations, saved views, background analysis, day integration and owner jobs
+are listed as "unavailable" in the live catalog capability list (evidence_library.rs catalog) and the UI
+renders them "Upcoming". Not presented as shipped; not presented as abandoned.
+
+-----------------------------------------------------------------------------
+10. PARENT ACCEPTANCE STATE
+-----------------------------------------------------------------------------
+Frozen docs: kan-v2-human-frontend.md AC-1..AC-10, kan-v2-session-reconstruction.md AC-1..AC-8,
+kan-v2-content-api.md AC-1..AC-5 and kan-v2-provider-interpretation.md AC-1..AC-4 are all "- [ ]".
+bb1e0ab does not modify the parent docs. The checkpoints say acceptance stays open pending this review.
+This review closes none of them. Recovery/full-frontend ACs remain open.
+
+-----------------------------------------------------------------------------
+11. HOUSE RULES (CLAUDE.md, derived)
+-----------------------------------------------------------------------------
+Fold reads, never mutates: untouched (no fold/store change in range). Affordance not enforcement: no hook
+or gate added. One surface: the v2 operator/library front end is the owner-authorized exception
+(CLAUDE.md, 2026-10-18); Content reads the same Reader API as CLI/Source and adds no workflow authority.
+Provenance: every displayed item carries citations derived from verified bytes; nothing fabricated; tool
+input is labelled derived and cited block-wide. Persistence change => surface contract: none (no persistence).
+Derived media never authority: parsed JSON/event displays are labelled derived and possibly rounded.
+-----------------------------------------------------------------------------
+12. FINAL STATE
+-----------------------------------------------------------------------------
+The temporary tests/zz_review_content_probes.rs was removed (`ls tests | grep -c zz_` = 0). A retained copy,
+the failed-method copies and the UI probe file live under review-evidence/probes/. Final reruns on the
+restored tree (raw/90-final-reruns.txt): 99/99 integration pass (+2 ignored manual fixtures), 4+3+2 units,
+Node 35/35, strict clippy and fmt exit 0. Identity after reruns (identity/after-reruns.json): ok, no errors.
+Identity after writing this report: identity/after.json (run after this file was written; result appended
+there only. The verdict stands unless that check FAILS, in which case this report is void).
+Disk: 15 GiB free at start, 14 GiB after the first build, 14 GiB at the end.
+-----------------------------------------------------------------------------
+13. RECORDING (Git-first; not executed)
+-----------------------------------------------------------------------------
+No kan/day command was run (day#168/kan#197). No claim CIDs are asserted here beyond those read from the
+supplied north-star.json; none were invented, and the two trust-excluded claims were not reconstructed.
+For later backfill by the operator (design-claim CID to be supplied from the record):
+  day review record <subject> --verdict APPROVE-WITH-FOLLOW-UPS --rationale "bb1e0ab: provider v2 closes
+  A-F1..A-F9 under independent probes/controls; Content authorization, exact-string wire and fail-closed
+  bounds verified; quadratic mapping budget refuses ~134 KB requests, limit refusals are worded as
+  verification failures, worker permit/cancellation guarantees unpinned" --cites <design CID>
+  Findings to record as observations citing that verdict: B-F1, B-F2, B-F3, B-F4, B-F5, B-F6, A-F10, A-F11,
+  A-F12.
+-----------------------------------------------------------------------------
+VERDICT
+-----------------------------------------------------------------------------
+Scope A: APPROVE WITH FOLLOW-UPS. Version 2 closes A-F1, A-F2, A-F4 and A-F6..A-F9 and mostly closes A-F5.
+I verified this with my own probes (empty-chunk forgeries, the tool-region contract, BOM/field/framing
+behaviour, absolute accounting, an 8000-body reason-code fuzz) and with controls on frozen bytes,
+including replays of the prior survivors. The promoted regressions are faithful. What remains is
+small: A-F10 (/error pointer with no reason code), A-F11 (object tool_result content shown silently) and
+A-F12 (sticky unknown-field flag, unpinned).
+Scope B: APPROVE WITH FOLLOW-UPS. The authorization design is right, and I checked both sides of every
+interface: the pin never replaces a current authorized read, every occurrence gets its membership,
+writer-signature and ciphertext checks before decoding, and a final current-grant read precedes the
+response. Coordinates are exact decimal strings end to end, with no bare JSON numbers. Partial, gapped and
+conflicting input stays explicit, nothing is persisted, and hostile text stays inert. HTTP disconnect during
+acquisition releases worker permits promptly.
+It is not plain APPROVE, for three reasons. (1) B-F1: the mapping budget is charged quadratically, so
+Content refuses requests of about 134 KB and responses of about 500 deltas. Real multi-turn agent traffic
+will mostly be refused. (2) B-F2: those refusals reach the human as "could not be verified", which is
+wrong about verified evidence. (3) B-F3: the specifically requested worker guarantees (permit held through
+cancellation, worker cancellation, 20 s deadline) and the request-wide citation/item/output/serialized
+accounting are correct in the code, but no test pins them: B-M1/2/4/6/9/10/11/12 all survive.
+None of these is a safety or invariant violation, and all fail closed.
+Overall: APPROVE WITH FOLLOW-UPS. In order: B-F1 and B-F2 (before claiming Content is usable on real
+archives or progressing parent frontend AC-2/AC-9), B-F3, B-F4, then B-F5, B-F6, A-F10, A-F11, A-F12.
+Parent recovery/full-frontend ACs and pending download delivery stay open. Search, session discovery,
+annotations, views, background analysis, day and owner jobs remain required separate slices.
+

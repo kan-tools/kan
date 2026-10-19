@@ -1,0 +1,18 @@
+$ cargo clippy --features v2-crypto --all-targets -- -D warnings
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-followups)
+error: field `mode` is never read
+  --> src/../tests/support/reader_fixture.rs:79:5
+   |
+72 | struct Fixture {
+   |        ------- field in this struct
+...
+79 |     mode: Arc<AtomicU8>,
+   |     ^^^^
+   |
+   = note: `-D dead-code` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[expect(dead_code)]` or `#[allow(dead_code)]`
+
+error: could not compile `kan` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+
+exit=101

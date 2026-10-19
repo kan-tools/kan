@@ -1,246 +1,6 @@
 #![cfg(feature = "v2-crypto")]
-use http_body_util::{BodyExt, Full};
-use hyper::{
-    body::{Bytes, Incoming},
-    Request as HttpRequest, Response,
-};
-use hyper_util::rt::TokioIo;
-use kan::{
-    evidence_crypto as crypto,
-    evidence_reader::{Reader, ScopeAccess, PAGE_LIMIT, RANGE_LIMIT},
-    evidence_service::{
-        self as svc, Command, Failure, Grant, Output, Request, Service, SignedRequest,
-    },
-    evidence_store::Ledger,
-    sign::Identity,
-};
-use std::{
-    convert::Infallible,
-    sync::{
-        atomic::{AtomicU8, Ordering},
-        Arc, Mutex,
-    },
-};
-use tokio::task::{JoinHandle, JoinSet};
-
-fn mutate_record(row: &mut svc::RecordView, mode: u8) {
-    use atproto_dasl::Ipld;
-    use kan::evidence::{self, Decoded};
-    let decode = |bytes: &str| {
-        let Decoded::Known(record) =
-            evidence::decode(&svc::unhex(bytes, evidence::MAX_RECORD_BYTES).unwrap()).unwrap()
-        else {
-            panic!("known record")
-        };
-        record
-    };
-    let encode = |kind: &str, body: std::collections::BTreeMap<String, Ipld>| {
-        let value = Ipld::Map(
-            [
-                ("v".into(), Ipld::Integer(1)),
-                ("kind".into(), Ipld::String(kind.into())),
-                ("body".into(), Ipld::Map(body)),
-            ]
-            .into_iter()
-            .collect(),
-        );
-        let Decoded::Known(record) = evidence::encode(&value).unwrap() else {
-            panic!("known record")
-        };
-        record
-    };
-    let manifest = decode(&row.manifest);
-    let receipt = decode(&row.receipt);
-    let mut mb = manifest.body().clone();
-    let mut rb = receipt.body().clone();
-    if mode == 4 {
-        mb.insert("scopeToken".into(), Ipld::Bytes(vec![99; 32]));
-        let manifest = encode("manifest", mb);
-        rb.insert("scopeToken".into(), Ipld::Bytes(vec![99; 32]));
-        rb.insert("manifest".into(), Ipld::Link(manifest.cid().clone()));
-        row.manifest = svc::hex(manifest.bytes());
-    } else if mode == 9 {
-        mb.insert("writer".into(), rb["issuer"].clone());
-        let manifest = encode("manifest", mb);
-        rb.insert("manifest".into(), Ipld::Link(manifest.cid().clone()));
-        row.manifest = svc::hex(manifest.bytes());
-    } else {
-        rb.insert("issuer".into(), mb["writer"].clone());
-    }
-    row.receipt = svc::hex(encode("receipt", rb).bytes());
-}
-
-struct Fixture {
-    dir: tempfile::TempDir,
-    scope: [u8; 32],
-    private: [u8; 32],
-    issuer: String,
-    endpoint: String,
-    service: Arc<Mutex<Service>>,
-    mode: Arc<AtomicU8>,
-    server: JoinHandle<()>,
-    writer: Identity,
-    previous: Option<String>,
-    position: u64,
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        self.server.abort();
-    }
-}
-impl Fixture {
-    async fn new(scope: u8, reader: &Identity) -> Self {
-        let dir = tempfile::tempdir().unwrap();
-        let key = Identity::generate();
-        key.save(&dir.path().join("server.key")).unwrap();
-        let writer = Identity::generate();
-        writer.save(&dir.path().join("writer.key")).unwrap();
-        let issuer = key.did().to_string();
-        let scope = [scope; 32];
-        let service = Arc::new(Mutex::new(
-            Service::new(
-                Ledger::create(&dir.path().join("archive")).unwrap(),
-                scope,
-                key,
-                vec![
-                    Grant {
-                        principal: reader.did().to_string(),
-                        append: false,
-                        inventory: true,
-                    },
-                    Grant {
-                        principal: writer.did().to_string(),
-                        append: true,
-                        inventory: false,
-                    },
-                ],
-            )
-            .unwrap(),
-        ));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}/v1/rpc", listener.local_addr().unwrap());
-        let mode = Arc::new(AtomicU8::new(0));
-        let state = service.clone();
-        let fault = mode.clone();
-        let signing = dir.path().join("server.key");
-        let server = tokio::spawn(async move {
-            let mut tasks = JoinSet::new();
-            loop {
-                tokio::select! {
-                    accepted=listener.accept()=>{let (stream,_)=accepted.unwrap();let state=state.clone();let fault=fault.clone();let signing=signing.clone();tasks.spawn(async move {
-                        let handler=hyper::service::service_fn(move |r:HttpRequest<Incoming>| {let state=state.clone();let fault=fault.clone();let signing=signing.clone();async move {
-                            let bytes=r.into_body().collect().await.unwrap().to_bytes();
-                            let mut reply=state.lock().unwrap().dispatch(&bytes,kan::evidence_operations::now()).unwrap();
-                            let mode=fault.load(Ordering::Relaxed);
-                            if mode==10 {std::future::pending::<()>().await;}
-                            if mode==11 && matches!(reply.reply.result,Ok(Output::Evidence{..})) {
-                                let request=SignedRequest::decode(&bytes).unwrap();
-                                let scope: [u8;32]=svc::unhex(&request.request.scope,32).unwrap().try_into().unwrap();
-                                let replacement=Service::new(Ledger::open(&signing.with_file_name("archive")).unwrap(),scope,Identity::load_existing(&signing).unwrap(),vec![]).unwrap();
-                                *state.lock().unwrap()=replacement;
-                            }
-                            if mode==1 {reply.signature="00".repeat(64);}
-                            if mode==2 {if let Ok(Output::Page{records,..})=&mut reply.reply.result {if let Some(row)=records.first_mut(){row.sequence+=1;}}}
-                            if mode==3 {if let Ok(Output::Evidence{record,..})=&mut reply.reply.result {record.sequence+=1;}}
-                            if mode==4 || mode==5 || mode==9 { if let Ok(Output::Page{records,..})=&mut reply.reply.result { if let Some(row)=records.first_mut() { mutate_record(row,mode); } } }
-                            if mode==6 {if let Ok(Output::Evidence{signed_request,..})=&mut reply.reply.result {
-                                let mut retained=SignedRequest::decode(&svc::unhex(signed_request,svc::MAX_REQUEST).unwrap()).unwrap();
-                                if let Command::Append{id,..}=&mut retained.request.command {*id="ff".repeat(16);}
-                                *signed_request=svc::hex(&SignedRequest::sign(retained.request,&Identity::load_existing(&signing.with_file_name("writer.key")).unwrap()).unwrap().bytes().unwrap());
-                            }}
-                            if mode==7 {if let Ok(Output::Page{complete,..})=&mut reply.reply.result {*complete = !*complete;}}
-                            if mode==8 {if let Ok(Output::Page{records,complete})=&mut reply.reply.result {records.clear();*complete=false;}}
-                            if (2..=9).contains(&mode) {
-                                use sha2::{Digest,Sha256};
-                                let mut preimage=b"tools.kan.service.reply.v1\0".to_vec();preimage.extend_from_slice(&Sha256::digest(serde_json::to_vec(&reply.reply).unwrap()));
-                                reply.signature=svc::hex(&Identity::load_existing(&signing).unwrap().sign(&preimage).unwrap());
-                            }
-                            Ok::<_,Infallible>(Response::new(Full::new(Bytes::from(reply.bytes().unwrap()))))
-                        }});
-                        let _=hyper::server::conn::http1::Builder::new().keep_alive(false).serve_connection(TokioIo::new(stream),handler).await;
-                    });},
-                    _=tasks.join_next(),if !tasks.is_empty()=>{}
-                }
-            }
-        });
-        Self {
-            dir,
-            scope,
-            private: [27; 32],
-            issuer,
-            endpoint,
-            service,
-            mode,
-            server,
-            writer,
-            previous: None,
-            position: 0,
-        }
-    }
-    fn access(&self) -> ScopeAccess {
-        ScopeAccess {
-            scope: self.scope,
-            private_key: self.private,
-            issuer: self.issuer.clone(),
-            endpoint: self.endpoint.clone(),
-        }
-    }
-    fn append(&mut self, plain: &[u8]) {
-        let request = SignedRequest::sign(
-            Request {
-                version: 1,
-                scope: svc::hex(&self.scope),
-                principal: self.writer.did().to_string(),
-                audience: self.issuer.clone(),
-                expires: None,
-                command: Command::Append {
-                    id: format!("{:032x}", self.position + 1),
-                    position: self.position,
-                    previous: self.previous.clone(),
-                    ciphertext: svc::hex(
-                        &crypto::seal(
-                            &crypto::public_key(&self.private).unwrap(),
-                            &self.scope,
-                            plain,
-                        )
-                        .unwrap(),
-                    ),
-                },
-            },
-            &self.writer,
-        )
-        .unwrap()
-        .bytes()
-        .unwrap();
-        let reply = self
-            .service
-            .lock()
-            .unwrap()
-            .dispatch(&request, kan::evidence_operations::now())
-            .unwrap();
-        let Ok(Output::Committed { record, .. }) = reply.reply.result else {
-            panic!("append failed")
-        };
-        let kan::evidence::Decoded::Known(manifest) = kan::evidence::decode(
-            &svc::unhex(&record.manifest, kan::evidence::MAX_RECORD_BYTES).unwrap(),
-        )
-        .unwrap() else {
-            panic!("manifest required")
-        };
-        self.previous = Some(manifest.cid().to_string());
-        self.position += 1;
-    }
-    fn revoke(&self) {
-        let replacement = Service::new(
-            Ledger::open(&self.dir.path().join("archive")).unwrap(),
-            self.scope,
-            Identity::load_existing(&self.dir.path().join("server.key")).unwrap(),
-            vec![],
-        )
-        .unwrap();
-        *self.service.lock().unwrap() = replacement;
-    }
-}
+include!("support/reader_fixture.rs");
+use kan::evidence_reader::{PAGE_LIMIT, RANGE_LIMIT};
 #[tokio::test]
 async fn inventory_is_snapshot_pinned_and_source_ranges_are_exact_across_scopes() {
     let identity = Identity::generate();
@@ -1326,10 +1086,15 @@ async fn content_cancelling_acquisition_releases_admission_and_does_not_cache_a_
             .await
             .is_err()
     );
+    // Admission must refuse immediately: a stalled upstream timeout is not
+    // evidence that the third operation was refused rather than admitted.
+    let mut third = Box::pin(reader.content(&pin, &sequences, format));
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
     assert_eq!(
-        reader.content(&pin, &sequences, format).await.unwrap_err(),
-        Failure::Unavailable
+        std::future::Future::poll(third.as_mut(), &mut cx),
+        std::task::Poll::Ready(Err(Failure::Unavailable))
     );
+    drop(third);
     drop(first);
     drop(second);
     a.mode.store(0, Ordering::Relaxed);
@@ -1442,6 +1207,26 @@ async fn content_http_routes_share_authority_and_return_exact_coordinates() {
             .unwrap()
             .status(),
         401
+    );
+    // Verified but over-budget presentation has a fixed, non-disclosing reason.
+    let many = serde_json::to_vec(&serde_json::json!({"messages":(0..1100).map(|_|serde_json::json!({"role":"user","content":"x"})).collect::<Vec<_>>()})).unwrap();
+    a.append(&content_frame(
+        '4',
+        0,
+        serde_json::json!({"type":"request-chunk","offset":0}),
+        &many,
+    ));
+    let snap = request(serde_json::json!({"action":"snapshot","scope":svc::hex(&a.scope)}))
+        .send()
+        .await
+        .unwrap();
+    let snap: serde_json::Value = serde_json::from_slice(&snap.bytes().await.unwrap()).unwrap();
+    let limited=request(serde_json::json!({"action":"content","pin_wire":snap["pin_wire"],"sequences":["2"],"format":"anthropic-messages-json"})).send().await.unwrap();
+    assert_eq!(limited.status(), 422);
+    assert_eq!(limited.headers()["cache-control"], "no-store");
+    assert_eq!(
+        limited.text().await.unwrap(),
+        r#"{"error":"content-limit"}"#
     );
     a.revoke();
     let denied = request(query).send().await.unwrap();
@@ -1695,4 +1480,105 @@ async fn content_accumulated_tool_input_cites_all_fragments_instead_of_only_the_
     }
     assert_eq!(retained, &raw.as_bytes()[start..end]);
     assert!(String::from_utf8_lossy(&retained).contains("partial_json"));
+}
+
+#[tokio::test]
+async fn content_handles_realistic_multiturn_history_and_streams_without_repeated_source_scans() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut fixture = Fixture::new(92, &identity).await;
+    let request=serde_json::to_vec(&serde_json::json!({"messages":(0..130).map(|k|serde_json::json!({"role":if k%2==0 {"user"}else{"assistant"},"content":"a".repeat(1000)})).collect::<Vec<_>>()})).unwrap();
+    let request_first = fixture.position + 1;
+    for (n, chunk) in request.chunks(65536).enumerate() {
+        fixture.append(&content_frame(
+            'a',
+            n as u64,
+            serde_json::json!({"type":"request-chunk","offset":n*65536}),
+            chunk,
+        ));
+    }
+    let request_sequences = (request_first..=fixture.position)
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>();
+    let mut events = vec![
+        serde_json::json!({"type":"message_start","message":{"type":"message","role":"assistant","content":[]}}),
+        serde_json::json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+    ];
+    events.extend((0..500).map(|_|serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"word word word word word word "}})));
+    events.extend([
+        serde_json::json!({"type":"content_block_stop","index":0}),
+        serde_json::json!({"type":"message_delta","delta":{"stop_reason":"end_turn"}}),
+        serde_json::json!({"type":"message_stop"}),
+    ]);
+    let sse = events
+        .iter()
+        .map(|value| {
+            format!(
+                "event: {}\ndata: {value}\n\n",
+                value["type"].as_str().unwrap()
+            )
+        })
+        .collect::<String>();
+    let response_first = fixture.position + 1;
+    for (n, chunk) in sse.as_bytes().chunks(65536).enumerate() {
+        fixture.append(&content_frame(
+            'b',
+            n as u64,
+            serde_json::json!({"type":"response-chunk","offset":n*65536}),
+            chunk,
+        ));
+    }
+    let response_sequences = (response_first..=fixture.position)
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>();
+    let reader = Reader::new(identity, vec![fixture.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&fixture.scope)).await.unwrap();
+    for (sequences, format, direction, count) in [
+        (
+            request_sequences,
+            Format::AnthropicMessagesJson,
+            "request",
+            261,
+        ),
+        (
+            response_sequences,
+            Format::AnthropicMessagesSse,
+            "response",
+            505,
+        ),
+    ] {
+        let bytes = reader.content(&pin, &sequences, format).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            result["groups"][0][direction]["items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            count
+        );
+        let scan = result["scan_bytes"]
+            .as_str()
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
+        assert!(
+            scan < 2 * 1024 * 1024,
+            "source correspondence must be charged once: {scan}"
+        );
+        for item in result["groups"][0][direction]["items"].as_array().unwrap() {
+            let citations = item["citations"].as_array().unwrap();
+            assert!(!citations.is_empty() && citations.len() <= sequences.len());
+            for citation in citations {
+                let index = citation["input"]
+                    .as_str()
+                    .unwrap()
+                    .parse::<usize>()
+                    .unwrap();
+                assert_eq!(
+                    result["occurrences"][index]["record"]["sequence"],
+                    sequences[index]
+                );
+            }
+        }
+    }
 }

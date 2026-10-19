@@ -1,0 +1,25 @@
+$ cargo test --features v2-crypto --lib evidence_content::worker_tests::overall_content_deadline_covers_acquisition_work_after_a_verified_read -- --exact
+
+running 1 test
+test evidence_content::worker_tests::overall_content_deadline_covers_acquisition_work_after_a_verified_read ... FAILED
+
+failures:
+
+---- evidence_content::worker_tests::overall_content_deadline_covers_acquisition_work_after_a_verified_read stdout ----
+
+thread 'evidence_content::worker_tests::overall_content_deadline_covers_acquisition_work_after_a_verified_read' (10558471) panicked at src/../tests/support/content_worker_unit.rs:166:23:
+called `Result::unwrap()` on an `Err` value: Elapsed(())
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_content::worker_tests::overall_content_deadline_covers_acquisition_work_after_a_verified_read
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.19s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-followups)
+    Finished `test` profile [unoptimized] target(s) in 7.23s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-480f4f845bac8ec9)
+error: test failed, to rerun pass `--lib`
+
+exit=101

@@ -1,0 +1,19 @@
+
+running 9 tests
+test absolute_output_accounting_covers_json_strings_and_sse_data ... ok
+test bom_and_undispatched_framing_keep_source_regions_and_unknown_fields_visible ... ok
+test citations_and_unknown_deltas_do_not_promote_an_empty_json_key_to_text ... ok
+test citations_delta_is_not_a_contradiction_and_unknown_types_do_not_guess_block_kind ... ok
+test nested_tool_results_render_and_malformed_unknown_shapes_have_reasons ... ok
+test malformed_error_and_tool_result_shapes_have_resolving_pointers_and_reasons ... ok
+test sequence_issue_is_attached_to_the_block_start_that_follows_message_delta ... ok
+test unknown_sse_field_reason_is_local_to_its_event ... ok
+test empty_chunks_at_covered_offsets_preserve_mapping_and_boundary_lineage ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-followups)
+    Finished `test` profile [unoptimized] target(s) in 0.41s
+     Running tests/evidence_interpretation_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation_followups-4e80bc39574f69f6)
+
+exit=0
