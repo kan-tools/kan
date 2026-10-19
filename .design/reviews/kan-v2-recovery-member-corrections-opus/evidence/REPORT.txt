@@ -1,0 +1,454 @@
+INDEPENDENT ADVERSARIAL REVIEW — recovery-member CORRECTION ROUND, pinned b11cbf42af09d09113e467f5cf9cdea82ef9ade0
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5). Fresh cold session, no subagents. I did not author this code.
+Range: 8ddefda..b11cbf4 (one commit, "fix(v2): distinguish recovery evidence from contradictory metadata").
+Measured against:
+- the full prior report, .design/reviews/kan-v2-recovery-member-opus/evidence/REPORT.txt (findings A-F1..A-F5, B-F1..B-F3)
+- the governing design, .design/kan-v2-recovery-bundle-codec.md
+Claimed scope: the pure logical-member prerequisite to a future replay. No physical format, writer, history, RPC
+or UI acceptance is claimed, and no consumer exists (src/lib.rs:32 is the only reference to the module).
+
+=====================================================================================================
+CUSTODY AND METHOD
+- Integrity (logs/00-identity-before.txt, logs/90-identity-after.txt; scripts/identity_check.py):
+  - The export was checked against ../member-corrections-identity.json: 3252 files, sha256 each.
+  - The manifest was checked against git blobs at b11cbf4: `git -C <named repo> ls-tree -r` plus
+    `cat-file --batch` content sha256. No discovery from the export was used.
+  - Before and after: 0 problems, 0 blob mismatches, repo HEAD == pinned commit. The only extras are
+    north-star.json and review-evidence/.
+  - Parent `git status --short` is empty after the review (logs/91).
+- Environment:
+  - The shared CARGO_TARGET_DIR (.../kan-v2-library-resilience/.local-state/target), CARGO_BUILD_JOBS=4, and
+    --offline.
+  - `cargo clean -p kan` ran first (logs/02). One heavy job ran at a time.
+  - No own target, no .lake, no installs, no network, no keys, no live archives. revert_v2.py was not run.
+- Probes and mutations:
+  - The reviewer probe file was placed in tests/ only while it ran. It was cmp-identical to
+    review-evidence/probes/zz_corrections_review_probes.rs, then removed (COMMANDS.txt TEMP-PLACE/TEMP-REMOVE).
+  - Mutations (scripts/mutate.py) restore exact bytes and assert sha256 == manifest after each case and at
+    exit.
+  - For the whole-file reversion, src/evidence_recovery_member.rs was taken read-only via
+    `git -C <named repo> show 8ddefda:...` (blob c1ddf33), placed, tested, and restored from a temporary copy.
+    The restored sha256 is 955320849f1d…, which equals the manifest. The temporary copy was then deleted.
+- Recording: git-first (day#168/kan#197). No `day review record`, `kan observe` or other live-log claims were
+  made. No excluded claims or witnesses were reconstructed. This file is the record.
+- North star: from the supplied north-star.json only.
+  - telos/raw-data-and-projections (Decision bafyreied3…) says: "Raw attested data is retained in full and never
+    collapsed in the store. Every simplification … is a determined projection computed on demand … A field
+    holding a computed value is the failure mode."
+  - The supplied export reports excluded_by_trust: 2. Those were not reconstructed.
+  - This round serves the telos directly. The new Basis is recomputed from the fixed member and deliberately
+    NOT stored as a signed wire field. M1 keeps the exact claimed membership rows (CP06 proves the commitment
+    changes when only an unverified length changes, while the projection does not).
+  - The only tension is with telos/performance-at-scale, and it is visible only as one extra bounded,
+    polled pass over the keys.
+
+=====================================================================================================
+WHAT CHANGED (git -C <repo> diff 8ddefda b11cbf4; logs/01-*)
+- Production: only src/evidence_recovery_member.rs (+37/-4). No change to evidence_recovery_commitment.rs or lib.rs.
+  - :3-4 rustdoc states the caller duty for canonical CID spelling (closes A-F5's doc point).
+  - :91-107 new `Basis {IssuerMetadata, VerifiedCopyRecipe, UnverifiedMembership, OriginalObject}` and
+    `Loss.basis`.
+  - :394 `n <= service::MAX_REQUEST`. The bound matches SignedRequest::decode's `> MAX_REQUEST` refusal at
+    src/evidence_service.rs:240, so the edge is exact.
+  - :395 `require(!c.referenced, "reused service request CID")`.
+  - :444-453: for an incomplete recipe, clear `length` on non-referenced coordinates (M1 framing still uses raw
+    input.membership, :562-564).
+  - :471-476 hash validity is split out. Hash-valid bytes contradicting a retained length now REFUSE. Validity
+    is `nonempty && hash_valid`.
+  - :507, :519-525 basis assignment.
+- Tests:
+  - tests/evidence_recovery_member_review_regressions.rs: new, 1147 lines. 17 promoted RP probes plus 3 author
+    probes.
+  - tests/evidence_recovery_member_corrections.rs: new. API-compatible; no Basis use.
+  - Edits to evidence_recovery_member.rs: basis in fixtures; the shared-CID test is inverted; a partial
+    conflicting-length case is added.
+  - rv_a4 gains é×40/é×41 and a corrected provenance header.
+- Oracle/fixture: .design/tools/recovery_member_vectors.py gains basis, complete-flag length withholding, and an
+  in-oracle refusal of 4 contradiction cases, plus 2 partial cases. The fixture has 22 cases.
+- CI: ci.yml adds the two new test targets.
+- Design: codec :100-109, :160-181, :398-423, :433-458.
+
+=====================================================================================================
+BASELINE (reproduced, not trusted)
+- cargo test --features v2-crypto (logs/03):
+  - evidence_recovery_member 16
+  - evidence_recovery_member_review_regressions 20
+  - evidence_recovery_member_corrections 2
+  - evidence_recovery_commitment_review_regressions 2
+  - Total 40 passed, 0 failed.
+  - This matches the author's 13-final-baseline counts for these targets. I did not re-run the observation (7)
+    or commitment (8) targets or the polling units (author logs 13/14). They are unchanged and outside the
+    requested bounded baseline.
+- Strict all-target v2 Clippy: clean (logs/04). fmt --check: clean (logs/05).
+- Python fixture --check under $KAN_CRYPTO_ORACLE_PYTHON: "22 independently constructed member cases; all
+  constructed issuer chains independently verified; no full verifier claim" (logs/06b).
+  - FAILED METHOD, retained as logs/06-…ATTEMPT1: running it with `python -I` fails, because isolated mode drops
+    the script directory needed for the sibling `attestation_vectors` import.
+- Final run after all mutations and the reversion (logs/40): the 40 author functions plus 12 reviewer probes
+  all pass.
+
+Author qualification logs read (.design/reviews/kan-v2-recovery-member-followups-author/):
+- REPORT.md, 01-17, controls/*, whole-reversion-logs/*.
+- The failed lint attempt 04-clippy.txt is genuine. clippy::single_match fired at the promoted rp09 `match`.
+  The promotion diff (logs/11) confirms the fix is an equivalent `if let` with no assertion change.
+- 15-final-clippy passes.
+- Author counts (55 integration functions = 16+20+2+8+2+7) are consistent with the files.
+- 11-whole-reversion reverted 8/8 member hunks and demonstrated both correction tests failing.
+- I confirmed the raw reviewer originals (.design/reviews/kan-v2-recovery-member-opus/) and the earlier author
+  directory are byte-unchanged by this commit (`git diff --stat` empty).
+
+Promotion fidelity (logs/11, scripts/promotion_diff.py):
+- Compared with the retained originals in .design/reviews/kan-v2-recovery-member-opus/evidence/probes/:
+  - rp04/05/06/08/10a/11/12/17 and all shared helpers are identical, apart from rustfmt-only differences.
+  - rp01/rp15 differ only by the added `basis` fields.
+  - rp07/rp09/rp13/rp16 differ only by rustfmt and the clippy if-let.
+  - rp02/rp03/rp14 change their expectations, as declared:
+    - rp14a/b now expect "hash-valid bytes contradict authenticated length".
+    - rp03 expects "reused service request CID" with and without bytes.
+    - rp02 expects a null length with UnverifiedMembership, and that relengthening does not corrupt.
+  - rp10b/c/d (timing) are not promoted, as declared.
+- No assertion was weakened.
+
+=====================================================================================================
+INDEPENDENT REVIEWER PROBES (probes/zz_corrections_review_probes.rs; logs/10 unmodified, logs/40 restored; all 12 pass)
+CP01 Referenced request length with bytes MISSING:
+     - MAX_REQUEST (2101248) is accepted as {occ 1, Some(2101248), Missing, IssuerMetadata}.
+     - MAX_REQUEST+1 and 4 MiB refuse with "service request length".
+     - 4 MiB+1 refuses with "forensic-recovery-required".
+CP02 MAX_REQUEST applies only to references. A staged membership-only original of MAX_REQUEST+10 bytes in a
+     complete copy:
+     - when present, is available;
+     - when missing, gives {null, Some(2101258), Missing, VerifiedCopyRecipe}.
+CP03 (characterisation) The empty-bytes CID referenced with signed length 1 and the empty row ABSENT is
+     ACCEPTED as {occ 1, Some(1), Missing, IssuerMetadata}. The same metadata with the empty row present refuses
+     (RP14b). See C-F4.
+CP04 Membership-only coordinates in a partial copy:
+     - a hash-invalid original gives {null, None, Corrupt, UnverifiedMembership};
+     - an empty-CID row (claimed length 5) with an empty original gives {null, None, Corrupt,
+       UnverifiedMembership};
+     - the same empty-CID row in a COMPLETE copy, with a re-issued correct digest, REFUSES with "hash-valid
+       bytes contradict authenticated length".
+CP05 (characterisation) Unverified partial rows with length 0 or 4 MiB+1 still refuse the whole member with
+     "forensic-recovery-required". They fail closed and are not dropped.
+CP06 M1 retains the claimed unverified lengths verbatim. Changing only a membership-only length in a partial
+     copy CHANGES the commitment, while the loss projection is identical ({null, None, Missing,
+     UnverifiedMembership}).
+CP07 A complete-copy membership-only key holding same-length tampered bytes, other-length garbage, or empty bytes
+     is Corrupt with Some(len) and VerifiedCopyRecipe in each case. The A-F1 refusal does not over-reach into
+     non-hash-valid bytes.
+CP08 A referenced hash-invalid object of the correct length gives {occ 1, Some(n), Corrupt, IssuerMetadata}.
+CP09 Shared CIDs:
+     - a non-adjacent shared CID (occurrences 1 and 3) refuses with "reused service request CID";
+     - a shared CID with different signed lengths refuses with "conflicting expected lengths" (diagnostic
+       precedence only).
+CP10 A profile-3 COMPLETE copy with a shared CID across two retained occurrences, digest and tip recomputed and
+     proofs re-issued, refuses with "reused service request CID". Only the A-F3 guard stands; under M04 it is
+     ACCEPTED.
+CP11 Basis is a pure function of the input. In a partial copy with 2 of 3 records:
+     [(1,IssuerMetadata,len), (2,IssuerMetadata,len), (null,UnverifiedMembership,None)], identical across runs,
+     with an identical commitment.
+CP12 A partial-copy membership row that relengthens a REFERENCED key (bytes present) refuses with "conflicting
+     expected lengths". An unverified row contradicting issuer metadata is not silently repaired.
+
+=====================================================================================================
+COMPILED CONTROLS (scripts/mutate.py; raw logs mutations/M*.txt; mutations/SUMMARY-by-panic-site.txt)
+Each control ran the four author suites AND the reviewer probes with --no-fail-fast. None failed to compile.
+"Semantic" means Ok where a refusal was due, a wrong loss/length/basis vector, or a refusal of a valid member.
+"Label-only" means a different refusal string.
+
+Author's selected controls (reproduced against whole suites, not a single named test):
+- M01 authenticated-length (A-F1 refusal removed): SEMANTIC, author suite.
+  - corrections "empty-cid-false-authenticated-length: contradictory metadata accepted as repairable loss";
+    completed_copy_… left None.
+  - The Python fixture test and rp14 change label to "retained writer request". That is label-only for the
+    referenced case, because writer verification still refuses.
+  - Also killed by reviewer CP04 (complete empty-CID row accepted).
+  - Honest note: the corrections test uses label-agnostic is_err(). Under M01 its first case still errs (with
+    "retained writer request"), so the semantic kill there comes from the empty-CID case.
+- M02 partial-length-kept: SEMANTIC, author suite.
+  - The corrections test reports Some(77) vs None; rp02 and the Python fixture also kill it.
+  - Also killed by CP04/CP06/CP11.
+- M03 partial-basis (labelled VerifiedCopyRecipe): SEMANTIC, author suite (rp02, Python fixture). Also killed by
+  CP04/CP06/CP11.
+- M04 shared-request allowed: SEMANTIC, author suite (four tests: Ok where a refusal was due). Also killed by
+  CP09/CP10.
+- M05 request-bound removed: SEMANTIC, author suite (the corrections test and the Python fixture "hostile member
+  must refuse"). Also killed by CP01.
+- M12 framing issuer counted in chars, not bytes: SEMANTIC, author suite (rv_a4 "issuer-utf8-bytes-82 left true
+  right false"). Closes prior RB3/B-F1.
+- Not re-run: membership-charge and orphan-hash. They are not changed rules. I read the author's raw logs
+  (controls/membership-charge.txt: left None vs Some(Budget); controls/orphan-hash.txt: left [] vs the Corrupt
+  orphan), and both are semantic.
+
+Reviewer controls:
+- M06 MAX_REQUEST off-by-one (`<` for `<=`): SURVIVES the author suite. Killed only by CP01, which refuses a
+  valid MAX_REQUEST reference. See C-F3.
+- M07 clearing loop also clears REFERENCED coordinates (`if true`): SURVIVES the entire author suite and the
+  Python fixture.
+  - Killed only by reviewer CP11: partial-copy IssuerMetadata losses lose their authenticated expectedLength
+    (true → false).
+  - See C-F2. This is the newly added `!c.referenced` condition, unpinned by the round that introduced it.
+- M08 clearing in complete copies too: SEMANTIC, author suite (rp01 None vs Some; completed_copy_…). Also
+  CP02/CP04/CP07.
+- M09 orphans labelled as membership basis: SEMANTIC, author suite (fixture, missing_corrupt_…, rp15,
+  orphan_hash_…).
+- M10 length check applied to non-hash-valid bytes (an over-broad A-F1): SEMANTIC, author suite (profile2-loss
+  fixture, rp01, missing_corrupt_… now refuse valid members). Also CP07.
+- M11 occurrence losses labelled VerifiedCopyRecipe: SEMANTIC, author suite (fixture, rp01). Also CP01/CP08/CP11.
+
+Whole production-file reversion to 8ddefda with the API-compatible tests (logs/30, logs/31):
+- evidence_recovery_member_corrections: both functions FAIL semantically.
+  - "hash-valid-false-authenticated-length: contradictory metadata accepted as repairable loss"
+  - "left: Some(77) right: None"
+- The Basis-using suites (member, review_regressions) FAIL TO COMPILE (E0432/E0560/E0609). That is a compile
+  failure, not a semantic demonstration, and is classified as such.
+- This reproduces the author's Demonstrated-by trailer.
+
+FAILED METHODS RETAINED
+- logs/06-…ATTEMPT1: `python -I` import failure. Re-run without -I in logs/06b.
+- mutations/SUMMARY-inline-FAILED-METHOD-misattributed.txt: the driver's inline per-binary attribution reported
+  "{}" for every case. cargo writes `Running` on stderr and the driver concatenated stdout before stderr. The
+  raw logs were intact, and scripts/summarise.py re-derived the attribution from `panicked at tests/<file>`
+  sites.
+- An ad-hoc `shasum` of the member source was taken while a background mutation was applied. It is disregarded
+  (COMMANDS.txt note). The restored file equals the manifest (logs/90).
+
+=====================================================================================================
+STATUS OF PRIOR FINDINGS
+- A-F1 (hash-valid bytes with a false authenticated length mislabelled corrupt): RESOLVED in design and both
+  implementations.
+  - The codec now governs refusal (codec :178-179) and removes the contradictory "wrong length/hash produces
+    corrupt" (:176-178).
+  - Rust refuses (src :471-475). The Python projection oracle refuses independently, with the exact reason
+    asserted (vectors.py `contradiction`).
+  - The MAX_REQUEST bound is added (src :394), with an exact edge (CP01).
+  - M01 and M10 show the refusal is pinned and not over-broad.
+  - Residual: CP03 / C-F4.
+- A-F2 (partial-copy coordinates unauthenticated without per-entry marking): RESOLVED inside the member.
+  - Membership-only losses in incomplete copies carry Basis::UnverifiedMembership and expectedLength None.
+  - M1 keeps the claimed rows (CP06).
+  - An unverified length cannot classify bytes (rp02 relength; CP04).
+  - No copy-job authority is invented (codec :442-452).
+  - Pinned by author M02/M03.
+  - Residuals: the replay-side contract text (C-F1) and pinning of issuer lengths in partial copies (C-F2).
+- A-F3 (shared request CID accepted while missing): RESOLVED by refusal (src :395, codec :162-165).
+  - The scope is limited to the current service-request profile, with future profiles explicitly needing their
+    own rules. That is legitimate narrowing.
+  - M04 is killed semantically. CP10 shows the profile-3 complete case.
+- A-F4 (unpinned guards): RESOLVED for the deterministic probes. RP01, RP04-RP09, RP10a, RP11-RP17 are promoted
+  faithfully (logs/11).
+  - Timing RP10b/c/d remain recorded limits, not promoted (honestly stated).
+  - I did not re-run the historical A-cancelled/R-series controls, per instruction. The prior report showed
+    RP10a kills A-cancelled, and RP10a is now in the author suite.
+- A-F5 (INFO): the caller-duty rustdoc was added (src :3-4). The "forensic-recovery-required" label for
+  membership length 0 remains (CP05), INFO only. R15's input charge is now pinned (author control
+  membership-charge).
+- B-F1: RESOLVED (é×40 accepted / é×41 refused; M12 killed).
+- B-F3: RESOLVED (header at tests/evidence_recovery_commitment_review_regressions.rs:3-4).
+- B-F2: unchanged limit, as recorded.
+
+=====================================================================================================
+NEW FINDINGS (this round)
+
+C-F1 [LOW-MEDIUM — design ambiguity on the replay side. MUST be resolved before replay consumes this component.]
+- The member now distinguishes authenticated from unverified lengths, but the downstream codec rules still say
+  "known":
+  - codec :112-113, `restored`: "Any known expected lengths must agree; conflicting references refuse"
+  - codec :139, R1: "Each must verify against its content address and all known expected lengths"
+  - codec :147, output union: "verified bytes of all known expected lengths"
+  - codec :129-130 says unavailable entries match "authenticated expected coordinates", although the vector
+    now also contains UnverifiedMembership coordinates.
+- M1 and the proposed member_membership table (codec :216-217) still hold the claimed partial-copy lengths.
+- A replay/restoration implementer reading "known" from the membership rows would constrain a candidate with an
+  unauthenticated length. That contradicts codec :180-181 ("An unverified membership length neither classifies
+  original bytes nor constrains a restoration candidate").
+- Separately, codec :111-112 lets a `restored` target be any "original membership" key. In an incomplete copy
+  that includes fabricated rows (RP02 / the fixture "partial-membership-fabrication-remains-unverified"). The
+  text does not say that a restoration against an UnverifiedMembership coordinate carries that basis forward.
+- Required:
+  - Define every "known expected length" in restored/R1/output as the member-derived coordinate length, i.e.
+    Loss/coordinate expected_length (authenticated only).
+  - State that a restoration inherits and exposes the coordinate's recomputed basis.
+- Not a member-code defect, but it is precisely the consumer contract.
+
+C-F2 [LOW — test gap in the newly added code. Resolve before replay recomputes and signs loss vectors.]
+- The clearing loop's `!c.referenced` condition (src :447) is what keeps issuer-authenticated lengths on
+  IssuerMetadata losses in incomplete copies.
+- Mutant M07, which clears every coordinate, passes all 40 author functions and the Python fixture. Only
+  reviewer CP11 kills it (IssuerMetadata losses lose expectedLength).
+- The fixture has no partial-copy case with an occurrence loss. "partial-profile3" has none, and
+  "partial-membership-*" has only null coordinates. It also has no VerifiedCopyRecipe loss at all; Rust rp01
+  covers that.
+- The consequence would be a wrong signed `unavailable` wire for every missing retained request in a partial
+  copy.
+- Required: add a partial-copy occurrence-loss vector to the Python oracle and fixture, and a Rust assertion
+  (CP11 can be promoted as-is).
+
+C-F3 [LOW — test gap]
+- The exact MAX_REQUEST acceptance edge is unpinned. Mutant M06 (`<`) survives the author suite, because the
+  author fixture only tests MAX_REQUEST+1.
+- An off-by-one would refuse a valid maximal service request's member. That fails closed, but it is a
+  false refusal.
+- Promote CP01 (MAX_REQUEST accepted with bytes missing).
+
+C-F4 [LOW — residual early-detectable impossibility, the same class as A-F1/A-F3]
+- A reference to the empty-bytes CID with a signed length ≥1 is accepted as a permanent Missing loss when the
+  empty row is absent (CP03), and refused when it is present (RP14b).
+- Nothing other than the empty string hashes to that CID, so no candidate can ever satisfy both CID and length.
+- Moreover, SignedRequest::decode (src/evidence_service.rs:239-245) can never accept empty bytes, so an
+  empty-CID SERVICE-REQUEST reference is unsatisfiable at any length.
+- The A-F3 rationale ("cannot be satisfied, refuse even when bytes are missing") applies equally.
+- Recommend refusing a service-request reference to the empty-bytes CID outright, in both implementations.
+  Alternatively, record explicitly that it stays an unrestorable Missing loss.
+- Not blocking: the loss is honestly unrestorable, nothing consumes it, and publication re-verifies.
+
+C-F5 [LOW — provenance/documentation hygiene, the same class as the prior B-F3]
+- In tests/evidence_recovery_member_review_regressions.rs, 11 multi-line reviewer doc comments were truncated
+  mid-sentence during promotion, each left dangling before a blank line: :471-472, :538-539, :624-625,
+  :707-708, :847-848, :865, :934, :954-955, :1019, :1044, :1065.
+- Some of the truncated text now misleads:
+  - RP02's text says fabricated membership "is accepted and drives the" [reported loss vector]. The test now
+    asserts the corrected null-length/unverified projection.
+  - RP03's text says "With bytes missing the member is accepted with two 'missing' losses". The test now asserts
+    refusal.
+  - The RP10b and RP10d timing-probe descriptions sit directly above rp11 and rp14, so rustdoc attaches them to
+    the wrong functions.
+- orphan_hash_mismatch_is_reported_without_rewriting_its_bytes asserts `f.objects == before`. That is vacuous,
+  because `run` takes `&F` and the API takes `&[u8]`, so the type system guarantees the property. Its real
+  content is the Corrupt/OriginalObject loss, which is semantically pinned (author control orphan-hash; M09).
+
+C-F6 [INFO — the documented behaviour is consistent; recorded for consumers]
+- An unverified partial-copy row can still make the whole member refuse:
+  - by local bounds (CP05);
+  - by contradicting issuer metadata (CP12, plus the author's partial conflicting-length case);
+  - by sharing a retained reference rule (rp16).
+- This matches codec :419-421 ("Every retained length must be positive, ≤4 MiB, and agree"). Contradictions
+  refuse and are not repaired.
+- It does mean whoever produced the partial copy's membership controls whether the member can be audited at
+  all. That is acceptable, because an incomplete copy has no publication path (codec :155-156).
+- The expectedLength null on the wire is shared by OriginalObject and UnverifiedMembership coordinates. A
+  reader can disambiguate only by recomputing from the member, which the codec requires (:105-108), and the
+  member is always present in a bundle.
+
+=====================================================================================================
+SCOPE-NARROWING CHECK (diff and codec)
+- "A future payload profile permitting shared bytes needs its own reviewed binding rules" (codec :164-165):
+  LEGITIMATE. It is explicit, it is limited to a not-yet-existing profile, and the current profile is strictly
+  tightened.
+- "readers must expose that basis alongside each loss" (:107) and "Any consuming API/UI must preserve the
+  distinction" (:456-458): LEGITIMATE deferral. No consumer exists, and the member computes the basis. It must
+  be carried into the replay design (C-F1).
+- "Greedy signed-loss partitioning, … replay, checkpoints, physical schema and all storage mutations remain
+  separate work" (:431-432): pre-existing, named before this checkpoint. LEGITIMATE (prior report).
+- No suspicious narrowing was found. The hard parts of A-F1/A-F2/A-F3 were implemented, not deferred.
+
+FORBIDDEN-PATTERN CHECK (CLAUDE.md house rules)
+- No store mutation, subject destruction, blocking hook, second UI or cites manipulation.
+- No persistence surface change, so no read-write-surface.tsv obligation.
+- Raw corrupt, empty, orphan and unverified rows are retained verbatim in M1 (CP06). Basis is a projection,
+  not a stored authority field, which is exactly the north star's rule.
+
+=====================================================================================================
+REQUIREMENT TABLE — correction round (codec "Member review corrections" :442-458 plus the amended rules)
+R1 Hash-valid bytes with a disagreeing authenticated length refuse; they are not called corrupt.
+   MET. src :471-475; rp14a/b; completed_copy_…; CP04; M01 semantic; the Python oracle refuses independently.
+   Residual: C-F4.
+R2 Referenced service-request lengths ≤ service::MAX_REQUEST.
+   MET. src :394; CP01 exact edges; M05 semantic. Exact-edge pinning only by the reviewer (C-F3).
+R3 Incomplete-copy membership rows/lengths retained in M1.
+   MET. src :562-564 frames raw input; CP06 commitment differs.
+R4 Membership-only expected lengths in incomplete copies withheld for availability and classification.
+   MET. src :444-453; rp02; the corrections test; CP04/CP06; M02 semantic.
+R5 Loss exposes a recomputed Basis (four values), not observer-supplied.
+   MET. src :91-107, :507, :519-525; M03/M09/M11 semantic; CP11 deterministic.
+R6 Issuer-referenced losses in incomplete copies keep their authenticated length (implied by codec :103,
+   :168-169).
+   MET in code (CP11), but UNPINNED by the author suite (M07 survives). See C-F2.
+R7 The signed unavailable wire is unchanged (four fields).
+   MET (codec :100-109). No writer exists, so this is unverifiable beyond the text.
+R8 No external copy-job authority invented; fabricated/omitted rows remain explicitly unverified.
+   MET. rp02 drop/fabricate; fixture partial-membership-fabrication-remains-unverified; codec :171-174.
+R9 Shared service-request CIDs refuse even when bytes are missing.
+   MET. src :395; rp03; CP09/CP10; M04 semantic.
+R10 General raw framing unchanged and conferring no authority.
+   MET. `git diff 8ddefda b11cbf4 -- src/evidence_recovery_commitment.rs` is empty.
+R11 Metadata contradictions are not silently repaired.
+   MET. CP05, CP12, the author's partial conflicting-length case.
+R12 Independent Python oracle pins the changed interpretation and itself refuses the new contradictions; it is
+    not a full validator.
+   MET. vectors.py losses()/contradiction(); logs/06b; the status string says so. Gap: no partial-copy
+   occurrence-loss vector (C-F2).
+R13 Promoted RP01-RP17 deterministic; timing excluded; RP02/03/14 deliberately changed; originals unchanged.
+   MET. logs/11; originals' git diff is empty. Doc-comment hygiene in C-F5.
+R14 Three author probes (false authenticated orphan length, exact membership charge, orphan hash mismatch).
+   MET (functions at :1088-1147; author controls are semantic). One assertion is vacuous (C-F5).
+R15 Rust framing é×40/é×41 and corrected provenance; no non-test framing change.
+   MET. M12 semantic; header :2-4.
+R16 Strict Clippy, fmt, fixture --check, bounded baseline.
+   MET. logs/03-06b, logs/40.
+R17 Whole production-file reversion with API-compatible tests demonstrates the regressions.
+   MET. logs/30 has both semantic failures; logs/31 is a compile failure, classified as such.
+
+Earlier checkpoint rows that change status vs the prior report:
+- CK12 (profile-3 binding) moves from "partial" to MET AS SPECIFIED. Incomplete-copy membership is still
+  unauthenticated by construction, but it is now labelled per entry and has no length authority.
+- CK15 MET, plus the request bound.
+- CK19 moves from PARTIAL to MET (A-F1/A-F3 resolved).
+- CK22 (qualified before feeding replay): this review. It is qualified, subject to C-F1/C-F2 being resolved
+  before replay.
+- All other CK rows are unchanged from the prior report. That evidence is reused, not re-run.
+
+PARENT CRITERIA — ALL REMAIN OPEN (.design/kan-v2-recovery-bundles.md). Nothing here is end-to-end delivery.
+- AC-1 standalone refusal and missing-history open refusal: UNMET (no opener or schema reader).
+- AC-2 observation fixtures: PARTIAL as before. There is no replay.
+- AC-3 missing/corrupt/restored distinct through backup/rebuild/publication: UNMET. Only the logical original
+  loss vector and its basis exist.
+- AC-4 crash boundaries, AC-5 storage-level refusal without rewriting, and AC-6 fresh review with
+  omission/overwrite/early-completion/downgrade controls: UNMET.
+- REQ-7 bounded materialisation: PARTIAL, for this pure call only.
+- Still to build:
+  - greedy ≤32-entry / 16 KiB `unavailable` partitioning
+  - full observation replay recomputing loss and basis
+  - R1 historical candidate selection
+  - O1 output revalidation and the publication rules
+  - external checkpoints
+  - physical KNB1 DDL, opener, UTF-8 gate and canonical-CID schema reader
+  - creation, restoration and publication writers with crash tests
+  - bundle backup/rebuild
+  - owner jobs, RPC and UI capability labels that expose the basis
+- Frontend/UI criteria are untouched and open.
+
+=====================================================================================================
+MUST BE RESOLVED BEFORE REPLAY CONSUMES THIS COMPONENT
+1. C-F1:
+   - Restate restored/R1/output length rules in terms of the member-derived authenticated coordinate length,
+     not "known" lengths read from M1/member_membership.
+   - Specify that a restoration of an UnverifiedMembership coordinate carries that basis.
+2. C-F2: pin issuer-length retention for IssuerMetadata losses in incomplete copies, in the Python
+   oracle/fixture and in Rust (promote CP11). The replay will recompute and sign this vector.
+3. C-F4: decide on empty-CID service-request references (refuse outright, or document them as permanent
+   unrestorable losses), in both implementations.
+Hardening (any time): C-F3 (promote CP01's MAX_REQUEST edge); C-F5 (restore full doc comments, drop the
+vacuous assertion).
+Carry-forward: the deterministic deadline-polling unit (B-F2) and wall-clock limits stay recorded as before.
+
+=====================================================================================================
+VERDICT: **APPROVE WITH FOLLOW-UPS**
+
+The correction round does what it says. The A-F1 contradiction is resolved in favour of refusal, consistently in
+the codec, the Rust verifier and the independent Python projection oracle, and the refusal is shown to be
+neither missing (M01) nor over-broad (M10, CP07). A-F2 is resolved without inventing authority: incomplete-copy
+membership stays verbatim in M1 (CP06), but it loses all length and classification power, and each loss carries
+a basis recomputed from the member rather than a signed field. That is the raw-data-and-projections telos
+applied correctly. A-F3 now refuses unsatisfiable shared request CIDs even without bytes, including in a
+re-signed complete profile-3 copy (CP10). Every author control I reproduced fails semantically, and the
+whole-file reversion fails both API-compatible tests on behaviour, not labels. Promotion of the reviewer probes
+is faithful.
+
+It is not a plain APPROVE, for three reasons. The newly added condition that preserves issuer-authenticated
+lengths in incomplete copies is unpinned by the author suite (M07 survives; C-F2). The codec's downstream
+restoration/R1/output rules still say "known expected lengths", which a replay implementer could read from
+unverified M1 rows (C-F1). And one same-class impossibility (empty-CID references with bytes missing; C-F4)
+remains. None of these violates an invariant, and nothing consumes the component, so this is not BLOCK. C-F1
+and C-F2 must close, and C-F4 must be decided, before replay is built on top. This is qualification of a pure
+member prerequisite only. No parent bundle, format, writer, history, RPC or frontend criterion is met by it.

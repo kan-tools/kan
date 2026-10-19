@@ -1,0 +1,58 @@
+commit b11cbf42af09d09113e467f5cf9cdea82ef9ade0
+Author:     Maxine Levesque <170461181+maxinelevesque@users.noreply.github.com>
+AuthorDate: Mon Oct 19 08:49:37 2026 -0700
+Commit:     Maxine Levesque <170461181+maxinelevesque@users.noreply.github.com>
+CommitDate: Mon Oct 19 08:49:37 2026 -0700
+
+    fix(v2): distinguish recovery evidence from contradictory metadata
+    
+    Label incomplete-copy membership losses as unverified, withhold unauthenticated expected lengths, reject hash-valid length contradictions and impossible service references, and pin the independent review findings.
+    
+    Demonstrated-by: revert=HEAD tests=evidence_recovery_member_corrections::authentic_bytes_with_false_metadata_are_not_repairable_loss,evidence_recovery_member_corrections::incomplete_membership_has_no_authenticated_length_or_byte_classification outcome=DEMONSTRATED
+
+ .design/fixtures/recovery-member-v1.json           |  248 ++++-
+ .design/kan-v2-recovery-bundle-codec.md            |   66 +-
+ .../01-clean.txt                                   |    1 +
+ .../02-baseline.txt                                |   55 +
+ .../03-corrections.txt                             |   10 +
+ .../04-clippy.txt                                  |   28 +
+ .../05-fmt.txt                                     |    0
+ .../06-final-tests.txt                             |   66 ++
+ .../07-final-clippy.txt                            |    2 +
+ .../08-final-fmt.txt                               |    0
+ .../09-controls.txt                                |    9 +
+ .../10-reversion-clean.txt                         |    1 +
+ .../11-whole-reversion.txt                         |   17 +
+ .../12-final-clean.txt                             |    1 +
+ .../13-final-baseline.txt                          |   93 ++
+ .../14-final-polling.txt                           |   10 +
+ .../15-final-clippy.txt                            |    2 +
+ .../16-final-fmt.txt                               |    0
+ .../17-final-oracle.txt                            |    2 +
+ .../REPORT.md                                      |   52 +
+ .../controls/authenticated-length.txt              |   23 +
+ .../controls/issuer-utf8.txt                       |   23 +
+ .../controls/membership-charge.txt                 |   23 +
+ .../controls/orphan-hash.txt                       |   23 +
+ .../controls/partial-basis.txt                     |   26 +
+ .../controls/partial-length.txt                    |   26 +
+ .../controls/request-bound.txt                     |   21 +
+ .../controls/restored.txt                          |   68 ++
+ .../controls/shared-request.txt                    |   24 +
+ .../01-evidence_recovery_member_corrections.txt    |    9 +
+ .../02-evidence_recovery_member_corrections.txt    |    8 +
+ .../03-evidence_recovery_member_corrections.txt    |   22 +
+ .../04-evidence_recovery_member_corrections.txt    |   23 +
+ .../05-evidence_recovery_member_corrections.txt    |    9 +
+ .../06-evidence_recovery_member_corrections.txt    |    8 +
+ .../whole-reversion-logs/production.patch          |  536 +++++++++
+ .design/tools/recovery_member_vectors.py           |   53 +-
+ .github/workflows/ci.yml                           |    2 +-
+ scripts/recovery_member_followup_controls.py       |   38 +
+ scripts/recovery_member_negative_controls.py       |    2 +-
+ src/evidence_recovery_member.rs                    |   41 +-
+ ...dence_recovery_commitment_review_regressions.rs |   14 +-
+ tests/evidence_recovery_member.rs                  |   42 +-
+ tests/evidence_recovery_member_corrections.rs      |  131 +++
+ .../evidence_recovery_member_review_regressions.rs | 1147 ++++++++++++++++++++
+ 45 files changed, 2962 insertions(+), 43 deletions(-)

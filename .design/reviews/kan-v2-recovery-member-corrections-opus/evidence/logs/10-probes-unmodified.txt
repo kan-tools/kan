@@ -1,0 +1,77 @@
+# date: 2026-10-19T15:54:15Z
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections
+# cmd: cargo test --offline --features v2-crypto --test zz_corrections_review_probes -- --nocapture --test-threads=1
+# ---
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections)
+warning: unused import: `Ordering`
+  --> tests/zz_corrections_review_probes.rs:21:30
+   |
+21 |         atomic::{AtomicBool, Ordering},
+   |                              ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: call to `.clone()` on a reference in this situation does nothing
+   --> tests/zz_corrections_review_probes.rs:461:90
+    |
+461 |     eprintln!("CP03 outcome: {:?}", r.as_ref().map(|m| m.losses().to_vec()).map_err(|e| e.clone()));
+    |                                                                                          ^^^^^^^^
+    |
+    = note: the type `kan::evidence_recovery_member::Error` does not implement `Clone`, so calling `clone` on `&kan::evidence_recovery_member::Error` copies the reference, which does not do anything and can be removed
+    = note: `#[warn(noop_method_call)]` on by default
+help: remove this redundant call
+    |
+461 -     eprintln!("CP03 outcome: {:?}", r.as_ref().map(|m| m.losses().to_vec()).map_err(|e| e.clone()));
+461 +     eprintln!("CP03 outcome: {:?}", r.as_ref().map(|m| m.losses().to_vec()).map_err(|e| e));
+    |
+help: if you meant to clone `kan::evidence_recovery_member::Error`, implement `Clone` for it
+   --> src/evidence_recovery_member.rs:27:1
+    |
+ 27 + #[derive(Clone)]
+ 28 | pub enum Error {
+    |
+
+warning: `kan` (test "zz_corrections_review_probes") generated 2 warnings (run `cargo fix --test "zz_corrections_review_probes" -p kan` to apply 2 suggestions)
+    Finished `test` profile [unoptimized] target(s) in 0.47s
+     Running tests/zz_corrections_review_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_corrections_review_probes-40f69a883b3ce883)
+
+running 12 tests
+test cp01_request_length_edges_without_bytes ... RP cp01-len-2101248: ACCEPT through=1 verified=0 complete=true losses=[Loss { occurrence: Some(1), cid: Cid(bafkreid6zo5zmdm74tloedzg3huklmmco26rpjnfkqva2yqpss4pdi5wdi), expected_length: Some(2101248), state: Missing, basis: IssuerMetadata }]
+RP cp01-len-2101249: REFUSE Invalid("service request length")
+RP cp01-len-4194304: REFUSE Invalid("service request length")
+RP cp01-len-4194305: REFUSE Invalid("forensic-recovery-required")
+ok
+test cp02_staged_object_above_request_bound_is_not_a_request ... RP cp02-big-staged-present: ACCEPT through=1 verified=1 complete=true losses=[]
+RP cp02-big-staged-missing: ACCEPT through=1 verified=1 complete=true losses=[Loss { occurrence: None, cid: Cid(bafkreichl5azrqf2bkcgiisvc5e7vdpnxc5wdoo3fjontno4eh4yrlztsa), expected_length: Some(2101258), state: Missing, basis: VerifiedCopyRecipe }]
+ok
+test cp03_empty_cid_positive_length_without_bytes ... RP cp03-empty-cid-len1-missing: ACCEPT through=1 verified=0 complete=true losses=[Loss { occurrence: Some(1), cid: Cid(bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku), expected_length: Some(1), state: Missing, basis: IssuerMetadata }]
+CP03 outcome: Ok([Loss { occurrence: Some(1), cid: Cid(bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku), expected_length: Some(1), state: Missing, basis: IssuerMetadata }])
+ok
+test cp04_partial_membership_only_corrupt_and_empty ... RP cp04-partial-corrupt-member-only: ACCEPT through=1 verified=1 complete=false losses=[Loss { occurrence: None, cid: Cid(bafkreigphevvnhuzipywjzxoyuyoix5awnffdlfsdaxpyq2svgisspv3yi), expected_length: None, state: Corrupt, basis: UnverifiedMembership }]
+RP cp04-partial-empty-cid-row: ACCEPT through=1 verified=1 complete=false losses=[Loss { occurrence: None, cid: Cid(bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku), expected_length: None, state: Corrupt, basis: UnverifiedMembership }]
+RP cp04-complete-empty-cid-row: REFUSE Invalid("hash-valid bytes contradict authenticated length")
+ok
+test cp05_partial_out_of_bound_rows_refuse ... RP cp05-partial-row-0: REFUSE Invalid("forensic-recovery-required")
+RP cp05-partial-row-4194305: REFUSE Invalid("forensic-recovery-required")
+ok
+test cp06_m1_retains_unverified_lengths ... CP06 losses a=[Loss { occurrence: None, cid: Cid(bafkreigphevvnhuzipywjzxoyuyoix5awnffdlfsdaxpyq2svgisspv3yi), expected_length: None, state: Missing, basis: UnverifiedMembership }] b=[Loss { occurrence: None, cid: Cid(bafkreigphevvnhuzipywjzxoyuyoix5awnffdlfsdaxpyq2svgisspv3yi), expected_length: None, state: Missing, basis: UnverifiedMembership }]
+ok
+test cp07_complete_membership_only_corrupt_variants ... RP cp07-same-length: ACCEPT through=1 verified=1 complete=true losses=[Loss { occurrence: None, cid: Cid(bafkreiel5k6suiu4zi6wbqhd4ljt5gnimg5wmgyfobkomx2zyvrgmopcqi), expected_length: Some(21), state: Corrupt, basis: VerifiedCopyRecipe }]
+RP cp07-other-length: ACCEPT through=1 verified=1 complete=true losses=[Loss { occurrence: None, cid: Cid(bafkreiel5k6suiu4zi6wbqhd4ljt5gnimg5wmgyfobkomx2zyvrgmopcqi), expected_length: Some(21), state: Corrupt, basis: VerifiedCopyRecipe }]
+RP cp07-empty: ACCEPT through=1 verified=1 complete=true losses=[Loss { occurrence: None, cid: Cid(bafkreiel5k6suiu4zi6wbqhd4ljt5gnimg5wmgyfobkomx2zyvrgmopcqi), expected_length: Some(21), state: Corrupt, basis: VerifiedCopyRecipe }]
+ok
+test cp08_referenced_hash_invalid_is_corrupt ... RP cp08-ref-hash-invalid: ACCEPT through=1 verified=0 complete=true losses=[Loss { occurrence: Some(1), cid: Cid(bafkreid6zo5zmdm74tloedzg3huklmmco26rpjnfkqva2yqpss4pdi5wdi), expected_length: Some(555), state: Corrupt, basis: IssuerMetadata }]
+ok
+test cp09_shared_request_variants ... RP cp09-non-adjacent-shared: REFUSE Invalid("reused service request CID")
+RP cp09-shared-different-length: REFUSE Invalid("conflicting expected lengths")
+ok
+test cp10_profile3_complete_shared_request_refuses ... RP cp10-p3-complete-shared: REFUSE Invalid("reused service request CID")
+ok
+test cp11_basis_deterministic ... RP cp11: ACCEPT through=2 verified=0 complete=false losses=[Loss { occurrence: Some(1), cid: Cid(bafkreigaxged477u5edgut5eqzidnuv3gsvzako6rbmowp5swyowybmira), expected_length: Some(555), state: Missing, basis: IssuerMetadata }, Loss { occurrence: Some(2), cid: Cid(bafkreiebrjzw6t3ax6q53uqxim5c5u3cdukjdudxmzfsypy2k3qekz36e4), expected_length: Some(612), state: Missing, basis: IssuerMetadata }, Loss { occurrence: None, cid: Cid(bafkreigphevvnhuzipywjzxoyuyoix5awnffdlfsdaxpyq2svgisspv3yi), expected_length: None, state: Missing, basis: UnverifiedMembership }]
+ok
+test cp12_partial_row_contradicting_issuer_length_refuses_with_bytes ... RP cp12-partial-referenced-row-relength-bytes-present: REFUSE Invalid("conflicting expected lengths")
+ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.75s
+
+# --- exit=0

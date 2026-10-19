@@ -1,0 +1,9 @@
+# date: 2026-10-19T15:52:09Z
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections
+# cmd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-encryption/.local-state/crypto-oracle-env/bin/python -I .design/tools/recovery_member_vectors.py --check
+# ---
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections/.design/tools/recovery_member_vectors.py", line 9, in <module>
+    import attestation_vectors as att
+ModuleNotFoundError: No module named 'attestation_vectors'
+# --- exit=1

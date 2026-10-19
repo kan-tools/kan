@@ -1,0 +1,33 @@
+2026-10-19T15:54:15Z TEMP-PLACE tests/zz_corrections_review_probes.rs (cmp-identical to review-evidence/probes/)
+2026-10-19T15:54:36Z logs/10-probes-unmodified.txt: 12/12 reviewer probes pass on unmodified tree (one clippy-style warning in probe only)
+2026-10-19T15:55:02Z START mutate.py (12 cases) with probe file placed
+2026-10-19T15:55:43Z git -C /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member show 8ddefda:src/evidence_recovery_member.rs > review-evidence/probes/evidence_recovery_member.rs.at-8ddefda (read-only)
+2026-10-19T15:57:06Z END mutate.py
+2026-10-19T15:57:22Z WHOLE-REVERSION: cp review-evidence/probes/evidence_recovery_member.rs.at-8ddefda -> src/evidence_recovery_member.rs
+2026-10-19T15:57:30Z WHOLE-REVERSION restored src/evidence_recovery_member.rs from frozen copy; sha=955320849f1d30905c305b164d80d86cf9a84b4a2b5d6ac2fafe44a5e26a1b93
+2026-10-19T15:57:53Z TEMP-REMOVE tests/zz_corrections_review_probes.rs (was cmp-identical to retained copy)
+2026-10-19T15:57:53Z removed temporary frozen-source backup copy
+
+INDEX OF LOGGED COMMANDS (each logs/*.txt header records date, cwd, exact command and exit code)
+00-identity-before            identity_check.py (export vs manifest vs git blobs @ b11cbf4 via git -C <named repo>)
+01-diff-stat / 01-full-diff   git -C <repo> show --stat b11cbf4 ; git -C <repo> diff 8ddefda b11cbf4 (read-only)
+02-clean                      cargo clean -p kan --offline (shared CARGO_TARGET_DIR, CARGO_BUILD_JOBS=4)
+03-baseline-tests             cargo test --features v2-crypto: member, member_review_regressions, member_corrections, commitment_review_regressions
+04-clippy                     cargo clippy --features v2-crypto --all-targets -- -D warnings
+05-fmt                        cargo fmt --all -- --check
+06-...ATTEMPT1-isolated-mode-failed  FAILED METHOD: python -I breaks sibling-module import (attestation_vectors); retained
+06b-python-member-check       $KAN_CRYPTO_ORACLE_PYTHON .design/tools/recovery_member_vectors.py --check
+10-probes-unmodified          reviewer probes CP01-CP12 on unmodified tree (temporarily placed in tests/)
+11-promotion-diff             promotion_diff.py: promoted RP functions vs retained reviewer originals
+20-mutations-driver           mutate.py: 12 compiled controls (author suites + reviewer probes, --no-fail-fast); logs in mutations/
+                              FAILED METHOD: mutate.py inline per-binary summary mis-attributed (cargo prints Running on stderr);
+                              kept as mutations/SUMMARY-inline-FAILED-METHOD-misattributed.txt; corrected by summarise.py ->
+                              mutations/SUMMARY-by-panic-site.txt
+30-whole-reversion-corrections  src member file replaced by git show 8ddefda copy; API-compatible corrections suite
+31-whole-reversion-other-suites same reversion; Basis-using suites (compile failure = not a semantic kill)
+40-final-restored-tests       restored tree: 4 author targets + reviewer probes
+90-identity-after             identity_check.py after all work
+91-parent-git-status          git -C <repo> status --short (read-only; empty = clean)
+Unlogged read-only exploration: file reads (Read tool), grep, sed -n, git -C <repo> diff/show/rev-parse, fixture listing.
+Note: one ad-hoc `shasum src/evidence_recovery_member.rs` was taken WHILE a mutation was applied in the background
+(03145fcc...); it is not evidence of the frozen state. The restored file hash is 955320849f1d... = manifest.
