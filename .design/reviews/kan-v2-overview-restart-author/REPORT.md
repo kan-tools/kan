@@ -11,3 +11,9 @@ pass again. The test also checks sample-time replacement with identical rows and
 that an identical cached sample does not rewrite totals. No Rust/runtime schema
 changed. The original reviewer probe/report will be preserved unchanged when the
 review finishes; fresh review of this correction remains required.
+
+The ongoing cold review's nine independent UI probes are now incorporated as
+`tests/operations_review_ui.test.cjs` and included in CI. Their fetch harness
+honors AbortSignal, so aborted polls actually execute catch/finally paths.
+The review export remains unchanged; its original restart failure is preserved.
+These author-run incorporated probes do not constitute a fresh review verdict.
