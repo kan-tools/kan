@@ -1,0 +1,11 @@
+Local combined qualification at9ec5b5a. Full local log SHA256=1dbfcc382c2224c2f33340b606beb2cbefc67789359e4e67067e07025de92b5a
+
+---- creation_reports_an_actual_commit_error_as_uncertain stdout ----
+
+thread 'creation_reports_an_actual_commit_error_as_uncertain' (10677644) panicked at tests/evidence_bundle_creation.rs:881:13:
+assertion `left == right` failed
+  left: "/private/var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpgE0zch/bundle.sqlite"
+ right: "/var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpgE0zch/bundle.sqlite"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+

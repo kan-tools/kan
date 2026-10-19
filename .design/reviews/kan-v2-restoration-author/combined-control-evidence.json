@@ -1,0 +1,116 @@
+{
+  "head": "6df024b5335ae18b46213dd547c005e6fe2bfbc0",
+  "files": {
+    "src/evidence_store/bundle/create.rs": "5ab73069351904ca7f4908ed2afc1024454d5e4aa27f4e698480e7936945ad64",
+    "src/evidence_store/bundle/restore.rs": "170500e8b6a66b277a6b0ad1419a2797c38da691a98f77bc7005397c01ba9423",
+    "src/evidence_store/bundle.rs": "b47fd919f3739dfba1e668c8c9a4fc44c8413371d8f3107185ced74ee90a0243",
+    "src/evidence_recovery_replay.rs": "fb96baeb6730356b6327b11767260478708933b9ac63589cd34a4f79542ba0c8",
+    "src/claim/ipld_decode.rs": "ad20fa213776d0b0a17ffc5c814e526df2bbfc9143d3474d3ec5b54d5cd15ae0",
+    "src/claim/codec.rs": "852055e101b725f1e3a842eca42b8808a14db816d00d86e982faef31dae13f9d",
+    "src/evidence_content.rs": "919a1057ad7e7c5504662e906394c4992d2de1b60ba44b88da22e56c6ee8d657",
+    "tests/evidence_bundle_creation.rs": "e4c13db89d1a62da94d7ed1350a57080d519a47771db0a1b56cb0186aff86b51",
+    "tests/support/content_worker_unit.rs": "4b3f4e4c46def146991e4d2d22a676e505a25bd41e22d74165838b9e041bdacf"
+  },
+  "logs": {
+    ".local-state/creation-followup-controls/RB07-destination-sidecars-unchecked.txt": {
+      "sha256": "62e4fdfc27cfbe8855b570a35f644e0ce0667ec7d2b35c9a1728550bd76c192f",
+      "exit": "101",
+      "assertion": "thread 'promoted_b2_preexisting_destination_sidecars_refuse_and_survive' (10683975) panicked at tests/evidence_bundle_creation.rs:722:9:"
+    },
+    ".local-state/creation-followup-controls/restored.txt": {
+      "sha256": "f8f4668881999196116f0dd6f43fa2166f1048eefb5f66d54747def30a187cc9",
+      "exit": "0",
+      "assertion": "restored positive check"
+    },
+    ".local-state/creation-followup-controls/RB06-commit-failure-refused.txt": {
+      "sha256": "fb14ae0abff2191a8427ab7186375104aa3078ba6641ff4cbf3ee5a79d277607",
+      "exit": "101",
+      "assertion": "thread 'creation_reports_an_actual_commit_error_as_uncertain' (10683677) panicked at tests/evidence_bundle_creation.rs:886:14:"
+    },
+    ".local-state/creation-followup-controls/RB04-no-reservation-recheck.txt": {
+      "sha256": "7705778222f92c4913ad3ff2d33d65ce749a45e067a9b7e314dda5dff2b31aec",
+      "exit": "101",
+      "assertion": "thread 'creation_rechecks_sidecars_after_preparation_before_reservation' (10683429) panicked at tests/evidence_bundle_creation.rs:848:5:"
+    },
+    ".local-state/creation-followup-controls/RB01-no-snapshot-transaction.txt": {
+      "sha256": "43034cbff1fcc2fc73ddbea0df90f6c634fd93ebff110eabf8276e021bade95b",
+      "exit": "101",
+      "assertion": "thread 'creation_pins_one_snapshot_between_metadata_and_object_acquisition' (10682904) panicked at tests/evidence_bundle_creation.rs:820:5:"
+    },
+    ".local-state/creation-followup-controls/RB03-no-source-schema.txt": {
+      "sha256": "8a84eb4adce34ee1da225e95b521018601d87ff97ffc3b70253c29e1b27aee5f",
+      "exit": "101",
+      "assertion": "thread 'promoted_b3_unknown_source_schema_refuses' (10683164) panicked at tests/evidence_bundle_creation.rs:763:9:"
+    },
+    ".local-state/creation-followup-controls/RB09-proof-sequence-unchecked.txt": {
+      "sha256": "f98c1b157eef8f7889a3b57db6f703f9d7c96fbb8b9c3e8d754c19c4e32173be",
+      "exit": "101",
+      "assertion": "thread 'promoted_b5_proof_coordinates_and_authoritative_cells_refuse' (10684258) panicked at tests/evidence_bundle_creation.rs:791:9:"
+    },
+    ".local-state/codec-clock-controls/clock-restored.txt": {
+      "sha256": "14d2ee374bc73742d686252049df8e11c36571fdc1f71d7518de928bef2ccff3",
+      "exit": "0",
+      "assertion": "restored positive check"
+    },
+    ".local-state/codec-clock-controls/generic-byte-guessing.txt": {
+      "sha256": "84bba081250528abe86f6269645b64d53fe8494df8d37d5751c460f49f614f75",
+      "exit": "101",
+      "assertion": "thread 'future_envelope_preserves_cid_shaped_untagged_bytes' (10684930) panicked at tests/claim_v2_codec.rs:483:82:"
+    },
+    ".local-state/codec-clock-controls/acquisition-cap-removed.txt": {
+      "sha256": "08b4ddb73355c9d55a613d188405374ddf070df33df38518a69592e4d07547d1",
+      "exit": "101",
+      "assertion": "thread 'evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record' (10685099) panicked at src/../tests/support/content_worker_unit.rs:208:5:"
+    },
+    ".local-state/codec-clock-controls/codec-restored.txt": {
+      "sha256": "77ec1372b954037013d41fad75b4057aa75e8214a602690b2ecbb24a31023879",
+      "exit": "0",
+      "assertion": "restored positive check"
+    },
+    ".local-state/restoration-controls/wrong-write-capability.txt": {
+      "sha256": "9dd9bb909ead0b952b2cf432e8f2d4477354d4b7cd609e61c8db63d997977bd6",
+      "exit": "101",
+      "assertion": "thread 'every_persistence_facade_call_is_independently_inventoried' (10688065) panicked at tests/surface_conformance.rs:1421:17:"
+    },
+    ".local-state/restoration-controls/wrong-source-capability.txt": {
+      "sha256": "036a10886f18ad48a8137f3008014e44f18637f18e551663c38830e848544fc8",
+      "exit": "101",
+      "assertion": "thread 'every_persistence_facade_call_is_independently_inventoried' (10688323) panicked at tests/surface_conformance.rs:1421:17:"
+    },
+    ".local-state/restoration-controls/restored.txt": {
+      "sha256": "7f2d0ea9bd693ccec4df3b397f621d3e2b318168626503052c812f2d63981cb7",
+      "exit": "0",
+      "assertion": "restored positive check"
+    },
+    ".local-state/restoration-controls/output-ceiling.txt": {
+      "sha256": "3fb1cb73ea8ced2d48ae42f2f9888d6d628434d71a59d87aacd983f3f5c49292",
+      "exit": "101",
+      "assertion": "thread 'restoration_budgets_and_participant_aliases_refuse_without_appending' (10687825) panicked at tests/evidence_bundle_creation.rs:1373:9:"
+    },
+    ".local-state/restoration-controls/pre-sign-validation.txt": {
+      "sha256": "35c967ef93cdd6fe8986d81eb74c1d025cd8f0c58d9d78f7396ede41abb543e7",
+      "exit": "101",
+      "assertion": "thread 'restoration_checks_writer_signature_and_manifest_binding_before_signing' (10686820) panicked at tests/evidence_bundle_creation.rs:1348:9:"
+    },
+    ".local-state/restoration-controls/checkpoint-required.txt": {
+      "sha256": "940809004f4614ed29446155d61348ee4facca8d9d3ed9742349cf0be6165864",
+      "exit": "101",
+      "assertion": "thread 'restoration_appends_atomic_candidate_and_history_and_retries_original_identity' (10686248) panicked at tests/evidence_bundle_creation.rs:964:5:"
+    },
+    ".local-state/restoration-controls/stale-checkpoint.txt": {
+      "sha256": "0e22dc7456e1105e880fbe9ae072d6c19055ab0187ad28b39f828f5f487fcaa5",
+      "exit": "101",
+      "assertion": "thread 'restoration_refuses_stale_new_transitions_invalid_candidate_and_wrong_observer' (10686529) panicked at tests/evidence_bundle_creation.rs:1011:5:"
+    },
+    ".local-state/restoration-controls/uncertain-outcome.txt": {
+      "sha256": "aa18ba1ab7e8a1ab0d39ea7388bbe28980a7ec2db2d3a4076eb17c1cd7bea81a",
+      "exit": "101",
+      "assertion": "thread 'restoration_cancel_rolls_back_both_rows_and_lost_completion_is_resolved_by_retry' (10687563) panicked at tests/evidence_bundle_creation.rs:1047:13:"
+    },
+    ".local-state/restoration-controls/split-candidate-commit.txt": {
+      "sha256": "163db388b9c49ecb11f40364a8279862e868b7b22f52fae17abe7118a0d59d3c",
+      "exit": "101",
+      "assertion": "thread 'restoration_abrupt_death_never_exposes_half_a_candidate_observation_pair' (10687232) panicked at tests/evidence_bundle_creation.rs:1207:9:"
+    }
+  }
+}
