@@ -1,0 +1,446 @@
+ADVERSARIAL REVIEW — KNB1 recovery publication + bf3c44e review follow-ups
+=============================================================================
+Reviewer: fresh cold Claude Code session, Opus 5.5 (claude-opus-5-5). No subagents. I did not write any
+of the code under review, and I had no prior context beyond the prompt and the files listed below.
+Date: 2026-10-19. Mode: Git-first under day#168/kan#197. I made no live kan/day reads or writes, no Git
+writes, no parent-source edits, no publication, and no production-code fixes.
+
+VERDICTS
+  Publication (physical publication from a retained KNB1 bundle) ....... APPROVE WITH FOLLOW-UPS
+  Follow-ups (D-F1, D-F2, C-F1, C-F2, A-F1, PO8 race fix, fixture fixes)  APPROVE
+  OVERALL ................................................................ **APPROVE WITH FOLLOW-UPS**
+
+I found no correctness, safety or invariant violation. Every follow-up below is either a test gap
+(production behaves correctly and a probe of mine shows it, but the author's suite would not catch a
+regression) or an API/documentation clarification. None of them blocks. Parent acceptance stays OPEN; this
+review closes nothing beyond the publication slice.
+
+-------------------------------------------------------------------------------------------------------------
+1. WHAT WAS REVIEWED, AND CUSTODY
+-------------------------------------------------------------------------------------------------------------
+Source: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-publication, frozen at
+ddb4e238755bb347770b9d460bb389173027fc16 (branch feat/kan-v2-recovery-publication).
+Review tree: the immutable export at .local-state/reviews/publication. Identity file:
+../publication-identity.json (sha256 2cc4a496…19ca), with 4076 tracked paths.
+
+Custody check (review-evidence/tools/custody.py; raw/custody-before.txt and raw/custody-after.txt):
+  - The review tree's path set exactly equals the identity's 4076 paths. The only extra file is
+    north-star.json (sha256 64a00fe7…c19b).
+  - Every file's SHA256 equals the identity, and every git blob id computed from the bytes equals the
+    identity.
+  - The pinned commit tree (git ls-tree) has the same paths and blob ids, and the actual pinned blob bytes
+    (git cat-file --batch) hash to the identity SHA256.
+  - The source worktree HEAD is ddb4e23 and its status is clean.
+  Result: 0 problems before and 0 after. Every temporary probe or mutation was restored from the pinned Git
+  blob, and its SHA was re-verified after every single control (46 + 16 restorations, all "restored": true).
+
+Range: main...HEAD covers 3891 files, i.e. the whole v2 stack. That is the wrong range for this review.
+I reviewed bf3c44e..ddb4e23 instead: c4928af (the publication feature), 081f02c (prior review docs) merged
+by 1c8a3fc, and ddb4e23 (qualification and the follow-up regression tests). The diff is retained at
+raw/diff-bf3c44e-ddb4e23.patch.
+
+Files read in full or in the relevant part: CLAUDE.md; north-star.json; the adversarial-review SKILL.md;
+.design/kan-v2-recovery-publication.md; kan-v2-recovery-bundle-copy.md; the relevant parts of
+recovery-bundle-opening and recovery-mutations; src/evidence_store/bundle/publish.rs (all);
+bundle/mutation.rs (all); bundle.rs (acquire/inspect); the publication_selection and
+published_output_commitment additions and their keys/output_commitments helpers in
+evidence_recovery_replay.rs; the restore.rs refactor diff; copied.rs (stored_plan/full_audit/audit);
+attested::initialize; the Ledger profile/schema checks and sqlite_destination/private_file in
+evidence_store.rs; persistence/surface/catalog diffs; .design/tools/recovery_publication_oracle.py and its
+publication handling in recovery_replay_vectors.py; all publication, D-F1 and D-F2 tests in
+tests/evidence_bundle_creation.rs; the follow-up test diffs (ipld_decode, claim_v2_codec, library_ui, PO8);
+the PO8 admission code in src/evidence_operations_collection/overview.rs; the author evidence in
+.design/reviews/kan-v2-publication-author/; and the prior cold report
+.design/reviews/kan-v2-combined-followups-opus/REPORT.txt.
+
+-------------------------------------------------------------------------------------------------------------
+2. NORTH STAR (quoted from the supplied north-star.json, not paraphrased)
+-------------------------------------------------------------------------------------------------------------
+telos/raw-data-and-projections — "Raw data retained, simplifications projected":
+  "Raw attested data is retained in full and never collapsed in the store. Every simplification --
+   identity, status, confidence, tension, ordering -- is a determined projection computed on demand over
+   that raw data, parameterised by a base the viewer chooses, and therefore swappable … A field holding a
+   computed value is the failure mode: it asserts an output of the fold as if it were input, and it
+   forecloses every other projection."
+On record it is InTensionWith telos/performance-at-scale. The telos also records that it deliberately
+declares no witnesses: "day witnesses the attainment, CI enforces the maintenance."
+I read no live log, as Git-first requires. Live-ness was therefore not re-checked against `kan show`; it
+is the supplied file's content.
+
+How this work serves the telos. Publication copies the original raw records, proofs, plan and membership
+byte-exactly into the output. It derives lookup columns only from those authenticated bytes. It never
+deletes or overwrites a bundle, a failed output or prior history. It records publication-failed as an
+attributed unsuccessful check rather than as a computed "absent" fact. It treats the signed O1 output
+commitment, not a filename, as the output's identity. I verified each of these by execution (§4).
+
+Tension with performance-at-scale. Publication re-acquires and re-replays the entire bundle three times
+and the output twice, and the acquisition budget is cumulative (P18 needs about 5–6× a single inspection
+pass). That is correctness bought with work, which is the right side of the tension for a recovery path.
+Its cost is undocumented (follow-up F-PUB-6).
+
+-------------------------------------------------------------------------------------------------------------
+3. INDEPENDENT VERIFICATION OF THE AUTHOR'S CLAIMS (raw logs in raw/)
+-------------------------------------------------------------------------------------------------------------
+Environment: shared CARGO_TARGET_DIR (kan-v2-library-resilience/.local-state/target); `cargo clean -p kan`
+run FIRST (it removed 329.1 MiB); offline and --locked; CARGO_BUILD_JOBS=4; one heavy job at a time.
+Free disk was 15.13 GiB before, 15.39 GiB after the clean, and at least 15.38 GiB throughout
+(raw/df-before.txt and the build log tails). There were no dependency changes, no .lake, and no perf-grid
+rerun.
+
+Author claim -> my result:
+  142 targeted integration tests
+      -> 142 passed: claim_v2_codec 14, evidence_bundle_creation 37 (3 ignored crash children),
+         evidence_recovery_bundle 15, evidence_recovery_member 16, evidence_recovery_replay 10,
+         evidence_recovery_replay_review_regressions 6, surface_conformance 19,
+         evidence_overview_review_regressions 11, evidence_operations_overview 14 (1 ignored).
+         (raw/baseline-tests.txt; again after restore in raw/final-restored-positive.txt)
+  4 decoder unit tests (lib claim::ipld_decode)            -> 4 passed
+  52 Node checks (tests/library_ui.test.cjs)               -> 52 passed (all .cjs files: 105/105)
+  strict all-target v2 Clippy (-D warnings) and fmt        -> both exit 0 (I confirmed Clippy actually
+                                                              re-checked kan after the clean)
+  16 author controls caught                                -> I re-ran all 16 from the author's
+                                                              control-specs.json in my own driver. All 16
+                                                              were KILLED at test assertions.
+
+Harness failures of my own, retained rather than hidden:
+  - raw/build-attempt1-zsh-wordsplit-failure.txt: zsh did not word-split $TARGETS.
+  - raw/build-attempt2-missing-v2-crypto-feature-killed.txt: I started a build without
+    --features v2-crypto (the targets compile to nothing without it) and killed my own job.
+  - raw/probe-build-1.txt: two borrow errors in my probe code.
+  - raw/probes-run-1/2/3: my tamper probe first assumed rowid tables; `objects` and `upgrade_objects`
+    are WITHOUT ROWID. A first page-limit probe did not reach a new page. All were corrected and re-run.
+  None of these was counted as a kill or as a pass.
+
+-------------------------------------------------------------------------------------------------------------
+4. INDEPENDENT PROBES (review-evidence/probes/publication_probes.rs, appended temporarily to
+   tests/evidence_bundle_creation.rs and then removed; outputs in raw/probes-run-*.txt)
+-------------------------------------------------------------------------------------------------------------
+P1  Abrupt death at 12 boundaries, followed by production-API recovery with NO fixture journal rollback.
+    The author's crash test opens the bundle read-write first, which lets SQLite roll back a hot journal.
+    For IntentInserted and BeforeIntentCommit, a -journal file exists but is not hot: inspect succeeds at
+    the old head, and a New publish completes. From IntentCommitted onward, Resume completes. A valid
+    output with a pending intent is observed only after a real Resume verifies it. For OutputRowsInserted
+    and BeforeOutputCommit, the partial output plus its journal is retained. Resume to that path refuses
+    ("destination SQLite sidecar already exists"), and a new attempt to a fresh path succeeds. At
+    ObservedCommitted, Resume returns duplicate=true with no new append.
+    => AC-4 honest-retained-state holds, and it is recoverable through the shipped API at every
+       qualified boundary.
+P2  An observed attempt whose output was deleted. Resume recreates the output, returns duplicate=true with
+    the ORIGINAL observation bytes, and appends nothing. The design permits creating a missing output on
+    resume, but the result cannot tell "re-verified the previously observed file" apart from "created a
+    new file after observation". The new physical file has no attribution in the bundle. -> F-PUB-1.
+P3  Destinations. A planted -journal or -wal refuses before intent. A case alias (BUNDLE.SQLITE), a hard
+    link to the bundle (New and Resume) and the original standalone source all refuse. A dangling symlink
+    refuses and its target is never created. A clean destination gives an owner-only (0600) file with no
+    sidecars. In every refusal the bundle stayed byte-identical.
+P4/P5  New reusing an attempt id refuses. A stale-but-retained pin refuses ("stale publication
+    checkpoint"). A future sequence, a wrong statement CID, an unknown Resume attempt, and sampled_at above
+    MAX_SAFE all refuse. The bundle stayed byte-identical in each case.
+P6  Output tamper matrix. 12 Admitted and 16 Copied variants, each placed at a new path and Resumed:
+    flipped proof, receipt, manifest or object byte; truncated last record; missing object;
+    application_id cleared; extra trigger; extra table; changed archive identity; profile changed 2<->3;
+    flipped plan byte; changed or removed membership; plan removed. All 26 tamper variants are refused.
+    The 2 untampered copies (positive controls) are accepted as duplicate. Bundle and variant are
+    byte-identical after every attempt.
+P7  For both profiles, a full cell dump of every bundle table before and after a publication: 0 cells
+    removed or changed, and exactly 2 observation rows added. The standalone source archive is
+    byte-identical. => AC-5 "byte-identical except the prescribed appended observations" holds.
+P8  Bundle page ceiling. A ceiling below the current size refuses before opening. A ceiling equal to the
+    current size, once an append genuinely needs a new page, gives Refused(SQLITE_FULL) at intent
+    insertion: bundle byte-identical, no output, no attempt. (The author tests only the output ceiling.)
+P9  Failure API. Unknown attempt, stale pin and wrong observer all refuse with the bundle unchanged.
+    A real COMMIT BUSY (shared reader held across the call) gives Uncertain(seq=3, database is locked),
+    the row is rolled back, and the exact retry appends once. Two failures, then Resume, gives observed.
+    A failure after observed refuses.
+P10 A nested New attempt 43 (published inside attempt 42's OutputVerified callback). Both are observed,
+    and 42's observed is appended after 43's. Later unrelated attempts advance the head without changing
+    42's selection.
+P11 A real COMMIT BUSY on the OUTPUT transaction gives Interrupted(BeforeOutputCommit) with the intent
+    retained. The output is retained but unrecognized (application_id 0). Resume onto it refuses.
+    (The author covers only the intent and observed COMMITs.)
+P13 A slow owner callback (4.1 s against a 4 s deadline) at IntentReopened, OutputRowsInserted,
+    OutputVerified and BeforeObservedCommit gives Interrupted with Budget(duration) at the next check.
+    Nothing is observed and artifacts are retained. This confirms the documented contract: the callback
+    is synchronous and is not preempted, and the deadline applies when it returns.
+P15 Profile 3: cancel at OutputSynced, record failure (destination-conflict), Resume the same attempt to
+    a different new path, then Resume naming the first path. The result is observed, then duplicate=true;
+    both outputs exist. Paths are routing data, as designed.
+P16 A corrupt-but-present original (Admitted request 1; Copied staged object) is restored and then
+    published. Both succeed, and the output holds the restored bytes (restored takes precedence over a
+    corrupt original). No author test publishes after such a restoration (see R19).
+P17 A fully valid substituted archive: a clean 2-record prefix that passes attested::verify_file with
+    through=2. It is refused on O1 ("physical publication output commitment"). A content-identical DELETE
+    copy of the original standalone source is accepted as duplicate. That is correct under the design
+    (O1 content identity, not file provenance), but worth knowing.
+P18 Budget semantics. Budget.acquired_bytes is charged cumulatively across all bundle and output passes.
+    Setting it to 2×/3×/4× a single inspection pass commits the intent and then fails at
+    OutputRowsInserted / OutputSynced / OutputVerified. 6× succeeds. Every failure leaves a retained
+    intent and output that need Resume or a new attempt. Honest, but avoidable. -> F-PUB-6.
+
+The oracle chain is independent end to end. The Python replay recomputes each intent's R1/O1 from bundle
+history (recovery_replay_vectors.py:111-112). The publication oracle frames the actual output rows read
+through sqlite3 and compares them with the authenticated intent. Neither imports Rust.
+
+-------------------------------------------------------------------------------------------------------------
+5. COMPILED SEMANTIC CONTROLS (review-evidence/controls/*.txt and summary.jsonl;
+   driver tools/controls.py; spec controls-spec.json)
+-------------------------------------------------------------------------------------------------------------
+Method: each control makes exact single-occurrence replacements. A --no-run build comes first, so a
+compile error is never counted as a kill. Then one relevant test filter runs. If that filter survives, the
+whole target runs too. Files are restored from the pinned blob and their SHA re-verified. Every KILLED
+result below is a panic or assertion inside the named test (I checked the first failure line of each log).
+Survivors were then re-run against my probes (tools/survivor_probes.py; survivor-probes/*.txt) to separate
+equivalent mutants from real test gaps.
+
+KILLED by the author suite (31):
+  Mine: R01 output reserved/built before the durable intent (abrupt-death test :1841)
+        R02 premature observed: final read-only verification skipped (:1701)
+        R06 Resume ignores the named attempt (stale selection)
+        R09 overwrite (delete and rebuild) of an existing output on resume (:1701)
+        R11 profile 3 written in profile-2 shape; R12 profile 3 verified as profile 2 (:1453)
+        R14 output snapshot not held (no BEGIN) (:1738)
+        R22 New proceeds to intent despite an existing destination (:1679)
+        O02 PO8 admission ignores the running worker (PO8 :392, blocked-worker assertion)
+        F01 restoration `attempted` never set; F02 restoration retry compares CID only
+        F03 decoder allocation floor raised to 1 MiB
+        F04/F05 citation regex admits leading zeros / whitespace; F06 error path keeps partial Content
+  Author publication controls, re-run: intent-commit-misclassified, observed-commit-wrong-checkpoint,
+        physical-commitment-unwired, ordinary-profile-unwired, future-restorations-selected,
+        verified-output-unpinned, output-page-limit-raised, wrong-output-capability,
+        wrong-output-read-capability, cancelled-worker-admission-released
+  Promoted follow-ups, re-run: D-F1 real-commit, D-F2 different-retry, C-F1 typed-content (the prior
+        MC6, codec.rs:273), C-F2 empty-container, C-F2 allocation, A-F1 canonical-reference
+
+SURVIVED the whole author target (15). My classification:
+  Equivalent: defense in depth; every probe still refuses; no behavior change observed (8):
+    R03 drop attested::verify_contents (issuer proofs are also verified by the member audit inside O1)
+    R04 drop check_write_profile (create::acquire's exact schema check refuses extra tables/triggers)
+    R05 drop the copy-completeness require (output_commitments refuses partial copies first)
+    R07 drop the replay's signed-selection equality; R08 drop the observed-step intent equality
+        (the signed intent already determines the selection; replay authenticates it)
+    R13 drop check_profile(2) (acquisition checks the profile)
+    R18 drop New's attempt-reuse guard; R21 drop the failure-after-observed guard
+        (replay refuses "duplicate intent" / "event after observed"; only the message changes)
+  Equivalent in effect (1):
+    O01 PO8 admission by published status, old thread detached. The worker publishes `cancelled` only
+        after build_observed returns, so nothing overlaps. The test cannot see this tail window by
+        construction. Premature admission DURING work is still caught by :392 (O02 and the author's
+        compound control are killed).
+  Not testable here (1):
+    R16 output and parent fsync skipped. Power loss is declared unqualified.
+  REAL TEST GAPS: production is correct, the author suite would miss a regression, and a reviewer probe
+  kills each one (5):
+    R10 [LOW-MEDIUM] Compound "overwritten history": the observed claim is appended on the stale
+        pre-output acquisition with INSERT OR REPLACE. Under a concurrent append between intent and
+        observed, this silently overwrites another observation. P10 detects it (history no longer
+        replays). No author test interleaves a bundle append inside one publish call. -> F-PUB-2
+    R15 [LOW-MEDIUM; same class as the prior RB06/D-F1, recurring in a new API] Failure API: a real COMMIT
+        error is classified Refused instead of Uncertain. P9d kills it. -> F-PUB-3
+    R17 [LOW-MEDIUM] New's "exact latest checkpoint" guard (REQ-2) removed: a stale retained pin signs a
+        new intent and publishes. P5a kills it. The author's only stale-pin New (test :1502) fails earlier,
+        on the existing destination. -> F-PUB-4
+    R19 [LOW] Selection prefers a corrupt original over the restored candidate. P16 kills it
+        (publication fails). -> F-PUB-5
+    R20 [LOW] Failure API's latest-checkpoint guard removed. P9b kills it. -> F-PUB-3
+
+AC-6's six named control classes, mapped:
+  missing intent -> R01 killed.
+  premature observed -> R02 killed.
+  skipped ordinary verification -> author ordinary-profile-unwired killed; narrower R03/R04/R13 equivalent.
+  stale selection -> author future-restorations-selected and R06 killed; R07/R08 equivalent.
+  overwritten history -> R09 (output) killed; R10 (bundle, compound) SURVIVES the author suite.
+  profile downgrade -> R11 and R12 killed.
+
+-------------------------------------------------------------------------------------------------------------
+6. REQ / AC TABLE — .design/kan-v2-recovery-publication.md (the REQ/AC text is byte-identical from the
+   pre-implementation design 8e143f5 to ddb4e23: raw/req-ac-drift.txt). All AC checkboxes are still
+   unchecked in the design, which is accurate.
+-------------------------------------------------------------------------------------------------------------
+REQ-1  met. Observer pin publish.rs:508; context pins through identity() under BEGIN IMMEDIATE
+       (bundle.rs:218-259); explicit New/Resume plus attempt id; output_path -> sqlite_destination
+       (evidence_store.rs:452-480) before any open (publish.rs:515-528). P3 (7 alias/sidecar/symlink
+       cases), P5, author refuses_conflicting test. Path as routing: P15c, P17b.
+REQ-2  met; the latest-pin guard is unpinned (F-PUB-4). Reacquire and full replay under BEGIN IMMEDIATE
+       (publish.rs:529-533 -> replay.rs publication_selection -> verify). The latest pin is required for
+       New (publish.rs:539-542; P5a). R1/O1 are computed and the virtual output is member-audited, with
+       zero losses and complete metadata, before signing (replay.rs:477-539). Partial profile 3 and
+       missing/corrupt originals refuse before intent (author tests :1513, :1872; P6; P16).
+REQ-3  met. The intent is committed, fsynced and independently reopened before output reservation
+       (publish.rs:580-606; R01 killed; 18-phase crash test). Historical selection breaks at the named
+       intent (replay.rs:122-128; author control and R06 killed). Rows, markers and verification share
+       one output transaction (publish.rs:393-468; application_id 0 until OutputCommitted in the crash
+       test; P11). Raw manifest/receipt/proof/plan/membership are copied exactly, with derived columns
+       from the authenticated manifest (publish.rs:410-457; oracle equality; P6).
+REQ-4  met. Ordinary profile 2 (verify_contents + check_profile + check_write_profile +
+       attested::verify_contents) or profile 3 (full_audit: check_profile(3), copy schema, proof prefix,
+       copy completeness) plus exact O1 from actual rows (publish.rs:345-373), both inside the write
+       transaction and again through a fresh DELETE-mode read snapshot held through observed
+       commit/reopen (publish.rs:628-714; R02, R14 and author controls killed; P6 26 variants; P17a).
+       Output and parent are fsynced (mutation.rs:94-99; untested, R16). Bundle re-inspection at the
+       final checkpoint (publish.rs:710). Writer-signature checking comes from the member audit; I did
+       not separately mutate it in this review.
+REQ-5  met, with an API clarification follow-up (F-PUB-1). Resume uses the historical selection
+       (author resume test; P15). An existing output is never overwritten (R09 killed; P1; P3). It is
+       reverified (R02; P6). Uncertain outcomes are retained across both commits (author real intent and
+       observed COMMIT tests; P11 output commit; P9d). A valid output with a pending intent never reports
+       completion (crash phases 10-14; P1).
+REQ-6  met; failure-API guards are unpinned (F-PUB-3). Closed reason enum (publish.rs:15-34); the API
+       never asserts absence or removes intent. Resume after failure observes (author test; P9g; P15).
+       Nothing follows observed (P9h; replay). Idempotent retry with no second signature (author test
+       :1488-1497; P15d).
+REQ-7  partially met. Acquisition, items, replay, pages (bundle P8; output author test plus its killed
+       control), cancellation and a single elapsed deadline spanning both databases (P13) are bounded.
+       Typed capabilities, catalog rows and the independent call inventory are extended
+       (surface_conformance 19/19; both capability controls killed). 18 crash windows are covered, plus
+       P1. Controls, the independent oracle and this fresh review are done. Partial because the
+       cumulative acquisition budget is undocumented (F-PUB-6), and power loss, death inside COMMIT
+       (genuinely hot journal), and blocked filesystem calls are unqualified (declared).
+
+AC-1  met. Both profiles publish, verify through the ordinary verify_file and the oracle, and refuse
+      partial or missing evidence before intent (author tests; P16).
+AC-2  met. Wrong pins, observer and checkpoint, reused attempt, aliases, conflicting output and budgets
+      all refuse with the bundle byte-identical; no output exists before a durable intent (author tests;
+      P3, P4/P5, P8, P9; R01, R22 killed). R17 is a test gap.
+AC-3  met. Later restorations leave R1/O1 unchanged; resume after failure verifies the same selection;
+      exact retry returns the original attribution and the current checkpoint without an append (author
+      tests; P10; P15).
+AC-4  met for SIGKILL process death at the 18 named boundaries (author) and for production-API recovery
+      (P1). NOT qualified: power loss, or death inside COMMIT that leaves a genuinely hot journal.
+      Production inspection would then refuse READONLY_ROLLBACK (776), and no shipped owner rollback
+      action exists. This is documented in kan-v2-recovery-mutations.md:110-113 but not restated in the
+      publication design. -> F-PUB-7.
+AC-5  met. Ordinary verification plus exact O1; substituted valid archive, modified proof, added or
+      missing object, changed plan, and later candidates are rejected (P6, P17a; author orphan and
+      derived-column tests). Bundle cells and source are byte-identical except the two prescribed
+      observations (P7).
+AC-6  partially met. Compiled controls detect missing intent, premature observed, skipped verification,
+      stale selection, output overwrite and profile downgrade. Bundle-history overwrite (R10) survives the
+      author suite. Tests, strict lint, the oracle and this review pass, with failures retained.
+
+-------------------------------------------------------------------------------------------------------------
+7. FOLLOW-UP SCOPE — VERDICT: APPROVE
+-------------------------------------------------------------------------------------------------------------
+The prior cold review (bf3c44e) approved only bf3c44e. I did not extend that verdict; I re-ran
+everything below myself.
+  D-F1  restoration_actual_commit_busy_is_uncertain uses a real shared reader across COMMIT and expects
+        Uncertain with DatabaseBusy, an exact rollback (row counts) and a single append on retry. The
+        author's control and my variant F01 are KILLED. Closed.
+  D-F2  retry_with_different_bytes_for_restored_cid_refuses expects the exact typed refusal and a
+        byte-identical row dump. The author's control and my variant F02 (compare CID only) are KILLED.
+        Closed.
+  C-F1  cid_shaped_git_digest_round_trips_through_typed_claim_codec. The control is the prior MC6
+        (codec.rs:273 typed_content reverted to the generic visitor) and is KILLED (claim_v2_codec.rs:543).
+        Dropping the reviewer's raw tag-byte heuristic is justified: decode plus exact typed equality is
+        the stronger check, and random signature bytes could contain the pair. Closed.
+  C-F2  boundary_regressions: both the empty-257th-container control and the allocation control are
+        KILLED, and so is my 1 MiB-floor variant F03. Its trailing "digest parses as CID" lines are
+        informational prints, not assertions; that is acceptable since C-F1 asserts the boundary. Closed.
+  A-F1  The non-canonical-alias test kills the author's regex control and my F04 (leading zeros) and F05
+        (whitespace). The response-stream partial-Content test plus four others kill F06 (error path
+        keeps partial Content). The alias list repeats ' 0' (harmless nit). Closed.
+  PO8   Production overview.rs is unchanged in this range. The test change only loosens the tail window
+        after `cancelled` is published (JoinHandle::is_finished governs admission). The blocked-worker
+        assertion (:392 `again.job == started.job`) still catches premature concurrent admission: O02
+        and the author's compound control are KILLED. The O01 survivor is equivalent in effect (see §5).
+        The CI excerpt (left 1, right 2 at :406) is consistent with this diagnosis. Closed.
+  Fixture corrections. foreign_keys=OFF is set only in disposable loss fixtures, to simulate physical
+        loss. The lock probe changed from `DELETE FROM objects` (which hit an FK error before the lock)
+        to `UPDATE objects SET bytes=bytes`, which still forces a real write lock. R14 and the author's
+        control are killed by it, so it is not weakened. Every other test change in ddb4e23 is additive.
+        Retained CI failure excerpts match the described causes.
+
+-------------------------------------------------------------------------------------------------------------
+8. SCOPE-NARROWING CHECK
+-------------------------------------------------------------------------------------------------------------
+REQ/AC are unchanged since the pre-implementation design (8e143f5). No AC is ticked. Instances:
+  "Backup and rebuild follow-through" plus kan-v2-recovery-bundle-copy.md ("Implementation has not
+      started, and all acceptance criteria remain open") — LEGITIMATE: named before implementation,
+      separately designed, genuinely separable.
+  "Remote APIs, durable owner jobs, human recovery controls, backup placement and writer cutover remain
+      subsequent slices" — LEGITIMATE (parent roadmap; the owner's frontend authorization does not make
+      them part of this slice).
+  "Power loss and indefinitely blocked filesystem operations remain unqualified" — LEGITIMATE and honest.
+      Hot-journal recovery should also be restated here (F-PUB-7).
+  "Do not claim protection against hostile replacement of parent directories" — LEGITIMATE (declared).
+  "`day design check` … refused the worktree … unavailable validation, not a passing check" — HONEST.
+      Unavailable validation is reported as unavailable.
+  Perf claim723 root cause and the generic Ipld inventory — LEGITIMATE (declared open; not rerun).
+None of these narrows the hard part of publication. The hard parts (historical selection, the
+intent-before-output ordering, exact O1 and ordinary verification of actual bytes, retained uncertainty)
+are implemented and verified.
+
+-------------------------------------------------------------------------------------------------------------
+9. FORBIDDEN-PATTERN CHECK (derived from CLAUDE.md house rules)
+-------------------------------------------------------------------------------------------------------------
+- The fold and claim graph are untouched. No operation destroys a subject or evidence: failed outputs,
+  intents, failures and bundles are retained, and nothing auto-deletes (P1, P7, P11, P13).
+- Persistence change = surface-contract change: catalog TSV rows, typed SurfaceWrite capabilities and
+  surface_conformance were updated together, and both capability controls are killed. INFO: the
+  pre-existing `evidence-bundle:database` catalog row still attributes writes only to `create`, although
+  restoration and publication append through the same capability via mutation.rs (the mutation-site
+  inventory does list mutation.rs). This is documentation drift from the restoration slice. -> F-PUB-8.
+- Derived media never become authority: derived lookup columns come from authenticated bytes, and
+  ordinary verification rejects altered derived columns (author test).
+- No blocking hooks or gates on agent action. No new UI surface in this slice (the operator frontend is
+  owner-authorized separately).
+- Provenance: no cites are touched; the observation chain is signed and replay-validated before every
+  insert.
+
+-------------------------------------------------------------------------------------------------------------
+10. FOLLOW-UPS (concrete; none blocks)
+-------------------------------------------------------------------------------------------------------------
+F-PUB-1 [LOW, API clarity] Published { duplicate } does not tell "re-verified the observed file" apart from
+        "created a missing output after observation" (P2). Add an explicit flag (e.g. output_created), or
+        document that an observed attempt's Resume may create an unattributed new file.
+F-PUB-2 [LOW-MEDIUM, test gap] Promote P10. Interleave a bundle append (another attempt, failure or
+        restoration) between OutputVerified and the observed append, then assert both histories are
+        retained and replay. This kills compound R10.
+F-PUB-3 [LOW-MEDIUM, test gap; recurrence of the RB06/D-F1 class] Promote P9d (real COMMIT BUSY in
+        record_publication_failure gives Uncertain, rollback, single append on retry) and P9b (stale
+        failure pin refuses). These kill R15 and R20.
+F-PUB-4 [LOW-MEDIUM, test gap] Promote P5a: New with a stale retained pin, a fresh destination and a new
+        attempt id refuses with the bundle byte-identical. This kills R17 (REQ-2's latest-checkpoint rule).
+F-PUB-5 [LOW, test gap] Promote P16: publish after restoring a corrupt-but-present original (both
+        profiles), asserting the output holds the restored bytes. This kills R19.
+F-PUB-6 [LOW, docs/usability] Budget.acquired_bytes and items are cumulative across about 5–6 bundle and
+        output passes (P18). Either document the multiplier for publication, or check the full projected
+        budget before signing the intent, so that an under-sized budget refuses instead of leaving a
+        retained intent and a partial output.
+F-PUB-7 [LOW, docs] Restate in the publication design that death inside COMMIT, or power loss, can leave
+        a genuinely hot journal that production inspection refuses (776), with no shipped owner rollback
+        action. Name the owner's recovery path or keep it explicitly open.
+F-PUB-8 [INFO, catalog] Update the evidence-bundle:database / -journal catalog rows (or add rows) so
+        restoration and publication appends are attributed alongside creation.
+INFO   Error labels in output verification say "source profile/schema" and "output page limit" for the
+       bundle ceiling (inherited helper names). Resume failures after the empty intent-phase commit are
+       reported as Interrupted rather than Refused even when nothing was written. That is conservative,
+       not wrong.
+
+A fix round for these follow-ups is a new implementation and gets its own fresh review (ADR-52).
+No BLOCK was found, so no BLOCK-fix re-review is pending.
+
+-------------------------------------------------------------------------------------------------------------
+11. LIMITATIONS OF THIS REVIEW
+-------------------------------------------------------------------------------------------------------------
+- macOS, case-insensitive APFS only. No power-loss, kernel-stall, hostile path-replacement or
+  multi-process crash-inside-COMMIT experiments.
+- I ran the named qualification targets, not the whole repository suite, and no CI. I did not re-review
+  member-audit, codec or attestation internals beyond the changed call sites (prior reviews cover them).
+- No browser, live archive, keys, deployment or cutover, consistent with scope. Node tests are
+  synthetic DOM tests.
+- The north star comes from the supplied file. Live-ness was not re-checked against the log (Git-first).
+- Equivalence classifications are with respect to my probe set. They mean "no observable change found",
+  not a proof of equivalence.
+
+-------------------------------------------------------------------------------------------------------------
+12. RECORDING (Git-first; nothing was written to a live kan/day log)
+-------------------------------------------------------------------------------------------------------------
+When recorded, this review would read:
+  day review record <publication subject> --verdict APPROVE-WITH-FOLLOW-UPS \
+    --rationale "publication sound: no invariant violation; 5 unpinned-but-correct guards (R10,R15,R17,R19,R20), result-flag and budget/doc follow-ups; bf3c44e follow-ups closed" \
+    --cites <publication design/plan claim CID>
+with F-PUB-1..8 as separate findings citing that verdict. The subject and CID were not available without
+a live read, so none was invented.
+
+Evidence index: review-evidence/MANIFEST.sha256 (SHA256 of every retained evidence file).
+Raw session, prompt and stderr archives stay local and are not exported.
