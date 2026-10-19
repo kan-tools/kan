@@ -1,0 +1,10 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/A-M2-name-only-guard/orig-src__evidence_store.rs	2026-10-19 06:41:27
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_store.rs	2026-10-19 06:41:27
+@@ -459,7 +459,6 @@
+     if target_paths.iter().any(|target| {
+         source_paths.iter().any(|source| {
+             sqlite_name_eq(target.as_os_str(), source.as_os_str())
+-                || same_existing_file(target, source)
+         })
+     }) {
+         return Err(Error::Invalid("destination overlaps source SQLite files"));

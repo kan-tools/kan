@@ -1,0 +1,11 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/D-M6-header-span-off-by-one/orig-src__evidence_reconstruction.rs	2026-10-19 06:44:03
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_reconstruction.rs	2026-10-19 06:44:03
+@@ -150,7 +150,7 @@
+     Ok(Decoded::Capture(Frame {
+         header,
+         body,
+-        header_span: 9..end,
++        header_span: 9..end.saturating_sub(1).max(9),
+         body_span: end..bytes.len(),
+     }))
+ }

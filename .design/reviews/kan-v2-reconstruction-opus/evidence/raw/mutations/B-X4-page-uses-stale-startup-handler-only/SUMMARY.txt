@@ -1,0 +1,4 @@
+inventory-vm: exit=101 compile_error=False failed=['evidence_store::inventory::tests::page_installs_vm_limits_after_startup_removes_its_handler'] ['test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 77 filtered out; finished in 3.11s'] 10s
+inventory: exit=0 compile_error=False failed=[] ['test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.73s'] 13s
+added_removed=True
+restored_bytes=True

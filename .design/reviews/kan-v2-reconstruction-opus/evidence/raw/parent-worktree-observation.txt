@@ -1,0 +1,63 @@
+Mon Oct 19 06:46:52 PDT 2026
+HEAD=7b44429d09f4dcb22ee4bc3bfb4e0441d0006d89
+ M src/evidence_reconstruction.rs
+ M tests/evidence_reconstruction.rs
+Oct 19 06:39:46 2026 /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/src/evidence_reconstruction.rs
+Oct 19 06:39:46 2026 /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/tests/evidence_reconstruction.rs
+diff --git a/src/evidence_reconstruction.rs b/src/evidence_reconstruction.rs
+index 58f1fce..8c04d45 100644
+--- a/src/evidence_reconstruction.rs
++++ b/src/evidence_reconstruction.rs
+@@ -130,6 +130,12 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded<'_>, Error> {
+             return Ok(Decoded::Unsupported(Unsupported::Outcome));
+         }
+     }
++    // Serde's internally tagged unit variant accepts extra map entries even
++    // with deny_unknown_fields. Do not silently discard fields from a recognized
++    // forwarding intent; the struct variants retain their derived strict checks.
++    if kind == "forwarding-intent" && event.len() != 1 {
++        return Err(Error::Header);
++    }
+     let header: Header = serde_json::from_value(value).map_err(|_| Error::Header)?;
+     if !identifier(&header.attempt)
+         || matches!(&header.event, Event::TransportLink { exchange } if !identifier(exchange))
+diff --git a/tests/evidence_reconstruction.rs b/tests/evidence_reconstruction.rs
+index 0e71c5b..d1dcd47 100644
+--- a/tests/evidence_reconstruction.rs
++++ b/tests/evidence_reconstruction.rs
+@@ -319,3 +319,35 @@ fn multibyte_and_escaped_header_text_preserves_original_byte_spans() {
+     assert_eq!(frame.body_span, bytes.len()..bytes.len());
+     assert!(matches!(frame.header.event,Event::Started{route,..} if route=="/café/é"));
+ }
++
++#[test]
++fn every_recognized_event_rejects_extra_fields_including_unit_variants() {
++    for event in [
++        serde_json::json!({"type":"started","method":"POST","route":"/"}),
++        serde_json::json!({"type":"request-chunk","offset":0}),
++        serde_json::json!({"type":"request-end","bytes":0}),
++        serde_json::json!({"type":"forwarding-intent"}),
++        serde_json::json!({"type":"transport-link","exchange":"01".repeat(32)}),
++        serde_json::json!({"type":"http-metadata-chunk","direction":"request","offset":0,"total":0}),
++        serde_json::json!({"type":"http-metadata","direction":"response","headers":[],"omitted":[]}),
++        serde_json::json!({"type":"response-head","status":200}),
++        serde_json::json!({"type":"response-chunk","offset":0}),
++        serde_json::json!({"type":"terminal","outcome":"completed"}),
++    ] {
++        let mut header: serde_json::Value = serde_json::from_str(HEADER).unwrap();
++        header["event"] = event;
++        assert!(matches!(
++            decode(&wire(&header.to_string(), b"")).unwrap(),
++            Decoded::Capture(_)
++        ));
++        for extra in [
++            serde_json::json!(1),
++            serde_json::json!({"nested":[1,2,3]}),
++            serde_json::Value::Null,
++        ] {
++            let mut changed = header.clone();
++            changed["event"]["unrecognized"] = extra;
++            rejected(&wire(&changed.to_string(), b""), Error::Header);
++        }
++    }
++}

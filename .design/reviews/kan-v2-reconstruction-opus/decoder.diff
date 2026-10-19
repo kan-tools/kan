@@ -1,0 +1,656 @@
+diff --git a/.design/kan-v2-session-reconstruction.md b/.design/kan-v2-session-reconstruction.md
+index 082011f..fc8e38d 100644
+--- a/.design/kan-v2-session-reconstruction.md
++++ b/.design/kan-v2-session-reconstruction.md
+@@ -157,3 +157,23 @@ claims or invent witnesses for the existing telos. Design recording and bridge
+ claims require later backfill; no claim CIDs or witnessed completion are asserted.
+ Run the actual design validator and preserve its output, including any root-
+ checkout path warnings, separately from implementation acceptance.
++
++## First implementation checkpoint: pure frame decoder
++
++`src/evidence_reconstruction.rs` adds a bounded, non-persistent decoder only.
++It returns opaque, unsupported, malformed or recognized capture input separately.
++The recognized frame exposes borrowed body bytes and exact header/body ranges;
++it has no wire serializer, grant, signature judgment or assembly-completeness
++claim. JSON maps reject duplicate keys recursively, including escaped aliases,
++before variant selection. Unknown envelope/version/observer/event/outcome is
++unsupported; unsupported means no semantic fields are accepted, not that all
++remaining fields satisfy a known schema. Recognized shapes use the current
++strict capture Header/Event types and recorder byte/identifier limits.
++
++HTTP directions, offsets, totals, status and timestamps remain observer claims;
++coherence belongs to later assembly. This checkpoint does not silently tighten
++the recorder's historical semantic guarantees. KANC-family truncation beginning
++with the four-byte family prefix is malformed; inputs without that prefix are
++opaque. Decode requires a complete retained frame, not a source-range fragment.
++All storage/RPC/browser/session acceptance remains open. No persistence surface
++is added by this pure function.
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 738b1d0..ae644ad 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -34,7 +34,7 @@ jobs:
+       - run: python3 .design/tools/attestation_vectors.py --check
+       - run: python3 .design/tools/copy_plan_vectors.py --check
+       - run: python3 .design/tools/attestation_mutations.py
+-      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_attestation --test evidence_copy_plan --test evidence_copy_source --test evidence_copy_destination --test evidence_inventory --test evidence_attested_store --test evidence_attested_followups --test evidence_attested_lifecycle --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_operations_collection --test evidence_operations_overview --test evidence_overview_review_regressions --test evidence_reader --test evidence_library_cli --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
++      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_attestation --test evidence_copy_plan --test evidence_copy_source --test evidence_copy_destination --test evidence_inventory --test evidence_attested_store --test evidence_attested_followups --test evidence_attested_lifecycle --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_reconstruction --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_operations_collection --test evidence_operations_overview --test evidence_overview_review_regressions --test evidence_reader --test evidence_library_cli --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
+       - run: python3 scripts/check_gateway_global_cap.py
+       - run: python3 scripts/check_v2_supervision.py target/debug/kan-v2
+       - run: cargo test --features v2-crypto --lib evidence_gateway::admission_tests
+diff --git a/scripts/reconstruction_negative_controls.py b/scripts/reconstruction_negative_controls.py
+new file mode 100644
+index 0000000..4d1dc7b
+--- /dev/null
++++ b/scripts/reconstruction_negative_controls.py
+@@ -0,0 +1,46 @@
++#!/usr/bin/env python3
++"""Compile targeted decoder guard removals using the caller's shared Cargo target."""
++from pathlib import Path
++import subprocess
++
++ROOT = Path(__file__).resolve().parents[1]
++FILE = ROOT / 'src/evidence_reconstruction.rs'
++OUT = ROOT / '.local-state/reconstruction-author/controls'
++CASES = [
++    ('duplicate-json-keys', 'if values.contains_key(&key)', 'if false && values.contains_key(&key)', 'duplicate_and_escaped_alias_keys_never_choose_a_winner'),
++    ('non-chunk-body', 'if !body.is_empty()', 'if false && !body.is_empty()', 'non_chunk_events_cannot_smuggle_body_bytes'),
++    ('body-bound', 'if body.len() > CHUNK', 'if false && body.len() > CHUNK', 'bounded_header_body_and_total_before_materialization'),
++    ('unknown-version', 'if version != 2 {', 'if false && version != 2 {', 'opaque_and_unsupported_are_distinct_from_malformed_capture'),
++    ('source-span', 'body_span: end..bytes.len()', 'body_span: end + 1..bytes.len()', 'exact_spans_binary_body_and_u64_coordinates_are_not_rounded'),
++    ('rounded-coordinate', '        header,\n        body,', '        header: Header { ordinal: header.ordinal as f64 as u64, ..header },\n        body,', 'exact_spans_binary_body_and_u64_coordinates_are_not_rounded'),
++]
++
++
++def main():
++    if not __debug__:
++        raise RuntimeError('assertions required')
++    OUT.mkdir(parents=True, exist_ok=True)
++    original = FILE.read_text()
++    try:
++        for name, old, new, test in CASES:
++            assert original.count(old) == 1, (name, original.count(old))
++            FILE.write_text(original.replace(old, new))
++            command = ['cargo', 'test', '--features', 'v2-crypto', '--test', 'evidence_reconstruction', test, '--', '--exact']
++            run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=180)
++            log = run.stdout + run.stderr
++            (OUT / (name + '.txt')).write_text(log + '\nexit=' + str(run.returncode) + '\n')
++            assert run.returncode != 0, name + ' SURVIVED'
++            assert 'could not compile' not in log, name + ' compile error'
++            assert 'test ' + test + ' ... FAILED' in log, name + ' lacks named assertion failure'
++            print('DEMONSTRATED:', name, flush=True)
++            FILE.write_text(original)
++    finally:
++        FILE.write_text(original)
++    run = subprocess.run(['cargo', 'test', '--features', 'v2-crypto', '--test', 'evidence_reconstruction'], cwd=ROOT, capture_output=True, text=True, timeout=180)
++    (OUT / 'restored.txt').write_text(run.stdout + run.stderr + '\nexit=' + str(run.returncode) + '\n')
++    assert run.returncode == 0, 'restored baseline failed'
++    print('6 controls; restored decoder suite passed.', flush=True)
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/src/evidence_reconstruction.rs b/src/evidence_reconstruction.rs
+new file mode 100644
+index 0000000..58f1fce
+--- /dev/null
++++ b/src/evidence_reconstruction.rs
+@@ -0,0 +1,217 @@
++//! Disposable interpretations of retained capture bytes. No storage or authority.
++//!
++//! Callers must obtain bytes through an authorized, verified occurrence. Successful
++//! decoding does not verify a signature, grant access, or prove capture coverage.
++use crate::evidence_capture::{Event, Header, CHUNK};
++use serde::de::{self, MapAccess, SeqAccess, Visitor};
++use serde::{Deserialize, Deserializer};
++use serde_json::{Map, Number, Value};
++use std::{fmt, ops::Range};
++
++pub const MAX_HEADER: usize = 128 * 1024;
++pub const MAX_FRAME: usize = 9 + MAX_HEADER + CHUNK;
++
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum Unsupported {
++    Envelope,
++    Version,
++    Observer,
++    Event,
++    Outcome,
++}
++
++#[derive(Debug, thiserror::Error, Clone, Copy, PartialEq, Eq)]
++pub enum Error {
++    #[error("capture frame exceeds decoder limits")]
++    Limit,
++    #[error("malformed capture envelope")]
++    Envelope,
++    #[error("malformed capture header")]
++    Header,
++    #[error("capture event contradicts its body shape")]
++    Body,
++}
++
++#[derive(Debug)]
++pub enum Decoded<'a> {
++    /// No recognized capture magic; the caller retains its original raw input.
++    Opaque,
++    /// No semantic interpretation. The caller still retains its original input.
++    Unsupported(Unsupported),
++    Capture(Frame<'a>),
++}
++
++#[derive(Debug)]
++pub struct Frame<'a> {
++    pub header: Header,
++    pub body: &'a [u8],
++    /// Exclusive byte coordinates in the original decrypted frame, not characters.
++    pub header_span: Range<usize>,
++    pub body_span: Range<usize>,
++}
++
++/// Decode one complete decrypted frame, never a source-range fragment.
++///
++/// Bounds apply before JSON allocation. Nested maps reject duplicate keys,
++/// including escaped aliases, even in unsupported variants. JSON's nesting limit
++/// remains enabled. Unknown variants are retained explicitly; recognized shapes
++/// are strict. Event coordinates are claims, not proof of coherent assembly.
++/// This type deliberately has no wire Serialize implementation: a later API must
++/// encode u64 coordinates without JavaScript rounding.
++pub fn decode(bytes: &[u8]) -> Result<Decoded<'_>, Error> {
++    if !bytes.starts_with(b"KANC") {
++        return Ok(Decoded::Opaque);
++    }
++    if bytes.len() > MAX_FRAME {
++        return Err(Error::Limit);
++    }
++    let Some(&version) = bytes.get(4) else {
++        return Err(Error::Envelope);
++    };
++    if version != b'2' {
++        return Ok(Decoded::Unsupported(Unsupported::Envelope));
++    }
++    let length: [u8; 4] = bytes.get(5..9).ok_or(Error::Envelope)?.try_into().unwrap();
++    let length = u32::from_be_bytes(length) as usize;
++    if length > MAX_HEADER {
++        return Err(Error::Limit);
++    }
++    let end = 9usize.checked_add(length).ok_or(Error::Envelope)?;
++    let json = bytes.get(9..end).ok_or(Error::Envelope)?;
++    let body = &bytes[end..];
++    if body.len() > CHUNK {
++        return Err(Error::Limit);
++    }
++    let Unique(value) = serde_json::from_slice(json).map_err(|_| Error::Header)?;
++    let object = value.as_object().ok_or(Error::Header)?;
++    let version = object
++        .get("version")
++        .and_then(Value::as_u64)
++        .ok_or(Error::Header)?;
++    if version != 2 {
++        return Ok(Decoded::Unsupported(Unsupported::Version));
++    }
++    let observer = object
++        .get("observer")
++        .and_then(Value::as_str)
++        .ok_or(Error::Header)?;
++    if !matches!(observer, "collector" | "gateway") {
++        return Ok(Decoded::Unsupported(Unsupported::Observer));
++    }
++    let event = object
++        .get("event")
++        .and_then(Value::as_object)
++        .ok_or(Error::Header)?;
++    let kind = event
++        .get("type")
++        .and_then(Value::as_str)
++        .ok_or(Error::Header)?;
++    if !matches!(
++        kind,
++        "started"
++            | "request-chunk"
++            | "request-end"
++            | "forwarding-intent"
++            | "transport-link"
++            | "http-metadata-chunk"
++            | "http-metadata"
++            | "response-head"
++            | "response-chunk"
++            | "terminal"
++    ) {
++        return Ok(Decoded::Unsupported(Unsupported::Event));
++    }
++    if kind == "terminal" {
++        let outcome = event
++            .get("outcome")
++            .and_then(Value::as_str)
++            .ok_or(Error::Header)?;
++        if !matches!(outcome, "completed" | "outcome-unknown") {
++            return Ok(Decoded::Unsupported(Unsupported::Outcome));
++        }
++    }
++    let header: Header = serde_json::from_value(value).map_err(|_| Error::Header)?;
++    if !identifier(&header.attempt)
++        || matches!(&header.event, Event::TransportLink { exchange } if !identifier(exchange))
++        || matches!(&header.event, Event::Started { method, route } if method.len()>32 || route.len()>2048)
++    {
++        return Err(Error::Header);
++    }
++    if !body.is_empty()
++        && !matches!(
++            header.event,
++            Event::RequestChunk { .. }
++                | Event::ResponseChunk { .. }
++                | Event::HttpMetadataChunk { .. }
++        )
++    {
++        return Err(Error::Body);
++    }
++    Ok(Decoded::Capture(Frame {
++        header,
++        body,
++        header_span: 9..end,
++        body_span: end..bytes.len(),
++    }))
++}
++
++fn identifier(s: &str) -> bool {
++    s.len() == 64
++        && s.bytes()
++            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
++}
++
++// Deserialize without JSON map's last-write-wins semantics. Constructing Value
++// only after rejecting each duplicate lets variant detection remain forward
++// compatible without hiding ambiguous fields inside unknown events.
++struct Unique(Value);
++impl<'de> Deserialize<'de> for Unique {
++    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
++        struct Strict;
++        impl<'de> Visitor<'de> for Strict {
++            type Value = Unique;
++            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
++                f.write_str("unambiguous JSON")
++            }
++            fn visit_bool<E: de::Error>(self, v: bool) -> Result<Unique, E> {
++                Ok(Unique(Value::Bool(v)))
++            }
++            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Unique, E> {
++                Ok(Unique(Value::Number(v.into())))
++            }
++            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Unique, E> {
++                Ok(Unique(Value::Number(v.into())))
++            }
++            fn visit_f64<E: de::Error>(self, v: f64) -> Result<Unique, E> {
++                Number::from_f64(v)
++                    .map(|n| Unique(Value::Number(n)))
++                    .ok_or_else(|| E::custom("nonfinite JSON"))
++            }
++            fn visit_str<E: de::Error>(self, v: &str) -> Result<Unique, E> {
++                Ok(Unique(Value::String(v.into())))
++            }
++            fn visit_unit<E: de::Error>(self) -> Result<Unique, E> {
++                Ok(Unique(Value::Null))
++            }
++            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Unique, A::Error> {
++                let mut values = Vec::new();
++                while let Some(Unique(v)) = seq.next_element()? {
++                    values.push(v);
++                }
++                Ok(Unique(Value::Array(values)))
++            }
++            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Unique, A::Error> {
++                let mut values = Map::new();
++                while let Some(key) = map.next_key::<String>()? {
++                    if values.contains_key(&key) {
++                        return Err(de::Error::custom("duplicate JSON key"));
++                    }
++                    let Unique(value) = map.next_value()?;
++                    values.insert(key, value);
++                }
++                Ok(Unique(Value::Object(values)))
++            }
++        }
++        d.deserialize_any(Strict)
++    }
++}
+diff --git a/src/lib.rs b/src/lib.rs
+index 7eb40da..9c40876 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -68,5 +68,8 @@ pub mod evidence_operations_collection;
+ #[cfg(feature = "v2-crypto")]
+ pub mod evidence_reader;
+ 
++#[cfg(feature = "v2-crypto")]
++pub mod evidence_reconstruction;
++
+ #[cfg(feature = "v2-crypto")]
+ pub mod evidence_library;
+diff --git a/tests/evidence_reconstruction.rs b/tests/evidence_reconstruction.rs
+new file mode 100644
+index 0000000..0e71c5b
+--- /dev/null
++++ b/tests/evidence_reconstruction.rs
+@@ -0,0 +1,321 @@
++#![cfg(feature = "v2-crypto")]
++use kan::{
++    evidence_capture::{Event, Observer, Outcome, Recorder, Sink, Unconfirmed, CHUNK},
++    evidence_reconstruction::{decode, Decoded, Error, Unsupported, MAX_FRAME, MAX_HEADER},
++};
++
++const HEADER: &str = r#"{"version":2,"attempt":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","observer":"collector","ordinal":9007199254740993,"observed_at_unix_micros":null,"elapsed_micros":18446744073709551615,"unconfirmed_before":0,"event":{"type":"request-chunk","offset":9007199254740995}}"#;
++fn wire(header: &str, body: &[u8]) -> Vec<u8> {
++    let mut bytes = b"KANC2".to_vec();
++    bytes.extend_from_slice(&(header.len() as u32).to_be_bytes());
++    bytes.extend_from_slice(header.as_bytes());
++    bytes.extend_from_slice(body);
++    bytes
++}
++fn rejected(bytes: &[u8], expected: Error) {
++    assert_eq!(decode(bytes).unwrap_err(), expected);
++}
++fn unsupported(bytes: &[u8], expected: Unsupported) {
++    assert!(matches!(decode(bytes).unwrap(), Decoded::Unsupported(reason) if reason==expected));
++}
++
++#[test]
++fn exact_spans_binary_body_and_u64_coordinates_are_not_rounded() {
++    let bytes = wire(HEADER, b"\0\xff\xc3\xa9");
++    let Decoded::Capture(frame) = decode(&bytes).unwrap() else {
++        panic!()
++    };
++    assert_eq!(&bytes[frame.header_span], HEADER.as_bytes());
++    assert_eq!(&bytes[frame.body_span], b"\0\xff\xc3\xa9");
++    assert_eq!(frame.body, b"\0\xff\xc3\xa9");
++    assert_eq!(frame.header.ordinal, 9_007_199_254_740_993);
++    assert_eq!(frame.header.elapsed_micros, u64::MAX);
++    assert!(matches!(
++        frame.header.event,
++        Event::RequestChunk {
++            offset: 9_007_199_254_740_995
++        }
++    ));
++}
++
++#[test]
++fn opaque_and_unsupported_are_distinct_from_malformed_capture() {
++    assert!(matches!(
++        decode(b"ordinary imported text").unwrap(),
++        Decoded::Opaque
++    ));
++    assert!(matches!(decode(b"").unwrap(), Decoded::Opaque));
++    rejected(b"KANC", Error::Envelope);
++    rejected(b"KANC2", Error::Envelope);
++    unsupported(b"KANC3", Unsupported::Envelope);
++    for (from, to, reason) in [
++        ("\"version\":2", "\"version\":3", Unsupported::Version),
++        (
++            "\"collector\"",
++            "\"future-observer\"",
++            Unsupported::Observer,
++        ),
++        ("\"request-chunk\"", "\"future-event\"", Unsupported::Event),
++    ] {
++        unsupported(&wire(&HEADER.replace(from, to), b"raw"), reason);
++    }
++    let terminal = HEADER.replace(
++        "\"request-chunk\",\"offset\":9007199254740995",
++        "\"terminal\",\"outcome\":\"future-outcome\"",
++    );
++    unsupported(&wire(&terminal, b""), Unsupported::Outcome);
++}
++
++#[test]
++fn duplicate_and_escaped_alias_keys_never_choose_a_winner() {
++    for header in [
++        HEADER.replace("\"version\":2", "\"version\":2,\"version\":3"),
++        HEADER.replace("\"version\":2", r#""version":2,"ver\u0073ion":2"#),
++        HEADER.replace(
++            "\"type\":\"request-chunk\"",
++            "\"type\":\"request-chunk\",\"type\":\"request-chunk\"",
++        ),
++        HEADER.replace(
++            "\"request-chunk\",\"offset\":9007199254740995",
++            "\"future\",\"nested\":{\"x\":1,\"x\":2}",
++        ),
++        HEADER.replace(
++            "\"version\":2",
++            "\"version\":3,\"extra\":[{\"x\":1,\"x\":2}]",
++        ),
++    ] {
++        rejected(&wire(&header, b""), Error::Header);
++    }
++}
++
++#[test]
++fn recognized_shapes_reject_missing_extra_wrong_type_and_bad_integer_fields() {
++    for header in [
++        HEADER.replace("\"version\":2,", ""),
++        HEADER.replace("\"version\":2", "\"version\":2.0"),
++        HEADER.replace("\"version\":2", "\"version\":2,\"extra\":true"),
++        HEADER.replace("\"offset\":9007199254740995", "\"offset\":-1"),
++        HEADER.replace(
++            "\"offset\":9007199254740995",
++            "\"offset\":18446744073709551616",
++        ),
++        HEADER.replace("\"offset\":9007199254740995", "\"offset\":1.5"),
++        HEADER.replace("\"offset\":9007199254740995", "\"offset\":\"1\""),
++        HEADER.replace(
++            "\"offset\":9007199254740995",
++            "\"offset\":0,\"unexpected\":null",
++        ),
++        HEADER.replace("\"observer\":\"collector\"", "\"observer\":null"),
++    ] {
++        rejected(&wire(&header, b""), Error::Header);
++    }
++}
++
++#[test]
++fn bounded_header_body_and_total_before_materialization() {
++    let mut declared = b"KANC2".to_vec();
++    declared.extend_from_slice(&u32::MAX.to_be_bytes());
++    rejected(&declared, Error::Limit);
++    rejected(&wire(HEADER, &vec![0; CHUNK + 1]), Error::Limit);
++    let header = format!("{}{}", HEADER, " ".repeat(MAX_HEADER - HEADER.len()));
++    let max = wire(&header, &vec![0; CHUNK]);
++    assert_eq!(max.len(), MAX_FRAME);
++    assert!(matches!(decode(&max).unwrap(), Decoded::Capture(_)));
++    let mut too_big = max;
++    too_big.push(0);
++    rejected(&too_big, Error::Limit);
++    rejected(&wire(&(header + " "), b""), Error::Limit);
++}
++
++#[test]
++fn malformed_json_encoding_trailing_data_and_nested_input_refuse() {
++    for header in [
++        "{}".to_owned(),
++        "[]".to_owned(),
++        format!("{HEADER}{{}}"),
++        HEADER.replace("\"version\":2", "\"version\":NaN"),
++        HEADER.replace(
++            "\"version\":2",
++            &format!(
++                "\"version\":3,\"nest\":{}0{}",
++                "[".repeat(130),
++                "]".repeat(130)
++            ),
++        ),
++        HEADER.replace("\"collector\"", r#""\ud800""#),
++    ] {
++        rejected(&wire(&header, b""), Error::Header);
++    }
++    let mut bad = wire(HEADER, b"");
++    bad[9] = 255;
++    rejected(&bad, Error::Header);
++}
++
++#[test]
++fn non_chunk_events_cannot_smuggle_body_bytes() {
++    for event in [
++        r#"{"type":"request-end","bytes":0}"#,
++        r#"{"type":"forwarding-intent"}"#,
++        r#"{"type":"response-head","status":200}"#,
++        r#"{"type":"terminal","outcome":"completed"}"#,
++    ] {
++        let header = HEADER.replace(
++            r#"{"type":"request-chunk","offset":9007199254740995}"#,
++            event,
++        );
++        rejected(&wire(&header, b"hidden"), Error::Body);
++        assert!(matches!(
++            decode(&wire(&header, b"")).unwrap(),
++            Decoded::Capture(_)
++        ));
++    }
++}
++
++#[test]
++fn identifiers_and_started_string_bounds_match_recorder() {
++    for attempt in [
++        "x".repeat(64),
++        "A".repeat(64),
++        "a".repeat(62),
++        "a".repeat(66),
++    ] {
++        rejected(
++            &wire(
++                &HEADER.replace(
++                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
++                    &attempt,
++                ),
++                b"",
++            ),
++            Error::Header,
++        );
++    }
++    for event in [
++        format!(
++            r#"{{"type":"started","method":"{}","route":"/"}}"#,
++            "M".repeat(33)
++        ),
++        format!(
++            r#"{{"type":"started","method":"POST","route":"{}"}}"#,
++            "é".repeat(1025)
++        ),
++        r#"{"type":"transport-link","exchange":"abcd"}"#.into(),
++    ] {
++        rejected(
++            &wire(
++                &HEADER.replace(
++                    r#"{"type":"request-chunk","offset":9007199254740995}"#,
++                    &event,
++                ),
++                b"",
++            ),
++            Error::Header,
++        );
++    }
++}
++
++#[test]
++fn all_truncated_header_prefixes_fail_without_panicking() {
++    let bytes = wire(HEADER, b"");
++    for n in 4..bytes.len() {
++        rejected(&bytes[..n], Error::Envelope);
++    }
++}
++
++#[test]
++fn mutated_bounded_inputs_never_panic_or_claim_spans_outside_input() {
++    let bytes = wire(HEADER, b"payload");
++    for position in 0..bytes.len() {
++        for replacement in [0, 0xff, b'"', b'{', b'9'] {
++            let mut changed = bytes.clone();
++            changed[position] = replacement;
++            if let Ok(Decoded::Capture(frame)) = decode(&changed) {
++                assert_eq!(frame.body, &changed[frame.body_span]);
++                assert_eq!(frame.header_span.start, 9);
++                assert!(frame.header_span.end <= changed.len());
++            }
++        }
++    }
++}
++
++#[derive(Default)]
++struct Memory(Vec<Vec<u8>>);
++impl Sink for Memory {
++    fn admit(&mut self, _: &[u8; 16], frame: &[u8]) -> Result<(), Unconfirmed> {
++        self.0.push(frame.to_vec());
++        Ok(())
++    }
++}
++#[test]
++fn current_production_recorder_event_forms_roundtrip_with_exact_bodies() {
++    let mut memory = Memory::default();
++    let mut notify = |_: &kan::evidence_capture::Health| {};
++    {
++        let mut recorder = Recorder::new(Observer::Gateway, &mut memory, &mut notify).unwrap();
++        for event in [
++            Event::Started {
++                method: "POST".into(),
++                route: "/messages".into(),
++            },
++            Event::RequestChunk { offset: 0 },
++            Event::RequestEnd { bytes: 3 },
++            Event::ForwardingIntent,
++            Event::TransportLink {
++                exchange: "01".repeat(32),
++            },
++            Event::HttpMetadataChunk {
++                direction: "request".into(),
++                offset: 0,
++                total: 3,
++            },
++            Event::HttpMetadata {
++                direction: "response".into(),
++                headers: vec![("x".into(), "é".into())],
++                omitted: vec!["authorization".into()],
++            },
++            Event::ResponseHead { status: 200 },
++            Event::ResponseChunk { offset: 0 },
++            Event::Terminal {
++                outcome: Outcome::Completed,
++            },
++        ] {
++            let body = if matches!(
++                event,
++                Event::RequestChunk { .. }
++                    | Event::HttpMetadataChunk { .. }
++                    | Event::ResponseChunk { .. }
++            ) {
++                b"raw".as_slice()
++            } else {
++                b""
++            };
++            recorder.record(event, body).unwrap();
++        }
++    }
++    assert_eq!(memory.0.len(), 10);
++    for (index, bytes) in memory.0.iter().enumerate() {
++        let Decoded::Capture(frame) = decode(bytes).unwrap() else {
++            panic!()
++        };
++        assert_eq!(frame.header.ordinal, index as u64);
++        assert_eq!(frame.header.observer, Observer::Gateway);
++        assert_eq!(frame.body, &bytes[frame.body_span]);
++    }
++}
++
++#[test]
++fn multibyte_and_escaped_header_text_preserves_original_byte_spans() {
++    let header = HEADER.replace(
++        r#"{"type":"request-chunk","offset":9007199254740995}"#,
++        r#"{"type":"started","method":"POST","route":"/café/\u00e9"}"#,
++    );
++    assert_ne!(header.len(), header.chars().count());
++    let bytes = wire(&header, b"");
++    let Decoded::Capture(frame) = decode(&bytes).unwrap() else {
++        panic!()
++    };
++    assert_eq!(frame.header_span, 9..9 + header.len());
++    assert_eq!(&bytes[frame.header_span], header.as_bytes());
++    assert_eq!(frame.body_span, bytes.len()..bytes.len());
++    assert!(matches!(frame.header.event,Event::Started{route,..} if route=="/café/é"));
++}

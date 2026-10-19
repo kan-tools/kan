@@ -1,0 +1,4 @@
+DEMONSTRATED: total-family-bound
+DEMONSTRATED: unit-extra-fields
+DEMONSTRATED: required-clock-field
+3 controls; restored decoder suite passed.

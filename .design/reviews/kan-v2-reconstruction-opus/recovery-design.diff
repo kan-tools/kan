@@ -1,0 +1,285 @@
+diff --git a/.design/kan-v2-evidence-availability.md b/.design/kan-v2-evidence-availability.md
+index 77322b1..1220103 100644
+--- a/.design/kan-v2-evidence-availability.md
++++ b/.design/kan-v2-evidence-availability.md
+@@ -977,3 +977,36 @@ record prefix against that source. Across a complete copy with fixed batch size,
+ those repeated prefix passes can cost O(n² / batch-size) I/O. Indexed individual
+ lookups do not remove that total-copy cost. Incremental audit optimization needs
+ its own proof contract; no large-archive throughput qualification is claimed.
++
++### Follow-up: plan-output custody before source open
++
++The independent inventory checkpoint review reproduced an additional entry-point
++ordering defect: `copy-plan` opened its source before `retain_plan` could reject
++an already-existing output file under a reserved source sidecar name. A fresh
++SQLite reader can consume that file before returning the eventual refusal.
++`validate_plan_destination` now performs the filesystem-only source-family guard
++before `PlannedCopy::open` in the CLI. The retention-time guard remains defense in
++depth. This preserves owner-selected existing files and does not claim protection
++against concurrent hostile path replacement. Regression evidence and a fresh
++review are required before this correction is accepted.
++
++
++### Recovery-ledger placement refinement from C review
++
++The separate observer authority and append-only recovery history specified above
++remain required. KNB1 places that history in the same outer SQLite file as its
++encapsulated member, in separate canonical observations and restoration tables,
++rather than a second independently opened ledger file. This is one transaction
++boundary for creation/restoration and preserved whole-bundle backup custody.
++The owner checkpoint remains separately retained; publication creates a different
++standalone file and therefore still has explicit cross-file uncertainty. No
++standalone API may ignore the observations or open an extracted member implicitly.
++
++Partial profile-3 bundles remain retained and inspectable but cannot publish a
++complete archive in the first KNB1 protocol. With the full pinned original source
++available, an explicit owner restart uses the reviewed source-copy workflow with
++a new nonce/archive identity, records the old bundle/checkpoint as job provenance,
++and retains that bundle and all its history. In-bundle metadata continuation is
++an additional protocol requirement before that capability can be exposed; blob
++restoration never invents missing records. Track this capability in the full
++recovery roadmap rather than claiming it from the initial bundle writer.
+diff --git a/.design/kan-v2-recovery-bundle-codec.md b/.design/kan-v2-recovery-bundle-codec.md
+index dc225a3..d420e8e 100644
+--- a/.design/kan-v2-recovery-bundle-codec.md
++++ b/.design/kan-v2-recovery-bundle-codec.md
+@@ -67,6 +67,7 @@ Missing objects are absent, not fabricated empty rows. A present zero-length
+ corrupt object is a present row with length zero and an empty frame. Staged/orphan
+ objects are included. A valid identifier with corrupted bytes is representable;
+ a malformed key, duplicate logical key, unreadable SQL cell, unknown schema or
++non-BLOB object cell (including TEXT with identical encoded bytes), or
+ raw object larger than 4 MiB refuses initial creation and retains the source and
+ failed output. This is a bounded capture format, not arbitrary SQLite forensics.
+ A later format for oversized forensic fragments needs a separate explicit recipe;
+@@ -80,7 +81,10 @@ not just a high-water sequence. For empty history both are null.
+ 
+ ## Event bodies
+ 
+-All digests below are 32-byte M1 values. All attempt IDs are owner-generated
++All digests below are 32 bytes; `member` uses M1, `output` uses O1, and
++`restorations` uses R1. O1 has exactly M1 framing with the initial domain replaced
++by ASCII `tools.kan.recovery.output.v1` followed by a zero byte. It commits to the
++fully verified selected output rather than the original damaged member. All attempt IDs are owner-generated
+ 16-byte values. A `frontier` is a closed map `{through, manifest, attestation}`
+ with both links null iff `through=0`. Nonempty links have DAG-CBOR/SHA256 codec.
+ 
+@@ -89,20 +93,21 @@ with both links null iff `through=0`. Nonempty links have DAG-CBOR/SHA256 codec.
+ - `unavailable`: `{member: digest, entries: [...]}`. One to 32 entries, each
+   `{occurrence, cid, expectedLength, state}`. `occurrence` is a positive member
+   sequence or null for a staged/orphan object; `expectedLength` is an expected
+-  length from authenticated metadata/membership or null only for a profile-2
+-  staged/orphan object without an authenticated length. `state` is `missing` or
++  length from authenticated metadata/membership or null only for an unreferenced
++  staged/orphan object without an authenticated length, in either profile. `state` is `missing` or
+   `corrupt`. No metadata-corruption state pretends a broken proof is trustworthy.
+-- `restored`: `{cid, length, candidate}`. `candidate` is the raw/SHA256 CID of the
++- `restored`: `{member: digest, cid, length, candidate}`. `candidate` is the raw/SHA256 CID of the
+   verified candidate and equals `cid`; length is 1..4 MiB. The target must exist
+   in member metadata, original membership or original object keys. Any known
+   expected lengths must agree; conflicting references refuse. Unknown orphan
+   length is established by this verified candidate, not invented historical data.
+ - `publication-intent`: `{attempt, member: digest, restorations: digest,
+-  frontier}`. The second digest is R1 below. Exactly one unresolved intent per
+-  attempt ID. No path/command is trusted as signed executable routing data.
++  output: digest, frontier}`. `output` is the expected O1 of the deterministic
++  selected standalone output, checked before signing intent. Exactly one intent
++  per attempt ID. No path/command is trusted as signed executable routing data.
+ - `publication-observed`: `{attempt, intent, output: digest, frontier}`. `intent`
+-  cites the exact prior intent statement. `output` is M1 of the fully verified
+-  standalone output, using selected valid objects and unchanged original metadata.
++  cites the exact prior intent statement. `output` is O1 of the fully verified
++  standalone output, must equal the cited intent output commitment, using selected valid objects and unchanged original metadata.
+   It reports an observed durable output; it never records service activation.
+ - `publication-failed`: `{attempt, intent, reason}`. Closed reason enum:
+   `source-changed`, `invalid-candidate`, `destination-conflict`, `budget`, `io`,
+@@ -118,9 +123,57 @@ must reference the member fixed at creation, not a silently revised member.
+ R1 is `SHA256(domain || N(count) || items)`, where domain is ASCII
+ `tools.kan.recovery.restorations.v1` plus zero byte, and items in canonical CID
+ text lexical order are `F(binary CID) || N(length) || F(candidate bytes)`.
+-Only candidates selected for the publication attempt enter R1. Each must verify
+-against its content address and all known expected lengths. No unsigned selection
+-list can substitute a different candidate after the intent is committed.
++R1 includes every candidate with a matching restored observation strictly before
++that intent's sequence. There is no optional unsigned selection list. Each must
++verify against its content address and all known expected lengths. A verifier
++replays the chain to reconstruct this exact historical set; candidates appended
++after the intent never enter its R1. A different candidate set requires a new
++attempt and intent. This makes restart verification independent of a lost job
++process or an externally remembered subset.
++
++The virtual standalone output contains exactly the union of original object
++keys, authenticated record object references and original membership keys.
++Every key needs verified bytes of all known expected lengths: use its verified
++restoration candidate from this R1 set when present, otherwise its valid original
++bytes. A still-missing/corrupt key refuses publication, including staged/orphan
++keys. Never drop a corrupt orphan to make verification pass, add an unreferenced
++new object, or use a candidate recorded after the intent. Recompute expected
++output O1 from this deterministic union and unchanged records/plan/membership; both intent and
++publication-observed must equal it and the original metadata frontier. The normal
++standalone verifier still independently validates all signatures and profile
++completion. A partial profile-3 member has no KNB1 publication operation; it stays
++a retained recovery artifact until a separate metadata-extension design exists.
++
++## Exact initial loss coverage
++
++Derive one expected coordinate for each `(occurrence sequence, object CID)` in
++member metadata. A shared CID used by two occurrences yields two distinct
++coordinates, not a collapsed history. Add a null-occurrence coordinate for each
++original membership key or original object key that has no occurrence reference;
++never add a second null entry for a CID already represented by occurrences.
++All authenticated lengths for a CID must agree or creation refuses. The expected
++length is that agreed value, or null only for an unreferenced original object
++without an authenticated length.
++
++Sample each coordinate against the original member objects. Missing rows produce
++missing entries; wrong length/hash produces corrupt entries; available entries
++produce no unavailable event. Non-BLOB cells refuse creation under the M1 rule.
++Sort occurrence entries first by ascending numeric sequence then canonical CID
++text; sort null entries last by canonical CID text. No duplicate coordinate is
++allowed. The concatenation of creation's unavailable events must equal this exact
++ordered loss vector: omissions, extra entries, duplicate entries, conflicting
++states or altered expected lengths refuse verification.
++
++These events occur immediately after created, before restoration/publication.
++Partition greedily into the largest consecutive prefix of at most 32 entries
++whose canonical signed envelope fits 16 KiB; signatures have fixed 64-byte width.
++No empty event is permitted. Empty loss coverage means created alone. Verifiers
++recompute the same vector and partition; an unavailable event after that initial
++coverage is invalid. Damage to the physical bundle after creation is an integrity
++failure against its fixed M1, not permission to rewrite member bytes or insert a
++new claim that retrospectively changes the initial sample. Preserve such media
++and recover the bundle from verified backups; arbitrary forensic repair remains
++outside KNB1.
+ 
+ ## Physical tables
+ 
+@@ -178,8 +231,9 @@ validate these relationships from the complete observation chain, not a mutable
+ status column.
+ 
+ Creation's single publication transaction includes a created event plus enough
+-unavailable events to cover every unavailable expected occurrence and every
+-corrupt retained staged/orphan row. Missing orphans with no surviving expected
++unavailable events to cover every unavailable expected occurrence, every
++missing/corrupt original-membership key (including unreferenced staged objects),
++and every corrupt retained orphan row. Missing orphans with no surviving expected
+ coordinate cannot be invented. Exact repeated restoration is idempotent: return
+ the prior candidate/observation, without a new row or signature. A candidate
+ insert without its observation, or observation without its candidate, refuses.
+@@ -190,3 +244,22 @@ must prove that checkpoint belongs to the observed chain and distinguish it from
+ any later verified extension. A file cannot supply its own rollback-detection
+ checkpoint. No cross-copy anti-equivocation beyond the explicitly pinned chain
+ is claimed.
++
++### Checkpoints and multiple completed outputs
++
++Several attempt IDs may each reach publication-observed. Each creates a separate
++physical standalone output with the member's logical archive identity; none
++activates a service. The owner must select exactly one live writer and fence the
++others through the separately authorized activation workflow. The bundle cannot
++promise that privileged manual configuration obeyed that workflow.
++
++Every successful mutation/job result returns the verified observation frontier
++(sequence plus statement CID and full binding), including a committed failure
++observation. The owner verifies and durably retains it outside the bundle before
++advancing the recovery UI's independently checkpointed status. On restart the
++owner supplies the latest retained checkpoint; valid extensions are reported
++separately until retained. A tail truncated after the latest external checkpoint
++is not detectable. The online observer key can attribute new statements but does
++not itself provide an independent tamper-evidence or non-equivocation witness.
++An uncertain response may require explicit inspection and checkpoint advancement;
++do not derive the external pin from the bundle being verified.
+diff --git a/.design/kan-v2-recovery-bundles.md b/.design/kan-v2-recovery-bundles.md
+index 0fb438d..7a0c192 100644
+--- a/.design/kan-v2-recovery-bundles.md
++++ b/.design/kan-v2-recovery-bundles.md
+@@ -28,6 +28,19 @@ bundle writer is implemented. The owner-copy storage PR does not implement it.
+ 
+ ## Architecture
+ 
++The provenance and non-destructive projection constraints originate in
++`docs/SPEC.md`; the v2 profile contracts below specialize its immutable-evidence
++principle without treating disposable query state as authoritative records.
++
++Preserve the append-only evidence and provenance rules in `CLAUDE.md`. The
++existing standalone lifecycle is in `src/evidence_store.rs`,
++`src/evidence_store/attested.rs` and `src/evidence_store/copied.rs`; the proposed
++bundle boundary must not call those openers as a fallback. Canonical service
++proofs in `src/evidence_attestation.rs` remain unchanged, while the new observer
++codec uses a separate domain. `tests/evidence_attested_lifecycle.rs` supplies the
++existing crash/byte-preservation test patterns; bundle-specific tests remain to
++be implemented after design approval.
++
+ ### Encapsulated logical member
+ 
+ Propose a separate SQLite application ID `0x4b4e4231` (KNB1), user_version 1.
+@@ -42,12 +55,11 @@ The namespace contains:
+ 
+ | Table | Authority and role |
+ | --- | --- |
+-| `bundle_identity` | singleton: bundle ID, observer DID, member logical profile, original archive/scope/issuer pins, initial member commitment and source frontier |
++| `bundle_identity` | singleton: bundle ID, observer DID, member logical profile and original archive/scope/issuer pins; commitment/frontier live in the signed created event |
+ | `member_objects` | exact original object keys and bounded bytes, including corrupt bytes; absent rows remain absent |
+-| `member_commits` | exact manifest/receipt bytes with reconstructed disposable lookup coordinates |
+-| `member_attestations` | exact stored proof envelopes; never newly issued |
+-| `member_upgrade_plan` | exact canonical profile-3 plan, absent for profile 2 |
+-| `member_upgrade_objects` | exact original membership and lengths, absent for profile 2 |
++| `member_records` | exact manifest/receipt/proof bytes together by occurrence sequence; never newly issued |
++| `member_plan` | exact canonical profile-3 plan, absent for profile 2 |
++| `member_membership` | exact original membership and lengths, absent for profile 2 |
+ | `observations` | contiguous observer-signed canonical envelopes; append only |
+ | `restored_objects` | append-only verified candidates by expected content address, with no updates to member_objects |
+ 
+@@ -68,13 +80,16 @@ but are not exposed as authorized browser occurrences without metadata membershi
+ 
+ ### Canonical observation protocol proposal
+ 
+-Use canonical DAG-CBOR `{v:1,kind:"recovery-observation",body}` and a closed
++The codec appendix is the single proposed wire definition. Use its flat canonical
++DAG-CBOR statement with `version`, `domain`, full pinned context, sequence,
++previous, `sampledAt`, `event` and event-specific `body`, inside the closed
+ `{statement:<exact bytes>,signature:<64 low-S P-256 bytes>}` envelope, max 16 KiB.
++There is no alternative `v/kind/body` statement wrapper.
+ Signature preimage is canonical `{domain:"tools.kan.recovery.observation.v1",
+ statement:<statement CID>}`. Require canonical static observer DID/method and
+ safe-integer sequence/time. No reuse of service admission signature domains.
+ 
+-Every body commits to bundle ID, logical archive ID/profile/scope/issuer, observer,
++Every statement commits to bundle ID, logical archive ID/profile/scope/issuer, observer,
+ positive sequence, previous statement CID (null only at sequence 1), sampled-at
+ milliseconds, event kind and a closed event-specific payload. Event variants:
+ 
+@@ -112,7 +127,8 @@ owner job copies and verifies member metadata, retains bounded original objects,
+ and inserts creation/loss observations. Publish the bundle marker only in the
+ same successful transaction as the complete initial member and initial history;
+ fsync the file and parent before reporting success. A failed/oversized job retains
+-an unrecognized output and source. Work budgets are explicit instance/owner
++an unrecognized output and source. Non-BLOB source object cells refuse creation rather than being cast to bytes.
++Work budgets are explicit instance/owner
+ resource limits, not a new fixed repository-size ceiling disguised as a protocol
+ limit. A resumable multi-transaction creator needs a separate pinned-plan design;
+ it must not label a partially copied bundle complete.
+@@ -128,9 +144,21 @@ original missing/corrupt state; it never silently substitutes history.
+ 
+ The owner selects a new output path and exact bundle/history frontier. Verify all
+ chosen payloads, current writer signatures, issuer proofs, original plan/membership
+-and structural constraints. Partial profile-3 copies must first be completed by
+-the reviewed source-copy workflow; restored blobs alone do not invent missing
+-metadata or satisfy an incomplete source recipe.
++and structural constraints. A partial profile-3 member is retained and inspectable but is ineligible for
++standalone publication in KNB1. Its immutable member cannot gain missing metadata
++through blob restoration. The owner can use the existing source-copy workflow
++on a separately retained complete original source, first confirming that source
++against the old pinned plan/digest, to create a different verified output using a new nonce and hence a new archive ID; retain the old bundle and
++its entire observation history, with the owner job recording the original bundle
++ID/checkpoint as a provenance reference. That is not publication from this partial
++bundle and must not be reported
++as such. Completing a partial member inside its bundle would require a separately
++reviewed append-only metadata-extension protocol, which KNB1 does not provide.
++This limitation is visible in the job/UI capability result, not a repair guess.
++
++Publication deterministically selects the candidate set recorded before its
++intent, as specified by R1 in the codec appendix. Later restorations require a
++new attempt and cannot silently alter an old selection.
+ 
+ Append `publication-intent` before creating an output. Build a new standalone
+ file using exact original metadata/proofs/plan and verified selected payloads,

@@ -1,0 +1,11 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/A-M1-noncanonical-source/orig-src__evidence_store__copy_upgrade.rs	2026-10-19 06:41:11
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_store/copy_upgrade.rs	2026-10-19 06:41:11
+@@ -166,7 +166,7 @@
+ /// filesystem-only preflight must precede `PlannedCopy::open`, not just retention.
+ /// It shares the trusted-filesystem/no-concurrent-path-replacement boundary.
+ pub fn validate_plan_destination(source: &Path, plan: &Path) -> Result<()> {
+-    plan_outside_sqlite(&std::fs::canonicalize(source)?, plan)
++    plan_outside_sqlite(source, plan)
+ }
+ 
+ /// Validate plan custody against both SQLite families before any database opens.

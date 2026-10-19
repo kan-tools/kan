@@ -1,0 +1,12 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/D-M7-total-frame-check-removed/orig-src__evidence_reconstruction.rs	2026-10-19 06:44:11
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_reconstruction.rs	2026-10-19 06:44:11
+@@ -62,9 +62,6 @@
+     if !bytes.starts_with(b"KANC") {
+         return Ok(Decoded::Opaque);
+     }
+-    if bytes.len() > MAX_FRAME {
+-        return Err(Error::Limit);
+-    }
+     let Some(&version) = bytes.get(4) else {
+         return Err(Error::Envelope);
+     };

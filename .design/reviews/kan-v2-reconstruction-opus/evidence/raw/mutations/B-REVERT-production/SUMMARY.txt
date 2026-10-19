@@ -1,0 +1,4 @@
+inventory: exit=101 compile_error=False failed=['single_bit_blob_to_text_serial_type_damage_remains_browsable', 'wrong_sql_payload_types_are_corrupt_without_failing_healthy_neighbours', 'inventory_large_rows_stay_below_the_materialization_memory_ceiling'] ['test result: FAILED. 15 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.70s'] 12s
+inventory-vm: exit=0 compile_error=False failed=[] ['test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 77 filtered out; finished in 0.14s'] 7s
+added_removed=True
+restored_bytes=True

@@ -319,3 +319,70 @@ fn multibyte_and_escaped_header_text_preserves_original_byte_spans() {
     assert_eq!(frame.body_span, bytes.len()..bytes.len());
     assert!(matches!(frame.header.event,Event::Started{route,..} if route=="/café/é"));
 }
+
+#[test]
+fn every_recognized_event_rejects_extra_fields_including_unit_variants() {
+    for event in [
+        serde_json::json!({"type":"started","method":"POST","route":"/"}),
+        serde_json::json!({"type":"request-chunk","offset":0}),
+        serde_json::json!({"type":"request-end","bytes":0}),
+        serde_json::json!({"type":"forwarding-intent"}),
+        serde_json::json!({"type":"transport-link","exchange":"01".repeat(32)}),
+        serde_json::json!({"type":"http-metadata-chunk","direction":"request","offset":0,"total":0}),
+        serde_json::json!({"type":"http-metadata","direction":"response","headers":[],"omitted":[]}),
+        serde_json::json!({"type":"response-head","status":200}),
+        serde_json::json!({"type":"response-chunk","offset":0}),
+        serde_json::json!({"type":"terminal","outcome":"completed"}),
+    ] {
+        let mut header: serde_json::Value = serde_json::from_str(HEADER).unwrap();
+        header["event"] = event;
+        assert!(matches!(
+            decode(&wire(&header.to_string(), b"")).unwrap(),
+            Decoded::Capture(_)
+        ));
+        for extra in [
+            serde_json::json!(1),
+            serde_json::json!({"nested":[1,2,3]}),
+            serde_json::Value::Null,
+        ] {
+            let mut changed = header.clone();
+            changed["event"]["unrecognized"] = extra;
+            rejected(&wire(&changed.to_string(), b""), Error::Header);
+        }
+    }
+}
+
+#[test]
+fn recognized_header_requires_explicit_timestamp_even_when_unknown() {
+    let mut header: serde_json::Value = serde_json::from_str(HEADER).unwrap();
+    header["observed_at_unix_micros"] = serde_json::Value::Null;
+    assert!(matches!(
+        decode(&wire(&header.to_string(), b"")),
+        Ok(Decoded::Capture(_))
+    ));
+    header
+        .as_object_mut()
+        .unwrap()
+        .remove("observed_at_unix_micros");
+    rejected(&wire(&header.to_string(), b""), Error::Header);
+}
+
+#[test]
+fn capture_family_size_limit_precedes_unknown_envelope_classification() {
+    for version in [b'1', b'3', 0xff] {
+        let mut bytes = vec![0; MAX_FRAME];
+        bytes[..4].copy_from_slice(b"KANC");
+        bytes[4] = version;
+        assert!(matches!(
+            decode(&bytes),
+            Ok(Decoded::Unsupported(Unsupported::Envelope))
+        ));
+        bytes.push(0);
+        rejected(&bytes, Error::Limit);
+    }
+    // Opaque non-capture inputs are not parsed or copied by this decoder.
+    assert!(matches!(
+        decode(&vec![0; MAX_FRAME + 1]),
+        Ok(Decoded::Opaque)
+    ));
+}

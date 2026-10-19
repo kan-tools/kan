@@ -1,0 +1,3 @@
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction)
+    Finished `dev` profile [unoptimized] target(s) in 8.57s
+exit=0

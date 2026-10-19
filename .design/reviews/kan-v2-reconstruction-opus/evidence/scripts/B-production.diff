@@ -1,0 +1,18 @@
+diff --git a/src/evidence_store/inventory.rs b/src/evidence_store/inventory.rs
+index c0f17ff..046bd4d 100644
+--- a/src/evidence_store/inventory.rs
++++ b/src/evidence_store/inventory.rs
+@@ -455,9 +455,12 @@ fn payload(
+     // SQLite's value limit applies. Scan by the bounded CID field instead;
+     // per-call VM cancellation bounds checked SQL work. This costs a linear
+     // object scan per sample and makes no large-archive latency promise.
++    // Check the stored SQLite type before computing length: TEXT length can
++    // materialize an oversized corrupt cell and counts characters, not bytes.
++    // A wrong payload storage class is local payload corruption, not a page error.
+     let length: Option<i64> = conn
+         .query_row(
+-            "SELECT length(bytes) FROM objects NOT INDEXED WHERE +cid=?",
++            "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects NOT INDEXED WHERE +cid=?",
+             [id.to_string()],
+             |r| r.get(0),
+         )

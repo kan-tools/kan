@@ -1,0 +1,16 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/B-REVERT-production/orig-src__evidence_store__inventory.rs	2026-10-19 06:41:42
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_store/inventory.rs	2026-10-19 06:41:42
+@@ -455,12 +455,9 @@
+     // SQLite's value limit applies. Scan by the bounded CID field instead;
+     // per-call VM cancellation bounds checked SQL work. This costs a linear
+     // object scan per sample and makes no large-archive latency promise.
+-    // Check the stored SQLite type before computing length: TEXT length can
+-    // materialize an oversized corrupt cell and counts characters, not bytes.
+-    // A wrong payload storage class is local payload corruption, not a page error.
+     let length: Option<i64> = conn
+         .query_row(
+-            "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects NOT INDEXED WHERE +cid=?",
++            "SELECT length(bytes) FROM objects NOT INDEXED WHERE +cid=?",
+             [id.to_string()],
+             |r| r.get(0),
+         )

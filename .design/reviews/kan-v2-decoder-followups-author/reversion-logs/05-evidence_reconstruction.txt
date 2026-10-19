@@ -1,0 +1,9 @@
+
+running 1 test
+test every_recognized_event_rejects_extra_fields_including_unit_variants ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reversion/7cb3600c396e43bfa6e23741f2c94d87)
+    Finished `test` profile [unoptimized] target(s) in 7.81s
+     Running tests/evidence_reconstruction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction-f47b82f29e147a62)

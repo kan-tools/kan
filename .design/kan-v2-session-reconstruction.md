@@ -177,3 +177,20 @@ with the four-byte family prefix is malformed; inputs without that prefix are
 opaque. Decode requires a complete retained frame, not a source-range fragment.
 All storage/RPC/browser/session acceptance remains open. No persistence surface
 is added by this pure function.
+
+### Decoder review decisions
+
+The first independent decoder review found that Serde's internally tagged unit
+variant silently ignores extra fields. Forwarding-intent now explicitly refuses
+anything beyond its type field; every recognized event has an extra-field test.
+A recognized header must include `observed_at_unix_micros`: explicit null retains
+the recorder's unavailable-clock claim, whereas absence is malformed. Unknown
+variants still accept no semantic interpretation. Noncanonical JSON whitespace
+and escaping remain accepted when unambiguous; exact original spans are retained.
+
+For every input beginning `KANC`, the total-frame size limit precedes envelope
+version classification, including unknown envelope versions. Thus oversized
+unknown KANC-family data is a limit refusal. Inputs without the KANC prefix remain
+opaque without parsing or copying, regardless of size. Downstream source-read
+budgets remain responsible for all input acquisition. These choices do not
+assert coverage or close the parent reconstruction acceptance criteria.

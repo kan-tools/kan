@@ -1,0 +1,10 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/B-AUTHOR-omit-startup-record-budget/orig-src__evidence_store__inventory.rs	2026-10-19 06:45:08
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_store/inventory.rs	2026-10-19 06:45:08
+@@ -237,7 +237,6 @@
+         }
+         while let Some(row) = rows.next()? {
+             budget.check(deadline)?;
+-            add_spent(&mut items, 1, budget.items)?;
+             let record = raw_commit(row)?;
+             if record.sequence != frontier.through + 1 {
+                 return Err(corrupt("noncontiguous inventory metadata"));

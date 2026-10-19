@@ -1,0 +1,26 @@
+cargo test --features v2-crypto --test zz_review_copy_plan_probes -- --nocapture
+
+running 1 test
+PROBE AP1: exit=Some(1) stdout_empty=true stderr="error: invalid input: destination overlaps source SQLite files" target_preserved=Some(true) db_unchanged=true
+PROBE AP1 dir listing after: ["archive.sqlite", "archive.sqlite-ſhm"] target_exists=true
+PROBE AP2: exit=Some(1) stdout_empty=true stderr="error: invalid input: destination overlaps source SQLite files" target_preserved=Some(true) db_unchanged=true
+PROBE AP2 dir listing after: ["archive.sqlite", "archive.sqlite-Shm"] target_exists=true
+PROBE AP3: exit=Some(1) stdout_empty=true stderr="error: invalid input: plan aliases a SQLite database" target_preserved=Some(true) db_unchanged=true
+PROBE AP3 dir listing after: ["archive.sqlite"] target_exists=true
+PROBE AP4: exit=Some(1) stdout_empty=true stderr="error: invalid input: destination aliases source SQLite sidecar" target_preserved=None db_unchanged=true
+PROBE AP4 dir listing after: ["archive.sqlite"] target_exists=false
+PROBE AP5a: exit=Some(1) stdout_empty=true stderr="error: File exists (os error 17)" target_preserved=Some(true) db_unchanged=true
+PROBE AP5a dir listing after: ["archive.sqlite", "archive.sqlite-shm", "archive.sqlite-wal"] target_exists=true
+PROBE AP5b: exit=Some(0) stdout_empty=false stderr="" target_preserved=None db_unchanged=true
+PROBE AP5b dir listing after: ["archive.sqlite", "archive.sqlite-shm", "archive.sqlite-wal"] target_exists=true
+PROBE AP6: exit=Some(1) stdout_empty=true stderr="error: invalid input: destination overlaps source SQLite files" target_preserved=Some(true) db_unchanged=true
+PROBE AP6 dir listing after: ["archive.sqlite", "archive.sqlite-JOURNAL"] target_exists=true
+test review_copy_plan_entry_point_probes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.23s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction)
+    Finished `test` profile [unoptimized] target(s) in 0.37s
+     Running tests/zz_review_copy_plan_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_copy_plan_probes-8eb946524d6b63d7)
+
+exit=0
