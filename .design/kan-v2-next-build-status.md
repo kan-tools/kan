@@ -79,6 +79,21 @@ strict all-target v2 Clippy. Fresh review of those corrections remains pending.
 The complete pre-admission audit is deliberately unoptimized; see the storage
 checkpoint scope in the governing design for its concurrency threat boundary.
 
+## Proof lifecycle continuation (draft)
+
+Permanent worktree `.worktrees/kan-v2-proof-lifecycle`, branch
+`feat/kan-v2-proof-lifecycle`, builds on the collection/storage checkpoint.
+It adds explicit profile-2 initialization resume, fully verified standalone
+backups, and proof-preserving raw recovery into a new file. The owner CLI uses
+all-or-none archive/scope/issuer pins; legacy commands still refuse profile 2.
+No schema field, lifecycle side store, implicit conversion or promotion is added.
+
+Draft regression coverage includes exact bytes, derived repair, wrong owner pins,
+legacy-profile refusal, copied-proof verification, pinned source transactions,
+process death at initialization/rebuild boundaries and real CLI output. Five
+semantic negative controls are prepared. Compilation and fresh review are pending;
+no parent acceptance criterion is closed from this draft.
+
 ## Remaining ordered build
 
 1. Profile-2 authoritative proof storage in permanent worktree

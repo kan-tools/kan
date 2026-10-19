@@ -447,3 +447,40 @@ and must not inherit that writable integrity-check path. Profile-2 initializatio
 resume, upgrade-plan/history pin, recovery observations, configured service grants,
 backup/rebuild and a reviewed scalable admission path remain prerequisites before
 production evidence or RPC exposure.
+
+## Proof lifecycle build contract
+
+The next prerequisite extends the existing profile-2 owner API without silently
+changing its schema. Explicit initialization resume accepts either an empty,
+unversioned interrupted output with the supplied owner binding, or an existing
+profile-2 archive whose binding and full audit match. It never adopts profile 1,
+replaces a binding, repairs records, or guesses the issuer. The empty-file opt-in
+has the same ambiguity as legacy resume: an empty foreign file is indistinguishable.
+
+`Archive::backup` produces a new standalone SQLite file and verifies the entire
+output payload/metadata/proof chain against the explicit owner binding. A new
+proof-aware recovery reader pins a read-only source, carries exact proof bytes
+into a new single-transaction rebuild, rebuilds disposable coordinates from raw
+records, and validates before commit and after durable output publication. It
+refuses missing payloads, proof gaps/extras, invalid proofs, binding mismatch and
+conflicting canonical records. This is full recovery, not degraded inventory or
+metadata-only recovery. Source main database and retained WAL remain unchanged;
+SQLite coordination-sidecar behavior retains the existing declared read-source
+boundary. Destination collision/sidecar checks reuse the existing recovery path.
+
+No new persisted field/file is introduced. Proof copying uses the inventoried
+`EvidenceAttestation` SQL helper; existing backup/recovery file and sidecar
+capabilities own destination media. Tests must prove byte-identical proof/record
+round trips, refusal after corruption, wrong-owner and legacy-profile refusal,
+interrupted initialization at every boundary, process-death rebuild behavior,
+source invariance, and derived-index repair without changing evidence. Fresh
+Opus review is required. Copy-upgrade plans, historical issuer pins, metadata-only
+resolution records and RPC remain separate required work; no parent AC closes
+from this prerequisite alone.
+
+Owner CLI uses the existing `init`, `verify`, `backup`, and `recover` commands
+with the all-or-none `--proof-archive`, `--proof-scope`, `--proof-issuer` pins.
+Omitting them preserves profile-1 behavior; it never guesses profile 2 from disk.
+`init --resume` is the explicit interrupted-creation opt-in. JSON distinguishes
+proof-purpose-dependent verification from historical completeness and never
+labels a local backup independent or automatically promotes rebuilt output.

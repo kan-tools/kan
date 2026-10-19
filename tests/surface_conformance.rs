@@ -449,7 +449,7 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         "src/evidence_store/attested.rs",
         "insert_evidence_proof",
         "EvidenceAttestation",
-        1,
+        2,
     ),
     (
         "src/evidence_operations_collection.rs",

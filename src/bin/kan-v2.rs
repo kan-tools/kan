@@ -30,6 +30,37 @@ struct ProxyCapture {
     #[arg(long, default_value_t=300, value_parser=clap::value_parser!(u32).range(1..=86400))]
     deadline_seconds: u32,
 }
+/// Optional explicit proof profile. All three owner pins are required together.
+#[derive(clap::Args)]
+struct ProofOptions {
+    #[arg(long, requires_all = ["proof_scope", "proof_issuer"])]
+    proof_archive: Option<String>,
+    #[arg(long, requires_all = ["proof_archive", "proof_issuer"])]
+    proof_scope: Option<String>,
+    #[arg(long, requires_all = ["proof_archive", "proof_scope"])]
+    proof_issuer: Option<String>,
+}
+impl ProofOptions {
+    fn binding(
+        self,
+    ) -> Result<Option<kan::evidence_store::attested::Binding>, Box<dyn std::error::Error>> {
+        match (self.proof_archive, self.proof_scope, self.proof_issuer) {
+            (None, None, None) => Ok(None),
+            (Some(archive), Some(scope), Some(issuer)) => {
+                Ok(Some(kan::evidence_store::attested::Binding {
+                    archive: kan::evidence_service::unhex(&archive, 32)?
+                        .try_into()
+                        .map_err(|_| "proof archive must be 32 bytes")?,
+                    scope: kan::evidence_service::unhex(&scope, 32)?
+                        .try_into()
+                        .map_err(|_| "proof scope must be 32 bytes")?,
+                    issuer,
+                }))
+            }
+            _ => Err("all proof owner pins are required together".into()),
+        }
+    }
+}
 #[derive(Subcommand)]
 enum Command {
     /// Initialize a separate private operations journal bound to an existing spool.
@@ -288,13 +319,21 @@ enum Command {
         /// Explicitly resume an interrupted initialization or reopen a valid archive.
         #[arg(long)]
         resume: bool,
+        #[command(flatten)]
+        proof: ProofOptions,
     },
     /// Verify structural evidence in a quiescent file; does not check writable admission.
-    Verify { database: PathBuf },
+    Verify {
+        database: PathBuf,
+        #[command(flatten)]
+        proof: ProofOptions,
+    },
     /// Make and verify a consistent local backup into a new file.
     Backup {
         archive: PathBuf,
         destination: PathBuf,
+        #[command(flatten)]
+        proof: ProofOptions,
     },
     /// Read exact canonical record bytes despite damaged derived lookups.
     ReadRecord { database: PathBuf, sequence: u64 },
@@ -304,6 +343,8 @@ enum Command {
     Recover {
         database: PathBuf,
         destination: PathBuf,
+        #[command(flatten)]
+        proof: ProofOptions,
     },
 }
 
@@ -797,36 +838,67 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "{}",
             serde_json::to_string_pretty(&migration_preflight::preview_identity(&config_root)?)?
         ),
-        Command::Init { archive, resume } => {
+        Command::Init {
+            archive,
+            resume,
+            proof,
+        } => {
+            let binding = proof.binding()?;
             let archive_text = archive
                 .to_str()
                 .ok_or("init JSON requires a UTF-8 archive path")?;
-            let store = if resume {
-                Ledger::resume_initialization(&archive)
+            let (commits, profile) = if let Some(binding) = binding {
+                let store = if resume {
+                    kan::evidence_store::attested::Archive::resume_initialization(&archive, binding)
+                } else {
+                    kan::evidence_store::attested::Archive::create(&archive, binding)
+                }
+                .map_err(|e| format!("cannot initialize {}: {e}", archive.display()))?;
+                (store.verify()?.through, 2)
             } else {
-                Ledger::create(&archive)
-            }
-            .map_err(|e| format!("cannot initialize {}: {e}", archive.display()))?;
+                let store = if resume {
+                    Ledger::resume_initialization(&archive)
+                } else {
+                    Ledger::create(&archive)
+                }
+                .map_err(|e| format!("cannot initialize {}: {e}", archive.display()))?;
+                (store.verify()?.commits, 1)
+            };
             println!(
                 "{}",
-                serde_json::json!({"archive":archive_text,"created":if resume { None } else { Some(archive_text) },"resume_requested":resume,"commits":store.verify()?.commits,"experimental":true})
+                serde_json::json!({"archive":archive_text,"created":if resume {None} else {Some(archive_text)},"resume_requested":resume,"commits":commits,"profile":profile,"experimental":true})
             );
         }
-        Command::Verify { database } => {
-            let report = Ledger::verify_file(&database)?;
+        Command::Verify { database, proof } => {
+            let binding = proof.binding()?;
+            let attested = binding.is_some();
+            let report = if let Some(binding) = binding {
+                kan::evidence_store::attested::Archive::verify_file(&database, binding)?
+            } else {
+                Ledger::verify_file(&database)?
+            };
             println!(
                 "{}",
-                serde_json::json!({"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"through":report.snapshot.through,"tip":report.snapshot.tip.map(|c|c.to_string()),"verification":"structural-closure","writable_admission":"not-checked","cryptographic_admission":"not-verified","historical_completeness":"not-verified"})
+                serde_json::json!({"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"through":report.snapshot.through,"tip":report.snapshot.tip.map(|c|c.to_string()),"verification":if attested {"payloads-writer-requests-and-issuer-proofs"} else {"structural-closure"},"writable_admission":"not-checked","cryptographic_admission":if attested {"proof-purpose-dependent"} else {"not-verified"},"historical_completeness":"not-verified"})
             );
         }
         Command::Backup {
             archive,
             destination,
+            proof,
         } => {
+            let binding = proof.binding()?;
+            let attested = binding.is_some();
             let destination_text = destination
                 .to_str()
                 .ok_or("backup JSON requires a UTF-8 destination path")?;
-            let report = Ledger::open(&archive)?.backup(&destination).map_err(|e| {
+            let result = if let Some(binding) = binding {
+                kan::evidence_store::attested::Archive::open(&archive, binding)?
+                    .backup(&destination)
+            } else {
+                Ledger::open(&archive)?.backup(&destination)
+            };
+            let report = result.map_err(|e| {
                 format!(
                     "backup into {} failed: {e}; any output is retained",
                     destination.display()
@@ -834,7 +906,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             })?;
             println!(
                 "{}",
-                serde_json::json!({"backup":destination_text,"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"independent_backup":false})
+                serde_json::json!({"backup":destination_text,"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"independent_backup":false,"issuer_proofs":if attested {"verified-preserved"} else {"not-present"}})
             );
         }
         Command::ReadRecord { database, sequence } => {
@@ -878,7 +950,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Command::Recover {
             database,
             destination,
+            proof,
         } => {
+            let binding = proof.binding()?;
+            let attested = binding.is_some();
             // JSON paths must be representable BEFORE creating any output file.
             let source_text = database
                 .to_str()
@@ -886,9 +961,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let destination_text = destination
                 .to_str()
                 .ok_or("recovery JSON requires a UTF-8 destination path")?;
-            let reader = RecoveryReader::open(&database)
-                .map_err(|e| format!("cannot read recovery source {}: {e}", database.display()))?;
-            let report = reader.rebuild(&destination).map_err(|e| format!(
+            let result = if let Some(binding) = binding {
+                kan::evidence_store::attested::Recovery::open(&database, binding)?
+                    .rebuild(&destination)
+            } else {
+                RecoveryReader::open(&database)?.rebuild(&destination)
+            };
+            let report = result.map_err(|e| format!(
                 "recovery into {} failed: {e}; destination must be a new file; any output is retained",
                 destination.display()))?;
             println!(
@@ -896,8 +975,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 serde_json::json!({
                     "source":source_text, "recovered":destination_text, "objects":report.objects,
                     "commits":report.commits, "bytes":report.bytes, "through":report.snapshot.through,
-                    "tip":report.snapshot.tip.map(|c|c.to_string()), "verification":"structural-closure",
-                    "cryptographic_admission":"not-verified", "historical_completeness":"not-verified",
+                    "tip":report.snapshot.tip.map(|c|c.to_string()), "verification":if attested {"payloads-writer-requests-and-issuer-proofs"} else {"structural-closure"},
+                    "cryptographic_admission":if attested {"proof-purpose-dependent"} else {"not-verified"}, "historical_completeness":"not-verified",
                     "independent_backup":false, "promoted":false
                 })
             );

@@ -171,6 +171,9 @@ impl RecoveryReader {
     /// usable sidecars and hot rollback journals fail closed. Preserve all source
     /// media together and perform any crash recovery on a separate writable copy.
     pub fn open(path: &Path) -> Result<Self> {
+        Self::open_profile(path, 1)
+    }
+    fn open_profile(path: &Path, profile: i64) -> Result<Self> {
         private_file(path)?;
         let source = std::fs::canonicalize(path)?;
         let ledger = Ledger {
@@ -187,7 +190,7 @@ impl RecoveryReader {
         ledger.conn.busy_timeout(Duration::from_secs(5))?;
         ledger.conn.execute_batch("PRAGMA query_only=ON; BEGIN;")?;
         // Reading the profile pins the transaction before the handle escapes.
-        ledger.check_schema()?;
+        ledger.check_profile(profile)?;
         Ok(Self { ledger, source })
     }
 
@@ -255,6 +258,17 @@ impl RecoveryReader {
         destination: &Path,
         observe: &mut dyn FnMut(RecoveryBoundary),
     ) -> Result<Verification> {
+        self.rebuild_profile(destination, observe, None)
+    }
+    fn rebuild_profile(
+        &self,
+        destination: &Path,
+        observe: &mut dyn FnMut(RecoveryBoundary),
+        binding: Option<&attested::Binding>,
+    ) -> Result<Verification> {
+        if let Some(binding) = binding {
+            attested::check_copy_source(&self.ledger.conn, binding, self.snapshot()?.through)?;
+        }
         let destination = sqlite_destination(&self.source, destination)?;
         // surface-write: evidence-recovery:archive.sqlite
         crate::persistence::write_new_owner_only(
@@ -268,6 +282,9 @@ impl RecoveryReader {
         target.conn.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA fullfsync=ON;")?;
         let tx = target.conn.unchecked_transaction()?;
         tx.execute_batch(SCHEMA)?;
+        if let Some(binding) = binding {
+            attested::initialize(&tx, binding)?;
+        }
         {
             let mut stmt = self.ledger.conn.prepare(
                 "SELECT cid,length(bytes),substr(bytes,1,4194304) FROM objects ORDER BY cid",
@@ -320,19 +337,29 @@ impl RecoveryReader {
                     tx.execute("INSERT INTO bindings VALUES(?,?,?,?,?,?) ON CONFLICT(scope,writer,slot) DO NOTHING",
                         params![blob(&b["scopeToken"]), writer(m), blob(&e["slot"]), cid(&e["ciphertext"]), number(&e["length"]), id])?;
                 }
+                if binding.is_some() {
+                    attested::copy_proof(&self.ledger.conn, &tx, raw.sequence)?;
+                }
                 observe(RecoveryBoundary::CommitCopied);
             }
         }
         // Verify before publishing even the profile marker. This also rejects
         // raw histories with missing predecessors or conflicting slot reuse.
         let expected = target.verify_contents()?;
+        if let Some(binding) = binding {
+            attested::verify_contents(&target, binding, &expected)?;
+        }
         observe(RecoveryBoundary::Verified);
         tx.commit()?;
         observe(RecoveryBoundary::Committed);
         drop(target);
         std::fs::File::open(&destination)?.sync_all()?;
         std::fs::File::open(parent_directory(&destination))?.sync_all()?;
-        let actual = Ledger::verify_file(&destination)?;
+        let actual = if let Some(binding) = binding {
+            attested::Archive::verify_file(&destination, binding.clone())?
+        } else {
+            Ledger::verify_file(&destination)?
+        };
         if actual != expected {
             return Err(Error::Corrupt("rebuild verification changed".into()));
         }
@@ -1084,6 +1111,14 @@ impl Ledger {
         destination: &Path,
         observe: &mut dyn FnMut(BackupBoundary),
     ) -> Result<Verification> {
+        let destination = self.backup_copy(destination, observe)?;
+        Self::verify_file(&destination)
+    }
+    fn backup_copy(
+        &self,
+        destination: &Path,
+        observe: &mut dyn FnMut(BackupBoundary),
+    ) -> Result<PathBuf> {
         let source = std::fs::canonicalize(
             self.conn
                 .path()
@@ -1115,7 +1150,7 @@ impl Ledger {
         drop(target);
         std::fs::File::open(&destination)?.sync_all()?;
         std::fs::File::open(parent_directory(&destination))?.sync_all()?;
-        Self::verify_file(&destination)
+        Ok(destination)
     }
 
     pub fn verify_file(path: &Path) -> Result<Verification> {
