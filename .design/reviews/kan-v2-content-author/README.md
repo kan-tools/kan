@@ -1,3 +1,11 @@
+# Historical Content author evidence
+
+Current interpretation of this directory: `attempt-3` records the initial provider-v1 integration (72 integrations, seven units, 34 UI checks); `provider-v2-integration` records the subsequent provider-v2 consumer (74 integrations, seven units, 35 UI checks). `browser-observations.md` records the later real-browser work and its limits. The old narrative below describes earlier points in that sequence and is not the current acceptance state.
+
+The six backend control logs include provider-v2 consumer tests, but their driver did not retain an immutable source manifest. They therefore cannot establish an exact frozen-commit qualification solely from line numbers or commit placement. They precede the test-only browser-control insertion that shifted test lines. The baseline's independent review re-executes controls against frozen bb1e0ab bytes; its complete record will be retained separately. Neither those historical logs nor this explanatory correction are independent acceptance of the new follow-up implementation.
+
+## Original checkpoint narrative (retained)
+
 # Content draft author evidence
 
 This draft consumes the provider candidate 0d04848, whose independent review is in progress. The Content integration is not yet accepted.
