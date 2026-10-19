@@ -1516,6 +1516,8 @@ fn publication_refuses_unavailable_originals_and_incomplete_copies_before_intent
         let f = fixture_with_staged(dir.path(), profile, profile == Profile::Copied);
         let source = f.root.join("archive.sqlite");
         let conn = rusqlite::Connection::open(&source).unwrap();
+        // Simulate physical loss in this disposable fixture, keeping bindings.
+        conn.execute_batch("PRAGMA foreign_keys=OFF;").unwrap();
         conn.execute(
             "DELETE FROM objects WHERE cid=?",
             [store::ciphertext_cid(&f.requests[0]).to_string()],
@@ -1549,6 +1551,8 @@ fn publication_refuses_unavailable_originals_and_incomplete_copies_before_intent
     let f = fixture(dir.path(), Profile::Copied);
     let source = f.root.join("archive.sqlite");
     let db = rusqlite::Connection::open(&source).unwrap();
+    // Simulate a physically incomplete copied source, retaining its signed plan.
+    db.execute_batch("PRAGMA foreign_keys=OFF;").unwrap();
     db.execute("DELETE FROM attestations WHERE sequence=3", [])
         .unwrap();
     db.execute("DELETE FROM commits WHERE sequence=3", [])
@@ -1731,7 +1735,7 @@ fn publication_holds_verified_output_snapshot_through_observed_commit() {
     let output = dir.path().join("output.sqlite");
     let mut checked = false;
     bundle::publish_observed(publication(&path,&pin,&observer,&output),|p|if p==bundle::PublicationBoundary::BeforeObservedCommit {
-        let db=rusqlite::Connection::open(&output).unwrap();db.busy_timeout(Duration::ZERO).unwrap();let error=db.execute("DELETE FROM objects",[]).unwrap_err();assert!(matches!(error,rusqlite::Error::SqliteFailure(ref e,_) if e.code==rusqlite::ErrorCode::DatabaseBusy));checked=true;
+        let db=rusqlite::Connection::open(&output).unwrap();db.busy_timeout(Duration::ZERO).unwrap();let error=db.execute("UPDATE objects SET bytes=bytes",[]).unwrap_err();assert!(matches!(error,rusqlite::Error::SqliteFailure(ref e,_) if e.code==rusqlite::ErrorCode::DatabaseBusy), "{error:?}");checked=true;
     }).unwrap();
     assert!(checked);
     publication_oracle(&path, &output);
@@ -1936,4 +1940,215 @@ fn publication_retry_requires_ordinary_derived_columns_as_well_as_output_commitm
     retry.mode = bundle::PublicationMode::Resume;
     assert!(bundle::publish(retry).is_err());
     assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn publication_output_page_budget_retains_intent_and_failed_output_without_observed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, path, pin) = complete_publication_bundle(dir.path(), Profile::Admitted);
+    let observer = identity(10);
+    let output = dir.path().join("output.sqlite");
+    let mut req = publication(&path, &pin, &observer, &output);
+    req.output_bytes = 8 * 4096;
+    let error = bundle::publish(req)
+        .err()
+        .expect("page ceiling must refuse");
+    assert!(
+        matches!(error, bundle::PublicationError::Interrupted { ref cause, .. }
+        if matches!(**cause, bundle::Error::Sql(rusqlite::Error::SqliteFailure(ref e, _))
+            | bundle::Error::Store(store::Error::Sql(rusqlite::Error::SqliteFailure(ref e, _)))
+            if e.code == rusqlite::ErrorCode::DiskFull)),
+        "{error:?}"
+    );
+    assert!(output.exists());
+    assert!(
+        std::fs::metadata(&output).unwrap().len() <= 8 * 4096,
+        "a later size check cannot undo an over-budget output write"
+    );
+    let checked = bundle::inspect(&path, pin.context.clone(), Some(&pin), budget()).unwrap();
+    assert_eq!(checked.replay().attempts().len(), 1);
+    assert!(checked.replay().attempts()[0]
+        .observed_at_sequence
+        .is_none());
+}
+#[test]
+fn publication_real_commit_errors_report_the_attempted_checkpoint_and_preserve_outputs() {
+    for phase in [
+        bundle::PublicationBoundary::BeforeIntentCommit,
+        bundle::PublicationBoundary::BeforeObservedCommit,
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, path, pin) = complete_publication_bundle(dir.path(), Profile::Admitted);
+        let observer = identity(10);
+        let output = dir.path().join("output.sqlite");
+        let mut reader = None;
+        let error = bundle::publish_observed(publication(&path, &pin, &observer, &output), |p| {
+            if p == phase {
+                let conn = rusqlite::Connection::open_with_flags(
+                    &path,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+                )
+                .unwrap();
+                conn.execute_batch("BEGIN;").unwrap();
+                let _: i64 = conn
+                    .query_row("SELECT count(*) FROM observations", [], |r| r.get(0))
+                    .unwrap();
+                reader = Some(conn);
+            }
+        });
+        match error {
+            Err(bundle::PublicationError::Interrupted {
+                phase: actual,
+                checkpoint,
+                cause,
+                ..
+            }) => {
+                assert_eq!(actual, phase);
+                assert_eq!(
+                    checkpoint.sequence,
+                    pin.sequence
+                        + if phase == bundle::PublicationBoundary::BeforeIntentCommit {
+                            1
+                        } else {
+                            2
+                        }
+                );
+                assert!(
+                    matches!(*cause,bundle::Error::Sql(rusqlite::Error::SqliteFailure(ref e,_)) if e.code==rusqlite::ErrorCode::DatabaseBusy)
+                );
+            }
+            _ => panic!("actual COMMIT error must preserve attempted checkpoint"),
+        }
+        drop(reader);
+        let checked = bundle::inspect(&path, pin.context.clone(), Some(&pin), budget()).unwrap();
+        assert_eq!(
+            checked.replay().latest().sequence,
+            pin.sequence + u64::from(phase == bundle::PublicationBoundary::BeforeObservedCommit)
+        );
+        assert_eq!(
+            output.exists(),
+            phase == bundle::PublicationBoundary::BeforeObservedCommit
+        );
+    }
+}
+
+// Promoted from cold Opus review bf3c44e: D-F1/D-F2.
+fn restoration_row_dump(dst: &Path) -> Vec<String> {
+    let c = rusqlite::Connection::open_with_flags(dst, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .unwrap();
+    let mut out = Vec::new();
+    for table in [
+        "bundle_identity",
+        "member_records",
+        "member_objects",
+        "member_plan",
+        "member_membership",
+        "observations",
+        "restored_objects",
+    ] {
+        let mut stmt = c.prepare(&format!("SELECT * FROM {table}")).unwrap();
+        let n = stmt.column_count();
+        let mut rows = stmt.query([]).unwrap();
+        while let Some(row) = rows.next().unwrap() {
+            let cells: Vec<rusqlite::types::Value> = (0..n).map(|i| row.get(i).unwrap()).collect();
+            out.push(format!("{table}:{cells:?}"));
+        }
+    }
+    out.sort();
+    out
+}
+fn restoration_row_counts(dst: &Path) -> (i64, i64) {
+    let c = rusqlite::Connection::open_with_flags(dst, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .unwrap();
+    (
+        c.query_row("SELECT count(*) FROM restored_objects", [], |r| r.get(0))
+            .unwrap(),
+        c.query_row("SELECT count(*) FROM observations", [], |r| r.get(0))
+            .unwrap(),
+    )
+}
+
+/// PD1: an actual SQLITE_BUSY on restoration COMMIT must be Uncertain, and SQLite
+/// must have rolled the transaction back so an exact retry appends exactly once.
+#[test]
+fn restoration_actual_commit_busy_is_uncertain() {
+    let dir = tempfile::tempdir().unwrap();
+    let (f, dst, initial) = lost_bundle(dir.path());
+    let observer = identity(10);
+    let cid = store::ciphertext_cid(&f.requests[0]);
+    let before = restoration_row_counts(&dst);
+    let mut reader = None;
+    let result = bundle::restore_observed(
+        restoration(&dst, &initial, &observer, &cid, &f.requests[0]),
+        |p| {
+            if p == bundle::RestorationBoundary::BeforeCommit {
+                let conn = rusqlite::Connection::open_with_flags(
+                    &dst,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+                )
+                .unwrap();
+                conn.execute_batch("BEGIN;").unwrap();
+                let _: i64 = conn
+                    .query_row("SELECT count(*) FROM sqlite_schema", [], |r| r.get(0))
+                    .unwrap();
+                reader = Some(conn);
+            }
+        },
+    );
+    println!("PD1 result: {:?}", result.as_ref().err());
+    match result {
+        Err(bundle::RestorationError::Uncertain {
+            path,
+            checkpoint,
+            cause,
+        }) => {
+            assert_eq!(path, dst.canonicalize().unwrap());
+            assert_eq!(checkpoint.sequence, initial.sequence + 1);
+            assert!(
+                matches!(*cause, bundle::Error::Sql(rusqlite::Error::SqliteFailure(ref e, _)) if e.code == rusqlite::ErrorCode::DatabaseBusy),
+                "cause {cause:?}"
+            );
+        }
+        other => panic!(
+            "PD1: attempted COMMIT failure must be Uncertain, got {:?}",
+            other.err()
+        ),
+    }
+    drop(reader);
+    assert_eq!(
+        restoration_row_counts(&dst),
+        before,
+        "BUSY commit rolled back"
+    );
+    let retry =
+        bundle::restore(restoration(&dst, &initial, &observer, &cid, &f.requests[0])).unwrap();
+    assert!(!retry.duplicate);
+    assert_eq!(restoration_row_counts(&dst), (before.0 + 1, before.1 + 1));
+}
+
+/// PD2: design: "A different candidate for the same CID refuses." Exercise the
+/// duplicate path (already restored CID) with different bytes.
+#[test]
+fn retry_with_different_bytes_for_restored_cid_refuses() {
+    let dir = tempfile::tempdir().unwrap();
+    let (f, dst, initial) = lost_bundle(dir.path());
+    let observer = identity(10);
+    let cid = store::ciphertext_cid(&f.requests[0]);
+    bundle::restore(restoration(&dst, &initial, &observer, &cid, &f.requests[0])).unwrap();
+    let snapshot = restoration_row_dump(&dst);
+    let mut other = f.requests[0].clone();
+    other[0] ^= 1;
+    let r = bundle::restore(restoration(&dst, &initial, &observer, &cid, &other));
+    println!("PD2 result: {:?}", r.as_ref().err());
+    assert!(
+        matches!(
+            r,
+            Err(bundle::RestorationError::Refused(bundle::Error::Invalid(
+                "retry candidate differs"
+            )))
+        ),
+        "PD2: got ok={}",
+        r.is_ok()
+    );
+    assert_eq!(restoration_row_dump(&dst), snapshot);
 }

@@ -171,3 +171,54 @@ mod tests {
         }
     }
 }
+
+// Promoted from cold Opus review bf3c44e: C-F2.
+#[cfg(test)]
+mod boundary_regressions {
+    use super::*;
+    #[test]
+    fn empty_innermost_container_and_input_bounded_allocation() {
+        let maximum = DecodeConfig::default().max_depth;
+        for leaf in [0x80u8, 0xa0] {
+            let mut ok = vec![0x81; maximum - 1];
+            ok.push(leaf);
+            assert!(
+                value(&ok).is_ok(),
+                "{maximum} containers incl. empty leaf {leaf:#x}"
+            );
+            let mut bad = vec![0x81; maximum];
+            bad.push(leaf);
+            let r = value(&bad);
+            println!(
+                "PC2 depth {} empty leaf {leaf:#x}: {:?}",
+                maximum + 1,
+                r.as_ref().map(|_| ())
+            );
+            assert!(
+                matches!(r, Err(DecodeError::MaxDepthExceeded { .. })),
+                "257th (empty) container must be refused like upstream"
+            );
+            assert!(
+                atproto_dasl::from_reader::<_, Ipld>(&bad[..]).is_err(),
+                "upstream refuses too"
+            );
+        }
+        // Allocation is bounded by available input, not the 64MiB default.
+        let r = value(&[0x5a, 0x00, 0x10, 0x00, 0x00]);
+        println!("PC2 declared 1MiB bytes in 5-byte input: {r:?}");
+        assert!(matches!(r, Err(DecodeError::AllocationExceeded { .. })));
+        // Is a 32-byte / 20-byte opaque digest able to look like a CID?
+        let mut d32 = vec![0x00, 0x01, 0x55, 0x00, 0x1b];
+        d32.extend([7u8; 27]);
+        let mut d20 = vec![0x00, 0x01, 0x55, 0x00, 0x0f];
+        d20.extend([7u8; 15]);
+        for d in [&d32, &d20] {
+            let parsed = atproto_dasl::Cid::from_dag_cbor_bytes(d);
+            println!(
+                "PC2 {}-byte digest parses as CID: {}",
+                d.len(),
+                parsed.is_ok()
+            );
+        }
+    }
+}
