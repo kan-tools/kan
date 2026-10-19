@@ -1,0 +1,4 @@
+profile2-restored-failure-observed independent 3015 observed delta 3015 MATCH
+profile3-restored-failure-observed independent 3015 observed delta 3015 MATCH
+greedy-32-plus-2-loss-partition independent 0 observed delta 0 MATCH
+later-candidate-keeps-earlier-intent-history independent 1556 observed delta 1556 MATCH

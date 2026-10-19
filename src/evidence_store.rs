@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use crate::evidence::{self, Decoded, Kind, Record};
 
 pub mod attested;
+pub mod bundle;
 pub mod copied;
 pub mod copy_upgrade;
 pub mod inventory;

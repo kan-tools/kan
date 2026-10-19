@@ -1,0 +1,42 @@
+
+running 1 test
+test schema_marker_history_identity_and_physical_cell_damage_refuse ... FAILED
+
+failures:
+
+failures:
+    schema_marker_history_identity_and_physical_cell_damage_refuse
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.08s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening)
+warning: constant `SCHEMA` is never used
+  --> src/evidence_store/bundle.rs:21:7
+   |
+21 | const SCHEMA: &str = include_str!("bundle.sql");
+   |       ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `APPLICATION_ID` is never used
+  --> src/evidence_store/bundle.rs:22:7
+   |
+22 | const APPLICATION_ID: i64 = 0x4b4e4231;
+   |       ^^^^^^^^^^^^^^
+
+warning: function `schema` is never used
+   --> src/evidence_store/bundle.rs:170:4
+    |
+170 | fn schema(conn: &Connection, work: &mut Work) -> Result<()> {
+    |    ^^^^^^
+
+warning: `kan` (lib) generated 3 warnings
+    Finished `test` profile [unoptimized] target(s) in 7.86s
+     Running tests/evidence_recovery_bundle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_bundle-bae884b5e26db009)
+
+thread 'schema_marker_history_identity_and_physical_cell_damage_refuse' (10204597) panicked at tests/evidence_recovery_bundle.rs:155:9:
+accepted mutation: PRAGMA application_id=1263940097;
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_bundle`
+
+exit=101

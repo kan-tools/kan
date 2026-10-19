@@ -1,0 +1,21 @@
+
+running 1 test
+test every_persistence_facade_call_is_independently_inventoried ... FAILED
+
+failures:
+
+failures:
+    every_persistence_facade_call_is_independently_inventoried
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.07s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening)
+    Finished `test` profile [unoptimized] target(s) in 7.30s
+     Running tests/surface_conformance.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/surface_conformance-34974efe399960ee)
+
+thread 'every_persistence_facade_call_is_independently_inventoried' (10209985) panicked at tests/surface_conformance.rs:1393:17:
+src/evidence_store/bundle.rs open_sqlite_recovery_source labels `evidence-bundle-source:database-wal` with capability `EvidenceRecoverySource`, whose allowed artifacts are ["evidence-recovery-source:database-wal", "evidence-recovery-source:database-shm"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test surface_conformance`
+
+exit=101

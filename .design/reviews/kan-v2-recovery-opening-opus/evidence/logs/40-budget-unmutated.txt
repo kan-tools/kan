@@ -1,0 +1,13 @@
+    Finished `test` profile [unoptimized] target(s) in 0.10s
+     Running tests/evidence_recovery_replay_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_replay_review_regressions-80b46206524a2950)
+
+running 1 test
+BUDGET profile2-restored-failure-observed: min_items=21 below=Some(Budget) min_bytes=31919 below=Some(Budget) same_projection_at_min=true member_input_bytes=3216 observation_bytes=4798 candidate_bytes=1175 observations=7 candidates=2
+BUDGET later-candidate-keeps-earlier-intent-history: min_items=28 below=Some(Budget) min_bytes=43865 below=Some(Budget) same_projection_at_min=true member_input_bytes=4391 observation_bytes=4357 candidate_bytes=616 observations=6 candidates=1
+BUDGET greedy-32-plus-2-loss-partition: min_items=37 below=Some(Budget) min_bytes=135343 below=Some(Budget) same_projection_at_min=true member_input_bytes=56643 observation_bytes=4815 candidate_bytes=0 observations=3 candidates=0
+BUDGET profile3-restored-failure-observed: min_items=27 below=Some(Budget) min_bytes=34344 below=Some(Budget) same_projection_at_min=true member_input_bytes=3701 observation_bytes=4798 candidate_bytes=1175 observations=7 candidates=2
+test reviewer_budget_monotonicity_and_bounds ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 8.90s
+
+exit=0

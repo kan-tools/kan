@@ -1,0 +1,5 @@
+error: day is running in a Git worktree whose checkout has no kan workspace, while the main checkout at `/Users/m/code/kan-tools/kan` does.
+
+kan currently discovers its log from the process working directory, so an empty read here does not establish that this repository has no teloi, atoms, or practice. day will not redirect the read: that could anchor a write to the main checkout's HEAD instead of this worktree. Run from the main checkout, or wait for kan's explicit shared-workspace mechanism (day#168 / kan#197).
+
+Exit: 2
