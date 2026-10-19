@@ -1,0 +1,86 @@
+# mutation A-item-budget
+# old: 'if u64::try_from(items).map_err(|_| Error::Budget)? > budget.items'
+# new: 'if false && u64::try_from(items).map_err(|_| Error::Budget)? > budget.items'
+# cmd: cargo test --offline --no-fail-fast --features v2-crypto --test evidence_recovery_member --test zz_review_member_probes -- --test-threads=1
+# exit=101 elapsed=21.8s restored_sha256=9d8ba8d1ad2dbb43e3c4b2ff2e6986c7f7417b7512548bbffa24ce37e41abdc9
+
+
+running 16 tests
+test both_profiles_verify_real_writer_requests_and_empty_members ... ok
+test bounded_acquisition_order_and_cancellation_refuse ... FAILED
+test complete_copy_accepts_new_admitted_suffix_without_rewriting_original_recipe ... ok
+test copy_plan_cannot_relabel_a_different_complete_source_digest ... ok
+test expected_oversized_length_refuses_without_a_physical_object ... ok
+test hash_valid_but_unsigned_bytes_are_not_treated_as_recoverable_loss ... ok
+test independently_constructed_python_members_match_commitments_losses_and_refusals ... ok
+test issuer_resigning_cannot_hide_invalid_writer_chain ... ok
+test issuer_resigning_does_not_make_wrong_service_slot_valid_when_payload_is_missing ... ok
+test missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitment ... ok
+test owner_pins_proofs_missing_membership_and_conflicting_lengths_refuse ... ok
+test profile3_partial_metadata_does_not_claim_completion_or_accept_extra_objects ... ok
+test shared_cid_lengths_and_duplicate_operations_refuse_even_when_all_bytes_missing ... ok
+test shared_missing_cid_keeps_each_occurrence_and_no_extra_null_coordinate ... ok
+test time_and_physical_object_bounds_refuse ... ok
+test valid_json_with_bad_writer_signature_and_resigned_manifest_substitution_refuse ... ok
+
+failures:
+
+---- bounded_acquisition_order_and_cancellation_refuse stdout ----
+
+thread 'bounded_acquisition_order_and_cancellation_refuse' (10018708) panicked at tests/evidence_recovery_member.rs:354:5:
+assertion `left == right` failed
+  left: None
+ right: Some(Budget)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    bounded_acquisition_order_and_cancellation_refuse
+
+test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.90s
+
+
+running 16 tests
+test rp01_staged_membership_key_null_coordinate ... ok
+test rp02_partial_profile3_membership_is_unauthenticated ... ok
+test rp03_shared_request_cid_is_unsatisfiable_but_accepted_when_missing ... ok
+test rp04_retained_receipts_from_wrong_issuer_refuse ... ok
+test rp05_source_tip_mismatch_refuses ... ok
+test rp06_plan_target_scope_and_issuer_binding ... ok
+test rp07_proof_purpose_per_range ... ok
+test rp08_membership_order_duplicates_and_codec ... ok
+test rp09_non_static_writer_refuses_without_bytes ... ok
+test rp10a_precancelled_refuses_before_semantic_work ... ok
+test rp10b_midflight_cancellation_is_prompt ... ok
+test rp10c_deadline_inside_member_stage_is_prompt ... ok
+test rp10d_cancellation_latency_is_below_one_object_hash ... ok
+test rp11_caps_before_work ... FAILED
+test rp12_cross_scope_issuer_and_observer ... ok
+test rp13_noncanonical_spelling_is_invisible_to_typed_api ... ok
+
+failures:
+
+---- rp11_caps_before_work stdout ----
+RP rp11-items-0: ACCEPT through=0 verified=0 complete=true losses=[]
+
+thread 'rp11_caps_before_work' (10018878) panicked at tests/zz_review_member_probes.rs:712:5:
+assertion `left == right` failed
+  left: None
+ right: Some(Budget)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    rp11_caps_before_work
+
+test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.25s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member)
+    Finished `test` profile [unoptimized] target(s) in 7.07s
+     Running tests/evidence_recovery_member.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member-9be305d24ad97b48)
+error: test failed, to rerun pass `--test evidence_recovery_member`
+     Running tests/zz_review_member_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_member_probes-343eeccac65832b4)
+error: test failed, to rerun pass `--test zz_review_member_probes`
+error: 2 targets failed:
+    `--test evidence_recovery_member`
+    `--test zz_review_member_probes`

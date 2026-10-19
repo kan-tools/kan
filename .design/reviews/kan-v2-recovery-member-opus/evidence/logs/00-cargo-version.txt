@@ -1,0 +1,10 @@
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member
+# cmd: sh -c cargo --version; rustc --version; cat rust-toolchain.toml
+# started: 2026-10-19T15:09:02Z
+cargo 1.96.1 (356927216 2026-06-26)
+rustc 1.96.1 (31fca3adb 2026-06-26)
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+
+# exit=0 elapsed_s=0

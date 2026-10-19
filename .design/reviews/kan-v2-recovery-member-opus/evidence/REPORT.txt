@@ -1,0 +1,448 @@
+INDEPENDENT ADVERSARIAL REVIEW — recovery-member export, pinned 5e54513c629b3b2e954eff5e3e43f98d471725c0
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), fresh cold session, no subagents, did not author this code.
+Scope A: logical recovery-member verifier (3169a0a, merged in 88db7c9, docs 5e54513).
+Scope B: framing review follow-through (99f1fba), relative to .design/reviews/kan-v2-recovery-commitment-opus/evidence/REPORT.txt.
+
+=====================================================================================================
+CUSTODY AND METHOD
+- Integrity (logs/manifest-pre.txt, logs/manifest-post.txt; script cmd/verify_manifest.py):
+  - The export tree was compared to ../recovery-member-identity.json: exactly 3108 files, sha256 each.
+  - The identity was compared to the git blobs at 5e54513, using explicit `git -C <worktree>` (ls-tree plus
+    cat-file --batch content sha256). No discovery from the export was used.
+  - Result: pre 0 problems, post 0 problems, blob mismatches 0. The only extras were north-star.json and
+    review-evidence/. Repo HEAD equals the pinned commit.
+- Every command is logged in COMMANDS.txt with its exit code and elapsed time; raw output is in logs/.
+- Environment:
+  - CARGO_TARGET_DIR was the shared .../kan-v2-library-resilience/.local-state/target, with CARGO_BUILD_JOBS=4
+    and --offline.
+  - `cargo clean -p kan` was run first (logs/01). One heavy job ran at a time. No own target, no installs.
+- Probes and mutations:
+  - Temporary probe files were placed in tests/ only while they ran. They were confirmed cmp-identical to
+    review-evidence/probes/ and then removed (COMMANDS.txt TEMP-PLACE/TEMP-REMOVE).
+  - Every source mutation was restored and its sha256 checked against the frozen manifest after each case.
+- What I did not do:
+  - No git writes, no parent edits, no kan/day writes, no network, no keys, no live archives.
+  - revert_v2.py was not run.
+- Recording: git-first (day#168/kan#197). `day review record` / `kan observe` were deliberately NOT run. This
+  file is the record.
+- Exploratory read-only commands (file reads, greps, git show/diff) are not all individually logged;
+  every claim in this report cites a re-runnable log or a file:line.
+- One combined cleanup command (rm + baseline + manifest + parent `git status`) was denied by the harness
+  permission mode. I re-ran the steps individually; all succeeded except that parent `git status` was not
+  retried.
+  - Integrity is instead established by the manifest + blob check above.
+- North star: from the supplied north-star.json, kan was not queried.
+  - telos/raw-data-and-projections (live Decision bafyreied3…): "Raw attested data is retained in full and
+    never collapsed in the store. Every simplification … is a determined projection computed on demand…"
+  - The export notes excluded_by_trust: 2. Those claims were not reconstructed.
+  - This work serves that telos directly. It retains corrupt/empty/orphan original bytes verbatim in M1, and
+    "loss" is a projection over them. The tension with telos/performance-at-scale is visible only as bounded
+    work limits.
+
+=====================================================================================================
+BASELINE (reproduced, not trusted; logs/02-07 initial, logs/90-94 final after restoration; identical)
+- `cargo test --features v2-crypto` with --test evidence_recovery_member, evidence_recovery_commitment,
+  evidence_recovery_commitment_review_regressions and evidence_recovery_observation:
+  - 16 + 8 + 2 + 7 = 33 passed, 0 failed.
+- `cargo test --features v2-crypto --lib evidence_recovery_commitment::polling_tests`: 2 passed.
+- `cargo clippy --features v2-crypto --all-targets -- -D warnings`: clean.
+- `cargo fmt --all -- --check`: clean.
+- Python oracles under $KAN_CRYPTO_ORACLE_PYTHON:
+  - recovery_member_vectors.py --check: "16 independently constructed member cases; all constructed issuer
+    chains independently verified".
+  - recovery_commitments.py --check: 9 member/output and 4 restoration vectors.
+- These match the author's claim of 33 + 2, clippy/fmt clean and fixture regeneration.
+- The Python builder imports only cryptography / hashlib / the attestation and framing oracles. It calls no
+  cargo or subprocess.
+  - It builds real canonical signed JSON requests (public scalars 3/4/5/6) and verifies every issuer proof with
+    its own attestation verifier.
+  - Rust then verifies the Python-signed writer requests: verifiedRequests 3 in the intact cases. That is
+    cross-implementation evidence for writer signatures.
+  - It is honestly NOT a semantic verifier. losses() does no length-conflict or writer checks, and it labels
+    itself that way.
+
+=====================================================================================================
+A. LOGICAL RECOVERY-MEMBER VERIFIER (src/evidence_recovery_member.rs, 552 lines; read in full)
+
+Code facts used below:
+- verify() takes an owner Context plus borrowed slices (:76-82). It has no fs/SQLite/rusqlite use; grep finds
+  none. Its only consumer is a lib.rs:32 module declaration.
+- Item cap is checked in Work::new (:137) before any map/vec allocation. Input-byte charges come before each
+  decode/hash (:262, :277, :303, :436).
+- Hashing polls per 64 KiB (:168-174). There are cancel/deadline polls around each record and each writer
+  verification (:411, :459, :484, :494, :543).
+- Framing receives the remaining duration and the shared cancel flag (:501-509).
+- Per-writer chain (:355-364), unique (writer, op) (:366-369), single entry and slot == SHA-256(op)
+  (:373-390), purpose by range (:320-331), historical receipt issuer (:332-342), static writer (:344-354).
+- Source digest (:290-295, :398-407, :413-429) is byte-identical in recipe to src/evidence_store/copied.rs:148-198.
+- Object validity = nonempty && known length matches && hash matches (:447-454).
+- Writer verification runs only for Available occurrences (:461-473). Null coordinates cover unreferenced
+  non-available keys (:483-493).
+- Member has private fields and getters only (:98-125). It has no publication, history or durability surface.
+- Manifest/receipt schemas are closed with all fields required (src/evidence.rs:463-522), so the Ipld
+  indexing at :341-378 cannot hit a missing key.
+
+Reviewer probes (probes/zz_review_member_probes.rs: 16 tests; probes/zz_review_member_probes2.rs: 4 tests).
+On the unmodified tree all pass (logs/13, logs/14). Observations:
+- RP01: an unreferenced staged membership key in a COMPLETE copy gets exactly one null coordinate with its
+  authenticated length.
+  - Missing gives missing; tampered gives corrupt.
+  - Combined order is [occ1 corrupt, occ2 missing, null staged missing], as codec :168-170 requires.
+- RP02 (characterisation): a PARTIAL profile-3 copy accepts membership that no digest authenticates.
+  - A fabricated key with length 77 is reported as a null "missing" loss with expectedLength 77.
+  - Silently dropping a staged key is accepted.
+  - Re-lengthening a staged key turns valid bytes into "corrupt".
+  - The same fabrication in a complete copy refuses with "source metadata digest".
+- RP03: two occurrences sharing one request CID are accepted, with bytes missing, as two "missing" losses.
+  Supplying the genuine bytes then refuses with "retained writer request". No bytes can ever satisfy it.
+- RP04: retained receipts from the current issuer instead of the plan's historical issuer refuse with
+  "historical receipt issuer", with bytes present or missing.
+- RP05: a plan tip at a non-final manifest, with a correct digest, refuses with "source tip".
+- RP06: plan target scope or issuer differing from the owner context refuses with "plan binding". Archive
+  equality alone is insufficient.
+- RP07: admitted purpose inside the retained range refuses with "proof purpose". The mixed case refuses with
+  "historical receipt issuer" first; the codec says diagnostic precedence is not contract.
+- RP08: reversed, duplicate or DAG-CBOR membership refuses. Profile-2 membership refuses, as does profile 3
+  without a plan.
+- RP09: the record schema already refuses non-static did:key writers. For did:web+documentCid and
+  did:plc+versionId writers with bytes missing, the verifier refuses with "static writer".
+- RP10a: pre-cancelled with a later broken proof gives Cancelled.
+- RP10b (timing): cancel at 20% of a 64 MiB member stage (~1.7 s) gives Cancelled after 0.3–1.1 ms.
+- RP10c: a deadline of 342 ms returned Budget at 343.5 ms.
+- RP10d (timing, finer): worst cancel latency over 6 offsets was 1.15 ms, against a 106 ms single 4 MiB hash.
+- RP11: items=0, or input_bytes one below a 4 MiB object, gives Budget; the exact amount is accepted.
+- RP12: wrong owner scope or issuer gives "issuer proof". A non-canonical observer gives "issuer encoding".
+  A same-key observer is accepted, per the recorded decision.
+- RP13: the DASL parser refuses uppercase CID text, so a typed Cid cannot carry a non-canonical spelling.
+- RP14a (characterisation): the GENUINE hash-valid signed request bytes are present, but the
+  issuer-re-signed manifest length is n+1. Result: the member is ACCEPTED, verified_requests=0 and the loss
+  is {occ 1, expectedLength n+1, Corrupt}. See finding A-F1.
+- RP14b: the empty-bytes CID referenced with signed length 1, with the empty row present, is accepted as
+  Corrupt.
+- RP15: an empty orphan keyed by the empty-bytes CID gives a null Corrupt loss.
+- RP16: a partial copy with a retained reference absent from membership (bytes missing) refuses.
+- RP17: a broken writer chain with bytes missing refuses with "writer predecessor".
+
+Compiled guard-removal controls (cmd/controls.py; mutations/*.txt; kill messages in logs/21 and logs/23).
+- Reproduction of the author's 9:
+  - 8 are killed with semantic assertions, i.e. Ok where a refusal was due, or a wrong loss vector:
+    item-budget, input-budget, source-digest, expected-length, duplicate-operation, original-hash,
+    orphan-loss, writer-signature.
+  - A-expected-length: its kills in the owner_pins test and the conflicting-membership Python case are
+    LABEL-ONLY, because the source digest still refuses. The semantic kill is the profile-2 shared-CID test
+    (left: None).
+  - A-cancelled (EXPLICIT AUTHOR SURVIVOR, retained) still PASSES the entire author suite, as the author
+    recorded. That suite is not evidence of prompt interruption. My probes kill it:
+    - RP10a: Invalid("issuer proof") instead of Cancelled, i.e. semantic work ran after cancellation.
+    - RP10b: latency 1.40 s against a 1.75 s member stage.
+    - RP10d: worst 388 ms against a 110 ms object hash.
+- Reviewer controls:
+  - Semantic kills found ONLY by reviewer probes (the author suite survives each):
+    - R01 historical receipt issuer (RP04)
+    - R02 source tip (RP05)
+    - R08 null coordinates for membership keys (RP01, RP02)
+    - R10 static writer (RP09)
+    - R11 plan scope/issuer binding (RP06)
+    - R12 hash unchunked and R13 no per-chunk poll (RP10d, timing; worst 82–85 ms against a ~110 ms hash)
+    - R17 non-empty validity rule (RP15)
+  - Author-suite LABEL-ONLY, semantic only with reviewer probes:
+    - R05 retained-reference membership. The author tests use complete copies, where the digest refuses; RP16
+      partial gives left: None.
+    - R09 writer predecessor. The author test has bytes present, so the writer request refuses; RP17 with
+      bytes missing gives left: None.
+  - Semantic kills by the author suite:
+    - R04 service slot
+    - R06 partial untracked object
+    - R07 proof purpose (via the Python profile-2 retained-purpose vector)
+    - R16 full-flag
+  - Label-only, layered: R18 record position. The issuer-proof chain refuses first, and MemberFraming.record
+    re-checks contiguity.
+  - SURVIVORS:
+    - R03 slot-conflict map: an EQUIVALENT/redundant guard. slot = SHA-256(op), and (writer, op) is already
+      unique (:366-369), so (writer, slot) can never recur without a hash collision.
+    - R14 the initial poll in Work::new: EQUIVALENT. The first input/check poll precedes all work.
+    - R15 the 44-byte membership input charge: accounting only and unpinned by any test. An input-budget edge
+      over membership would pin it.
+
+Findings A
+- A-F1 [MEDIUM — design incoherence, implementation follows one side. Resolve before any creation writer signs
+  `unavailable`.]
+  - The codec has two rules that contradict each other:
+    - codec :165-166: "wrong length/hash produces corrupt entries".
+    - codec :406-408, the governing checkpoint: "A hash-valid request that fails its writer signature or exact
+      manifest binding is invalid member evidence, not a repairable missing-byte condition".
+  - The code folds the length check into byte validity (:447-449). It never reaches writer/manifest
+    verification for a hash-valid object whose issuer-signed length is false.
+  - RP14a shows genuine original request bytes reported as Corrupt, with the member accepted. The fault is
+    attributed to the raw bytes, not to the false signed metadata.
+  - Consequences:
+    - A future observer would sign an `unavailable: corrupt` statement about authentic bytes.
+    - The coordinate can never be restored, since any CID-matching candidate has the "wrong" length.
+  - No false completion or publication is possible: there is no consumer, and publication re-verifies.
+  - Same class, also accepted as a loss:
+    - RP14b, an empty-CID with a positive signed length.
+    - Signed lengths above evidence_service MAX_REQUEST (2 MiB + 4 KiB, src/evidence_service.rs:14-15), which no
+      valid service request can have.
+  - Required: decide which rule governs. For hash-valid bytes with a disagreeing authenticated length, refusing
+    as invalid member evidence matches the checkpoint text and the north star (do not misattribute raw data).
+    Then pin it in both implementations.
+- A-F2 [LOW-MEDIUM — authentication gap in a reported projection]
+  - Partial profile-3 membership is unauthenticated: the plan digest needs every source commit (RP02;
+    copied.rs:200-203 has the same property).
+  - Member.losses() nevertheless emits null coordinates and expected lengths derived from it.
+  - The only signal is recipe_metadata_complete()==false. The loss entries themselves do not say which
+    coordinates are authenticated.
+  - Codec :103-105 says expectedLength comes "from authenticated metadata/membership".
+  - Partial members cannot publish in KNB1, but a creation writer would still sign these coordinates.
+  - Required before creation:
+    - EITHER mark membership-only coordinates in partial members as unauthenticated, or withhold them,
+    - OR state in the design that partial-copy membership is attested only by the external copy job.
+- A-F3 [LOW — early-detectable impossibility deferred]: shared request CIDs across distinct (writer, op)
+  occurrences (RP03) are accepted when the bytes are missing.
+  - Static service requests make this unsatisfiable: the request bytes fix one operation and position.
+  - Codec :157-158 deliberately keeps per-occurrence coordinates, and the Member claims no recoverability, so
+    this is consistent but weak.
+  - Consider refusing it outright for the service-request payload profile.
+- A-F4 [LOW — test pinning]
+  - The author suite does not pin these guards:
+    - early/prompt cancellation (the retained survivor)
+    - historical receipt issuer
+    - source tip
+    - plan scope/issuer binding
+    - static writer
+    - null coordinates for unreferenced membership keys
+    - partial retained-membership
+    - writer predecessor without bytes
+    - empty-CID orphan
+    - chunked member hashing
+  - Production code is correct on each (probes above). Promote RP01, RP04-RP07, RP09, RP10a, RP15-RP17
+    (deterministic), and keep RP10b/RP10d as recorded timing evidence. A deterministic member-stage hook,
+    analogous to scope B's, would replace them.
+- A-F5 [INFO]
+  - Redundant/equivalent guards: R03, R14, R18 (layered).
+  - Unpinned accounting: R15.
+  - Membership length 0 refuses with the label "forensic-recovery-required" (:207-211). The refusal is
+    correct; the label is misleading.
+  - The caller duty to refuse non-canonical physical CID text lives only in the design (codec :389-390), not in
+    the module rustdoc. The DASL parser itself refuses uppercase (RP13).
+
+Scope-narrowing (Step 4): the diff's "remain separate work" / "pending" lines (codec :412-414, :417-422) defer
+greedy partitioning, replay, checkpoints, schema and storage. Those were named BEFORE this checkpoint (codec
+:305-310), so the deferral is legitimate, not drift. No other narrowing language was found
+(logs/32-scope-narrowing-grep.txt, which also records the 99f1fba src/ diffstat and the empty merge diff).
+Forbidden patterns:
+- No store mutation, subject destruction, blocking hook, second UI or cites manipulation.
+- Persistence surface unchanged, so no read-write-surface.tsv obligation.
+- Raw corrupt/empty/orphan bytes are retained verbatim in M1. A-F1 is a mis-projection, not a collapse of raw
+  data.
+
+REQUIREMENT TABLE — Scope A (checkpoint: codec "Next verifier checkpoint", :384-422)
+
+CK1 — Pure verifier over owner context and borrowed ordered slices; not an opener; no SQLite or storage
+writer.
+- Verdict: met.
+- Evidence: src :1-2, :76-82; no fs/rusqlite in the module; lib.rs:32 is the only reference.
+
+CK2 — Caller acquires bounded slices and refuses non-canonical CID text before typed CIDs.
+- Verdict: unverifiable here (caller duty).
+- Evidence: the typed API cannot see spellings. RP13 shows the parser refuses uppercase. There is no rustdoc
+  (A-F5).
+
+CK3 — Item, input-byte, time and cancellation limits bound the invocation.
+- Verdict: met.
+- Evidence: :132-167; RP10a-d, RP11; A-item/input/cancelled; R12/R13.
+
+CK4 — Stores only bounded coordinates; never copies payloads.
+- Verdict: met.
+- Evidence: :199-206 (Cid, length, flags, index). The plan is the only copied blob (≤4096 bytes).
+
+CK5 — Polls per 64 KiB; decode/verify individually bounded with checks around them.
+- Verdict: met.
+- Evidence: :168-174, :411, :459. RP10d is 1.15 ms worst case; R12/R13 are killed.
+
+CK6 — Contiguous issuer chain.
+- Verdict: met.
+- Evidence: :305, :308-319 → evidence_attestation.rs:277-301. RP12; wrong-owner-archive vector.
+
+CK7 — Admitted vs retained purpose.
+- Verdict: met.
+- Evidence: :320-331. RP07; R07 is killed.
+
+CK8 — Static service writer form.
+- Verdict: met.
+- Evidence: :344-354. RP09; R10 is killed (by the reviewer only).
+
+CK9 — Per-writer position and predecessor.
+- Verdict: met.
+- Evidence: :355-364. RP17; R09 is semantic only with RP17.
+
+CK10 — Unique operation.
+- Verdict: met.
+- Evidence: :366-369. A-duplicate-operation.
+
+CK11 — Operation-to-slot commitment and consistent slot bindings.
+- Verdict: met (slot); the binding check is redundant.
+- Evidence: :386-397. R04 is killed; R03 is equivalent.
+
+CK12 — Profile 3 binds plan, membership and retained-prefix digest.
+- Verdict: partial.
+- Evidence: the plan is bound by the archive ID (:263-269) plus R11/RP06. The digest is checked when complete
+  (:421-425). For partial copies, membership is unauthenticated (RP02, A-F2).
+
+CK13 — An unfinished prefix is reported incomplete; missing writer signatures are not certified.
+- Verdict: met.
+- Evidence: recipe_metadata_complete (:413-429); verified_requests counts only Available occurrences.
+
+CK14 — No standalone publication capability.
+- Verdict: met.
+- Evidence: Member API :98-125.
+
+CK15 — Every known length is positive, ≤4 MiB, and agrees across references and membership.
+- Verdict: met.
+- Evidence: :207-218. A-expected-length; expected_oversized test.
+
+CK16 — Raw corrupt and empty originals retained in M1.
+- Verdict: met.
+- Evidence: :537-541; Python M1 matches for the loss vectors.
+
+CK17 — Each present object's hash verified once; every occurrence sampled separately.
+- Verdict: met.
+- Evidence: :431-455, :458-482. RP01; shared-missing test.
+
+CK18 — Unreferenced membership and original keys get null coordinates.
+- Verdict: met.
+- Evidence: :483-493. RP01, RP15; R08/R17 are killed by the reviewer only.
+
+CK19 — A hash-valid request failing its signature or exact manifest binding is invalid, not a repairable loss.
+- Verdict: PARTIAL.
+- Evidence: the correct-length case refuses (author tests, A-writer-signature). A hash-valid object with a
+  false signed length is reported Corrupt (RP14a, A-F1). A shared CID is accepted while missing (RP03, A-F3).
+
+CK20 — Missing or corrupt requests stay unavailable, with writer verification outstanding.
+- Verdict: met.
+- Evidence: :474-481.
+
+CK21 — Loss order: occurrence/CID first, then null coordinates by CID text.
+- Verdict: met.
+- Evidence: RP01 combined; BTreeMap iteration :483.
+
+CK22 — Qualified before feeding replay.
+- Verdict: this review.
+- Evidence: A-F1 and A-F2 must be resolved first.
+
+Remaining parent work is unimplemented and must NOT be rounded up. The parent design is
+.design/kan-v2-recovery-bundles.md:
+- AC-1 bundle refuses standalone; missing history refuses open: UNMET (no opener/schema reader).
+- AC-2 observation fixtures: PARTIAL. The observation wire was qualified at an earlier checkpoint; source and
+  output commitments are framing-only; there is no replay.
+- AC-3 missing/corrupt/restored distinct through backup/rebuild/publication: UNMET. This checkpoint only
+  distinguishes original loss logically.
+- AC-4 crash boundaries: UNMET. AC-5 refusals without rewriting: UNMET at the storage level. AC-6 fresh review
+  with ledger-omission/overwrite/early-completion/downgrade controls: UNMET.
+- REQ-7 bounded materialization: PARTIAL, for this pure call only.
+- Still to build:
+  - greedy signed-loss partition into ≤32-entry / 16 KiB `unavailable` events
+  - full observation replay
+  - R1 historical candidate selection
+  - O1 output revalidation and publication-intent/observed/failed rules
+  - external checkpoints
+  - physical KNB1 DDL, opener, UTF-8 gate and schema reader that refuses non-canonical CID text
+  - creation, restoration and publication writers with crash tests
+  - bundle backup/rebuild
+  - owner jobs, RPC and UI capability labels (forensic-recovery-required, publication-blocked-unavailable-object)
+
+SCOPE A VERDICT: **APPROVE WITH FOLLOW-UPS**
+The verifier is a sound, bounded, pure checkpoint. Every guard I attacked either refuses correctly or is a
+demonstrated equivalent. Cancellation and deadlines are prompt, and the M1/loss output matches an independent
+signed construction. It confers no history, recoverability or publication authority. It is not BLOCK because
+nothing consumes it and no invariant is violated.
+Required before creation signs `unavailable` events:
+- A-F1 is a real contradiction in the governing text, and the code currently mislabels authentic bytes as
+  corrupt under false signed lengths.
+- A-F2 leaves partial-copy loss coordinates unauthenticated without saying so per entry.
+A-F3 and A-F4 are test/design hardening. The early-cancellation author survivor is retained. It is now
+semantically pinned only by reviewer probes, not by the author suite.
+
+=====================================================================================================
+B. FRAMING FOLLOW-THROUGH (99f1fba)
+
+- No non-test runtime change: CONFIRMED.
+  - `git diff 61b8667 99f1fba -- src/` is +76/-0, in evidence_recovery_commitment.rs only.
+  - Every added runtime line is #[cfg(test)]: the field (:71-72), the initialiser (:91-92), the injection
+    block in Meter::check (:98-105) and the test module (:418+).
+  - The non-test lib compiles under all-target clippy (logs/04, logs/92), so no non-test path names the field.
+  - The merge 88db7c9 did not touch member code: `git diff 3169a0a 5e54513` on the member src/test is empty.
+- RA3/RA4 promotion is FAITHFUL: whitespace-normalised token streams equal the original reviewer functions,
+  and the helpers are identical apart from emit, which now writes to stderr (logs/30).
+- Polling units are meaningful, deterministic evidence of bounded interruption granularity:
+  - They drive the real MemberFraming::original_object and RestorationFraming::candidate.
+  - They inject cancellation when charged bytes reach a threshold, with no sleeps and no host-speed skip.
+  - They assert exact charged deltas (60 + 65536 and 65536) and poisoning.
+- The 13 follow-up controls, reproduced from the tracked reviewer-cases.json (cmd/controls_b.py,
+  mutations/scope-b/, logs/40):
+  - All 13 are KILLED by semantic assertions.
+  - AC01: left Ok(()) vs Err(Cancelled). AC02: 4194304 vs 65536 charged.
+  - AC25: both units fail.
+  - AC03–AC08, AC16, AC17: out-of-bound input accepted (true vs false).
+  - AC09 and AC10: "must refuse".
+- Reviewer additions:
+  - RB1/RB2 (poll every 128 KiB instead of 64 KiB) are KILLED: 131132 vs 65596 and 131072 vs 65536. The units
+    pin the stated granularity, not just "some" polling.
+  - RB4 (put's leading check removed) SURVIVED. It is equivalent: per-chunk spend checks remain.
+  - RB3 (issuer bound counted in chars instead of bytes) SURVIVED. Rust has no multibyte edge test.
+- Python issuer bound: a char-count mutant of recovery_commitments.py is killed by its new é×41 check, with
+  "accepted invalid issuer byte length" (logs/31; attempt 1 failed on a root path and is retained).
+- The codec now states the issuer rule as 1..80 UTF-8 bytes (codec :56-58), with canonical DID as a stricter
+  member rule.
+- UTF-8 create/open is explicitly "a proposed format requirement; no creation/opener exists yet" (:10-13). It
+  is not an implemented gate.
+- O1 confers no output authority (:378-381; module doc :1-5). The member verifier computes only Domain::Member.
+
+Findings B
+- B-F1 [LOW]: the Rust framing has no multibyte issuer edge, so RB3 survives. Add 'é'×40 accepted and
+  'é'×41 refused to rv_a4.
+- B-F2 [LOW/INFO]: the polling units prove same-thread poll granularity in charged bytes. They do not prove
+  deadline polling, which still has only the original timing probe (prior A-F4), or cross-thread wall-clock
+  latency. My RP10b/d supply the latter for the member stage only.
+- B-F3 [INFO]: the regression file header (tests/evidence_recovery_commitment_review_regressions.rs:3-4) says
+  "Vectors come from review-evidence/probes/indep_commitments.py". RA3/RA4 use no vectors, and the path is
+  relative to a different review. Stale provenance text.
+
+REQUIREMENT TABLE — Scope B
+- B1 RA3/RA4 promoted: met (logs/30, baseline).
+- B2 deterministic polling, no production hook, real operations: met (cfg(test) sites; units; AC01/02/25,
+  RB1/RB2).
+- B3 13 controls fail assertions: met, reproduced (logs/40).
+- B4 issuer 1..80 UTF-8 bytes explicit plus Python edges: met (codec :56-58; logs/31). Rust multibyte edge
+  missing (B-F1).
+- B5 UTF-8 create/open a proposal only: met as a statement; not implemented, correctly so labelled.
+- B6 O1 grants no authority: met.
+- B7 no non-test runtime change: met.
+
+SCOPE B VERDICT: **APPROVE WITH FOLLOW-UPS** (B-F1 and B-F3 are trivial; B-F2 restates the prior A-F4 limit
+for deadlines).
+
+=====================================================================================================
+PRESERVED FAILED ATTEMPTS
+- logs/10 (…ATTEMPT1) and logs/11 (…ATTEMPT2): probe construction errors.
+  - proof::issue refuses `admitted` over historical receipts.
+  - The record schema refuses non-static did:key, did:web+versionId and did:plc+event writers.
+  - Fixed in logs/12.
+- logs/31-…ATTEMPT1-wrong-root: the Python mutant resolved its fixtures relative to its own copy.
+- The harness denied one combined cleanup command; its steps were re-run individually (see custody).
+
+UNTESTED / LIMITS
+- RP10b, RP10c, RP10d and the scope-B prior RA8 are timing-based (margins ≥25× here).
+- Request-verification-stage latency (JSON up to ~2 MiB) was not measured. It is an indivisible bounded
+  operation.
+- No physical surface exists to test.
+- I did not rerun the 35+ historical commitment controls or the Node/performance/compatibility matrices, as
+  instructed.
+
+OVERALL VERDICT: **APPROVE WITH FOLLOW-UPS**
+This is the logical-member checkpoint only. It is NOT full bundle acceptance: no parent AC is met.
+Next steps:
+1. Resolve A-F1 (design + both implementations).
+2. Resolve A-F2 (label or withhold partial-copy membership coordinates).
+3. Promote the deterministic reviewer probes (A-F4, B-F1).
+4. Only then feed this verifier into loss partitioning and replay.

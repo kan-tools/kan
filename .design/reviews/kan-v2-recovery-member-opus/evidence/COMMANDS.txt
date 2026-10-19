@@ -1,0 +1,29 @@
+2026-10-19T15:09:02Z manifest-pre exit=0 :: python3 review-evidence/cmd/verify_manifest.py pre
+2026-10-19T15:09:02Z 00-cargo-version exit=0 elapsed=0s :: sh -c cargo --version; rustc --version; cat rust-toolchain.toml
+2026-10-19T15:09:02Z 01-clean exit=0 elapsed=0s :: cargo clean -p kan
+2026-10-19T15:09:15Z 02-baseline-integration exit=0 elapsed=9s :: cargo test --offline --features v2-crypto --test evidence_recovery_member --test evidence_recovery_commitment --test evidence_recovery_commitment_review_regressions --test evidence_recovery_observation
+2026-10-19T15:09:28Z 03-polling-units exit=0 elapsed=7s :: cargo test --offline --features v2-crypto --lib evidence_recovery_commitment::polling_tests
+2026-10-19T15:09:36Z 04-clippy exit=0 elapsed=8s :: cargo clippy --offline --features v2-crypto --all-targets -- -D warnings
+2026-10-19T15:09:37Z 05-fmt exit=0 elapsed=1s :: cargo fmt --all -- --check
+2026-10-19T15:09:37Z 06-oracle-member exit=0 elapsed=0s :: sh -c "$KAN_CRYPTO_ORACLE_PYTHON" .design/tools/recovery_member_vectors.py --check
+2026-10-19T15:09:37Z 07-oracle-commitments exit=0 elapsed=0s :: sh -c "$KAN_CRYPTO_ORACLE_PYTHON" .design/tools/recovery_commitments.py --check
+2026-10-19T15:13:33Z TEMP-PLACE tests/zz_review_member_probes.rs (copy of review-evidence/probes/)
+2026-10-19T15:13:46Z 10-probes-unmodified exit=101 elapsed=13s :: cargo test --offline --features v2-crypto --test zz_review_member_probes -- --nocapture --test-threads=1
+2026-10-19T15:14:16Z 11-probes-unmodified exit=101 elapsed=13s :: cargo test --offline --features v2-crypto --test zz_review_member_probes -- --nocapture --test-threads=1
+2026-10-19T15:14:39Z 12-probes-unmodified exit=0 elapsed=13s :: cargo test --offline --features v2-crypto --test zz_review_member_probes -- --nocapture --test-threads=1
+2026-10-19T15:15:24Z 13-probes-unmodified exit=0 elapsed=14s :: cargo test --offline --features v2-crypto --test zz_review_member_probes -- --nocapture --test-threads=1
+2026-10-19T15:18:18Z 31-python-issuer-chars-mutant exit=1 elapsed=0s :: python3 review-evidence/mutations/python/recovery_commitments_chars.py --check
+2026-10-19T15:18:23Z 31-python-issuer-chars-mutant exit=1 elapsed=0s :: python3 review-evidence/mutations/python/recovery_commitments_chars.py --check
+2026-10-19T15:26:11Z 20-controls exit=0 elapsed=614s :: python3 review-evidence/cmd/controls.py
+2026-10-19T15:26:46Z TEMP-PLACE tests/zz_review_member_probes2.rs
+2026-10-19T15:26:53Z 14-probes2-unmodified exit=0 elapsed=7s :: cargo test --offline --features v2-crypto --test zz_review_member_probes2 -- --nocapture --test-threads=1
+2026-10-19T15:29:50Z 22-controls-round2 exit=0 elapsed=162s :: python3 review-evidence/cmd/controls.py R03-slot-conflict R05-retained-membership R09-writer-predecessor R14-new-initial-check R15-membership-input-charge R17-nonempty-original R18-record-position
+2026-10-19T15:34:27Z 40-controls-scope-b exit=0 elapsed=269s :: python3 review-evidence/cmd/controls_b.py
+2026-10-19T15:34:50Z TEMP-REMOVE tests/zz_review_member_probes.rs tests/zz_review_member_probes2.rs (cmp-identical canonical copies retained in review-evidence/probes/)
+2026-10-19T15:35:00Z 90-final-integration exit=0 elapsed=10s :: cargo test --offline --features v2-crypto --test evidence_recovery_member --test evidence_recovery_commitment --test evidence_recovery_commitment_review_regressions --test evidence_recovery_observation
+2026-10-19T15:35:11Z 91-final-polling exit=0 elapsed=7s :: cargo test --offline --features v2-crypto --lib evidence_recovery_commitment::polling_tests
+2026-10-19T15:35:20Z 92-final-clippy exit=0 elapsed=9s :: cargo clippy --offline --features v2-crypto --all-targets -- -D warnings
+2026-10-19T15:35:21Z 93-final-fmt exit=0 elapsed=1s :: cargo fmt --all -- --check
+2026-10-19T15:35:21Z 94-final-oracle exit=0 elapsed=0s :: sh -c "$KAN_CRYPTO_ORACLE_PYTHON" .design/tools/recovery_member_vectors.py --check && "$KAN_CRYPTO_ORACLE_PYTHON" .design/tools/recovery_commitments.py --check
+2026-10-19T15:35:25Z manifest-post exit=0 :: python3 review-evidence/cmd/verify_manifest.py post
+2026-10-19T15:37:34Z 32-scope-narrowing-grep exit=0 elapsed=0s :: sh -c git -C /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member diff a8927a6 5e54513 -- src tests .design/kan-v2-recovery-bundle-codec.md .design/kan-v2-recovery-bundles.md .design/tools scripts | grep -n "^+" | grep -iE "out of scope|deferred|follow-up|future work|for now|TODO|later|remain|separate work|not yet|pending"; git -C /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member diff --stat 61b8667 99f1fba -- src/; git -C /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member diff --stat 3169a0a 5e54513 -- src/evidence_recovery_member.rs tests/evidence_recovery_member.rs

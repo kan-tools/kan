@@ -1,0 +1,5 @@
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/recovery-member
+# cmd: cargo fmt --all -- --check
+# started: 2026-10-19T15:35:20Z
+
+# exit=0 elapsed_s=1
