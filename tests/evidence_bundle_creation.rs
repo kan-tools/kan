@@ -1452,6 +1452,7 @@ fn publication_builds_exact_complete_profiles_and_retries_without_new_history() 
         })
         .unwrap();
         assert!(!result.duplicate);
+        assert!(result.output_created);
         assert_eq!(
             result.inspection.replay().latest().sequence,
             pin.sequence + 2
@@ -1489,6 +1490,7 @@ fn publication_builds_exact_complete_profiles_and_retries_without_new_history() 
         retry.mode = bundle::PublicationMode::Resume;
         let retried = bundle::publish(retry).unwrap();
         assert!(retried.duplicate);
+        assert!(!retried.output_created);
         assert_eq!(retried.observation.bytes(), result.observation.bytes());
         assert_eq!(retried.intent.bytes(), result.intent.bytes());
         assert_eq!(
@@ -2152,3 +2154,8 @@ fn retry_with_different_bytes_for_restored_cid_refuses() {
     );
     assert_eq!(restoration_row_dump(&dst), snapshot);
 }
+
+#[path = "support/bundle_copy_tests.rs"]
+mod bundle_copy_tests;
+#[path = "support/publication_followup_tests.rs"]
+mod publication_followup_tests;
