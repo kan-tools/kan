@@ -1,0 +1,7 @@
+membership-unordered	after=[Err(Poisoned), Err(Poisoned), Err(Poisoned), Err(Poisoned), Err(Poisoned)]	finish=Err(Poisoned)
+membership-length	after=[Err(Poisoned), Err(Poisoned), Err(Poisoned), Err(Poisoned), Err(Poisoned)]	finish=Err(Poisoned)
+begin-records-early	after=[Err(Poisoned), Err(Poisoned), Err(Poisoned), Err(Poisoned), Err(Poisoned)]	finish=Err(Poisoned)
+budget-mid-object	after=Err(Poisoned)
+cancel-then-uncancel	after=Err(Poisoned)
+record-shape-then-valid	after=Err(Poisoned)
+r1-budget-then-valid	after=Err(Poisoned)

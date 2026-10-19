@@ -1,0 +1,22 @@
+fixture-member empty: M1 match O1 match
+fixture-member staged: M1 match O1 match
+fixture-member missing-payload-framing: M1 match O1 match
+fixture-member corrupt: M1 match O1 match
+fixture-member zero-length-corrupt: M1 match O1 match
+fixture-member restored-output-framing: M1 match O1 match
+fixture-member partial-copy-framing: M1 match O1 match
+fixture-member cid-text-order-framing: M1 match O1 match
+fixture-member membership-cid-text-order-framing: M1 match O1 match
+fixture-R1 #0 (0 candidates): match
+fixture-R1 #1 (1 candidates): match
+fixture-R1 #2 (2 candidates): match
+fixture-R1 #3 (2 candidates): match
+order-census staged.objects: text==binary? True
+order-census partial-copy-framing.membership: text==binary? True
+order-census cid-text-order-framing.objects: text==binary? False
+order-census membership-cid-text-order-framing.membership: text==binary? False
+order-census R1#2: text==binary? True
+order-census R1#3: text==binary? False
+reviewer pool: 40 CIDs, 35 text-vs-binary disagreeing ordered pairs
+wrote 5 reviewer vectors
+RESULT: ALL-FIXTURE-MATCH

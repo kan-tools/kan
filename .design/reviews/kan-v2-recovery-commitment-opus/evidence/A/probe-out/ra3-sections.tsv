@@ -1,0 +1,14 @@
+membership-after-begin-records	refused=true
+begin-records-twice	refused=true
+record-before-begin-records	refused=true
+object-in-records-phase	refused=true
+member-finish-fewer-objects	refused=true
+finish-in-membership-phase	refused=true
+finish-in-records-phase	refused=true
+record-sequence-zero	refused=true
+record-beyond-count	refused=true
+record-repeat-sequence	refused=true
+begin-records-fewer-membership	refused=true
+begin-objects-twice	refused=true
+r1-candidate-beyond-count	refused=true
+object-key-below-membership-key	accepted=true

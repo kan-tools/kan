@@ -1,0 +1,21 @@
+Write(REPORT.txt) calls in transcript: 1
+ write#0: identical to retained REPORT.txt: False  (len 22941 vs 22941)
+Bash commands touching REPORT.txt: 4
+   wc -l .design/kan-v2-recovery-bundle-codec.md .design/kan-v2-recovery-bundles.md .design/kan-v2-session-reconstruction.md tests/evidence_recovery_observation.rs
+   sed -n 140,180p .design/kan-v2-session-reconstruction.md; grep -n "F-D1\|P3\|precedence\|size" .design/reviews/kan-v2-reconstruction-opus/evidence/REPORT.txt | 
+   sed -n 265,370p .design/reviews/kan-v2-reconstruction-opus/evidence/REPORT.txt
+   python3 - <<'EOF' | p='review-evidence/REPORT.txt'; s=open(p).read() | assert s.count('demonstrated 13 semantic-acceptance cases')==1 | s=s.replace('demonstrated 13 s
+--- in-session edit command(s) by the prior reviewer after its Write:
+python3 - <<'EOF'
+p='review-evidence/REPORT.txt'; s=open(p).read()
+assert s.count('demonstrated 13 semantic-acceptance cases')==1
+s=s.replace('demonstrated 13 semantic-acceptance cases','demonstrated 12 semantic-acceptance cases')
+open(p,'w').write(s)
+EOF
+echo "$(date -u +%FT%TZ) wrote review-evidence/REPORT.txt" >> review-evidence/COMMANDS.txt; python3 -I review-evidence/scripts/verify_tree.py | tail -1
+--- diff Write-content -> retained:
+--- transcript-write
++++ retained
+@@ -313 +313 @@
+-  - I demonstrated 13 semantic-acceptance cases the future verifier must refuse.
++  - I demonstrated 12 semantic-acceptance cases the future verifier must refuse.

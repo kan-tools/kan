@@ -1,0 +1,43 @@
+sqlite 3.51.0
+OK   observer-55-ascii-bytes: accepted=False expected=False
+OK   issuer-55-ascii-bytes: accepted=False expected=False
+OK   observer-56-ascii-bytes: accepted=True expected=True
+OK   issuer-56-ascii-bytes: accepted=True expected=True
+OK   observer-80-ascii-bytes: accepted=True expected=True
+OK   issuer-80-ascii-bytes: accepted=True expected=True
+OK   observer-81-ascii-bytes: accepted=False expected=False
+OK   issuer-81-ascii-bytes: accepted=False expected=False
+OK   did-with-tilde-and-bang: accepted=True expected=True
+OK   observer-contains-space: accepted=False expected=False
+OK   observer-contains-tab: accepted=False expected=False
+OK   observer-contains-DEL: accepted=False expected=False
+OK   observer-contains-SOH: accepted=False expected=False
+OK   observer-leading-NUL: accepted=False expected=False
+OK   observer-invalid-utf8-lone-0x80: accepted=False expected=False
+OK   observer-bound-as-blob: accepted=False expected=False
+OK   member_objects-cid-0-bytes: accepted=False expected=False
+OK   member_membership-cid-0-bytes: accepted=False expected=False
+OK   restored_objects-cid-0-bytes: accepted=False expected=False
+OK   member_objects-cid-1-bytes: accepted=True expected=True
+OK   member_membership-cid-1-bytes: accepted=True expected=True
+OK   restored_objects-cid-1-bytes: accepted=True expected=True
+OK   member_objects-cid-128-bytes: accepted=True expected=True
+OK   member_membership-cid-128-bytes: accepted=True expected=True
+OK   restored_objects-cid-128-bytes: accepted=True expected=True
+OK   member_objects-cid-129-bytes: accepted=False expected=False
+OK   member_membership-cid-129-bytes: accepted=False expected=False
+OK   restored_objects-cid-129-bytes: accepted=False expected=False
+OK   cid-invalid-utf8-C3-alone: accepted=False expected=False
+OK   cid-trailing-DEL: accepted=False expected=False
+OK   cid-bound-as-blob: accepted=False expected=False
+DIFF UTF-16le-db-valid-ascii-did: accepted=False expected=True
+DIFF UTF-16le-db-valid-ascii-cid: accepted=False expected=True
+DIFF UTF-16be-db-valid-ascii-did: accepted=False expected=True
+DIFF UTF-16be-db-valid-ascii-cid: accepted=False expected=True
+
+clause mutants (member_objects only):
+  no-byte-bound(char-bound): probes that now get the wrong verdict = NONE (clause redundant for this probe set)
+  no-equality: probes that now get the wrong verdict = ['embedded-NUL', 'trailing-NUL']
+  no-glob: probes that now get the wrong verdict = ['newline', 'space']
+
+35 probes, 4 differ from expectation: ['UTF-16le-db-valid-ascii-did', 'UTF-16le-db-valid-ascii-cid', 'UTF-16be-db-valid-ascii-did', 'UTF-16be-db-valid-ascii-cid']

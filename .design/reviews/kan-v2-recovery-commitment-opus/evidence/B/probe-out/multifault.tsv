@@ -1,0 +1,3 @@
+created-later+short-member	python=created-position	rust=byte-width	same_label=false
+unavailable-first+empty-entries	python=created-position	rust=entries-bound	same_label=false
+single-fault-short-member	python=byte-width	rust=byte-width	same_label=true

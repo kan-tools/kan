@@ -1,0 +1,11 @@
+## scope-narrowing grep over a8927a6 + a78fa61 + ede35ec non-evidence diffs (added lines only)
+### a8927a6
+18:+DID/record/plan truth, candidate membership and full state replay are not supplied
+23:+remains pending; full member and state verification are separate prerequisites.
+66:+//! it does not check record signatures, copy-plan truth or publication readiness.
+### a78fa61
+### ede35ec
+6:+remain Unsupported. This pins classification precedence and catches future
+167:+            json!({"observer":"future"}),
+172:+            json!({"event":{"type":"future","x":1}}),
+177:+            json!({"event":{"type":"terminal","outcome":"future"}}),

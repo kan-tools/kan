@@ -1,0 +1,188 @@
+diff --git a/.design/fixtures/recovery-bundle-v1-schema.sql b/.design/fixtures/recovery-bundle-v1-schema.sql
+index ad30769..b714c19 100644
+--- a/.design/fixtures/recovery-bundle-v1-schema.sql
++++ b/.design/fixtures/recovery-bundle-v1-schema.sql
+@@ -4,11 +4,11 @@
+ CREATE TABLE bundle_identity (
+     singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+     bundle BLOB NOT NULL CHECK(typeof(bundle)='blob' AND length(bundle)=32),
+-    observer TEXT NOT NULL CHECK(typeof(observer)='text' AND length(observer) BETWEEN 56 AND 80),
++    observer TEXT NOT NULL CHECK(typeof(observer)='text' AND length(CAST(observer AS BLOB)) BETWEEN 56 AND 80 AND length(observer)=length(CAST(observer AS BLOB)) AND observer NOT GLOB '*[^!-~]*'),
+     profile INTEGER NOT NULL CHECK(typeof(profile)='integer' AND profile IN (2,3)),
+     archive BLOB NOT NULL CHECK(typeof(archive)='blob' AND length(archive)=32),
+     scope BLOB NOT NULL CHECK(typeof(scope)='blob' AND length(scope)=32),
+-    issuer TEXT NOT NULL CHECK(typeof(issuer)='text' AND length(issuer) BETWEEN 56 AND 80)
++    issuer TEXT NOT NULL CHECK(typeof(issuer)='text' AND length(CAST(issuer AS BLOB)) BETWEEN 56 AND 80 AND length(issuer)=length(CAST(issuer AS BLOB)) AND issuer NOT GLOB '*[^!-~]*')
+ );
+ CREATE TABLE member_records (
+     sequence INTEGER PRIMARY KEY CHECK(sequence BETWEEN 1 AND 9007199254740991),
+@@ -17,7 +17,7 @@ CREATE TABLE member_records (
+     envelope BLOB NOT NULL CHECK(typeof(envelope)='blob' AND length(envelope) BETWEEN 1 AND 16384)
+ );
+ CREATE TABLE member_objects (
+-    cid TEXT PRIMARY KEY CHECK(typeof(cid)='text' AND length(cid) BETWEEN 1 AND 128),
++    cid TEXT PRIMARY KEY CHECK(typeof(cid)='text' AND length(CAST(cid AS BLOB)) BETWEEN 1 AND 128 AND length(cid)=length(CAST(cid AS BLOB)) AND cid NOT GLOB '*[^!-~]*'),
+     bytes BLOB NOT NULL CHECK(typeof(bytes)='blob' AND length(bytes) BETWEEN 0 AND 4194304)
+ ) WITHOUT ROWID;
+ CREATE TABLE member_plan (
+@@ -25,7 +25,7 @@ CREATE TABLE member_plan (
+     envelope BLOB NOT NULL CHECK(typeof(envelope)='blob' AND length(envelope) BETWEEN 1 AND 4096)
+ );
+ CREATE TABLE member_membership (
+-    cid TEXT PRIMARY KEY CHECK(typeof(cid)='text' AND length(cid) BETWEEN 1 AND 128),
++    cid TEXT PRIMARY KEY CHECK(typeof(cid)='text' AND length(CAST(cid AS BLOB)) BETWEEN 1 AND 128 AND length(cid)=length(CAST(cid AS BLOB)) AND cid NOT GLOB '*[^!-~]*'),
+     length INTEGER NOT NULL CHECK(typeof(length)='integer' AND length BETWEEN 1 AND 4194304)
+ ) WITHOUT ROWID;
+ CREATE TABLE observations (
+@@ -33,6 +33,6 @@ CREATE TABLE observations (
+     envelope BLOB NOT NULL CHECK(typeof(envelope)='blob' AND length(envelope) BETWEEN 1 AND 16384)
+ );
+ CREATE TABLE restored_objects (
+-    cid TEXT PRIMARY KEY CHECK(typeof(cid)='text' AND length(cid) BETWEEN 1 AND 128),
++    cid TEXT PRIMARY KEY CHECK(typeof(cid)='text' AND length(CAST(cid AS BLOB)) BETWEEN 1 AND 128 AND length(cid)=length(CAST(cid AS BLOB)) AND cid NOT GLOB '*[^!-~]*'),
+     bytes BLOB NOT NULL CHECK(typeof(bytes)='blob' AND length(bytes) BETWEEN 1 AND 4194304)
+ ) WITHOUT ROWID;
+diff --git a/.design/kan-v2-recovery-bundles.md b/.design/kan-v2-recovery-bundles.md
+index 82d9ee0..8665f8b 100644
+--- a/.design/kan-v2-recovery-bundles.md
++++ b/.design/kan-v2-recovery-bundles.md
+@@ -252,3 +252,10 @@ These are proposed capability/refusal labels, not implemented RPC enum values.
+ They complement the already explicit partial-profile-3 limitation. The storage
+ writer, owner jobs and full human frontend must implement and test them before
+ claiming recovery coverage.
++
++The second codec review clarifies that REQ-1 separates observer and issuer roles
++and signature domains; equal explicitly pinned keys are wire-valid but do not
++provide independent-key isolation. Owner recovery jobs default to distinct keys
++and disclose reuse. The codec appendix records this decision and diagnostic
++precedence limits. `forensic-recovery-required` also covers authenticated expected
++object lengths beyond 4 MiB, whether or not the original object row is present.
+diff --git a/.design/tools/recovery_bundle_schema.py b/.design/tools/recovery_bundle_schema.py
+index 5a8f6e5..d4bcbe4 100644
+--- a/.design/tools/recovery_bundle_schema.py
++++ b/.design/tools/recovery_bundle_schema.py
+@@ -63,6 +63,20 @@ class DraftSchema(unittest.TestCase):
+         self.db.execute('INSERT INTO member_records VALUES(?,?,?,?)', (1,bytes(65536),bytes(65536),bytes(16384)))
+         self.reject('INSERT INTO member_records VALUES(?,?,?,?)', (1,b'm',b'r',b'p'))
+ 
++    def test_identifier_byte_bounds_ascii_and_embedded_nul(self):
++        for value in ['é'*56, 'é'+'a'*55, 'a'*55+'\0', 'a'*55+'\n']:
++            for field in (2,6):
++                row=[1,bytes(32),'d'*56,2,bytes(32),bytes(32),'i'*56]
++                row[field]=value
++                self.reject('INSERT INTO bundle_identity VALUES(?,?,?,?,?,?,?)',row)
++        for table in ('member_objects','restored_objects'):
++            for key in ['é'*64, 'é'+'a'*127, 'x\0hidden','line\nbreak','has space']:
++                self.reject('INSERT INTO '+table+' VALUES(?,?)',(key,b'x'))
++            with self.assertRaises(sqlite3.IntegrityError):
++                self.db.execute("INSERT INTO "+table+" VALUES(CAST(X'FF' AS TEXT),X'01')")
++        for key in ['é'*64,'x\0hidden','line\nbreak']:
++            self.reject('INSERT INTO member_membership VALUES(?,?)',(key,1))
++
+     def test_identity_and_membership_local_shapes(self):
+         identity=[1,bytes(32),'d'*56,2,bytes(32),bytes(32),'i'*56]
+         for index, values in [(0,[0,2]),(1,[b'',bytes(33),'x'*32]),(2,['x'*55,'x'*81]),(3,[1,4]),(4,[bytes(31),'x'*32]),(5,[bytes(33),'x'*32]),(6,['x'*55,'x'*81])]:
+diff --git a/.design/tools/recovery_commitments.py b/.design/tools/recovery_commitments.py
+index 7aa6a95..3accafe 100644
+--- a/.design/tools/recovery_commitments.py
++++ b/.design/tools/recovery_commitments.py
+@@ -135,7 +135,18 @@ def vectors():
+     plan=json.loads((ROOT/'.design/fixtures/copy-plan-v1.json').read_text())['positive'][0]
+     m=copy.deepcopy(base);m.update(profile=3,archive=bytes.fromhex(plan['archiveHex']),scope=bytes.fromhex(plan['plan']['scopeToken']['$bytes']),issuer=plan['plan']['issuer'],plan=bytes.fromhex(plan['hex']),membership=[(key,len(good)),(other_key,len(other))],objects=[(key,good)])
+     add('partial-copy-framing',m)
+-    candidates=[[],[(key,good)],[(key,good),(other_key,other)]]
++    # Deliberately distinguish canonical text order from binary CID order.
++    # The base32 alphabet puts digits after letters numerically, while ASCII
++    # text sorts them before letters. The earlier two-object fixture did not.
++    probes=[('public ordering fixture '+str(n)).encode() for n in range(100)]
++    pair=next((a,b) for a in probes for b in probes if (raw_cid(a)<raw_cid(b)) != (cid_bytes(raw_cid(a))<cid_bytes(raw_cid(b))))
++    m=copy.deepcopy(base);m['objects']=[(raw_cid(value),value) for value in pair]
++    add('cid-text-order-framing',m)
++    order_objects=m['objects']
++    m=decode_notation(next(row['member'] for row in rows if row['name']=='partial-copy-framing'))
++    m['membership']=[(raw_cid(value),len(value)) for value in pair]
++    add('membership-cid-text-order-framing',m)
++    candidates=[[],[(key,good)],[(key,good),(other_key,other)],order_objects]
+     return {'status':'proposal-framing-only-not-logical-member-validation','member':rows,'restorations':[{'candidates':notation(c),'R1':restoration_digest(c).hex()} for c in candidates]}
+ 
+ 
+@@ -169,7 +180,7 @@ def main():
+     if args.write:PATH.write_text(json.dumps(generated,indent=2)+'\n')
+     else:
+         stored=json.loads(PATH.read_text());checks(stored);require(stored==generated,'proposal changed; explicit review/regeneration required')
+-    print('7 member/output and 3 restoration framing vectors; local negative checks pass. No logical-member acceptance claimed.')
++    print(f"{len(generated['member'])} member/output and {len(generated['restorations'])} restoration framing vectors; local negative checks pass. No logical-member acceptance claimed.")
+ 
+ 
+ if __name__=='__main__':main()
+diff --git a/.design/tools/recovery_observation_vectors.py b/.design/tools/recovery_observation_vectors.py
+index 73f5e23..876afc4 100644
+--- a/.design/tools/recovery_observation_vectors.py
++++ b/.design/tools/recovery_observation_vectors.py
+@@ -245,7 +245,15 @@ def vectors():
+     shape('maximum-loss-count-and-lengths',1,[(['body','entries'],[{'occurrence':n,'cid':obj,'expectedLength':4194304,'state':'missing'} for n in range(1,32)]+[{'occurrence':None,'cid':obj,'expectedLength':None,'state':'corrupt'}])])
+     shape('nonempty-metadata-frontier',0,[(['body','frontier'],{'through':SAFE,'manifest':codec.link(codec.cid(b'm')),'attestation':codec.link(codec.cid(b'p'))}),(['sampledAt'],SAFE)])
+     shape('maximum-restoration-length',2,[(['body','length'],4194304)])
+-    return {'status':'proposal-wire-layer-only-not-complete-bundle-validation','publicObserverScalar':3,'context':ctx,'positive':rows,'shapePositive':shapes,'negative':negative}
++    texts=sorted([codec.cid(b'probe-19',0x55),codec.cid(b'probe-20',0x55)])
++    require(texts!=sorted(texts,key=codec.cid_bytes),'discriminating CID order')
++    entries=[{'occurrence':1,'cid':codec.link(text),'expectedLength':8,'state':'missing'} for text in texts]
++    shape('canonical-cid-text-order',1,[(['body','entries'],entries)])
++    change('binary-cid-order','entry-order-unique',['body','entries'],list(reversed(entries)),1)
++    same_context=copy.deepcopy(ctx);same_context['issuer']=same_context['observer']
++    same_statement=copy.deepcopy(rows[0]['statement']);same_statement['issuer']=same_context['issuer']
++    same_key={'context':same_context,'envelopeHex':sign(same_statement).hex()}
++    return {'status':'proposal-wire-layer-only-not-complete-bundle-validation','publicObserverScalar':3,'context':ctx,'positive':rows,'shapePositive':shapes,'sameKeyRoles':same_key,'negative':negative}
+ 
+ 
+ def checks(value):
+@@ -261,6 +269,7 @@ def checks(value):
+         index=row['base']; raw=bytes.fromhex(row['envelopeHex'])
+         result=verify(raw,ctx,None if index==0 else verified[index-1])
+         require(sign(row['statement'])==raw and result['statementCid']==codec.Link(codec.cid_bytes(row['statementCid'])),'shape vector')
++    same=value['sameKeyRoles'];verify(bytes.fromhex(same['envelopeHex']),codec.from_fixture(same['context']))
+     for row in value['negative']:
+         index=row['base']
+         try:verify(bytes.fromhex(row['envelopeHex']),ctx,None if index==0 else verified[index-1])
+diff --git a/scripts/recovery_observation_negative_controls.py b/scripts/recovery_observation_negative_controls.py
+index 720869a..47f425f 100644
+--- a/scripts/recovery_observation_negative_controls.py
++++ b/scripts/recovery_observation_negative_controls.py
+@@ -7,6 +7,7 @@ FILE=ROOT/'src/evidence_recovery_observation.rs'
+ OUT=ROOT/'.local-state/bundle-codec-author/controls'
+ NEGATIVE='independently_resigned_hostile_vectors_refuse_with_named_error'
+ CASES=[
++ ('binary-cid-order','cid.to_string(),','format!("{:02x?}", cid.to_bytes()),',NEGATIVE),
+  ('bundle-pin','st["bundle"] == Ipld::Bytes(context.bundle.to_vec())','true',NEGATIVE),
+  ('predecessor-context','require(&previous.context == context, "previous-context")?;','require(true, "previous-context")?;','signed_cross_context_chain_and_profile_confusion_refuse'),
+  ('chain-link','require(link(&st["previous"], 0x71)? == &previous.cid, "predecessor")?;','require(true, "predecessor")?;',NEGATIVE),
+diff --git a/scripts/revert_v2.py b/scripts/revert_v2.py
+index 35b5de5..5297440 100644
+--- a/scripts/revert_v2.py
++++ b/scripts/revert_v2.py
+@@ -37,6 +37,7 @@ NODE_TESTS = {
+     'summary_loss_units': ('tests/operations_ui.test.cjs', 'unsampled sessions and summary loss units are explicit'),
+ }
+ PYTHON_TESTS = {
++    'recovery_identifier_bytes': ('.design/tools/recovery_bundle_schema.py', 'DraftSchema.test_identifier_byte_bounds_ascii_and_embedded_nul'),
+     'bounded_pipe_cleanup': ('tests/test_revert_v2.py', 'Execution.test_detached_pipe_holder_cannot_hang_timeout_cleanup'),
+ }
+ 
+diff --git a/tests/evidence_recovery_observation.rs b/tests/evidence_recovery_observation.rs
+index 407d591..11fa678 100644
+--- a/tests/evidence_recovery_observation.rs
++++ b/tests/evidence_recovery_observation.rs
+@@ -193,3 +193,13 @@ fn signed_cross_context_chain_and_profile_confusion_refuse() {
+     .is_err());
+     assert!(observation::authenticate(foreign.bytes(), &ctx, None).is_err());
+ }
++
++#[test]
++fn explicitly_pinned_same_key_roles_are_wire_valid_without_combining_authority() {
++    let f = fixture();
++    let same = &f["sameKeyRoles"];
++    let ctx = context(same);
++    assert_eq!(ctx.observer, ctx.issuer);
++    let observation = observation::authenticate(&raw(&same["envelopeHex"]), &ctx, None).unwrap();
++    assert_eq!(observation.context(), &ctx);
++}
