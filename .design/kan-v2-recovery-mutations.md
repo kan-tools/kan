@@ -92,3 +92,28 @@ Initial fixture and lint failures remain recorded. Fresh Opus review is pending;
 restoration/publication/full recovery acceptance remain open. Remote performance
 generation exposed an unresolved legacy claim-codec canonicality refusal;
 it is not represented as a passing scaling result.
+
+
+## Creation review follow-ups — candidate
+Fresh actual Opus review of918318d approved creation with follow-ups. The report
+is retained at `reviews/kan-v2-content-creation-opus/REPORT.txt`. Three genuine
+controls survived: removing BEGIN, skipping reservation-time custody rechecks,
+and moving the uncertain-outcome flag after COMMIT. The through-only frontier
+mutation was redundant with complete precommit replay, which still rejected it.
+
+The candidate adds acquisition/pre-reservation phase notifications to the existing
+owner-side callback API. A real WAL writer appends between the metadata and object
+scans; the bundle must retain only its original snapshot's objects. A sidecar
+inserted after preparation must prevent reservation and survive untouched. A real
+SQLite reader holds a shared lock across the output's DELETE-mode COMMIT, which
+must return an uncertain outcome on the actual commit error. These checks avoid
+an environment switch or fake successful commit. The abrupt-death fixture also
+covers the two new phases before any destination exists.
+
+The independent review's schema, preexisting-sidecar and proof-coordinate cases
+are promoted, with case variants tested as aliases only when the test filesystem
+actually treats them as aliases. Original probe evidence remains local and
+unchanged. The public callback is retained for compatibility; it is owner-side,
+adds no remote authority and must return promptly. It is not a promise to preempt
+arbitrary callback or filesystem stalls. These changes still require compiled
+qualification, targeted fault controls and fresh review.

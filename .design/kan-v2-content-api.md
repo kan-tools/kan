@@ -62,3 +62,42 @@ Frozen bb1e0ab independently received APPROVE WITH FOLLOW-UPS for provider-v2 an
 The follow-up branch validates complete source correspondence once per immutable borrowed stream, then maps each item with bounded segment/citation traversal. Source byte-decode/comparison charges are cumulative across streams, not multiplied by the number of displayed items. All input, item, citation, normalized-output, serialized-output, deadline and worker bounds remain unchanged. A verification failure remains a reader failure; presentation exhaustion returns fixed HTTP 422 `content-limit`, and unavailable worker admission returns fixed HTTP 429 `content-busy`. Neither contains source-derived counts or snippets. The public Rust compatibility method retains its existing Failure result, while the Library uses the detailed internal outcome.
 
 New tests pause the real Reader's synchronous worker after its first item and verify both admission retention across disconnect and cancellation before another item. Realistic 130-message and 500-delta fixtures exercise the repeated-validation regression. The UI renders observed extents, all observer length claims and unexpected starts and restores Interpret after a Source request supersedes it. These changes are a candidate pending Rust qualification and a fresh Opus review; parent acceptance remains open.
+
+
+## Shared citation sets — correction candidate
+
+Fresh review of918318d found that repeatedly mapping and serializing a coarse
+JSON region spends the citation budget at items times occurrences. The candidate
+`kan-content/2` represents each stream's distinct source region once in
+`citation_sets`, an array of exact citation arrays. Items and derived tool inputs
+carry a canonical decimal-string `citation_set` index into that same stream's
+table. The mapping is computed only from its immutable ValidatedMapping and exact
+(start,end) region. No reference crosses streams or changes the source pin.
+
+Unique physical citations are charged once per set, against the existing shared
+4096-citation request budget. Item, acquisition, scan, deadline, cancellation and
+serialized-output limits remain. Every emitted index must resolve, including
+empty sets where the existing mapping permits an empty region. Table/index
+validation precedes browser rendering. The browser renders repeated sets once
+with keyboard-accessible references; single-use sets keep direct Source buttons.
+The version change is explicit; v1 and v2 response shapes are not interchanged.
+
+This correction is not unlimited interpretation: the1024-item and4MiB output
+ceilings still apply, and the full parsed body remains an explicitly derived
+copy. A single request can still exceed presentation limits. The422 message
+therefore offers exact Source inspection rather than implying that omitting
+chunks will make an incomplete stream interpretable. Content422/429 clear
+plaintext but preserve selected occurrence IDs, allowing a real retry.
+
+Provider adapter4 treats an absent tool_result content key as valid, while an
+explicit object/null/number content retains Shape. This was verified against
+Anthropic's official handle-tool-calls documentation on2026-10-19:
+https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls
+The UI labels the authenticated outer writer as Retained request signer to
+separate it from claimed provider roles and observer capture assertions.
+
+Qualification must include the former340/341-message boundary, a request over
+1MiB, exact source/duplicate/tool mappings, unique-citation accounting across
+streams, malformed reference refusal, retry/clear/revoke behavior, real browser
+navigation, semantic controls and fresh actual Opus review. These changes are
+candidates until that qualification completes; parent ACs remain open.

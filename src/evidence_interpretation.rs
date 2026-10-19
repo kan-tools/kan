@@ -17,7 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const VERSION: &str = "kan-anthropic-messages/3";
+pub const VERSION: &str = "kan-anthropic-messages/4";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     Request,
@@ -246,9 +246,9 @@ fn block(
         i.issues.push(Issue::Shape);
     }
     if kind == Kind::ToolResult
-        && !value
+        && value
             .get("content")
-            .is_some_and(|v| v.is_string() || v.is_array())
+            .is_some_and(|v| !v.is_string() && !v.is_array())
     {
         i.issues.push(Issue::Shape);
     }
