@@ -1,0 +1,47 @@
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	﻿2026-10-19T20:10:52.5545188Z ##[group]Run cargo clippy --features v2-crypto --all-targets -- -D warnings
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:10:52.5545773Z ^[[36;1mcargo clippy --features v2-crypto --all-targets -- -D warnings^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:10:52.5607128Z shell: /usr/bin/bash -e {0}
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:10:52.5607397Z env:
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:10:52.5607603Z   CARGO_HOME: /home/runner/.cargo
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:10:52.5607879Z   CARGO_INCREMENTAL: 0
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:10:52.5608106Z   CARGO_TERM_COLOR: always
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:10:52.5608589Z   CACHE_ON_FAILURE: false
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:10:52.5608814Z ##[endgroup]
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:10:52.9322229Z ^[[1m^[[92m    Checking^[[0m kan v1.0.0-beta.1 (/home/runner/work/kan/kan)
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5619486Z ^[[1m^[[91merror^[[0m^[[1m: useless conversion to the same type: `std::string::String`^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5620274Z    ^[[1m^[[94m--> ^[[0mtests/evidence_bundle_creation.rs:194:19
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5620644Z     ^[[1m^[[94m|^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5620991Z ^[[1m^[[94m194^[[0m ^[[1m^[[94m|^[[0m         observer: observer.did().into(),
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5622053Z     ^[[1m^[[94m|^[[0m                   ^[[1m^[[91m^^^^^^^^^^^^^^^^^^^^^^[[0m ^[[1m^[[91mhelp: consider removing `.into()`: `observer.did()`^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5634237Z     ^[[1m^[[94m|^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5635263Z     ^[[1m^[[94m= ^[[0m^[[1mhelp^[[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_conversion
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5636226Z     ^[[1m^[[94m= ^[[0m^[[1mnote^[[0m: `-D clippy::useless-conversion` implied by `-D warnings`
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5636927Z     ^[[1m^[[94m= ^[[0m^[[1mhelp^[[0m: to override `-D warnings` add `#[allow(clippy::useless_conversion)]`
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5637305Z 
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5637624Z ^[[1m^[[91merror^[[0m^[[1m: useless conversion to the same type: `std::string::String`^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5638140Z    ^[[1m^[[94m--> ^[[0mtests/evidence_bundle_creation.rs:344:45
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5638966Z     ^[[1m^[[94m|^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5639689Z ^[[1m^[[94m344^[[0m ^[[1m^[[94m|^[[0m             2 => request.context.observer = identity(11).did().into(),
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5640992Z     ^[[1m^[[94m|^[[0m                                             ^[[1m^[[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[[0m ^[[1m^[[91mhelp: consider removing `.into()`: `identity(11).did()`^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5641944Z     ^[[1m^[[94m|^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5643076Z     ^[[1m^[[94m= ^[[0m^[[1mhelp^[[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_conversion
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5643925Z 
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5644501Z ^[[1m^[[91merror^[[0m^[[1m: useless conversion to the same type: `std::string::String`^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5645389Z    ^[[1m^[[94m--> ^[[0mtests/evidence_bundle_creation.rs:534:21
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5645978Z     ^[[1m^[[94m|^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5646568Z ^[[1m^[[94m534^[[0m ^[[1m^[[94m|^[[0m             issuer: identity(8).did().into(),
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5647890Z     ^[[1m^[[94m|^[[0m                     ^[[1m^[[91m^^^^^^^^^^^^^^^^^^^^^^^^^[[0m ^[[1m^[[91mhelp: consider removing `.into()`: `identity(8).did()`^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5649041Z     ^[[1m^[[94m|^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5650198Z     ^[[1m^[[94m= ^[[0m^[[1mhelp^[[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_conversion
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5651134Z 
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5651813Z ^[[1m^[[91merror^[[0m^[[1m: useless conversion to the same type: `std::string::String`^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5653006Z    ^[[1m^[[94m--> ^[[0mtests/evidence_bundle_creation.rs:535:23
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5653615Z     ^[[1m^[[94m|^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5654254Z ^[[1m^[[94m535^[[0m ^[[1m^[[94m|^[[0m             observer: identity(10).did().into(),
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5655463Z     ^[[1m^[[94m|^[[0m                       ^[[1m^[[91m^^^^^^^^^^^^^^^^^^^^^^^^^^[[0m ^[[1m^[[91mhelp: consider removing `.into()`: `identity(10).did()`^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5656589Z     ^[[1m^[[94m|^[[0m
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5657895Z     ^[[1m^[[94m= ^[[0m^[[1mhelp^[[0m: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_conversion
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5659111Z 
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5780732Z ^[[1m^[[91merror^[[0m: could not compile `kan` (test "evidence_bundle_creation") due to 4 previous errors
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.5801728Z ^[[1m^[[33mwarning^[[0m: build failed, waiting for other jobs to finish...
+test	Run cargo clippy --features v2-crypto --all-targets -- -D warnings	2026-10-19T20:11:02.7217038Z ##[error]Process completed with exit code 101.

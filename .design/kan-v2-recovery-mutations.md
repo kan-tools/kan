@@ -81,3 +81,14 @@ checkpoint. Publication and writer activation remain distinct subsequent actions
 The current worktree's repeated `day design check` still returns exit2 for the
 shared-workspace refusal. The diagnostic is preserved locally; it is not counted
 as successful validation and was not redirected to the main checkout's log.
+
+## Creation author qualification — 2026-10-19
+
+Source22002e7 passes70 selected integration checks (including ten creation
+checks and eight abrupt-death boundaries), strict all-target v2 lint and format.
+The SQL/history oracle and seven compiled mutation controls pass with restored
+source identity. Evidence is in`reviews/kan-v2-recovery-creation-author/`.
+Initial fixture and lint failures remain recorded. Fresh Opus review is pending;
+restoration/publication/full recovery acceptance remain open. Remote performance
+generation exposed an unresolved legacy claim-codec canonicality refusal;
+it is not represented as a passing scaling result.

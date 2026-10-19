@@ -1,0 +1,24 @@
+
+running 1 test
+test creation_refuses_stale_pins_invalid_physical_types_extra_proofs_and_existing_outputs ... FAILED
+
+failures:
+
+---- creation_refuses_stale_pins_invalid_physical_types_extra_proofs_and_existing_outputs stdout ----
+
+thread 'creation_refuses_stale_pins_invalid_physical_types_extra_proofs_and_existing_outputs' (10572697) panicked at tests/evidence_bundle_creation.rs:359:9:
+mode 4
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    creation_refuses_stale_pins_invalid_physical_types_extra_proofs_and_existing_outputs
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.94s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-mutations)
+    Finished `test` profile [unoptimized] target(s) in 7.87s
+     Running tests/evidence_bundle_creation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_bundle_creation-2c0c9f1234da24e6)
+error: test failed, to rerun pass `--test evidence_bundle_creation`
+
+exit=101

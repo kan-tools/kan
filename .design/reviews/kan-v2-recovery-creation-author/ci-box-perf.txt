@@ -1,0 +1,18 @@
+perf	Measure the grid	﻿2026-10-19T19:58:00.3293210Z ##[group]Run scripts/run-perf-grid.sh measure target/release/kan > perf-results.tsv
+perf	Measure the grid	2026-10-19T19:58:00.3294053Z ^[[36;1mscripts/run-perf-grid.sh measure target/release/kan > perf-results.tsv^[[0m
+perf	Measure the grid	2026-10-19T19:58:00.3294647Z ^[[36;1mecho "## Perf grid (raw, ms)" >> "$GITHUB_STEP_SUMMARY"^[[0m
+perf	Measure the grid	2026-10-19T19:58:00.3294999Z ^[[36;1mecho '```' >> "$GITHUB_STEP_SUMMARY"^[[0m
+perf	Measure the grid	2026-10-19T19:58:00.3295571Z ^[[36;1mcolumn -t -s$'\t' perf-results.tsv >> "$GITHUB_STEP_SUMMARY"^[[0m
+perf	Measure the grid	2026-10-19T19:58:00.3295910Z ^[[36;1mecho '```' >> "$GITHUB_STEP_SUMMARY"^[[0m
+perf	Measure the grid	2026-10-19T19:58:00.3328397Z shell: /usr/bin/bash -e {0}
+perf	Measure the grid	2026-10-19T19:58:00.3328748Z env:
+perf	Measure the grid	2026-10-19T19:58:00.3328990Z   CARGO_HOME: /home/runner/.cargo
+perf	Measure the grid	2026-10-19T19:58:00.3329273Z   CARGO_INCREMENTAL: 0
+perf	Measure the grid	2026-10-19T19:58:00.3329542Z   CARGO_TERM_COLOR: always
+perf	Measure the grid	2026-10-19T19:58:00.3329776Z   CACHE_ON_FAILURE: false
+perf	Measure the grid	2026-10-19T19:58:00.3330049Z ##[endgroup]
+perf	Measure the grid	2026-10-19T19:58:00.3808993Z == grid point: 50 claims x 4 subjects (/tmp/tmp.kH7GQsbNUQ)
+perf	Measure the grid	2026-10-19T19:58:03.7943728Z == grid point: 800 claims x 4 subjects (/tmp/tmp.jiDNNGMsRu)
+perf	Measure the grid	2026-10-19T20:02:44.4882230Z generation failed: observe exited 1 at claim 723. Its stderr:
+perf	Measure the grid	2026-10-19T20:02:44.4883208Z error: log error: claim codec decode failed: claim record is not canonical DAG-CBOR
+perf	Measure the grid	2026-10-19T20:02:44.5297085Z ##[error]Process completed with exit code 1.

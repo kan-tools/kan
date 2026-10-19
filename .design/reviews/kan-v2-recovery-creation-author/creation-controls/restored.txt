@@ -1,0 +1,21 @@
+
+running 11 tests
+test creation_crash_child ... ignored, subprocess-only abrupt-death fixture
+test complete_bundle_remains_refused_by_standalone_openers_and_inventory ... ok
+test creation_keeps_the_selected_snapshot_when_source_appends_during_output_work ... ok
+test creation_preserves_physical_originals_and_metadata_for_admitted_complete_and_partial_copies ... ok
+test creation_refuses_stale_pins_invalid_physical_types_extra_proofs_and_existing_outputs ... ok
+test abrupt_death_never_publishes_a_partial_created_bundle ... ok
+test output_page_limit_retains_failure_without_truncating_source ... ok
+test creation_rejects_all_participant_aliases_before_sqlite_opens ... ok
+test source_derived_columns_do_not_replace_authoritative_bytes ... ok
+test precommit_cancellation_retains_unrecognized_artifact_and_postcommit_cancellation_is_uncertain ... ok
+test created_loss_history_uses_exact_maximal_partitions ... ok
+
+test result: ok. 10 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 5.50s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-mutations)
+    Finished `test` profile [unoptimized] target(s) in 7.82s
+     Running tests/evidence_bundle_creation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_bundle_creation-2c0c9f1234da24e6)
+
+exit=0

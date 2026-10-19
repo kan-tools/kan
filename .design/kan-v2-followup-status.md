@@ -15,9 +15,9 @@ named review disposition, not a main merge or operational cutover.
 | Frame decoder, recovery codec/state/member/replay | #297–301, through `c0a74313` | Current CI green; physical mutation and remote/UI consumers remain separate |
 | Physical bundle reader | #302 `6bf681a1` | Fresh approval with follow-ups; promoted empty physical-type regressions pass; mutation custody/refusal obligations carry forward |
 | Capture assembly | #303 `a65e2a67` | Fresh approval with follow-ups; absolute accounting/order/duplicate regressions promoted; CI green |
-| Provider interpretation v2 | #304 `6667190f` | Original `0d04848` approved with follow-ups; required and related fixes qualified with12 controls+whole-fix reversion; current CI green; fresh review of v2 pending |
-| Authorized Content/Source/Provenance | #305 `bb1e0ab1` | 74 integration+7unit+35UI author checks,6backend+5UI controls, real browser evidence; fresh actual Opus review running; CI23success/1in-progress at this snapshot |
-| Physical bundle creation | Local `c155abd`, `feat/kan-v2-recovery-mutations` | Draft only: compilation, controls, independent oracle/crash execution and fresh review pending; no PR yet |
+| Provider interpretation / Content | #305`aef1067` | Frozen baselinebb1e0ab received fresh Opus APPROVE WITH FOLLOW-UPS; corrections now author-qualified with103integrations+12units+47UI,17backend controls and retained browser evidence; fresh correction review pending; download still unverified |
+| Physical bundle creation | #306`22002e7`, `feat/kan-v2-recovery-mutations` |70integration checks,strict lint/format,seven semantic controls and independent SQL/history oracle pass; fresh review pending; restoration/publication remain required |
+| Legacy codec qualification | Recovery616ff64 performance run39315201306 | Claim canonicality refusal during synthetic generation; unresolved, not timing noise or a passing performance result |
 
 The next implementation order is:
 
