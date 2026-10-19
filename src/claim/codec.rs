@@ -127,7 +127,7 @@ pub fn decode_record(
     if bytes.len() > MAX_RECORD_BYTES {
         return Err(DecodeError::RecordTooLarge(bytes.len()));
     }
-    let raw: Ipld = match atproto_dasl::from_reader(bytes) {
+    let raw: Ipld = match super::ipld_decode::value(bytes) {
         Ok(raw) => raw,
         Err(
             atproto_dasl::DecodeError::NonCanonicalEncoding { .. }
@@ -270,7 +270,7 @@ fn verify_with_resolved_identities(
 
 fn typed_content<T: serde::Serialize>(value: &T, content_type: &str) -> Result<Ipld, EncodeError> {
     let bytes = atproto_dasl::to_vec(value)?;
-    let Ipld::Map(mut fields) = atproto_dasl::from_reader(&bytes[..])? else {
+    let Ipld::Map(mut fields) = super::ipld_decode::value(&bytes)? else {
         return Err(EncodeError::ContentNotMap);
     };
     if fields
