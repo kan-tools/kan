@@ -1,0 +1,360 @@
+PROTOCOL CORRECTION REVIEW — kan-v2-evidence-availability (design readiness only)
+=============================================================================
+Reviewer: fresh Claude Code session, claude-opus-5-5. Not the author, not the prior
+reviewer. No delegation, no subagents.
+Reviewed tree: export at .local-state/reviews/protocol-correction. Byte-identical to
+  HEAD b81eb4f for every reviewed file (git show HEAD:<f> | cmp). See tree-state-before.log.
+Targets read in full: .design/kan-v2-evidence-availability.md (329 lines),
+  rfcs/4-evidence-contract.md (315 lines; proposal section :87-181),
+  .design/tools/attestation_vectors.py, .design/tools/attestation_mutations.py,
+  .design/fixtures/service-attestation-v1.json (summarised by script),
+  prior BLOCK report .design/reviews/kan-v2-evidence-protocol-opus/evidence/REPORT.txt.
+Code read for the other side of each interface: src/evidence_service.rs (:320-380 retained
+  request / admitted_manifest, :484-560 audit and execute, :659-680 read_signed),
+  src/evidence_reader.rs (:20-40 decode_record, :53-62 ScopeAccess/Reader, :170-200 check_pin,
+  :275-310 source read), src/evidence_store.rs (:545-575 resume_initialization,
+  :613-622 check_schema, RecoveryReader::open -> check_schema).
+Skill: /Users/m/code/kan-tools/day/skills/adversarial-review/SKILL.md. North star:
+  the supplied north-star.json.
+
+VERDICT (design/protocol readiness ONLY; no runtime approval): **APPROVE WITH FOLLOW-UPS**
+R1 below must be written into the design before anyone implements the reader source path
+or proof-aware spool release. It does not block codec/statement/storage work.
+
+-----------------------------------------------------------------
+0. Constraints honoured / deviations from the skill
+-----------------------------------------------------------------
+- No kan/day reads or writes. Skill Step 7 (day review record / kan observe / kan mark)
+  NOT done, by operator instruction. I used the supplied north-star.json. Its 2 withheld
+  claims (excluded_by_trust: 2) stay withheld.
+- No cargo build/test/clippy/fmt, no target/, no .lake. Skill Step 3's cargo steps were
+  NOT run. This is a design gate: nothing requires a runtime claim, and none is made.
+- No network, real archives, production keys or deployments. Probes use only public test
+  scalars 1, 2 and 3.
+- Source, design, fixtures and oracle are unchanged: the SHA-256 values in
+  tree-state-before.log and tree-state-after.log are identical. Files written: only
+  review-evidence/*.
+- OBSERVATION, not reviewed: the LIVE worktree (not this export) has uncommitted changes:
+    M .design/fixtures/service-attestation-v1.json
+    M .design/tools/attestation_vectors.py   (adds issuer continuity to chain-position and a
+                                              'changed-chain-issuer' negative)
+    M src/evidence.rs, src/lib.rs
+    ?? src/evidence_attestation.rs, tests/evidence_attestation.rs
+  So Rust work has started ahead of this gate. This review covers HEAD b81eb4f only. It
+  says nothing about that uncommitted code.
+
+-----------------------------------------------------------------
+1. Commands run (exact) and raw results
+-----------------------------------------------------------------
+PY=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-encryption/.local-state/crypto-oracle-env/bin/python
+  (Python 3.9.6, cryptography 46.0.3)
+C1 $PY .design/tools/attestation_vectors.py --check                     -> oracle-check.log
+   "2 exact signed vectors; 46 labelled negatives; independent byte/signature/chain/metadata
+    checks passed. No admission/availability claim."  exit=0
+C2 $PY .design/tools/attestation_mutations.py                           -> oracle-mutations.log
+   "27/27 semantic-check removals killed; zero survivors."  exit=0
+C3 $PY -I review-evidence/probe_correction.py "$PWD"                   -> probe_correction.log
+   12 probes (P1 has two cases). 9 document gaps; 3 confirm intended behaviour.
+C4 $PY -I review-evidence/mutate_extended.py "$PWD"                    -> mutate_extended.log
+   25 reviewer mutants: 12 killed, 13 survive (4 equivalent, 9 real; see section 4).
+C5 $PY -I review-evidence/probe_survivors.py "$PWD"                    -> probe_survivors.log
+   The oracle LOGIC rejects every real-survivor input; the fixture has NO vector for any.
+C6 The prior reviewer's mutate_oracle.py was not re-run. Its exact-text patterns target
+   the pre-correction source and no longer match. All 13 of its concepts appear among the
+   author's 27 labels, and C2 kills each one.
+
+-----------------------------------------------------------------
+2. North star
+-----------------------------------------------------------------
+telos/raw-data-and-projections (Decision bafyreied3rk…): "Raw attested data is retained in
+full and never collapsed in the store. Every simplification … is a determined projection …
+A field holding a computed value is the failure mode." The telos deliberately declares no
+witnesses (Observation bafyreicakl3…). I invent none.
+The work serves this telos:
+  - availability is sampled and never stored;
+  - retained-verified is present-time, never backdated;
+  - source archives are preserved byte-exactly;
+  - an unsigned historical receipt is never reinterpreted as a signature (design :252-253).
+Tension: InTensionWith telos/performance-at-scale. The correction resolves this honestly:
+bounded descending pages plus process-local MAC cursors, with no persistent pin cache.
+The cost is that after a reader restart, reaching a deep row means paging down from the
+tip again (design :279-280). That cost is declared, and accepting it is correct.
+One telos risk (F-new-5): the recovery descriptor is called "authoritative" but records
+an observation, and clearing it is unspecified.
+
+-----------------------------------------------------------------
+3. Original findings vs correction
+-----------------------------------------------------------------
+B1 fixtures don't exercise chain bindings ....... RESOLVED (residual fixture gaps F-new-1/2)
+   - The JSON now holds 46 negatives, each with an `expected` label. They are re-signed with
+     the pinned key (attestation_vectors.py:149-152).
+   - check() asserts the exact label and fails on any unexpected exception
+     (:224-228). Mutation kills require a label mismatch or an accepted negative
+     (mutations.py:39), so they cannot be masked by a positive failing.
+   - C2 reproduced 27/27. Each of the 13 prior survivor concepts is now killed by its own
+     named vector.
+   - Residual: the 27 mutants delete whole require() calls. They never weaken one conjunct
+     inside a compound check. My conjunct-level mutants find 9 real survivors (section 4),
+     and there are still no snapshot/page vectors (F-new-1).
+
+B2 issuer model contradictory ................... RESOLVED for proofs; RESIDUAL R1 (audience)
+   - One configured current issuer signs every statement (design :241-243, RFC :154-158).
+   - The copy job runs on the service host; the key is never exported (design :195-198,
+     :243-245).
+   - admitted requires receipt.issuer == statement.issuer: vector foreign-admitted-issuer.
+   - The receipt must bind the proof's manifest: vector receipt-for-other-manifest.
+   - P4/P3 from the prior review are now rejected.
+   - Residual R1 (section 5): the request AUDIENCE rule was not reconciled for H != C.
+
+B3 page linkage / archive identity .............. RESOLVED at protocol level (no vectors)
+   - archiveId is in the statement bytes (RFC :99), the snapshot tuple (:135-137) and the
+     configured check (vectors configured-archive and mid-chain-archive).
+   - Descending anchored pages are specified (design :266-273, RFC :166-173).
+   - Equivocation and rollback non-guarantees are stated plainly (design :257-262,
+     RFC :161-164).
+   - My independent descending verifier, built from the design text
+     (probe_correction.py:descend), accepts the true chain and rejects:
+       * a same-height fork spliced under branch A's tip (P3: forward=accept,
+         descending=reject:anchor-mismatch);
+       * alternate tip statements with changed issuedAt/purpose (P1);
+       * paging past genesis (P4).
+     So the algorithm is concrete enough to implement.
+   - The oracle and fixtures contain no anchor/page/cursor function or vector (P2). RFC
+     :173-174 explicitly defers "RPC and cursor framing" fixtures to implementation; that
+     deferral is legitimate. But design :326 ("Test semantically valid alternate statements
+     … against a pinned successor") is NOT met by the committed fixture (P1:
+     fixture vector present=False).
+     -> F-new-1.
+
+F1 P-256 only ............. specified (design :92-93, RFC :120-121). Vector other-algorithm
+                            (secp256k1) -> issuer-algorithm. Rust must still add an explicit
+                            multicodec 0x1200 check; atrium-crypto accepts both (prior F1).
+F2 proof in reply/release . specified (design :296-302). Residual: R1 (H != C retries cannot
+                            reach dedupe).
+F3 degraded mode .......... specified: explicit owner-selected mode, separate read-only
+                            reader, grant check before any disclosure, refuses Append, no
+                            strict-open fallback (design :305-310).
+F4 old-reader refusal ..... specified (design :319). Confirmed in code:
+                            - check_schema refuses user_version != 1
+                              (evidence_store.rs:613-621);
+                            - RecoveryReader::open calls check_schema;
+                            - resume_initialization with version 2 falls into
+                              initialize_empty and errors (:553-575).
+F5 durable recovery marker  specified (design :314-319). Its surface is deferred "with the
+                            implementation". See F-new-5.
+F6 prefix salvage ......... explicitly unsupported (design :312-313).
+F7 raw commit / one scope . specified (design :241, :302-303).
+F8 statement bound ........ the envelope bound subsumes the statement bound. Vector
+                            oversized-nested-statement -> envelope-bound. The statement-bound
+                            check is redundant (equivalent mutant, section 4).
+
+-----------------------------------------------------------------
+4. Mutation results beyond the author's 27 (mutate_extended.log, probe_survivors.log)
+-----------------------------------------------------------------
+Killed (12):
+  - signature-verify removal, record-binding (both CIDs), receipt.manifest equality;
+  - chain scope/archive/previousManifest/previousAttestation;
+  - purpose any-string, bool-as-int, statementCid-from-envelope, domain change.
+
+Equivalent survivors (4; not gaps):
+  - statement-bound: implied by envelope-bound;
+  - DID re-encode: base58 is bijective at fixed length;
+  - DID prefix: label-equivalent through re-encode;
+  - sequence>0: previousSequence would be -1 and fail safe-integer first.
+
+Real survivors (9). For each one the oracle logic rejects a concrete input (C5), but no
+fixture vector exists:
+  a. receipt.operation != manifest.operation           -> receipt-binding
+  b. receipt.position  != manifest.position            -> receipt-binding
+  c. manifest scope != configured scope, receipt bound to that manifest
+                                                       -> receipt-binding
+     (nothing else ties statement.scopeToken to manifest.scopeToken)
+  d. sequence>1 with null predecessors, no verified previous
+                                                       -> genesis
+     (this matters for descending termination)
+  e. admitted receipt issuer with the same principal but a different
+     verificationMethod                                -> admitted-issuer
+  f. manifest-profile and receipt-profile labels: no vector
+  g. r >= n: no vector
+  h. inclusive bound s == floor(n/2): no vector. A range-pass/signature-invalid vector
+     would discriminate s<n/2 from s<=n/2.
+  i. issuer-point (off-curve x=1 is rejected correctly, P8): no vector.
+Conclusion: "27/27 zero survivors" is true for the 27 whole-call deletions the author
+chose. It does not show that every conjunct discriminates. Rust parity would inherit
+these blind spots. -> F-new-2.
+
+-----------------------------------------------------------------
+5. Findings
+-----------------------------------------------------------------
+R1 (must decide before the reader source path / proof-aware spool release; no byte change)
+   Historical issuer H != current issuer C contradicts the request audience rule.
+
+   The design allows H != C for retained-verified (:249-251), says exact retries of copied
+   operations return retained-verified (:299-301), and says source reads verify the signed
+   writer request (:288-290). But:
+     - RFC :303-309: requests bind the destination service did:key as `audience`; admission
+       compares it with the serving identity "before accessing storage"; "key rotation and
+       audience transition are not implemented by this profile."
+     - Service::execute refuses audience != self.issuer() BEFORE the duplicate lookup
+       (src/evidence_service.rs:549-551). A spooled legacy op addressed to H is
+       AccessLimited by C, so the spool never drains.
+     - The reader source read refuses signed.request.audience != access.issuer
+       (src/evidence_reader.rs:285-289), so every retained-verified row with H != C fails as
+       Corrupt. check_pin (:182) and decode_record (:32, receipt.issuer == access.issuer)
+       pin the same single identity.
+     - verify_retained_request already binds receipt.issuer == request.audience (:338-341),
+       so a consistent rule exists. It just isn't stated for the proof profile.
+   Choose one and write it into design and RFC:
+     (a) The first profile requires H == C: the upgrade plan refuses H != C. This matches
+         RFC :308-309, but then the design's "historical issuer can differ" text must go.
+     (b) Specify that for retained-verified rows the reader and the service dedupe path
+         accept audience == receipt.issuer, bound through the C-signed proof's receipt CID.
+         Exact retries then match the stored operation before the audience gate. Never
+         relax the audience check for admitted rows.
+   Recommended: (a) for the first profile. Leaving it implicit invites an implementer to
+   relax the audience check globally, which reopens request redirection.
+   Probe: P11.
+
+F-new-1 Snapshot/page/cursor vectors.
+   Add Python oracle functions and fixture vectors for:
+     - the anchor (snapshot tip CID equality);
+     - descending predecessor equality;
+     - genesis termination, past-genesis, an empty page before genesis, inconsistent
+       complete flag;
+     - same-height alternate statements at the tip (purpose/time/receipt);
+     - a fork splice.
+   This is design :326, which is currently unmet. Cursor/MAC framing may follow, as RFC
+   :173-174 already declares. My descend() in probe_correction.py is a working sketch.
+
+F-new-2 Fixture completeness. Add labelled negatives for section 4 items a-i, and pin
+   schema-level receipt negatives for Rust:
+     - P7: durability 'best-effort' and an extra receipt field are ACCEPTED by the Python
+       oracle; a missing issuer raises KeyError, not a label;
+     - P6: a junk historical issuer Author is accepted for retained-verified.
+   The Python oracle declares receipt schema "Rust-only" (RFC :246), so these must be Rust
+   vectors.
+
+F-new-3 Purpose ordering and historical-issuer consistency are not verifiable (P5).
+   - The design says upgrade copies a complete legacy prefix with one pinned legacy issuer
+     (:255, :312). The oracle accepts admitted -> retained-verified -> admitted ->
+     retained-verified with three receipt issuers and decreasing issuedAt.
+   - The committed positive vector is itself admitted(1) -> retained-verified(2), an order
+     the specified upgrade can never produce.
+   - Specify the reader rule:
+       * retained-verified only in a contiguous prefix from sequence 1, all with one receipt
+         issuer;
+       * admitted only after that prefix;
+       * issuedAt non-decreasing, or state explicitly that it is unchecked.
+   - Reorder the positive vector to retained-verified -> admitted.
+   - Also state that service admission never mints retained-verified, except by returning
+     the stored proof on exact retry.
+   This is not a trust escalation (C is trusted anyway). It is a cheap invariant that would
+   otherwise exist only operationally.
+
+F-new-4 Assertion provenance in the UI. The design separates issuer attestation from
+   writer verification (:72-76, AC-6). It does not say:
+     - "missing" and "corrupt" are signed SERVICE assertions the reader cannot verify;
+     - only "available" is ever reader-verified, and only on a source read (hash + writer
+       signature);
+     - snapshot through/tip/genesis is a service assertion with no freshness guarantee.
+   Classification to pin in the requirements:
+     caller assertion  = unsigned frontier/after/through coordinates and cursor bytes
+                         before MAC check (never trusted: :277-279);
+     service assertion = signed reply (snapshot, availability state, page) and the C-signed
+                         statement (admitted / retained-verified);
+     writer verification = reader-side verification of the retained signed request
+                         (payload present only);
+     receipt.issuer    = an unsigned field, bound only via the C-signed receipt CID.
+
+F-new-5 Recovery descriptor (design :314-319).
+   - It is called "authoritative" but holds an observation made at a point in time. Specify
+     that it is an observation record (observer, time, source pin), not a current state.
+   - Specify how "explicit owner recovery" lifts the strict-open refusal WITHOUT deleting
+     or overwriting the descriptor (for example a new copy, or an appended resolution
+     record). Otherwise the record of loss gets destroyed, against the telos.
+   - Its surface row is still to come.
+
+F-new-6 archiveId provisioning.
+   - Readers and spool clients check a "configured" archiveId (:298, :325). Say where that
+     comes from: the plan output delivered out of band. TOFU from the first snapshot would
+     weaken the "foreign archive" check.
+   - An owner-copy changes archiveId, so every reader/client config must be updated.
+   - Resume binding (:172) omits archiveId even though the plan (:115) includes it.
+
+F-new-7 Source quiescence.
+   - Resume refuses differing plan inputs, so there is no catch-up to a later legacy tip.
+   - State that the legacy service must stop admitting between plan pin and cutover, or
+     appends acknowledged with legacy receipts are absent from the destination. Production
+     cutover is out of scope, but this constraint belongs in the plan semantics.
+
+-----------------------------------------------------------------
+6. REQ / AC coverage (preimplementation; prose is not evidence)
+-----------------------------------------------------------------
+REQ-1 proof binding ........ unmet (no code). Spec adequate. Fixture coverage: good for
+                             statement fields and chain links; gaps F-new-1/2/3.
+REQ-2 atomic admission ..... unmet. Spec adequate (design :62-70, :296-303). R1 affects
+                             retries only.
+REQ-3 inventory states/auth  unmet. Spec adequate incl. degraded disclosure (:305-310).
+                             F-new-4.
+REQ-4 startup/pinned chain . unmet. Algorithm concrete (verified by reviewer sketch);
+                             vectors missing (F-new-1).
+REQ-5 owner-copy upgrade ... unmet. Spec adequate except R1, F-new-3, F-new-6, F-new-7.
+REQ-6 surfaces/backup ...... unmet. Old-reader refusal confirmed in code. F-new-5.
+REQ-7 Library states ....... unmet / unverifiable here.
+REQ-8 qualification ........ unmet. This is a design-gate review, not the build review.
+AC-1..AC-6 ................. all unchecked, correctly (design :21-26).
+
+-----------------------------------------------------------------
+7. Scope-narrowing language
+-----------------------------------------------------------------
+Each item below is judged in its own right.
+- "Prefix-only salvage is not supported" (:313): legitimate, decided before
+  implementation, and disclosed.
+- "no rollback/freshness guarantee across refresh or restart" (:261-262) and "No signature
+  detects equivocation" (:260): legitimate. These are honest non-claims, not drift.
+- "Detailed RPC and cursor framing must receive implementation fixtures before release"
+  (RFC :173-174): legitimate deferral, but it conflicts with design :326 for the alternate
+  statement case (F-new-1).
+- "declare this surface with the implementation" (:316-317): acceptable, but see F-new-5.
+- "append-while-degraded" (:146, :206): legitimate and separable.
+- "no production key/custody change selected" (:194-198): legitimate now. The software
+  boundary (signer stays on the service host) is fixed, and provider choice is genuinely
+  separable.
+
+-----------------------------------------------------------------
+8. House rules
+-----------------------------------------------------------------
+- No destruction: copy-upgrade, source preserved, no in-place migration. OK. Watch
+  F-new-5 (descriptor clearing).
+- Raw vs projection: availability is sampled, indexes are disposable, cursors are
+  process-local and grant nothing. OK.
+- Surface contract: named together (:179-185). Not yet done (expected).
+- One surface: the owner-authorized frontend was not re-litigated.
+- Provenance: purposes are never interchangeable, there is no backdating, and the
+  historical receipt issuer is displayed without being promoted to a signature. OK.
+
+-----------------------------------------------------------------
+9. Verdict rationale
+-----------------------------------------------------------------
+**APPROVE WITH FOLLOW-UPS** (design/protocol readiness only; no runtime approval).
+
+All three original blockers are resolved at the protocol level, and none of my findings
+requires changing the statement bytes:
+  - B1: every named check now has a re-signed, labelled vector. I reproduced 27/27 kills.
+  - B2: one host-resident current issuer signs everything; admitted-issuer and receipt
+    binding are vectored.
+  - B3: archiveId is in the bytes; descending anchored pages and process-local MAC cursors
+    are specified concretely enough that an independent sketch rejects forks, tip
+    substitutions and past-genesis pages; the non-guarantees are stated honestly.
+F1-F8 are each specified.
+
+What remains:
+  - R1, one real contradiction: allowing historical issuer != current issuer conflicts with
+    the RFC's request-audience rule, and the existing service and reader code would refuse
+    spool retries and source reads. Resolve it in text, preferably by requiring H == C for
+    the first profile, before implementing those two paths.
+  - The fixture set needs snapshot/page vectors, conjunct-level negatives and a
+    purpose-order rule (F-new-1..3).
+  - F-new-4..7 are specification clarifications.
+These are concrete and bounded, and none undermines telos/raw-data-and-projections.
+The build still needs Rust parity, the runtime ACs and its own fresh Opus review.

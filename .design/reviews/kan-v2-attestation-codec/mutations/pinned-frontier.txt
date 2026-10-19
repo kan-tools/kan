@@ -1,0 +1,22 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next)
+    Finished `test` profile [unoptimized] target(s) in 6.85s
+     Running tests/evidence_attestation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attestation-cba5a126dc479c9c)
+
+running 1 test
+test descending_pages_link_to_the_exact_pin_and_terminate_at_genesis ... FAILED
+
+failures:
+
+---- descending_pages_link_to_the_exact_pin_and_terminate_at_genesis stdout ----
+
+thread 'descending_pages_link_to_the_exact_pin_and_terminate_at_genesis' (9329998) panicked at tests/evidence_attestation.rs:290:5:
+same-height fork must fail at pinned frontier
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    descending_pages_link_to_the_exact_pin_and_terminate_at_genesis
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `--test evidence_attestation`

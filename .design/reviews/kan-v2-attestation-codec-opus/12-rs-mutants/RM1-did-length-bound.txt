@@ -1,0 +1,89 @@
+mutant RM1-did-length-bound
+file src/evidence_attestation.rs
+--- old
+if !(56..=80).contains(&did.len()) || !did.starts_with("did:key:z")
+--- new
+if !did.starts_with("did:key:z")
+--- restored sha 6cd4a7ddb8b6b958c1c56c8f5eeb3e9604cd4398ee4f25d3807b0a9c24f9b7a3
+
+
+running 5 tests
+test valid_same_manifest_alternate_statement_does_not_replace_pinned_predecessor ... ok
+test issuance_cannot_sign_mismatched_records_or_overflow_frontiers ... ok
+test independent_bytes_signatures_and_chain_match ... ok
+test descending_pages_link_to_the_exact_pin_and_terminate_at_genesis ... ok
+test independent_resigned_negative_vectors_fail_at_named_check ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+
+running 7 tests
+test review_rust_rejects_schema_invalid_sources_oracle_accepts ... ok
+test review_short_did_never_reaches_dependency_panic ... FAILED
+test review_predecessor_is_caller_authority ... ok
+test review_differential_against_python_oracle ... FAILED
+test review_codec_permits_store_level_invariants ... ok
+test review_verify_at_labels_fork_height_and_genesis ... ok
+test review_hostile_bytes_never_accept_or_panic ... ok
+
+failures:
+
+---- review_short_did_never_reaches_dependency_panic stdout ----
+
+thread 'review_short_did_never_reaches_dependency_panic' (9366597) panicked at /Users/m/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/atrium-crypto-0.1.3/src/did.rs:85:32:
+range end index 2 out of range for slice of length 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+did:key:z      -> RUST-PANIC
+
+thread 'review_short_did_never_reaches_dependency_panic' (9366597) panicked at tests/zz_review_attestation_probe.rs:257:9:
+assertion `left == right` failed: did:key:z
+  left: "RUST-PANIC"
+ right: "issuer-encoding"
+
+---- review_differential_against_python_oracle stdout ----
+same v-true                                           python=profile                rust=profile
+same archive-text                                     python=archive-length         rust=archive-length
+same scope-text                                       python=scope-length           rust=scope-length
+same manifest-raw-codec-link                          python=record-cid             rust=record-cid
+same receipt-raw-codec-link                           python=record-cid             rust=record-cid
+same prev-manifest-raw-codec                          python=record-cid             rust=record-cid
+same prev-attestation-raw-codec                       python=record-cid             rust=record-cid
+same purpose-case                                     python=purpose                rust=purpose
+same issuedAt-max-safe-accept                         python=ACCEPT                 rust=ACCEPT
+same issuedAt-zero-accept                             python=ACCEPT                 rust=ACCEPT
+same kind-swap                                        python=manifest-profile       rust=manifest-profile
+same capture-as-receipt                               python=receipt-profile        rust=receipt-profile
+same capture-as-manifest                              python=manifest-profile       rust=manifest-profile
+same noncanonical-manifest-bytes                      python=manifest-canonical     rust=manifest-canonical
+same signature-text                                   python=signature-encoding     rust=signature-encoding
+same signature-65                                     python=signature-encoding     rust=signature-encoding
+same signature-link                                   python=signature-encoding     rust=signature-encoding
+same statement-link                                   python=statement-bytes        rust=statement-bytes
+same envelope-exactly-16384                           python=statement-canonical    rust=statement-canonical
+same envelope-16385                                   python=envelope-bound         rust=envelope-bound
+DIFF precedence-outer-trailing-and-bad-manifest       python=envelope-canonical     rust=manifest-canonical
+DIFF did-short-55                                     python=issuer-encoding        rust=issuer-algorithm
+
+thread 'review_differential_against_python_oracle' (9366593) panicked at /Users/m/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/atrium-crypto-0.1.3/src/did.rs:85:32:
+range end index 2 out of range for slice of length 1
+DIFF did-z2                                           python=issuer-encoding        rust=RUST-PANIC
+
+thread 'review_differential_against_python_oracle' (9366593) panicked at tests/zz_review_attestation_probe.rs:104:9:
+assertion `left != right` failed: "did-z2"
+  left: "RUST-PANIC"
+ right: "RUST-PANIC"
+
+
+failures:
+    review_differential_against_python_oracle
+    review_short_did_never_reaches_dependency_panic
+
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.42s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next/.local-state/reviews/codec)
+    Finished `test` profile [unoptimized] target(s) in 6.84s
+     Running tests/evidence_attestation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attestation-cba5a126dc479c9c)
+     Running tests/zz_review_attestation_probe.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_attestation_probe-da9858e49482ccea)
+error: test failed, to rerun pass `--test zz_review_attestation_probe`
+error: 1 target failed:
+    `--test zz_review_attestation_probe`

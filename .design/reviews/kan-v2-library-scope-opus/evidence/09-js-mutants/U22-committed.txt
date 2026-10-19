@@ -1,0 +1,49 @@
+✔ real endpoint uses header auth and untrusted source stays text (3.713667ms)
+✔ lock aborts pending source and clears every private view (0.730292ms)
+✔ page and scope navigation carry only the selected authenticated pin (0.852334ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.7705ms)
+✔ old transport errors cannot lock a newer session (0.564375ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.776167ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.655708ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.807875ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (1.890709ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.62775ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.354042ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.560292ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.90725ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.499875ms)
+✔ partial catalog coverage persists while browsing and retry clears old authority (0.705041ms)
+✔ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (0.839708ms)
+✔ both authorization denial statuses lock an already open Library (1.161ms)
+✔ Previous is disabled immediately when leaving a later page (0.901083ms)
+✔ malformed duplicate and inconsistent capabilities never open a Library (1.759792ms)
+✔ all directional control families default to exact hex with explicit text access (5.338167ms)
+✖ malformed retry clears partially rendered capabilities and keeps recovery available (0.857417ms)
+✔ malformed scope catalogs are rejected before any option or page request (5.332292ms)
+✔ malformed scope retry clears old plaintext and permits recovery (0.720834ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 22
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 60.889875
+
+✖ failing tests:
+
+test at tests/library_ui.test.cjs:46:1
+✖ malformed retry clears partially rendered capabilities and keeps recovery available (0.857417ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next/.local-state/reviews/library/tests/library_ui.test.cjs:46:477)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual'
+  }

@@ -1,0 +1,15 @@
+✔ PB1 boundary values are accepted, not falsely rejected (3.683375ms)
+✔ PB2 complete empty catalog still opens without page request (0.644917ms)
+✔ PB3 over-limit scope name and pin request are rejected (0.993375ms)
+✔ PB4 non-string scope/request with a length property are rejected (1.683833ms)
+✔ PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery (0.911709ms)
+✔ PB6 lock during malformed-catalog reply ignores the late reply (0.449209ms)
+✔ PB7 after malformed retry, old scope names and pins cannot be navigated (0.585125ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 37.423833

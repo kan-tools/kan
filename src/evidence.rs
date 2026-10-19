@@ -107,18 +107,7 @@ pub fn encode(value: &Ipld) -> Result<Decoded, Error> {
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Decoded, Error> {
-    if bytes.len() > MAX_RECORD_BYTES {
-        return Err(canonical("record exceeds 65536 bytes"));
-    }
-    let mut parser = Parser { bytes, offset: 0 };
-    let value = parser.item(0)?;
-    if parser.offset != bytes.len() {
-        return Err(canonical("trailing bytes"));
-    }
-    scalars(&value, 0)?;
-    if atproto_dasl::to_vec(&value).map_err(|e| Error::Schema(e.to_string()))? != bytes {
-        return Err(canonical("noncanonical bytes"));
-    }
+    let value = canonical_value(bytes, MAX_RECORD_BYTES)?;
     let envelope = closed(&value, &["v", "kind", "body"])?;
     let version = uint(&envelope["v"])?;
     if version == 0 {
@@ -149,6 +138,23 @@ pub fn decode(bytes: &[u8]) -> Result<Decoded, Error> {
         bytes: bytes.to_vec(),
         cid,
     }))
+}
+
+/// Shared strict parser for bounded protocol values, preserving byte/link types.
+pub(crate) fn canonical_value(bytes: &[u8], maximum: usize) -> Result<Ipld, Error> {
+    if bytes.len() > maximum {
+        return Err(canonical("value exceeds byte limit"));
+    }
+    let mut parser = Parser { bytes, offset: 0 };
+    let value = parser.item(0)?;
+    if parser.offset != bytes.len() {
+        return Err(canonical("trailing bytes"));
+    }
+    scalars(&value, 0)?;
+    if atproto_dasl::to_vec(&value).map_err(|e| Error::Schema(e.to_string()))? != bytes {
+        return Err(canonical("noncanonical bytes"));
+    }
+    Ok(value)
 }
 
 /// Byte types are determined by CBOR headers, never by payload heuristics.
@@ -301,7 +307,10 @@ fn map(value: &Ipld) -> Result<&BTreeMap<String, Ipld>, Error> {
     }
 }
 
-fn closed<'a>(value: &'a Ipld, fields: &[&str]) -> Result<&'a BTreeMap<String, Ipld>, Error> {
+pub(crate) fn closed<'a>(
+    value: &'a Ipld,
+    fields: &[&str],
+) -> Result<&'a BTreeMap<String, Ipld>, Error> {
     let value = map(value)?;
     if value.len() != fields.len() || fields.iter().any(|field| !value.contains_key(*field)) {
         return Err(fail("missing or unknown field"));
@@ -309,21 +318,21 @@ fn closed<'a>(value: &'a Ipld, fields: &[&str]) -> Result<&'a BTreeMap<String, I
     Ok(value)
 }
 
-fn uint(value: &Ipld) -> Result<i128, Error> {
+pub(crate) fn uint(value: &Ipld) -> Result<i128, Error> {
     match value {
         Ipld::Integer(n) if (0..=MAX_SAFE_INTEGER).contains(n) => Ok(*n),
         _ => Err(fail("expected unsigned safe integer")),
     }
 }
 
-fn bytes(value: &Ipld, length: usize) -> Result<&[u8], Error> {
+pub(crate) fn bytes(value: &Ipld, length: usize) -> Result<&[u8], Error> {
     match value {
         Ipld::Bytes(value) if value.len() == length => Ok(value),
         _ => Err(fail("wrong byte string length")),
     }
 }
 
-fn string(value: &Ipld, max: usize) -> Result<&str, Error> {
+pub(crate) fn string(value: &Ipld, max: usize) -> Result<&str, Error> {
     match value {
         Ipld::String(value) if !value.is_empty() && value.len() <= max => Ok(value),
         _ => Err(fail("wrong string length or type")),
@@ -349,7 +358,7 @@ fn list(value: &Ipld) -> Result<&[Ipld], Error> {
     }
 }
 
-fn link(value: &Ipld, codec: u8) -> Result<&Cid, Error> {
+pub(crate) fn link(value: &Ipld, codec: u8) -> Result<&Cid, Error> {
     if let Ipld::Link(cid) = value {
         let raw = cid.to_bytes();
         if raw.len() == 36 && raw[..4] == [1, codec, 0x12, 0x20] {
@@ -359,7 +368,7 @@ fn link(value: &Ipld, codec: u8) -> Result<&Cid, Error> {
     Err(fail("wrong CID profile"))
 }
 
-fn author(value: &Ipld) -> Result<(), Error> {
+pub(crate) fn author(value: &Ipld) -> Result<(), Error> {
     // Preserve the strict parser's types through the identity boundary. Generic
     // drisl IPLD deserialization can reinterpret untagged bytes as a CID.
     let fields = closed(

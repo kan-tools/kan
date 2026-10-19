@@ -1,0 +1,38 @@
+P1-issuedAt [GAP] alternate seq-1 statement (issuedAt changed, re-signed by pinned key)
+    EXPECT:   refused against pinned successor; fixture carries a labelled vector
+    OBSERVED: standalone=accept; successor-forward=reject:chain-commitments; reviewer-descending=reject:anchor-mismatch; fixture vector present=False
+P1-purpose [GAP] alternate seq-1 statement (purpose changed, re-signed by pinned key)
+    EXPECT:   refused against pinned successor; fixture carries a labelled vector
+    OBSERVED: standalone=accept; successor-forward=reject:chain-commitments; reviewer-descending=reject:anchor-mismatch; fixture vector present=False
+P2 [GAP] descending page / snapshot anchor / cursor in oracle+fixture
+    EXPECT:   design :266-284 + RFC :166-174 algorithm has independent vectors before freezing
+    OBSERVED: oracle names=[]; fixture keys=['archiveHex', 'negative', 'pinnedIssuer', 'positive', 'scopeHex', 'status', 'testPrivateScalars']
+P3 [ok ] same-height fork statement under pinned tip of branch A
+    EXPECT:   forward verify accepts (declared: no equivocation guarantee); descending anchor rejects
+    OBSERVED: forward=accept; descending-from-A-tip=reject:anchor-mismatch
+P4 [ok ] page that continues past genesis
+    EXPECT:   integrity error
+    OBSERVED: reject:page-past-genesis
+P5 [GAP] interleaved admitted/retained-verified chain, three receipt issuers, decreasing issuedAt
+    EXPECT:   design specifies upgrade = complete legacy prefix of retained-verified with one pinned legacy issuer (:255,:312); a verifier rule or explicit statement that order/issuer-consistency is unchecked
+    OBSERVED: accept (no purpose-order, single-historical-issuer or issuedAt monotonicity rule in RFC/oracle)
+P6 [GAP] retained-verified over receipt with malformed historical issuer Author
+    EXPECT:   historical issuer is displayed by UI (:253); must at least be a valid static Author; fixture negative
+    OBSERVED: issuer==current: accept; junk issuer retained-verified: accept; junk admitted: reject:admitted-issuer
+P7 [GAP] receipt schema (durability literal, closed fields, required issuer) in proof binding
+    EXPECT:   RFC :71 closed receipt body; labelled negatives for Rust parity (Python oracle declares schema Rust-only :246)
+    OBSERVED: durability=best-effort: accept; extra field: accept; missing issuer: unexpected:KeyError:'issuer'; kind=manifest: reject:receipt-profile
+P8 [GAP] labels without any fixture vector
+    EXPECT:   every verifier label has a labelled vector (design :323-329)
+    OBSERVED: labels with no vector=['manifest-profile', 'receipt-profile', 'issuer-point', 'manifest-canonical', 'receipt-canonical', 'statement-bound']; off-curve x=1 did → reject:issuer-point; r=n → reject:signature-range
+P9 [GAP] acceptance boundary s = floor(n/2)
+    EXPECT:   a positive vector pins inclusive bound (RFC :121 "0 < s <= n/2")
+    OBSERVED: positive s values == n//2: [False, False]
+P10 [ok ] cross-archive replay to a reader configured for another archiveId
+    EXPECT:   configured-archive
+    OBSERVED: reject:configured-archive
+P11 [GAP] H != C: exact retry of copied legacy op / source read of retained-verified row under existing audience rules
+    EXPECT:   design :299-301 says exact retry returns retained-verified; :288-290 source read verifies writer request
+    OBSERVED: service retry admitted=False; reader source accepted=False; retained binding=True; design specifies no audience rule change
+
+SUMMARY: 9 gaps of 12 probes

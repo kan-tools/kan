@@ -96,6 +96,7 @@ An attestation statement is canonical DAG-CBOR exactly
 | Field | Value |
 |---|---|
 | issuer | Static Author with canonical base58btc P-256 did:key, compressed SEC1 public key, exact `principal#fingerprint` method, static/null identity version |
+| archiveId | Exactly 32 bytes; immutable destination archive identity |
 | scopeToken | Exactly 32 bytes |
 | sequence | Global local sequence in 1…2^53−1 |
 | manifest, receipt | Exact canonical record CIDs, CIDv1/DAG-CBOR/SHA2-256 |
@@ -125,17 +126,17 @@ The statement CID is the attestation identity used by the chain. Using it rather
 than a signature/envelope hash keeps the identity independent of ECDSA nonce
 choice. Preserve exact stored envelope bytes on retries regardless. Verification
 requires contiguous sequence and exact preceding manifest **and** statement
-commitments, matching issuer/scope, and structural binding of the exact receipt
+commitments, matching configured issuer/archive/scope, and structural binding of the exact receipt
 to its manifest. New admission requires the current receipt issuer; an explicit
 upgrade preserves the historical receipt issuer and distinguishes the present
 verification issuer using `retained-verified`. No signature proves unavailable
 original writer bytes independently of the attesting service's prior verification.
 
-The proposed inventory snapshot is `(through, tip, attestation)`: through is the
+The proposed inventory snapshot is `(archiveId, through, tip, attestation)`: through is the
 local sequence, tip its manifest CID and attestation its statement CID. Genesis
-is `(0, null, null)` only. The third coordinate prevents substitution of another
+is `(archiveId, 0, null, null)` only. The attestation coordinate prevents substitution of another
 valid receipt/purpose/time statement for an unchanged manifest at the same height.
-Pin all three in signed InventorySnapshot/InventoryPage replies and independently
+Pin all four in signed InventorySnapshot/InventoryPage replies and independently
 verify metadata chain linkage before exposing rows. Legacy Snapshot/Page/Read
 remain unchanged. A reader explicitly configured for `proof-inventory-v1` must
 refuse unknown/unsupported profile responses; it must never fall back silently.
@@ -150,14 +151,44 @@ SQLite coordination WAL/SHM initialization must be explicitly surface-declared;
 no hidden checkpoint or immutable-mode bypass of a live WAL is permitted. Hot
 rollback journals or unusable sidecars fail closed; recovery uses a separate copy.
 
+For `admitted`, the exact receipt issuer must equal the configured current service
+issuer. For `retained-verified`, the original receipt issuer may differ and is
+preserved; the current service issuer signs the upgrade verification on its own
+host after verifying the pinned legacy partition and request. One configured
+current issuer signs the entire destination chain. The proof does not turn the
+historical unsigned receipt into a historical signature.
+
+Fresh copy destinations receive new archiveIds; backup/resume preserve them.
+An archiveId does not prevent same-key forks after backup restore. Readers pin
+an exact statement tip; the first profile promises neither across-reader
+non-equivocation nor persisted monotonicity across refresh/restart.
+
+Inventory pages descend from the authenticated pin. Each first/current statement
+CID and manifest match the expected frontier; verifying its metadata/signature
+reveals the predecessor that must match the next row. The reader returns bounded
+MAC-authenticated continuation/occurrence tokens tied to the original pin,
+archive, scope and process instance, only after verification. Restart invalidates
+them. They are disposable verification shortcuts, never grants: every page or
+source reauthorizes against the service. No unsigned cursor, forward-page splice,
+same-height alternate statement or unbounded prefix scan is accepted. Detailed
+RPC and cursor framing must receive implementation fixtures before release.
+
 Proposal byte fixtures are in `.design/fixtures/service-attestation-v1.json`,
 with `.design/tools/attestation_vectors.py --check` as an independent Python
-DAG-CBOR/OpenSSL oracle. The public synthetic private scalar is 1. Two valid
-statements pin bytes/CIDs/preimages/signatures and chain linkage; twenty hostile
-checks include wrong issuer, changed purpose/scope, invalid integers, high-S,
-zero signatures, extra envelope fields, oversized and trailing inputs. No Rust
-implementation exists yet, so these are preparation for cross-implementation
-conformance, not evidence that it has passed.
+DAG-CBOR/OpenSSL oracle. The correction includes re-signed, labelled negatives;
+public scalars 1 and 2 are synthetic fixture identities only. Rust parity and
+runtime admission/availability qualification are separate gates. The original
+blocking protocol review is retained in the design review directory.
+
+For proof-profile source reads only, after verifying the current issuer's proof,
+retained-verified original request.audience must equal the historical receipt
+issuer; admitted still requires the current issuer. Live Read/Append authentication
+always checks the current audience. A separate current-audience RetryImported
+command may confirm an exact already copied operation: require current writer
+append grant, same inner/outer writer, exact stored manifest/proof binding and
+retained-verified purpose. It cannot insert or stage data or mint a new proof.
+Normal Append never accepts another audience. Its detailed signed framing and
+failure fixtures are implementation gates; the legacy profile remains unchanged.
 
 ## Canonicalization and equivalence
 

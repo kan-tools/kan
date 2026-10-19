@@ -1,0 +1,49 @@
+✔ PB1 boundary values are accepted, not falsely rejected (3.690792ms)
+✔ PB2 complete empty catalog still opens without page request (0.658542ms)
+✔ PB3 over-limit scope name and pin request are rejected (0.8905ms)
+✔ PB4 non-string scope/request with a length property are rejected (1.740667ms)
+✖ PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery (1.172583ms)
+✔ PB6 lock during malformed-catalog reply ignores the late reply (0.662041ms)
+✖ PB7 after malformed retry, old scope names and pins cannot be navigated (0.947875ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 5
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 38.495084
+
+✖ failing tests:
+
+test at review-evidence/probes/scope_probes.test.cjs:32:1
+✖ PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery (1.172583ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  'partial' !== ''
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next/.local-state/reviews/library/review-evidence/probes/scope_probes.test.cjs:39:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'partial',
+    expected: '',
+    operator: 'strictEqual'
+  }
+
+test at review-evidence/probes/scope_probes.test.cjs:45:1
+✖ PB7 after malformed retry, old scope names and pins cannot be navigated (0.947875ms)
+  AssertionError [ERR_ASSERTION]: old pin still usable
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next/.local-state/reviews/library/review-evidence/probes/scope_probes.test.cjs:49:51)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual'
+  }

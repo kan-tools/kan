@@ -1,0 +1,16 @@
+OK  | P1 re-signed seq2 with wrong previousAttestation | expected reject | got reject(AssertionError: chain commitments)
+OK  | P1 re-signed seq2 with wrong previousManifest | expected reject | got reject(AssertionError: chain commitments)
+OK  | P1 re-signed seq2 with wrong sequence | expected reject | got reject(AssertionError: sequence)
+OK  | P1 re-signed seq2 with wrong previousSequence | expected reject | got reject(AssertionError: sequence)
+OK  | P1 re-signed genesis with non-null previousManifest | expected reject | got reject(AssertionError: genesis)
+OK  | P2 equal-height fork statement verifies per-statement | expected accept | got accept
+OK  | P3 statement binds receipt of a different manifest | expected accept | got accept
+OK  | P4 admitted purpose over foreign-issuer receipt | expected accept | got accept
+OK  | P5 issuer transition within one chain | expected reject | got reject(AssertionError: pinned issuer)
+OK  | P6 verify mid-chain row without predecessor | expected reject | got reject(AssertionError: genesis)
+OK  | P7 DER signature | expected reject | got reject(AssertionError: signature encoding)
+OK  | P7 re-signed unknown statement body field | expected reject | got reject(AssertionError: closed fields)
+OK  | P7 re-signed statement v=2 | expected reject | got reject(AssertionError: profile)
+OK  | P7 re-signed unknown purpose | expected reject | got reject(AssertionError: purpose)
+OK  | P7 noncanonical envelope key order | expected reject | got reject(ValueError: unordered/duplicate/nontext key)
+15 probes, 0 unexpected

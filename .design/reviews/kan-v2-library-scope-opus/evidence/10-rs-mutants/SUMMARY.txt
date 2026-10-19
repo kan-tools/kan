@@ -1,0 +1,16 @@
+W1 first window takes no lock (BEGIN deferred): KILLED rc=101 failed=['p4_capture_beside_brief_periodic_writer']
+   tests/evidence_capture_contention.rs:425:5: :: first admission must wait on the coordinated writer lock: 0ns
+W2 wrapper drops wait parameter (passes ZERO): KILLED rc=101 failed=['p4_capture_beside_brief_periodic_writer']
+   tests/evidence_capture_contention.rs:425:5: :: first admission must wait on the coordinated writer lock: 0ns
+W3 wrapper reports ZERO on spent channel: KILLED rc=101 failed=['p4_capture_beside_brief_periodic_writer']
+   tests/evidence_capture_contention.rs:425:5: :: first admission must wait on the coordinated writer lock: 0ns
+W4 wrapper returns ZERO spent to production: SURVIVED rc=0 failed=[]
+   
+W5 wrapper override removed (default trait): COMPILE-FAIL rc=101 failed=[]
+   
+W6 production busy handler does not accumulate spent: KILLED rc=101 failed=['p4_capture_beside_brief_periodic_writer', 'q2_per_observation_cap_and_allowance']
+   tests/evidence_capture_contention.rs:425:5: :: first admission must wait on the coordinated writer lock: 0ns
+   tests/evidence_capture_contention.rs:526:5: :: allowance not exhausted: [103, 111, 100, 100, 100, 100, 100, 100, 100, 100, 101, 100, 100, 100, 101]
+W7 writer releases lock before signalling: KILLED rc=101 failed=['p4_capture_beside_brief_periodic_writer']
+   tests/evidence_capture_contention.rs:425:5: :: first admission must wait on the coordinated writer lock: 0ns
+restored: tests/evidence_capture_contention.rs=fc7d7498965c38af (orig fc7d7498965c38af), src/evidence_spool.rs=c2f69c63564edcb7 (orig c2f69c63564edcb7)

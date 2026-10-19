@@ -1,0 +1,27 @@
+drop manifest-profile: killed -> unsupported-manifest: expected manifest-profile, got receipt-binding
+drop receipt-profile: killed -> accepted negative unsupported-receipt
+drop statement-bound: SURVIVED
+drop canonical re-encode of did: SURVIVED
+drop did length/prefix: SURVIVED
+drop signature verification: killed -> accepted negative s-at-half-order
+s<=n/2 -> s<n/2: killed -> s-at-half-order: expected signature-invalid, got signature-range
+drop r<n: killed -> r-at-order: expected signature-range, got signature-invalid
+receipt-binding: drop manifest equality: killed -> accepted negative receipt-for-other-manifest
+receipt-binding: drop operation: killed -> accepted negative receipt-mismatched-operation
+receipt-binding: drop position: killed -> accepted negative receipt-mismatched-position
+receipt-binding: drop manifest scope==configured: killed -> accepted negative foreign-scope-metadata
+record-binding: drop receipt CID: killed -> accepted negative wrong-receipt
+record-binding: drop manifest CID: killed -> wrong-manifest: expected record-binding, got receipt-binding
+chain-position: drop scope continuity: killed -> mid-chain-scope: expected chain-position, got receipt-binding
+chain-position: drop archive continuity: killed -> accepted negative mid-chain-archive
+chain-commitments: drop previousManifest: killed -> accepted negative wrong-previousManifest
+chain-commitments: drop previousAttestation: killed -> accepted negative wrong-previousAttestation
+genesis: drop sequence==1: killed -> accepted negative nonfirst-genesis
+admitted-issuer: compare principal only: SURVIVED
+purpose: accept any string: killed -> accepted negative unknown-purpose
+safe-integer: allow bool: killed -> accepted negative boolean-sequence
+sequence: drop >0: SURVIVED
+statementCid from envelope instead of statement: killed (non-assert Rejected: chain-commitments)
+preimage domain changed: killed -> exact fixture mismatch; no automatic rewrite
+
+20/25 killed; survivors: ['drop statement-bound', 'drop canonical re-encode of did', 'drop did length/prefix', 'admitted-issuer: compare principal only', 'sequence: drop >0']

@@ -1,0 +1,15 @@
+baseline check: pass
+chain commitments removed      SURVIVED (check still passes)
+chain position/scope removed   SURVIVED (check still passes)
+genesis rule removed           SURVIVED (check still passes)
+sequence arithmetic removed    SURVIVED (check still passes)
+purpose allow-list removed     SURVIVED (check still passes)
+scope length removed           SURVIVED (check still passes)
+closed body removed            SURVIVED (check still passes)
+profile v/kind removed         SURVIVED (check still passes)
+low-S/range removed            killed (AssertionError: accepted invalid high-S)
+pinned issuer removed          killed (AssertionError: accepted unpinned signer)
+envelope bound removed         SURVIVED (check still passes)
+closed envelope removed        killed (AssertionError: accepted invalid unknown-envelope-field)
+record CID shape removed       SURVIVED (check still passes)
+10/13 mutants survived

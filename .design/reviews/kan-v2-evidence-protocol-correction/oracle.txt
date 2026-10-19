@@ -1,0 +1,1 @@
+2 exact signed vectors; 46 labelled negatives; independent byte/signature/chain/metadata checks passed. No admission/availability claim.

@@ -1,0 +1,43 @@
+**Verdict: APPROVE WITH FOLLOW-UPS.** This covers only commit 4b0ebc1 against fa60c31 (Library scope validation and the P4 wait assertion). It is not a whole-roadmap approval, and it does not cover attestation code. I did not check browser export delivery; it's still blocked by the locked Mac.
+
+The full report and raw logs are in `review-evidence/REPORT.txt`. I did this review myself without delegating. I made no kan/day writes, so the skill's step that records the verdict in kan was skipped.
+
+**Setup**
+- The export matches 4b0ebc1 exactly (1249/1249 tracked files). The author's uncommitted attestation work is not in it.
+- All source bytes were restored after every change. A final hash check of all 1251 files matches. No listeners or test processes are left, and the load-test loops are stopped.
+
+**Checks run**
+
+| Check | Result |
+|---|---|
+| Contention suite | 6/6 pass |
+| P4 repeated ten times | 10/10 pass |
+| Library Node suite | 23/23 pass |
+| CI Node set (library, operations, theme) | 43/43 pass |
+| `cargo fmt --check` | exit 0 |
+| `cargo clippy --features v2-crypto --all-targets -D warnings` | exit 0 |
+
+**Scope validation**
+- **Order:** `validateScopes` (`web/library/app.js:106-117`) runs after `catalog()` clears all old state. It runs before capabilities are drawn, before the scope list is stored, before any scope option is created, before the Library is shown, and before any page request.
+- **On failure:** at first login the Library locks. On a retry, `run()` clears the scope options and capabilities and shows "coverage is unknown". No page or source request is sent.
+- **Limits match the server:** scope names are 64 hex chars, at most 16 scopes, and pin requests at most 8192 hex chars (`evidence_reader.rs:97`, `:178`). Boundary values are accepted, so valid server replies aren't refused.
+- **Negative controls:** of 23 mutations to `app.js`, the committed tests catch 13, each with an assertion failure. The rest:
+  - Four survivors behave the same as the real code, because JSON input fails just as safely anyway.
+  - Six are caught only by my extra probe tests (follow-ups 1 and 2).
+
+**P4 wait assertion**
+- **Meaning:** the value checked is the time spent waiting on SQLite's busy lock, not total admission time. So `waited > 0` proves the first write really hit the test writer's lock.
+- **Wrapper:** it passes the wait limit through and returns the result unchanged.
+- **Negative controls:** six compiled mutations fail the named assertion: removing the lock, zeroing the wait or the reported value, removing the wrapper override, breaking the production wait accounting, and releasing the lock early.
+- **One survivor:** zeroing the wait the wrapper hands back to production code goes unnoticed (follow-up 3). By reading, the wrapper returns the true value.
+- **Flake risk:** low. The write lock is the first thing the admission takes, before any crypto. With temporary instrumentation, measured waits were 6.0–9.1 ms unloaded and 8.3–10.1 ms with the CPUs twice oversubscribed (30/30 pass). The test can only fail if the capture thread stalls for more than about 5 ms in a microsecond-long gap.
+
+**Follow-ups (all test gaps, no code defects)**
+1. The committed malformed-scope cases include no over-long scope name or pin request (257 / 8193 chars). They also omit a non-string value that has a length, such as `['a']`.
+2. Nothing pins that validation runs before the scope list is stored. If it ran after, a malformed scope would stay navigable. A real browser can't reach that today.
+3. P4 doesn't check that production gets the true wait value back from the wrapper.
+4. The second new Node test is not evidence for the validator: it still passes with `validateScopes` removed. It is also not registered in `scripts/revert_v2.py`.
+
+One of my mutant runs failed to compile because I built it wrong. That log is kept, labelled invalid, not counted, and I re-ran that mutant correctly.
+
+**APPROVE WITH FOLLOW-UPS**

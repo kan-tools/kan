@@ -1,0 +1,15 @@
+pinned-issuer: compiled named assertion failed
+configured-archive: compiled named assertion failed
+configured-scope: compiled named assertion failed
+sequence: compiled named assertion failed
+profile: compiled named assertion failed
+genesis: compiled named assertion failed
+chain-position: compiled named assertion failed
+chain-commitments: compiled named assertion failed
+record-binding: compiled named assertion failed
+receipt-binding: compiled named assertion failed
+admitted-issuer: compiled named assertion failed
+signature-range: compiled named assertion failed
+signature-invalid: compiled named assertion failed
+pinned-frontier: compiled named assertion failed
+Exact source restored; 5 attestation and 7 canonical codec tests pass.
