@@ -1,0 +1,11 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/D-M8-plain-value-no-duplicate-detection/orig-src__evidence_reconstruction.rs	2026-10-19 06:44:19
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_reconstruction.rs	2026-10-19 06:44:19
+@@ -82,7 +82,7 @@
+     if body.len() > CHUNK {
+         return Err(Error::Limit);
+     }
+-    let Unique(value) = serde_json::from_slice(json).map_err(|_| Error::Header)?;
++    let value: Value = serde_json::from_slice(json).map_err(|_| Error::Header)?; let _ = std::marker::PhantomData::<Unique>;
+     let object = value.as_object().ok_or(Error::Header)?;
+     let version = object
+         .get("version")

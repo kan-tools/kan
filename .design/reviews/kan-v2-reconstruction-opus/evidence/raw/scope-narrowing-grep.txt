@@ -1,0 +1,13 @@
+plan-preopen.diff:10:+### Follow-up: plan-output custody before source open
+plan-preopen.diff:18:+depth. This preserves owner-selected existing files and does not claim protection
+plan-preopen.diff:43:+// not qualified. This helper does not fence concurrent hostile path replacement.
+plan-preopen.diff:60:+    plan_outside_sqlite(&std::fs::canonicalize(source)?, plan)
+recovery-design.diff:10:+### Follow-up: plan-output custody before source open
+recovery-design.diff:18:+depth. This preserves owner-selected existing files and does not claim protection
+recovery-design.diff:152:+outside KNB1.
+recovery-design.diff:183:+observation. The owner verifies and durably retains it outside the bundle before
+recovery-design.diff:281:+intent, as specified by R1 in the codec appendix. Later restorations require a
+decoder.diff:23:+coherence belongs to later assembly. This checkpoint does not silently tighten
+decoder.diff:27:+All storage/RPC/browser/session acceptance remains open. No persistence surface
+decoder.diff:158:+/// This type deliberately has no wire Serialize implementation: a later API must
+decoder.diff:561:+fn mutated_bounded_inputs_never_panic_or_claim_spans_outside_input() {

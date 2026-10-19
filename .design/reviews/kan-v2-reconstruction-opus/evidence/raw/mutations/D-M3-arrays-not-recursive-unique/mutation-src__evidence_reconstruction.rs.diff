@@ -1,0 +1,11 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/D-M3-arrays-not-recursive-unique/orig-src__evidence_reconstruction.rs	2026-10-19 06:43:41
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_reconstruction.rs	2026-10-19 06:43:41
+@@ -195,7 +195,7 @@
+             }
+             fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Unique, A::Error> {
+                 let mut values = Vec::new();
+-                while let Some(Unique(v)) = seq.next_element()? {
++                while let Some(v) = seq.next_element::<Value>()? {
+                     values.push(v);
+                 }
+                 Ok(Unique(Value::Array(values)))

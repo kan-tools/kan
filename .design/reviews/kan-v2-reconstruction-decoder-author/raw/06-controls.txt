@@ -1,0 +1,7 @@
+DEMONSTRATED: duplicate-json-keys
+DEMONSTRATED: non-chunk-body
+DEMONSTRATED: body-bound
+DEMONSTRATED: unknown-version
+DEMONSTRATED: source-span
+DEMONSTRATED: rounded-coordinate
+6 controls; restored decoder suite passed.

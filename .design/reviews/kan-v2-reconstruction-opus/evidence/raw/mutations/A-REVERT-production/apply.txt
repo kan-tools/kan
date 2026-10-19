@@ -1,0 +1,5 @@
+patching file 'src/bin/kan-v2.rs'
+patching file 'src/evidence_store.rs'
+patching file 'src/evidence_store/copy_upgrade.rs'
+
+exit=0

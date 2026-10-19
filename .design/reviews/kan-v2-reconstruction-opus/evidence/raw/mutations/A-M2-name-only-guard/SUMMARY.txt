@@ -1,0 +1,4 @@
+copy_destination: exit=101 compile_error=False failed=['sidecar_hardlink_identity_is_rejected_even_with_an_unrelated_plan_name'] ['test result: FAILED. 32 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.01s'] 14s
+reviewer-probes: exit=0 compile_error=False failed=[] ['test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.20s'] 2s
+added_removed=True
+restored_bytes=True

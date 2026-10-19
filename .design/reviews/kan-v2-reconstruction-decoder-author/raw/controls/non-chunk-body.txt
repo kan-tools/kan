@@ -1,0 +1,24 @@
+
+running 1 test
+test non_chunk_events_cannot_smuggle_body_bytes ... FAILED
+
+failures:
+
+---- non_chunk_events_cannot_smuggle_body_bytes stdout ----
+
+thread 'non_chunk_events_cannot_smuggle_body_bytes' (9852284) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Capture(Frame { header: Header { version: 2, attempt: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", observer: Collector, ordinal: 9007199254740993, observed_at_unix_micros: None, elapsed_micros: 18446744073709551615, unconfirmed_before: 0, event: RequestEnd { bytes: 0 } }, body: [104, 105, 100, 100, 101, 110], header_span: 9..282, body_span: 282..288 })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    non_chunk_events_cannot_smuggle_body_bytes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction)
+    Finished `test` profile [unoptimized] target(s) in 6.96s
+     Running tests/evidence_reconstruction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction-f47b82f29e147a62)
+error: test failed, to rerun pass `--test evidence_reconstruction`
+
+exit=101

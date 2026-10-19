@@ -1,0 +1,3 @@
+inventory: exit=101 compile_error=False failed=['startup_item_budget_counts_each_metadata_record_before_accepting_a_snapshot'] ['test result: FAILED. 17 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.68s'] 13s
+added_removed=True
+restored_bytes=True

@@ -1,0 +1,11 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/B-X5-budget-off-by-one/orig-src__evidence_store__inventory.rs	2026-10-19 06:43:12
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_store/inventory.rs	2026-10-19 06:43:12
+@@ -191,7 +191,7 @@
+     *spent = spent
+         .checked_add(amount)
+         .ok_or(Error::Invalid("inventory budget overflow"))?;
+-    if *spent > maximum {
++    if *spent >= maximum {
+         return Err(Error::Invalid("inventory audit budget exhausted"));
+     }
+     Ok(())

@@ -1,0 +1,24 @@
+
+running 1 test
+test duplicate_and_escaped_alias_keys_never_choose_a_winner ... FAILED
+
+failures:
+
+---- duplicate_and_escaped_alias_keys_never_choose_a_winner stdout ----
+
+thread 'duplicate_and_escaped_alias_keys_never_choose_a_winner' (9852023) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Unsupported(Version)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    duplicate_and_escaped_alias_keys_never_choose_a_winner
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction)
+    Finished `test` profile [unoptimized] target(s) in 6.98s
+     Running tests/evidence_reconstruction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction-f47b82f29e147a62)
+error: test failed, to rerun pass `--test evidence_reconstruction`
+
+exit=101

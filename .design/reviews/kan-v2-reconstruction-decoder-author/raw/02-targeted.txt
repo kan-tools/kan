@@ -1,0 +1,123 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction)
+    Finished `test` profile [unoptimized] target(s) in 6.96s
+     Running tests/evidence_capture.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture-54a9cad3536a7b47)
+
+running 18 tests
+test disconnect_is_unknown_and_retains_observed_prefix ... FAILED
+test deadline_and_dropped_future_record_unknown_without_retry ... FAILED
+test capture_latency_does_not_consume_provider_io_budget ... FAILED
+test empty_body_still_requires_successful_output_flush ... FAILED
+test io_budget_is_cumulative_across_output_writes ... FAILED
+test cli_missing_spool_reports_gap_separately_from_binary_stdout ... FAILED
+test cli_deadline_exits_even_when_stdout_pipe_is_not_consumed ... FAILED
+test output_failure_and_backpressure_stop_reading ... FAILED
+test redirect_is_observed_but_never_followed ... FAILED
+test maximum_request_is_chunked_and_sent_once ... FAILED
+test route_and_request_limits_refuse_before_provider ... FAILED
+test resumed_capture_carries_gap_and_observers_attempts_have_distinct_ids ... ok
+test binary_stream_above_ten_mib_has_exact_bodies_and_independent_frames ... FAILED
+test encrypted_spool_reopens_drains_only_evidence_and_contains_no_plaintext ... FAILED
+test full_and_unavailable_capture_continue_with_visible_gap ... FAILED
+test killed_cli_retains_intent_without_fabricating_terminal_completion ... FAILED
+test encrypted_sink_recovers_after_contention_without_rewriting_evidence ... ok
+test capture_wait_allowance_exhaustion_does_not_disable_recovery ... ok
+
+failures:
+
+---- disconnect_is_unknown_and_retains_observed_prefix stdout ----
+
+thread 'disconnect_is_unknown_and_retains_observed_prefix' (9849903) panicked at tests/evidence_capture.rs:90:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- deadline_and_dropped_future_record_unknown_without_retry stdout ----
+
+thread 'deadline_and_dropped_future_record_unknown_without_retry' (9849902) panicked at tests/evidence_capture.rs:90:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- capture_latency_does_not_consume_provider_io_budget stdout ----
+
+thread 'capture_latency_does_not_consume_provider_io_budget' (9849898) panicked at tests/evidence_capture.rs:90:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- empty_body_still_requires_successful_output_flush stdout ----
+
+thread 'empty_body_still_requires_successful_output_flush' (9849904) panicked at tests/evidence_capture.rs:90:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- io_budget_is_cumulative_across_output_writes stdout ----
+
+thread 'io_budget_is_cumulative_across_output_writes' (9849914) panicked at tests/evidence_capture.rs:90:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- cli_missing_spool_reports_gap_separately_from_binary_stdout stdout ----
+
+thread 'cli_missing_spool_reports_gap_separately_from_binary_stdout' (9849901) panicked at tests/evidence_capture.rs:90:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- cli_deadline_exits_even_when_stdout_pipe_is_not_consumed stdout ----
+
+thread 'cli_deadline_exits_even_when_stdout_pipe_is_not_consumed' (9849900) panicked at tests/evidence_capture.rs:90:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- output_failure_and_backpressure_stop_reading stdout ----
+
+thread 'output_failure_and_backpressure_stop_reading' (9849919) panicked at tests/evidence_capture.rs:90:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- redirect_is_observed_but_never_followed stdout ----
+
+thread 'redirect_is_observed_but_never_followed' (9849920) panicked at tests/evidence_capture.rs:366:57:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- maximum_request_is_chunked_and_sent_once stdout ----
+
+thread 'maximum_request_is_chunked_and_sent_once' (9849916) panicked at tests/evidence_capture.rs:90:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- route_and_request_limits_refuse_before_provider stdout ----
+
+thread 'route_and_request_limits_refuse_before_provider' (9849922) panicked at tests/evidence_capture.rs:552:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- binary_stream_above_ten_mib_has_exact_bodies_and_independent_frames stdout ----
+
+thread 'binary_stream_above_ten_mib_has_exact_bodies_and_independent_frames' (9849897) panicked at tests/evidence_capture.rs:90:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- encrypted_spool_reopens_drains_only_evidence_and_contains_no_plaintext stdout ----
+
+thread 'encrypted_spool_reopens_drains_only_evidence_and_contains_no_plaintext' (9849906) panicked at tests/evidence_capture.rs:90:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- full_and_unavailable_capture_continue_with_visible_gap stdout ----
+
+thread 'full_and_unavailable_capture_continue_with_visible_gap' (9849913) panicked at tests/evidence_capture.rs:90:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- killed_cli_retains_intent_without_fabricating_terminal_completion stdout ----
+
+thread 'killed_cli_retains_intent_without_fabricating_terminal_completion' (9849915) panicked at tests/evidence_capture.rs:90:59:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+
+failures:
+    binary_stream_above_ten_mib_has_exact_bodies_and_independent_frames
+    capture_latency_does_not_consume_provider_io_budget
+    cli_deadline_exits_even_when_stdout_pipe_is_not_consumed
+    cli_missing_spool_reports_gap_separately_from_binary_stdout
+    deadline_and_dropped_future_record_unknown_without_retry
+    disconnect_is_unknown_and_retains_observed_prefix
+    empty_body_still_requires_successful_output_flush
+    encrypted_spool_reopens_drains_only_evidence_and_contains_no_plaintext
+    full_and_unavailable_capture_continue_with_visible_gap
+    io_budget_is_cumulative_across_output_writes
+    killed_cli_retains_intent_without_fabricating_terminal_completion
+    maximum_request_is_chunked_and_sent_once
+    output_failure_and_backpressure_stop_reading
+    redirect_is_observed_but_never_followed
+    route_and_request_limits_refuse_before_provider
+
+test result: FAILED. 3 passed; 15 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.21s
+
+error: test failed, to rerun pass `--test evidence_capture`

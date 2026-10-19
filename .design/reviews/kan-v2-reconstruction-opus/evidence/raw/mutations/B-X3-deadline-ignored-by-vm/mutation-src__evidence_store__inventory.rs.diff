@@ -1,0 +1,11 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/B-X3-deadline-ignored-by-vm/orig-src__evidence_store__inventory.rs	2026-10-19 06:42:26
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_store/inventory.rs	2026-10-19 06:42:26
+@@ -109,7 +109,7 @@
+     let cancelled = budget.cancelled.clone();
+     conn.progress_handler(
+         1000,
+-        Some(move || cancelled.load(Ordering::Relaxed) || Instant::now() >= deadline),
++        Some(move || { let _ = deadline; cancelled.load(Ordering::Relaxed) }),
+     )?;
+     budget.check(deadline)
+ }

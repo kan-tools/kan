@@ -1,0 +1,11 @@
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/review-evidence/raw/mutations/B-X1-text-treated-as-blob/orig-src__evidence_store__inventory.rs	2026-10-19 06:42:01
++++ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction/.local-state/reviews/reconstruction/src/evidence_store/inventory.rs	2026-10-19 06:42:01
+@@ -460,7 +460,7 @@
+     // A wrong payload storage class is local payload corruption, not a page error.
+     let length: Option<i64> = conn
+         .query_row(
+-            "SELECT CASE WHEN typeof(bytes)='blob' THEN length(bytes) ELSE -1 END FROM objects NOT INDEXED WHERE +cid=?",
++            "SELECT CASE WHEN typeof(bytes) IN ('blob','text') THEN length(bytes) ELSE -1 END FROM objects NOT INDEXED WHERE +cid=?",
+             [id.to_string()],
+             |r| r.get(0),
+         )
