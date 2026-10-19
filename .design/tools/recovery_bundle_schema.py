@@ -24,6 +24,9 @@ class DraftSchema(unittest.TestCase):
         with self.assertRaises(sqlite3.IntegrityError):
             self.db.execute(sql, parameters)
 
+    def test_runtime_schema_matches_proposed_fixture(self):
+        self.assertEqual((ROOT / "src/evidence_store/bundle.sql").read_text(), SQL)
+
     def test_outer_tables_are_exact_and_unpublished(self):
         actual = self.db.execute("SELECT type,name FROM sqlite_schema ORDER BY type,name").fetchall()
         self.assertEqual(actual, [('table', name) for name in sorted([

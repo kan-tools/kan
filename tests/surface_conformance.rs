@@ -14,6 +14,10 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    (
+        "owner-pinned-knb1-inspection",
+        "tests/evidence_recovery_bundle.rs",
+    ),
     ("recipe-bound-copy", "tests/evidence_copy_destination.rs"),
     (
         "profile-selected-evidence-lifecycle",
@@ -526,6 +530,12 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         "src/evidence_spool.rs",
         "write_new_owner_only",
         "EvidenceSpool",
+        1,
+    ),
+    (
+        "src/evidence_store/bundle.rs",
+        "open_sqlite_recovery_source",
+        "EvidenceBundleSource",
         1,
     ),
     (
