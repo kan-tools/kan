@@ -178,6 +178,17 @@ async fn acquisition_cap_stops_before_fetching_the_next_selected_record() {
     }
     let reader = Reader::new(identity, vec![fixture.access()]).unwrap();
     let pin = reader.snapshot(&svc::hex(&fixture.scope)).await.unwrap();
+    // Exercise the real 8MiB boundary independently of the 20s deadline. On slow
+    // CI hosts repeated encrypted reads can exhaust time before the byte cap.
+    // Keep a runnable cooperative task while time is paused: otherwise Tokio
+    // auto-advances to a timeout whenever socket I/O is the only pending work.
+    tokio::time::pause();
+    let started = tokio::time::Instant::now();
+    let keep_clock_paused = tokio::spawn(async {
+        loop {
+            tokio::task::yield_now().await;
+        }
+    });
     let sequences = (1..=10).map(|n| n.to_string()).collect::<Vec<_>>();
     let count = Arc::new(AtomicUsize::new(0));
     let seen = count.clone();
@@ -199,10 +210,15 @@ async fn acquisition_cap_stops_before_fetching_the_next_selected_record() {
         9,
         "never fetch the tenth selected record after exceeding8MiB"
     );
-    let accepted = reader
-        .content(&pin, &sequences[..8], Format::AnthropicMessagesJson)
-        .await
-        .unwrap();
-    let value: serde_json::Value = serde_json::from_slice(&accepted).unwrap();
-    assert_eq!(value["occurrences"].as_array().unwrap().len(), 8);
+    // Do not start a second eight-record interpretation here: the synchronous
+    // render budget uses std::time::Instant, which Tokio's pause cannot freeze.
+    // Successful bounded Content rendering has separate integration coverage.
+    // This probe isolates the real acquisition cutoff and its exact fetch count.
+    assert_eq!(
+        tokio::time::Instant::now(),
+        started,
+        "byte-cap probe must not spend virtual deadline time"
+    );
+    keep_clock_paused.abort();
+    tokio::time::resume();
 }

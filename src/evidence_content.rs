@@ -9,7 +9,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     io::{self, Write},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -18,7 +18,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const VERSION: &str = "kan-content/1";
+pub const VERSION: &str = "kan-content/2";
 const INPUT: usize = 8 * 1024 * 1024;
 const SCAN: u64 = 64 * 1024 * 1024;
 const OUTPUT: usize = 4 * 1024 * 1024;
@@ -279,6 +279,33 @@ fn map_citations(
         .collect())
 }
 
+#[derive(Default)]
+struct CitationSets {
+    regions: BTreeMap<(usize, usize), usize>,
+    values: Vec<Vec<Value>>,
+}
+impl CitationSets {
+    fn reference(
+        &mut self,
+        mapping: &provider::ValidatedMapping<'_, '_>,
+        region: std::ops::Range<usize>,
+        budget: &mut Budget,
+    ) -> Result<String, Failure> {
+        budget.check()?;
+        let key = (region.start, region.end);
+        if let Some(index) = self.regions.get(&key) {
+            return Ok(index.to_string());
+        }
+        // One immutable validated stream: identical regions have identical
+        // exact source mappings. Charge and serialize each set only once.
+        let citations = map_citations(mapping, region, budget)?;
+        let index = self.values.len();
+        self.values.push(citations);
+        self.regions.insert(key, index);
+        Ok(index.to_string())
+    }
+}
+
 fn stream(
     stream: &assembly::Stream,
     inputs: &[assembly::Input<'_>],
@@ -291,7 +318,7 @@ fn stream(
         "extent_claims":stream.extents.iter().map(|(i,n)|json!({"input":i.to_string(),"bytes":n.to_string()})).collect::<Vec<_>>(),
         "issues":stream.issues.iter().map(stream_issue).collect::<Vec<_>>(),
         "observed_bytes":stream.contiguous.as_ref().map(|b|b.len().to_string()),
-        "state":"unavailable","items":[],"parsed_json":null,"coherent_stop_observed":false});
+        "state":"unavailable","items":[],"citation_sets":[],"parsed_json":null,"coherent_stop_observed":false});
     let Some(bytes) = stream.contiguous.as_deref() else {
         return Ok(result);
     };
@@ -322,24 +349,26 @@ fn stream(
         })?;
     budget.charge_scan(mapping.scanned_bytes)?;
     let mut items = Vec::new();
+    let mut citation_sets = CitationSets::default();
     for item in document.items {
-        let citations = map_citations(&mapping, item.region.clone(), budget)?;
+        let citation_set = citation_sets.reference(&mapping, item.region.clone(), budget)?;
         let tool = match (item.tool_input, item.tool_region) {
             (Some(json), Some(region)) => {
-                let citations = map_citations(&mapping, region.clone(), budget)?;
-                json!({"json":json,"region":pair(region.start,region.end),"citations":citations})
+                let citation_set = citation_sets.reference(&mapping, region.clone(), budget)?;
+                json!({"json":json,"region":pair(region.start,region.end),"citation_set":citation_set})
             }
             (None, None) => Value::Null,
             _ => return Err(Failure::Corrupt),
         };
         items.push(json!({"kind":item_kind(item.kind),"region":pair(item.region.start,item.region.end),"coarse":item.coarse,
             "role":item.role,"index":item.index.map(|n|n.to_string()),"text":item.text,"pointer":item.pointer,
-            "event_json":item.event.map(|v|v.to_string()),"issues":item.issues.into_iter().map(issue_kind).collect::<Vec<_>>(),"citations":citations,"tool":tool}));
+            "event_json":item.event.map(|v|v.to_string()),"issues":item.issues.into_iter().map(issue_kind).collect::<Vec<_>>(),"citation_set":citation_set,"tool":tool}));
         after_item();
         budget.check()?;
     }
     result["state"] = json!("interpreted");
     result["items"] = json!(items);
+    result["citation_sets"] = json!(citation_sets.values);
     result["parsed_json"] = json!(document.json.map(|v| v.to_string()));
     result["coherent_stop_observed"] = json!(document.coherent_stop_observed);
     Ok(result)
@@ -603,7 +632,7 @@ mod tests {
             Failure::Unavailable
         );
         let mut b = budget();
-        b.citations = 3;
+        b.citations = 1;
         stream(
             stream_data,
             &inputs,
@@ -612,7 +641,7 @@ mod tests {
             &mut || {},
         )
         .unwrap();
-        assert_eq!(b.citations, 1);
+        assert_eq!(b.citations, 0);
         assert_eq!(
             stream(
                 stream_data,
@@ -654,7 +683,7 @@ mod tests {
     }
     #[test]
     fn serialized_content_cap_is_independent_of_normalized_output() {
-        let body=serde_json::to_vec(&json!({"messages":(0..60).map(|_|json!({"role":"user","content":"x".repeat(34000)})).collect::<Vec<_>>()})).unwrap();
+        let body=serde_json::to_vec(&json!({"messages":(0..60).map(|_|json!({"role":"user","content":"x".repeat(34800)})).collect::<Vec<_>>()})).unwrap();
         let b = budget();
         let parsed =
             provider::interpret(&body, provider::Format::Request, b.limits().unwrap()).unwrap();
