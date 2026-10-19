@@ -1,0 +1,8 @@
+Ran 7 tests in 0.006s
+
+OK
+exit=0
+45 independent state cases; 13 positive; no storage or durability acceptance
+exit=0
+23 design-derived review cases; conservative envelope bound 3816 bytes
+exit=0

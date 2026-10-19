@@ -1,0 +1,21 @@
+    Finished `test` profile [unoptimized] target(s) in 0.14s
+     Running tests/zz_review_bundle_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_bundle_probes-d8368fbcda019254)
+
+running 1 test
+PROBE B1-correct-writer-resigned-new-ciphertext-control pure_replay => ACCEPT latest=3 restored=1
+PROBE B1-correct-writer-resigned-new-ciphertext-control physical => ACCEPT latest=3 restored=1 items=6 bytes=4348 elapsed_ms=13
+PROBE B1-correct-writer-resigned-new-ciphertext-control source-unchanged=true
+PROBE B2-foreign-principal-valid-signature pure_replay => REFUSE Invalid("candidate writer request")
+PROBE B2-foreign-principal-valid-signature physical => REFUSE Replay(Invalid("candidate writer request")) elapsed_ms=5
+PROBE B2-foreign-principal-valid-signature source-unchanged=true
+PROBE B3-wrong-audience-valid-writer-signature pure_replay => REFUSE Invalid("candidate writer request")
+PROBE B3-wrong-audience-valid-writer-signature physical => REFUSE Replay(Invalid("candidate writer request")) elapsed_ms=5
+PROBE B3-wrong-audience-valid-writer-signature source-unchanged=true
+PROBE B4-writer-principal-signed-by-foreign-key pure_replay => REFUSE Invalid("candidate writer request")
+PROBE B4-writer-principal-signed-by-foreign-key physical => REFUSE Replay(Invalid("candidate writer request")) elapsed_ms=5
+PROBE B4-writer-principal-signed-by-foreign-key source-unchanged=true
+test generated_empty_original_probes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.06s
+
+exit=0

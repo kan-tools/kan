@@ -1,0 +1,4 @@
+attestation_vectors.cpython-314.pyc
+recovery_member_vectors.cpython-314.pyc
+recovery_replay_vectors.cpython-314.pyc
+created 10:04:55 by reviewer's failed-method run (06a, /opt/homebrew/bin/python3 3.14) importing .design/tools modules; not tracked; removed by reviewer

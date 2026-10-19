@@ -1,0 +1,15 @@
+A-M01-schema restored True
+A-M02-identity restored True
+A-M03-canonical-key restored True
+A-M04-observation-coordinate restored True
+A-M05-pinned-snapshot restored True
+A-M06-external-checkpoint restored True
+A-M07-wrong-capability restored True
+A-M08-no-progress-handler restored True
+A-M09-alias-check restored True
+A-M10-source-bytes restored True
+A-M11-read-write-open restored True
+A-M12-truncation-guard restored True
+A-M13-no-query-only restored True
+A-M14-typeof-guard restored True
+exit=0

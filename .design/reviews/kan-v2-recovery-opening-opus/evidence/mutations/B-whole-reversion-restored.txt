@@ -1,0 +1,25 @@
+$ cargo test --features v2-crypto --test evidence_recovery_replay_review_regressions writer_invalid_candidate_refuses_without_publication_intent -- --exact --nocapture
+
+running 1 test
+test writer_invalid_candidate_refuses_without_publication_intent ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.02s
+
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening/.local-state/reviews/recovery-opening)
+    Finished `test` profile [unoptimized] target(s) in 7.62s
+     Running tests/evidence_recovery_replay_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_replay_review_regressions-80b46206524a2950)
+
+exit=0
+$ cargo test --features v2-crypto --test evidence_recovery_replay_review_regressions valid_writer_signature_with_wrong_manifest_binding_refuses -- --exact --nocapture
+
+running 1 test
+test valid_writer_signature_with_wrong_manifest_binding_refuses ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.01s
+
+
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/evidence_recovery_replay_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_replay_review_regressions-80b46206524a2950)
+
+exit=0
