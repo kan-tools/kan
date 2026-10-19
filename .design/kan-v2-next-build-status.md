@@ -1,10 +1,113 @@
-# Kan v2 continuation status
+# Kan v2 — feature-complete build, then review
 
-This is the execution ledger for the approved remaining roadmap. Permanent
-worktree: `.worktrees/kan-v2-build-next`; branch: `feat/kan-v2-build-next`.
-It builds on the stacked evidence-availability design, preserving existing drafts
-and the root checkout's unrelated edits. No production archive, key, deployment,
-installation, live migration or main merge has occurred.
+## Active development flow — owner decision, 2026-10-19
+
+The owner explicitly retains the full v2 scope and replaces checkpoint-by-checkpoint
+review with continuous implementation/integration, followed by a thorough review
+of the feature-complete product. This section is the single current completion
+checklist and execution policy. Checkpoint tables below are historical evidence;
+they do not prescribe another review loop or the current build order.
+
+The product target remains `.design/kan-v2-server-first.md`,
+`.design/kan-v2-buildout.md` and `.design/kan-v2-human-frontend.md`.
+A minimal demo is useful verification, but does not replace feature completeness.
+
+### Completion checklist
+
+Mark a row complete only when its backend, shared API/CLI where applicable, human
+workflow and relevant failure behavior work together. Existing component tests
+and reviews are foundations, not automatic end-to-end completion.
+
+| Work package | Completion means | Current position |
+|---|---|---|
+| Capture, storage and migration | Supported harness/provider traffic reaches the centralized encrypted ledger; spool/retry and visible recording gaps work; v1 imports reconcile against preserved originals; local and remote use the same server architecture | Substantial implementation; integrated completion still to verify |
+| Library and sessions | Authorized cross-project browsing, readable complete supported conversations/tools/attachments/branches/compaction/gaps, exact source/provenance and working downloads; missing/corrupt evidence stays visible | Proof service/Reader author-qualified; Library candidate in #313; Rust/CLI/browser qualification and archive-wide sessions remain |
+| Search and views | Authorized search/facets, stable references, honest index coverage, reproducible saved scope/trust views and relation inspection | Foundations/designs; integrated build remains |
+| Knowledge and annotations | Imported v1 claims and raw/derived evidence remain distinguishable; human/agent tags, annotations, relations and corrections use shared attributed append-only records with citations/history | Foundations/designs; integrated build remains |
+| Analysis and day integration | Explicit and tag-triggered background extraction/summary/assessment jobs, grants/quotas, retries/cancellation, recipe/model/input/output lineage and inspectable results | Integrated build remains |
+| Administration and operations | One human application exposes source/queue/gap health and authorized previewable jobs for rotation, backup/restore/recovery, migration, access, key lifecycle, settings and explicit erasure; interrupted jobs reconnect honestly | Many primitives exist; owner APIs/jobs and full UI integration remain, including explicit hot-journal recovery |
+| Complete application | Coherent navigation across every area; accessible responsive light/dark/system UI; setup/restart/upgrade/backup/restore instructions and end-to-end synthetic qualification | Partial application; final integration remains |
+
+No silent reduction of the approved feature scope. Unsupported provider formats
+must remain inspectable and labeled; expanding adapter support follows the agreed
+contracts, not an unbounded claim to parse every provider. Day process features
+remain required. Live installation, production keys, migration/cutover and main
+merge retain their separate authorization boundaries; implementation and synthetic
+qualification can finish without those operations.
+
+### Build loop
+
+1. Work continuously on the existing permanent integration tip
+   `.worktrees/kan-v2-proof-library`, branch `feat/kan-v2-proof-library`.
+   Preserve the existing draft stack and root checkout's unrelated changes.
+   Do not create a branch, worktree or PR for each helper, test or review follow-up.
+2. Finish the Library candidate's Rust/CLI/browser checks, then complete the work
+   packages above in dependency order. Move directly from functioning integration
+   to the next missing feature. A working demonstration is a checkpoint, not the
+   finish line for the whole build.
+3. Design only unresolved contracts needed by the next implementation. Reuse the
+   accepted architecture and record concise decisions in its relevant document.
+   Do not introduce a new process document or evidence ledger per small change.
+4. Keep ordinary engineering validation during implementation: compile, run the
+   affected tests, check real API/UI integration, and fix regressions. Preserve
+   meaningful security, persistence, migration and provenance tests. Run broader
+   checks when changes cross boundaries, and once across the integrated build.
+   No routine full-suite repetitions, exhaustive mutation matrices, fresh external
+   reviews or whole-change reversion demonstrations at every checkpoint.
+5. Fix concrete correctness, data-loss, authorization and integration defects as
+   they arise. A new validation pass must answer a named unresolved question;
+   additional evidence volume alone is not progress. Nonblocking review suggestions
+   do not automatically generate another build/review cycle.
+6. Update this checklist at completed user workflows or material blockers. Report
+   what a human can now do, what remains, and the next implementation target;
+   avoid presenting test counts or review artifacts as the main accomplishment.
+
+### Integrated completion and review
+
+When all work packages are implemented, run a complete synthetic instance through
+capture/import, browse/session/search, source/export, annotations/views, analysis,
+admin/recovery and restart. Exercise loss, revocation, retry and incomplete coverage
+along the relevant paths. Include realistic large records so the original capacity
+pain is actually addressed. Record one concise capability/test map; fix failures.
+
+Then freeze one integrated revision and run a thorough fresh actual Claude Code
+Opus 5.5 review against the full product requirements. One review campaign may
+organize its work by risk area, but every area judges the same integrated product.
+It must cover architecture, trust/encryption, append-only provenance, recovery and
+migration, feature completeness, shared API/CLI/UI behavior, failure handling,
+resource bounds and browser usability. Reuse valid existing evidence and inspect
+actual behavior; use targeted adversarial probes where they resolve a concrete risk.
+No mandatory number of mutations, tests, reports or review rounds.
+
+Triage findings by effect: fix broken required workflows and correctness/security/
+data-integrity defects before acceptance; retain optional improvements in a backlog.
+Re-review the material fixes and their affected boundaries, not the entire unchanged
+system. A new independent full pass requires a material architecture change or
+review evidence that the original pass missed its target. After the final targeted
+regressions and whole-application checks pass, prepare the sequenced merge/release
+plan using the preserved draft history. Do not merge/deploy merely because review
+completed.
+
+### Starting state and evidence reuse
+
+- Recovery/pinned inventory author qualification at a2666df passed 138 integrations,
+  strict v2 Clippy and formatting. The later fresh review at b01b62f was interrupted
+  at the owner's request; it has no final verdict and is not a prerequisite to resume
+  implementation. Its partial evidence is retained locally, not acceptance.
+- Proof service/Reader author qualification at bdbf136 passed 82 integrations plus
+  strict Clippy/formatting. The Library candidate is committed through c4e7f03;
+  58 Library UI tests (111 total frontend tests) and six focused UI fault controls
+  passed. Library Rust/CLI/browser qualification remains open.
+- Existing completed reviews keep their exact scope and revision. Do not restart
+  them merely to produce another report. The final integrated review evaluates
+  composition and remaining uncertainty.
+- Keep one shared Cargo target, four jobs and one heavy job at a time; obey the
+  machine's disk threshold. No Mathlib builds, new worktree dependency caches or
+  abandoned servers. Retain raw review output locally and publish only inspected
+  concise results. Git-first process recording remains in effect under day#168 /
+  kan#197; do not reconstruct excluded claims or invent witnesses.
+
+## Historical checkpoint records
 
 ## Current continuation checkpoint (2026-10-19)
 

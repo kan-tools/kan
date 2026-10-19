@@ -1,5 +1,11 @@
 # Feature: Kan Studio — the complete human frontend
 
+> Development flow update (owner decision, 2026-10-19): complete the full v2
+> feature set with continuous integration, then conduct one thorough integrated
+> Opus 5.5 review campaign. The active checklist and policy are in
+> [kan-v2-next-build-status.md](kan-v2-next-build-status.md). This supersedes older
+> per-checkpoint review/reversion instructions below, without reducing product scope.
+
 ## Summary
 Build a full human client for Kan: a rich, navigable library of retained work, messages, evidence, annotations and interpretations, with process assessment and administration in the same coherent application. Operations is one area, not the product boundary. Use the user's selected technical-studio direction: clean light surfaces, dense data and vivid accents.
 
