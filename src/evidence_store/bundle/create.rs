@@ -42,6 +42,10 @@ pub enum CreationError {
     },
 }
 
+fn sql_integer(value: u64) -> Result<i64> {
+    i64::try_from(value).map_err(|_| Error::Invalid("SQLite integer range"))
+}
+
 struct MemberBytes {
     context: Context,
     plan: Option<Vec<u8>>,
@@ -533,9 +537,12 @@ pub fn create_observed(
             5 * 1024 * 1024,
         )?;
         let pages = request.output_bytes / 4096;
-        let applied: u64 =
+        let applied: i64 =
             conn.query_row(&format!("PRAGMA max_page_count={pages}"), [], |r| r.get(0))?;
-        require(applied == pages, "output page limit")?;
+        require(
+            u64::try_from(applied).ok() == Some(pages),
+            "output page limit",
+        )?;
         let cancel = work.budget.cancelled.clone();
         let deadline = work.deadline;
         conn.progress_handler(
@@ -562,14 +569,14 @@ pub fn create_observed(
             work.check()?;
             tx.execute(
                 "INSERT INTO member_membership VALUES(?1,?2)",
-                rusqlite::params![cid.to_string(), length],
+                rusqlite::params![cid.to_string(), sql_integer(*length)?],
             )?;
         }
         for r in &data.records {
             work.check()?;
             tx.execute(
                 "INSERT INTO member_records VALUES(?1,?2,?3,?4)",
-                rusqlite::params![r.sequence, r.manifest, r.receipt, r.proof],
+                rusqlite::params![sql_integer(r.sequence)?, r.manifest, r.receipt, r.proof],
             )?;
         }
         for (cid, bytes) in &data.objects {
@@ -584,7 +591,7 @@ pub fn create_observed(
             work.check()?;
             tx.execute(
                 "INSERT INTO observations VALUES(?1,?2)",
-                rusqlite::params![h.sequence(), h.bytes()],
+                rusqlite::params![sql_integer(h.sequence())?, h.bytes()],
             )?;
         }
         observe(CreationBoundary::HistoryInserted);
