@@ -2,11 +2,23 @@
   'use strict';
   const $ = id => document.getElementById(id);
   let token = '', epoch = 0, controller, scopes = [], pin, after = 0, next = null, history = [], selected = null, source = null, hexadecimal = false;
-  const buttons = new Map(), exports = new Map();
+  const buttons = new Map(), exports = new Map(), contentSelection = new Set(), checks = new Map();
+  let pinWire = null, contentEnabled = false, contentValue = null, returnItem = null;
   function releaseExport(url) { clearTimeout(exports.get(url)); exports.delete(url); URL.revokeObjectURL(url); }
   function notice(text, error = false) { $('notice').textContent = text; $('notice').className = `notice${error ? ' error' : ''}`; }
+  function clearContent(clearSelection = true) {
+    contentValue = null; returnItem = null; $('content-panel').replaceChildren(); $('content-tab').disabled = true;
+    if (clearSelection) { contentSelection.clear(); for (const check of checks.values()) check.checked = false; }
+    updateSelection();
+  }
+  function updateSelection() {
+    $('content-count').textContent = `${contentSelection.size} selected`;
+    $('interpret').disabled = !contentEnabled || !pinWire || contentSelection.size === 0;
+    $('clear-content').disabled = contentSelection.size === 0;
+  }
+  function cancelWork() { epoch++; if (controller) controller.abort(); }
   function clearInspector() {
-    source = null; selected = null; $('inspection').hidden = true; $('source').textContent = '';
+    source = null; selected = null; $('source-tab').disabled = true; $('provenance-tab').disabled = true; $('inspection').hidden = true; $('source').textContent = '';
     $('provenance').replaceChildren(); $('range').textContent = ''; $('selection').textContent = 'Select an occurrence';
     $('source-hint').textContent = 'Read exact retained bytes alongside their provenance.'; $('close-inspector').hidden = true;
     for (const button of buttons.values()) button.setAttribute('aria-pressed', 'false');
@@ -14,7 +26,7 @@
   function lock(message = 'Locked · connect to browse authorized evidence.') {
     for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
-    clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
+    pinWire = null; contentEnabled = false; clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
     $('catalog-status').textContent = ''; $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
     $('lock').disabled = true; $('token').value = ''; notice(message); $('token').focus();
   }
@@ -25,10 +37,10 @@
     if (current !== epoch) return null;
     if (!response.ok) {
       const denied = response.status === 401 || response.status === 403;
-      const message = denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
+      const message = body.action === 'content' && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : body.action === 'content' && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
         ? 'Retained source is unavailable for this request. Choose another occurrence or refresh the snapshot.'
         : 'This response could not be verified. Retry, refresh the snapshot, or choose another scope.';
-      const error = new Error(message); error.accessDenied = denied; error.readerMessage = message; throw error;
+      const error = new Error(message); error.accessDenied = denied; error.keepContentSelection = body.action === 'content' && [422,429].includes(response.status); error.readerMessage = message; throw error;
     }
     const value = await response.json(); if (current !== epoch) return null; return value;
     } catch (error) { if (current !== epoch) return null; throw error; }
@@ -37,22 +49,23 @@
     if (error.name === 'AbortError') return;
     const message = error.readerMessage || 'Reader unavailable. Retry, refresh the snapshot, or choose another scope.';
     if (error.accessDenied || $('library').hidden) lock(message);
-    else { clearInspector(); if (!pin) { $('capability-list').replaceChildren(); $('scope').replaceChildren(); $('catalog-status').textContent = 'Source check failed · coverage is unknown. Retry sources.'; $('catalog-status').className = ''; } notice(message, true); }
+    else { clearContent(!error.keepContentSelection); clearInspector(); if (!pin) { $('capability-list').replaceChildren(); $('scope').replaceChildren(); $('catalog-status').textContent = 'Source check failed · coverage is unknown. Retry sources.'; $('catalog-status').className = ''; } notice(message, true); }
   }); }
   function tab(name) {
+    $('content-panel').hidden = name !== 'content'; $('content-tab').setAttribute('aria-pressed', String(name === 'content'));
     $('source-panel').hidden = name !== 'source'; $('provenance').hidden = name !== 'provenance';
     $('source-tab').setAttribute('aria-pressed', String(name === 'source')); $('provenance-tab').setAttribute('aria-pressed', String(name === 'provenance'));
   }
   function renderBytes() {
     if (!source) return;
-    const end = source.offset + source.bytes_hex.length / 2;
+    const end = typeof source.offset === 'string' ? (BigInt(source.offset) + BigInt(source.bytes_hex.length / 2)).toString() : source.offset + source.bytes_hex.length / 2;
     $('range').textContent = `Bytes ${source.offset}–${end} of ${source.total_bytes} · ${hexadecimal ? 'hex' : 'UTF-8'} · end exclusive`;
     $('source').textContent = hexadecimal ? source.bytes_hex : source.utf8;
     $('encoding').textContent = hexadecimal ? 'Show UTF-8' : 'Show hex';
     $('encoding').disabled = source.utf8 === null;
   }
   function showSource(value) {
-    source = value; $('inspection').hidden = false; $('close-inspector').hidden = false;
+    source = value; $('source-tab').disabled = false; $('provenance-tab').disabled = false; $('inspection').hidden = false; $('close-inspector').hidden = false;
     $('selection').textContent = `Occurrence ${value.record.sequence}`;
     $('source-hint').textContent = value.content_trust;
     hexadecimal = value.utf8 === null || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(value.utf8);
@@ -64,22 +77,28 @@
     notice('Source verified · this is one retained occurrence, not a reconstructed session.');
   }
   async function inspect(sequence, offset = 0) {
-    clearInspector(); selected = sequence; const button = buttons.get(sequence); if (button) button.setAttribute('aria-pressed','true');
+    updateSelection(); clearInspector(); selected = sequence; const button = buttons.get(sequence); if (button) button.setAttribute('aria-pressed','true');
     notice('Verifying snapshot membership and reading source…');
-    const value = await rpc({action:'source', pin, sequence, offset, length:65536}); if (!value) return;
+    const value = await rpc(sourceRequest(sequence, offset)); if (!value) return;
     showSource(value); tab('source'); $('source-tab').focus();
   }
   async function page(position) {
-    clearInspector(); buttons.clear(); $('rows').replaceChildren();
+    clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren();
     $('count').textContent = ''; $('coverage').textContent = ''; $('page-position').textContent = 'Loading…';
     $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
     notice('Reading the selected snapshot…');
-    const value = await rpc({action:'page', pin, after:position, limit:20}); if (!value) return;
+    const value = await rpc(pinWire ? {action:'content-page',pin_wire:pinWire,after:String(position),limit:20} : {action:'page', pin, after:position, limit:20}); if (!value) return;
     after = position; next = value.next; buttons.clear(); $('rows').replaceChildren();
     for (const row of value.records) {
       const button = document.createElement('button'); button.className = 'occurrence'; button.setAttribute('aria-pressed','false');
       const title = document.createElement('strong'), id = document.createElement('span'); title.textContent = `Occurrence ${row.sequence}`; id.textContent = row.manifest;
-      button.append(title); button.append(id); button.addEventListener('click', () => run(() => inspect(row.sequence))); buttons.set(row.sequence,button); $('rows').append(button);
+      button.append(title); button.append(id); button.addEventListener('click', () => run(() => inspect(row.sequence))); buttons.set(row.sequence,button);
+      if (contentEnabled && pinWire) {
+        const wrap = document.createElement('div'), check = document.createElement('input'); wrap.className = 'selectable-occurrence';
+        check.type = 'checkbox'; check.setAttribute('aria-label', `Select occurrence ${row.sequence} for Content`); checks.set(row.sequence,check);
+        check.addEventListener('change', () => { cancelWork(); clearContent(false); clearInspector(); if(check.checked)contentSelection.add(String(row.sequence));else contentSelection.delete(String(row.sequence));updateSelection(); });
+        wrap.append(check); wrap.append(button); $('rows').append(wrap);
+      } else $('rows').append(button);
     }
     $('count').textContent = `${value.through} at snapshot`; $('coverage').textContent = value.coverage;
     $('page-position').textContent = value.records.length ? `${value.records[0].sequence}–${value.records[value.records.length-1].sequence}` : '0 entries';
@@ -88,8 +107,8 @@
   }
   function renderCapabilities(value) {
     if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
-    const labels = {'snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
-    const supported = new Set(['snapshot-inventory','source-ranges','provenance']), seen = new Set();
+    const labels = {'snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
+    const supported = new Set(['snapshot-inventory','source-ranges','provenance','content-inspection']), seen = new Set();
     $('capability-list').replaceChildren();
     for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
       for (const capability of items) {
@@ -112,11 +131,13 @@
           || !object(entry.pin) || typeof entry.pin.request !== 'string' || !entry.pin.request.length || entry.pin.request.length > 8192 || !object(entry.pin.reply)) {
         throw new Error('Invalid or duplicate scope entry.');
       }
+      if (entry.pin_wire !== undefined && (typeof entry.pin_wire !== 'string' || !entry.pin_wire.length || entry.pin_wire.length > 12000)) throw new Error('Invalid exact snapshot.');
       seen.add(entry.scope);
     }
   }
   async function catalog() {
-    clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
+    clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
+    pinWire = null; contentEnabled = false;
     scopes = []; pin = null; history = []; after = 0; next = null;
     $('coverage').textContent = ''; $('count').textContent = ''; $('page-position').textContent = '';
     $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
@@ -126,6 +147,9 @@
     if (value.version !== 1 || !['complete','partial'].includes(value.coverage)) throw new Error('Unsupported reader version or coverage.');
     validateScopes(value.scopes);
     renderCapabilities(value);
+    contentEnabled = value.capabilities.includes('content-inspection');
+    if (contentEnabled && value.scopes.some(s => typeof s.pin_wire !== 'string')) throw new Error('Missing exact snapshot.');
+    $('content-support').textContent = contentEnabled ? 'Select captures on this page. Interpretation covers only this selection.' : 'Content inspection is unavailable on this reader.';
     scopes = value.scopes;
     for (const scope of scopes) { const option = document.createElement('option'); option.value = scope.scope; option.textContent = scope.scope; $('scope').append(option); }
     $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;
@@ -138,21 +162,116 @@
       notice(partial ? 'No verified scope is available from this incomplete check. Retry sources.' : 'No currently authorized scopes.');
       return;
     }
-    $('scope').value = scopes[0].scope; pin = scopes[0].pin; await page(0);
+    $('scope').value = scopes[0].scope; pin = scopes[0].pin; pinWire = scopes[0].pin_wire || null; await page(0);
   }
+
+  function sourceRequest(sequence, offset = 0) {
+    return pinWire ? {action:'source-exact',pin_wire:pinWire,sequence:String(sequence),offset:String(offset),length:'65536'} : {action:'source',pin,sequence,offset,length:65536};
+  }
+  function textNode(tag, text, className) { const e=document.createElement(tag);e.textContent=text;if(className)e.className=className;return e; }
+  function sourceLink(parent, value, input, label, offset = '0') {
+    const occurrence = value.occurrences[Number(input)]; if(!occurrence)throw new Error('Invalid Content citation.');
+    const button=textNode('button',label);button.addEventListener('click',()=>run(async()=>{returnItem=button;await inspect(occurrence.record.sequence,offset);}));parent.append(button);return button;
+  }
+  function details(parent, title, raw) {
+    const d=document.createElement('details');d.append(textNode('summary',title));d.append(textNode('pre',raw));parent.append(d);
+  }
+  function citationRenderer(value, stream) {
+    if(!Array.isArray(stream.citation_sets)||stream.citation_sets.length>2048||!Array.isArray(stream.items))throw new Error('Invalid Content citation table.');
+    let total=0;
+    for(const set of stream.citation_sets){
+      if(!Array.isArray(set)||(total+=set.length)>4096)throw new Error('Invalid Content citation table.');
+      for(const c of set)if(!c||!Array.isArray(c.bytes)||c.bytes.length!==2||!value.occurrences[Number(c.input)])throw new Error('Invalid Content citation.');
+    }
+    function resolve(ref){
+      if(typeof ref!=='string'||ref.length>20||!/^(0|[1-9][0-9]*)$/.test(ref))throw new Error('Invalid Content citation reference.');
+      const index=Number(ref);
+      if(!Number.isSafeInteger(index)||index>=stream.citation_sets.length)throw new Error('Invalid Content citation reference.');
+      return stream.citation_sets[index];
+    }
+    const uses=new Map(),shared=new Map();
+    for(const item of stream.items)for(const ref of [item.citation_set,...(item.tool?[item.tool.citation_set]:[])]){resolve(ref);uses.set(ref,(uses.get(ref)||0)+1);}
+    function links(parent, ref, label){let first;for(const c of resolve(ref)){const button=sourceLink(parent,value,c.input,`${label} ${value.occurrences[Number(c.input)].record.sequence} · ${c.bytes.join('–')}`,c.bytes[0]);first ||= button;}return first;}
+    return {
+      append(parent,ref,label){
+        if(uses.get(ref)===1){links(parent,ref,label);return;}
+        if(!shared.has(ref)){
+          const detail=document.createElement('details');detail.className='content-citation-set';
+          const summary=textNode('summary',`Shared source range ${Number(ref)+1} · ${resolve(ref).length} citations`);detail.append(summary);
+          const sources=document.createElement('div');sources.className='content-citations';const target=links(sources,ref,'Source')||summary;detail.append(sources);shared.set(ref,{detail,target});
+        }
+        const button=textNode('button',`Sources · shared range ${Number(ref)+1}`);button.addEventListener('click',()=>{const group=shared.get(ref);group.detail.open=true;group.target.focus();});parent.append(button);
+      },
+      finish(parent){for(const group of shared.values())parent.append(group.detail);}
+    };
+  }
+  function showContent(value) {
+    if(value.version!=='kan-content/2'||value.pin_wire!==pinWire||!Array.isArray(value.occurrences)||value.occurrences.length>40||!Array.isArray(value.observations)||!Array.isArray(value.groups))throw new Error('Unsupported Content response.');
+    contentValue=value;$('content-panel').replaceChildren();$('content-tab').disabled=false;
+    $('inspection').hidden=false;$('close-inspector').hidden=false;$('selection').textContent='Selected Content';
+    $('source-hint').textContent='Observed content · roles and outcomes are claims. Follow citations to verified retained source.';
+    const panel=$('content-panel');panel.append(textNode('p',value.coverage,'content-coverage'));
+    const unplaced=value.observations.filter(o=>o.kind!=='capture');
+    if(unplaced.length){const section=document.createElement('section');section.className='content-unplaced';section.append(textNode('h3','Other selected evidence'));for(const o of unplaced){const row=document.createElement('p');row.append(textNode('span',`${o.kind}${o.reason?' · '+o.reason:''} `));sourceLink(row,value,o.input,'Inspect source');section.append(row);}panel.append(section);}
+    if(!value.groups.length)panel.append(textNode('p','No recognized capture groups in this selection. Every input remains inspectable in Source.'));
+    for(const group of value.groups){
+      const card=document.createElement('section');card.className='content-group';
+      card.append(textNode('h3',`${group.observer} · ${group.terminal}`));card.append(textNode('p',group.attempt,'content-identity'));card.append(textNode('p',`Retained request signer: ${group.writer}`,'content-identity'));
+      const flags=[];if(group.missing_start)flags.push('Start not selected');if(group.events_after_terminal)flags.push('Events after terminal');if(group.unconfirmed_claim)flags.push('Observer reports unconfirmed capture');
+      if(group.ordinal_gaps.length)flags.push(`No recognized capture at ordinals ${group.ordinal_gaps.map(r=>r.join('–')).join(', ')} (end exclusive)`);
+      if(group.ordinals.some(o=>o.conflict))flags.push('Conflicting ordinal · both streams withheld conservatively');
+      if(flags.length)card.append(textNode('p',flags.join(' · '),'content-warning'));
+      if(group.unexpected_starts.length){const row=textNode('p','Unexpected start events: ','content-warning');for(const input of group.unexpected_starts)sourceLink(row,value,input,`Unexpected start · Source ${value.occurrences[Number(input)].record.sequence}`);card.append(row);}
+      const lineage=document.createElement('details');lineage.className='content-lineage';lineage.append(textNode('summary','Retained occurrence lineage'));
+      for(const ordinal of group.ordinals){const row=document.createElement('p');row.append(textNode('span',`Observed ordinal ${ordinal.value}${ordinal.conflict?' · conflict':''} `));for(const input of ordinal.inputs)sourceLink(row,value,input,`Source ${value.occurrences[Number(input)].record.sequence}`);lineage.append(row);}card.append(lineage);
+      for(const direction of ['request','response']){
+        const stream=group[direction],citations=citationRenderer(value,stream),section=document.createElement('section');section.className='content-stream';section.append(textNode('h4',direction==='request'?'Request · supplied history':'Response · observed output'));
+        section.append(textNode('p',`Contiguous selected bytes: ${stream.observed_bytes??'unavailable'} · Consistent observer length claim: ${stream.expected_bytes??'none'}`,'content-coverage'));
+        if(stream.extent_claims.length){const claims=document.createElement('details');claims.append(textNode('summary','Observer length claims'));for(const claim of stream.extent_claims){const row=textNode('p',`Claimed bytes: ${claim.bytes} `);sourceLink(row,value,claim.input,`Length claim · Source ${value.occurrences[Number(claim.input)].record.sequence}`);claims.append(row);}section.append(claims);}
+        if(stream.state!=='interpreted')section.append(textNode('p',`No readable stream: ${stream.issues.map(i=>i.kind+(i.bytes?' '+i.bytes.join('–'):'')).join(', ')||'absent, incomplete or contradictory selected bytes'}.`,'content-warning'));
+        else {
+          if(stream.coherent_stop_observed)section.append(textNode('p','Coherent protocol stop observed · capture completeness is unknown.','content-coverage'));
+          for(const item of stream.items){const entry=document.createElement('article');entry.className='content-item';entry.append(textNode('h5',`${direction==='request'?'Supplied history · ':''}${item.role?item.role+' · ':''}${item.kind}${item.index!==null?' · block '+item.index:''}`));
+            if(item.text!==null)entry.append(textNode('pre',item.text,'content-text'));
+            if(item.issues.length)entry.append(textNode('p',item.issues.join(' · '),'content-warning'));
+            if(item.pointer!==null)entry.append(textNode('p',`Parsed JSON location ${item.pointer||'/'}`,'content-pointer'));
+            if(item.event_json!==null)details(entry,'Parsed event · numbers may be rounded; Source preserves exact bytes',item.event_json);
+            if(item.tool){details(entry,'Accumulated tool input (derived)',item.tool.json);const refs=document.createElement('div');refs.className='content-citations';refs.append(textNode('span',`Enclosing tool block ${item.tool.region.join('–')} · coarse attribution · end exclusive`));citations.append(refs,item.tool.citation_set,'Tool input source');entry.append(refs);}
+            const sources=document.createElement('div');sources.className='content-citations';sources.append(textNode('span',`Enclosing bytes ${item.region.join('–')} · ${item.coarse?'coarse attribution':'attribution'} · end exclusive`));
+            citations.append(sources,item.citation_set,'Source');
+            entry.append(sources);section.append(entry);
+          }
+          citations.finish(section);
+          if(stream.parsed_json!==null)details(section,'Parsed body · numbers may be rounded; Source preserves exact bytes',stream.parsed_json);
+        }
+        card.append(section);
+      }
+      panel.append(card);
+    }
+    tab('content');$('content-tab').focus();notice('Content interpreted from the explicit selection · original source and provenance remain available.');
+  }
+  $('interpret').addEventListener('click',()=>run(async()=>{
+    if(!pinWire||!contentEnabled||!contentSelection.size)return;
+    clearContent(false);clearInspector();$('interpret').disabled=true;notice('Verifying selected evidence and interpreting Content…');
+    const value=await rpc({action:'content',pin_wire:pinWire,sequences:[...contentSelection],format:$('content-format').value});if(!value)return;
+    showContent(value);updateSelection();
+  }));
+  $('clear-content').addEventListener('click',()=>{cancelWork();clearContent();clearInspector();notice('Content selection cleared.');});
+  $('content-format').addEventListener('change',()=>{cancelWork();clearContent(false);clearInspector();});
+
   $('connect').addEventListener('submit', event => {
     event.preventDefault(); token = $('token').value; $('token').value = ''; run(catalog);
   });
   $('retry-sources').addEventListener('click', () => run(catalog));
-  $('scope').addEventListener('change', () => run(async () => { const chosen = scopes.find(s => s.scope === $('scope').value); if (!chosen) return; pin = chosen.pin; history = []; await page(0); }));
-  $('resnapshot').addEventListener('click', () => run(async () => { if (!pin) return; clearInspector(); const value = await rpc({action:'snapshot',scope:$('scope').value}); if (!value) return; pin = value.pin; const chosen = scopes.find(s => s.scope === $('scope').value); chosen.pin = pin; history = []; await page(0); }));
+  $('scope').addEventListener('change', () => run(async () => { const chosen = scopes.find(s => s.scope === $('scope').value); if (!chosen) return; pin = chosen.pin; pinWire = chosen.pin_wire || null; history = []; await page(0); }));
+  $('resnapshot').addEventListener('click', () => run(async () => { if (!pin) return; clearContent(); clearInspector(); const value = await rpc({action:'snapshot',scope:$('scope').value}); if (!value) return; if(contentEnabled && typeof value.pin_wire !== 'string') throw new Error('Missing exact snapshot.'); pin = value.pin; pinWire = value.pin_wire || null; const chosen = scopes.find(s => s.scope === $('scope').value); chosen.pin = pin; chosen.pin_wire = pinWire; history = []; await page(0); }));
   $('next').addEventListener('click', () => run(async () => { if (next === null) return; history.push(after); await page(next); }));
   $('previous').addEventListener('click', () => run(async () => { if (history.length) await page(history.pop()); }));
   $('more').addEventListener('click', () => run(async () => { if (source && source.next !== null) await inspect(selected,source.next); }));
   $('download').addEventListener('click', () => run(async () => {
     if (!source) return; const offset = source.offset, sequence = selected;
     // Export rechecks authorization; the displayed range is not an offline grant.
-    const value = await rpc({action:'source',pin,sequence,offset,length:65536}); if (!value) return;
+    const value = await rpc(sourceRequest(sequence,offset)); if (!value) return;
     const bytes = new Uint8Array(value.bytes_hex.match(/../g)?.map(x => parseInt(x,16)) || []);
     const url = URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));
     // Keep the URL alive for navigation to begin; lock/pagehide release it early.
@@ -161,8 +280,9 @@
     a.hidden = true; document.body.append(a); a.click(); a.remove();
   }));
   $('encoding').addEventListener('click', () => { if (source && source.utf8 !== null) { hexadecimal = !hexadecimal; renderBytes(); } });
+  $('content-tab').addEventListener('click', () => { if(contentValue) { tab('content'); $('selection').textContent = 'Selected Content'; $('source-hint').textContent = 'Observed content · roles and outcomes are claims. Follow citations to verified retained source.'; if(returnItem)returnItem.focus(); } });
   $('source-tab').addEventListener('click', () => tab('source')); $('provenance-tab').addEventListener('click', () => tab('provenance'));
-  $('close-inspector').addEventListener('click', () => { epoch++; if(controller) controller.abort(); const button = buttons.get(selected); clearInspector(); if(button)button.focus(); });
+  $('close-inspector').addEventListener('click', () => { epoch++; if(controller) controller.abort(); const button = buttons.get(selected); clearContent(false); clearInspector(); if(button)button.focus(); });
   $('lock').addEventListener('click', () => lock());
   window.addEventListener('pagehide', () => lock());
 })();

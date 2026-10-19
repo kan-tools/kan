@@ -1,0 +1,42 @@
+✔ real endpoint uses header auth and untrusted source stays text (4.092333ms)
+✔ lock aborts pending source and clears every private view (0.79325ms)
+✔ page and scope navigation carry only the selected authenticated pin (0.797833ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.761833ms)
+✔ old transport errors cannot lock a newer session (0.549208ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.974125ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.7955ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.61975ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (1.796792ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.628208ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.734917ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.553458ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.613375ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.556042ms)
+✔ partial catalog coverage persists while browsing and retry clears old authority (0.702834ms)
+✔ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (1.118166ms)
+✔ both authorization denial statuses lock an already open Library (1.097834ms)
+✔ Previous is disabled immediately when leaving a later page (0.524541ms)
+✔ malformed duplicate and inconsistent capabilities never open a Library (2.060084ms)
+✔ all directional control families default to exact hex with explicit text access (4.914792ms)
+✔ malformed retry clears partially rendered capabilities and keeps recovery available (0.769834ms)
+✔ malformed scope catalogs are rejected before any option or page request (4.502208ms)
+✔ malformed scope retry clears old plaintext and permits recovery (0.803167ms)
+✔ PB1 boundary values are accepted, not falsely rejected (1.187416ms)
+✔ PB2 complete empty catalog still opens without page request (0.404459ms)
+✔ PB3 over-limit scope name and pin request are rejected (0.715417ms)
+✔ PB4 non-string scope/request with a length property are rejected (1.548709ms)
+✔ PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery (0.66125ms)
+✔ PB6 lock during malformed-catalog reply ignores the late reply (0.3585ms)
+✔ PB7 after malformed retry, old scope names and pins cannot be navigated (0.534542ms)
+✔ Content preserves opaque pins and large sequence strings through source return (0.952625ms)
+✔ Content lock, scope, selection and format changes discard late plaintext (2.164917ms)
+✔ Content unplaced input is visible and denied citations clear all plaintext (1.527042ms)
+✔ Content refuses wrong snapshot and missing exact pins before exposing items (0.921667ms)
+ℹ tests 34
+ℹ suites 0
+ℹ pass 34
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 75.066708

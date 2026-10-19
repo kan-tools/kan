@@ -1,0 +1,69 @@
+✔ real endpoint uses header auth and untrusted source stays text (5.323792ms)
+✔ lock aborts pending source and clears every private view (1.271417ms)
+✔ page and scope navigation carry only the selected authenticated pin (1.182333ms)
+✔ download rechecks authorization and denied export clears prior plaintext (1.027416ms)
+✔ old transport errors cannot lock a newer session (0.738042ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (1.26825ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.847833ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.73625ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (2.67425ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.85475ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (2.025083ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.683292ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.716916ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.695ms)
+✔ partial catalog coverage persists while browsing and retry clears old authority (1.263959ms)
+✔ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (2.169459ms)
+✔ both authorization denial statuses lock an already open Library (1.620541ms)
+✔ Previous is disabled immediately when leaving a later page (1.438ms)
+✔ malformed duplicate and inconsistent capabilities never open a Library (6.245084ms)
+✔ all directional control families default to exact hex with explicit text access (10.069083ms)
+✔ malformed retry clears partially rendered capabilities and keeps recovery available (3.785ms)
+✔ malformed scope catalogs are rejected before any option or page request (3.997458ms)
+✔ malformed scope retry clears old plaintext and permits recovery (0.898209ms)
+✔ PB1 boundary values are accepted, not falsely rejected (1.443375ms)
+✔ PB2 complete empty catalog still opens without page request (0.71925ms)
+✔ PB3 over-limit scope name and pin request are rejected (1.094666ms)
+✔ PB4 non-string scope/request with a length property are rejected (1.923542ms)
+✔ PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery (0.848709ms)
+✔ PB6 lock during malformed-catalog reply ignores the late reply (0.473625ms)
+✔ PB7 after malformed retry, old scope names and pins cannot be navigated (1.049334ms)
+✔ Content preserves opaque pins and large sequence strings through source return (1.3005ms)
+✔ Content lock, scope, selection and format changes discard late plaintext (2.062791ms)
+✔ Content unplaced input is visible and denied citations clear all plaintext (1.006291ms)
+✔ Content refuses wrong snapshot and missing exact pins before exposing items (1.885167ms)
+✖ Content labels supplied history and derived numbers, with separate tool block citations (1.886375ms)
+ℹ tests 35
+ℹ suites 0
+ℹ pass 34
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 104.335834
+
+✖ failing tests:
+
+test at tests/library_ui.test.cjs:136:1
+✖ Content labels supplied history and derived numbers, with separate tool block citations (1.886375ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    {
+      action: 'source-exact',
+  +   length: '65536',
+  -   max_bytes: 32768,
+      offset: '40',
+      pin_wire: '{"reply":{"through":9007199254740993},"signature":"synthetic-exact"}',
+      sequence: '9007199254740993'
+    }
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/tests/library_ui.test.cjs:146:35)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { action: 'source-exact', pin_wire: '{"reply":{"through":9007199254740993},"signature":"synthetic-exact"}', sequence: '9007199254740993', offset: '40', length: '65536' },
+    expected: { action: 'source-exact', pin_wire: '{"reply":{"through":9007199254740993},"signature":"synthetic-exact"}', sequence: '9007199254740993', offset: '40', max_bytes: 32768 },
+    operator: 'deepStrictEqual'
+  }

@@ -1,0 +1,152 @@
+$ cargo test --features v2-crypto --test evidence_reader --test evidence_interpretation --test evidence_interpretation_followups --test evidence_interpretation_review_regressions --test evidence_assembly --test evidence_assembly_review_regressions --test surface_conformance
+
+running 13 tests
+test every_non_capture_and_unavailable_input_has_a_result ... ok
+test a_chunk_after_request_end_cannot_silently_become_a_closed_request ... ok
+test empty_request_extent_and_unknown_extent_remain_distinct ... ok
+test completed_terminal_is_only_a_claim_and_does_not_fill_missing_evidence ... ok
+test observed_missing_admission_and_unexpected_start_stay_visible ... ok
+test exact_budget_edges_cancellation_and_repeat_are_deterministic ... ok
+test repeated_semantic_chunk_at_a_new_ordinal_is_an_overlap_not_deduplicated ... ok
+test ordinal_conflicts_keep_both_bytes_and_prevent_synthetic_rendering ... ok
+test scope_writer_observer_attempt_isolation_ignores_transport_link_claims ... ok
+test holes_overlaps_and_contradictory_extents_are_not_repaired ... ok
+test sparse_u64_and_overflow_coordinates_never_allocate_by_claimed_extent ... ok
+test shuffled_selection_preserves_exact_binary_spans_and_duplicate_lineage ... ok
+test terminal_at_a_conflicting_ordinal_cannot_select_a_winner ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+test stream_offset_order_can_differ_from_observer_ordinal_order ... ok
+test duplicate_request_end_retains_every_extent_source ... ok
+test ordinal_gaps_do_not_mean_unplaced_inputs_are_absent ... ok
+test scan_accounting_pins_decode_duplicate_comparison_and_copy ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 13 tests
+test empty_sse_and_malformed_message_delta_are_explicit ... ok
+test duplicate_keys_aliases_depth_and_truncation_are_visible ... ok
+test malformed_unknown_error_and_trailing_event_are_visible ... ok
+test exact_budgets_and_cancellation_return_no_partial_document ... ok
+test block_sequence_conflicts_and_sparse_indices_never_complete ... ok
+test mapping_refuses_foreign_group_unavailable_source_and_forged_extent ... ok
+test missing_event_and_delta_types_are_malformed_not_future_extensions ... ok
+test request_history_and_unknown_fields_remain_source_linked ... ok
+test response_json_and_provider_errors_never_claim_stream_completeness ... ok
+test newline_forms_multiline_comments_and_raw_unknown_fields_survive ... ok
+test mapping_refuses_gaps_overlaps_forged_source_bytes_and_ranges ... ok
+test tool_fragments_are_not_repaired_or_replaced_by_empty_initial_input ... ok
+test every_capture_split_preserves_sse_text_and_exact_duplicate_source_spans ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+
+running 9 tests
+test absolute_output_accounting_covers_json_strings_and_sse_data ... ok
+test bom_and_undispatched_framing_keep_source_regions_and_unknown_fields_visible ... ok
+test citations_and_unknown_deltas_do_not_promote_an_empty_json_key_to_text ... ok
+test citations_delta_is_not_a_contradiction_and_unknown_types_do_not_guess_block_kind ... ok
+test nested_tool_results_render_and_malformed_unknown_shapes_have_reasons ... ok
+test malformed_error_and_tool_result_shapes_have_resolving_pointers_and_reasons ... ok
+test sequence_issue_is_attached_to_the_block_start_that_follows_message_delta ... ok
+test unknown_sse_field_reason_is_local_to_its_event ... ok
+test empty_chunks_at_covered_offsets_preserve_mapping_and_boundary_lineage ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 19 tests
+test pass_j1_nested_escaped_duplicate_alias_refuses_whole_body ... ok
+test pass_b1_exact_edges_for_request_format ... ok
+test pass_b2_duration_bounds ... ok
+test pass_j7_hostile_strings_are_inert_data ... ok
+test pass_j4_pointers_resolve_and_request_history_is_context_not_observation ... ok
+test pass_m2_forged_duplicate_with_different_frame_refuses ... ok
+test pass_m3_forged_cross_direction_segment_refuses ... ok
+test pass_m4_forged_frame_offset_refuses ... ok
+test pass_m5_forged_span_into_header_bytes_refuses ... ok
+test pass_m6_forged_trailing_contiguous_bytes_refuse ... ok
+test pass_m7_citation_and_work_edges_and_empty_regions ... ok
+test pass_s1_independent_writer_all_newlines_no_names ... ok
+test pass_m1_multibyte_escaped_sse_spans_across_three_chunks_and_triplicates ... ok
+test pass_s4_lifecycle_contradictions_never_cohere ... ok
+test pass_s7_invalid_utf8_and_sentinel_names ... ok
+test pass_s6_tool_fragment_strictness ... ok
+test pass_j2_depth_limit_holds_despite_unbounded_depth_feature_and_does_not_overflow ... ok
+test pass_s8_fuzz_tiling_and_coherence_implies_clean ... ok
+test pass_j8_fuzz_request_json_no_panic_and_pointers_resolve ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+
+running 28 tests
+test content_browser_fixture ... ignored, manual Content browser fixture; requires KAN_LIBRARY_FIXTURE_INFO
+test content_cancelling_acquisition_releases_admission_and_does_not_cache_a_grant ... ok
+test content_accumulated_tool_input_cites_all_fragments_instead_of_only_the_stop ... ok
+test content_has_an_independent_item_limit_with_no_partial_success ... ok
+test content_http_routes_share_authority_and_return_exact_coordinates ... ok
+test content_handles_realistic_multiturn_history_and_streams_without_repeated_source_scans ... ok
+test content_rechecks_current_grant_after_successful_acquisition ... ok
+test content_preserves_authorized_occurrences_duplicates_unplaced_inputs_and_exact_spans ... ok
+test inventory_is_snapshot_pinned_and_source_ranges_are_exact_across_scopes ... ok
+test content_refuses_invalid_selections_tampering_and_revocation_without_partial_success ... ok
+test large_source_is_returned_in_exact_bounded_ranges ... ok
+test library_browser_fixture ... ignored, manual browser fixture; requires KAN_LIBRARY_FIXTURE_INFO output path
+test library_http_authority_is_separate_and_denial_does_not_reveal_scope_existence ... ok
+test library_body_read_deadline_returns_an_explicit_timeout ... ok
+test library_refuses_public_listeners_and_short_tokens_before_serving ... ok
+test catalog_verification_failure_is_not_an_empty_authorized_inventory ... ok
+test pin_principal_and_audience_are_checked_even_with_valid_signatures ... ok
+test catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources ... ok
+test reader_configuration_scope_count_and_duplicates_are_bounded ... ok
+test reader_identity_scope_and_decryption_key_are_separate_checks ... ok
+test library_refuses_thirteenth_socket_at_the_live_admission_boundary ... ok
+test reader_refuses_reusing_the_storage_issuer_signing_key ... ok
+test reader_cli_refuses_public_configuration_and_relative_private_key_paths ... ok
+test reader_rejects_signed_page_completeness_and_tip_mismatches ... ok
+test revoked_grants_and_tampered_pins_cannot_read_cached_source ... ok
+test signed_reply_integrity_page_shape_and_source_membership_are_independent ... ok
+test source_refuses_a_valid_read_from_a_different_snapshot_history ... ok
+test library_queues_a_browser_request_behind_four_idle_connections ... ok
+
+test result: ok. 26 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 8.45s
+
+
+running 19 tests
+test compiler_resolves_filesystem_aliases_to_the_single_mutation_facade ... ok
+test catalog_is_well_formed_and_cites_real_designs ... ok
+test every_implemented_value_has_exactly_one_catalog_row_and_no_row_is_fiction ... ok
+test every_filesystem_mutation_names_its_catalog_surface_at_the_call_site ... ok
+test every_module_that_mutates_the_filesystem_is_registered ... ok
+test persistence_modules_cannot_add_an_unreviewed_path_literal ... ok
+test every_persistence_facade_call_is_independently_inventoried ... ok
+test overlay_is_recomputed_from_authoritative_git_tree_claims ... ok
+test production_workspace_bypasses_an_unremovable_corrupt_projection ... ok
+test production_workspace_bypasses_an_unremovable_semantically_poisoned_projection ... ok
+test caller_selected_role_key_is_an_implemented_authoritative_surface ... ok
+test production_workspace_bypasses_an_unopenable_projection_path ... ok
+test production_workspace_recovers_when_projection_metadata_has_the_wrong_type ... ok
+test production_workspace_recovers_when_a_projection_column_has_the_wrong_type ... ok
+test the_catalog_represents_authority_source_and_scope_as_independent_axes ... ok
+test workspace_routes_overlay_io_through_overlay_capabilities ... ok
+test sqlite_is_recomputed_from_authoritative_claims_not_from_itself ... ok
+test production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json ... ok
+test production_workspace_recreates_a_malformed_projection_schema ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.43s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-followups)
+    Finished `test` profile [unoptimized] target(s) in 9.21s
+     Running tests/evidence_assembly.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_assembly-ab2b7afbe8d062d0)
+     Running tests/evidence_assembly_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_assembly_review_regressions-bfce74943978b5ce)
+     Running tests/evidence_interpretation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation-13fed510d614cbe3)
+     Running tests/evidence_interpretation_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation_followups-4e80bc39574f69f6)
+     Running tests/evidence_interpretation_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation_review_regressions-e1f7748b3dd049da)
+     Running tests/evidence_reader.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reader-391eae18af80c190)
+     Running tests/surface_conformance.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/surface_conformance-34974efe399960ee)
+
+exit=0

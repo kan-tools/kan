@@ -1,0 +1,30 @@
+$ cargo test --features v2-crypto --lib evidence_content::worker_tests::cancelling_real_content_keeps_worker_admission_until_exit_and_stops_after_first_item -- --exact
+
+running 1 test
+test evidence_content::worker_tests::cancelling_real_content_keeps_worker_admission_until_exit_and_stops_after_first_item ... FAILED
+
+failures:
+
+---- evidence_content::worker_tests::cancelling_real_content_keeps_worker_admission_until_exit_and_stops_after_first_item stdout ----
+
+thread 'evidence_content::worker_tests::cancelling_real_content_keeps_worker_admission_until_exit_and_stops_after_first_item' (10559790) panicked at src/../tests/support/content_worker_unit.rs:48:5:
+assertion `left == right` failed: worker must own its permit while paused
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'tokio-rt-worker' (10559795) panicked at src/../tests/support/content_worker_unit.rs:37:26:
+called `Result::unwrap()` on an `Err` value: Disconnected
+
+
+failures:
+    evidence_content::worker_tests::cancelling_real_content_keeps_worker_admission_until_exit_and_stops_after_first_item
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.18s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-followups)
+    Finished `test` profile [unoptimized] target(s) in 7.30s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-480f4f845bac8ec9)
+error: test failed, to rerun pass `--lib`
+
+exit=101

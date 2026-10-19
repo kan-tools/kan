@@ -14,7 +14,7 @@ Connect the reviewed frame, assembly and provider interpretation components to t
 
 ## Acceptance Criteria
 - [ ] AC-1: Real signed service fixtures accept selected occurrences and refuse foreign scope, forged pin, revoked grant, mismatched writer binding, out-of-snapshot coordinates and truncated acquisition without snippets or counts. (REQ-1, REQ-2, REQ-4)
-- [ ] AC-2: Interleaved attempts and duplicate selections preserve exact occurrence identities and frame-body spans; all new wire integer coordinates round-trip above the JavaScript safe-integer limit without rounding. (REQ-3, REQ-4)
+- [ ] AC-2: Interleaved attempts and duplicate observations at distinct occurrence coordinates preserve exact occurrence identities and frame-body spans; all new wire integer coordinates round-trip above the JavaScript safe-integer limit without rounding. (REQ-3, REQ-4)
 - [ ] AC-3: Empty/oversized selections, duplicate coordinates, byte/item/work/output limits and cancellation return explicit refusal. No assembly operation continues unbounded after the connection is dropped. (REQ-2, REQ-6)
 - [ ] AC-4: Browser fixtures exercise multi-selection, returned groups, unsupported/corrupt inputs, partial streams, item-to-source navigation and return, hostile strings, lock/revoke during network and interpretation, focus, mobile and both themes. (REQ-4, REQ-5, REQ-6)
 - [ ] AC-5: Selected behavioral mutations fail named assertions; source/library compatibility checks, lint and fresh review pass. Pending actual browser download delivery remains separately visible. (REQ-7)
@@ -24,7 +24,7 @@ Refactor `Reader::source` internally so verified decrypted acquisition can be re
 
 Construct `evidence_assembly::Input` only from the verified acquired records. Caller-owned occurrence records remain adjacent to each input index. Provider interpretation operates separately on each eligible contiguous request/response stream and a declared format; unavailable or conflicted streams stay visible. Show all unplaced Unsupported/Malformed/Unavailable inputs beside groups: ordinal gaps are no recognized capture at those positions, not proof of absent data. Explain conservative conflict suppression even when a stream has contiguous bytes. Use `evidence_interpretation::map_region` to bind displayed regions back to original complete capture frames and every duplicate occurrence. Emit structured reason codes rather than unbounded debug strings. Serialized response size has an explicit ceiling checked with a bounded writer before HTTP success.
 
-`src/evidence_library.rs` adds one authenticated action using the existing Host/Origin/token and no-store boundary. New coordinates are decimal strings; no generic serde serialization of u64-rich internal structs. A cancellation token is owned by a drop guard around a bounded worker. Network futures are borrowed/cancellable; synchronous work polls the token and deadline. Runtime worker count is bounded by existing connection admission, with no detached infinite queue.
+`src/evidence_library.rs` adds authenticated Content inspection and exact-coordinate page/source actions using the existing Host/Origin/token and no-store boundary. New coordinates are decimal strings; no generic serde serialization of u64-rich internal structs. A cancellation token is owned by a drop guard around a bounded worker. Network futures are borrowed/cancellable; synchronous work polls the token and deadline. A separate two-permit semaphore is held inside each blocking worker until it exits, including after a client drops its future. Admission refuses instead of queueing; connection permits alone would not bound cancelled blocking workers.
 
 The UI adds checkboxes beside occurrence navigation, a selection count and an Interpret selection control with explicit format choice. Selection belongs to exactly one snapshot and is cleared on refresh/scope change. The Content panel lists returned attempt groups and readable items, including gaps and protocol issues. An item's source citation uses the same authorized Source request and can return to the same item; no browser-supplied CID is an access path. Keep provider claims visually distinct from authenticated writer provenance. All content uses text nodes; attachment URLs are inert descriptors.
 
@@ -38,3 +38,66 @@ This checkpoint does not infer cross-request session identity, scan the archive 
 
 ## Recording
 Continues `.design/kan-v2-session-reconstruction.md`, `.design/kan-v2-provider-interpretation.md` and the full human frontend contract. Git-first recording under day#168/kan#197; no claimed live-log read or invented witness. Parent acceptance remains open until real implementation, browser evidence and fresh review exist.
+
+## Exact browser wire contract
+The catalog and refreshed snapshot also return `pin_wire`, a JSON string containing the exact signed Pin. The existing v1 Pin object is retained for compatibility; the Content path never round-trips its signed integers through JavaScript numbers. `content-page` and `source-exact` consume this opaque string and canonical decimal string coordinates, delegating to the same authorized Reader methods. All new output coordinates, indices, bounds and counters are decimal strings. Parsed provider JSON is a display string, with original exact bytes reachable through source citations; it is not a second coordinate protocol.
+
+`content` consumes `pin_wire`, 1–40 unique sequence strings, and `anthropic-messages-json` or `anthropic-messages-sse`. Requests use the Messages request adapter; response interpretation follows the explicit choice. The response retains snapshot evidence, occurrence lineage, every input observation, attempt groups, stream issues and all item citations. A two-worker admission limit, 20-second total deadline, 8-MiB acquired plaintext budget, 64-MiB work budget, 1024 items, 4096 citations and 4-MiB serialized response bound constrain this presentation request. These are not retention limits. No incomplete selected acquisition returns success. A final current-permission check precedes delivery; permissions are checked at request times, not retroactively recalled.
+
+Draft integration may be authored while the pure adapter receives independent review, but it is not accepted or published as completed integration until that review and this integration's own tests/review pass.
+
+Draft validation status: the baseline integration passes 72 Rust integration checks, seven units, strict all-target v2 Clippy and formatting, and 34 Node checks. Five selected UI mutations fail behavior assertions and restored tests pass. The provider-follow-up consumer draft adds per-item history/numeric labels and separate tool citations; its 35 Node checks pass, while its new backend tests await the provider version 2 merge and qualification. Real browser validation is pending. `day design check` returned exit 2 for the worktree lookup refusal; raw output is retained, and no main-log recording was attempted.
+
+Provider review A-F3/A-F5/A-F6 consumer obligations: the request-wide item ceiling is 1024, separately from normalized bytes, with two admitted workers retained until cancellation actually ends. These fixed ceilings prevent the million-item framing allocation demonstrated by the reviewer; they are not an exact RSS bound. The independent 4-MiB serialized ceiling includes JSON escaping and citation metadata. Mapping work and citation counts are shared across all items and any derived tool-block regions. Every request item is labelled supplied history; parsed provider JSON is labelled as potentially numerically rounded, with exact Source available. Tool input uses a separate block-wide coarse region and separate source mapping, never the stop event alone.
+
+
+## Integration qualification checkpoint
+Provider version2 is integrated. 74 affected integration tests, seven units,35 Node checks, strict all-target v2 Clippy and formatting pass. Six backend controls (final grant, duplicate selection, exact u64 wire, serialized ceiling, independent item ceiling and cumulative mapping work) and five UI controls fail behavior assertions, then restored tests pass. Browser inspection covers ten signed/encrypted captures, unknown/opaque/gapped evidence, duplicate source lineage, source/provenance return focus, light/dark/mobile, hostile text, lock during stalled acquisition, reconnect and grant revocation. Evidence and exact limitations are retained in `.design/reviews/kan-v2-content-author/`. Fresh actual Opus review of the frozen provider+Content candidate is pending; acceptance criteria remain open until its disposition is handled.
+
+
+Frozen bb1e0ab independently received APPROVE WITH FOLLOW-UPS for provider-v2 and Content. The inspected report and source-custody result are in `.design/reviews/kan-v2-content-integration-opus/`; raw reviewer session data remains local. Performance, refusal wording, deterministic budget/worker coverage and UI/provider follow-ups are being addressed on `feat/kan-v2-content-followups`. This baseline review does not accept those later changes or close parent frontend/recovery criteria.
+
+## Review correction candidate
+
+The follow-up branch validates complete source correspondence once per immutable borrowed stream, then maps each item with bounded segment/citation traversal. Source byte-decode/comparison charges are cumulative across streams, not multiplied by the number of displayed items. All input, item, citation, normalized-output, serialized-output, deadline and worker bounds remain unchanged. A verification failure remains a reader failure; presentation exhaustion returns fixed HTTP 422 `content-limit`, and unavailable worker admission returns fixed HTTP 429 `content-busy`. Neither contains source-derived counts or snippets. The public Rust compatibility method retains its existing Failure result, while the Library uses the detailed internal outcome.
+
+New tests pause the real Reader's synchronous worker after its first item and verify both admission retention across disconnect and cancellation before another item. Realistic 130-message and 500-delta fixtures exercise the repeated-validation regression. The UI renders observed extents, all observer length claims and unexpected starts and restores Interpret after a Source request supersedes it. These changes are a candidate pending Rust qualification and a fresh Opus review; parent acceptance remains open.
+
+
+## Shared citation sets — correction candidate
+
+Fresh review of918318d found that repeatedly mapping and serializing a coarse
+JSON region spends the citation budget at items times occurrences. The candidate
+`kan-content/2` represents each stream's distinct source region once in
+`citation_sets`, an array of exact citation arrays. Items and derived tool inputs
+carry a canonical decimal-string `citation_set` index into that same stream's
+table. The mapping is computed only from its immutable ValidatedMapping and exact
+(start,end) region. No reference crosses streams or changes the source pin.
+
+Unique physical citations are charged once per set, against the existing shared
+4096-citation request budget. Item, acquisition, scan, deadline, cancellation and
+serialized-output limits remain. Every emitted index must resolve, including
+empty sets where the existing mapping permits an empty region. Table/index
+validation precedes browser rendering. The browser renders repeated sets once
+with keyboard-accessible references; single-use sets keep direct Source buttons.
+The version change is explicit; v1 and v2 response shapes are not interchanged.
+
+This correction is not unlimited interpretation: the1024-item and4MiB output
+ceilings still apply, and the full parsed body remains an explicitly derived
+copy. A single request can still exceed presentation limits. The422 message
+therefore offers exact Source inspection rather than implying that omitting
+chunks will make an incomplete stream interpretable. Content422/429 clear
+plaintext but preserve selected occurrence IDs, allowing a real retry.
+
+Provider adapter4 treats an absent tool_result content key as valid, while an
+explicit object/null/number content retains Shape. This was verified against
+Anthropic's official handle-tool-calls documentation on2026-10-19:
+https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls
+The UI labels the authenticated outer writer as Retained request signer to
+separate it from claimed provider roles and observer capture assertions.
+
+Qualification must include the former340/341-message boundary, a request over
+1MiB, exact source/duplicate/tool mappings, unique-citation accounting across
+streams, malformed reference refusal, retry/clear/revoke behavior, real browser
+navigation, semantic controls and fresh actual Opus review. These changes are
+candidates until that qualification completes; parent ACs remain open.

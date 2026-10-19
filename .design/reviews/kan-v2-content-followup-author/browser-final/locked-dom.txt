@@ -1,0 +1,25 @@
+- complementary:
+  - link "kan•":
+    - /url: /
+  - generic: YOUR KNOWLEDGE
+  - generic: Evidence Library
+  - paragraph:
+    - text: Retained source.
+    - text: Inspectable provenance.
+  - generic: Authorized reader
+- main:
+  - generic: KAN STUDIO / LIBRARY
+  - heading "Your evidence library." [level=1]
+  - paragraph: Explore retained occurrences and inspect the bytes behind them.
+  - generic: Appearance
+  - combobox "Appearance":
+    - option "System" [selected]
+    - option "Light"
+    - option "Dark"
+  - button "Lock" [disabled]
+  - heading "Open your Library" [level=2]
+  - paragraph: This reader has its own scope grants. Your access token stays in this tab’s memory.
+  - generic: Reader access token
+  - textbox "Reader access token" [active]
+  - button "Open Library"
+  - status: Locked · connect to browse authorized evidence.

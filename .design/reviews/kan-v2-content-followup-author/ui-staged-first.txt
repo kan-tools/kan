@@ -1,0 +1,57 @@
+✔ real endpoint uses header auth and untrusted source stays text (4.055ms)
+✔ lock aborts pending source and clears every private view (0.698667ms)
+✔ page and scope navigation carry only the selected authenticated pin (1.0235ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.866625ms)
+✔ old transport errors cannot lock a newer session (0.877417ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.686709ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.67125ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.614584ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (1.7865ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.941ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.409958ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.5845ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.572583ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.5405ms)
+✔ partial catalog coverage persists while browsing and retry clears old authority (0.882125ms)
+✔ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (0.867542ms)
+✔ both authorization denial statuses lock an already open Library (1.079667ms)
+✔ Previous is disabled immediately when leaving a later page (0.554ms)
+✔ malformed duplicate and inconsistent capabilities never open a Library (2.215458ms)
+✔ all directional control families default to exact hex with explicit text access (5.121042ms)
+✔ malformed retry clears partially rendered capabilities and keeps recovery available (0.66875ms)
+✔ malformed scope catalogs are rejected before any option or page request (4.348167ms)
+✔ malformed scope retry clears old plaintext and permits recovery (0.817333ms)
+✔ PB1 boundary values are accepted, not falsely rejected (1.193084ms)
+✔ PB2 complete empty catalog still opens without page request (0.410208ms)
+✔ PB3 over-limit scope name and pin request are rejected (0.690292ms)
+✔ PB4 non-string scope/request with a length property are rejected (1.438334ms)
+✔ PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery (0.741166ms)
+✔ PB6 lock during malformed-catalog reply ignores the late reply (0.461958ms)
+✔ PB7 after malformed retry, old scope names and pins cannot be navigated (0.543542ms)
+✔ Content preserves opaque pins and large sequence strings through source return (1.04825ms)
+✔ Content lock, scope, selection and format changes discard late plaintext (2.233958ms)
+✔ Content unplaced input is visible and denied citations clear all plaintext (0.632042ms)
+✔ Content refuses wrong snapshot and missing exact pins before exposing items (0.80625ms)
+✔ Content labels supplied history and derived numbers, with separate tool block citations (0.735958ms)
+✔ Content exposes unexpected starts and every exact observer length claim beside unavailable streams (0.727041ms)
+✔ Content limits and busy workers have distinct fixed messages without claiming failed verification (0.996667ms)
+✔ Source supersedes pending Content and leaves Interpret available for the current selection (0.61325ms)
+✔ pass_u2 late Content reply after resnapshot is suppressed (0.512333ms)
+✔ pass_u3 invalid citation index leaves no partial Content (0.599583ms)
+✔ pass_u4 hostile strings in every rendered field stay text and set no attributes (1.085542ms)
+✔ pass_u5 page navigation clears selection and disables Interpret (0.485125ms)
+✔ pass_u7 duplicate lineage citations navigate to each distinct occurrence (0.558958ms)
+✔ pass_u10 more than 40 occurrences or wrong version is refused (1.01175ms)
+✔ pass_u11 format change keeps selection but clears Content (0.539959ms)
+✔ pass_u12 v1 reader without content capability keeps numeric v1 page/source and no checkboxes (0.452208ms)
+✔ pass_u13 refreshed snapshot missing pin_wire is refused; old signed snapshot stays coherent (0.557375ms)
+ℹ tests 47
+ℹ suites 0
+ℹ pass 47
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 80.428416
+
+exit=0

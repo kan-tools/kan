@@ -1,240 +1,6 @@
 #![cfg(feature = "v2-crypto")]
-use http_body_util::{BodyExt, Full};
-use hyper::{
-    body::{Bytes, Incoming},
-    Request as HttpRequest, Response,
-};
-use hyper_util::rt::TokioIo;
-use kan::{
-    evidence_crypto as crypto,
-    evidence_reader::{Reader, ScopeAccess, PAGE_LIMIT, RANGE_LIMIT},
-    evidence_service::{
-        self as svc, Command, Failure, Grant, Output, Request, Service, SignedRequest,
-    },
-    evidence_store::Ledger,
-    sign::Identity,
-};
-use std::{
-    convert::Infallible,
-    sync::{
-        atomic::{AtomicU8, Ordering},
-        Arc, Mutex,
-    },
-};
-use tokio::task::{JoinHandle, JoinSet};
-
-fn mutate_record(row: &mut svc::RecordView, mode: u8) {
-    use atproto_dasl::Ipld;
-    use kan::evidence::{self, Decoded};
-    let decode = |bytes: &str| {
-        let Decoded::Known(record) =
-            evidence::decode(&svc::unhex(bytes, evidence::MAX_RECORD_BYTES).unwrap()).unwrap()
-        else {
-            panic!("known record")
-        };
-        record
-    };
-    let encode = |kind: &str, body: std::collections::BTreeMap<String, Ipld>| {
-        let value = Ipld::Map(
-            [
-                ("v".into(), Ipld::Integer(1)),
-                ("kind".into(), Ipld::String(kind.into())),
-                ("body".into(), Ipld::Map(body)),
-            ]
-            .into_iter()
-            .collect(),
-        );
-        let Decoded::Known(record) = evidence::encode(&value).unwrap() else {
-            panic!("known record")
-        };
-        record
-    };
-    let manifest = decode(&row.manifest);
-    let receipt = decode(&row.receipt);
-    let mut mb = manifest.body().clone();
-    let mut rb = receipt.body().clone();
-    if mode == 4 {
-        mb.insert("scopeToken".into(), Ipld::Bytes(vec![99; 32]));
-        let manifest = encode("manifest", mb);
-        rb.insert("scopeToken".into(), Ipld::Bytes(vec![99; 32]));
-        rb.insert("manifest".into(), Ipld::Link(manifest.cid().clone()));
-        row.manifest = svc::hex(manifest.bytes());
-    } else if mode == 9 {
-        mb.insert("writer".into(), rb["issuer"].clone());
-        let manifest = encode("manifest", mb);
-        rb.insert("manifest".into(), Ipld::Link(manifest.cid().clone()));
-        row.manifest = svc::hex(manifest.bytes());
-    } else {
-        rb.insert("issuer".into(), mb["writer"].clone());
-    }
-    row.receipt = svc::hex(encode("receipt", rb).bytes());
-}
-
-struct Fixture {
-    dir: tempfile::TempDir,
-    scope: [u8; 32],
-    private: [u8; 32],
-    issuer: String,
-    endpoint: String,
-    service: Arc<Mutex<Service>>,
-    mode: Arc<AtomicU8>,
-    server: JoinHandle<()>,
-    writer: Identity,
-    previous: Option<String>,
-    position: u64,
-}
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        self.server.abort();
-    }
-}
-impl Fixture {
-    async fn new(scope: u8, reader: &Identity) -> Self {
-        let dir = tempfile::tempdir().unwrap();
-        let key = Identity::generate();
-        key.save(&dir.path().join("server.key")).unwrap();
-        let writer = Identity::generate();
-        writer.save(&dir.path().join("writer.key")).unwrap();
-        let issuer = key.did().to_string();
-        let scope = [scope; 32];
-        let service = Arc::new(Mutex::new(
-            Service::new(
-                Ledger::create(&dir.path().join("archive")).unwrap(),
-                scope,
-                key,
-                vec![
-                    Grant {
-                        principal: reader.did().to_string(),
-                        append: false,
-                        inventory: true,
-                    },
-                    Grant {
-                        principal: writer.did().to_string(),
-                        append: true,
-                        inventory: false,
-                    },
-                ],
-            )
-            .unwrap(),
-        ));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}/v1/rpc", listener.local_addr().unwrap());
-        let mode = Arc::new(AtomicU8::new(0));
-        let state = service.clone();
-        let fault = mode.clone();
-        let signing = dir.path().join("server.key");
-        let server = tokio::spawn(async move {
-            let mut tasks = JoinSet::new();
-            loop {
-                tokio::select! {
-                    accepted=listener.accept()=>{let (stream,_)=accepted.unwrap();let state=state.clone();let fault=fault.clone();let signing=signing.clone();tasks.spawn(async move {
-                        let handler=hyper::service::service_fn(move |r:HttpRequest<Incoming>| {let state=state.clone();let fault=fault.clone();let signing=signing.clone();async move {
-                            let bytes=r.into_body().collect().await.unwrap().to_bytes();
-                            let mut reply=state.lock().unwrap().dispatch(&bytes,kan::evidence_operations::now()).unwrap();
-                            let mode=fault.load(Ordering::Relaxed);
-                            if mode==10 {std::future::pending::<()>().await;}
-                            if mode==1 {reply.signature="00".repeat(64);}
-                            if mode==2 {if let Ok(Output::Page{records,..})=&mut reply.reply.result {if let Some(row)=records.first_mut(){row.sequence+=1;}}}
-                            if mode==3 {if let Ok(Output::Evidence{record,..})=&mut reply.reply.result {record.sequence+=1;}}
-                            if mode==4 || mode==5 || mode==9 { if let Ok(Output::Page{records,..})=&mut reply.reply.result { if let Some(row)=records.first_mut() { mutate_record(row,mode); } } }
-                            if mode==6 {if let Ok(Output::Evidence{signed_request,..})=&mut reply.reply.result {
-                                let mut retained=SignedRequest::decode(&svc::unhex(signed_request,svc::MAX_REQUEST).unwrap()).unwrap();
-                                if let Command::Append{id,..}=&mut retained.request.command {*id="ff".repeat(16);}
-                                *signed_request=svc::hex(&SignedRequest::sign(retained.request,&Identity::load_existing(&signing.with_file_name("writer.key")).unwrap()).unwrap().bytes().unwrap());
-                            }}
-                            if mode==7 {if let Ok(Output::Page{complete,..})=&mut reply.reply.result {*complete = !*complete;}}
-                            if mode==8 {if let Ok(Output::Page{records,complete})=&mut reply.reply.result {records.clear();*complete=false;}}
-                            if (2..=9).contains(&mode) {
-                                use sha2::{Digest,Sha256};
-                                let mut preimage=b"tools.kan.service.reply.v1\0".to_vec();preimage.extend_from_slice(&Sha256::digest(serde_json::to_vec(&reply.reply).unwrap()));
-                                reply.signature=svc::hex(&Identity::load_existing(&signing).unwrap().sign(&preimage).unwrap());
-                            }
-                            Ok::<_,Infallible>(Response::new(Full::new(Bytes::from(reply.bytes().unwrap()))))
-                        }});
-                        let _=hyper::server::conn::http1::Builder::new().keep_alive(false).serve_connection(TokioIo::new(stream),handler).await;
-                    });},
-                    _=tasks.join_next(),if !tasks.is_empty()=>{}
-                }
-            }
-        });
-        Self {
-            dir,
-            scope,
-            private: [27; 32],
-            issuer,
-            endpoint,
-            service,
-            mode,
-            server,
-            writer,
-            previous: None,
-            position: 0,
-        }
-    }
-    fn access(&self) -> ScopeAccess {
-        ScopeAccess {
-            scope: self.scope,
-            private_key: self.private,
-            issuer: self.issuer.clone(),
-            endpoint: self.endpoint.clone(),
-        }
-    }
-    fn append(&mut self, plain: &[u8]) {
-        let request = SignedRequest::sign(
-            Request {
-                version: 1,
-                scope: svc::hex(&self.scope),
-                principal: self.writer.did().to_string(),
-                audience: self.issuer.clone(),
-                expires: None,
-                command: Command::Append {
-                    id: format!("{:032x}", self.position + 1),
-                    position: self.position,
-                    previous: self.previous.clone(),
-                    ciphertext: svc::hex(
-                        &crypto::seal(
-                            &crypto::public_key(&self.private).unwrap(),
-                            &self.scope,
-                            plain,
-                        )
-                        .unwrap(),
-                    ),
-                },
-            },
-            &self.writer,
-        )
-        .unwrap()
-        .bytes()
-        .unwrap();
-        let reply = self
-            .service
-            .lock()
-            .unwrap()
-            .dispatch(&request, kan::evidence_operations::now())
-            .unwrap();
-        let Ok(Output::Committed { record, .. }) = reply.reply.result else {
-            panic!("append failed")
-        };
-        let kan::evidence::Decoded::Known(manifest) = kan::evidence::decode(
-            &svc::unhex(&record.manifest, kan::evidence::MAX_RECORD_BYTES).unwrap(),
-        )
-        .unwrap() else {
-            panic!("manifest required")
-        };
-        self.previous = Some(manifest.cid().to_string());
-        self.position += 1;
-    }
-    fn revoke(&self) {
-        let replacement = Service::new(
-            Ledger::open(&self.dir.path().join("archive")).unwrap(),
-            self.scope,
-            Identity::load_existing(&self.dir.path().join("server.key")).unwrap(),
-            vec![],
-        )
-        .unwrap();
-        *self.service.lock().unwrap() = replacement;
-    }
-}
+include!("support/reader_fixture.rs");
+use kan::evidence_reader::{PAGE_LIMIT, RANGE_LIMIT};
 #[tokio::test]
 async fn inventory_is_snapshot_pinned_and_source_ranges_are_exact_across_scopes() {
     let identity = Identity::generate();
@@ -676,7 +442,12 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
     assert_eq!(value["coverage"], "complete");
     assert_eq!(
         value["capabilities"],
-        serde_json::json!(["snapshot-inventory", "source-ranges", "provenance"])
+        serde_json::json!([
+            "snapshot-inventory",
+            "source-ranges",
+            "provenance",
+            "content-inspection"
+        ])
     );
     assert_eq!(
         value["unavailable"],
@@ -1138,4 +909,738 @@ async fn library_refuses_thirteenth_socket_at_the_live_admission_boundary() {
         );
     }
     drop(held);
+}
+
+fn content_frame(attempt: char, ordinal: u64, event: serde_json::Value, body: &[u8]) -> Vec<u8> {
+    let header = serde_json::to_vec(
+        &serde_json::json!({"version":2,"attempt":attempt.to_string().repeat(64),
+        "observer":"collector","ordinal":ordinal,"observed_at_unix_micros":null,"elapsed_micros":0,
+        "unconfirmed_before":0,"event":event}),
+    )
+    .unwrap();
+    let mut out = b"KANC2".to_vec();
+    out.extend((header.len() as u32).to_be_bytes());
+    out.extend(header);
+    out.extend(body);
+    out
+}
+#[tokio::test]
+async fn content_preserves_authorized_occurrences_duplicates_unplaced_inputs_and_exact_spans() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut a = Fixture::new(31, &identity).await;
+    let body = br#"{"messages":[{"role":"user","content":"<script>hostile()</script>"}]}"#;
+    let frame = content_frame(
+        '1',
+        9007199254740993,
+        serde_json::json!({"type":"request-chunk","offset":0}),
+        body,
+    );
+    a.append(&frame);
+    a.append(b"opaque input");
+    a.append(&frame);
+    a.append(&content_frame(
+        '2',
+        0,
+        serde_json::json!({"type":"future-event"}),
+        b"",
+    ));
+    a.append(&content_frame(
+        '2',
+        1,
+        serde_json::json!({"type":"request-chunk","offset":"bad"}),
+        b"x",
+    ));
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    let result = reader
+        .content(
+            &pin,
+            &["1", "2", "3", "4", "5"].map(String::from),
+            Format::AnthropicMessagesJson,
+        )
+        .await
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&result).unwrap();
+    assert_eq!(value["version"], "kan-content/2");
+    assert_eq!(value["occurrences"].as_array().unwrap().len(), 5);
+    assert_eq!(value["observations"][1]["kind"], "opaque");
+    assert_eq!(value["observations"][3]["kind"], "unsupported");
+    assert_eq!(value["observations"][4]["kind"], "malformed");
+    let group = &value["groups"][0];
+    assert_eq!(group["ordinals"][0]["value"], "9007199254740993");
+    assert_eq!(
+        group["ordinals"][0]["inputs"],
+        serde_json::json!(["0", "2"])
+    );
+    assert_eq!(group["terminal"], "unknown");
+    assert_eq!(
+        group["ordinal_gaps"][0],
+        serde_json::json!(["0", "9007199254740993"])
+    );
+    let item = group["request"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["kind"] == "context")
+        .unwrap();
+    assert_eq!(item["kind"], "context");
+    assert_eq!(item["coarse"], true);
+    let citations = content_citations(&group["request"], item);
+    assert_eq!(citations.len(), 2);
+    for (citation, sequence) in citations.iter().zip([1, 3]) {
+        let bounds = citation["bytes"].as_array().unwrap();
+        let start: usize = bounds[0].as_str().unwrap().parse().unwrap();
+        let end: usize = bounds[1].as_str().unwrap().parse().unwrap();
+        let source = reader
+            .source(&pin, sequence, start, end - start)
+            .await
+            .unwrap();
+        assert_eq!(svc::unhex(&source.bytes_hex, 1000).unwrap(), body);
+        assert_eq!(
+            source.record.manifest,
+            value["occurrences"][(sequence - 1) as usize]["record"]["manifest"]
+                .as_str()
+                .unwrap()
+        );
+    }
+    let opaque = kan::evidence_content::pin(value["pin_wire"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        kan::evidence_content::pin_wire(&opaque).unwrap(),
+        kan::evidence_content::pin_wire(&pin).unwrap()
+    );
+}
+#[tokio::test]
+async fn content_refuses_invalid_selections_tampering_and_revocation_without_partial_success() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut a = Fixture::new(32, &identity).await;
+    a.append(b"secret-selection-canary");
+    a.append(b"second");
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    let format = Format::AnthropicMessagesSse;
+    for sequences in [
+        vec![],
+        vec!["0".into()],
+        vec!["01".into()],
+        vec!["1".into(), "1".into()],
+        vec!["1".into(); 41],
+        vec!["18446744073709551616".into()],
+    ] {
+        assert_eq!(
+            reader.content(&pin, &sequences, format).await.unwrap_err(),
+            Failure::Invalid
+        );
+    }
+    assert_eq!(
+        reader
+            .content(&pin, &["1".into(), "3".into()], format)
+            .await
+            .unwrap_err(),
+        Failure::Missing
+    );
+    for mode in 1..=9 {
+        a.mode.store(mode, Ordering::Relaxed);
+        assert!(
+            reader.content(&pin, &["1".into()], format).await.is_err(),
+            "mode {mode}"
+        );
+    }
+    a.mode.store(0, Ordering::Relaxed);
+    let mut bad = pin.clone();
+    if let Ok(Output::Snapshot { through, .. }) = &mut bad.reply.reply.result {
+        *through += 1;
+    }
+    assert!(reader.content(&bad, &["1".into()], format).await.is_err());
+    reader.content(&pin, &["1".into()], format).await.unwrap();
+    a.revoke();
+    assert_eq!(
+        reader
+            .content(&pin, &["1".into()], format)
+            .await
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
+}
+#[tokio::test]
+async fn content_cancelling_acquisition_releases_admission_and_does_not_cache_a_grant() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut a = Fixture::new(33, &identity).await;
+    a.append(b"cancel-canary");
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    a.mode.store(10, Ordering::Relaxed);
+    let sequences = ["1".into()];
+    let format = Format::AnthropicMessagesSse;
+    let mut first = Box::pin(reader.content(&pin, &sequences, format));
+    let mut second = Box::pin(reader.content(&pin, &sequences, format));
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(30), &mut first)
+            .await
+            .is_err()
+    );
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(30), &mut second)
+            .await
+            .is_err()
+    );
+    // Admission must refuse immediately: a stalled upstream timeout is not
+    // evidence that the third operation was refused rather than admitted.
+    let mut third = Box::pin(reader.content(&pin, &sequences, format));
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    assert_eq!(
+        std::future::Future::poll(third.as_mut(), &mut cx),
+        std::task::Poll::Ready(Err(Failure::Unavailable))
+    );
+    drop(third);
+    drop(first);
+    drop(second);
+    a.mode.store(0, Ordering::Relaxed);
+    assert!(reader.content(&pin, &sequences, format).await.is_ok());
+    a.revoke();
+    assert_eq!(
+        reader.content(&pin, &sequences, format).await.unwrap_err(),
+        Failure::AccessLimited
+    );
+}
+
+#[tokio::test]
+async fn content_http_routes_share_authority_and_return_exact_coordinates() {
+    let identity = Identity::generate();
+    let mut a = Fixture::new(34, &identity).await;
+    let body = br#"{"messages":[{"role":"user","content":"content-http-canary"}]}"#;
+    a.append(&content_frame(
+        '3',
+        0,
+        serde_json::json!({"type":"request-chunk","offset":0}),
+        body,
+    ));
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    struct Stop(JoinHandle<std::io::Result<()>>);
+    impl Drop for Stop {
+        fn drop(&mut self) {
+            self.0.abort();
+        }
+    }
+    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
+        listener,
+        "synthetic-content-library-token-32-chars".into(),
+        reader,
+    )));
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let url = format!("http://{addr}/api/library");
+    let request = |v: serde_json::Value| {
+        client
+            .post(&url)
+            .header("content-type", "application/json")
+            .bearer_auth("synthetic-content-library-token-32-chars")
+            .body(v.to_string())
+    };
+    let catalog: serde_json::Value = serde_json::from_slice(
+        &request(serde_json::json!({"action":"catalog"}))
+            .send()
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let wire = catalog["scopes"][0]["pin_wire"].as_str().unwrap();
+    assert!(!wire.contains("content-http-canary"));
+    let page = request(
+        serde_json::json!({"action":"content-page","pin_wire":wire,"after":"0","limit":40}),
+    )
+    .send()
+    .await
+    .unwrap();
+    assert!(page.status().is_success());
+    let value: serde_json::Value = serde_json::from_slice(&page.bytes().await.unwrap()).unwrap();
+    assert_eq!(value["through"], "1");
+    assert_eq!(value["records"][0]["sequence"], "1");
+    let query = serde_json::json!({"action":"content","pin_wire":wire,"sequences":["1"],"format":"anthropic-messages-json"});
+    let output = request(query.clone()).send().await.unwrap();
+    assert!(output.status().is_success());
+    assert_eq!(output.headers()["cache-control"], "no-store");
+    let value: serde_json::Value = serde_json::from_slice(&output.bytes().await.unwrap()).unwrap();
+    assert!(value["groups"][0]["request"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|i| i["text"] == "content-http-canary"));
+    let source=request(serde_json::json!({"action":"source-exact","pin_wire":wire,"sequence":"1","offset":"0","length":"65536"})).send().await.unwrap();
+    assert!(source.status().is_success());
+    let source: serde_json::Value = serde_json::from_slice(&source.bytes().await.unwrap()).unwrap();
+    assert_eq!(source["offset"], "0");
+    assert_eq!(source["record"]["sequence"], "1");
+    assert!(source["total_bytes"].is_string());
+    for bad in [
+        serde_json::json!({"action":"content","pin_wire":wire,"sequences":[1],"format":"anthropic-messages-json"}),
+        serde_json::json!({"action":"content-page","pin_wire":wire,"after":"00","limit":40}),
+        serde_json::json!({"action":"source-exact","pin_wire":wire,"sequence":"1.0","offset":"0","length":"1"}),
+    ] {
+        let response = request(bad).send().await.unwrap();
+        assert_eq!(response.status(), 400);
+        assert!(!String::from_utf8_lossy(&response.bytes().await.unwrap())
+            .contains("content-http-canary"));
+    }
+    assert_eq!(
+        request(query.clone())
+            .header("origin", "https://evil.invalid")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    assert_eq!(
+        client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(query.to_string())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    // Verified but over-budget presentation has a fixed, non-disclosing reason.
+    let many = serde_json::to_vec(&serde_json::json!({"messages":(0..1100).map(|_|serde_json::json!({"role":"user","content":"x"})).collect::<Vec<_>>()})).unwrap();
+    a.append(&content_frame(
+        '4',
+        0,
+        serde_json::json!({"type":"request-chunk","offset":0}),
+        &many,
+    ));
+    let snap = request(serde_json::json!({"action":"snapshot","scope":svc::hex(&a.scope)}))
+        .send()
+        .await
+        .unwrap();
+    let snap: serde_json::Value = serde_json::from_slice(&snap.bytes().await.unwrap()).unwrap();
+    let limited=request(serde_json::json!({"action":"content","pin_wire":snap["pin_wire"],"sequences":["2"],"format":"anthropic-messages-json"})).send().await.unwrap();
+    assert_eq!(limited.status(), 422);
+    assert_eq!(limited.headers()["cache-control"], "no-store");
+    assert_eq!(
+        limited.text().await.unwrap(),
+        r#"{"error":"content-limit"}"#
+    );
+    a.revoke();
+    let denied = request(query).send().await.unwrap();
+    assert_eq!(denied.status(), 403);
+    assert!(
+        !String::from_utf8_lossy(&denied.bytes().await.unwrap()).contains("content-http-canary")
+    );
+}
+
+/// Real encrypted/signed synthetic captures for Content browser qualification.
+#[tokio::test]
+#[ignore = "manual Content browser fixture; requires KAN_LIBRARY_FIXTURE_INFO"]
+async fn content_browser_fixture() {
+    let output = std::env::var_os("KAN_LIBRARY_FIXTURE_INFO").expect("explicit output path");
+    let identity = Identity::generate();
+    let mut a = Fixture::new(35, &identity).await;
+    a.append(&content_frame(
+        '4',
+        0,
+        serde_json::json!({"type":"started","method":"POST","route":"/v1/messages"}),
+        b"",
+    ));
+    let request=br#"{"system":"You are a helpful assistant.","messages":[{"role":"user","content":[{"type":"text","text":"Explain provenance. <img src=https://untrusted.invalid/tracker onerror=alert(1)>"},{"type":"image","source":{"type":"url","url":"https://untrusted.invalid/attachment"}},{"type":"future-widget","note":"retained, unsupported"}]}]}"#;
+    a.append(&content_frame(
+        '4',
+        1,
+        serde_json::json!({"type":"request-chunk","offset":0}),
+        request,
+    ));
+    a.append(&content_frame(
+        '4',
+        2,
+        serde_json::json!({"type":"request-end","bytes":request.len()}),
+        b"",
+    ));
+    let events = [
+        serde_json::json!({"type":"message_start","message":{"type":"message","role":"assistant","content":[]}}),
+        serde_json::json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+        serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Provenance connects an interpretation to the exact retained evidence. Inspect the source before trusting a claim. ☃"}}),
+        serde_json::json!({"type":"content_block_stop","index":0}),
+        serde_json::json!({"type":"message_delta","delta":{"stop_reason":"end_turn"}}),
+        serde_json::json!({"type":"message_stop"}),
+    ];
+    let response = events
+        .iter()
+        .map(|v| format!("event: {}\ndata: {v}\n\n", v["type"].as_str().unwrap()))
+        .collect::<String>();
+    let split = response.len() / 2;
+    let first = content_frame(
+        '4',
+        3,
+        serde_json::json!({"type":"response-chunk","offset":0}),
+        &response.as_bytes()[..split],
+    );
+    a.append(&first);
+    a.append(&content_frame(
+        '4',
+        4,
+        serde_json::json!({"type":"response-chunk","offset":split}),
+        &response.as_bytes()[split..],
+    ));
+    a.append(&first);
+    a.append(&content_frame(
+        '4',
+        5,
+        serde_json::json!({"type":"terminal","outcome":"completed"}),
+        b"",
+    ));
+    a.append(&content_frame(
+        '5',
+        0,
+        serde_json::json!({"type":"future-event"}),
+        b"",
+    ));
+    a.append(b"Opaque imported note\0\xff");
+    a.append(&content_frame(
+        '6',
+        3,
+        serde_json::json!({"type":"response-chunk","offset":8}),
+        b"gap",
+    ));
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let token = "synthetic-browser-content-access-token";
+    std::fs::write(
+        output,
+        serde_json::to_vec(&serde_json::json!({"url":format!("http://{addr}"),"token":token}))
+            .unwrap(),
+    )
+    .unwrap();
+    // Optional test-only owner control; never exposed by the production server.
+    let control = std::env::var_os("KAN_CONTENT_FIXTURE_CONTROL").map(std::path::PathBuf::from);
+    let controls = async {
+        let mut previous = String::new();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            if let Some(path) = &control {
+                if let Ok(command) = std::fs::read_to_string(path) {
+                    if command != previous {
+                        match command.trim() {
+                            "stall" => a.mode.store(10, Ordering::Relaxed),
+                            "normal" => a.mode.store(0, Ordering::Relaxed),
+                            "revoke" => {
+                                a.mode.store(0, Ordering::Relaxed);
+                                a.revoke();
+                            }
+                            _ => panic!("unknown synthetic fixture command"),
+                        }
+                        previous = command;
+                        std::fs::write(path.with_extension("ack"), &previous).unwrap();
+                    }
+                }
+            }
+        }
+    };
+    tokio::select! {r=kan::evidence_library::serve(listener,token.into(),reader)=>r.unwrap(),_=controls=>{},_=tokio::signal::ctrl_c()=>{}}
+}
+
+#[tokio::test]
+async fn content_rechecks_current_grant_after_successful_acquisition() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut a = Fixture::new(36, &identity).await;
+    a.append(&content_frame(
+        '7',
+        0,
+        serde_json::json!({"type":"request-chunk","offset":0}),
+        br#"{"messages":[{"role":"user","content":"late-revocation-canary"}]}"#,
+    ));
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    a.mode.store(11, Ordering::Relaxed);
+    assert_eq!(
+        reader
+            .content(&pin, &["1".into()], Format::AnthropicMessagesJson)
+            .await
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
+}
+
+#[tokio::test]
+async fn content_has_an_independent_item_limit_with_no_partial_success() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut a = Fixture::new(37, &identity).await;
+    a.append(&content_frame(
+        '8',
+        0,
+        serde_json::json!({"type":"response-chunk","offset":0}),
+        &vec![b'\n'; 1024],
+    ));
+    a.append(&content_frame(
+        '9',
+        0,
+        serde_json::json!({"type":"response-chunk","offset":0}),
+        &vec![b'\n'; 1025],
+    ));
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    let bytes = reader
+        .content(&pin, &["1".into()], Format::AnthropicMessagesSse)
+        .await
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        value["groups"][0]["response"]["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1024
+    );
+    assert_eq!(
+        reader
+            .content(&pin, &["2".into()], Format::AnthropicMessagesSse)
+            .await
+            .unwrap_err(),
+        Failure::Unavailable
+    );
+}
+#[tokio::test]
+async fn content_accumulated_tool_input_cites_all_fragments_instead_of_only_the_stop() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut a = Fixture::new(38, &identity).await;
+    let events = [
+        serde_json::json!({"type":"message_start","message":{"type":"message","role":"assistant","content":[]}}),
+        serde_json::json!({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"f","input":{}}}),
+        serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"x\":"}}),
+        serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"1}"}}),
+        serde_json::json!({"type":"content_block_stop","index":0}),
+    ];
+    let raw = events
+        .iter()
+        .map(|v| format!("data: {v}\n\n"))
+        .collect::<String>();
+    let split = raw.len() / 2;
+    a.append(&content_frame(
+        'a',
+        0,
+        serde_json::json!({"type":"response-chunk","offset":0}),
+        &raw.as_bytes()[..split],
+    ));
+    a.append(&content_frame(
+        'a',
+        1,
+        serde_json::json!({"type":"response-chunk","offset":split}),
+        &raw.as_bytes()[split..],
+    ));
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    let result = reader
+        .content(
+            &pin,
+            &["1".into(), "2".into()],
+            Format::AnthropicMessagesSse,
+        )
+        .await
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&result).unwrap();
+    let items = value["groups"][0]["response"]["items"].as_array().unwrap();
+    let item = items.iter().find(|i| i["tool"].is_object()).unwrap();
+    let tool = &item["tool"];
+    assert_eq!(tool["json"], "{\"x\":1}");
+    let start: usize = tool["region"][0].as_str().unwrap().parse().unwrap();
+    let end: usize = tool["region"][1].as_str().unwrap().parse().unwrap();
+    assert!(
+        start
+            < item["region"][0]
+                .as_str()
+                .unwrap()
+                .parse::<usize>()
+                .unwrap()
+    );
+    let mut retained = Vec::new();
+    for c in content_citations(&value["groups"][0]["response"], tool) {
+        let input: usize = c["input"].as_str().unwrap().parse().unwrap();
+        let seq = value["occurrences"][input]["record"]["sequence"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let begin = c["bytes"][0].as_str().unwrap().parse().unwrap();
+        let finish: usize = c["bytes"][1].as_str().unwrap().parse().unwrap();
+        let source = reader
+            .source(&pin, seq, begin, finish - begin)
+            .await
+            .unwrap();
+        retained.extend(svc::unhex(&source.bytes_hex, 65536).unwrap());
+    }
+    assert_eq!(retained, &raw.as_bytes()[start..end]);
+    assert!(String::from_utf8_lossy(&retained).contains("partial_json"));
+}
+
+#[tokio::test]
+async fn content_handles_realistic_multiturn_history_and_streams_without_repeated_source_scans() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut fixture = Fixture::new(92, &identity).await;
+    let request=serde_json::to_vec(&serde_json::json!({"messages":(0..130).map(|k|serde_json::json!({"role":if k%2==0 {"user"}else{"assistant"},"content":"a".repeat(1000)})).collect::<Vec<_>>()})).unwrap();
+    let request_first = fixture.position + 1;
+    for (n, chunk) in request.chunks(65536).enumerate() {
+        fixture.append(&content_frame(
+            'a',
+            n as u64,
+            serde_json::json!({"type":"request-chunk","offset":n*65536}),
+            chunk,
+        ));
+    }
+    let request_sequences = (request_first..=fixture.position)
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>();
+    let mut events = vec![
+        serde_json::json!({"type":"message_start","message":{"type":"message","role":"assistant","content":[]}}),
+        serde_json::json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+    ];
+    events.extend((0..500).map(|_|serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"word word word word word word "}})));
+    events.extend([
+        serde_json::json!({"type":"content_block_stop","index":0}),
+        serde_json::json!({"type":"message_delta","delta":{"stop_reason":"end_turn"}}),
+        serde_json::json!({"type":"message_stop"}),
+    ]);
+    let sse = events
+        .iter()
+        .map(|value| {
+            format!(
+                "event: {}\ndata: {value}\n\n",
+                value["type"].as_str().unwrap()
+            )
+        })
+        .collect::<String>();
+    let response_first = fixture.position + 1;
+    for (n, chunk) in sse.as_bytes().chunks(65536).enumerate() {
+        fixture.append(&content_frame(
+            'b',
+            n as u64,
+            serde_json::json!({"type":"response-chunk","offset":n*65536}),
+            chunk,
+        ));
+    }
+    let response_sequences = (response_first..=fixture.position)
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>();
+    let reader = Reader::new(identity, vec![fixture.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&fixture.scope)).await.unwrap();
+    for (sequences, format, direction, count) in [
+        (
+            request_sequences,
+            Format::AnthropicMessagesJson,
+            "request",
+            261,
+        ),
+        (
+            response_sequences,
+            Format::AnthropicMessagesSse,
+            "response",
+            505,
+        ),
+    ] {
+        let bytes = reader.content(&pin, &sequences, format).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            result["groups"][0][direction]["items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            count
+        );
+        let scan = result["scan_bytes"]
+            .as_str()
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
+        assert!(
+            scan < 2 * 1024 * 1024,
+            "source correspondence must be charged once: {scan}"
+        );
+        for item in result["groups"][0][direction]["items"].as_array().unwrap() {
+            let citations = content_citations(&result["groups"][0][direction], item);
+            assert!(!citations.is_empty() && citations.len() <= sequences.len());
+            for citation in citations {
+                let index = citation["input"]
+                    .as_str()
+                    .unwrap()
+                    .parse::<usize>()
+                    .unwrap();
+                assert_eq!(
+                    result["occurrences"][index]["record"]["sequence"],
+                    sequences[index]
+                );
+            }
+        }
+    }
+}
+
+fn content_citations<'a>(
+    stream: &'a serde_json::Value,
+    item: &serde_json::Value,
+) -> &'a Vec<serde_json::Value> {
+    let index: usize = item["citation_set"].as_str().unwrap().parse().unwrap();
+    stream["citation_sets"][index].as_array().unwrap()
+}
+
+#[tokio::test]
+async fn content_shares_coarse_citations_past_the_old_boundary_and_one_megabyte() {
+    use kan::evidence_content::Format;
+    for (messages, text_bytes) in [(340, 1000), (341, 1000), (500, 2200)] {
+        let identity = Identity::generate();
+        let mut fixture = Fixture::new(96, &identity).await;
+        let body = serde_json::to_vec(&serde_json::json!({"messages":(0..messages).map(|_|serde_json::json!({"role":"user","content":"x".repeat(text_bytes)})).collect::<Vec<_>>()})).unwrap();
+        for (n, chunk) in body.chunks(65536).enumerate() {
+            fixture.append(&content_frame(
+                'a',
+                n as u64,
+                serde_json::json!({"type":"request-chunk","offset":n*65536}),
+                chunk,
+            ));
+        }
+        let selections = (1..=fixture.position)
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>();
+        let reader = Reader::new(identity, vec![fixture.access()]).unwrap();
+        let pin = reader.snapshot(&svc::hex(&fixture.scope)).await.unwrap();
+        let encoded = reader
+            .content(&pin, &selections, Format::AnthropicMessagesJson)
+            .await
+            .unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        let stream = &result["groups"][0]["request"];
+        assert_eq!(stream["items"].as_array().unwrap().len(), 2 * messages + 1);
+        assert_eq!(
+            stream["citation_sets"].as_array().unwrap().len(),
+            1,
+            "coarse source ranges must be serialized once"
+        );
+        for item in stream["items"].as_array().unwrap() {
+            assert_eq!(item["citation_set"], "0");
+        }
+        let mut exact = Vec::new();
+        for citation in stream["citation_sets"][0].as_array().unwrap() {
+            let input: usize = citation["input"].as_str().unwrap().parse().unwrap();
+            let start: usize = citation["bytes"][0].as_str().unwrap().parse().unwrap();
+            let end: usize = citation["bytes"][1].as_str().unwrap().parse().unwrap();
+            let source = reader
+                .source(&pin, selections[input].parse().unwrap(), start, end - start)
+                .await
+                .unwrap();
+            exact.extend(svc::unhex(&source.bytes_hex, 65536).unwrap());
+        }
+        assert_eq!(exact, body);
+        if messages == 500 {
+            assert!(body.len() > 1024 * 1024);
+        }
+        assert!(encoded.len() < 4 * 1024 * 1024);
+    }
 }

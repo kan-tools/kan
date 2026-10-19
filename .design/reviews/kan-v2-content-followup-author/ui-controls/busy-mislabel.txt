@@ -1,0 +1,75 @@
+✔ real endpoint uses header auth and untrusted source stays text (4.237042ms)
+✔ lock aborts pending source and clears every private view (0.749333ms)
+✔ page and scope navigation carry only the selected authenticated pin (0.847417ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.761625ms)
+✔ old transport errors cannot lock a newer session (0.882041ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.824458ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.796583ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.747709ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (1.963167ms)
+✔ scope changes remove old-scope rows before a new pin is used (1.037708ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.51ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.608125ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.626833ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.588125ms)
+✔ partial catalog coverage persists while browsing and retry clears old authority (0.988792ms)
+✔ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (0.86475ms)
+✔ both authorization denial statuses lock an already open Library (1.152709ms)
+✔ Previous is disabled immediately when leaving a later page (0.572583ms)
+✔ malformed duplicate and inconsistent capabilities never open a Library (2.193ms)
+✔ all directional control families default to exact hex with explicit text access (5.208792ms)
+✔ malformed retry clears partially rendered capabilities and keeps recovery available (0.710709ms)
+✔ malformed scope catalogs are rejected before any option or page request (4.846625ms)
+✔ malformed scope retry clears old plaintext and permits recovery (0.776209ms)
+✔ PB1 boundary values are accepted, not falsely rejected (1.157ms)
+✔ PB2 complete empty catalog still opens without page request (0.420334ms)
+✔ PB3 over-limit scope name and pin request are rejected (0.706791ms)
+✔ PB4 non-string scope/request with a length property are rejected (1.47575ms)
+✔ PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery (0.694708ms)
+✔ PB6 lock during malformed-catalog reply ignores the late reply (0.381458ms)
+✔ PB7 after malformed retry, old scope names and pins cannot be navigated (0.504125ms)
+✔ Content preserves opaque pins and large sequence strings through source return (1.049542ms)
+✔ Content lock, scope, selection and format changes discard late plaintext (2.427375ms)
+✔ Content unplaced input is visible and denied citations clear all plaintext (0.6785ms)
+✔ Content refuses wrong snapshot and missing exact pins before exposing items (0.967167ms)
+✔ Content labels supplied history and derived numbers, with separate tool block citations (0.819458ms)
+✔ Content exposes unexpected starts and every exact observer length claim beside unavailable streams (0.786042ms)
+✖ Content limits and busy workers have distinct fixed messages without claiming failed verification (1.43275ms)
+✔ Source supersedes pending Content and leaves Interpret available for the current selection (0.996584ms)
+✔ pass_u2 late Content reply after resnapshot is suppressed (0.53475ms)
+✔ pass_u3 invalid citation index leaves no partial Content (0.638667ms)
+✔ pass_u4 hostile strings in every rendered field stay text and set no attributes (0.714083ms)
+✔ pass_u5 page navigation clears selection and disables Interpret (1.089125ms)
+✔ pass_u7 duplicate lineage citations navigate to each distinct occurrence (0.672791ms)
+✔ pass_u10 more than 40 occurrences or wrong version is refused (0.921541ms)
+✔ pass_u11 format change keeps selection but clears Content (0.493417ms)
+✔ pass_u12 v1 reader without content capability keeps numeric v1 page/source and no checkboxes (0.429792ms)
+✔ pass_u13 refreshed snapshot missing pin_wire is refused; old signed snapshot stays coherent (0.600833ms)
+ℹ tests 47
+ℹ suites 0
+ℹ pass 46
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 84.650125
+
+✖ failing tests:
+
+test at tests/library_ui.test.cjs:165:1
+✖ Content limits and busy workers have distinct fixed messages without claiming failed verification (1.43275ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /workers are busy/. Input:
+  
+  'This response could not be verified. Retry, refresh the snapshot, or choose another scope.'
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/.local-state/ui-followup-stage/tests/library_ui.test.cjs:168:10)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'This response could not be verified. Retry, refresh the snapshot, or choose another scope.',
+    expected: /workers are busy/,
+    operator: 'match'
+  }
+
+exit=1
