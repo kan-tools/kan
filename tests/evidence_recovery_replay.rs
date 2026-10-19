@@ -26,11 +26,12 @@ fn limits() -> Limits {
 fn raw(v: &Value) -> Vec<u8> {
     unhex(v.as_str().unwrap(), 4 * 1024 * 1024).unwrap()
 }
+type EncodedRow = (u64, Vec<u8>, Vec<u8>, Vec<u8>);
 struct Case {
     context: Context,
     plan: Option<Vec<u8>>,
     membership: Vec<(Cid, u64)>,
-    records: Vec<(u64, Vec<u8>, Vec<u8>, Vec<u8>)>,
+    records: Vec<EncodedRow>,
     objects: Vec<(Cid, Vec<u8>)>,
     candidates: Vec<(Cid, Vec<u8>)>,
     observations: Vec<Vec<u8>>,

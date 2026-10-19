@@ -18,7 +18,7 @@ full recovery or human-frontend acceptance criteria.
 | Observation wire codec (#298) | Authenticated bounded envelopes and independent signed vectors; review APPROVE WITH FOLLOW-UPS | Semantic replay, physical format and publication checks |
 | Streaming M1/O1/R1 (#299) | Reviewed framing; promoted boundary and deterministic cancellation tests; current CI green | Fresh review returned APPROVE WITH FOLLOW-UPS; UTF-8 test follow-through is in #300; digests alone confer no authority |
 | Logical member (#300) | Author tests and independent fixture construction; current CI green | b11cbf4 correction review APPROVE WITH FOLLOW-UPS; 5edb505 closes the consumer contract and test gaps with 43 affected checks and whole-guard reversion evidence; fresh combined replay review remains required |
-| Observation replay (this branch) | Draft pure replay, independent signed state fixtures and selected guard-removal runner | Rust qualification, resolution of member-review findings and fresh independent Opus review |
+| Observation replay (this branch) | 68 affected integration checks plus two deterministic polling checks; 45 independent state cases; 11 compiled semantic controls; strict Clippy/fmt | Fresh combined Opus review of replay and the final member follow-through; physical recovery remains separate |
 | Physical recovery and delivery | Proposed bundle schema, existing lifecycle/inventory foundations | Bounded custody-checked opener, creator/restorer/publisher, crash/reconnect jobs, RPC, spool proof integration and Library unavailable-evidence UI |
 
 The Library's actual browser download is still unverified on the locked host.
