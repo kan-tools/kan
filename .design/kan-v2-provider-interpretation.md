@@ -51,3 +51,5 @@ ordinals, not proof of absent inputs. The Content consumer must show unplaced
 unsupported, malformed and unavailable observations beside the attempt groups.
 This adapter interprets one eligible byte stream and cannot itself provide that
 selection-wide view; `.design/kan-v2-content-api.md` must preserve it.
+
+Combined qualification after merging the reader/assembly follow-through: 97 affected integration tests, five units, strict all-target v2 Clippy and formatting pass. Runtime behavior is unchanged by the parent merge. Raw logs are retained under the author evidence directory.
