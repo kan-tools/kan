@@ -2,6 +2,10 @@
   'use strict';
   const $ = id => document.getElementById(id);
   let token = '', epoch = 0, controller, scopes = [], pin, after = 0, next = null, history = [], selected = null, source = null, hexadecimal = false;
+  const selections = new Map();
+  let activeSource = null, catalogContent = false;
+  const sourceId = entry => entry.id || entry.scope;
+  const isProof = () => activeSource?.protocol === 'kan-proof-reader/1';
   const buttons = new Map(), exports = new Map(), contentSelection = new Set(), checks = new Map();
   let pinWire = null, contentEnabled = false, contentValue = null, returnItem = null;
   function releaseExport(url) { clearTimeout(exports.get(url)); exports.delete(url); URL.revokeObjectURL(url); }
@@ -18,7 +22,7 @@
   }
   function cancelWork() { epoch++; if (controller) controller.abort(); }
   function clearInspector() {
-    source = null; selected = null; $('source-tab').disabled = true; $('provenance-tab').disabled = true; $('inspection').hidden = true; $('source').textContent = '';
+    source = null; selected = null; $('download').disabled = true; $('more').disabled = true; $('source-tab').disabled = true; $('provenance-tab').disabled = true; $('inspection').hidden = true; $('source').textContent = '';
     $('provenance').replaceChildren(); $('range').textContent = ''; $('selection').textContent = 'Select an occurrence';
     $('source-hint').textContent = 'Read exact retained bytes alongside their provenance.'; $('close-inspector').hidden = true;
     for (const button of buttons.values()) button.setAttribute('aria-pressed', 'false');
@@ -26,7 +30,7 @@
   function lock(message = 'Locked · connect to browse authorized evidence.') {
     for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
-    pinWire = null; contentEnabled = false; clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
+    pinWire = null; contentEnabled = false; activeSource = null; selections.clear(); clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
     $('catalog-status').textContent = ''; $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
     $('lock').disabled = true; $('token').value = ''; notice(message); $('token').focus();
   }
@@ -65,16 +69,22 @@
     $('encoding').disabled = source.utf8 === null;
   }
   function showSource(value) {
-    source = value; $('source-tab').disabled = false; $('provenance-tab').disabled = false; $('inspection').hidden = false; $('close-inspector').hidden = false;
+    const unavailable = value.availability === 'missing' || value.availability === 'corrupt';
+    source = unavailable ? null : value; $('download').disabled = unavailable; $('source-tab').disabled = false; $('provenance-tab').disabled = false; $('inspection').hidden = false; $('close-inspector').hidden = false;
     $('selection').textContent = `Occurrence ${value.record.sequence}`;
     $('source-hint').textContent = value.content_trust;
+    if (unavailable) {
+      $('source').textContent = `Retained source is ${value.availability}. Issuer-attested metadata remains available.`;
+      $('range').textContent = 'No source bytes available'; $('encoding').disabled = true; $('more').disabled = true;
+    } else {
     hexadecimal = value.utf8 === null || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(value.utf8);
     renderBytes(); $('more').disabled = value.next === null;
+    }
     $('provenance').replaceChildren();
-    for (const [key, val] of Object.entries({Scope:value.scope, Manifest:value.record.manifest, Receipt:value.record.receipt, 'Observed writer':value.writer, Observer:'Not normalized in this source view', 'Claimed speaker':'Not inferred from the writer key', 'Service issuer':value.service_issuer, Signature:value.signature, Admission:value.admission, 'Content trust':value.content_trust})) {
+    for (const [key, val] of Object.entries({Scope:value.scope, Manifest:value.record.manifest, Receipt:value.record.receipt, 'Observed writer':value.writer || 'Unavailable for present-time verification', Observer:'Not normalized in this source view', 'Claimed speaker':'Not inferred from the writer key', 'Service issuer':value.service_issuer, Signature:value.signature, Admission:value.admission, 'Content trust':value.content_trust, ...(value.archive ? {Archive:value.archive, Profile:value.profile, 'Proof purpose':value.record.purpose, 'Attested at (Unix milliseconds)':value.record.issued_at, 'Receipt issuer':value.record.receipt_issuer, Attestation:value.record.attestation, Availability:value.availability} : {})})) {
       const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = key; dd.textContent = val; $('provenance').append(dt); $('provenance').append(dd);
     }
-    notice('Source verified · this is one retained occurrence, not a reconstructed session.');
+    notice(unavailable ? `Source ${value.availability} · provenance retained; no bytes substituted.` : 'Source verified · this is one retained occurrence, not a reconstructed session.');
   }
   async function inspect(sequence, offset = 0) {
     updateSelection(); clearInspector(); selected = sequence; const button = buttons.get(sequence); if (button) button.setAttribute('aria-pressed','true');
@@ -83,16 +93,21 @@
     showSource(value); tab('source'); $('source-tab').focus();
   }
   async function page(position) {
-    clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren();
+    clearContent(); checks.clear(); clearInspector(); buttons.clear(); selections.clear(); $('rows').replaceChildren();
     $('count').textContent = ''; $('coverage').textContent = ''; $('page-position').textContent = 'Loading…';
     $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
     notice('Reading the selected snapshot…');
-    const value = await rpc(pinWire ? {action:'content-page',pin_wire:pinWire,after:String(position),limit:20} : {action:'page', pin, after:position, limit:20}); if (!value) return;
+    const value = await rpc(isProof() ? {action:'proof-page',source:sourceId(activeSource),pin,cursor:position || null,limit:20} : pinWire ? {action:'content-page',pin_wire:pinWire,after:String(position),limit:20} : {action:'page', pin, after:position, limit:20}); if (!value) return;
     after = position; next = value.next; buttons.clear(); $('rows').replaceChildren();
     for (const row of value.records) {
       const button = document.createElement('button'); button.className = 'occurrence'; button.setAttribute('aria-pressed','false');
       const title = document.createElement('strong'), id = document.createElement('span'); title.textContent = `Occurrence ${row.sequence}`; id.textContent = row.manifest;
-      button.append(title); button.append(id); button.addEventListener('click', () => run(() => inspect(row.sequence))); buttons.set(row.sequence,button);
+      button.append(title); button.append(id);
+      if (isProof()) {
+        if (!['available','missing','corrupt'].includes(row.availability) || !row.selection || typeof row.sequence !== 'string') throw new Error('Invalid proof occurrence.');
+        selections.set(row.sequence, row.selection);
+        const badge = document.createElement('span'); badge.className = `availability ${row.availability}`; badge.textContent = `${row.availability} · ${row.purpose}`; button.append(badge);
+      } button.addEventListener('click', () => run(() => inspect(row.sequence))); buttons.set(row.sequence,button);
       if (contentEnabled && pinWire) {
         const wrap = document.createElement('div'), check = document.createElement('input'); wrap.className = 'selectable-occurrence';
         check.type = 'checkbox'; check.setAttribute('aria-label', `Select occurrence ${row.sequence} for Content`); checks.set(row.sequence,check);
@@ -107,8 +122,8 @@
   }
   function renderCapabilities(value) {
     if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
-    const labels = {'snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
-    const supported = new Set(['snapshot-inventory','source-ranges','provenance','content-inspection']), seen = new Set();
+    const labels = {'snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
+    const supported = new Set(['snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability']), seen = new Set();
     $('capability-list').replaceChildren();
     for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
       for (const capability of items) {
@@ -122,36 +137,36 @@
       }
     }
   }
-  function validateScopes(value) {
+  function validateScopes(value, version) {
     const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
     if (!Array.isArray(value) || value.length > 16) throw new Error('Invalid scope catalog.');
     const seen = new Set();
     for (const entry of value) {
-      if (!object(entry) || typeof entry.scope !== 'string' || !entry.scope.length || entry.scope.length > 256 || seen.has(entry.scope)
+      if (!object(entry) || typeof entry.scope !== 'string' || !entry.scope.length || entry.scope.length > 256 || seen.has(sourceId(entry))
           || !object(entry.pin) || typeof entry.pin.request !== 'string' || !entry.pin.request.length || entry.pin.request.length > 8192 || !object(entry.pin.reply)) {
         throw new Error('Invalid or duplicate scope entry.');
       }
       if (entry.pin_wire !== undefined && (typeof entry.pin_wire !== 'string' || !entry.pin_wire.length || entry.pin_wire.length > 12000)) throw new Error('Invalid exact snapshot.');
-      seen.add(entry.scope);
+      if (version === 2 && (typeof entry.id !== 'string' || !entry.id.length || entry.id.length > 512 || !['legacy','kan-proof-reader/1'].includes(entry.protocol) || !Array.isArray(entry.capabilities))) throw new Error('Invalid source protocol.');
+      seen.add(sourceId(entry));
     }
   }
   async function catalog() {
     clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
-    pinWire = null; contentEnabled = false;
+    pinWire = null; contentEnabled = false; activeSource = null; selections.clear();
     scopes = []; pin = null; history = []; after = 0; next = null;
     $('coverage').textContent = ''; $('count').textContent = ''; $('page-position').textContent = '';
     $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
     $('capability-list').replaceChildren(); $('catalog-status').textContent = 'Checking configured sources…';
     notice('Checking scope access…');
     const value = await rpc({action:'catalog'}); if (!value) return;
-    if (value.version !== 1 || !['complete','partial'].includes(value.coverage)) throw new Error('Unsupported reader version or coverage.');
-    validateScopes(value.scopes);
+    if (![1,2].includes(value.version) || !['complete','partial'].includes(value.coverage)) throw new Error('Unsupported reader version or coverage.');
+    validateScopes(value.scopes, value.version);
     renderCapabilities(value);
-    contentEnabled = value.capabilities.includes('content-inspection');
-    if (contentEnabled && value.scopes.some(s => typeof s.pin_wire !== 'string')) throw new Error('Missing exact snapshot.');
-    $('content-support').textContent = contentEnabled ? 'Select captures on this page. Interpretation covers only this selection.' : 'Content inspection is unavailable on this reader.';
+    catalogContent = value.capabilities.includes('content-inspection');
+    if (value.scopes.some(s => (s.capabilities?.includes('content-inspection') || (value.version === 1 && catalogContent)) && typeof s.pin_wire !== 'string')) throw new Error('Missing exact snapshot.');
     scopes = value.scopes;
-    for (const scope of scopes) { const option = document.createElement('option'); option.value = scope.scope; option.textContent = scope.scope; $('scope').append(option); }
+    for (const scope of scopes) { const option = document.createElement('option'); option.value = sourceId(scope); option.textContent = scope.protocol === 'kan-proof-reader/1' ? `${scope.scope} · ${scope.binding.profile} · ${scope.binding.archive}` : scope.scope; $('scope').append(option); }
     $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;
     const partial = value.coverage === 'partial';
     $('catalog-status').className = partial ? 'partial' : '';
@@ -162,10 +177,19 @@
       notice(partial ? 'No verified scope is available from this incomplete check. Retry sources.' : 'No currently authorized scopes.');
       return;
     }
-    $('scope').value = scopes[0].scope; pin = scopes[0].pin; pinWire = scopes[0].pin_wire || null; await page(0);
+    $('scope').value = sourceId(scopes[0]); choose(scopes[0]); await page(0);
   }
 
+  function choose(entry) {
+    activeSource = entry; pin = entry.pin; pinWire = entry.pin_wire || null; history = [];
+    contentEnabled = entry.capabilities ? entry.capabilities.includes('content-inspection') : catalogContent;
+    $('content-support').textContent = contentEnabled ? 'Select captures on this page. Interpretation covers only this selection.' : 'Selected Content is not yet available for this source. Source and provenance remain browsable.';
+  }
   function sourceRequest(sequence, offset = 0) {
+    if (isProof()) {
+      const selection = selections.get(String(sequence)); if (!selection) throw new Error('Missing verified selection.');
+      return {action:'proof-source',source:sourceId(activeSource),pin,selection,offset:String(offset),length:'65536'};
+    }
     return pinWire ? {action:'source-exact',pin_wire:pinWire,sequence:String(sequence),offset:String(offset),length:'65536'} : {action:'source',pin,sequence,offset,length:65536};
   }
   function textNode(tag, text, className) { const e=document.createElement(tag);e.textContent=text;if(className)e.className=className;return e; }
@@ -263,15 +287,17 @@
     event.preventDefault(); token = $('token').value; $('token').value = ''; run(catalog);
   });
   $('retry-sources').addEventListener('click', () => run(catalog));
-  $('scope').addEventListener('change', () => run(async () => { const chosen = scopes.find(s => s.scope === $('scope').value); if (!chosen) return; pin = chosen.pin; pinWire = chosen.pin_wire || null; history = []; await page(0); }));
-  $('resnapshot').addEventListener('click', () => run(async () => { if (!pin) return; clearContent(); clearInspector(); const value = await rpc({action:'snapshot',scope:$('scope').value}); if (!value) return; if(contentEnabled && typeof value.pin_wire !== 'string') throw new Error('Missing exact snapshot.'); pin = value.pin; pinWire = value.pin_wire || null; const chosen = scopes.find(s => s.scope === $('scope').value); chosen.pin = pin; chosen.pin_wire = pinWire; history = []; await page(0); }));
+  $('scope').addEventListener('change', () => run(async () => { const chosen = scopes.find(s => sourceId(s) === $('scope').value); if (!chosen) return; choose(chosen); await page(0); }));
+  $('resnapshot').addEventListener('click', () => run(async () => { if (!pin) return; clearContent(); clearInspector(); const value = await rpc(isProof() ? {action:'proof-snapshot',source:sourceId(activeSource)} : {action:'snapshot',scope:$('scope').value}); if (!value) return; if(contentEnabled && typeof value.pin_wire !== 'string') throw new Error('Missing exact snapshot.'); pin = value.pin; pinWire = value.pin_wire || null; const chosen = scopes.find(s => sourceId(s) === $('scope').value); chosen.pin = pin; chosen.pin_wire = pinWire; history = []; await page(0); }));
   $('next').addEventListener('click', () => run(async () => { if (next === null) return; history.push(after); await page(next); }));
   $('previous').addEventListener('click', () => run(async () => { if (history.length) await page(history.pop()); }));
   $('more').addEventListener('click', () => run(async () => { if (source && source.next !== null) await inspect(selected,source.next); }));
   $('download').addEventListener('click', () => run(async () => {
     if (!source) return; const offset = source.offset, sequence = selected;
     // Export rechecks authorization; the displayed range is not an offline grant.
-    const value = await rpc(sourceRequest(sequence,offset)); if (!value) return;
+    const request = sourceRequest(sequence,offset); clearInspector(); selected = sequence;
+    const value = await rpc(request); if (!value) return;
+    showSource(value); if (value.availability === 'missing' || value.availability === 'corrupt') return;
     const bytes = new Uint8Array(value.bytes_hex.match(/../g)?.map(x => parseInt(x,16)) || []);
     const url = URL.createObjectURL(new Blob([bytes],{type:'application/octet-stream'}));
     // Keep the URL alive for navigation to begin; lock/pagehide release it early.

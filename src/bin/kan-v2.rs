@@ -321,6 +321,24 @@ enum Command {
         #[arg(long, default_value = "127.0.0.1:7282")]
         listen: std::net::SocketAddr,
     },
+    /// Serve proof metadata read-only, including archives with unavailable payloads.
+    #[cfg(feature = "v2-service")]
+    ServeProof {
+        archive: PathBuf,
+        /// Owner-selected JSON binding: profile, archive, scope and issuer.
+        #[arg(long)]
+        binding: PathBuf,
+        #[arg(long)]
+        signing_key: PathBuf,
+        #[arg(long)]
+        grants: PathBuf,
+        #[arg(long, default_value = "127.0.0.1:7283")]
+        listen: std::net::SocketAddr,
+        #[arg(long, default_value_t = 100000)]
+        items: u64,
+        #[arg(long, default_value_t = 67108864)]
+        metadata_bytes: u64,
+    },
     /// Sign a bounded unsigned request from stdin using an explicit existing key.
     #[cfg(feature = "v2-service")]
     SignRequest {
@@ -535,6 +553,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 endpoint: String,
                 issuer: String,
                 private_key_file: PathBuf,
+                #[serde(default)]
+                protocol: Option<String>,
+                #[serde(default)]
+                profile: Option<kan::evidence_proof_service::Profile>,
+                #[serde(default)]
+                archive: Option<String>,
             }
             if !listen.ip().is_loopback() {
                 return Err("reader requires literal loopback".into());
@@ -545,9 +569,34 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("reader requires 1..16 configured scopes".into());
             }
             let mut scopes = Vec::new();
+            let mut proofs = Vec::new();
             for entry in configured {
                 if !entry.private_key_file.is_absolute() {
                     return Err("reader key paths must be absolute".into());
+                }
+                match entry.protocol.as_deref().unwrap_or("legacy") {
+                    "legacy" if entry.profile.is_none() && entry.archive.is_none() => {}
+                    kan::evidence_proof_service::PROTOCOL => {
+                        proofs.push(kan::evidence_reader::proof::Reader::new(
+                            service_identity(&signing_key)?,
+                            kan::evidence_reader::proof::Access {
+                                binding: kan::evidence_proof_service::Binding {
+                                    profile: entry
+                                        .profile
+                                        .ok_or("proof source requires profile")?,
+                                    archive: entry
+                                        .archive
+                                        .ok_or("proof source requires archive")?,
+                                    scope: entry.scope,
+                                    issuer: entry.issuer,
+                                },
+                                endpoint: entry.endpoint,
+                                private_key: recipient_private(&entry.private_key_file)?,
+                            },
+                        )?);
+                        continue;
+                    }
+                    _ => return Err("unsupported or inconsistent reader protocol".into()),
                 }
                 scopes.push(kan::evidence_reader::ScopeAccess {
                     scope: fixed_hex(&entry.scope)?,
@@ -556,15 +605,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     private_key: recipient_private(&entry.private_key_file)?,
                 });
             }
-            let reader =
-                kan::evidence_reader::Reader::new(service_identity(&signing_key)?, scopes)?;
+            let legacy = if scopes.is_empty() {
+                None
+            } else {
+                Some(kan::evidence_reader::Reader::new(
+                    service_identity(&signing_key)?,
+                    scopes,
+                )?)
+            };
+            let reader = kan::evidence_library::Readers::new(legacy, proofs)?;
             let token = String::from_utf8(kan::evidence_gateway::secret_file(&token_file)?)?
                 .trim_end_matches('\n')
                 .to_string();
             tokio::runtime::Runtime::new()?.block_on(async {
                 let listener = tokio::net::TcpListener::bind(listen).await?;
                 eprintln!("library http://{}", listener.local_addr()?);
-                tokio::select! { result=kan::evidence_library::serve(listener,token,reader)=>result, _=shutdown()=>Ok(()) }
+                tokio::select! { result=kan::evidence_library::serve_readers(listener,token,reader)=>result, _=shutdown()=>Ok(()) }
             })?;
         }
         #[cfg(feature = "v2-crypto")]
@@ -827,6 +883,44 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let listener=kan::evidence_http::bind(listen).await?;
                 println!("{}",serde_json::json!({"listen":listener.local_addr()?.to_string(),"issuer":service.issuer(),"experimental":true,"payload_encryption":"caller-supplied","grant_history":"not-retained","startup":"full-audit"}));
                 kan::evidence_http::serve(listener,service).await
+            })?;
+        }
+        #[cfg(feature = "v2-service")]
+        Command::ServeProof {
+            archive,
+            binding,
+            signing_key,
+            grants,
+            listen,
+            items,
+            metadata_bytes,
+        } => {
+            let binding =
+                serde_json::from_slice(&bounded_read(std::fs::File::open(binding)?, 4096)?)?;
+            let grants =
+                serde_json::from_slice(&bounded_read(std::fs::File::open(grants)?, 65536)?)?;
+            if items == 0 || metadata_bytes == 0 {
+                return Err("proof read budgets must be positive".into());
+            }
+            let service = kan::evidence_proof_service::Service::new(
+                archive,
+                binding,
+                service_identity(&signing_key)?,
+                grants,
+                kan::evidence_store::inventory::Budget {
+                    items,
+                    metadata_bytes,
+                    duration: std::time::Duration::from_secs(4),
+                    cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                },
+            )?;
+            tokio::runtime::Runtime::new()?.block_on(async {
+                let listener = kan::evidence_http::bind(listen).await?;
+                eprintln!("proof reader http://{}/v2/read", listener.local_addr()?);
+                #[cfg(feature = "v2-crypto")]
+                { tokio::select! { result=kan::evidence_http::serve_proof(listener,service)=>result, _=shutdown()=>Ok(()) } }
+                #[cfg(not(feature = "v2-crypto"))]
+                { kan::evidence_http::serve_proof(listener,service).await }
             })?;
         }
         #[cfg(feature = "v2-service")]

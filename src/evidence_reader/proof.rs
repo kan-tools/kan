@@ -59,6 +59,7 @@ pub struct Occurrence {
     pub receipt: String,
     pub attestation: String,
     pub purpose: String,
+    pub issued_at: String,
     pub receipt_issuer: String,
     pub availability: wire::Availability,
     pub selection: Token,
@@ -95,6 +96,9 @@ fn token_preimage(body: &TokenBody) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 impl Reader {
+    pub fn binding(&self) -> &wire::Binding {
+        &self.access.binding
+    }
     pub fn new(signer: Identity, access: Access) -> Result<Self> {
         access.binding.owner_binding()?;
         if signer.did().as_str() == access.binding.issuer {
@@ -357,6 +361,7 @@ impl Reader {
                 .ok_or(Failure::Corrupt)?
                 .to_string(),
             purpose: proof.purpose().as_str().into(),
+            issued_at: proof.issued_at().to_string(),
             receipt_issuer,
             availability,
             selection: self.token(pin, proof.frontier(), TokenPurpose::Source)?,

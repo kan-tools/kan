@@ -284,3 +284,45 @@ test('malformed ref in the RESPONSE stream after a valid request stream leaves n
  v.groups[0].response={...clone(v.groups[0].request),citation_sets:[[{input:'0',bytes:['1','2']}]]};v.groups[0].response.items[0].citation_set='1';await u.respond(v);
  assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('content-tab').disabled,true);
 });
+
+const proofEntry=id=>({id,scope:'shared-scope',protocol:'kan-proof-reader/1',binding:{profile:'copied',archive:id},pin,capabilities:['snapshot-inventory','source-ranges','provenance','payload-availability']});
+const proofCatalog={...catalog,version:2,capabilities:['snapshot-inventory','source-ranges','provenance','payload-availability'],scopes:[proofEntry('archive-A'),proofEntry('archive-B')]};
+const proofRow={sequence:'3',manifest:'manifest-proof',receipt:'receipt-proof',attestation:'attestation-proof',purpose:'retained-verified',issued_at:'1234',receipt_issuer:'historical-issuer',availability:'available',selection:{signature:'selection-token'}};
+const proofPage={through:'3',records:[proofRow],next:{signature:'page-token'},coverage:'Issuer-attested metadata'};
+const proofSource={...source,record:proofRow,scope:'shared-scope',archive:'archive-A',profile:'copied',availability:'available',offset:'0',total_bytes:'8',next:'4'};
+async function openProof(u){await u.login();await u.respond(proofCatalog);await u.respond(proofPage);}
+test('proof sources sharing one scope use distinct configured identities and opaque page tokens',async()=>{
+ const u=ui();await openProof(u);assert.deepEqual(u.node('scope').children.map(x=>x.value),['archive-A','archive-B']);
+ assert.match(u.node('rows').children[0].children[2].textContent,/available.*retained-verified/);
+ u.node('next').click();await tick();let request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'proof-page');assert.equal(request.source,'archive-A');assert.deepEqual(request.cursor,proofPage.next);
+ await u.respond({...proofPage,next:null,records:[{...proofRow,sequence:'2'}]});u.node('previous').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).cursor,null);await u.respond(proofPage);
+ u.node('scope').value='archive-B';u.node('scope').events.change();await tick();request=JSON.parse(u.pending[0].opts.body);assert.equal(request.source,'archive-B');assert.equal(request.cursor,null);assert.equal(u.node('rows').children.length,0);await u.respond(proofPage);
+});
+test('proof source keeps exact selection, proof purpose and historical issuer',async()=>{
+ const u=ui();await openProof(u);u.node('rows').children[0].click();await tick();const request=JSON.parse(u.pending[0].opts.body);
+ assert.equal(request.action,'proof-source');assert.deepEqual(request.selection,proofRow.selection);assert.equal(request.offset,'0');assert.equal(request.length,'65536');
+ await u.respond(proofSource);const text=u.node('provenance').children.map(x=>x.textContent).join(' ');assert.match(text,/retained-verified/);assert.match(text,/historical-issuer/);assert.match(text,/1234/);assert.equal(u.node('download').disabled,false);
+});
+test('loss or corruption after available sample clears plaintext, preserves provenance and cannot export a Blob',async()=>{
+ for(const availability of ['missing','corrupt']){const u=ui();await openProof(u);u.node('rows').children[0].click();await tick();await u.respond(proofSource);
+ u.node('download').click();await tick();assert.equal(u.node('source').textContent,'');assert.equal(u.node('download').disabled,true);
+ const lost={...proofSource,availability,record:{...proofRow,availability},writer:null};for(const key of ['bytes_hex','utf8','offset','total_bytes','next'])delete lost[key];await u.respond(lost);
+ assert.equal(u.blobs.length,0);assert.match(u.node('source').textContent,new RegExp(availability));assert.equal(u.node('source').textContent.includes('<b>x'),false);
+ assert.equal(u.node('download').disabled,true);assert.equal(u.node('more').disabled,true);assert.equal(u.node('provenance-tab').disabled,false);assert.equal(u.node('rows').children.length,1);
+ assert.match(u.node('provenance').children.map(x=>x.textContent).join(' '),/Writer|Unavailable/);
+ }
+});
+test('proof export reauthorizes; denial clears the Library and emits no Blob',async()=>{
+ const u=ui();await openProof(u);u.node('rows').children[0].click();await tick();await u.respond(proofSource);u.node('download').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'proof-source');await u.respond({},403);
+ assert.equal(u.node('library').hidden,true);assert.equal(u.node('source').textContent,'');assert.equal(u.blobs.length,0);assert.equal(u.node('provenance').children.length,0);
+});
+test('mixed catalog changes per-source Content capability without legacy fallback',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A'),{id:'legacy',scope:'legacy',protocol:'legacy',pin,pin_wire:'exact-legacy-pin',capabilities:['content-inspection']}]});await u.respond(proofPage);
+ assert.match(u.node('content-support').textContent,/not yet available/);assert.equal(u.node('rows').children[0].children.some(c=>c.type==='checkbox'),false);
+ u.node('scope').value='legacy';u.node('scope').events.change();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'content-page');await u.respond({...page,through:'2',next:null,records:[{...page.records[0],sequence:'1'}]});assert.match(u.node('content-support').textContent,/Select captures/);
+ u.node('scope').value='archive-A';u.node('scope').events.change();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'proof-page');await u.respond({},503);assert.equal(u.pending.length,0);assert.equal(u.node('rows').children.length,0);
+});
+test('proof refresh and lock preserve no stale source or selection',async()=>{
+ const u=ui();await openProof(u);u.node('resnapshot').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'proof-snapshot',source:'archive-A'});await u.respond({pin:{...pin,request:'new-pin'}});assert.equal(JSON.parse(u.pending[0].opts.body).cursor,null);await u.respond(proofPage);
+ u.node('rows').children[0].click();await tick();const pending=u.pending[0];u.node('lock').click();assert.equal(pending.opts.signal.aborted,true);await u.respond(proofSource);assert.equal(u.node('source').textContent,'');assert.equal(u.node('rows').children.length,0);assert.equal(u.node('download').disabled,true);
+});

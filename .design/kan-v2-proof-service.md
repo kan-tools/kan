@@ -69,8 +69,9 @@ background processing and owner jobs remain in the overall v2 roadmap.
 The service/wire, shared HTTP adapter and verified Reader candidates are now on
 disk. Seven service tests, a real loopback transport test and five Reader tests
 cover both profiles, exact encrypted source decryption, faulty signed replies,
-tokens, revocation and later payload loss. Formatting and whitespace checks pass;
-compilation and review are pending. The human Library integration is still open.
+tokens, revocation and later payload loss. Author qualification at bdbf136 passed
+82 integrations, strict all-target v2 Clippy and formatting; see
+`.design/reviews/kan-v2-proof-service-author/`. Independent review remains pending. The human Library integration is still open.
 `day design check` refused this worktree because it has no separate kan workspace;
 the exact diagnostic is retained in `.local-state/design-check.txt`. Validation
 and kan/bridge recording remain unavailable, not passing or an empty log.

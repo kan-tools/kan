@@ -452,3 +452,6 @@ async fn proof_reader_can_browse_empty_copy_before_original_membership_is_comple
     ));
     server.stop().await;
 }
+
+#[path = "proof_library_tests.rs"]
+mod library_tests;

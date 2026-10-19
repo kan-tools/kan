@@ -1,5 +1,7 @@
 //! Human evidence Library. Loopback presentation with a separate read capability.
+mod proof;
 use crate::evidence_content::ContentError;
+use crate::evidence_reader::proof as verified;
 use crate::evidence_reader::{Pin, Reader};
 use crate::evidence_service::Failure;
 use http_body_util::{BodyExt, Full, Limited};
@@ -8,6 +10,7 @@ use hyper::{
     Request, Response, StatusCode,
 };
 use hyper_util::rt::TokioIo;
+pub use proof::Readers;
 use serde::Deserialize;
 use std::{convert::Infallible, future::Future, io, sync::Arc, time::Duration};
 use tokio::{
@@ -18,6 +21,22 @@ use tokio::{
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 enum Query {
+    ProofSnapshot {
+        source: String,
+    },
+    ProofPage {
+        source: String,
+        pin: verified::Pin,
+        cursor: Option<verified::Token>,
+        limit: usize,
+    },
+    ProofSource {
+        source: String,
+        pin: verified::Pin,
+        selection: verified::Token,
+        offset: String,
+        length: String,
+    },
     Content {
         pin_wire: String,
         sequences: Vec<String>,
@@ -68,6 +87,9 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
 async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
+        Query::ProofSnapshot { .. } | Query::ProofPage { .. } | Query::ProofSource { .. } => {
+            return Err(Failure::Invalid.into())
+        }
         Query::Content {
             pin_wire,
             sequences,
@@ -167,7 +189,7 @@ async fn handle(
     r: Request<Incoming>,
     host: String,
     token: Arc<String>,
-    reader: Arc<Reader>,
+    reader: Arc<Readers>,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
     if r.headers().get("host").and_then(|v| v.to_str().ok()) != Some(host.as_str())
         || r.headers()
@@ -237,7 +259,7 @@ async fn handle(
         Ok(request) => request,
         Err(_) => return Ok(denied(StatusCode::BAD_REQUEST)),
     };
-    Ok(match query(&reader, request).await {
+    Ok(match reader.query(request).await {
         Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
         Err(ContentError::Read(Failure::AccessLimited)) => denied(StatusCode::FORBIDDEN),
         Err(ContentError::Read(Failure::Missing)) => denied(StatusCode::NOT_FOUND),
@@ -257,6 +279,19 @@ async fn handle(
 }
 /// Bounded concurrent reads. Tokens/keys are operator-configured and never logged.
 pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::Result<()> {
+    serve_readers(
+        listener,
+        token,
+        Readers::new(Some(reader), Vec::new()).map_err(io::Error::other)?,
+    )
+    .await
+}
+/// Serve explicit legacy and proof sources using the same bounded local UI.
+pub async fn serve_readers(
+    listener: TcpListener,
+    token: String,
+    reader: Readers,
+) -> io::Result<()> {
     let addr = listener.local_addr()?;
     if !addr.ip().is_loopback()
         || token.len() < 32
@@ -298,7 +333,7 @@ async fn connection(
     stream: tokio::net::TcpStream,
     host: String,
     token: Arc<String>,
-    reader: Arc<Reader>,
+    reader: Arc<Readers>,
 ) {
     let mut builder = hyper::server::conn::http1::Builder::new();
     builder
