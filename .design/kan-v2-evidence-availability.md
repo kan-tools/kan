@@ -1085,3 +1085,20 @@ the integrated contracts and evidence above exist.
 without its own kan workspace. The exact diagnostic is retained locally in
 `.local-state/proof-reader-design-check.txt`. Validation and kan/bridge recording
 are unavailable here; they are not reported as passing or as an empty log.
+
+### Pinned inventory foundation candidate
+
+`Inventory::open_at` now accepts an owner-selected older frontier, still audits
+the full current metadata chain, and exposes only that retained prefix.
+`Inventory::page_from` validates a descending continuation against the selected
+prefix and the existing proof verifier before returning rows. It does not expose
+an unchecked wire constructor for Selection or Cursor. A copied archive's current
+completion marker is not represented as completion of an older partial pin.
+
+Three new integration tests cover both profiles, appends between independent
+page openings, malformed/forked/future/rolled-back coordinates, payload loss,
+and invalid current metadata after the selected prefix. They are prepared but
+not yet locally compiled: the independent publication review owns the shared
+Cargo target. Format and whitespace checks pass. This foundation does not yet
+implement the authenticated remote protocol, HTTP adapter, Reader or Library
+display. The integrated acceptance criteria above remain open.
