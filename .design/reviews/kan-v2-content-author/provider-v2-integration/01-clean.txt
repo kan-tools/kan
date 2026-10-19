@@ -1,0 +1,4 @@
+$ cargo clean -p kan
+     Removed 0 files
+
+exit=0

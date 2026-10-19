@@ -1,0 +1,26 @@
+
+running 1 test
+test evidence_content::tests::canonical_decimal_and_new_source_coordinates_preserve_full_width ... FAILED
+
+failures:
+
+---- evidence_content::tests::canonical_decimal_and_new_source_coordinates_preserve_full_width stdout ----
+
+thread 'evidence_content::tests::canonical_decimal_and_new_source_coordinates_preserve_full_width' (10444272) panicked at src/evidence_content.rs:454:9:
+assertion `left == right` failed
+  left: Number(18446744073709551615)
+ right: "18446744073709551615"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_content::tests::canonical_decimal_and_new_source_coordinates_preserve_full_width
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 90 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection)
+    Finished `test` profile [unoptimized] target(s) in 7.02s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-480f4f845bac8ec9)
+error: test failed, to rerun pass `--lib`
+
+exit=101

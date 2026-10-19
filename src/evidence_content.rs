@@ -190,6 +190,7 @@ fn item_kind(k: provider::Kind) -> &'static str {
         Attachment => "attachment",
         ToolFragment => "tool-fragment",
         Protocol => "protocol",
+        Framing => "framing",
         Error => "error",
         Unsupported => "unsupported",
         Malformed => "malformed",
@@ -207,6 +208,44 @@ fn issue_kind(i: provider::Issue) -> &'static str {
         ToolJson => "tool-json",
         Unknown => "unknown",
     }
+}
+fn map_citations(
+    stream: &assembly::Stream,
+    inputs: &[assembly::Input<'_>],
+    region: std::ops::Range<usize>,
+    budget: &mut Budget,
+) -> Result<Vec<Value>, Failure> {
+    // Full-source validation happens on every mapping. Account all passes
+    // across calls, rather than resetting the request work budget per item.
+    let mut charge = 0u64;
+    for segment in &stream.segments {
+        for (n, source) in segment.sources.iter().enumerate() {
+            let assembly::Payload::Available(original) =
+                inputs.get(source.input).ok_or(Failure::Corrupt)?.payload
+            else {
+                return Err(Failure::Corrupt);
+            };
+            charge = charge
+                .checked_add(original.len() as u64)
+                .and_then(|v| v.checked_add(source.bytes.len() as u64))
+                .and_then(|v| v.checked_add(if n > 0 { original.len() as u64 } else { 0 }))
+                .ok_or(Failure::Unavailable)?;
+        }
+    }
+    let mut limits = budget.limits()?;
+    limits.items = 2 * PAGE_LIMIT;
+    budget.charge_scan(charge)?;
+    let citations =
+        provider::map_region(stream, inputs, region, limits).map_err(|_| Failure::Corrupt)?;
+    budget.citations = budget
+        .citations
+        .checked_sub(citations.len())
+        .ok_or(Failure::Unavailable)?;
+    let citations: Vec<_> = citations
+        .into_iter()
+        .map(|s| json!({"input":s.input.to_string(),"bytes":pair(s.bytes.start,s.bytes.end)}))
+        .collect();
+    Ok(citations)
 }
 fn stream(
     stream: &assembly::Stream,
@@ -243,39 +282,18 @@ fn stream(
         .ok_or(Failure::Unavailable)?;
     let mut items = Vec::new();
     for item in document.items {
-        // Full-source validation happens on every mapping. Account all passes
-        // across calls, rather than resetting the request work budget per item.
-        let mut charge = 0u64;
-        for segment in &stream.segments {
-            for (n, source) in segment.sources.iter().enumerate() {
-                let assembly::Payload::Available(original) =
-                    inputs.get(source.input).ok_or(Failure::Corrupt)?.payload
-                else {
-                    return Err(Failure::Corrupt);
-                };
-                charge = charge
-                    .checked_add(original.len() as u64)
-                    .and_then(|v| v.checked_add(source.bytes.len() as u64))
-                    .and_then(|v| v.checked_add(if n > 0 { original.len() as u64 } else { 0 }))
-                    .ok_or(Failure::Unavailable)?;
+        let citations = map_citations(stream, inputs, item.region.clone(), budget)?;
+        let tool = match (item.tool_input, item.tool_region) {
+            (Some(json), Some(region)) => {
+                let citations = map_citations(stream, inputs, region.clone(), budget)?;
+                json!({"json":json,"region":pair(region.start,region.end),"citations":citations})
             }
-        }
-        let mut limits = budget.limits()?;
-        limits.items = 2 * PAGE_LIMIT;
-        budget.charge_scan(charge)?;
-        let citations = provider::map_region(stream, inputs, item.region.clone(), limits)
-            .map_err(|_| Failure::Corrupt)?;
-        budget.citations = budget
-            .citations
-            .checked_sub(citations.len())
-            .ok_or(Failure::Unavailable)?;
-        let citations: Vec<_> = citations
-            .into_iter()
-            .map(|s| json!({"input":s.input.to_string(),"bytes":pair(s.bytes.start,s.bytes.end)}))
-            .collect();
+            (None, None) => Value::Null,
+            _ => return Err(Failure::Corrupt),
+        };
         items.push(json!({"kind":item_kind(item.kind),"region":pair(item.region.start,item.region.end),"coarse":item.coarse,
             "role":item.role,"index":item.index.map(|n|n.to_string()),"text":item.text,"pointer":item.pointer,
-            "event_json":item.event.map(|v|v.to_string()),"issues":item.issues.into_iter().map(issue_kind).collect::<Vec<_>>(),"citations":citations}));
+            "event_json":item.event.map(|v|v.to_string()),"issues":item.issues.into_iter().map(issue_kind).collect::<Vec<_>>(),"citations":citations,"tool":tool}));
     }
     result["state"] = json!("interpreted");
     result["items"] = json!(items);

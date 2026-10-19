@@ -1533,7 +1533,32 @@ async fn content_browser_fixture() {
             .unwrap(),
     )
     .unwrap();
-    tokio::select! {r=kan::evidence_library::serve(listener,token.into(),reader)=>r.unwrap(),_=tokio::signal::ctrl_c()=>{}}
+    // Optional test-only owner control; never exposed by the production server.
+    let control = std::env::var_os("KAN_CONTENT_FIXTURE_CONTROL").map(std::path::PathBuf::from);
+    let controls = async {
+        let mut previous = String::new();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            if let Some(path) = &control {
+                if let Ok(command) = std::fs::read_to_string(path) {
+                    if command != previous {
+                        match command.trim() {
+                            "stall" => a.mode.store(10, Ordering::Relaxed),
+                            "normal" => a.mode.store(0, Ordering::Relaxed),
+                            "revoke" => {
+                                a.mode.store(0, Ordering::Relaxed);
+                                a.revoke();
+                            }
+                            _ => panic!("unknown synthetic fixture command"),
+                        }
+                        previous = command;
+                        std::fs::write(path.with_extension("ack"), &previous).unwrap();
+                    }
+                }
+            }
+        }
+    };
+    tokio::select! {r=kan::evidence_library::serve(listener,token.into(),reader)=>r.unwrap(),_=controls=>{},_=tokio::signal::ctrl_c()=>{}}
 }
 
 #[tokio::test]

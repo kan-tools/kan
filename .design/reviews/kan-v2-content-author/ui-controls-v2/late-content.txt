@@ -1,0 +1,95 @@
+✔ real endpoint uses header auth and untrusted source stays text (4.7775ms)
+✖ lock aborts pending source and clears every private view (1.368083ms)
+✔ page and scope navigation carry only the selected authenticated pin (1.245125ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.860125ms)
+✔ old transport errors cannot lock a newer session (0.634334ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.820334ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (1.071792ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.619875ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (1.852625ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.649542ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.718084ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.595459ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.596917ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.532ms)
+✔ partial catalog coverage persists while browsing and retry clears old authority (0.807958ms)
+✖ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (0.708291ms)
+✔ both authorization denial statuses lock an already open Library (1.858667ms)
+✔ Previous is disabled immediately when leaving a later page (0.671583ms)
+✔ malformed duplicate and inconsistent capabilities never open a Library (1.961208ms)
+✔ all directional control families default to exact hex with explicit text access (5.914292ms)
+✔ malformed retry clears partially rendered capabilities and keeps recovery available (0.758833ms)
+✔ malformed scope catalogs are rejected before any option or page request (6.186667ms)
+✔ malformed scope retry clears old plaintext and permits recovery (0.860583ms)
+✔ PB1 boundary values are accepted, not falsely rejected (1.256958ms)
+✔ PB2 complete empty catalog still opens without page request (0.460458ms)
+✔ PB3 over-limit scope name and pin request are rejected (0.79175ms)
+✔ PB4 non-string scope/request with a length property are rejected (1.757625ms)
+✔ PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery (0.746459ms)
+✔ PB6 lock during malformed-catalog reply ignores the late reply (0.423084ms)
+✔ PB7 after malformed retry, old scope names and pins cannot be navigated (0.578458ms)
+✔ Content preserves opaque pins and large sequence strings through source return (1.038458ms)
+✖ Content lock, scope, selection and format changes discard late plaintext (1.230083ms)
+✔ Content unplaced input is visible and denied citations clear all plaintext (1.309958ms)
+✔ Content refuses wrong snapshot and missing exact pins before exposing items (1.031542ms)
+✔ Content labels supplied history and derived numbers, with separate tool block citations (1.028667ms)
+ℹ tests 35
+ℹ suites 0
+ℹ pass 32
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 82.120708
+
+✖ failing tests:
+
+test at tests/library_ui.test.cjs:20:1
+✖ lock aborts pending source and clears every private view (1.368083ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  '<b>x' !== ''
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/tests/library_ui.test.cjs:20:322)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '<b>x',
+    expected: '',
+    operator: 'strictEqual'
+  }
+
+test at tests/library_ui.test.cjs:40:1
+✖ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (0.708291ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/tests/library_ui.test.cjs:40:611)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual'
+  }
+
+test at tests/library_ui.test.cjs:113:1
+✖ Content lock, scope, selection and format changes discard late plaintext (1.230083ms)
+  AssertionError [ERR_ASSERTION]: scope
+  
+  2 !== 0
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/tests/library_ui.test.cjs:121:10)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 0,
+    operator: 'strictEqual'
+  }
+
+exit=1

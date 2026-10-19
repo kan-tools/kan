@@ -1,0 +1,73 @@
+✔ real endpoint uses header auth and untrusted source stays text (4.49325ms)
+✔ lock aborts pending source and clears every private view (0.904959ms)
+✔ page and scope navigation carry only the selected authenticated pin (0.907ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.88175ms)
+✔ old transport errors cannot lock a newer session (0.682042ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.962208ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (1.131584ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.679792ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (1.962583ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.723334ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.84875ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.594708ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.616208ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.532042ms)
+✔ partial catalog coverage persists while browsing and retry clears old authority (0.71025ms)
+✔ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (1.396084ms)
+✔ both authorization denial statuses lock an already open Library (1.323291ms)
+✔ Previous is disabled immediately when leaving a later page (0.688375ms)
+✔ malformed duplicate and inconsistent capabilities never open a Library (2.309875ms)
+✔ all directional control families default to exact hex with explicit text access (5.597334ms)
+✔ malformed retry clears partially rendered capabilities and keeps recovery available (0.832209ms)
+✔ malformed scope catalogs are rejected before any option or page request (4.543458ms)
+✔ malformed scope retry clears old plaintext and permits recovery (0.7845ms)
+✔ PB1 boundary values are accepted, not falsely rejected (1.182125ms)
+✔ PB2 complete empty catalog still opens without page request (0.461833ms)
+✔ PB3 over-limit scope name and pin request are rejected (0.859916ms)
+✔ PB4 non-string scope/request with a length property are rejected (1.792916ms)
+✔ PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery (0.863125ms)
+✔ PB6 lock during malformed-catalog reply ignores the late reply (0.482792ms)
+✔ PB7 after malformed retry, old scope names and pins cannot be navigated (1.011292ms)
+✖ Content preserves opaque pins and large sequence strings through source return (1.278167ms)
+✔ Content lock, scope, selection and format changes discard late plaintext (2.349125ms)
+✔ Content unplaced input is visible and denied citations clear all plaintext (0.864083ms)
+✔ Content refuses wrong snapshot and missing exact pins before exposing items (1.227917ms)
+✔ Content labels supplied history and derived numbers, with separate tool block citations (1.265125ms)
+ℹ tests 35
+ℹ suites 0
+ℹ pass 34
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 83.211375
+
+✖ failing tests:
+
+test at tests/library_ui.test.cjs:101:1
+✖ Content preserves opaque pins and large sequence strings through source return (1.278167ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    {
+      action: 'content',
+      format: 'anthropic-messages-sse',
+      pin_wire: '{"reply":{"through":9007199254740993},"signature":"synthetic-exact"}',
+      sequences: [
+  +     9007199254740992
+  -     '9007199254740993'
+      ]
+    }
+  
+      at interpretContent (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/tests/library_ui.test.cjs:100:84)
+      at async TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/tests/library_ui.test.cjs:102:36)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { action: 'content', pin_wire: '{"reply":{"through":9007199254740993},"signature":"synthetic-exact"}', sequences: [ 9007199254740992 ], format: 'anthropic-messages-sse' },
+    expected: { action: 'content', pin_wire: '{"reply":{"through":9007199254740993},"signature":"synthetic-exact"}', sequences: [ '9007199254740993' ], format: 'anthropic-messages-sse' },
+    operator: 'deepStrictEqual'
+  }
+
+exit=1
