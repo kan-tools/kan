@@ -19,6 +19,35 @@ for acceptance. The complete human frontend remains required by
 | Background analysis/day | Server-first architecture | Inspectable run/assessment records, scheduler/worker contracts, grants/quotas and source lineage |
 | Deployment and migration cutover | Runbooks and synthetic evidence only | Reader placement decision, real installation/key placement and owner-approved cutover remain separate |
 
+## Current checkpoint overlay — 2026-10-19
+
+The preceding table and delivery-order text retain the earlier roadmap state.
+Use these later checkpoint records for implementation status:
+
+- #290 Library/codec follow-ups: source through 5784efa; actual browser file
+  delivery remains unverified.
+- #291 proof storage: a1007a6; independently reviewed corrections and CI green.
+- #292 bounded collection overview: d94359c; fresh Opus APPROVE (scope C in
+  `reviews/kan-v2-purpose-gate-opus/evidence/REPORT.txt`), CI green, real browser
+  restart evidence. Sustained-write refresh starvation and memory refusal remain
+  declared bounds, not universal performance guarantees.
+- #293 proof-preserving lifecycle: 58ba158; reviewed corrections, CI green.
+- #294 source-copy planner and codec: 619613d; CI green. The independent oracle
+  sort and named-reason follow-ups are closed in #295.
+- #295 destination: d9b2110; fresh Opus APPROVE WITH FOLLOW-UPS, preserved in
+  `reviews/kan-v2-copy-destination-opus/evidence/REPORT.txt`. Plan-file custody
+  and coverage follow-ups are being qualified separately. Linux/MSRV/migration
+  passed; the performance run initially failed the unchanged context ratio
+  (8.3 > 8), with its single retry still pending at this writing.
+- Degraded inventory and recovery-bundle designs are on the permanent
+  `feat/kan-v2-degraded-inventory` worktree branch. Inventory implementation is
+  an unqualified draft. No bundle writer, remote proof adapter, or full human
+  conversation workflow is accepted by these storage checkpoints.
+
+The next sequence remains inventory/bundles and remote integration, followed by
+conversation reconstruction, search/views/annotations, background assessment and
+integrated administration. All PRs remain stacked drafts; no live cutover.
+
 ## Accepted delivery order
 
 The owner approved this roadmap after #286/#287:

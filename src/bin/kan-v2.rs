@@ -893,7 +893,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 fixed_hex(&nonce)?,
             )?;
             let path = plan.to_str().ok_or("plan JSON requires a UTF-8 path")?;
-            kan::evidence_store::copy_upgrade::retain_plan(&plan, source.plan())?;
+            kan::evidence_store::copy_upgrade::retain_plan(&plan, &source)?;
             print_json(
                 &serde_json::json!({"plan":path,"archive":hex(&source.plan().archive_id()),"source_through":source.plan().source().through,"profile":3,"promoted":false}),
             )?;
@@ -913,7 +913,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 return Err("copy-batch requires --copy-profile and all owner pins".into());
             }
             let binding = proof.binding()?.ok_or("copy requires owner pins")?;
-            let recipe = kan::evidence_store::copy_upgrade::read_plan(&plan, &binding.archive)?;
+            let recipe = kan::evidence_store::copy_upgrade::read_plan_for_copy(
+                &plan,
+                &database,
+                &archive,
+                &binding.archive,
+            )?;
             let source = kan::evidence_store::copy_upgrade::PlannedCopy::confirm(
                 &database,
                 &recipe,

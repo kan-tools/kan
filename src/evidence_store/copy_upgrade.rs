@@ -136,7 +136,9 @@ impl PlannedCopy {
 
 /// Retain a recipe before creating its destination. The new file is private and
 /// durable; errors leave any output for explicit owner inspection.
-pub fn retain_plan(path: &Path, plan: &Plan) -> Result<()> {
+pub fn retain_plan(path: &Path, source: &PlannedCopy) -> Result<()> {
+    plan_outside_sqlite(&source.reader.source, path)?;
+    let plan = source.plan();
     // surface-write: evidence-copy-plan:artifact
     crate::persistence::write_new_owner_only(
         crate::persistence::SurfaceWrite::EvidenceCopyPlan,
@@ -150,10 +152,52 @@ pub fn retain_plan(path: &Path, plan: &Plan) -> Result<()> {
     }
     Ok(())
 }
-/// Read bounded private recipe bytes and compare the separately supplied pin.
+// A plan is an ordinary retained file, never a SQLite main file or sidecar.
+fn plan_outside_sqlite(database: &Path, plan: &Path) -> Result<()> {
+    if same_existing_file(database, plan) {
+        return Err(Error::Invalid("plan aliases a SQLite database"));
+    }
+    sqlite_destination(database, plan)?;
+    Ok(())
+}
+
+/// Validate plan custody against both SQLite families before any database opens.
+/// An absent destination root must have an existing parent, as creation requires.
+/// This protects owner-selected paths under the same trusted-filesystem contract
+/// as archive creation; it does not fence concurrent hostile path replacement.
+pub fn read_plan_for_copy(
+    path: &Path,
+    source: &Path,
+    destination_root: &Path,
+    expected_archive: &[u8; 32],
+) -> Result<Plan> {
+    let source = std::fs::canonicalize(source)?;
+    plan_outside_sqlite(&source, path)?;
+    let root = if destination_root.exists() {
+        std::fs::canonicalize(destination_root)?
+    } else {
+        std::fs::canonicalize(parent_directory(destination_root))?.join(
+            destination_root
+                .file_name()
+                .ok_or(Error::Invalid("destination directory"))?,
+        )
+    };
+    plan_outside_sqlite(&root.join("archive.sqlite"), path)?;
+    read_plan(path, expected_archive)
+}
+
+/// Decode bounded private recipe bytes and compare the separately supplied pin.
+/// This decoder never opens SQLite. Executors must use `read_plan_for_copy` to
+/// protect artifact custody before opening either source or destination.
 pub fn read_plan(path: &Path, expected_archive: &[u8; 32]) -> Result<Plan> {
     use std::io::Read;
-    private_file(path)?;
+    private_file(path).map_err(|e| match e {
+        Error::Invalid("database must be owner-only") => Error::Invalid("plan must be owner-only"),
+        Error::Invalid("expected regular database file") => {
+            Error::Invalid("expected regular plan file")
+        }
+        other => other,
+    })?;
     let mut bytes = Vec::new();
     std::fs::File::open(path)?
         .take(crate::evidence_copy_plan::MAX_PLAN_BYTES as u64 + 1)

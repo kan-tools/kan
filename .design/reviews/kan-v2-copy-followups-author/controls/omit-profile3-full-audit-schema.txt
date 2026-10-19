@@ -1,0 +1,22 @@
+
+running 1 test
+test profile3_schema_drift_refuses_open_verify_resume_and_stale_handle_backup ... FAILED
+
+failures:
+
+---- profile3_schema_drift_refuses_open_verify_resume_and_stale_handle_backup stdout ----
+
+thread 'profile3_schema_drift_refuses_open_verify_resume_and_stale_handle_backup' (9765124) panicked at tests/evidence_copy_destination.rs:1121:18:
+called `Result::unwrap_err()` on an `Ok` value: Verification { contents: Verification { objects: 0, commits: 0, bytes: 0, snapshot: Snapshot { through: 0, tip: None } }, copy: Status { original_objects: 0, copied_records: 0, planned_records: 2, source_copy_complete: false } }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    profile3_schema_drift_refuses_open_verify_resume_and_stale_handle_backup
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.21s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination)
+    Finished `test` profile [unoptimized] target(s) in 6.88s
+     Running tests/evidence_copy_destination.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_destination-e9770359e29db79f)
+error: test failed, to rerun pass `--test evidence_copy_destination`
