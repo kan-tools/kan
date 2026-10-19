@@ -1,0 +1,7 @@
+SURVIVED: canonical-key (typed CID parser already rejects the tested noncanonical spelling)
+DEMONSTRATED: observation-coordinate
+DEMONSTRATED: acquisition-bytes
+DEMONSTRATED: acquisition-items
+DEMONSTRATED: external-checkpoint
+DEMONSTRATED: pinned-snapshot
+5 selected semantic controls demonstrated; 1 classified survivors; restored tests pass.

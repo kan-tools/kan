@@ -1,0 +1,10 @@
+DEMONSTRATED: schema
+DEMONSTRATED: identity
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening/scripts/recovery_bundle_negative_controls.py", line 45, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening/scripts/recovery_bundle_negative_controls.py", line 33, in main
+    assert r.returncode and 'could not compile' not in log,name+' survived or failed compilation'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: canonical-key survived or failed compilation

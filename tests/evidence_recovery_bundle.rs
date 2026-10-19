@@ -290,3 +290,36 @@ fn existing_sqlite_sidecar_symlink_or_hardlink_refuses_before_open() {
         ));
     }
 }
+
+#[test]
+fn hot_rollback_journal_refuses_without_recovering_source_media() {
+    const CHILD: &str = "KAN_BUNDLE_HOT_JOURNAL_FIXTURE";
+    if let Some(path) = std::env::var_os(CHILD) {
+        let db = Connection::open(PathBuf::from(path)).unwrap();
+        db.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA cache_size=1; PRAGMA ignore_check_constraints=ON; BEGIN EXCLUSIVE; UPDATE observations SET envelope=zeroblob(65536);").unwrap();
+        std::process::exit(71);
+    }
+    let (_dir, path, v) = fixture();
+    let out = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "hot_rollback_journal_refuses_without_recovering_source_media",
+            "--nocapture",
+        ])
+        .env(CHILD, &path)
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(71),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let journal = PathBuf::from(format!("{}-journal", path.display()));
+    let before_main = std::fs::read(&path).unwrap();
+    let before_journal = std::fs::read(&journal).unwrap();
+    assert!(before_journal.len() > 512);
+    assert!(bundle::inspect(&path, pins(&v), None, budget()).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before_main);
+    assert_eq!(std::fs::read(&journal).unwrap(), before_journal);
+}
