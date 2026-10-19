@@ -1,0 +1,24 @@
+✖ build preempts an in-flight overview poll and ignores its stale reply (13.187917ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8056.0435
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:36:1
+✖ build preempts an in-flight overview poll and ignores its stale reply (13.187917ms)
+  AssertionError [ERR_ASSERTION]: build must dispatch while the overview poll is pending
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/tests/operations_ui.test.cjs:36:225)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '=='
+  }

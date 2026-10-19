@@ -1,0 +1,22 @@
+
+running 1 test
+test changed_missing_sources_binding_and_membership_fail_visibly ... FAILED
+
+failures:
+
+---- changed_missing_sources_binding_and_membership_fail_visibly stdout ----
+
+thread 'changed_missing_sources_binding_and_membership_fail_visibly' (9568986) panicked at tests/evidence_operations_overview.rs:460:9:
+accepted hash
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    changed_missing_sources_binding_and_membership_fail_visibly
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.67s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+    Finished `test` profile [unoptimized] target(s) in 7.06s
+     Running tests/evidence_operations_overview.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_operations_overview-60b870fdbabb93d8)
+error: test failed, to rerun pass `--test evidence_operations_overview`

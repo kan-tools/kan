@@ -1,0 +1,396 @@
+Independent review: three separate scopes at 7ab1afa183880a06f409a454a49e87df5b7c33fc
+  Scope A: overview correction 262cad3 against 67c1263
+  Scope B: profile-2 owner lifecycle 7ab1afa against 262cad3 (694e644, f9285c2, 6324e9f, merge 5b0bb97, 7ab1afa)
+  Scope C: design readiness ONLY of ".design/kan-v2-evidence-availability.md" section
+           "Next copy-upgrade schema decision (not implemented)" (profile 3)
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), in-session. No delegation, no subagents.
+Independence: I wrote none of the code under review. Per the user rule there were no kan/day
+reads or writes, so adversarial-review Step 7 recording was skipped and Git-first evidence is kept
+instead (day#168/kan#197).
+North star: the supplied north-star.json -> telos/raw-data-and-projections.
+  - The telos is live and deliberately unwitnessed. Its Observation says CI enforces maintenance.
+  - It is InTensionWith telos/performance-at-scale.
+  - The two trust-excluded claims were not reconstructed.
+  - All three scopes serve it the same way: totals and backups are disposable, labelled
+    projections, raw bytes are retained, and loss or refusal is visible, never fabricated.
+
+VERDICTS (one per scope, not blended)
+  Scope A (overview correction):          APPROVE WITH FOLLOW-UPS   (prior required O1 is resolved)
+  Scope B (profile-2 owner lifecycle):    APPROVE WITH FOLLOW-UPS   (prerequisite slice only; all 6 parent ACs open)
+  Scope C (profile-3 copy-upgrade design):APPROVE WITH FOLLOW-UPS   (design readiness only; C1, C3, C4 required before implementation)
+No roadmap completion is implied. The overview's AC-5 authenticated real-browser state matrix is still OPEN.
+
+==============================================================================================
+IDENTITY / HYGIENE
+- The export (.local-state/reviews/lifecycle) matches `git archive 7ab1afa` in the enclosing worktree:
+  all 1,323 tracked files are byte-identical, before and after the review. The only extra file is the
+  harness-supplied untracked north-star.json (00-export-vs-archive-before.txt,
+  90-export-vs-archive-after.txt; script verify-export.sh).
+- ../overview-correction-change.diff == `git diff 67c1263 262cad3 -- . ':(exclude).design/reviews'`.
+- ../lifecycle-change.diff == `git diff 262cad3 7ab1afa -- . ':(exclude).design/reviews'`.
+  Both byte-identical (00-...). Raw .design/reviews evidence was read directly.
+- `cargo clean -p kan` first: removed 855 files, 258.9 MiB (01-clean.txt). Every build below is from
+  this export (paths in the logs).
+- Shared target: CARGO_BUILD_JOBS=4, one heavy job at a time. It was not copied or deleted.
+  Reviewer test/release artifacts remain in it; they are inert.
+- Mutated sources were restored to their exact SHA-256 after each batch
+  (20-mutation-targets-before.sha256; re-verified after sets A and B and after the author-control rerun).
+- Temporary probes tests/zz_review_*.rs were removed. Identical copies are in probes/.
+- The author control script created <export>/.local-state. Its output was moved to
+  author-controls-A-rerun/ and the directory removed.
+- No owned processes remain (91-processes-after.txt).
+- Two foreign processes were observed and left untouched; neither touched this export:
+  - a concurrent session in .worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart
+  - an earlier overview_browser_fixture
+- No production archive or key, no kan/day writes, no .lake/Lean/Mathlib, install, deploy or merge.
+- Synthetic fixtures only.
+
+COMMANDS (raw logs in this directory)
+02  Scope A author suites: 74 pass (22 operations, 9 collection, 14 overview + 1 ignored manual browser
+    fixture, 10 incorporated reviewer regressions, 19 surface). Matches the author.
+03  Node: 26/26 Operations; 60/60 across library/operations/theme.
+04  cargo clippy --features v2-crypto --all-targets -- -D warnings: exit 0.
+05  cargo fmt --all -- --check: exit 0.
+06  Scope B author suites: 81 pass (9 lifecycle, 9 follow-ups, 10 attested store, 34 legacy store,
+    19 surface). Matches the author.
+10/11/12  Scope A reviewer probes, debug and release: 10/10 pass.
+    10a preserves a first run whose failures were my own result-line parser bug.
+13  UI probes (abort-honouring fetch): 9 tests. UPb fails on baseline (finding A-F2); the other 8 pass.
+21  Scope A reviewer mutants (probes/mutate.py, set A).
+22  Author's scripts/overview_negative_controls.py rerun: 13/13 DEMONSTRATED; restored Rust/UI pass.
+30  Scope B reviewer probes: 6/6 pass. 30a preserves a run where my "uppercase" case was all digits
+    (probe bug, not a product defect).
+31  Scope B mutants: the author's 5 controls replicated with identical anchors, plus 6 reviewer mutants.
+40  Full CI cargo-test list (29 targets) on this macOS host: 310 passed, 0 failed, 3 ignored.
+    40a is a zsh word-splitting false start.
+Not run: Linux CI, the Python oracle/vector CI steps, MSRV, default-feature Clippy, a real browser,
+fsync/power loss.
+
+==============================================================================================
+SCOPE A - OVERVIEW CORRECTION (262cad3)
+
+Mechanism, read from code (src/evidence_operations/projection.rs:41-79,
+src/evidence_operations_collection/overview.rs:233-292, 401-411):
+- Journal::open_file validates the live source.
+- projection_copy sets the source busy_timeout to 0 and creates a :memory: destination
+  (page_size 4096, max_page_count 8192).
+- It runs sqlite3_backup in 64-page steps, checking cancellation before every step. Busy or Locked
+  steps sleep 1 ms. A 5 s deadline returns SourceBusy.
+- It then revalidates schema/control rows on the copy and swaps the copy in. The live connection is
+  dropped before any row is parsed.
+- snapshot.started_at/finished_at are overwritten with the copy window.
+- Sealed generations are still read in place under a pre-hash and an exact post-read rehash.
+
+Independent verification (probes/zz_review_overview_correction.rs; writers run as SEPARATE PROCESSES):
+
+RA1/RA7 writer exclusion (O1):
+- Setup: 27.2 MB, 6,630-page active generation; a production Journal::record writer process at
+  continuous (~55-60 commits/s, fsync bound), 20 Hz and 5 Hz.
+- Result: ZERO writer errors in every run, debug and release.
+- Max write latency 19-24 ms, about the fsync baseline. No write exceeded 50 ms.
+- Reverting to the pre-fix read path makes the author's regression fail with 6 x "database is locked"
+  (author control rerun).
+- O1 is RESOLVED.
+
+RA2 snapshot consistency:
+- The writer process commits multi-row transactions:
+  - K=5 attempts
+  - one session with a 0-3,900-byte id
+  - a counter update
+  - near-page-size insert+delete churn (freelist pages)
+- Every published overview must equal an exact committed prefix:
+  attempts = base + 5n; dropped = 8 + n(n+1)/2 + n; unclosed = n + 1.
+- 305 (debug) + 3,242 (release) publications ran concurrently with writes. ZERO torn snapshots.
+- Every refusal was a busy class.
+
+RA3a cancellation:
+- 13 (debug) / 9 (release) cancellations landed inside the active copy/parse window.
+- Outcomes were only Ok or Cancelled. Collection directory (names, sizes, SHA-256) unchanged.
+- The next write takes 15-17 ms.
+
+RA3b SIGKILL of a refreshing process, 12 kill points:
+- Source byte-identical, no sidecars, integrity_check ok, writable, and refresh works afterwards.
+
+RA4 busy matrix (real Manager labels):
+- An EXCLUSIVE holder -> "source busy or in use; retry refresh" in 140 ms.
+- A RESERVED holder with uncommitted rows -> completes; uncommitted rows invisible.
+- A crashed writer's hot journal -> "source invalid or unavailable". No file touched. Completes once
+  the writer reopens.
+- A corrupt attempts root page -> "source invalid or unavailable", never busy.
+
+RA5/RA5b memory: SQLite's own allocator, which earlier heap probes did not count.
+  - 6,630-page image: high-water 36.7 MB. Process max RSS 75.7-76.7 MB (baseline 6.7-7.0 MB),
+    against 133,345,985 B accounted.
+  - 8,137-page (33.3 MB, near-max) image: high-water 44.46 MB, inside the 48 MiB = 50.33 MB reserve
+    with a 5.9 MB margin.
+
+RA6 exact post-read sealed rehash: appending one byte, flipping one unused reserve-blob byte, or
+truncating one byte after the row read all refuse publication.
+
+Findings (Scope A)
+A-F1 [MEDIUM, availability, new trade-off] Under a sustained back-to-back writer, refresh is
+     effectively unavailable:
+     - release: RA7 0/3 completed; RA2 20k 0/23; RA1 1/4
+     - two mechanisms:
+       (a) open-time validation starves past its 100 ms busy timeout ("database is locked")
+       (b) every external commit restarts the 64-page backup until the 5 s deadline
+     - Every refusal is honestly labelled busy and retryable, and no wrong data is published. This
+       satisfies "may refuse after five seconds" and AC-4's explicit failed-refresh state.
+     - At 20 Hz: 52/52 succeed (~144 ms, release).
+     - AM1 shows the 64-page stepping is NOT what fixed O1 on this host:
+       - a single-step copy also had 0 writer errors (max 41.7 ms)
+       - it RAISED availability to 4/6
+       - the decisive fix is releasing the live lock before parsing
+     - Follow-up: measure and choose the step/backoff policy, for example a bounded larger step or a
+       longer open-validation wait, and record the hardware assumption. The 64-page claim should not
+       be cited as the O1 proof.
+A-F2 [LOW-MEDIUM, UI, AC-3] The restart-clearing claim has a gap (probe UPb fails on baseline).
+     - web/operations/app.js renderOverview keys repaint on `last_job:manifest_sha256`.
+     - After a service restart, the job counter restarts at 1. If no rotation happened, the manifest
+       is unchanged.
+     - If this tab never sees the intermediate "unavailable" or "building" state (for example a second
+       tab rebuilds within one 5 s poll), then:
+       - the new sample's age/label are shown
+       - but the pre-restart totals, sources and "built" time stay on screen
+     - Narrow, but it relabels an old projection as fresh.
+     - Fix: key on built_at plus source digests, or compare the whole result.
+A-F3 [LOW, regression gaps] These seams survive the entire author suite:
+     - AM1 step size (see A-F1)
+     - AM2 the 5 s SourceBusy deadline: no test reaches it, because author busy tests fail earlier at
+       open
+     - AM3 post-copy schema/control revalidation
+     - AM4 copy-window timestamps
+     - AM6 "classify everything as busy": killed only by reviewer RA4d
+     - UM1 catch-path serial guard: killed only by UPa
+     - UM2 finally-path serial guard: killed only by UPi
+     The author's Node harness fetch ignores AbortSignal, so no preempted-poll abort path is executed.
+     Incorporate RA4d, UPa, UPi and a deadline test with a seam.
+A-F4 [LOW-MEDIUM, capacity, disclosed] The practical ceiling is now about 64.5k distinct attempts in
+     total.
+     - A single active generation that is legal under its own 100k/32 MiB profile reaches
+       "capacity-limited" at about 64.7k attempts. RA1 5 Hz saw 57 such refusals once rows
+       accumulated.
+     - Accounting is about 1.8x conservative against measured RSS.
+     - The docs now state this honestly, so prior O4 is partially resolved. The external-memory or
+       calibrated-accounting follow-up remains.
+A-F5 [LOW] A hot rollback journal (a crashed writer) is labelled "source invalid or unavailable".
+     That is acceptable, but "recovering/unavailable" would avoid implying damage.
+
+Prior findings O1-O7 (.design/reviews/kan-v2-overview-opus/REPORT.txt)
+  O1 RESOLVED (RA1/RA7 cross-process, debug+release; author control reverts to the failure). A-F1 is
+     the residual trade-off.
+  O2 RESOLVED (RA4, RA7, AM5 killed). The busy/invalid split is correct; A-F5 is wording.
+  O3 RESOLVED (author tests; UPa/UPc/UPe/UPi with abort-honouring fetch). The queue is depth-1,
+     last-wins: Build, Cancel, Build sends Build twice (UPd). This is acceptable and consistent with
+     the latest intent.
+  O4 PARTIAL (A-F4). Wording is now honest; the capacity is lower than before.
+  O5 MOSTLY RESOLVED:
+     - cached age, the superseded label (via active_generation; derived, not a server state) and the
+       invalid-reply "Prior sample retained" label work (UPf/UPg)
+     - restart clearing has A-F2
+  O6 RESOLVED for every listed mutant: OM1, OM2, OM3, OM5, OM6, OM11, OM13 and UM2 are now covered
+     by the incorporated tests or author controls. New gaps are in A-F3.
+  O7 RESOLVED. The design and runbook now explicitly split real-browser (completed+lock,
+     light/dark/mobile) from Node coverage and do not claim the AC-5 matrix.
+Parent ACs (.design/kan-v2-collection-overview.md):
+  AC-1 MET  (unchanged; suites pass; no-dedup/no-dominance controls demonstrated again)
+  AC-2 MET  (RA6 strengthens exact rehash; no-sealed-hash/sidecar controls demonstrated)
+  AC-3 OPEN/PARTIAL (age and superseded labels exist; A-F2 can show stale totals beside a fresh label)
+  AC-4 MET on this evidence:
+       - published-memory polling, one build, cancellation (RA3a)
+       - connection cap (author test; remove-connection-bound control demonstrated)
+       - identity/memory limits; explicit busy/capacity failure states
+       A-F1 is an availability caveat, not an AC miss.
+  AC-5 OPEN (real authenticated browser covered completed+lock only; Node is not browser coverage)
+  AC-6 MET on evidence once this review is committed (restart -> unavailable, no persisted surface;
+       runbook limitations committed; baseline/revert/restore assertions reproduced)
+
+==============================================================================================
+SCOPE B - PROFILE-2 OWNER LIFECYCLE (7ab1afa vs 262cad3)
+
+Audited code: attested.rs:218-301, 446-506; evidence_store.rs:167-367, 531-705, 1105-1163;
+kan-v2.rs ProofOptions and the Init/Verify/Backup/Recover arms; surface TSV and conformance count.
+
+What holds (by execution):
+- Create/resume interruption:
+  - Author: 4 observer-aligned phases.
+  - RB4: 24 random-point SIGKILLs during create (15) and during resume itself (9). States reached:
+    - no directory
+    - empty file
+    - empty file + journal
+    - 36,864 B + hot journal
+    - completed
+  - Every state is recovered by explicit owner action (resume, or init when no file exists), yields
+    a verified profile-2 archive, and is refused by legacy Ledger::open/resume.
+  - A different binding never adopts an initialized archive.
+  - Profile 1 is never adopted (RB3: `init --resume` with pins on a legacy archive refuses; the
+    legacy rows are logically unchanged).
+  - The empty-foreign-file ambiguity is documented, not hidden.
+- New archive binding: the archive/scope/issuer pins are explicit and validated before any output.
+  - RB3: 47 command x pin permutations (missing pins, uppercase/short/long hex, malformed and
+    Ed25519 issuers, wrong archive) all refuse and create nothing.
+  - Partial pins are stopped by clap requires_all (exit 2). BM6 shows the second guard is redundant.
+- Proof/payload backup verification:
+  - Archive::backup re-audits the copy: exact schema, payloads, retained requests, proof chain and
+    purposes.
+  - Author control drop-backup-proof-audit is KILLED (author + RB2).
+- Read-only pinned source rebuild:
+  - query_only + BEGIN pin.
+  - Author drop-pinned-read is KILLED.
+  - RB5: a separate process made 30 admissions with 0 errors while 4 pinned rebuilds and 4 backups
+    ran. Each output verified at its own frontier.
+- Source/WAL invariance: main-database and non-empty-WAL bytes are unchanged (author + RB1, including
+  backup-as-source). SHM/empty-WAL coordination is declared, matching the Linux-CI history in
+  f9285c2.
+- Exact preservation (RB1): EVERY row of EVERY table, schema and pragmas are identical across
+  backup, rebuild-from-source and rebuild-from-backup, for:
+  - an H != C retained-verified prefix (H = identity 11, C = identity 7)
+  - an admitted suffix
+  - an orphan payload
+  Derived bindings are rebuilt identically. Rebuilt outputs open and accept a further admission.
+  No replacement attestation can be minted: Recovery has no signer.
+- Refusal of missing/extra/malformed proofs:
+  - the author's 6 mutations
+  - RB2: individually VALID foreign proofs (same key; another branch or another archiveId; at seq 1
+    or at the tip) are refused by verify, open and rebuild.
+- Historical H != C purpose survives byte-for-byte (p5c, RB1).
+- Mutation sites: an independent grep shows proof-table SQL only in persistence.rs helpers. The
+  callers are attested::initialize and the two insert_evidence_proof sites. The conformance count of
+  2 is correct.
+- Legacy behaviour: the full CI list (310) passes, including recovery_cli, migration and restore.
+  Legacy CLI refuses profile 2 (RB3: recover, backup, read-record).
+- The 5 author controls are reproduced with identical anchors: all KILLED by the named tests.
+
+Findings (Scope B)
+B-F1 [LOW-MEDIUM, test gap] BM1, dropping the pre-commit attested audit in rebuild_profile
+     (evidence_store.rs:349-351), survives everything.
+     - A hostile source is then COMMITTED as a profile-2 output and only rejected after publication.
+     - Refusal is still returned and every opener refuses the file, so this is not a BLOCK.
+     - But the design's "validates before commit" is unpinned.
+     - Assert that a refused rebuild leaves no committed profile-2 schema.
+B-F2 [LOW-MEDIUM, test gap] BM3, dropping check_write_profile(true) from Archive::verify_file
+     (attested.rs:297), survives all lifecycle/store suites.
+     - CLI `verify` and backup verification would then accept extra triggers, indexes or tables.
+B-F3 [LOW, claims] BM4 and BM5 survive.
+     - BM4: verify's cryptographic_admission changed to "admitted-verified".
+     - BM5: recover's historical_completeness changed to "complete".
+     - The honest labels are present in code, but tests pin only some of them.
+B-F4 [LOW, legacy UX regression] The legacy `recover` lost "cannot read recovery source <path>: ..."
+     context. RecoveryReader::open(&database)? now propagates a bare error (RB3 stderr; 262cad3
+     kan-v2.rs:890). Behaviour is otherwise unchanged and still refuses before creating output.
+B-F5 [LOW, catalog precision] The evidence-recovery/evidence-backup destination rows still name only
+     the profile-1 validator/owner (opaque-evidence-store, Ledger/RecoveryReader), although those
+     files may now be profile 2, validated by attested::Archive::verify_file.
+B-F6 [INFO] The merged 7ab1afa needs its own Linux CI run. I ran the CI cargo list on macOS only.
+     Process-death tests are abrupt exits, not power loss. Directory fsyncs are untestable here.
+Not implemented and correctly not claimed:
+  - owner-copy upgrade
+  - recovery descriptors / payload-incomplete recovery
+  - degraded inventory, RPC, cursors, UI
+All six parent missing-evidence ACs (.design/kan-v2-evidence-availability.md) remain OPEN. This
+slice supplies prerequisites to AC-3 and AC-5 (exact proof backup/recovery) but closes neither.
+
+==============================================================================================
+SCOPE C - PROFILE-3 COPY-UPGRADE DESIGN (design readiness only; no runtime exists or was judged)
+
+Sound:
+- A separate profile 3 instead of silently widening profile 2.
+- The plan binds:
+  - recipe 1 and source profile 1
+  - exact through/tip
+  - a framed digest over ordered manifest, receipt and retained-request CIDs. Alternate valid
+    snapshots at the same through/tip are distinguished.
+  - single H
+  - target scope and C
+  - target profile 3
+  - a 32-byte nonce
+- archiveId = domain-separated SHA-256(plan bytes). Proofs bind archiveId, so every C-signed proof
+  transitively commits to the plan. No mutable progress flag is needed.
+- Completion is derived: verified prefix length + digest + H before any admission.
+- An incomplete prefix refuses Append.
+- The proof chain is exactly the retained-verified prefix followed only by admitted rows.
+- An empty source needs explicit H.
+- Exact resume never replaces or re-signs.
+- Backup/recovery must carry the plan and refuse a changed plan.
+- The qualification list is strong:
+  - independent plan vectors
+  - field mutations
+  - alternate snapshots
+  - partial-copy admission
+  - concurrent destination changes
+  - every interruption point
+  - source/WAL invariance
+
+Gaps to resolve in the design BEFORE implementation:
+C1 [REQUIRED, resume ambiguity] Plan custody before durability is unspecified.
+   - Planning happens "before creating any destination". The plan is durable only inside the
+     destination.
+   - An interrupted creation (an empty file, exactly as in profile-2 init) therefore has no stored
+     plan. The owner has only the pinned ID.
+   - "Exact resume" then requires either an owner-held plan artifact or atomic schema+identity+plan
+     creation plus a resume input that re-supplies the same plan bytes.
+   - Re-planning mints a new nonce and a new archiveId.
+   - Specify the artifact, its integrity check (it must hash to the pinned ID) and the empty-file
+     resume rule.
+C2 [FOLLOW-UP, equivocation] Re-executing one plan into a second fresh destination, or resuming a
+   backup of an incomplete copy alongside the original, yields two archives with the SAME
+   commitment-derived ID and diverging admitted suffixes.
+   - This is the known restored-writer fork class (design lines 257-262).
+   - The design should name it for profile 3, distinguish create-from-plan from resume, and say that
+     only one destination per plan may ever admit.
+C3 [REQUIRED, backup/recovery coherence] Earlier text says a payload-incomplete recovery copy
+   "remains profile 2" with an authoritative recovery descriptor and append-only resolution records
+   (lines 313-319, 383-389).
+   - The new section says profile 2 has an exact schema with no extra fields.
+   - Decide whether profile 3 also carries descriptor/resolution tables (and how a profile-2 archive
+     records them), before the profile-3 schema and surface catalog are frozen. Otherwise profile 4
+     follows immediately.
+C4 [REQUIRED, trust binding stated] State explicitly that:
+   - archive_identity (archive, scope, issuer) must equal (SHA-256 commitment of the plan,
+     plan.scope, plan.C)
+   - the stored plan's target profile and recipe must match the opener
+   - every opener (writable, verify, backup, rebuild, inventory) recomputes this
+   It is implied today, not stated.
+C5 [FOLLOW-UP, precision]
+   - Define the digest framing with an explicit sequence and count.
+   - Say whether the "plan envelope" is signed. Unsigned appears sufficient because of the ID
+     commitment; the word "envelope" is ambiguous.
+   - Say that per-batch recomputation is digest-only, with signatures verified once per copied row.
+     Re-verifying every request per batch is O(n^2/batch).
+C6 [FOLLOW-UP, scope] State that legacy histories containing non-service or raw-imported commits
+   (no single retained signed request per manifest) cannot be upgraded by recipe 1.
+
+==============================================================================================
+SCOPE NARROWING (Step 4; 14-scope-narrowing-grep.txt)
+All instances are named before or within the recorded design and are separable. I judge them
+legitimate:
+- "fresh re-review remains required"
+- "not implemented" (profile 3)
+- "remain separate required work" (copy upgrade, metadata-only, RPC)
+- "no parent AC closes"
+- "no production migration or cutover approval"
+- the browser/Node coverage split
+None narrows the hard part of the current scopes. The profile-2 lifecycle refuses payload-incomplete
+recovery outright rather than claiming metadata-only recovery. That is consistent with
+"This is full recovery, not degraded inventory".
+
+FORBIDDEN PATTERNS (Step 5; derived from CLAUDE.md)
+- No fold change or subject destruction.
+- No source rewrite: RA3, RB1 and RB5 show source bytes unchanged.
+- No fabricated provenance:
+  - rebuild has no signer
+  - proofs are byte-copied
+  - totals refuse rather than invent
+- No persisted projection: the overview tree is unchanged.
+- The persistence/surface change updates TSV, typed helper and conformance together (B-F5 is
+  wording).
+- The v2 operator UI is explicitly authorised.
+- Tension with performance-at-scale: A-F1 and A-F4 trade throughput and capacity for exactness; both
+  are disclosed.
+
+LIMITS
+- Bounded mutation samples; no fuzzing.
+- Contention measured on one Apple-silicon host with warm caches. Slower storage could make the
+  64-page steps matter and worsen A-F1.
+- Real-browser behaviour was not driven by me.
+- Power loss is untested.

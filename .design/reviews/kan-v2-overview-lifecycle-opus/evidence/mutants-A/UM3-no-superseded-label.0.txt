@@ -1,0 +1,53 @@
+node --test tests/operations_ui.test.cjs
+✔ auth is header-only; gap filtering and untrusted values use text (14.568ms)
+✔ late authenticated response cannot unlock a locked view (0.6595ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.687667ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.625583ms)
+✔ fresh active sessions are current while historical losses remain visible (0.543041ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.609125ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.557042ms)
+✔ unsampled sessions and summary loss units are explicit (0.469542ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.733958ms)
+✔ unsupported status version retains visibly disconnected values (0.7615ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.633625ms)
+✔ locking clears rendered private metadata and closes the inspector (0.443583ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.580583ms)
+✔ future persistence timestamps stay unknown (0.458042ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.6065ms)
+✔ unchanged notices are not announced again on every poll (0.499ms)
+✔ overview refresh is explicit authenticated POST with exact large counters (0.686958ms)
+✔ lock clears overview and prevents a late result from repainting (0.830208ms)
+✔ failed or limited refresh labels the prior sample explicitly (0.619209ms)
+✔ overview rejects malformed source lists and unsafe numeric counters before rendering (1.452667ms)
+✔ build preempts an in-flight overview poll and ignores its stale reply (0.485208ms)
+✔ cancel preempts a poll while preserving server action order (0.48375ms)
+✔ a second action is queued behind an unfinished action, then dispatched (0.43975ms)
+✖ cached overview shows its age and becomes visibly superseded after rotation (0.965125ms)
+✔ invalid overview replies label retained totals and restart clears them (0.768458ms)
+✔ late overview transport errors cannot repaint after lock (0.418625ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 25
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 63.016875
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:40:1
+✖ cached overview shows its age and becomes visibly superseded after rotation (0.965125ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Superseded by active generation d+/. Input:
+  
+  'Overview completed · Cached sample · 29873412m old'
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/tests/operations_ui.test.cjs:40:519)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'Overview completed · Cached sample · 29873412m old',
+    expected: /Superseded by active generation d+/,
+    operator: 'match'
+  }

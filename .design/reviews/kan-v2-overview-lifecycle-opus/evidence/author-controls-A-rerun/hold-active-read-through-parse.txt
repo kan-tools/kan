@@ -1,0 +1,34 @@
+
+running 1 test
+test active_snapshot_parsing_does_not_exclude_health_writes ... FAILED
+
+failures:
+
+---- active_snapshot_parsing_does_not_exclude_health_writes stdout ----
+
+thread 'active_snapshot_parsing_does_not_exclude_health_writes' (9571602) panicked at tests/evidence_operations_overview.rs:207:5:
+overview row scan excluded the health writer: ["database is locked", "database is locked", "database is locked", "database is locked", "database is locked", "database is locked"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    active_snapshot_parsing_does_not_exclude_health_writes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 3.13s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+warning: method `projection_copy` is never used
+  --> src/evidence_operations/projection.rs:41:19
+   |
+37 | impl Journal {
+   | ------------ method in this implementation
+...
+41 |     pub(crate) fn projection_copy(
+   |                   ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 6.83s
+     Running tests/evidence_operations_overview.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_operations_overview-60b870fdbabb93d8)
+error: test failed, to rerun pass `--test evidence_operations_overview`

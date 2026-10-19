@@ -1,0 +1,34 @@
+1323a1324
+> 64a00fe76d22f33b199d9191acbf21436190472eafb7b5680a12368777e1c19b  ./north-star.json
+EXPORT DIFFERS
+north-star.json is the only non-archive file (untracked, supplied)
+error: pathspec 'north-star.json' did not match any file(s) known to git
+Did you forget to 'git add'?
+head: Error reading .local-state/reviews/
+grep: .local-state/reviews/: Is a directory
+       0
+fatal: bad revision '67c1263 262cad3 overview-correction-change.diff'
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  -
+shasum: .local-state/reviews/: Is a directory
+head: Error reading .local-state/reviews/
+grep: .local-state/reviews/: Is a directory
+       0
+fatal: bad revision '262cad3 7ab1afa lifecycle-change.diff'
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  -
+shasum: .local-state/reviews/: Is a directory
+== overview-correction-change.diff
+diff --git a/.design/kan-v2-collection-overview.md b/.design/kan-v2-collection-overview.md
+index c80119a..2244d71 100644
+files=14
+8249d724f60f88d403f05daa4a772d989edf75efce6d2cf21bfee48efbb0623c  -
+8249d724f60f88d403f05daa4a772d989edf75efce6d2cf21bfee48efbb0623c  -
+8249d724f60f88d403f05daa4a772d989edf75efce6d2cf21bfee48efbb0623c  -
+8249d724f60f88d403f05daa4a772d989edf75efce6d2cf21bfee48efbb0623c  -
+== lifecycle-change.diff
+diff --git a/.design/kan-v2-collection-overview.md b/.design/kan-v2-collection-overview.md
+index 2244d71..2cc2309 100644
+files=15
+eede82149d0a7ec9939fabda23441fcf9985825e9b983eb8f613f8dbe9592694  -
+eede82149d0a7ec9939fabda23441fcf9985825e9b983eb8f613f8dbe9592694  -
+eede82149d0a7ec9939fabda23441fcf9985825e9b983eb8f613f8dbe9592694  -
+eede82149d0a7ec9939fabda23441fcf9985825e9b983eb8f613f8dbe9592694  -

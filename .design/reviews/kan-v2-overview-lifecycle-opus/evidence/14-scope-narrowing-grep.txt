@@ -1,0 +1,19 @@
+=== overview-correction-change.diff
+24:65:+The reviewer returned APPROVE WITH FOLLOW-UPS for the overview, with O1 a required code correction; the checkpoint is not merge-qualified. The separate a1007a6 storage correction round received APPROVE. Raw reports are retained unchanged under `.design/
+30:71:+Snapshot timestamps name the copy window, not the later parse. Copied schema and
+32:73:+and stale replies cannot overwrite newer action state. The corrected checkpoint passes74 Rust checks,26 Operations Node checks,strict Clippy and13 semantic mutants; fresh re-review remains required.
+34:75:+The follow-up distinguishes file-lock and SQLite contention from invalid history.
+51:108:+   and real completed/lock light/dark/mobile browser inspection. The initial Opus verdict was APPROVE WITH FOLLOW-UPS; correction qualification is recorded below;
+61:125:+unique health rows, historical worker separation and UI request races. Author qualification now passes 74 Rust checks,26 Operations Node checks,strict all-target v2 Clippy and13 semantic mutants with restored assertions. Evidence is in `.design/reviews
+62:126:+The final cold review returned APPROVE WITH FOLLOW-UPS for the overview, with O1 a required code correction, and APPROVE for the storage corrections. The raw report and independent probes are preserved unchanged in `.design/reviews/kan-v2-overview-opus
+794:1167:+/// PO6: whole-row selection, not component maxima: a later row that raises one
+=== lifecycle-change.diff
+2:10:+and stale replies cannot overwrite newer action state. The corrected checkpoint passes 74 Rust checks, 26 Operations Node checks, strict Clippy and 13 semantic mutants; fresh re-review remains required.
+32:50:+resolution records and RPC remain separate required work; no parent AC closes
+42:60:+## Next copy-upgrade schema decision (not implemented)
+110:143:+unique health rows, historical worker separation and UI request races. Author qualification now passes 74 Rust checks, 26 Operations Node checks, strict all-target v2 Clippy and 13 semantic mutants with restored assertions. Evidence is in `.design/rev
+135:187:+separate work. These paths have no production migration or cutover approval.
+138:196:+WITH FOLLOW-UPS with a required contention fix; fresh review of this correction
+139:197:+remains required before merge qualification.
+160:223:+        ('drop-pinned-read',STORE,store.replace('PRAGMA query_only=ON; BEGIN;','PRAGMA query_only=ON;'),'recovery_pins_source_before_later_admission'),
+685:966:+fn recovery_pins_source_before_later_admission() {

@@ -1,0 +1,82 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+    Finished `test` profile [unoptimized] target(s) in 0.43s
+     Running tests/zz_review_proof_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_proof_lifecycle-38f45f8bd3aa4b2c)
+
+running 6 tests
+test rb1_exact_authoritative_rows_survive_backup_and_rebuild_with_h_ne_c ... RB1 proofs=4 source tables=["archive_identity", "attestations", "bindings", "commits", "objects", "~pragmas", "~schema"]
+ok
+test rb2_valid_foreign_proof_substitution_is_refused_everywhere ... RB2 branch-seq1: verify=Some(Corrupt("invalid attestation chain")) open=Some("corrupt evidence: invalid attestation chain") rebuild=Some(Corrupt("invalid attestation chain"))
+RB2 branch-tip: verify=Some(Corrupt("invalid attestation chain")) open=Some("corrupt evidence: invalid attestation chain") rebuild=Some(Corrupt("invalid attestation chain"))
+RB2 archive-seq1: verify=Some(Corrupt("invalid attestation chain")) open=Some("corrupt evidence: invalid attestation chain") rebuild=Some(Corrupt("invalid attestation chain"))
+RB2 archive-tip: verify=Some(Corrupt("invalid attestation chain")) open=Some("corrupt evidence: invalid attestation chain") rebuild=Some(Corrupt("invalid attestation chain"))
+ok
+test rb3_cli_pin_permutations_and_profile_mismatch_create_nothing ... RB3 init/archive-only: exit=Some(2) created=false
+RB3 backup/archive-only: exit=Some(2) created=false
+RB3 recover/archive-only: exit=Some(2) created=false
+RB3 verify/archive-only: exit=Some(2) created=false
+RB3 init/scope-only: exit=Some(2) created=false
+RB3 backup/scope-only: exit=Some(2) created=false
+RB3 recover/scope-only: exit=Some(2) created=false
+RB3 verify/scope-only: exit=Some(2) created=false
+RB3 init/issuer-only: exit=Some(2) created=false
+RB3 backup/issuer-only: exit=Some(2) created=false
+RB3 recover/issuer-only: exit=Some(2) created=false
+RB3 verify/issuer-only: exit=Some(2) created=false
+RB3 init/no-issuer: exit=Some(2) created=false
+RB3 backup/no-issuer: exit=Some(2) created=false
+RB3 recover/no-issuer: exit=Some(2) created=false
+RB3 verify/no-issuer: exit=Some(2) created=false
+RB3 init/no-scope: exit=Some(2) created=false
+RB3 backup/no-scope: exit=Some(2) created=false
+RB3 recover/no-scope: exit=Some(2) created=false
+RB3 verify/no-scope: exit=Some(2) created=false
+RB3 init/no-archive: exit=Some(2) created=false
+RB3 backup/no-archive: exit=Some(2) created=false
+RB3 recover/no-archive: exit=Some(2) created=false
+RB3 verify/no-archive: exit=Some(2) created=false
+RB3 init/upper-hex: exit=Some(1) created=false
+RB3 backup/upper-hex: exit=Some(1) created=false
+RB3 recover/upper-hex: exit=Some(1) created=false
+RB3 verify/upper-hex: exit=Some(1) created=false
+RB3 init/short-hex: exit=Some(1) created=false
+RB3 backup/short-hex: exit=Some(1) created=false
+RB3 recover/short-hex: exit=Some(1) created=false
+RB3 verify/short-hex: exit=Some(1) created=false
+RB3 init/long-hex: exit=Some(1) created=false
+RB3 backup/long-hex: exit=Some(1) created=false
+RB3 recover/long-hex: exit=Some(1) created=false
+RB3 verify/long-hex: exit=Some(1) created=false
+RB3 init/bad-issuer: exit=Some(1) created=false
+RB3 backup/bad-issuer: exit=Some(1) created=false
+RB3 recover/bad-issuer: exit=Some(1) created=false
+RB3 verify/bad-issuer: exit=Some(1) created=false
+RB3 init/ed25519-issuer: exit=Some(1) created=false
+RB3 backup/ed25519-issuer: exit=Some(1) created=false
+RB3 recover/ed25519-issuer: exit=Some(1) created=false
+RB3 verify/ed25519-issuer: exit=Some(1) created=false
+RB3 backup/wrong-archive: exit=Some(1) created=false
+RB3 recover/wrong-archive: exit=Some(1) created=false
+RB3 verify/wrong-archive: exit=Some(1) created=false
+RB3 recover-legacy-with-pins: exit=Some(1) created=false stderr=error: invalid input: unknown database profile
+RB3 backup-legacy-with-pins: exit=Some(1) created=false stderr=error: invalid input: unknown database profile
+RB3 recover-p2-without-pins: exit=Some(1) created=false stderr=error: invalid input: unknown database profile
+RB3 backup-p2-without-pins: exit=Some(1) created=false stderr=error: invalid input: unknown database profile
+RB3 readrecord-p2: exit=Some(1) created=false stderr=error: cannot read sequence 1 from /var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpDisBh9/p2/archive.sqlite: invalid input: unknown database profile
+RB3 init-resume-legacy-with-pins: exit=Some(1) stderr=error: cannot initialize /var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpDisBh9/legacy: invalid input: resume requires an empty unversioned database or a recognized archive
+ok
+test rb4_random_sigkill_during_create_and_resume ... RB4 x6: create finished=false | dir=false file=false len=0 journal=false wal=false | no-file -> create ok
+RB4 x3: create finished=false | dir=true file=true len=0 journal=false wal=false | resume ok
+RB4 x2: create finished=false | dir=true file=true len=0 journal=true wal=false | resume ok
+RB4 x2: create finished=false | dir=true file=true len=36864 journal=true wal=false | resume ok
+RB4 x2: create finished=true | dir=true file=true len=36864 journal=false wal=false | resume ok
+RB4 x5: resume finished=false | dir=true file=true len=0 journal=false wal=false | resume ok
+RB4 x2: resume finished=false | dir=true file=true len=0 journal=true wal=false | resume ok
+RB4 x1: resume finished=false | dir=true file=true len=36864 journal=false wal=false | resume ok
+RB4 x1: resume finished=false | dir=true file=true len=36864 journal=true wal=false | resume ok
+ok
+test rb5_cross_process_admission_during_rebuild_and_backup ... RB5 writer={"err":0,"first":[],"ok":30} outputs=["rebuild through=21 backup=Ok(25)", "rebuild through=26 backup=Ok(29)", "rebuild through=30 backup=Ok(34)", "rebuild through=35 backup=Ok(38)"]
+ok
+test zz_review_lifecycle_child ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.72s
+
