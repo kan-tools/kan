@@ -8,7 +8,7 @@ This serves `telos/raw-data-and-projections`: evidence loss is represented, neve
 hidden by a projection or repaired by inventing historical provenance.
 
 ## Requirements
-- REQ-1: Retain an independently verifiable issuer attestation binding the exact manifest, receipt, scope, local sequence and preceding admitted manifest and attestation-statement frontier. A missing payload must not turn unsigned raw-ledger metadata into authenticated service admission.
+- REQ-1: Retain an independently verifiable issuer attestation binding the exact manifest, receipt, archive identifier, scope, local sequence and preceding admitted manifest and attestation-statement frontier. A missing payload must not turn unsigned raw-ledger metadata into authenticated service admission.
 - REQ-2: New admission commits metadata and its attestation atomically under the existing audited-frontier transaction fence. Exact retries preserve the original receipt/attestation. No success acknowledges an uncommitted attestation; crash recovery cannot expose half-admitted records.
 - REQ-3: Authorized inventory returns each metadata-verified occurrence with explicit available, missing or corrupt payload state. Metadata/signature/partition/frontier corruption remains a whole-request integrity error. Unknown or denied principals see the same access-limited shape before metadata disclosure.
 - REQ-4: Startup and pinned reads can verify a complete metadata chain despite absent payloads. Source access always rechecks authorization, selected-snapshot membership, current object hash, retained writer signature and scope decryption; an available marker is a sampled observation, never an offline read grant.
@@ -78,7 +78,7 @@ speaker attribution remain separate from either signature.
 ### Proposed protocol values
 
 The new statement is canonical DAG-CBOR `{v: 1, kind: "service-attestation",
-body}`. The closed body fields are `issuer` (existing static Author), `scopeToken`
+body}`. The closed body fields are `issuer` (existing static Author), `archiveId` (32 bytes), `scopeToken`
 (32 bytes), `sequence` (positive safe integer), `manifest` and `receipt`
 (record CIDs), `previousSequence` (safe integer), `previousManifest` and `previousAttestation` (both null only
 at the empty predecessor, otherwise record CIDs; the latter is the preceding
@@ -97,8 +97,8 @@ existing Receipt signing preimage. Independent codec fixtures must pin exact
 bytes/preimages/CIDs and reject noncanonical/duplicate/unknown fields.
 
 Use new signed `InventorySnapshot` and `InventoryPage` commands and corresponding
-outputs for the proof-bearing profile. `InventorySnapshot` commits to `(through, tip, attestation)` where tip is the
-manifest CID and attestation is the statement CID; genesis is `(0, null, null)`.
+outputs for the proof-bearing profile. `InventorySnapshot` commits to `(archiveId, through, tip, attestation)` where tip is the
+manifest CID and attestation is the statement CID; genesis is `(archiveId, 0, null, null)`.
 This anchors exact receipt/purpose/time as well as the manifest. The statement
 CID is stable across alternate valid ECDSA signatures; exact retry still returns
 the stored signature bytes. `InventorySnapshot` commits to that metadata
@@ -112,7 +112,7 @@ visible. A schema-1 service cannot advertise payload-independent browsing.
 
 The copy upgrade is a separate CLI operation with a pinned source plan and an
 explicit destination and signer. Its plan must name source through/tip, source
-profile, issuer, scope, destination profile 2 and recipe version 1. Execution
+profile, historical receipt issuer, current service issuer, scope, fresh destination archiveId, destination profile 2 and recipe version 1. Execution
 requires that exact plan, preserves a durable resumable mapping using the same
 new authoritative proof table, and refuses differing resume inputs. CLI naming
 can follow the existing archive/import command grouping; the complete plan fields
@@ -191,15 +191,14 @@ one SQLite transaction boundary.
 - The full frontend roadmap remains required. This change cannot reconstruct missing bytes or certify conversation completeness.
 
 ## Open Questions
-No new deployment/key-placement preference is selected here. The concrete
-protocol values above are proposals to be reviewed together with the RFC update,
-not existing wire compatibility. Before implementation, the protocol pass must
-supply independent exact-byte fixtures and downgrade refusal. This document is
-a build contract under development, not an implemented format or satisfied
-acceptance criterion. The proposal now has two exact independent Python/OpenSSL
-fixtures and twenty negative checks in `.design/fixtures/service-attestation-v1.json`
-and `.design/tools/attestation_vectors.py`. These supply a future Rust oracle,
-not cross-implementation conformance, atomic admission or payload availability. No unresolved owner preference blocks that technical pass.
+Production credential placement and live cutover remain owner-controlled deployment
+choices. The build uses synthetic identities only. The protocol fixes one current
+service issuer per destination archive: the copy job runs on that service host
+using its configured signer, so the design requires no private-key export to a
+remote CLI. Historical receipt issuers remain unchanged. The first Opus design
+review blocked the original proposal; its report and probes are retained under
+`.design/reviews/kan-v2-evidence-protocol-opus/`. The correction below requires a
+fresh review before storage integration. No runtime acceptance criterion is closed.
 
 ## Out of Scope
 Inference-provider changes, automatic deletion/retention, owner erasure execution,
@@ -227,6 +226,104 @@ low-S P-256 signature encoding and downgrade refusal. Independent fixtures use
 public test private scalar 1 and synthetic existing RFC 4 metadata; no actual
 service admission or production identity is involved. Run the checker with the
 existing crypto-oracle Python environment (cryptography 46.0.3); `--check` does
-not rewrite fixtures and `--write` is explicit regeneration. Rust parity, a
-fresh protocol review and the complete storage/service/reader implementation
+not rewrite fixtures and `--write` is explicit regeneration. The initial Opus review returned BLOCK; the correction retains that report and
+adds archive/issuer/page-linkage rules plus labelled negative vectors. Rust parity,
+a fresh correction review and the complete storage/service/reader implementation
 remain required before this design's acceptance criteria can be checked off.
+
+## Protocol correction after independent review
+
+### Issuer and archive binding
+
+Each new profile-2 archive has a random immutable 32-byte archiveId in authoritative
+profile metadata and every proof. Fresh owner-copy destinations get new IDs;
+resumption and byte-preserving backups keep the original ID. One archive holds
+one scope and one configured current service issuer. All statements in its chain
+use that issuer, including upgrade proofs. The owner-copy job executes on the
+service host with the service's configured signer; a remote browser/CLI never
+receives the private key. This defines the software boundary, not a choice of
+production credential provider or path.
+
+For admitted, receipt.issuer equals statement.issuer equals the configured issuer.
+For retained-verified, the original receipt and its issuer are retained exactly;
+the current configured issuer attests that the explicit upgrade verified the
+original signed request, partition and pinned legacy issuer. That historical
+issuer can differ. Inventory checks the exact canonical receipt CID and all
+receipt-to-manifest bindings in both cases. It does not reinterpret an unsigned
+historical receipt as a signature by the historical issuer. The UI names both
+identities and present verification purpose/time. A legacy source with mixed
+receipt issuers or scopes refuses this first partition-only upgrade profile.
+
+A backup restored to a second writer can still fork under the same archiveId and
+key. Archive IDs distinguish independently created archives; they do not prevent
+issuer equivocation. A signed snapshot selects an exact branch by its tip statement
+CID. No signature detects equivocation across independent readers. This first
+reader has no persistent monotonic pin and makes no rollback/freshness guarantee
+across refresh or restart. The owner must prevent simultaneous restored writers.
+
+### Descending pages and verified cursors
+
+Proof inventory reads newest to oldest. A page is anchored at an expected frontier
+(archiveId, sequence, manifest CID, statement CID). The first row must match that
+exact frontier, verify its issuer/scope/archive/record bindings and signature,
+and supply the preceding frontier; every next row matches the previous row's
+committed predecessor. Genesis terminates at sequence zero with two null CIDs.
+An empty page before genesis, skipped row, inconsistent complete flag, foreign
+archive, or same-height fork is an integrity error. At most forty rows are checked
+per page. First-page work is bounded independently of archive length.
+
+For subsequent pages the authorized reader issues an opaque, domain-separated
+cursor only after verifying the preceding page. It binds the original signed
+snapshot digest, scope, reader-instance nonce and exact next frontier. Authenticate
+it with an ephemeral per-reader MAC key; never accept unsigned client frontier
+coordinates. The key/nonce live only in process memory; restart invalidates cursors
+and the UI restarts at the latest page. This is a disposable verification shortcut,
+not evidence or an access grant. Every page and source request still authenticates
+to the configured service and rechecks current grants. Cursor bytes grant neither
+plaintext nor scope authority. No persistent pin/cache or automatic history scan
+is added. Bound cursor size, envelope decoding, page bytes and MAC verification.
+
+A source/export selection carries a separate reader-authenticated occurrence token
+binding original pin, archive, scope, sequence, exact manifest/receipt/statement
+CIDs and reader instance. Mint it only for a verified inventory row. The reader
+checks the token, contacts the service under current authorization, matches the
+exact retained row and verifies hash, signed writer request and decryption. It
+never rescans an unbounded prefix or treats an available badge as authorization.
+Legacy snapshot/page/source behavior remains unchanged.
+
+### Admission, degraded serving and recovery
+
+A proof-profile Append reply carries exact stored proof bytes and a profile tag.
+The proof-aware spool release verifies the signed reply, manifest/receipt binding,
+configured issuer/scope/archive and proof signature. It does not infer contiguous
+inventory from one admission reply. Exact retries return the original proof;
+retained-verified is acceptable for an exact operation copied from legacy only
+when the verified manifest matches the pending request. Legacy clients never
+silently select this mode. Profile-2 raw Ledger commit APIs are unavailable;
+only the authenticated service admission transaction may issue admitted proofs.
+
+Degraded inventory is an explicit owner-selected server mode with a separate
+read-only metadata reader. It authenticates requests and checks grants before
+reporting integrity or availability. It serves InventorySnapshot/Page and bounded
+source reads, refuses Append, and never invokes strict writable open as a fallback.
+An archive that cannot open even for metadata cannot serve inventory; its errors
+must not leak archive contents to unknown principals.
+
+The first owner-copy upgrade accepts only a complete pinned legacy snapshot.
+Prefix-only salvage is not supported and must not be described as full migration.
+A payload-incomplete recovery copy remains profile 2 with exact proofs and missing
+references. Its authoritative, copy-local recovery descriptor binds archiveId,
+source pin and observed unavailable references; declare this surface with the
+implementation. It cannot pass full restore or strict writable open until an
+explicit owner recovery verifies all payloads. Backup/rebuild preserve both proof
+bytes and recovery descriptors; old profile-1 readers refuse user_version 2.
+
+### Revised conformance gate
+
+Persist positive and re-signed negative vectors with exact expected failure
+labels. Verify configured archive and scope, predecessor commitments, canonical
+issuer algorithm/spelling, receipt bindings and purpose-dependent issuer rules.
+Test semantically valid alternate statements with changed purpose/time/receipt
+against a pinned successor. Keep envelope and nested-statement framing failures
+separate from signature failures. Assertion-removal mutation tests must fail the
+specific fixture check, not compilation or an unrelated signature check.

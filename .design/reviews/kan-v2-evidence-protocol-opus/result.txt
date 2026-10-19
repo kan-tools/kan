@@ -1,0 +1,51 @@
+## Verdict: **BLOCK** (on design readiness only; nothing has been built)
+
+The design is heading the right way for `telos/raw-data-and-projections`:
+- Missing or corrupt payloads are shown as a state checked at read time, never stored.
+- The strict checks on the writable store stay as they are.
+- The upgrade is a non-destructive copy, and its proofs are dated at upgrade time, not backdated.
+- Atomic proof insertion fits cleanly into the existing transaction check in `src/evidence_store.rs:763-803`.
+
+But three protocol problems should be settled before any bytes or tables are frozen. No requirement or acceptance criterion is met yet.
+
+### Blockers
+1. **The fixtures don't test the chain bindings the design relies on.** I deleted the checks in `verify()` one at a time and reran `--check`. It still passes with 10 of 13 removed, including the chain-link checks (`attestation_vectors.py:118`), sequence numbering, the genesis rule, the purpose and closed-field checks, and the scope checks. Only the low-S, pinned-issuer and extra-envelope-field checks are actually caught.
+   - All 20 "negative checks" change signed content without re-signing, so the signature check rejects them before the named check runs.
+   - The fixture JSON contains no negative cases at all, so a Rust implementation has nothing to test against.
+   - The oracle's logic itself is fine: when I re-signed the forged chains with the pinned key, it rejected all of them.
+2. **Who signs upgraded chains is contradictory.** RFC 4 lines 129-131 allow the upgrade signer to differ from the original receipt issuer. But both the oracle and the existing reader (`ScopeAccess.issuer`, `decode_record`) trust exactly one issuer per scope, and a probe confirms a chain can't switch issuers. Fixing this means either putting the live service key in the offline upgrade CLI, or supporting two issuers in the reader and protocol. That's a key-custody choice, which the design (line 194) says hasn't been made. Separately, nothing in the spec or fixtures yet requires that:
+   - an `admitted` proof's receipt was issued by the same key, or
+   - the referenced receipt actually belongs to the proof's manifest.
+
+   Probes P3 and P4 show the oracle accepts both.
+3. **Verifying a page against a pinned snapshot is unspecified, and nothing identifies the archive copy.** Each proof links back to the one before it. So to check that a page in the middle belongs to the pinned snapshot, a reader needs every later proof up to the pin, or the whole chain. As written, that's one signature check per record, every time a reader pins a snapshot.
+   - Checking each row's signature alone isn't enough, because the same issuer can legitimately produce two valid proofs for the same position. That happens after restoring a backup and resuming, or after running the upgrade twice into different destinations.
+   - RFC 4 line 26 already requires a frontier bound to an archive instance, but the proof has no such field. Adding one would change the bytes the fixtures now pin.
+
+### Follow-ups
+- **Key type:** reusing `sign::verify` doesn't restrict keys to P-256 (atrium-crypto also accepts secp256k1).
+- **Proof in replies:** it isn't decided whether the append reply carries the proof, or whether clients need it before clearing their spool.
+- **Degraded mode:** how damaged archives enter read-only mode, and which process serves inventory then, is open.
+- **Recovery:** metadata-only recovery output needs a durable "payload-incomplete" marker.
+- **Old readers:** the new profile must bump the SQLite version, or old recovery code will read it and silently drop the proofs.
+- **Legacy archives:** an archive with any missing payload can never be upgraded. That's honest, but it means the archives that motivated this get no benefit, and the owner should know.
+- **Raw commits:** writing a commit without a proof should be impossible in the new profile, and the chain should be single-scope only.
+
+### Commands run
+- `/Users/m/code/kan-tools/kan/.worktrees/kan-v2-encryption/.local-state/crypto-oracle-env/bin/python .design/tools/attestation_vectors.py --check` → exit 0, 2 vectors and 20 negatives pass
+- `<same python> -I review-evidence/probe_attestation.py "$PWD"` → all 15 probes behaved as predicted (P2-P4 deliberately show what the oracle accepts)
+- `<same python> -I review-evidence/mutate_oracle.py "$PWD"` → 10 of 13 deleted checks go unnoticed
+
+### What I didn't do
+- No Rust build or tests, no kan/day reads or writes, and nothing recorded to kan/day. For the north star I used the supplied `north-star.json`; the 2 withheld claims stay withheld and I invented no witnesses.
+- No network, real archives or keys, and no source or fixture changes. The worktree's git status is clean.
+
+The full report has the requirement table, 12 required implementation tests (T1-T12), 5 unresolved decisions (U1-U5) and line citations. Files are in `.local-state/reviews/protocol/review-evidence/`:
+- REPORT.txt
+- probe_attestation.py
+- probe_attestation.log
+- mutate_oracle.py
+- mutate_oracle.log
+- oracle-check.log
+
+Once blockers 1-3 are settled and the fixtures regenerated, this gate needs a fresh review.
