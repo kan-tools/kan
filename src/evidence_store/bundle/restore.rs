@@ -189,6 +189,7 @@ pub fn restore_observed(
                     .map(|_| ())
                     .map_err(Error::Replay)
             })?;
+            observe(RestorationBoundary::CandidateVerified);
             work.check()?;
             let body = Ipld::Map(
                 [

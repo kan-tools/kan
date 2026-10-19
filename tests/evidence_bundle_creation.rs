@@ -751,6 +751,16 @@ fn restoration_appends_atomic_candidate_and_history_and_retries_original_identit
     assert_eq!(second.inspection.replay().restored(), 2);
     let retry =
         bundle::restore(restoration(&dst, &initial, &observer, &id0, &f.requests[0])).unwrap();
+    let mut unknown_checkpoint = initial.clone();
+    unknown_checkpoint.statement = first.observation.statement_cid().clone();
+    assert!(bundle::restore(restoration(
+        &dst,
+        &unknown_checkpoint,
+        &observer,
+        &id0,
+        &f.requests[0]
+    ))
+    .is_err());
     assert!(retry.duplicate);
     assert_eq!(retry.observation.bytes(), first.observation.bytes());
     assert_eq!(
