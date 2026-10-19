@@ -1,0 +1,14 @@
+A-complete-without-source-digest [kill] -> KILLED: evidence_copy_destination:KILLED by ['test empty_record_history_is_incomplete_until_all_staged_objects_are_copied ... FAILED']
+A-skip-preflight-completeness [kill] -> KILLED: evidence_copy_destination:KILLED by ['test bounded_copy_preserves_original_bytes_and_acknowledged_proofs_before_new_admission ... FAILED']
+A-skip-writer-membership-check [kill] -> KILLED: evidence_copy_destination:KILLED by ['test admission_rechecks_original_membership_after_staging_under_writer_transaction ... FAILED']
+A-ignore-external-archive [kill] -> KILLED: evidence_copy_destination:KILLED by ['test owner_recipe_signer_and_profile_are_required_before_mutation ... FAILED']
+A-ignore-historical-issuer [kill] -> KILLED: evidence_copy_destination:KILLED by ['test profile3_rejects_mixed_historical_issuers_with_a_specific_reason ... FAILED']
+A-ignore-retained-position [kill] -> KILLED: evidence_copy_destination:KILLED by ['test profile3_rejects_retained_after_admission_and_admission_inside_original_prefix ... FAILED']
+A-oracle-omits-independent-sort [kill] -> KILLED: evidence_copy_source:KILLED by ['test source_fingerprint_matches_an_independent_python_byte_oracle ... FAILED']
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/destination/review-evidence/scripts/mutate.py", line 84, in <module>
+    lines.append(run(*case))
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/destination/review-evidence/scripts/mutate.py", line 51, in run
+    assert before.count(old) == 1, f"{name}: pattern count {before.count(old)}"
+AssertionError: A-wrong-inventory-capability: pattern count 3
+exit=1

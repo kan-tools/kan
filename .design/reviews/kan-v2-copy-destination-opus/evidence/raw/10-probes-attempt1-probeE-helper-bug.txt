@@ -1,0 +1,112 @@
+$ cargo test --features v2-crypto --test zz_review_destination -- --nocapture --test-threads=1
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/destination)
+    Finished `test` profile [unoptimized] target(s) in 0.48s
+     Running tests/zz_review_destination.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_destination-3c56c092dc48cd74)
+
+running 10 tests
+test probe_a_plan_artifact_at_source_sidecar_name ... PROBE A0 copy-plan PLAN=<source>-journal (existed_before=false): exit=Some(0) stdout={"archive":"180771a502f1bf404ac0299a0e4bdf04d1977d36a4da2da1dc9a6ec383ed3355","plan":"/var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpKXXEMw/source/archive.sqlite-journal","profile":3,"promoted":false,"source_through":2} stderr=
+PROBE A0 plan exists after copy-plan: true ; source main unchanged: true
+PROBE A0 copy-batch with that plan: exit=Some(1) stdout= stderr=error: attempt to write a readonly database
+PROBE A0 plan bytes intact after copy-batch: Some(true)
+PROBE A0 legacy Ledger::open(source) -> Ok(())
+PROBE A0 plan bytes intact after legacy source open: None
+PROBE A0 source main unchanged after all: true
+PROBE A0 re-plan of source after -> Ok(true) (pin was 180771a502f1bf404ac0299a0e4bdf04d1977d36a4da2da1dc9a6ec383ed3355)
+PROBE A1 copy-plan PLAN=<source>-wal (existed_before=true): exit=Some(1) stdout= stderr=error: File exists (os error 17)
+PROBE A1 plan exists after copy-plan: true ; source main unchanged: true
+PROBE A2 copy-plan PLAN=<source>-shm (existed_before=true): exit=Some(1) stdout= stderr=error: File exists (os error 17)
+PROBE A2 plan exists after copy-plan: true ; source main unchanged: true
+ok
+test probe_b_destination_is_source_directory ... PROBE B wal present before: Some(0) bytes
+PROBE B copy-batch DEST=<source dir> []: exit=Some(1) stdout= stderr=error: invalid input: destination SQLite sidecar already exists
+PROBE B copy-batch DEST=<source dir> ["--resume"]: exit=Some(1) stdout= stderr=error: invalid input: resume requires an empty unversioned database or a recognized archive
+PROBE B source still confirms against the plan after both refusals
+ok
+test probe_c_profile3_unsupported_schema ... PROBE C0 [CREATE INDEX extra_len ON upgrade_objects(length)] open=Err(Invalid("unsupported writable archive schema")) verify_file=Err(Invalid("unsupported writable archive schema")) resume=Err(Invalid("unsupported writable archive schema")) rebuild=Ok(false)
+PROBE C0 rebuild output carries drift objects: 0
+PROBE C1 [CREATE TRIGGER extra AFTER INSERT ON upgrade_objects BEGIN SELECT 1; END] open=Err(Invalid("unsupported writable archive schema")) verify_file=Err(Invalid("unsupported writable archive schema")) resume=Err(Invalid("unsupported writable archive schema")) rebuild=Ok(false)
+PROBE C1 rebuild output carries drift objects: 0
+PROBE C2 [CREATE VIEW extra AS SELECT * FROM upgrade_objects] open=Err(Invalid("unsupported writable archive schema")) verify_file=Err(Invalid("unsupported writable archive schema")) resume=Err(Invalid("unsupported writable archive schema")) rebuild=Ok(false)
+PROBE C2 rebuild output carries drift objects: 0
+PROBE C3 [CREATE TABLE upgrade_progress(n INTEGER)] open=Err(Invalid("unsupported writable archive schema")) verify_file=Err(Invalid("unsupported writable archive schema")) resume=Err(Invalid("unsupported writable archive schema")) rebuild=Ok(false)
+PROBE C3 rebuild output carries drift objects: 0
+ok
+test probe_d_cross_profile_entry_points ... PROBE D Ledger::open on profile-3 -> Err("invalid input: unknown database profile")
+PROBE D Ledger::resume_initialization on profile-3 -> Err("invalid input: resume requires an empty unversioned database or a recognized archive")
+PROBE D Ledger::verify_file on profile-3 -> Err("invalid input: unknown database profile")
+PROBE D RecoveryReader::open on profile-3 -> Err("invalid input: unknown database profile")
+PROBE D attested::Archive::open on profile-3 -> Err("invalid input: unknown database profile")
+PROBE D attested::Archive::resume_initialization on profile-3 -> Err("invalid input: resume requires an empty unversioned database or a recognized archive")
+PROBE D attested::Archive::verify_file on profile-3 -> Err("invalid input: unknown database profile")
+PROBE D attested::Recovery::open on profile-3 -> Err("invalid input: unknown database profile")
+PROBE D PlannedCopy::open(profile3 as source) on profile-3 -> Err("invalid input: unknown database profile")
+PROBE D cli verify (no pins) on profile-3: exit=Some(1) stdout= stderr=error: invalid input: unknown database profile
+PROBE D cli verify (profile-2 pins, no --copy-profile) on profile-3: exit=Some(1) stdout= stderr=error: invalid input: unknown database profile
+PROBE D cli read-record on profile-3: exit=Some(1) stdout= stderr=error: cannot read sequence 1 from /var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpNCUkcd/copy/archive.sqlite: invalid input: unknown database profile
+PROBE D cli verify --copy-profile on profile-3 (positive control): exit=Some(0) stdout={"bytes":1775,"commits":3,"copy":{"copied_records":2,"original_objects":3,"planned_records":2,"source_copy_complete":true},"cryptographic_admission":"proof-purpose-dependent","historical_completeness":"not-verified","objects":4,"through":3,"tip":"bafyreiaa574bxe2eoqpaukxxwcx4gn7n3v3gjuq6yforvhnpgua4rvvscm","verification":"payloads-writer-requests-and-issuer-proofs","writable_admission":"not-checked"} stderr=
+PROBE D copied::Archive::open on profile-2 -> Err("invalid input: unknown database profile")
+PROBE D copied::Archive::resume_initialization on profile-2 -> Err("invalid input: resume requires an empty unversioned database or a recognized archive")
+PROBE D copied::Archive::verify_file on profile-2 -> Err("invalid input: unknown database profile")
+PROBE D copied::Recovery::open on profile-2 -> Err("invalid input: unknown database profile")
+PROBE D cli verify --copy-profile on profile-2: exit=Some(1) stdout= stderr=error: invalid input: unknown database profile
+PROBE D copied::Archive::open on profile-1 -> Err("invalid input: unknown database profile")
+PROBE D copied::Archive::resume_initialization on profile-1 -> Err("invalid input: resume requires an empty unversioned database or a recognized archive")
+PROBE D copied::Archive::verify_file on profile-1 -> Err("invalid input: unknown database profile")
+PROBE D copied::Recovery::open on profile-1 -> Err("invalid input: unknown database profile")
+PROBE D cli verify --copy-profile on profile-1: exit=Some(1) stdout= stderr=error: invalid input: unknown database profile
+ok
+test probe_e_incomplete_admission_matrix ... PROBE E state=Status { original_objects: 0, copied_records: 0, planned_records: 2, source_copy_complete: false } counts(obj,commits,proofs,orig)=(0, 0, 0, 0) admit=Err(Conflict) counts_after=(0, 0, 0, 0)
+PROBE E state=Status { original_objects: 1, copied_records: 0, planned_records: 2, source_copy_complete: false } counts(obj,commits,proofs,orig)=(1, 0, 0, 1) admit=Err(Conflict) counts_after=(1, 0, 0, 1)
+PROBE E state=Status { original_objects: 2, copied_records: 0, planned_records: 2, source_copy_complete: false } counts(obj,commits,proofs,orig)=(2, 0, 0, 2) admit=Err(Conflict) counts_after=(2, 0, 0, 2)
+PROBE E state=Status { original_objects: 3, copied_records: 0, planned_records: 2, source_copy_complete: false } counts(obj,commits,proofs,orig)=(3, 0, 0, 3) admit=Err(Conflict) counts_after=(3, 0, 0, 3)
+PROBE E state=Status { original_objects: 4, copied_records: 1, planned_records: 2, source_copy_complete: false } counts(obj,commits,proofs,orig)=(4, 1, 1, 4) admit=Err(Conflict) counts_after=(4, 1, 1, 4)
+PROBE E incomplete states exercised: 5
+
+thread 'probe_e_incomplete_admission_matrix' (9718995) panicked at tests/zz_review_destination.rs:45:6:
+called `Result::unwrap()` on an `Err` value: Invalid
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test probe_f_exact_retry_of_copied_request_with_h_equal_c ... PROBE F retry of copied seq1 while incomplete -> Err(Conflict)
+PROBE F retry of copied seq1 after completion -> Err(Conflict)
+PROBE F retry of copied seq2 after completion -> Err(Conflict)
+PROBE F counts before/after retries (2, 2, 2, 2) (2, 2, 2, 2)
+ok
+test probe_g_cli_wal_source_invariance ... PROBE G wal bytes before: 4152
+PROBE G copy-plan: exit=Some(0) stdout={"archive":"520451ea408658e999183c00a57c0b164dfbc5e37e56f91a4ac6d09f5322108b","plan":"/var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpjAw9zF/plan.cbor","profile":3,"promoted":false,"source_through":3} stderr=
+PROBE G copy-batch #0: exit=Some(0) stdout={"activated":false,"bytes_written":641,"copy":{"copied_records":0,"original_objects":2,"planned_records":3,"source_copy_complete":false},"objects_written":2,"profile":3,"promoted":false,"records_written":0} stderr=
+PROBE G copy-batch #1: exit=Some(0) stdout={"activated":false,"bytes_written":58,"copy":{"copied_records":0,"original_objects":4,"planned_records":3,"source_copy_complete":false},"objects_written":2,"profile":3,"promoted":false,"records_written":0} stderr=
+PROBE G copy-batch final #4: exit=Some(0) stdout={"activated":false,"bytes_written":1689,"copy":{"copied_records":3,"original_objects":6,"planned_records":3,"source_copy_complete":true},"objects_written":0,"profile":3,"promoted":false,"records_written":1} stderr=
+PROBE G verify: exit=Some(0) stdout={"bytes":1890,"commits":3,"copy":{"copied_records":3,"original_objects":6,"planned_records":3,"source_copy_complete":true},"cryptographic_admission":"proof-purpose-dependent","historical_completeness":"not-verified","objects":6,"through":3,"tip":"bafyreibjb6ewjygwnzf675hvrac4h6m7nduv7exfd5bveocva2oe6i3yba","verification":"payloads-writer-requests-and-issuer-proofs","writable_admission":"not-checked"} stderr=
+PROBE G copy-batch --resume after a later source stage: exit=Some(1) stdout= stderr=error: conflict: copy source differs from pinned plan
+ok
+test probe_h_cli_incomplete_lifecycle ... PROBE H copy-batch objects=1 records=0: exit=Some(0) stdout={"activated":false,"bytes_written":17,"copy":{"copied_records":0,"original_objects":1,"planned_records":2,"source_copy_complete":false},"objects_written":1,"profile":3,"promoted":false,"records_written":0} stderr=
+PROBE H copy-batch --resume objects=0 records=5 (cannot advance object phase): exit=Some(0) stdout={"activated":false,"bytes_written":0,"copy":{"copied_records":0,"original_objects":1,"planned_records":2,"source_copy_complete":false},"objects_written":0,"profile":3,"promoted":false,"records_written":0} stderr=
+PROBE H verify incomplete: exit=Some(0) stdout={"bytes":17,"commits":0,"copy":{"copied_records":0,"original_objects":1,"planned_records":2,"source_copy_complete":false},"cryptographic_admission":"proof-purpose-dependent","historical_completeness":"not-verified","objects":1,"through":0,"tip":null,"verification":"payloads-writer-requests-and-issuer-proofs","writable_admission":"not-checked"} stderr=
+PROBE H backup incomplete: exit=Some(0) stdout={"backup":"/var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmplvGdVg/backup.sqlite","bytes":17,"commits":0,"copy":{"copied_records":0,"original_objects":1,"planned_records":2,"source_copy_complete":false},"independent_backup":false,"issuer_proofs":"verified-preserved","objects":1} stderr=
+PROBE H admit on backup output -> Err(Conflict)
+PROBE H recover incomplete: exit=Some(0) stdout={"bytes":17,"commits":0,"copy":{"copied_records":0,"original_objects":1,"planned_records":2,"source_copy_complete":false},"cryptographic_admission":"proof-purpose-dependent","historical_completeness":"not-verified","independent_backup":false,"objects":1,"promoted":false,"recovered":"/var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmplvGdVg/recover.sqlite","source":"/var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmplvGdVg/copy/archive.sqlite","through":0,"tip":null,"verification":"payloads-writer-requests-and-issuer-proofs"} stderr=
+PROBE H admit on recover output -> Err(Conflict)
+ok
+test probe_i_cli_preconditions ... PROBE I0 copy-batch without --copy-profile: exit=Some(1) stdout= stderr=error: copy-batch requires --copy-profile and all owner pins
+PROBE I1 copy-batch --copy-profile without pins: exit=Some(2) stdout= stderr=error: the following required arguments were not provided:   --proof-scope <PROOF_SCOPE>   --proof-issuer <PROOF_ISSUER>   --proof-archive <PROOF_ARCHIVE>  Usage: kan-v2 copy-batch --plan <PLAN> --key <KEY> --proof-scope <PROOF_SCOPE> --proof-issuer <PROOF_ISSUER> --proof-archive <PROOF_ARCHIVE> --copy-profile <DATABASE> <ARCHIVE>  For more information, try '--help'.
+PROBE I2 copy-batch with key for another issuer: exit=Some(1) stdout= stderr=error: copy signer differs from owner issuer
+PROBE I3 copy-batch with group/world-readable plan: exit=Some(1) stdout= stderr=error: invalid input: database must be owner-only
+PROBE I4 copy-batch bytes below MAX_CHUNK: exit=Some(1) stdout= stderr=error: invalid input: copy budget
+PROBE I5 copy-batch --resume with no existing output: exit=Some(1) stdout= stderr=error: No such file or directory (os error 2)
+PROBE I6 init --copy-profile: exit=Some(1) stdout= stderr=error: profile 3 initialization requires copy-batch with a pinned source and recipe
+PROBE I copy-plan onto existing plan: exit=Some(1) stdout= stderr=error: File exists (os error 17)
+PROBE I copy-plan PLAN=<source db>: exit=Some(1) stdout= stderr=error: File exists (os error 17)
+ok
+test probe_k_privileged_truncation_is_outside_the_fence ... PROBE K verify after privileged truncation -> Ok(Status { original_objects: 3, copied_records: 1, planned_records: 2, source_copy_complete: false })
+PROBE K resume -> Ok(Status { original_objects: 3, copied_records: 2, planned_records: 2, source_copy_complete: true }); seq2 proof bytes equal original: Some(false)
+ok
+
+failures:
+
+failures:
+    probe_e_incomplete_admission_matrix
+
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.93s
+
+error: test failed, to rerun pass `--test zz_review_destination`
+exit=101
