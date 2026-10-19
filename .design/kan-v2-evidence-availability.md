@@ -644,3 +644,45 @@ records. The eventual cutover plan must inventory such pending requests and
 resolve them explicitly; this source planner neither stops a process nor drops
 or relabels pending traffic. Deployment and live cutover remain separately
 authorized operational work.
+
+### Destination execution order (proposed; not implemented)
+
+The owner executor must verify the externally pinned recipe and current signing
+key before creating output. It holds the verified read-only source snapshot for
+the invocation. Creating a new destination and resuming an existing destination
+are separate explicit actions; neither can adopt profile 1 or 2. Initialization
+commits the exact profile-3 schema, owner identity and plan together. Resume of an
+empty interrupted file follows the existing explicit-owner ambiguity rule.
+
+Copy original objects first, in the plan's canonical CID-string order. Each
+payload and inventory row enter one transaction. Before advancing, compare all
+existing original inventory/payload bytes against the source's exact prefix.
+Then copy source records in sequence, preserving raw manifests, receipts and
+request bytes; each new retained-verified proof commits with its record. Existing
+proofs are verified against C and the fixed plan and preserved byte for byte.
+Their present-time issuance timestamps need not equal those of later batches.
+Restart never signs a replacement for an already committed proof.
+
+Each invocation has explicit object, record and byte budgets. A single maximum
+permitted object must fit the declared byte budget; exhausting a budget yields a
+resumable status, not partial success disguised as completion. These budgets
+bound copied work, not the full-source or destination audit cost. The source
+planner's offline audit limitations therefore remain visible.
+
+Every destination batch acquires SQLite's write transaction and revalidates the
+prefix inside that transaction before mutation. Concurrent owner invocations
+must either observe and validate the newer prefix or refuse with a conflict.
+No process-local progress counter is authority. Completion requires the entire
+source record prefix and original-object inventory to reproduce sourceDigest;
+an empty recorded history with staged objects is incomplete until those objects
+are copied. Normal admission requires that verified completion and can only add
+current-issuer admitted proofs after the retained prefix. A resumed already
+completed destination may contain later admitted rows; those must be independently
+audited and may never be truncated to make it resemble the original source.
+
+The owner API must expose copied-object count, copied-record frontier and explicit
+source-copy completion separately from payload completeness and historical
+capture completeness. Backup/recovery cannot mint completion or attestations.
+Crash qualification covers initialization, object/inventory transactions, each
+record/proof transaction and the boundary before the first new admission, with
+source bytes unchanged and all acknowledged destination bytes preserved.
