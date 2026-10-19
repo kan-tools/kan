@@ -1,0 +1,40 @@
+Commands run by the reviewer (cwd = export root unless noted). Environment from
+../run-recovery-replay.sh: CARGO_TARGET_DIR=<kan-v2-library-resilience>/.local-state/target,
+CARGO_BUILD_JOBS=4, debug=0, incremental=0, KAN_CRYPTO_ORACLE_PYTHON=<crypto-oracle-env>/bin/python (3.9.6).
+One heavy (cargo) job at a time throughout.
+
+00  python3 -I review-evidence/tools/verify_identity.py north-star.json review-evidence      -> logs/00-identity-before.txt
+    git -C <repo> status --porcelain=v1 --ignored                                           -> logs/00-git-status-before.txt
+01  cargo clean -p kan                                                                       -> logs/01-clean.txt
+02  cargo test --features v2-crypto --test evidence_recovery_replay
+        --test evidence_recovery_member_corrections --test evidence_recovery_member_review_regressions
+                                                                                             -> logs/02-baseline-tests.txt
+03  cargo clippy --features v2-crypto --all-targets -- -D warnings                          -> logs/03-clippy-v2.txt
+04  cargo fmt --all -- --check                                                               -> logs/04-fmt.txt
+05  $KAN_CRYPTO_ORACLE_PYTHON .design/tools/recovery_replay_vectors.py --check              -> logs/05-python-replay-check.txt
+    $KAN_CRYPTO_ORACLE_PYTHON .design/tools/recovery_member_vectors.py --check              -> logs/05b-python-member-check.txt
+06  fixture case census                                                                      -> logs/06-fixture-case-names.txt
+10  PYTHONDONTWRITEBYTECODE=1 $KAN_CRYPTO_ORACLE_PYTHON -B review-evidence/tools/gen_replay_probes.py
+        review-evidence/probes/replay-probes.json .design/tools                             -> probes/gen-replay-probes.log
+    cp review-evidence/probes/zz_review_replay_probe.rs tests/   (TEMPORARY; removed at step 40)
+    REVIEW_PROBES=... cargo test --features v2-crypto --test zz_review_replay_probe -- --nocapture --test-threads=1
+                                                                                             -> probes/10-probes-unmodified.txt
+    (P20 added) same, reviewer_probe_corpus                                                  -> probes/11-probes-unmodified-with-P20.txt
+20  python3 -B review-evidence/tools/mutate_replay.py           (RM01..RM20)                 -> mutations/RM*.txt, driver-batch1.txt
+    python3 -B review-evidence/tools/mutate_replay.py RM09b-verified-requests-conjunct       -> mutations/RM09b*.txt, driver-RM09b.txt
+    python3 -B review-evidence/tools/reclassify.py                                           -> mutations/RECLASSIFIED.txt
+21  python3 -B review-evidence/tools/author_replay_controls.py  (author CASES imported verbatim)
+                                                                                             -> mutations/author-*.txt
+30  python3 -B review-evidence/tools/scope_b.py   (3 author member controls verbatim; whole
+        runtime reversion via `git -C <repo> show cd0a9ff:src/evidence_recovery_member.rs`,
+        restoration via `git -C <repo> show b52aa48:...`, SHA256-checked)                   -> mutations/scopeB-*.txt
+40  rm tests/zz_review_replay_probe.rs (cmp-identical copy retained in probes/)
+    cargo test --features v2-crypto --test evidence_recovery_replay --test evidence_recovery_member_corrections
+        --test evidence_recovery_member_review_regressions --test evidence_recovery_member   -> logs/40-final-restored-tests.txt
+90  python3 -I review-evidence/tools/verify_identity.py north-star.json review-evidence      -> logs/90-identity-after.txt
+91  git -C <repo> rev-parse HEAD; status --porcelain (+ --ignored); stash list               -> logs/91-parent-git-status.txt
+
+Not run (by instruction or by choice): scripts/recovery_replay_negative_controls.py itself (it writes
+into the export's .local-state; its CASES were imported and reproduced instead), revert_v2.py,
+the historical 27+17+12 member/framing control collections, compatibility/performance/Node matrices,
+`cargo clippy --workspace --all-targets` without features, any kan/day write verb, network, install.

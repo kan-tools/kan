@@ -1,0 +1,405 @@
+INDEPENDENT ADVERSARIAL REVIEW — pure recovery observation replay (scope A)
+and inherited 5edb505 member consumer follow-through (scope B)
+=====================================================================================================
+Reviewer: fresh, cold Claude Code Opus 5.5 session (claude-opus-5-5); no subagents; no prior context.
+Frozen commit: b52aa4849f4a5696b50222bd1ad25290846d3b91 (feat/kan-v2-recovery-replay)
+Repo (explicit): /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-replay
+Export reviewed: <repo>/.local-state/reviews/recovery-replay
+Date: 2026-10-19
+
+STEP 0 — independence. I did not write any of the code, tests, fixtures or design text under review and
+had no prior conversation context. No conflict of interest is declared. Every claim below was
+reproduced by execution; the author qualification under .design/reviews/kan-v2-recovery-replay-author/
+and .design/reviews/kan-v2-recovery-member-consumer-followups-author/ was read as a claim, not evidence.
+
+RECORDING. Per the instruction "Git-first recording due day#168/kan#197", this review does NOT run
+`day review record` / `kan observe` / `kan mark` (no kan/day write verbs, no log writes). This REPORT.txt
+and review-evidence/ are the record, for the owner to retain in Git. `day next adversarial-review` was not
+run either (it is a read, but the live log is out of scope for this frozen review).
+
+=====================================================================================================
+IDENTITY AND HYGIENE
+- Before (logs/00-identity-before.txt): 3350 manifest paths = 3350 export paths = 3350 tree entries at
+  b52aa48; 0 SHA256 mismatches; 0 Git blob-id mismatches; repo HEAD = pinned commit. IDENTITY_OK.
+  Only untracked extra at start: north-star.json (review-evidence/ created by me).
+- After (logs/90-identity-after.txt): identical result, IDENTITY_OK. Parent `git status --porcelain` is
+  empty; only the ignored .local-state/ (logs/91). Parent stash has pre-existing `autostash` entries; I
+  never touched the stash. No Git writes, no parent edits.
+- Temporary probe copy tests/zz_review_replay_probe.rs existed only between steps 10 and 40; removed after
+  `cmp` against the retained copy (probes/zz_review_replay_probe.rs). No __pycache__ left in the export
+  (checked). Every mutation restored its file and SHA256-checked it against the manifest after each run;
+  scope B restoration used `git -C <repo> show b52aa48:src/evidence_recovery_member.rs`.
+- No network, live archives, keys (public test scalars 3/4/5/6 only, via the author's oracle helpers),
+  installs, .lake, own target, or process kills. `cargo clean -p kan` first; shared target; 4 jobs; one
+  heavy job at a time. revert_v2.py not run.
+
+=====================================================================================================
+STEP 1 — NORTH STAR (from the supplied frozen record only)
+north-star.json (supplied, frozen; I do not claim current live-log access). It carries one subject,
+telos/raw-data-and-projections, and reports excluded_by_trust: 2 at top level. I do not reconstruct the
+two excluded claims. Quoted (Decision bafyreied3rklhs…):
+  "Raw attested data is retained in full and never collapsed in the store. Every simplification --
+   identity, status, confidence, tension, ordering -- is a determined projection computed on demand over
+   that raw data … A field holding a computed value is the failure mode: it asserts an output of the fold
+   as if it were input, and it forecloses every other projection."
+Observation bafyreicakl3rs… states this telos deliberately declares no witnesses; I therefore assess it as
+a design principle, not as a witnessed metric. A Relation records InTensionWith telos/performance-at-scale
+(that telos's text is not in the supplied record; not reconstructed).
+
+How this work serves it: replay is a pure projection over retained raw member bytes, signed observations
+and candidates. Basis is recomputed from the fixed member rather than read from a signed field; M1 keeps
+claimed partial-copy rows verbatim while denying them authority; the only cache is a per-call virtual-
+output memo that is semantics-free (RM20 survives = equivalent mutant). That is the telos applied. The
+tension with performance appears only as bounded re-audits per distinct selection, which the design
+accepts. A-F1 below is the one place where the returned projection is less informative than the raw
+data supports.
+
+=====================================================================================================
+STEP 2 — REQUIREMENTS: codec "Next draft checkpoint: pure observation replay" (codec.md:476-519)
+(src = src/evidence_recovery_replay.rs at b52aa48; tests = tests/evidence_recovery_replay.rs)
+
+R1 Immutable caller-acquired slices, independent pins, optional external checkpoint.
+   MET. verify(input: Input<'a>, candidates: &'a [Object], observations: &[&[u8]], external:
+   Option<&Checkpoint>, limits) src:483-489; no I/O, SQLite, signing or global state in the module (grep:
+   only crate evidence/commitment/member/observation modules, sha2, std).
+R2 Audit the member first; fix M1/frontier.            MET. src:502-504.
+R3 One contiguous authenticated chain from genesis.    MET. src:541-544 (observation::authenticate with the
+   verified predecessor); vectors replayed-observation-row; probe: reordered/empty envelopes refuse
+   (probes/10: "OBSERVATION reordered restored rows: observation authentication").
+R4 Creation compared to the member.                     MET. src:550-561; vectors wrong-created-member/
+   frontier; probe P12 (unavailable with wrong member) refuses "member commitment".
+R5 Exact greedy loss vector before any restoration/publication; late/omitted/repeated/altered refuses.
+   MET. src:559-571, 643-646. Vectors plus probes P13 (exactly 32 -> one event), P14 (64 -> two), P15
+   (32 split 16+16 -> "initial loss partition"). Controls RM03 and RM13 are killed by acceptance; author
+   loss-partition control reproduced. Note A-F3: the envelope-size shrink branch (src:375-378) is
+   unreachable under the closed schema.
+R6 Member review resolved before qualifying.           MET as scope B below (with the A-F2 caveat for C-F1).
+R7 Each physical candidate: exactly one restored observation, existing key, content address, every
+   authenticated expected length.
+   MET IN CODE. src:505-534 (bounds, raw CID, order/uniqueness, membership, length, hash), 572-584
+   (restoration length, duplicate), 647-650 (bijection). RM02/RM04/RM12/RM16 are killed by acceptance in
+   the author suite. RM05 (hash) and RM06 (authenticated length) are pinned ONLY by reviewer probes
+   (A-F2).
+R8 Incomplete-copy membership lengths are not candidate constraints.
+   MET. src:310 `complete_recipe.then_some(m.length)`; author control partial-candidate-length reproduced
+   (false refusal of a valid partial restoration). The opposite direction (a referenced issuer length
+   still constrains a partial copy, src:335) is pinned only by reviewer probe P20 (RM18; A-F2).
+R9 Member-derived basis for every restoration, including an already-available key; no promotion.
+   MET. src:298-357, 662-668. Basis precedence in keys() (membership -> record override IssuerMetadata ->
+   original-only OriginalObject) matches member.rs:506-530. Probes P07 (available key -> IssuerMetadata),
+   P18 (OriginalObject); author partial-membership test (UnverifiedMembership). RM17/RM19 killed as
+   projection errors.
+R10 No unsigned candidate, duplicate restoration, hidden subset or new orphan.
+   MET. Vectors unsigned-physical-candidate, duplicate-restored-observation, new-candidate-outside-member;
+   RM02/RM04 killed by acceptance.
+R11 Intent commits to all prior candidates; historical R1; deterministic union; virtual output re-audited
+   (writer signatures, complete profile-3 recipe) before O1.
+   MET. src:382-479, 585-601. Probes P06/P07/P17/P18 match R1/O1 computed independently in my generator
+   from frame.restoration_digest/member_digest over a union I build myself (not Rust values). Author
+   virtual-output-writer control reproduced (acceptance). RM07 (losses-empty) is pinned only by reviewer
+   probe P04 (A-F2). RM08 (partial-copy guard) is diagnostic-only: still refused as "incomplete output" =
+   redundant early label. RM09b (verified_requests conjunct) survives: implied by empty losses plus the
+   member's per-request writer check (member.rs:492-504) = redundant defense in depth.
+R12 Originals and later candidates never replace historical selections.
+   MET. Probe P07 (restore after intent, before observed: attempt keeps R1 of the empty selection);
+   vector later-candidate-keeps-earlier-intent-history; RM01 (stale cache) refuses a valid history (fails
+   closed).
+R13 Attempts: one intent; failures before at most one observed; nothing after observed; independent IDs.
+   MET. src:585-627. Probes P06 (two attempts, interleaved failure/observed, same selection via cache),
+   P08 (observed cites another attempt's intent), P09 (failure cites created); RM14/RM15 and the author
+   intent-citation/terminal-attempt controls killed by acceptance.
+R14 Pending/failed is not absence; observed is not activation or presence.
+   MET as an API/documentation property (Attempt doc src:66; module doc src:1-2); no consumer exists.
+   Unverifiable beyond that until a job/UI consumer exists.
+R15 External checkpoint matches complete context, sequence and statement; missing/changed prefix refuses;
+   latest returned separately; no checkpoint = no rollback protection; later truncation undetectable.
+   MET IN CODE. src:492-499, 631-639, 651, 654-661. Probe (probes/10, CHECKPOINT lines): observer/
+   issuer/profile/scope/archive mismatch -> "external checkpoint context"; seq 0 and MAX_SAFE+1 ->
+   context; tip+1 -> absent; seq 1 with tip CID -> statement. Author tests pin truncation and skipped
+   suffix. Cross-context refusal is pinned only by reviewer probes (RM11; A-F2).
+R16 Item/scan-byte/time/cancel limits; documented metric; cache reuse only while selection unchanged;
+   collections bounded.
+   MET with notes (A-F5). Probe (probes/10, BUDGET lines): for 4 positive vectors the minimal item and
+   byte budgets accept with the identical projection, and minimum-1 refuses with Budget (no partial
+   acceptance). Duration 0 and 3601 s refuse; 3600 s accepts. RM01 killed; RM20 equivalent.
+R17 No SQLite opener/writer, job, RPC or UI.            MET (module grep; lib.rs:36 is only `pub mod`).
+
+PARENT .design/kan-v2-recovery-bundles.md AC-1..AC-6: ALL REMAIN OPEN. Nothing here creates, opens,
+backs up, rebuilds or publishes a bundle; there are no crash windows, physical schema, writer, job, RPC or
+UI. AC-2 is advanced only for the pure semantic layer (independent signed state vectors). Pure replay
+acceptance is not full recovery or frontend completion.
+
+=====================================================================================================
+STEP 3 — VERIFICATION (raw logs under review-evidence/logs)
+- Baseline (logs/02): evidence_recovery_replay 10/10, evidence_recovery_member_corrections 2/2,
+  evidence_recovery_member_review_regressions 23/23. exit=0.
+- Clippy (logs/03): `cargo clippy --features v2-crypto --all-targets -- -D warnings` exit=0.
+  Format (logs/04): `cargo fmt --all -- --check` exit=0.
+- Python (logs/05, 05b): replay --check "45 independent state cases; 13 positive" exit=0; member --check
+  "25 independently constructed member cases" exit=0. Interpreter 3.9.6 (crypto-oracle env).
+- Final restored run (logs/40): member 16/16, corrections 2/2, regressions 23/23, replay 10/10. exit=0.
+- Author qualification cross-check: the author's 68-function claim spans 7 suites; I reran the 4 suites
+  in scope (51 functions) plus the scope-B member suite. Author files 08/09 (Clippy failure, then
+  corrected) are consistent with my clean Clippy result.
+
+Reviewer probe corpus (probes/replay-probes.json, 20 signed cases; generator tools/gen_replay_probes.py)
+built with the author's public-key construction helpers but with expectations taken from the design text,
+and R1/O1 computed directly from framing primitives over my own union function. Results (probes/10, 11):
+all 20 MATCH; each case was verified twice with identical results (deterministic).
+  P01 writer-invalid request restored, no intent ............ ACCEPT, basis IssuerMetadata (see A-F1)
+  P02 same bytes as the original object ..................... REFUSE member:retained writer request
+  P03 issuer-signed false length, true bytes as candidate ...... REFUSE candidate expected length
+  P04 corrupt orphan + self-consistent O1 over corrupt bytes .. REFUSE publication-blocked-unavailable-object
+  P05 restored event with wrong candidate bytes, no intent .... REFUSE candidate hash
+  P06 two attempts, same selection, interleaved outcomes ...... ACCEPT (R1/O1 match my computation)
+  P07 restore after intent, before observed ................... ACCEPT (historical R1 preserved)
+  P08/P09 intent citation across attempts / to created ........ REFUSE intent citation
+  P10/P11 wrong frontier in intent / observed ................. REFUSE metadata frontier
+  P12 unavailable with wrong member ........................... REFUSE member commitment
+  P13/P14/P15 32 / 64 / 32-as-16+16 losses .................... ACCEPT / ACCEPT / REFUSE initial loss partition
+  P16 checkpoint inside the loss-coverage prefix .............. ACCEPT
+  P17 complete profile 3 + valid non-member orphan ............ ACCEPT (orphan in O1 union)
+  P18 orphan restored, length taken from candidate ............ ACCEPT, OriginalObject basis
+  P19 intent before a required restoration .................... REFUSE publication-blocked-unavailable-object
+  P20 partial copy, referenced key with issuer-signed false length REFUSE candidate expected length
+Author oracle verdicts are recorded per case for comparison; for P02 the author oracle ACCEPTS. That is
+consistent with its declared limit (not a member validator), not a Rust defect.
+Envelope arithmetic (probes/gen-replay-probes.log): maxEntryBytes=100; maximal 32-entry unavailable
+envelope = 3770 bytes < 16384 -> the greedy shrink is never exercised (A-F3).
+
+Compiled guard removals (mutations/, RECLASSIFIED.txt; each mutation run alone, author suite + probes):
+  KILLED by acceptance in the author suite: RM02 duplicate restoration, RM03 late unavailable, RM04
+    candidate/restoration bijection, RM10 checkpoint statement, RM12 restoration length, RM13 final loss
+    coverage, RM14 duplicate intent, RM15 observed output, RM16 candidate order.
+  KILLED as projection / false refusal in the author suite: RM01 stale cache (valid history refused:
+    fails closed), RM17 record basis override, RM19 original-object basis (both wrong basis).
+  AUTHOR SUITE DIAGNOSTIC-ONLY OR SURVIVING; KILLED BY ACCEPTANCE ONLY IN REVIEWER PROBES (A-F2):
+    RM05 candidate hash ............ author: label change only (candidate without restoration); P05 accepted
+    RM06 candidate expected length .. author: SURVIVES entirely; P03 and P20 accepted
+    RM07 output losses empty ........ author: label change only (intent output); P04 accepted
+    RM11 checkpoint context ......... author: label change only (absent, because the foreign-context
+                                      assertion at tests:235-239 runs on the truncated history from
+                                      tests:230); probes: observer/issuer/profile/scope/archive accepted
+    RM18 record length override ..... author: SURVIVES entirely; P20 accepted
+  REDUNDANT / EQUIVALENT: RM08 partial-copy guard (diagnostic-only, backed by "incomplete output"),
+    RM09b verified-requests conjunct (survives; implied), RM20 cache never used (survives; performance only).
+  COMPILE FAILURE: RM09 (my own typo dropped a comma; no evidence either way; retyped as RM09b).
+Author's 11 focused controls (imported verbatim, logs mutations/author-*.txt): all reproduce.
+  9 killed by acceptance (member-commitment, frontier, loss-partition, historical-restorations,
+  intent-output, intent-citation, terminal-attempt, external-checkpoint, virtual-output-writer);
+  partial-candidate-length killed as false refusal; restoration-basis killed as wrong projection.
+
+=====================================================================================================
+STEP 4 — SCOPE-NARROWING CHECK
+- codec:496-497 "The virtual audit is not a physical standalone-schema or durability check." LEGITIMATE:
+  named in the design before implementation; the physical publisher remains open.
+- codec:502-504 "Physical output verification/fsync and job reconciliation remain separate requirements."
+  LEGITIMATE.
+- codec:509-511 "No checkpoint means no rollback protection, and truncation after the latest retained
+  checkpoint remains undetectable." LEGITIMATE: an inherent limit, honestly stated and pinned by
+  tests:241-258.
+- codec:518-519 "This remains a pure draft until … fresh review …; no SQLite opener/writer, job, RPC or
+  UI." LEGITIMATE.
+- next-build-status table: "physical recovery remains separate"; full frontend open. LEGITIMATE; no
+  completion is rounded up.
+- Python header "not a general second metadata/schema validator". LEGITIMATE and accurate (P02).
+No suspicious narrowing found. Nothing hard was deferred during implementation; the hard parts
+(historical R1, re-audited O1, exact partition, checkpoint) are implemented.
+
+STEP 5 — HOUSE RULES (CLAUDE.md; codec/bundle design)
+- No destruction/mutation of evidence: replay borrows immutable slices; restoration never rewrites
+  losses (tests:203-214; Member losses unchanged). OK.
+- Provenance never fabricated: basis recomputed, not signed; UnverifiedMembership never promoted. OK.
+- Derived media never authority: the cache is semantics-free (RM20); Replay carries no publication or
+  activation capability. OK.
+- No second surface/workflow authority: no CLI/MCP/UI/RPC added. OK.
+- Fold/projection purity: deterministic (probe double-run). OK.
+No violation found.
+
+=====================================================================================================
+FINDINGS — SCOPE A (pure replay)
+
+A-F1 [MEDIUM-LOW — consumer contract / design coherence. Decide before any physical restorer or UI
+consumes Restoration.]
+- Replay accepts a restored candidate for an issuer-referenced service request whose bytes match the
+  CID and authenticated length but fail writer verification. It returns that candidate as a Restoration
+  with basis IssuerMetadata (probe P01). The failure surfaces only if a later intent is signed
+  ("output member validation").
+- The identical bytes present as the ORIGINAL object make the whole member refuse (probe P02). The
+  member rule is explicit: "A hash-valid request that fails its writer signature or exact manifest
+  binding is invalid member evidence, not a repairable missing-byte condition" (codec:427-429).
+- So the replay projection reports a repair candidate for a condition the member defines as
+  unrepairable. That candidate can never publish (P01's sibling vector
+  restored-content-address-does-not-certify-writer), but nothing in Replay/Restoration says so.
+- This is NOT incorrect acceptance under the current replay text, which defers writer re-audit to the
+  intent (codec:494-496). It is a coherence gap.
+- Required (choose one and record it):
+  (a) verify restored service-request candidates against their manifest binding and writer signature
+      at restoration, refusing the history as the member would; or
+  (b) expose a per-Restoration writer-verification status, and require the future restorer never to
+      sign such a restoration and the UI never to present it as recovered evidence.
+
+A-F2 [LOW-MEDIUM — test gap; close before the replay checkpoint is accepted.]
+- Five semantic guards are correct in code, but the author suite does not pin them. Removing any of them
+  either passes the whole author suite or only changes a refusal label. Only reviewer probes show the
+  resulting hostile acceptance:
+  - RM05 candidate hash (src:532);
+  - RM06 candidate authenticated length (src:528-531). This is the positive half of C-F1;
+  - RM07 output losses empty (src:435-438). A corrupt orphan with a self-consistent O1 publishes;
+  - RM11 checkpoint context (src:494). Foreign observer/issuer/profile/scope/archive pins are accepted;
+    the author assertion at tests:235-239 conflates the context fault with the truncation fault from
+    tests:230;
+  - RM18 partial-copy referenced length override (src:335).
+- Required:
+  - Add P03, P04, P05 and P20 (or equivalents) to the independent Python constructor/fixture as
+    single-fault hostile vectors.
+  - Make the foreign-checkpoint assertion single-fault: run it on the untruncated history and cover the
+    observer, issuer and profile fields.
+  - Demonstrate RM05/RM06/RM07/RM11/RM18 as compiled semantic controls.
+  - Until then, C-F1's replay-side length constraint is qualified only by this review's probes.
+
+A-F3 [LOW / INFO — spec–oracle equivalence by arithmetic only.]
+- The greedy "largest prefix whose envelope fits 16 KiB" loop (src:358-381) is unreachable: the maximal
+  32-entry envelope is 3770 B (probe arithmetic).
+- The Python oracle uses fixed 32-entry chunks (recovery_replay_vectors.py:103), so the two agree only
+  because of that arithmetic, and neither independently exercises the envelope rule.
+- Pin the bound as a test, so a future schema change that enlarges entries cannot silently diverge, or
+  simplify the spec to "32 per event" with the bound as an asserted invariant.
+
+A-F4 [INFO — oracle independence, stated precisely.]
+- The Python replay() state machine is a close transliteration of the Rust one: same labels, same order.
+- Its independent value is in signed construction, the R1/O1/union computations and the selected-output
+  writer-signature check (check_writer). It is not an independent derivation of the state rules.
+- It is not a member validator, as declared (P02 accepted by the oracle).
+- The reviewer probes supply design-derived expectations beyond its corpus. All 20 matched Rust.
+
+A-F5 [INFO — resource accounting notes.]
+- expected_partition re-encodes up to 32 candidate statements per unavailable event. This work is not
+  charged to scan bytes; it is bounded (≤32 × ~3.8 KiB per event) and its polling is per observation.
+- Observer and writer signature verification are individually bounded, not interruptible.
+- The scan metric counts documented input passes: member 2×, observations 1×, candidates 1×, R1 2×,
+  virtual audit 2× + O1 1× per distinct selection. It is monotone; minimum-1 refuses (probe).
+- It is not RSS or CPU, as documented.
+
+A-F6 [INFO — prerequisite for the job layer.]
+- Checkpoint has public fields, and nothing in the type prevents a caller from re-feeding replay.latest()
+  as the "external" pin, which would remove rollback protection.
+- The provenance rule ("do not derive the external pin from the bundle", codec:288-289) must be enforced
+  by the owner job's storage boundary, not assumed from this API.
+
+No production correctness defect, invariant violation or incorrect acceptance was found in the frozen
+replay code. Every hostile probe outside the author corpus refused, and every positive probe matched
+independently computed R1/O1/basis.
+
+=====================================================================================================
+SCOPE B — inherited 5edb505 consumer follow-through (after the b11cbf4 correction review)
+
+Source: .design/reviews/kan-v2-recovery-member-corrections-opus/evidence/REPORT.txt is byte-identical to
+cd0a9ff (diff empty). Author: .design/reviews/kan-v2-recovery-member-consumer-followups-author/REPORT.md.
+Runtime change cd0a9ff..b52aa48 in src/evidence_recovery_member.rs: exactly one guard (lines 390-393,
+`cid != ciphertext_cid(b"")` -> "empty service request CID"). Confirmed by git diff.
+
+C-F1 CLOSED in design and code; replay-side pinning is reviewer-only (see A-F2).
+  - Codec text now says "member-derived authenticated expected length" (codec:112-117, 141, 149) and
+    "Restoration inherits and exposes the coordinate basis, including UnverifiedMembership".
+  - Replay implements it (src:310, 335, 662-668). Restorations expose basis for an already-available key
+    with no initial loss (P07; author partial test, "one restored key was already available").
+  - The positive length constraint is pinned only by reviewer probes P03/P20 (RM06, RM18).
+C-F2 CLOSED.
+  - The Python fixture case partial-copy-issuer-losses-keep-authenticated-length has losses
+    [(1,559,IssuerMetadata),(2,616,IssuerMetadata),(None,None,UnverifiedMembership)].
+  - CP11 is promoted (tests/…review_regressions.rs, cp11_basis_deterministic).
+  - Control retain-issuer-length reproduced: KILLED semantically. Under mutation the IssuerMetadata
+    losses lose expectedLength (left: [(Some(1), IssuerMetadata, false), …]).
+C-F3 CLOSED.
+  - CP01 is promoted with the exact MAX_REQUEST edge; the Python fixture has
+    exact-max-request-length-without-bytes (2101248).
+  - Control request-bound-edge reproduced: KILLED as a false refusal (unwrap on Err "service request
+    length" for a valid maximal request).
+C-F4 CLOSED in Rust and Python.
+  - Rust guard at member.rs:390-393; Python recovery_member_vectors.py:60.
+  - Fixture cases empty-cid-false-authenticated-length and empty-service-cid-with-no-original both refuse.
+  - Control empty-request-cid reproduced: KILLED by acceptance (left: None).
+C-F5 CLOSED.
+  - No doc comment in the promoted regression file dangles before a blank line (awk scan, empty output).
+  - The truncated misleading RP02/RP03 texts are replaced by accurate one-liners.
+  - The RP10b/RP10d descriptions no longer attach to the wrong functions.
+  - The vacuous `f.objects == before` assertion is removed (grep: no match).
+  - The long-form reviewer descriptions now live only in the retained review evidence, which is
+    acceptable.
+C-F6 INFO, unchanged and consistent.
+
+Whole-runtime reversion (mutations/scopeB-whole-reversion-*.txt):
+- Method: src/evidence_recovery_member.rs replaced by `git -C <repo> show cd0a9ff:…` (only that one hunk
+  differs).
+- The named regression empty_service_request_cid_refuses_without_an_original compiles and FAILS
+  SEMANTICALLY: the member is accepted (left: None, right: Some("empty service request CID")).
+- The broader run also fails two more checks, both label-only:
+  - independently_constructed_python_members_… (empty-cid-false-authenticated-length);
+  - rp14_hash_valid_bytes_with_false_signed_length.
+  Both still refuse, as "hash-valid bytes contradict authenticated length". That is the expected
+  pre-C-F4 diagnostic, not acceptance.
+- Corrections 2/2 and replay 10/10 pass under reversion: the replay corpus contains no empty-CID case.
+- No compile failures in scope B.
+- Restored via `git show b52aa48:`; SHA256 matches the manifest; the named regression passes (exit 0).
+
+Scope B verdict: APPROVE. All five required/hardening items are closed as specified, with reproduced
+semantic controls and reversion. The one residual (C-F1's replay-side positive constraint is pinned
+only by reviewer probes) belongs to the replay checkpoint and is carried as A-F2.
+
+=====================================================================================================
+PREREQUISITES BEFORE REPLAY CAN BECOME A PHYSICAL WRITER CONSUMER (not met by this checkpoint)
+1. Close A-F2 (promote the single-fault vectors and controls) and decide A-F1 (writer validity of
+   restored requests).
+2. Frozen KNB1 DDL plus a bounded, custody-checked, UTF-8-gated opener that rejects noncanonical CID text
+   before typed parsing, with fixtures and independent review.
+3. A creator transaction (marker only alongside the complete initial member and history, then fsync
+   file and parent), with crash tests at every boundary (parent AC-4).
+4. A restorer that atomically inserts candidate plus observation, is idempotent, runs the A-F1 decision
+   before signing, and never signs from an unverified selection.
+5. A publisher that builds a separate standalone output and runs the normal standalone verifier
+   (physical schema, writer/issuer chains, profile completion), plus durable publish/fsync, re-verify
+   and then observed. Uncertain-publication resume and failure recording must be covered.
+6. Owner job storage for the external checkpoint and observer key that is independent of the bundle
+   (A-F6). Job results must return the verified frontier, and UI status must advance only from an
+   independently retained checkpoint.
+7. Backup/rebuild preserving the entire observation and restoration history; no standalone fallback
+   (parent AC-1, AC-3, REQ-6).
+8. Capability labels (publication-blocked-unavailable-object, forensic-recovery-required, the
+   partial-copy limitation, basis display including UnverifiedMembership) implemented and tested
+   through RPC and UI.
+9. Fresh independent review of each of the above. Activation and fencing remain a separate workflow.
+None of parent AC-1..AC-6 is closed by this review; all full bundle and frontend acceptance remains open.
+
+=====================================================================================================
+VERDICTS
+Scope A (pure replay, b52aa48): APPROVE WITH FOLLOW-UPS
+Scope B (5edb505 member consumer follow-through): APPROVE
+Overall: **APPROVE WITH FOLLOW-UPS**
+
+Rationale.
+- The frozen replay verifier does what the draft checkpoint specifies:
+  - whole-chain authentication;
+  - exact M1/frontier and partition;
+  - candidate/restoration bijection with content-address and authenticated-length checks;
+  - basis carried and never promoted;
+  - historical R1 and a fully re-audited O1;
+  - attempt relations;
+  - context-exact external checkpoints;
+  - monotone bounded work.
+- I found no incorrect acceptance or projection in 20 design-derived probes outside the author corpus.
+  All 11 author controls reproduce on semantics, and 12 of my 20 compiled guard removals are killed by
+  the author suite itself.
+- It is not a plain APPROVE. Five semantic guards (RM05, RM06, RM07, RM11, RM18) are unpinned by the
+  author suite: removing them yields hostile acceptance that only reviewer probes catch. RM06/RM18 are
+  exactly the C-F1 consumer constraint the scope-B follow-through was meant to close (A-F2).
+- Replay also reports writer-invalid request bytes as an IssuerMetadata restoration. The member defines
+  that state as unrepairable (A-F1).
+- Neither breaks an invariant or yields a false publication, so this is not BLOCK. The work points
+  squarely at its telos, so it is not REDIRECT.
+- Required before the replay checkpoint is recorded as accepted:
+  - promote A-F2's single-fault vectors and controls;
+  - record a decision on A-F1.
+- Scope B's C-F1..C-F5 are closed, and the scope-B reversion is demonstrated.
+- This qualifies a pure, in-memory replay draft only. No physical format, writer, durability, job, RPC,
+  UI or parent AC is accepted, and full recovery and frontend completion remain open.

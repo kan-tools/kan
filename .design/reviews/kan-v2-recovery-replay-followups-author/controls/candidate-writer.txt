@@ -1,0 +1,45 @@
+
+running 1 test
+PROBE P01-writer-invalid-restoration-without-intent class=ACCEPTED_HOSTILE detail={"attempts":[],"latestCid":"bafyreigjp45kgdrt3xdkksraastfvckuy27tzuw6wxatap2h6tyc2vjcsm","latestSequence":3,"restoredObjects":[{"basis":"IssuerMetadata","cid":"bafkreicrrcptoyc3lgitrst6q5xqjq3duymjejui2h4g5gs2j3qwvbo7fy","length":559}]}
+PROBE P02-writer-invalid-bytes-as-original-refuse-member class=MATCH detail=member:retained writer request
+PROBE P03-false-signed-length-candidate class=MATCH detail=candidate expected length
+PROBE P04-corrupt-orphan-with-self-consistent-o1 class=MATCH detail=publication-blocked-unavailable-object
+PROBE P05-restored-wrong-bytes-without-intent class=MATCH detail=candidate hash
+PROBE P06-same-selection-two-attempts-interleaved class=MATCH detail={"attempts":[{"failureCount":1,"id":"09090909090909090909090909090909","intent":"bafyreiepmplktb4fbxyi6mmrghccu2r63ht7ytimhyni2ahi4lhym4bafm","observedAt":6,"output":"21cea405f0eb82f4d631479d560684c515111ee356ccd52ced8cac78980d983b","restorations":"0a5e83be384d5ea3496cd3e9d6b79ae8744521e3990597485f62c7f4789bf7ce"},{"failureCount":0,"id":"0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a","intent":"bafyreibjsv67ojej6oajyhvyf5t6jkaede6qfy7lvgqorqwpm764ovogz4","observedAt":5,"output":"21cea405f0eb82f4d631479d560684c515111ee356ccd52ced8cac78980d983b","restorations":"0a5e83be384d5ea3496cd3e9d6b79ae8744521e3990597485f62c7f4789bf7ce"}],"latestCid":"bafyreieixt373llldedaalq22aon4atcvaswigs35672ogwssgid5dpfre","latestSequence":6,"restoredObjects":[]}
+PROBE P07-restore-after-intent-before-observed class=MATCH detail={"attempts":[{"failureCount":0,"id":"09090909090909090909090909090909","intent":"bafyreiepmplktb4fbxyi6mmrghccu2r63ht7ytimhyni2ahi4lhym4bafm","observedAt":4,"output":"21cea405f0eb82f4d631479d560684c515111ee356ccd52ced8cac78980d983b","restorations":"0a5e83be384d5ea3496cd3e9d6b79ae8744521e3990597485f62c7f4789bf7ce"}],"latestCid":"bafyreifpfry6d2knjs3ogzxiz32rnow2a23ol7j5x34ame6klvfbdny4oq","latestSequence":4,"restoredObjects":[{"basis":"IssuerMetadata","cid":"bafkreia6lir6zdjc2v6g527lrhnncnlils2nbgnpoyjlvb53fbbgh6iwna","length":616}]}
+PROBE P08-observed-cites-other-attempts-intent class=MATCH detail=intent citation
+PROBE P09-failed-cites-created class=MATCH detail=intent citation
+PROBE P10-intent-wrong-frontier class=MATCH detail=metadata frontier
+PROBE P11-observed-wrong-frontier class=MATCH detail=metadata frontier
+PROBE P12-unavailable-wrong-member class=MATCH detail=member commitment
+PROBE P13-exactly-32-losses-one-event class=MATCH detail={"attempts":[],"latestCid":"bafyreidcfok66dvxt33yek4jaqng7nv3fzd6sctawsfvtc5cfd33as3mty","latestSequence":2,"restoredObjects":[]}
+PROBE P14-exactly-64-losses-two-events class=MATCH detail={"attempts":[],"latestCid":"bafyreigxdxrkz3drobhx7ezx23zm3mw3373bwsucqwtqats7wt2nwzxnwi","latestSequence":3,"restoredObjects":[]}
+PROBE P15-32-losses-split-16-16 class=MATCH detail=initial loss partition
+PROBE P16-checkpoint-inside-loss-coverage class=MATCH detail={"attempts":[],"latestCid":"bafyreicyillhi3uzwsnlb32hm3omz672kyshx4327ebsdkwqrlyvjmgqwi","latestSequence":3,"restoredObjects":[]}
+PROBE P17-complete-p3-valid-orphan-in-output class=MATCH detail={"attempts":[{"failureCount":0,"id":"09090909090909090909090909090909","intent":"bafyreibd7n5bgevm2x6p22fok22nftv5w4qj5du4deyc7gcsbluex76r2i","observedAt":3,"output":"b34debb48b792db14021da4cc6c7def2e86962c6fc4d42300718d67b29d3b612","restorations":"0a5e83be384d5ea3496cd3e9d6b79ae8744521e3990597485f62c7f4789bf7ce"}],"latestCid":"bafyreif4273spvxdkaqrzzq7ij5qgmyaljbgkocxgqwnxgpve43hrryf3q","latestSequence":3,"restoredObjects":[]}
+PROBE P18-orphan-restored-length-from-candidate class=MATCH detail={"attempts":[{"failureCount":0,"id":"09090909090909090909090909090909","intent":"bafyreifmauxqfquanbuwq7cck3g5nekepaozwgpzigmgmrnpbpf4bq2ooe","observedAt":5,"output":"991b77f5b4c036fa99c1d4459306626fe5aecc0a241d38df34d951b52cdf8d82","restorations":"d7fdde56a383f5a7010ad4ccaaad7c53cc58527d1211e029d6382a31e756b0fd"}],"latestCid":"bafyreigfucd4f2gy7k7qxycrbky6ljcy6qatwnlejyhmbh44s4ikm2d4yq","latestSequence":5,"restoredObjects":[{"basis":"OriginalObject","cid":"bafkreielsqpszcd7ke7kzucqgii6deqxsroy4q3f2u6q5ykxaebcchdha4","length":17}]}
+PROBE P19-intent-before-required-restoration class=MATCH detail=publication-blocked-unavailable-object
+PROBE P20-partial-copy-issuer-length-constrains-candidate class=MATCH detail=candidate expected length
+PROBE P21-valid-writer-signature-wrong-manifest-binding class=ACCEPTED_HOSTILE detail={"attempts":[],"latestCid":"bafyreicqzxrhphgkdxl7aeqrt26z45rd4gckxd7ktm3jtcldc2te4gipqq","latestSequence":3,"restoredObjects":[{"basis":"IssuerMetadata","cid":"bafkreig3cjp7fzibinwui7tkjdkzur7ldyqkg4v4sd3ayzvtxwbzc4t6py","length":559}]}
+PROBE P22-original-only-candidate-hash-single-fault class=MATCH detail=candidate hash
+PROBE P23-complete-recipe-staged-length-single-fault class=MATCH detail=candidate expected length
+PROBE-SUMMARY failures=["P01-writer-invalid-restoration-without-intent ACCEPTED_HOSTILE", "P21-valid-writer-signature-wrong-manifest-binding ACCEPTED_HOSTILE"]
+test reviewer_probe_corpus ... FAILED
+
+failures:
+
+failures:
+    reviewer_probe_corpus
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.57s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-replay)
+    Finished `test` profile [unoptimized] target(s) in 7.55s
+     Running tests/evidence_recovery_replay_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_replay_review_regressions-80b46206524a2950)
+
+thread 'reviewer_probe_corpus' (10215114) panicked at tests/evidence_recovery_replay_review_regressions.rs:221:5:
+["P01-writer-invalid-restoration-without-intent ACCEPTED_HOSTILE", "P21-valid-writer-signature-wrong-manifest-binding ACCEPTED_HOSTILE"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_replay_review_regressions`
+
+exit=101

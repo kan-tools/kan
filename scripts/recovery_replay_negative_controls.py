@@ -27,10 +27,10 @@ CASES = [
 ]
 
 
-def run(test):
+def run(test, target="evidence_recovery_replay"):
     return subprocess.run(
         ['cargo', 'test', '--features', 'v2-crypto', '--test',
-         'evidence_recovery_replay', test, '--', '--exact', '--nocapture'],
+         target, test, '--', '--exact', '--nocapture'],
         cwd=ROOT, capture_output=True, text=True, timeout=240)
 
 
@@ -61,12 +61,12 @@ def main():
         old = '.map_err(|_| Error::Invalid("retained writer request"))?;'
         assert original_member.count(old) == 1
         MEMBER.write_text(original_member.replace(old, '.ok();'))
-        result = run(VECTOR)
+        result = run("reviewer_probe_corpus", "evidence_recovery_replay_review_regressions")
         log = result.stdout + result.stderr
-        (OUT / 'virtual-output-writer.txt').write_text(log + '\nexit=' + str(result.returncode) + '\n')
+        (OUT / 'original-writer.txt').write_text(log + '\nexit=' + str(result.returncode) + '\n')
         assert result.returncode != 0 and 'could not compile' not in log
-        assert 'hostile history must refuse' in log, 'writer check control was diagnostic-only'
-        print('DEMONSTRATED: virtual-output-writer', flush=True)
+        assert 'P02-writer-invalid-bytes-as-original-refuse-member class=ACCEPTED_HOSTILE' in log, 'writer check control was diagnostic-only'
+        print('DEMONSTRATED: original-writer', flush=True)
     finally:
         FILE.write_text(original)
         MEMBER.write_text(original_member)

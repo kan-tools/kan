@@ -1,0 +1,23 @@
+author control member-commitment: KILLED-ACCEPTANCE exit=101
+--- bytes::<32>(value)? == *original.commitment()
++++ true || bytes::<32>(value)? == *original.commitment()
+
+
+running 1 test
+test independent_state_vectors_match_acceptance_commitments_attempts_and_checkpoints ... FAILED
+
+failures:
+
+failures:
+    independent_state_vectors_match_acceptance_commitments_attempts_and_checkpoints
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.43s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-replay/.local-state/reviews/recovery-replay)
+    Finished `test` profile [unoptimized] target(s) in 7.37s
+     Running tests/evidence_recovery_replay.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_replay-4eb126a2c0172bbe)
+
+thread 'independent_state_vectors_match_acceptance_commitments_attempts_and_checkpoints' (10190945) panicked at tests/evidence_recovery_replay.rs:166:38:
+hostile history must refuse
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_replay`

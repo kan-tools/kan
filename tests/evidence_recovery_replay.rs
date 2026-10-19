@@ -232,6 +232,9 @@ fn rollback_before_external_checkpoint_and_foreign_checkpoint_refuse() {
         c.verify(limits()).err(),
         Some(Error::Invalid("external checkpoint absent"))
     );
+    // Isolate foreign context from the separate truncation fault above.
+    c = Case::named("profile2-restored-failure-observed");
+    c.checkpoint = Some(r.latest().clone());
     c.checkpoint.as_mut().unwrap().context.bundle[0] ^= 1;
     assert_eq!(
         c.verify(limits()).err(),

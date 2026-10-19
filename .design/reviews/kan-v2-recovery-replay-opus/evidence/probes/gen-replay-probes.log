@@ -1,0 +1,21 @@
+{"maxEntryBytes": 100, "max32EntryStatementBytes": 3680, "max32EntryEnvelopeBytes": 3770, "MAX_ENVELOPE": 16384, "greedyShrinkReachable": false}
+P01-writer-invalid-restoration-without-intent expect accept | author-oracle accept
+P02-writer-invalid-bytes-as-original-refuse-member expect refuse:member:retained writer request | author-oracle accept
+P03-false-signed-length-candidate expect refuse:candidate expected length | author-oracle refuse:candidate expected length
+P04-corrupt-orphan-with-self-consistent-o1 expect refuse:publication-blocked-unavailable-object | author-oracle refuse:publication-blocked-unavailable-object
+P05-restored-wrong-bytes-without-intent expect refuse:candidate hash | author-oracle refuse:candidate hash
+P06-same-selection-two-attempts-interleaved expect accept | author-oracle accept
+P07-restore-after-intent-before-observed expect accept | author-oracle accept
+P08-observed-cites-other-attempts-intent expect refuse:intent citation | author-oracle refuse:intent citation
+P09-failed-cites-created expect refuse:intent citation | author-oracle refuse:intent citation
+P10-intent-wrong-frontier expect refuse:metadata frontier | author-oracle refuse:metadata frontier
+P11-observed-wrong-frontier expect refuse:metadata frontier | author-oracle refuse:metadata frontier
+P12-unavailable-wrong-member expect refuse:member commitment | author-oracle refuse:member commitment
+P13-exactly-32-losses-one-event expect accept | author-oracle accept
+P14-exactly-64-losses-two-events expect accept | author-oracle accept
+P15-32-losses-split-16-16 expect refuse:initial loss partition | author-oracle refuse:initial loss partition
+P16-checkpoint-inside-loss-coverage expect accept | author-oracle accept
+P17-complete-p3-valid-orphan-in-output expect accept | author-oracle accept
+P18-orphan-restored-length-from-candidate expect accept | author-oracle accept
+P19-intent-before-required-restoration expect refuse:publication-blocked-unavailable-object | author-oracle refuse:publication-blocked-unavailable-object
+P20-partial-copy-issuer-length-constrains-candidate expect refuse:candidate expected length | author-oracle refuse:candidate expected length

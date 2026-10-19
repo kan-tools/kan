@@ -1,0 +1,307 @@
+diff --git a/tests/evidence_recovery_member_review_regressions.rs b/tests/evidence_recovery_member_review_regressions.rs
+index 4580477..01014e5 100644
+--- a/tests/evidence_recovery_member_review_regressions.rs
++++ b/tests/evidence_recovery_member_review_regressions.rs
+@@ -377,6 +377,7 @@ fn invalid(r: &Result<member::Member, member::Error>) -> Option<&'static str> {
+     }
+ }
+ 
++/// Complete-copy staged membership losses retain authenticated length and basis.
+ #[test]
+ fn rp01_staged_membership_key_null_coordinate() {
+     let staged = b"reviewer staged object".to_vec();
+@@ -468,9 +469,7 @@ fn rp01_staged_membership_key_null_coordinate() {
+     );
+ }
+ 
+-/// RP02: in a PARTIAL profile-3 copy the membership list is not bound by any digest.
+-/// Characterisation: fabricated/omitted unreferenced membership is accepted and drives the
+-
++/// Incomplete-copy membership claims remain explicitly unverified and carry no authenticated length.
+ #[test]
+ fn rp02_partial_profile3_membership_is_labeled_unverified() {
+     let staged = b"reviewer staged object".to_vec();
+@@ -535,9 +534,7 @@ fn rp02_partial_profile3_membership_is_labeled_unverified() {
+     assert!(r.unwrap().losses().is_empty());
+ }
+ 
+-/// RP03: two occurrences sharing one request CID. With bytes missing the member is accepted
+-/// with two "missing" losses; supplying the genuine bytes then REFUSES. No bytes can ever
+-
++/// Distinct service occurrences cannot share a request CID, with or without bytes.
+ #[test]
+ fn rp03_shared_request_cid_refuses_with_or_without_bytes() {
+     let mut f = build(Opts {
+@@ -568,6 +565,7 @@ fn rp03_shared_request_cid_refuses_with_or_without_bytes() {
+     assert_eq!(invalid(&r), Some("reused service request CID"));
+ }
+ 
++/// Retained receipts must use the plan historical issuer.
+ #[test]
+ fn rp04_retained_receipts_from_wrong_issuer_refuse() {
+     let f = build(Opts {
+@@ -586,6 +584,7 @@ fn rp04_retained_receipts_from_wrong_issuer_refuse() {
+     assert_eq!(invalid(&r), Some("historical receipt issuer"));
+ }
+ 
++/// The verified recipe must also match the declared source tip.
+ #[test]
+ fn rp05_source_tip_mismatch_refuses() {
+     let f = build(Opts {
+@@ -599,6 +598,7 @@ fn rp05_source_tip_mismatch_refuses() {
+     assert_eq!(invalid(&r), Some("source tip"));
+ }
+ 
++/// The plan target scope and issuer must match independent owner pins.
+ #[test]
+ fn rp06_plan_target_scope_and_issuer_binding() {
+     let f = build(Opts {
+@@ -621,9 +621,7 @@ fn rp06_plan_target_scope_and_issuer_binding() {
+     assert_eq!(invalid(&r), Some("plan binding"));
+ }
+ 
+-/// RP07: purpose must be retained-verified inside the plan prefix and admitted after it.
+-/// (Attempt 1 used historical-issuer receipts; proof::issue itself refuses `admitted`
+-
++/// Issuer-proof purpose must match the retained/admitted range.
+ #[test]
+ fn rp07_proof_purpose_per_range() {
+     let mut f = build(Opts {
+@@ -659,6 +657,7 @@ fn rp07_proof_purpose_per_range() {
+     ));
+ }
+ 
++/// Membership ordering, CID codec and profile/plan presence must be valid.
+ #[test]
+ fn rp08_membership_order_duplicates_and_codec() {
+     let base = build(Opts {
+@@ -704,9 +703,7 @@ fn rp08_membership_order_duplicates_and_codec() {
+     assert_eq!(invalid(&r), Some("profile plan"));
+ }
+ 
+-/// RP09: a non-static writer form with bytes MISSING (so writer signature never runs)
+-/// must still refuse on static-writer shape. Variants that the record schema itself
+-
++/// Unsupported writer identity forms refuse even without payload bytes.
+ #[test]
+ fn rp09_non_static_writer_refuses_without_bytes() {
+     let writer = did(5);
+@@ -844,9 +841,7 @@ fn rp09_non_static_writer_refuses_without_bytes() {
+     assert!(reached > 0, "no non-static variant passed record schema");
+ }
+ 
+-/// RP10a: a pre-cancelled invocation reports Cancelled before semantic work. With the
+-/// member-stage cancellation poll removed the verifier instead runs to the first semantic
+-
++/// Pre-cancellation prevents later semantic work on a broken proof.
+ #[test]
+ fn rp10a_precancelled_refuses_before_semantic_work() {
+     let mut f = build(Opts {
+@@ -862,8 +857,7 @@ fn rp10a_precancelled_refuses_before_semantic_work() {
+     assert_eq!(r.err(), Some(member::Error::Cancelled));
+ }
+ 
+-/// RP10b (timing-based): cancellation raised mid-way through member-stage hashing of
+-
++/// Input count and byte budgets include their exact acceptance edge.
+ #[test]
+ fn rp11_caps_before_work() {
+     let mut f = build(Opts {
+@@ -890,6 +884,7 @@ fn rp11_caps_before_work() {
+     assert!(r.is_ok());
+ }
+ 
++/// Owner pins remain independent of the signed member.
+ #[test]
+ fn rp12_cross_scope_issuer_and_observer() {
+     let mut f = build(Opts {
+@@ -931,8 +926,7 @@ fn rp12_cross_scope_issuer_and_observer() {
+     assert!(r.is_ok());
+ }
+ 
+-/// RP13: a canonical-text CID parsed from a NON-canonical spelling is indistinguishable at
+-
++/// Typed CIDs cannot preserve a noncanonical physical spelling.
+ #[test]
+ fn rp13_noncanonical_spelling_is_invisible_to_typed_api() {
+     let c = ciphertext_cid(b"spelling");
+@@ -951,9 +945,7 @@ fn rp13_noncanonical_spelling_is_invisible_to_typed_api() {
+     }
+ }
+ 
+-/// RP10d (timing-based, finer): pins per-chunk (not per-object) polling inside member-stage
+-/// hashing. Several trials cancel at different offsets inside 4 MiB objects; the worst
+-
++/// Authentic bytes with false metadata refuse; empty request CIDs are impossible.
+ #[test]
+ fn rp14_hash_valid_bytes_with_false_signed_length() {
+     let mut f = build(Opts {
+@@ -1010,14 +1002,10 @@ fn rp14_hash_valid_bytes_with_false_signed_length() {
+     f.objects = vec![(empty.clone(), vec![])];
+     let r = run(&f, budget());
+     show("rp14b-empty-cid-signed-length-1", &r);
+-    assert_eq!(
+-        invalid(&r),
+-        Some("hash-valid bytes contradict authenticated length")
+-    );
++    assert_eq!(invalid(&r), Some("empty service request CID"));
+ }
+ 
+-/// RP15: an empty orphan whose key IS the empty-bytes CID (hash-valid, no expected length)
+-
++/// An empty orphan remains raw corrupt evidence, not a valid object.
+ #[test]
+ fn rp15_empty_orphan_with_empty_cid_is_corrupt() {
+     let mut f = build(Opts {
+@@ -1041,8 +1029,7 @@ fn rp15_empty_orphan_with_empty_cid_is_corrupt() {
+     );
+ }
+ 
+-/// RP16: PARTIAL copy, a retained reference absent from membership with bytes missing.
+-
++/// A retained reference in a partial copy still needs a membership row.
+ #[test]
+ fn rp16_partial_retained_reference_outside_membership_refuses() {
+     let mut f = build(Opts {
+@@ -1062,8 +1049,7 @@ fn rp16_partial_retained_reference_outside_membership_refuses() {
+     );
+ }
+ 
+-/// RP17: a broken per-writer chain (second request claims genesis) with bytes MISSING, so
+-
++/// A broken writer predecessor refuses even when every payload is missing.
+ #[test]
+ fn rp17_writer_predecessor_without_bytes() {
+     let mut f = build(Opts {
+@@ -1131,7 +1117,6 @@ fn orphan_hash_mismatch_is_reported_without_rewriting_its_bytes() {
+     });
+     let cid = ciphertext_cid(b"original intended bytes");
+     f.objects = vec![(cid.clone(), b"wrong retained bytes".to_vec())];
+-    let before = f.objects.clone();
+     let m = run(&f, budget()).unwrap();
+     assert_eq!(
+         m.losses(),
+@@ -1143,5 +1128,122 @@ fn orphan_hash_mismatch_is_reported_without_rewriting_its_bytes() {
+             basis: Basis::OriginalObject
+         }]
+     );
+-    assert_eq!(f.objects, before);
++}
++
++// Promoted from the b11cbf4 independent correction review.
++#[test]
++fn cp01_request_length_edges_without_bytes() {
++    for (n, want) in [
++        (MAXREQ, None),
++        (MAXREQ + 1, Some("service request length")),
++        (MIB4, Some("service request length")),
++        (MIB4 + 1, Some("forensic-recovery-required")),
++    ] {
++        let mut f = build(Opts {
++            profile: 2,
++            n: 1,
++            ..Default::default()
++        });
++        let (c, _) = entry_cid(&f.records[0].0);
++        set_len(&mut f, 0, n);
++        f.objects.clear();
++        let r = run(&f, budget());
++        show(&format!("cp01-len-{n}"), &r);
++        match want {
++            None => assert_eq!(
++                r.unwrap().losses(),
++                &[loss(
++                    Some(1),
++                    &c,
++                    Some(n),
++                    Availability::Missing,
++                    Basis::IssuerMetadata
++                )]
++            ),
++            Some(w) => assert_eq!(invalid(&r), Some(w)),
++        }
++    }
++}
++
++// Promoted from the b11cbf4 independent correction review.
++#[test]
++fn cp11_basis_deterministic() {
++    let full = build(Opts {
++        profile: 3,
++        n: 3,
++        ..Default::default()
++    });
++    let mut p = full.clone();
++    p.records.truncate(2);
++    p.objects.clear();
++    let a = run(&p, budget()).unwrap();
++    let b = run(&p, budget()).unwrap();
++    show("cp11", &Ok::<_, member::Error>(run(&p, budget()).unwrap()));
++    assert_eq!(a.losses(), b.losses());
++    assert_eq!(a.commitment(), b.commitment());
++    let bases: Vec<_> = a
++        .losses()
++        .iter()
++        .map(|l| (l.occurrence, l.basis, l.expected_length.is_some()))
++        .collect();
++    assert_eq!(
++        bases,
++        vec![
++            (Some(1), Basis::IssuerMetadata, true),
++            (Some(2), Basis::IssuerMetadata, true),
++            (None, Basis::UnverifiedMembership, false)
++        ]
++    );
++}
++
++#[test]
++fn empty_service_request_cid_refuses_without_an_original() {
++    let mut f = build(Opts {
++        profile: 2,
++        n: 1,
++        ..Default::default()
++    });
++    let issuer = f.context.issuer.clone();
++    replace_manifest(&mut f, 0, &issuer, |body| {
++        let Ipld::List(entries) = body.get_mut("entries").unwrap() else {
++            panic!()
++        };
++        let Ipld::Map(entry) = &mut entries[0] else {
++            panic!()
++        };
++        entry.insert("ciphertext".into(), Ipld::Link(ciphertext_cid(b"")));
++        entry.insert("length".into(), Ipld::Integer(1));
++    })
++    .unwrap();
++    resign(&mut f, |_| Purpose::Admitted);
++    f.objects.clear();
++    assert_eq!(
++        invalid(&run(&f, budget())),
++        Some("empty service request CID")
++    );
++}
++
++// Helpers promoted with CP01 and CP11.
++const MAXREQ: u64 = service::MAX_REQUEST as u64;
++const MIB4: u64 = 4 * 1024 * 1024;
++fn set_len(f: &mut F, i: usize, n: u64) {
++    let issuer = f.context.issuer.clone();
++    replace_manifest(f, i, &issuer, |b| {
++        let Ipld::List(es) = b.get_mut("entries").unwrap() else {
++            panic!()
++        };
++        let Ipld::Map(e) = &mut es[0] else { panic!() };
++        e.insert("length".into(), Ipld::Integer(n as i128));
++    })
++    .unwrap();
++    resign(f, |_| Purpose::Admitted);
++}
++fn loss(occ: Option<u64>, cid: &Cid, n: Option<u64>, s: Availability, b: Basis) -> Loss {
++    Loss {
++        occurrence: occ,
++        cid: cid.clone(),
++        expected_length: n,
++        state: s,
++        basis: b,
++    }
+ }

@@ -1,0 +1,16 @@
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-replay/.local-state/reversion/347f596826ba49159562d3ffaf5378f9
+note: untracked and therefore NOT reverted: ['.design/fixtures/recovery-replay-review-v1.json', '.design/tools/recovery_replay_review_vectors.py', 'scripts/recovery_replay_followup_controls.py']
+What would be reverted (worktree):
+  skipped .design/fixtures/recovery-replay-v1.json (not in --include)
+  skipped .design/kan-v2-recovery-bundle-codec.md (not in --include)
+  skipped .design/tools/recovery_replay_vectors.py (not in --include)
+  skipped .github/workflows/ci.yml (not in --include)
+  skipped scripts/recovery_replay_negative_controls.py (not in --include)
+  reverting src/evidence_recovery_replay.rs: 8/8 hunk(s)
+  skipped tests/evidence_recovery_replay.rs (not in --include)
+
+DEMONSTRATED — failed under revert: evidence_recovery_replay_review_regressions::writer_invalid_candidate_refuses_without_publication_intent, evidence_recovery_replay_review_regressions::valid_writer_signature_with_wrong_manifest_binding_refuses
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=evidence_recovery_replay_review_regressions::writer_invalid_candidate_refuses_without_publication_intent,evidence_recovery_replay_review_regressions::valid_writer_signature_with_wrong_manifest_binding_refuses outcome=DEMONSTRATED

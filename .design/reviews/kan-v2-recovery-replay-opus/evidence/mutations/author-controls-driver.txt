@@ -1,0 +1,12 @@
+author-member-commitment: KILLED-ACCEPTANCE
+author-frontier: KILLED-ACCEPTANCE
+author-loss-partition: KILLED-ACCEPTANCE
+author-historical-restorations: KILLED-ACCEPTANCE
+author-intent-output: KILLED-ACCEPTANCE
+author-intent-citation: KILLED-ACCEPTANCE
+author-terminal-attempt: KILLED-ACCEPTANCE
+author-external-checkpoint: KILLED-ACCEPTANCE
+author-partial-candidate-length: KILLED-SEMANTIC
+author-restoration-basis: KILLED-SEMANTIC
+author-virtual-output-writer: KILLED-ACCEPTANCE
+frozen bytes restored

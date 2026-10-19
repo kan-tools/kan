@@ -1,0 +1,5 @@
+b52aa4849f4a5696b50222bd1ad25290846d3b91
+!! .local-state/
+stash@{0}: autostash
+stash@{1}: autostash
+stash@{2}: autostash

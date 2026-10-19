@@ -1,0 +1,26 @@
+scopeB control retain-issuer-length: KILLED-SEMANTIC exit=101 test=cp11_basis_deterministic
+--- if !c.referenced {
++++ if true {
+
+
+running 1 test
+test cp11_basis_deterministic ... FAILED
+
+failures:
+
+failures:
+    cp11_basis_deterministic
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.08s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-replay/.local-state/reviews/recovery-replay)
+    Finished `test` profile [unoptimized] target(s) in 7.45s
+     Running tests/evidence_recovery_member_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_review_regressions-9f02720da46a1f05)
+RP cp11: ACCEPT through=2 verified=0 complete=false losses=[Loss { occurrence: Some(1), cid: Cid(bafkreigaxged477u5edgut5eqzidnuv3gsvzako6rbmowp5swyowybmira), expected_length: None, state: Missing, basis: IssuerMetadata }, Loss { occurrence: Some(2), cid: Cid(bafkreiebrjzw6t3ax6q53uqxim5c5u3cdukjdudxmzfsypy2k3qekz36e4), expected_length: None, state: Missing, basis: IssuerMetadata }, Loss { occurrence: None, cid: Cid(bafkreigphevvnhuzipywjzxoyuyoix5awnffdlfsdaxpyq2svgisspv3yi), expected_length: None, state: Missing, basis: UnverifiedMembership }]
+
+thread 'cp11_basis_deterministic' (10194267) panicked at tests/evidence_recovery_member_review_regressions.rs:1189:5:
+assertion `left == right` failed
+  left: [(Some(1), IssuerMetadata, false), (Some(2), IssuerMetadata, false), (None, UnverifiedMembership, false)]
+ right: [(Some(1), IssuerMetadata, true), (Some(2), IssuerMetadata, true), (None, UnverifiedMembership, false)]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_member_review_regressions`

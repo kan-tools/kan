@@ -67,6 +67,8 @@ pub struct Attempt {
     pub observed_at_sequence: Option<u64>,
 }
 /// Verified candidate bytes, with source membership authority kept separate.
+/// Issuer-referenced requests also verify their writer signature and exact
+/// manifest binding before any restoration is accepted; this is not publication.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Restoration {
     pub cid: Cid,
@@ -294,6 +296,7 @@ struct Key<'a> {
     length: Option<u64>,
     original: Option<&'a [u8]>,
     basis: Basis,
+    request: Option<usize>,
 }
 fn keys<'a>(
     input: Input<'a>,
@@ -309,6 +312,7 @@ fn keys<'a>(
                 cid: m.cid.clone(),
                 length: complete_recipe.then_some(m.length),
                 original: None,
+                request: None,
                 basis: if complete_recipe {
                     Basis::VerifiedCopyRecipe
                 } else {
@@ -317,7 +321,7 @@ fn keys<'a>(
             },
         );
     }
-    for row in input.records {
+    for (index, row) in input.records.iter().enumerate() {
         work.charge(0, row.manifest.len() as u64)?;
         let Decoded::Known(record) =
             evidence::decode(row.manifest).map_err(|_| Error::Invalid("member changed"))?
@@ -334,12 +338,14 @@ fn keys<'a>(
             .and_modify(|key| {
                 key.length = Some(length);
                 key.basis = Basis::IssuerMetadata;
+                key.request = Some(index);
             })
             .or_insert_with(|| Key {
                 cid: cid.clone(),
                 length: Some(length),
                 original: None,
                 basis: Basis::IssuerMetadata,
+                request: Some(index),
             });
     }
     for o in input.objects {
@@ -350,6 +356,7 @@ fn keys<'a>(
                 length: None,
                 original: None,
                 basis: Basis::OriginalObject,
+                request: None,
             })
             .original = Some(o.bytes);
     }
@@ -530,6 +537,32 @@ pub fn verify<'a>(
             "candidate expected length",
         )?;
         require(work.hash(c.bytes)? == raw[4..], "candidate hash")?;
+        if let Some(index) = target.request {
+            let row = &input.records[index];
+            work.charge(
+                0,
+                (row.manifest.len() + row.receipt.len() + c.bytes.len()) as u64,
+            )?;
+            let Decoded::Known(manifest) =
+                evidence::decode(row.manifest).map_err(|_| Error::Invalid("member changed"))?
+            else {
+                return Err(Error::Invalid("member changed"));
+            };
+            let Decoded::Known(receipt) =
+                evidence::decode(row.receipt).map_err(|_| Error::Invalid("member changed"))?
+            else {
+                return Err(Error::Invalid("member changed"));
+            };
+            let committed = crate::evidence_store::Committed {
+                sequence: row.sequence,
+                manifest,
+                receipt,
+                duplicate: false,
+            };
+            crate::evidence_service::verify_retained_request(&committed, c.bytes)
+                .map_err(|_| Error::Invalid("candidate writer request"))?;
+            work.check()?;
+        }
         physical.insert(name, c.bytes);
     }
     let mut previous: Option<Authenticated> = None;

@@ -37,9 +37,11 @@ def basis(m,cid):
  if cid in dict(m['membership']):return 'VerifiedCopyRecipe' if complete(m) else 'UnverifiedMembership'
  return 'OriginalObject'
 
-def check_writer(m,objects):
+def check_writer(m,objects,selected_only=False):
  for _,mb,rb,_ in m['records']:
-  manifest=codec.decode(mb);receipt=codec.decode(rb);entry=manifest['body']['entries'][0];raw=objects[text(entry['ciphertext'])]
+  manifest=codec.decode(mb);receipt=codec.decode(rb);entry=manifest['body']['entries'][0]
+  if selected_only and text(entry['ciphertext']) not in objects:continue
+  raw=objects[text(entry['ciphertext'])]
   value=json.loads(raw);need(list(value)==['request','signature'] and members.canonical(value)==raw,'writer-json');request=value['request']
   need(list(request)==['version','scope','audience','principal','expires','command'],'writer-json')
   command=request['command'];need(list(command)==['operation','id','position','previous','ciphertext'] and command['operation']=='append','writer-command')
@@ -91,6 +93,8 @@ def replay(h,envelopes):
  for cid,b in h.candidates:
   need(prior_name is None or prior_name<cid,'candidate order or duplicate');prior_name=cid
   need(cid in known,'candidate outside member');need(1<=len(b)<=4194304,'candidate bounds');need(known[cid] is None or known[cid]==len(b),'candidate expected length');need(frame.raw_cid(b)==cid,'candidate hash');physical[cid]=b
+ try:check_writer(m,physical,True)
+ except (ValueError,wire.crypto.InvalidSignature,KeyError,TypeError):raise ValueError('candidate writer request')
  previous=None;offset=0;selected={};attempts={};seen=h.checkpoint is None
  for raw in envelopes:
   try:st=wire.verify(raw,h.context,previous)
@@ -199,7 +203,7 @@ def vectors():
  m,o=members.build(2,1);request=json.loads(m['objects'][0][1]);sig=bytearray.fromhex(request['signature']);sig[7]^=1;request['signature']=sig.hex();bad=members.canonical(request);cid=frame.raw_cid(bad)
  manifest=members.codec.decode(m['records'][0][1]);entry=manifest['body']['entries'][0];entry['ciphertext']=members.codec.Link(members.codec.cid_bytes(cid));entry['length']=len(bad);mb=members.codec.encode(manifest)
  receipt=members.codec.decode(m['records'][0][2]);receipt['body']['manifest']=members.codec.Link(members.codec.cid_bytes(members.codec.cid(mb)));m['records'][0][1]=mb;m['records'][0][2]=members.codec.encode(receipt);m['objects']=[];members.resign(m)
- h=History(m,o);h.initial();h.restore(cid,bad);h.add('publication-intent',{'attempt':b'\x09'*16,'member':frame.member_digest(m),'restorations':frame.restoration_digest(h.candidates),'output':frame.member_digest({**m,'objects':[[cid,bad]]},True),'frontier':frontier(m)});add('restored-content-address-does-not-certify-writer',h,'output member validation')
+ h=History(m,o);h.initial();h.restore(cid,bad);h.add('publication-intent',{'attempt':b'\x09'*16,'member':frame.member_digest(m),'restorations':frame.restoration_digest(h.candidates),'output':frame.member_digest({**m,'objects':[[cid,bad]]},True),'frontier':frontier(m)});add('restored-content-address-does-not-certify-writer',h,'candidate writer request')
  return {'status':'pure state replay vectors over independently constructed valid members; no physical format/durability claim','cases':cases}
 
 def main():
