@@ -76,6 +76,7 @@ struct Fixture {
     issuer: String,
     endpoint: String,
     service: Arc<Mutex<Service>>,
+    #[allow(dead_code, reason = "Fault modes are exercised by the integration suite sharing this fixture")]
     mode: Arc<AtomicU8>,
     server: JoinHandle<()>,
     writer: Identity,

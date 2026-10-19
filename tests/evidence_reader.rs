@@ -1488,29 +1488,66 @@ async fn content_handles_realistic_multiturn_history_and_streams_without_repeate
     let identity = Identity::generate();
     let mut fixture = Fixture::new(92, &identity).await;
     let request=serde_json::to_vec(&serde_json::json!({"messages":(0..130).map(|k|serde_json::json!({"role":if k%2==0 {"user"}else{"assistant"},"content":"a".repeat(1000)})).collect::<Vec<_>>()})).unwrap();
-    fixture.append(&content_frame(
-        'a',
-        0,
-        serde_json::json!({"type":"request-chunk","offset":0}),
-        &request,
-    ));
-    let sse=(0..500).map(|_|format!("data: {}\n\n",serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"word word word word word word "}}))).collect::<String>();
-    fixture.append(&content_frame(
-        'b',
-        0,
-        serde_json::json!({"type":"response-chunk","offset":0}),
-        sse.as_bytes(),
-    ));
+    let request_first = fixture.position + 1;
+    for (n, chunk) in request.chunks(65536).enumerate() {
+        fixture.append(&content_frame(
+            'a',
+            n as u64,
+            serde_json::json!({"type":"request-chunk","offset":n*65536}),
+            chunk,
+        ));
+    }
+    let request_sequences = (request_first..=fixture.position)
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>();
+    let mut events = vec![
+        serde_json::json!({"type":"message_start","message":{"type":"message","role":"assistant","content":[]}}),
+        serde_json::json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+    ];
+    events.extend((0..500).map(|_|serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"word word word word word word "}})));
+    events.extend([
+        serde_json::json!({"type":"content_block_stop","index":0}),
+        serde_json::json!({"type":"message_delta","delta":{"stop_reason":"end_turn"}}),
+        serde_json::json!({"type":"message_stop"}),
+    ]);
+    let sse = events
+        .iter()
+        .map(|value| {
+            format!(
+                "event: {}\ndata: {value}\n\n",
+                value["type"].as_str().unwrap()
+            )
+        })
+        .collect::<String>();
+    let response_first = fixture.position + 1;
+    for (n, chunk) in sse.as_bytes().chunks(65536).enumerate() {
+        fixture.append(&content_frame(
+            'b',
+            n as u64,
+            serde_json::json!({"type":"response-chunk","offset":n*65536}),
+            chunk,
+        ));
+    }
+    let response_sequences = (response_first..=fixture.position)
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>();
     let reader = Reader::new(identity, vec![fixture.access()]).unwrap();
     let pin = reader.snapshot(&svc::hex(&fixture.scope)).await.unwrap();
-    for (sequence, format, direction, count) in [
-        ("1", Format::AnthropicMessagesJson, "request", 261),
-        ("2", Format::AnthropicMessagesSse, "response", 500),
+    for (sequences, format, direction, count) in [
+        (
+            request_sequences,
+            Format::AnthropicMessagesJson,
+            "request",
+            261,
+        ),
+        (
+            response_sequences,
+            Format::AnthropicMessagesSse,
+            "response",
+            505,
+        ),
     ] {
-        let bytes = reader
-            .content(&pin, &[sequence.into()], format)
-            .await
-            .unwrap();
+        let bytes = reader.content(&pin, &sequences, format).await.unwrap();
         let result: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(
             result["groups"][0][direction]["items"]
@@ -1529,8 +1566,19 @@ async fn content_handles_realistic_multiturn_history_and_streams_without_repeate
             "source correspondence must be charged once: {scan}"
         );
         for item in result["groups"][0][direction]["items"].as_array().unwrap() {
-            assert_eq!(item["citations"].as_array().unwrap().len(), 1);
-            assert_eq!(item["citations"][0]["input"], "0");
+            let citations = item["citations"].as_array().unwrap();
+            assert!(!citations.is_empty() && citations.len() <= sequences.len());
+            for citation in citations {
+                let index = citation["input"]
+                    .as_str()
+                    .unwrap()
+                    .parse::<usize>()
+                    .unwrap();
+                assert_eq!(
+                    result["occurrences"][index]["record"]["sequence"],
+                    sequences[index]
+                );
+            }
         }
     }
 }

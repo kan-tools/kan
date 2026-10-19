@@ -88,3 +88,42 @@ async fn cancelling_real_content_keeps_worker_admission_until_exit_and_stops_aft
         Err(Failure::AccessLimited)
     );
 }
+
+#[tokio::test]
+async fn busy_content_http_response_is_distinct_and_retry_succeeds_after_capacity_returns() {
+    let identity = Identity::generate();
+    let mut fixture = Fixture::new(93, &identity).await;
+    fixture.append(b"synthetic-opaque-capacity-fixture");
+    let reader = Reader::new(identity, vec![fixture.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&fixture.scope)).await.unwrap();
+    let wire = crate::evidence_content::pin_wire(&pin).unwrap();
+    let first = reader.content_workers.clone().try_acquire_owned().unwrap();
+    let second = reader.content_workers.clone().try_acquire_owned().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/api/library", listener.local_addr().unwrap());
+    let token = "synthetic-capacity-reader-token-32-chars";
+    struct Stop(JoinHandle<std::io::Result<()>>);
+    impl Drop for Stop {
+        fn drop(&mut self) {
+            self.0.abort();
+        }
+    }
+    let _server = Stop(tokio::spawn(crate::evidence_library::serve(
+        listener,
+        token.into(),
+        reader,
+    )));
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let request = || {
+        client.post(&endpoint).bearer_auth(token).header("content-type","application/json").body(serde_json::json!({"action":"content","pin_wire":wire,"sequences":["1"],"format":"anthropic-messages-sse"}).to_string())
+    };
+    let busy = request().send().await.unwrap();
+    assert_eq!(busy.status(), 429);
+    assert_eq!(busy.headers()["cache-control"], "no-store");
+    assert_eq!(busy.text().await.unwrap(), r#"{"error":"content-busy"}"#);
+    drop(first);
+    drop(second);
+    assert_eq!(request().send().await.unwrap().status(), 200);
+    fixture.revoke();
+    assert_eq!(request().send().await.unwrap().status(), 403);
+}

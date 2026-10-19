@@ -504,7 +504,9 @@ fn event(
                 _ => (Kind::Unsupported, "", BlockKind::Unknown),
             };
             i.kind = kind;
-            let text = delta.and_then(|d| d.get(key)).and_then(Value::as_str);
+            let text = (!key.is_empty())
+                .then(|| delta.and_then(|d| d.get(key)).and_then(Value::as_str))
+                .flatten();
             i.text = text.map(|s| w.string(s)).transpose()?;
             if want == BlockKind::Unknown {
                 if delta

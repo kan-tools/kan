@@ -651,39 +651,33 @@ mod tests {
     }
     #[test]
     fn serialized_content_cap_is_independent_of_normalized_output() {
-        let body=serde_json::to_vec(&json!({"messages":(0..500).map(|_|json!({"role":"user","content":"x".repeat(4030)})).collect::<Vec<_>>()})).unwrap();
+        let body=serde_json::to_vec(&json!({"messages":(0..60).map(|_|json!({"role":"user","content":"x".repeat(34000)})).collect::<Vec<_>>()})).unwrap();
         let b = budget();
         let parsed =
             provider::interpret(&body, provider::Format::Request, b.limits().unwrap()).unwrap();
         assert!(parsed.output_bytes < OUTPUT as u64);
-        assert_eq!(parsed.items.len(), 1001);
-        let header=serde_json::to_vec(&json!({"version":2,"attempt":"8".repeat(64),"observer":"collector","ordinal":0,"observed_at_unix_micros":null,"elapsed_micros":0,"unconfirmed_before":0,"event":{"type":"request-chunk","offset":0}})).unwrap();
-        let mut raw = b"KANC2".to_vec();
-        raw.extend((header.len() as u32).to_be_bytes());
-        raw.extend(header);
-        raw.extend(body);
-        let acquired = vec![Acquired {
-            scope: [1; 32],
-            record: crate::evidence_reader::Occurrence {
-                sequence: 1,
-                manifest: "m".into(),
-                receipt: "r".into(),
+        assert_eq!(parsed.items.len(), 121);
+        let acquired=body.chunks(65536).enumerate().map(|(n,chunk)|{
+            let header=serde_json::to_vec(&json!({"version":2,"attempt":"8".repeat(64),"observer":"collector","ordinal":n,"observed_at_unix_micros":null,"elapsed_micros":0,"unconfirmed_before":0,"event":{"type":"request-chunk","offset":n*65536}})).unwrap();
+            let mut raw=b"KANC2".to_vec();raw.extend((header.len() as u32).to_be_bytes());raw.extend(header);raw.extend(chunk);
+            Acquired{scope:[1;32],record:crate::evidence_reader::Occurrence{sequence:n as u64+1,manifest:"m".into(),receipt:"r".into()},writer:"synthetic-writer".into(),service_issuer:"synthetic-issuer".into(),plaintext:raw}
+        }).collect();
+        let mut seen = 0;
+        let result = render(
+            acquired,
+            "opaque-pin".into(),
+            Format::AnthropicMessagesJson,
+            b.cancelled,
+            b.deadline,
+            || {
+                seen += 1;
             },
-            writer: "synthetic-writer".into(),
-            service_issuer: "synthetic-issuer".into(),
-            plaintext: raw,
-        }];
-        assert_eq!(
-            render(
-                acquired,
-                "opaque-pin".into(),
-                Format::AnthropicMessagesJson,
-                b.cancelled,
-                b.deadline,
-                || {}
-            ),
-            Err(Failure::Unavailable)
         );
+        assert_eq!(
+            seen, 121,
+            "normalization must finish before the serialization refusal"
+        );
+        assert_eq!(result, Err(Failure::Unavailable));
     }
     #[test]
     fn dropping_request_guard_signals_the_worker() {

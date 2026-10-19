@@ -287,3 +287,21 @@ fn unknown_sse_field_reason_is_local_to_its_event() {
     assert!(d.items[1].issues.is_empty());
     assert!(!d.coherent_stop_observed);
 }
+
+#[test]
+fn citations_and_unknown_deltas_do_not_promote_an_empty_json_key_to_text() {
+    for delta in [
+        json!({"type":"citations_delta","citation":{},"":"untyped text"}),
+        json!({"type":"future_delta","":"untyped text"}),
+    ] {
+        let raw = events(&[
+            start(),
+            json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+            json!({"type":"content_block_delta","index":0,"delta":delta}),
+        ]);
+        let doc = p::interpret(&raw, p::Format::Sse, limits()).unwrap();
+        let item = &doc.items[2];
+        assert_eq!(item.text, None);
+        assert_eq!(item.event.as_ref().unwrap()["delta"][""], "untyped text");
+    }
+}
