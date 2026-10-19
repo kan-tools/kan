@@ -1,0 +1,72 @@
+# A-C3-candidate-min-zero: src/evidence_store/bundle.rs
+# expect: DIAG: replay layer refuses empty candidate (label change in PH2 only)
+# old occurrences=1
+--- old
+objects(&conn, "restored_objects", 1, &mut work)?
++++ new
+objects(&conn, "restored_objects", 0, &mut work)?
+
+$ cargo test --features v2-crypto --test evidence_recovery_bundle -- --nocapture  env=None
+
+running 14 tests
+test public_mode_and_symlink_source_refuse_before_sqlite_open ... ok
+test hot_rollback_journal_refuses_without_recovering_source_media ... ok
+test oversized_and_malformed_physical_media_retain_sqlite_refusal_codes ... ok
+test empty_originals_remain_exact_evidence_before_and_after_restoration ... ok
+test existing_sqlite_sidecar_symlink_or_hardlink_refuses_before_open ... ok
+test acquisition_budgets_have_exact_edges_and_replay_has_separate_limits ... ok
+test foreign_external_pins_and_checkpoint_refuse ... ok
+test restored_bundle_is_still_refused_by_all_standalone_readers ... ok
+test parser_accepted_noncanonical_spellings_refuse_in_every_key_table ... ok
+test utf16_refuses_despite_identical_logical_columns ... ok
+test busy_source_refuses_with_bounded_wait_and_no_recovery_write ... ok
+test sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation ... ok
+test schema_marker_history_identity_and_physical_cell_damage_refuse ... ok
+test python_sqlite_histories_match_independent_state_results_and_preserve_source ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.46s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening)
+    Finished `test` profile [unoptimized] target(s) in 7.66s
+     Running tests/evidence_recovery_bundle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_bundle-bae884b5e26db009)
+
+exit=0
+
+$ cargo test --features v2-crypto --test zz_review_A_probes -- --nocapture  env={'REVIEW_A_DIR': '/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening/review-evidence/probes/out-A'}
+
+running 1 test
+PROBE PA1-p3-complete-empty-original-initial-loss: expect=accept expectErr=None -> ACCEPT latest=2 restored=0 losses=1 states=["Corrupt"] complete=true source_unchanged=true MATCH
+PROBE PA2-p3-complete-empty-original-restored: expect=accept expectErr=None -> ACCEPT latest=3 restored=1 losses=1 states=["Corrupt"] complete=true source_unchanged=true MATCH
+PROBE PA3-p3-partial-two-empty-one-restored: expect=accept expectErr=None -> ACCEPT latest=3 restored=1 losses=2 states=["Corrupt", "Corrupt"] complete=false source_unchanged=true MATCH
+PROBE PA4-p2-two-empty-both-restored: expect=accept expectErr=None -> ACCEPT latest=4 restored=2 losses=2 states=["Corrupt", "Corrupt"] complete=true source_unchanged=true MATCH
+PROBE PH1-empty-original-stored-as-TEXT: expect=refuse expectErr=Some("cell storage class") -> REFUSE Invalid("cell storage class") source_unchanged=true MATCH
+PROBE PH2-empty-candidate-blob: expect=refuse expectErr=Some("integer storage class or bounds") -> REFUSE Replay(Invalid("candidate bounds")) source_unchanged=true MISMATCH
+PROBE PH3-empty-candidate-TEXT: expect=refuse expectErr=Some("cell storage class") -> REFUSE Invalid("cell storage class") source_unchanged=true MATCH
+PROBE PH4-empty-original-rewritten-as-zeroblob0: expect=accept expectErr=None -> ACCEPT latest=2 restored=0 losses=1 states=["Corrupt"] complete=true source_unchanged=true MATCH
+PROBE PH5-nonempty-original-truncated-to-empty-after-signing: expect=refuse expectErr=None -> REFUSE Replay(Invalid("member commitment")) source_unchanged=true MATCH
+PROBE PH6-empty-original-replaced-by-one-byte: expect=refuse expectErr=None -> REFUSE Replay(Invalid("member commitment")) source_unchanged=true MATCH
+test zz_review_scope_a_empty_original_probes ... FAILED
+
+failures:
+
+failures:
+    zz_review_scope_a_empty_original_probes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening)
+    Finished `test` profile [unoptimized] target(s) in 0.37s
+     Running tests/zz_review_A_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_A_probes-bea35d80046d5736)
+
+thread 'zz_review_scope_a_empty_original_probes' (10329249) panicked at tests/zz_review_A_probes.rs:86:5:
+assertion `left == right` failed
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_A_probes`
+
+exit=101
+
+
+VERDICT KILLED by test zz_review_scope_a_empty_original_probes ... FAILED
+restored_exact=True

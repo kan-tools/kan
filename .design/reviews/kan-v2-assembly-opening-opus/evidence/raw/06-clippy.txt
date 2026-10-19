@@ -1,0 +1,6 @@
+$ cargo clippy --features v2-crypto --all-targets -- -D warnings
+# cwd=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target CARGO_BUILD_JOBS=4 date=2026-10-19T17:54:02Z
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening)
+    Finished `dev` profile [unoptimized] target(s) in 8.99s
+
+exit=0 wall_s=9

@@ -1,0 +1,34 @@
+# A-C6-canonical-case-insensitive: src/evidence_store/bundle.rs
+# expect: KILL (all three tables)
+# old occurrences=1
+--- old
+require(value.to_string() == text, "canonical CID spelling")?;
++++ new
+require(value.to_string().eq_ignore_ascii_case(text), "canonical CID spelling")?;
+
+$ cargo test --features v2-crypto --test evidence_recovery_bundle parser_accepted_noncanonical_spellings_refuse_in_every_key_table -- --nocapture  env=None
+
+running 1 test
+test parser_accepted_noncanonical_spellings_refuse_in_every_key_table ... FAILED
+
+failures:
+
+failures:
+    parser_accepted_noncanonical_spellings_refuse_in_every_key_table
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.08s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening)
+    Finished `test` profile [unoptimized] target(s) in 7.52s
+     Running tests/evidence_recovery_bundle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_bundle-bae884b5e26db009)
+
+thread 'parser_accepted_noncanonical_spellings_refuse_in_every_key_table' (10330804) panicked at tests/evidence_recovery_bundle.rs:467:9:
+accepted mutation: parser-accepted noncanonical member_objects key
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_bundle`
+
+exit=101
+
+
+VERDICT KILLED by test parser_accepted_noncanonical_spellings_refuse_in_every_key_table ... FAILED
+restored_exact=True

@@ -1,0 +1,380 @@
+INDEPENDENT ADVERSARIAL REVIEW: KNB1 reader correction (scope A) + pure bounded occurrence assembly (scope B)
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5). Fresh cold session, no subagents, no fork. 2026-10-19.
+Frozen commit: eb4f471248939f7684d710501e458f9cf3375fd7 (branch feat/kan-v2-session-assembly).
+Explicit source repository: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly
+Export reviewed (every command ran here): <repo>/.local-state/reviews/assembly-opening
+
+VERDICTS
+  Scope A (b6a4f3f empty-original correction + A-F2..A-F7/B-F1/B-F2 follow-through) ... APPROVE WITH FOLLOW-UPS
+  Scope B (src/evidence_assembly.rs pure bounded occurrence assembly) ................ APPROVE WITH FOLLOW-UPS
+  Overall checkpoint eb4f471 ....................................................... APPROVE WITH FOLLOW-UPS
+I found no correctness, safety or invariant violation in either scope. No hostile input was wrongly accepted
+and no source byte was rewritten. Every reviewer probe matched its design-derived expectation. The prior
+BLOCK on frozen 01bc49b stands as the historical verdict on that commit; this verdict covers the fix round.
+None of these components implies acceptance of a recovery writer, durability, owner job, RPC, session API,
+provider adapter or frontend. No parent acceptance criterion closes.
+
+=====================================================================================================
+0. INDEPENDENCE, RECORDING, IDENTITY, ENVIRONMENT
+- I did not write any code under review. This is a cold session with no subagents.
+- Git-first recording (day#168/kan#197): this REPORT.txt plus review-evidence/ is the record. I made no kan or
+  day writes and read no live log, and I do not claim live-log access. The north star comes only from the
+  supplied frozen north-star.json. Its two trust-excluded claims (excluded_by_trust=2) were not reconstructed,
+  and no witnesses were invented.
+- Identity BEFORE (raw/00-identity-before.txt) and AFTER (raw/99-identity-after.txt), using
+  tools/verify_identity.py. The export path set equals the 3,631 manifest paths plus north-star.json
+  (review-evidence/ is excluded as this review's own output). There are 0 SHA-256 mismatches and 0 Git-blob
+  mismatches. `git ls-tree -r eb4f471` in the explicit repository equals the pinned git_blobs (3,631 entries).
+  Repository HEAD is eb4f471 and the tracked status is clean. Identity-file sha256 is 40837510...; north-star.json
+  sha256 is 64a00fe7.... Result: PASS both times.
+- Environment: shared CARGO_TARGET_DIR=<kan-v2-library-resilience>/.local-state/target, CARGO_BUILD_JOBS=4,
+  `cargo clean -p kan` first (raw/02-clean.txt: 963 files removed), one heavy job at a time. Python used
+  KAN_CRYPTO_ORACLE_PYTHON (3.9.6) with -B so that no __pycache__ entered the export (none found at the end).
+  There was no own target, no install, no .lake, no network, no live archive/key/traffic, no parent edit, no Git
+  write, no stash operation (stash count read only: 3) and no process kill. revert_v2.py was never run.
+  Temporary probe tests were copied into tests/ only for their runs. Each was cmp-verified against its
+  review-evidence copy and then removed, and the final `ls tests | grep -c zz` was 0.
+
+1. NORTH STAR (frozen north-star.json only)
+telos/raw-data-and-projections (Decision bafyreied3rklhs57...): "Raw attested data is retained in full and
+never collapsed in the store. Every simplification ... is a determined projection computed on demand over
+that raw data ... A field holding a computed value is the failure mode." It is in recorded tension with
+telos/performance-at-scale (InTensionWith, both directions). The telos deliberately declares no witnesses.
+I did not add one.
+How each scope serves it:
+  A: the physical reader is a projection over retained raw bundle bytes. It must neither drop a legitimately
+     retained raw state (an empty original) nor accept a non-retained one.
+  B: assembly is a disposable projection over caller-selected raw frames. It must retain every input and every
+     lineage, and must not collapse duplicates, conflicts, holes or claims into synthetic completeness.
+Tension in play: both components trade bounded budgets (performance) against retaining every raw item. Both
+refuse wholesale on budget exhaustion rather than silently truncating. That is the correct side of the
+tension. Scope B's derived booleans (unconfirmed_claim, missing_start, events_after_terminal) are projections
+whose raw values stay reachable through Assembly.observations. They are not stored fields, so they do not hit
+the telos' failure mode.
+
+2. BASELINE (bounded scope; raw logs in raw/)
+- cargo build --features v2-crypto --tests: exit 0 (raw/03).
+- Integration (raw/04): evidence_assembly 13, evidence_reconstruction 15, evidence_reconstruction_review_
+  regressions 2, evidence_recovery_bundle 14, evidence_recovery_replay 10, evidence_recovery_replay_review_
+  regressions 6, surface_conformance 19. All 79 pass. Scope A's affected subset (bundle+replay+regressions+
+  surface) is 49, which matches the author's "49 integration".
+- Units: evidence_assembly::tests 1/1 (raw/05b); evidence_store::bundle::snapshot_tests 3/3 (raw/05c).
+  FAILED METHOD retained (raw/05-units): passing two filters to one `cargo test --lib` invocation is a CLI usage
+  error (exit 1). This was not a test failure, and the run was split.
+- cargo clippy --features v2-crypto --all-targets -- -D warnings: exit 0 (raw/06). cargo fmt --all -- --check:
+  exit 0 (raw/07).
+- Python --check (raw/08-*): recovery_bundle_review_vectors.py: "Five empty/corrupt-original vectors
+  reproduce; original three reviewer cases retained unchanged". recovery_replay_vectors.py: 45 cases/13
+  positive. recovery_replay_review_vectors.py: 23 cases, bound 3816. recovery_bundle_schema.py: OK.
+- Final post-restoration rerun (raw/90-93): the same 79 integration tests, 1+3 units and fmt all pass.
+- Retained runs read, not repeated: the author's correction qualification (.design/reviews/kan-v2-recovery-
+  opening-correction-author/attempt-1 failure, attempt-2 pass), the combined qualification
+  (kan-v2-session-assembly-combined-author: 79+4 pass) and the assembly author controls. Applicability: from
+  01bc49b to eb4f471 the only production changes are bundle.rs (+49, of which 4 lines are code), the new
+  evidence_assembly.rs and the lib.rs registration (raw/20-diff-src-stat.txt). Cargo.toml and Cargo.lock are
+  unchanged. Earlier lifecycle results are therefore unaffected.
+- CI: the author's retained initial PR perf failure (context/claims ratio 8.4 > bound 8) is UNRESOLVED. I did
+  not rerun CI (no network). evidence_assembly is `#[cfg(feature = "v2-crypto")]` (lib.rs) and no Cargo
+  manifest changed, so the default-feature measured binary should not contain it. That makes an unrelated
+  cause plausible but not demonstrated. The threshold is unchanged. This must be green before merge (§10).
+
+=====================================================================================================
+SCOPE A: KNB1 READER CORRECTION (b6a4f3f; governing kan-v2-recovery-bundle-opening.md, parent bundles/codec)
+
+3. THE FIX (code read, bundle.rs:143-161)
+      require(row.get_ref(col)? == ValueRef::Text(if text {b"text"} else {b"blob"}), "cell storage class")?;
+      let len = integer(row, col + 1, min as i64, max as i64)? as usize;
+      ... (false, ValueRef::Null) if len == 0 => &[],
+  The NULL projection is admitted only after (a) typeof(column)='blob', (b) length(CAST(col AS BLOB)) is an
+  integer within [min,max] and equals 0, and (c) text=false. min is 0 only for member_objects
+  (bundle.rs:396). restored_objects uses min=1 (bundle.rs:397). A source NULL fails (a), TEXT fails (a), and an
+  empty candidate fails (b). The truncation guard (bytes.len()==len) is still applied afterwards.
+  Requirement "preserve empty or hash-invalid original BLOB bytes within the 4-MiB cell limit": MET.
+
+4. REQUIREMENT / FOLLOW-THROUGH COVERAGE
+A-F1 empty-original BLOB (prior BLOCK) ............................................... MET
+  - Independent whole-file reversion (tools/revert_bundle.py; mutations/A-REV-*). src/evidence_store/bundle.rs
+    was set to Git blob db1bb06:src/evidence_store/bundle.rs = bc1fb7f1 (sha256 47d9bbb0..., identical to 01bc49b),
+    with tests and fixtures left at eb4f471. empty_originals_remain_exact_evidence_before_and_after_restoration
+    COMPILES and FAILS: "E1-empty-original-initial-loss: invalid recovery bundle: projected cell storage class"
+    (tests/evidence_recovery_bundle.rs:359). That is the prior A-F1 message exactly. The full reverted suite
+    gives 13 passed, 1 failed. Only the empty-original test depends on the fix; the A-F2/3/4 tests are
+    test-only follow-ups whose guards pre-existed. Restored sha256 is 5cc60260..., equal to the pin, and the
+    restored suite passes 14/14.
+  - Fixture independence (raw/10-fixture-independence.txt): promoted E1/E2/E3 in
+    .design/fixtures/recovery-bundle-review-v1.json are field-for-field EQUAL to the prior reviewer's raw
+    out-empty/cases.json (member, candidates, observations, checkpoint, expectations). E4/E5 are author-added.
+    They are partial profile 3 (records[:1], recipeMetadataComplete=false), object 0 is empty, and E5 restores
+    the correct 616-byte object. The generator calls rv.replay without try, so a Python-oracle refusal would
+    abort --check.
+  - Reviewer positive probes beyond the author's five (probes/gen_A_probes.py, zz_review_A_probes.rs,
+    raw/A-probes-run1.txt). Expectations were written from the design before running, and source bytes were
+    unchanged in all cases:
+      PA1 COMPLETE profile 3, empty original, initial loss ......... ACCEPT latest=2 losses=1 Corrupt  MATCH
+      PA2 COMPLETE profile 3, empty original, restored ............. ACCEPT latest=3 restored=1         MATCH
+      PA3 partial p3, TWO empty originals, one restored ............ ACCEPT restored=1 losses=2         MATCH
+      PA4 profile 2, two empty original-only keys, both restored ... ACCEPT latest=4 restored=2         MATCH
+      PH4 empty original rewritten as zeroblob(0) .................. ACCEPT                             MATCH
+    Reviewer hostile probes:
+      PH1 empty original stored as TEXT '' ......................... REFUSE Invalid("cell storage class")  MATCH
+      PH2 empty candidate BLOB x'' ................................. REFUSE Invalid("integer storage class or bounds") MATCH
+      PH3 empty candidate TEXT '' .................................. REFUSE Invalid("cell storage class")  MATCH
+      PH5 nonempty original truncated to x'' after signing ......... REFUSE Replay(Invalid("member commitment")) MATCH
+      PH6 retained empty original replaced by x'00' ................ REFUSE Replay(Invalid("member commitment")) MATCH
+    PH5 is the important direction. The empty-projection admission cannot launder a post-signing truncation,
+    because the member digest commits original lengths and bytes (recovery_commitments.py:89-94).
+  - A physical NULL original cannot be constructed through SQLite (NOT NULL is enforced even with
+    ignore_check_constraints). It is covered only by the in-memory unit
+    empty_blob_projection_does_not_admit_source_null_text_or_empty_candidates (bundle.rs:470-510), which I ran.
+A-F2 parser-accepted noncanonical keys in all three populated tables ..................... MET
+  parser_accepted_noncanonical_spellings_refuse_in_every_key_table uses 'b'||upper(substr(cid,2)) on
+  member_objects, restored_objects and member_membership. It asserts that the UPDATE changes >0 rows and asserts
+  the exact error. The schema-damage list also gained this spelling. Reviewer control A-C6 (a different
+  mutation: case-insensitive comparison) is KILLED ("accepted mutation: parser-accepted noncanonical
+  member_objects key").
+A-F3 timed VM schema interruption ...................................................... MET
+  sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation: 400,000 writable_schema view rows, a 150 ms
+  deadline giving Budget("duration") in <3 s, then an in-flight cancel at 100 ms giving Cancelled in <3 s,
+  source unchanged. Reviewer controls (distinct from the author's handler removal) are both KILLED:
+  A-C4 (handler always returns false) fails "deadline did not interrupt SQLite schema loading"; A-C5 (handler
+  ignores cancel) fails "cancellation did not interrupt SQLite schema loading". The timing margin is wide
+  (prior measurement ~17.5 s unbounded versus 3 s).
+A-F4 SQL refusal codes documented/tested, no invented enum ............................... MET
+  Error::Sql doc comment (bundle.rs:31-34). Tests assert TooBig for a 6 MiB (>5 MiB) member_objects cell,
+  DatabaseCorrupt for a malformed schema row, and ReadOnly/extended 776 for a hot journal. opening.md states
+  that the later forensic capability enum is not yet exposed. Reviewer A-C8 (SQLITE_LIMIT_LENGTH raised to
+  64 MiB) makes the TooBig assertion fail. That is LABEL-ONLY, not a semantic kill: the cell is still refused
+  (length bounds), only via a different error. I did not capture the substituted error text.
+A-F5 redundant controls not relabeled .................................................. MET
+  Neither the correction README nor opening.md counts query_only or the typeof guard as kills. The three claimed
+  semantic controls (canonical spelling, VM interruption, writer-pass) are real. I reproduced each with my own
+  distinct mutant (A-C6, A-C4/C5, A-C7).
+A-F6/A-F7 carried into creator/restorer design ......................................... MET
+  .design/kan-v2-recovery-mutations.md:51-61 explicitly carries root-based Ledger/Archive and
+  inventory/source/copy-upgrade KNB1 refusal tests and parent-symlink/hard-link custody into the mutation work,
+  "not properties established by read-only inspection".
+B-F1 writer-pass scan charge pinned .................................................... MET
+  reviewer_budget_monotonicity_and_bounds pins 31919/43865/135343/34344. These are exactly the values the prior
+  review measured independently. Reviewer A-C7 (omit candidate bytes from the charge, distinct from the author's
+  "charge 0") is KILLED: "scan-charge accounting: profile2-restored-failure-observed left: 30744 right: 31919".
+B-F2 maximal-envelope echo labelled ..................................................... MET
+  Comment at tests/evidence_recovery_replay_review_regressions.rs:411-413 says "echoes the independent
+  Python fixture's arithmetic; it does not encode a maximal statement in Rust".
+No production mutation API ............................................................ MET
+  bundle.rs public surface: inspect() and Inspection's four accessors only (grep "pub fn"). No writer exists.
+
+5. SCOPE A REVIEWER CONTROLS (tools/mutate.py; one mutant at a time; exact pinned SHA-256 restore verified
+   after each; raw in mutations/A-C*.txt, summary mutations/driver-spec-A.txt)
+   A-C1 NULL arm without `len == 0` ................ SURVIVES. Unreachable: typeof=blob plus len>0 never
+                                                     projects NULL, and the truncation guard backstops it.
+                                                     Defensive only. Not a defect.
+   A-C2 NULL arm for any storage class ............. SURVIVES. Unreachable (typeof gate; text columns min>=56).
+   A-C3 restored_objects min 1 -> 0 ................ author suite SURVIVES. My PH2 changes label only
+                                                     (Replay(Invalid("candidate bounds"))). DIAGNOSTIC-ONLY: the
+                                                     replay layer backstops it. NOT counted as a kill, although
+                                                     my probe's exact-label assertion "failed".
+   A-C4 progress handler never interrupts .......... KILLED (timing assertion)
+   A-C5 progress handler ignores cancellation ...... KILLED (cancellation timing assertion)
+   A-C6 canonical CID compare case-insensitive ..... KILLED
+   A-C7 writer-pass charge omits candidate bytes ... KILLED (pinned scan charge)
+   A-C8 SQLITE_LIMIT_LENGTH 5 MiB -> 64 MiB ........ test fails; LABEL-ONLY (refusal persists)
+  No compile failures. Author controls read, not rerun (controls-1/*.txt: canonical-spelling, vm-progress and
+  writer-pass-accounting each fail named assertions; the restored subset passes; reversion-raw/ shows the
+  author's reversion failing with the same message as mine).
+
+6. SCOPE A FINDINGS (none blocking)
+A-N1 [LOW, test adequacy] There is no physical-file test that an empty TEXT original or an empty candidate
+  refuses. The only coverage is the in-memory unit on cell(). My PH1/PH2/PH3 show the code is correct. Promote
+  them (or equivalents) into evidence_recovery_bundle so a future projection refactor cannot silently widen the
+  admission. Note that the physical candidate min (A-C3) is backstopped by replay, so the promoted test should
+  assert refusal, not a particular label, or pin both layers deliberately.
+A-N2 [INFO] The guarded NULL arm's `len == 0` condition is unreachable defensive code (A-C1/A-C2 survive).
+  That is fine to keep. Do not claim a control on it.
+
+=====================================================================================================
+SCOPE B: PURE BOUNDED OCCURRENCE ASSEMBLY (src/evidence_assembly.rs, tests/evidence_assembly.rs, lib.rs, CI)
+Governing: .design/kan-v2-session-reconstruction.md ("Next implementation checkpoint" §204-248), parent
+.design/kan-v2-human-frontend.md, telos/raw-data-and-projections.
+
+7. CHECKPOINT REQUIREMENT COVERAGE (code read + commands)
+B-R1 Explicit caller-authorized inputs; no grant check, discovery, persistence or serializer ......... MET
+  Input{scope:[u8;32], writer:&str, payload: Available(&[u8]) | Unavailable(Missing|Corrupt|Withheld)}
+  (evidence_assembly.rs:20-36). The module has no fs/IO/persistence call (grep). No Serialize derive. No other
+  src/ consumer (grep: lib.rs only). It does not touch the persistence surface, so no surface-catalog change is
+  required, and surface_conformance passes 19/19.
+B-R2 Exactly one observation per input, in input order; indices are the caller's lineage handle ...... MET
+  evidence_assembly.rs:362-378 pushes exactly one Observation per input, including Opaque, Unsupported,
+  Malformed and Unavailable. Author every_non_capture_and_unavailable_input_has_a_result; my BP04/BP13. No
+  partial result on refusal (all budget paths return Err).
+B-R3 Group only by (scope, writer, observer, attempt); exact identities ............................... MET
+  Key at :379-399. Author isolation test plus the author's 4 key controls (read: controls-2/*-key.txt, each
+  "left: 4 right: 5"). My BP03: writers "", "w", "W", "w\0", "w ", "é", "e\u{301}" plus a second scope give 8
+  separate groups. Byte-identical frames are never merged across caller identities, and there is no Unicode
+  normalization. My BP12: gateway and collector frames of the same attempt never interleave. Transport-link
+  claims are not used for identity.
+B-R4 Ordinal order; exact-byte duplicates retain all lineage; conflicting variants explicit .......... MET
+  identical() compares raw full-frame bytes (:188-200, :418-422). A non-conflict ordinal keeps all inputs in
+  Ordinal.inputs and in Segment.sources. A conflict keeps each variant as its own segment and raises an
+  OrdinalConflict issue. Author tests plus my BP02 ([A,B,A] gives 3 lineages, conflict) and BP01 (whitespace-
+  only header differences conflict, never last-write-wins). Reviewer B-C01 (length-only identity) is KILLED.
+B-R5 Spans are exclusive byte ranges in each input's own decrypted frame ............................ MET
+  SourceSpan.bytes = frame(observations, input).body_span (:254-257), computed per source. My BP01 shows
+  conflicting variants with different header lengths get different, exact spans: payload[span] == the
+  multibyte body, and end == frame length. Reviewer B-C19 (header_span cited) is KILLED by the author's and my
+  tests.
+B-R6 Ordinal holes compact; offsets checked; gaps/overlaps/contradictory extents; no padding .......... MET
+  Ordinal gaps are Range<u64> (:409-416), checked_add at :416 and :284. My BP07: ordinals {0,7,8,2^62,2^64-2}
+  and offsets {0,2^63,2^64-1} give range gaps, OffsetOverflow at u64::MAX+1, 0 assembled bytes, <1 ms. The
+  author has Gap/Overlap/BeyondExtent/ConflictingExtents/ChunkAfterEnd tests. Reviewer B-C02..C06, C11, C18 are
+  KILLED. Note B-N2 (the offset sort is untested).
+B-R7 Empty vs unknown extent ......................................................................... MET
+  expected_bytes None vs Some(0), and contiguous None vs Some(empty) (:303-316). Author test plus my BP08: no
+  request evidence gives None; an empty chunk at offset 5 gives Gap(0..5); end=0 with an empty chunk gives
+  Some(empty); end=0 with a 1-byte chunk gives BeyondExtent. B-C20 is KILLED.
+B-R8 Terminal is an observer claim, not complete capture; events-after-terminal visible ............... MET
+  Terminal::{Unknown, Claimed, Conflicting} (:452-461). The author test shows Claimed(Completed) alongside an
+  ordinal gap and an unknown response extent. My BP10: an exact duplicate terminal stays one claim;
+  outcome-unknown gives Claimed(OutcomeUnknown); two same-outcome terminals at different ordinals give
+  Conflicting plus events_after_terminal; other attempts' terminals don't leak. B-C07 and B-C08 are KILLED.
+B-R9 Missing start, late starts, unconfirmed claims visible ......................................... MET
+  missing_start, unexpected_starts and unconfirmed_claim (a projection; raw values remain in observations).
+  My BP15 includes unconfirmed_before on a non-start event. B-C09 and B-C10 are KILLED.
+B-R10 Contiguous payload is an observed prefix only ................................................. MET
+  Doc comment :94-97. Rendered only if a stream has zero issues. No extent is invented (a response stream never
+  has one). The design-mandated label is present. See B-N4 for how holes interact with this.
+B-R11 Budgets: occurrences, input bytes (+writer), scan, assembled, duration/cancel; whole refusal ..... MET IN
+  CODE, PARTIAL IN TESTS (B-N1)
+  Occurrence check before any decode (:343). Preflight input bytes before decoding (:346-361). Scan is charged
+  per decode, per 64 KiB duplicate-comparison chunk and per copy. Assembled bytes are charged per copy.
+  Duration is (0,3600 s]. My BP06 checks the independent formula: scanned = Σ available bytes + Σ extra
+  exact-duplicate comparisons + copied bytes = 1792, and assembled = 9. Both match. My BP13: occurrences=0 on
+  empty input is OK; 3601 s refuses and 3600 s accepts; unavailable inputs still charge writer bytes; a second
+  frame over the scan budget refuses the whole operation. B-C15, B-C17 and B-C22 are KILLED by the author's
+  tests. The scan-charge mutants B-C13, B-C14 and B-C16 SURVIVE the author suite and are killed only by my BP06.
+B-R12 Cancellation ...................................................................................... MET
+  Author unit (mid-decode hook, deterministic). My BP14: cross-thread cancel after ~200 µs during a
+  20,000-input assembly (full run 173 ms, debug) gives Cancelled in 0.34 ms.
+B-R13 Deterministic output / work and memory claims ..................................................... MET
+  BTreeMap grouping, a stable sort keyed by (offset, first input), Debug-equal repeat (author). My BP05: 40
+  permutations of 7 inputs produce identical bytes, issues, gaps, terminal, ordinal multiplicities and
+  scanned/assembled counts. Containers are bounded by input count: my BP14 all-overlap case with 5,000 inputs
+  gives 4,999 issues (linear). The design honestly says byte budgets are not exact RSS/CPU.
+B-R14 Scope fence: no provider adapters, session API, UI or parent AC closure ........................ MET
+  The diff adds no such code. The design and status table say these remain open.
+
+8. SCOPE B REVIEWER CONTROLS (22 mutants + 1 rerun; each runs the author suite AND my probe file;
+   raw mutations/B-C*.txt, summary mutations/driver-spec-B.txt; every restore exact)
+   KILLED by the author suite (and usually also by mine): C01 length-only identity, C02 no overlap, C03 no
+   chunk-after-end, C04 no beyond-extent, C05 no trailing extent gap, C06 extent last-write-wins, C07 no
+   events-after-terminal, C08 terminal ignores ordinal conflict, C09 any start counts, C10 drop unconfirmed,
+   C11 no ordinal gaps, C15 no occurrence limit, C17 writer bytes uncharged, C18 wrapping offset add,
+   C19 header span cited, C20 contiguous from nothing, C22 input-byte preflight skipped.
+   SURVIVE the author suite, KILLED only by reviewer probes:
+     C12 RequestEnd extent lineage keeps only the first duplicate ... killed by BP09a
+     C13 duplicate comparison uncharged ............................. killed by BP06
+     C14 copy not charged to scan bytes ............................. killed by BP06
+     C16 decode not charged to scan bytes ........................... killed by BP06
+   SURVIVE everything initially: C21 offset sort removed. Then the supplementary design-derived probe BP16
+     (a later ordinal at an earlier offset must still assemble "abcd") KILLS it as C21b: the mutant reports a
+     false Gap(0..2)+Overlap and renders nothing (fail-closed false gap). The unmutated code passes BP16.
+   No compile failures. All kills are named behavioural assertion failures, not label-only.
+   Author's 8 controls read, not rerun: controls-2/*.txt are genuine assertion failures, and the restored suite
+   passes. The retained controls-1 harness failure for the assembled-budget control is a correct
+   `unwrap_err()` panic on an unexpected Ok(Assembly). Its classification as a semantic kill is correct, and
+   the harness correction did not change production code.
+
+9. SCOPE B FINDINGS (none blocking)
+B-N1 [LOW-MEDIUM, test adequacy; same pattern as prior B-F1] The scan-byte budget's accounting is unpinned.
+  exact_budget_edges_cancellation_and_repeat_are_deterministic calibrates scan_bytes from the same run
+  (`exact.scan_bytes = r.scanned_bytes`), so removing the decode, duplicate-comparison or copy charge passes
+  the author suite (C13/C14/C16). With C16, decoding is entirely outside the scan budget. Required: promote an
+  absolute accounting assertion (e.g. BP06's formula) so that "scan bytes" provably bounds decode,
+  duplicate-comparison and copy work.
+B-N2 [LOW, test gap] The offset sort (:269) is load-bearing for out-of-ordinal-order offsets. Removing it
+  produces a false Gap/Overlap (fail-closed). No author test exercises it. Promote BP16.
+B-N3 [LOW, test gap] RequestEnd lineage for exact duplicates (:230-237) is untested by the author (C12).
+  Promote BP09a (extents == [(1,2),(2,2)]).
+B-N4 [LOW, labelling and later-stage obligation] Unsupported and Malformed frames are never placed in a
+  group. That follows the decoder decision that "unsupported means no semantic fields are accepted". So an
+  attempt whose ordinals 1 and 2 are an unknown event and a malformed chunk reports ordinal_gaps [1..3], and
+  the request still renders contiguous "abc" with no issue (BP04). Inputs exist at those ordinals; they are
+  only uninterpretable. Group.ordinal_gaps documents "Observed holes", which reads as "missing". Required:
+  document it as "no recognized capture at these ordinals", and have the adapter/API stage show unplaced
+  Unsupported/Malformed/Unavailable observations next to the group, so a gap is never presented as proof of
+  absence.
+B-N5 [INFO] The coupling is conservative. Any ordinal conflict in a group, even between two Terminal frames,
+  adds OrdinalConflict to both streams and suppresses request rendering (BP11). Two same-outcome terminals at
+  different ordinals give Conflicting (BP10). Neither is unsafe. The later API/UI should explain why a request
+  with complete byte coverage is not rendered.
+B-N6 [MERGE PRECONDITION, unverified by me] The default-feature perf gate failure (8.4 > 8) is unresolved. It
+  is plausibly unrelated (feature-gated module, unchanged manifests) but not demonstrated. Do not change the
+  bound. Obtain a green or explained rerun before merge.
+
+10. REQUIRED FOLLOW-THROUGH (none blocks acceptance of these components)
+  1. B-N6: resolve the CI perf gate (green rerun or root cause) before merge. Keep the threshold.
+  2. B-N1: pin scan-byte accounting absolutely (decode + duplicate comparison + copy). Demonstrate with
+     C13/C14/C16-style controls.
+  3. B-N2/B-N3: promote the out-of-order offset (BP16) and duplicate RequestEnd lineage (BP09a) tests.
+  4. B-N4: relabel ordinal_gaps, and carry "unplaced unsupported/malformed/unavailable inputs shown beside
+     the group" into the adapter/API design.
+  5. A-N1: promote physical refusals for an empty TEXT original and an empty candidate (PH1-PH3).
+  6. Carried, unchanged: A-F6/A-F7 obligations in kan-v2-recovery-mutations.md. Typed forensic capability
+     mapping of Error::Sql for the later owner job. Provider adapters, source spans across SSE, authorized
+     Content API, lock/revocation and browser AC remain open.
+  Parent ACs: kan-v2-session-reconstruction AC-1..AC-8 all remain "[ ]". This review supplies AC-8-style
+  evidence for the pure assembly component only. AC-2 is partially evidenced at the pure layer (no API
+  lineage yet). kan-v2-recovery-bundles AC-1..AC-6 and kan-v2-human-frontend AC-1..AC-10 remain open. No
+  writer, durability, job, RPC or frontend acceptance is implied.
+
+11. SCOPE-NARROWING LANGUAGE (raw/21-scope-narrowing-grep.txt; diffs 01bc49b..eb4f471)
+- "provider semantics and metadata-chunk interpretation belong to the adapter stage": the parent design
+  sequenced this before implementation ("First qualify the pure envelope decoder and occurrence assembly ...
+  Then ... provider adapter", session-reconstruction.md:143-149). LEGITIMATE.
+- "The later API must use validated decimal strings for JavaScript": an existing parent REQ-5 restated, with
+  no serializer added. LEGITIMATE.
+- "this API does not yet expose the later forensic capability enum": the prior review offered "or document
+  Sql as that channel". Documented and tested. LEGITIMATE.
+- "Busy/I/O failures remain distinct SQLite codes for a later owner-job capability/error mapping": separable.
+  LEGITIMATE.
+- A-F6/A-F7 "remain mutation qualification obligations": recorded in a named design. LEGITIMATE.
+- recovery-mutations.md "Out of Scope" (publication, backup/rebuild, jobs, RPC, UI): a dependent plan that
+  states it is not implemented. LEGITIMATE.
+- "Initial CI ... unresolved CI evidence, not a claimed pass or proof of noise": honest, but it is a merge gate
+  (B-N6).
+- No suspicious narrowing found. Unlike the prior round, no claim of qualified coverage turned out false: the
+  author's "first three equal the independent review's originals" is verified byte-for-byte.
+
+12. HOUSE RULES (CLAUDE.md)
+- The fold reads and never mutates, and no subject is destroyed: inspect has no write path, source bytes are
+  unchanged in all 10 reviewer physical probes, and assembly is pure. OK.
+- A persistence change is a surface-contract change: assembly adds no persistence. The bundle change is
+  read-path only, and surface_conformance passes 19/19. OK.
+- Derived media never become authority: Assembly/Inspection carry no completion flag, and contiguous is
+  documented as an observed prefix only. OK (see B-N4 for UI care).
+- Affordance not enforcement / one surface: no hook, CLI, MCP or UI is added. OK.
+- Provenance is sacred: no cites or claims are created. Every input lineage is retained, including duplicates
+  and conflicts (BP02/BP09a). OK.
+- Raw-data telos: no stored computed field. Every projection is recomputable from the selected inputs.
+  BP05 shows determinism under permutation. OK.
+
+13. PROBE / CONTROL / FAILED-METHOD INVENTORY (everything retained under review-evidence/)
+ tools/: verify_identity.py, run.sh (command+output+exit logger), revert_bundle.py, mutate.py, spec-A.json,
+   spec-B.json, spec-B21b.json.
+ raw/: 00 identity-before, 01 commit stats, 02 clean, 03 build, 04 baseline tests, 05 units (05 = failed CLI
+   method; 05b/05c real), 06 clippy, 07 fmt, 08 python x4, 10 fixture independence, 20 diff stat, 21 narrowing
+   grep, A-probes-run1, B-probes-run1, B2-probe-unmutated, 90-93 final reruns, 99 identity/git after.
+ probes/: gen_A_probes.py, gen-A.log, out-A/ (cases.json + 10 .sqlite), zz_review_A_probes.rs,
+   zz_review_B_probes.rs (BP01-BP15), zz_review_B2_probes.rs (BP16).
+ mutations/: A-REV-1..3 + A-REV-driver.txt, A-C1..A-C8, B-C01..B-C22, B-C21b, driver-spec-*.txt.
+ Failed or irregular methods: raw/05-units (two --lib filters; usage error). The A-probe run's shell exit 1 came
+   from an empty `ls tests/zz*` glob after removal, not from a test (the test result in raw/A-probes-run1.txt is
+   ok). A-C3's "KILLED" in the driver summary is a label-only probe mismatch, reclassified DIAGNOSTIC above.
+   A-C8's driver "KILLED" is label-only. A-C8's substituted error text was not captured.
+ Not rerun (retained logs read instead): the author's 3 correction controls, the author's reversion, the
+   author's 8 assembly controls, and the full CI test list beyond the bounded scope.
+
+14. HOW TO RECORD (not executed: Git-first, no kan writes in this session)
+ day review record <subject> --verdict APPROVE-WITH-FOLLOW-UPS --rationale "eb4f471: KNB1 empty-original
+ correction verified by independent reversion and probes; pure assembly sound, scan-accounting/offset-sort/
+ extent-lineage tests and CI perf gate outstanding" --cites <cid of the governing design claim>
+ The subject and cid are to be supplied by the owner after day#168/kan#197 is repaired. I do not invent them.

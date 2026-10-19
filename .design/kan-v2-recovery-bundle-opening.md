@@ -131,3 +131,18 @@ passes. Whole production fix reversion reproduces the empty-original failure and
 restoring it passes. Raw qualification, failures, controls and reversion evidence
 are retained in `.design/reviews/kan-v2-recovery-opening-correction-author/`.
 Fresh review remains required; no production bundle writer has been introduced.
+
+### Fresh correction review
+
+Actual cold Claude Code Opus 5.5 reviewed frozen `eb4f471` (the reader bytes
+match `b6a4f3f`) and returned **APPROVE WITH FOLLOW-UPS** for the correction.
+The previous BLOCK remains attached to `01bc49b`. The unmodified combined report,
+independent reversion, ten physical probes, controls and exact Git/SHA256 custody
+are retained in `.design/reviews/kan-v2-assembly-opening-opus/`.
+
+Follow-up A-N1 adds physical-file refusals for an empty TEXT original and empty
+BLOB/TEXT restoration candidates, asserting refusal without forcing a diagnostic
+label where replay independently backstops acquisition. Fifteen physical-reader tests, strict all-target v2 Clippy and formatting pass
+with that addition; production reader logic is unchanged. Parent writer,
+job, RPC and frontend acceptance remains open. All 21 CI checks passed at
+`b6a4f3f`; later commits must receive their own CI results.

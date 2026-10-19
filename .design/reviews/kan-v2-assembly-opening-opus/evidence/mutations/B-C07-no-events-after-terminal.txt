@@ -1,0 +1,93 @@
+# B-C07-no-events-after-terminal: src/evidence_assembly.rs
+# expect: KILL
+# old occurrences=1
+--- old
+let events_after_terminal = terminals
+            .first()
++++ new
+let events_after_terminal = false && terminals
+            .first()
+
+$ cargo test --features v2-crypto --test evidence_assembly -- --nocapture  env=None
+
+running 13 tests
+test every_non_capture_and_unavailable_input_has_a_result ... ok
+test observed_missing_admission_and_unexpected_start_stay_visible ... ok
+test repeated_semantic_chunk_at_a_new_ordinal_is_an_overlap_not_deduplicated ... ok
+test empty_request_extent_and_unknown_extent_remain_distinct ... ok
+test scope_writer_observer_attempt_isolation_ignores_transport_link_claims ... ok
+test ordinal_conflicts_keep_both_bytes_and_prevent_synthetic_rendering ... ok
+test a_chunk_after_request_end_cannot_silently_become_a_closed_request ... ok
+test exact_budget_edges_cancellation_and_repeat_are_deterministic ... ok
+test holes_overlaps_and_contradictory_extents_are_not_repaired ... ok
+test terminal_at_a_conflicting_ordinal_cannot_select_a_winner ... ok
+test completed_terminal_is_only_a_claim_and_does_not_fill_missing_evidence ... FAILED
+test shuffled_selection_preserves_exact_binary_spans_and_duplicate_lineage ... ok
+test sparse_u64_and_overflow_coordinates_never_allocate_by_claimed_extent ... ok
+
+failures:
+
+failures:
+    completed_terminal_is_only_a_claim_and_does_not_fill_missing_evidence
+
+test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening)
+    Finished `test` profile [unoptimized] target(s) in 7.87s
+     Running tests/evidence_assembly.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_assembly-ab2b7afbe8d062d0)
+
+thread 'completed_terminal_is_only_a_claim_and_does_not_fill_missing_evidence' (10336037) panicked at tests/evidence_assembly.rs:212:5:
+assertion failed: out.groups[0].events_after_terminal
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_assembly`
+
+exit=101
+
+$ cargo test --features v2-crypto --test zz_review_B_probes -- --nocapture  env=None
+
+running 15 tests
+BP02 ordinal.inputs=[0, 1, 2] conflict=true segment sources=[0, 1, 2] issues=[OrdinalConflict, Overlap { input: 1 }, Overlap { input: 2 }]
+BP09a extents=[(1, 2), (2, 2)] expected=Some(2)
+BP10 two-same-outcome-terminals=Conflicting after=false
+BP09b issues=[ChunkAfterEnd { input: 2 }] contiguous=None
+BP01 conflict=true segments=2 issues=[OrdinalConflict, Overlap { input: 1 }]
+BP06 scanned=1792 assembled=9 expected scanned=1792 assembled=9
+BP03 groups=8 writers=[(1, ""), (1, "W"), (1, "e\u{301}"), (1, "w"), (1, "w\0"), (1, "w "), (1, "é"), (2, "w")]
+test bp02_mixed_duplicate_and_conflict_retains_every_lineage ... ok
+BP04 obs=[Capture,Unsupported,Malformed,Capture] ordinal_gaps=[1..3] request.contiguous=Some([97, 98, 99]) issues=[]
+test bp09_request_end_lineage_and_chunks_between_two_ends ... ok
+test bp01_spans_exact_for_conflicting_variants_with_different_header_lengths ... ok
+BP05 base=(Some([104, 101, 108, 108, 111]), Some([111, 107]), Some(5), Claimed(Completed), [], [(0, 1, false), (1, 1, false), (2, 2, false), (3, 1, false), (4, 1, false), (5, 1, false)], 2054, 7)
+test bp06_scan_and_assembled_accounting_formula ... ok
+BP07 elapsed=818.833µs gaps=[1..7, 9..4611686018427387904, 4611686018427387905..18446744073709551614] req.issues=[Gap(1..9223372036854775808), Gap(9223372036854775809..18446744073709551615)] resp.issues=[Gap(0..18446744073709551615), OffsetOverflow { input: 4 }] assembled=0
+BP08 empty-at-5 issues=[Gap(0..5)] contiguous=None
+BP12 collector=Some([97, 98]) gateway issues=[Gap(0..2)]
+BP11 request.contiguous=None request.issues=[OrdinalConflict] terminal=Conflicting
+test bp04_unsupported_and_malformed_frames_leave_ordinal_holes_in_groups ... ok
+test bp10_terminal_claims ... ok
+test bp07_sparse_u64_offsets_and_ordinals_are_ranges_not_allocations ... ok
+test bp03_arbitrary_caller_identities_are_exact_and_isolated ... ok
+test bp12_observer_isolation_same_attempt ... ok
+test bp11_conflict_coupling_between_streams ... ok
+test bp08_empty_versus_unknown_extent_and_empty_frames ... ok
+BP13 over-scan=Some(Limit("scan bytes"))
+test bp13_budget_edges ... ok
+BP15 missing_start=false unexpected=[3] unconfirmed=true
+test bp15_unconfirmed_claims_and_multiple_starts ... ok
+test bp05_permutation_invariance_of_groups_bytes_and_issues ... ok
+BP14 20000 inputs elapsed=178.717542ms contiguous_len=Some(60000) scanned=5285184
+BP14 cancel result=Some(Cancelled) elapsed=278.042µs
+BP14 overlap issues=4999 segments=5000
+test bp14_cross_thread_cancellation_and_scale ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening)
+    Finished `test` profile [unoptimized] target(s) in 0.44s
+     Running tests/zz_review_B_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_B_probes-8b10ca6c866b4e0a)
+
+exit=0
+
+
+VERDICT KILLED by test completed_terminal_is_only_a_claim_and_does_not_fill_missing_evidence ... FAILED
+restored_exact=True

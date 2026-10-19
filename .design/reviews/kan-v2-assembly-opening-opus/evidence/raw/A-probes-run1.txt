@@ -1,0 +1,23 @@
+$ cargo test --features v2-crypto --test zz_review_A_probes -- --nocapture
+# cwd=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target CARGO_BUILD_JOBS=4 date=2026-10-19T17:56:52Z
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening)
+    Finished `test` profile [unoptimized] target(s) in 0.36s
+     Running tests/zz_review_A_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_A_probes-bea35d80046d5736)
+
+running 1 test
+PROBE PA1-p3-complete-empty-original-initial-loss: expect=accept expectErr=None -> ACCEPT latest=2 restored=0 losses=1 states=["Corrupt"] complete=true source_unchanged=true MATCH
+PROBE PA2-p3-complete-empty-original-restored: expect=accept expectErr=None -> ACCEPT latest=3 restored=1 losses=1 states=["Corrupt"] complete=true source_unchanged=true MATCH
+PROBE PA3-p3-partial-two-empty-one-restored: expect=accept expectErr=None -> ACCEPT latest=3 restored=1 losses=2 states=["Corrupt", "Corrupt"] complete=false source_unchanged=true MATCH
+PROBE PA4-p2-two-empty-both-restored: expect=accept expectErr=None -> ACCEPT latest=4 restored=2 losses=2 states=["Corrupt", "Corrupt"] complete=true source_unchanged=true MATCH
+PROBE PH1-empty-original-stored-as-TEXT: expect=refuse expectErr=Some("cell storage class") -> REFUSE Invalid("cell storage class") source_unchanged=true MATCH
+PROBE PH2-empty-candidate-blob: expect=refuse expectErr=Some("integer storage class or bounds") -> REFUSE Invalid("integer storage class or bounds") source_unchanged=true MATCH
+PROBE PH3-empty-candidate-TEXT: expect=refuse expectErr=Some("cell storage class") -> REFUSE Invalid("cell storage class") source_unchanged=true MATCH
+PROBE PH4-empty-original-rewritten-as-zeroblob0: expect=accept expectErr=None -> ACCEPT latest=2 restored=0 losses=1 states=["Corrupt"] complete=true source_unchanged=true MATCH
+PROBE PH5-nonempty-original-truncated-to-empty-after-signing: expect=refuse expectErr=None -> REFUSE Replay(Invalid("member commitment")) source_unchanged=true MATCH
+PROBE PH6-empty-original-replaced-by-one-byte: expect=refuse expectErr=None -> REFUSE Replay(Invalid("member commitment")) source_unchanged=true MATCH
+test zz_review_scope_a_empty_original_probes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+
+exit=0 wall_s=1
