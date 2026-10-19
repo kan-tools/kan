@@ -15,8 +15,9 @@ for that control. No production code changed to satisfy the harness.
 Initial PR CI had 20 successful checks and one context scaling failure (ratio
 8.4 against bound 8). The default-feature measured binary excludes the new
 v2-crypto module; Cargo manifests/lock and performance paths are unchanged.
-The raw failure is retained and a single failed-job rerun was requested. This
-is unresolved CI evidence, not a claimed pass or proof of noise.
+The raw failure and successful attempt-2 rerun are both retained. The same source
+passed with context/claims ratio 6.8 against unchanged bound 8 (job118211863917).
+This resolves the requested rerun; it does not erase or explain the first result.
 
 Day validation refuses the worktree with exit 2 under day#168/kan#197, not a
 passing check. No main-workspace log write occurred. Fresh actual Opus review

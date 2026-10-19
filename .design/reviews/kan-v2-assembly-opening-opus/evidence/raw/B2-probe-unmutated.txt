@@ -1,0 +1,14 @@
+$ cargo test --features v2-crypto --test zz_review_B2_probes -- --nocapture
+# cwd=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target CARGO_BUILD_JOBS=4 date=2026-10-19T18:05:47Z
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly/.local-state/reviews/assembly-opening)
+    Finished `test` profile [unoptimized] target(s) in 7.38s
+     Running tests/zz_review_B2_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_B2_probes-5e446f52bf94369b)
+
+running 1 test
+BP16 contiguous=Some([97, 98, 99, 100]) issues=[] order=[0, 2]
+test bp16_out_of_ordinal_order_offsets_still_assemble_by_offset ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+exit=0 wall_s=7

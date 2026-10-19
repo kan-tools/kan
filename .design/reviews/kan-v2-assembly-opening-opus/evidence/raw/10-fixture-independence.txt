@@ -1,0 +1,30 @@
+reviewer case names ['E1-empty-original-initial-loss', 'E2-empty-original-restored', 'E3-nonempty-corrupt-original-restored-control']
+promoted case names ['E1-empty-original-initial-loss', 'E2-empty-original-restored', 'E3-nonempty-corrupt-original-restored-control', 'E4-partial-profile3-empty-original-initial-loss', 'E5-partial-profile3-empty-original-restored']
+E1-empty-original-initial-loss candidates EQUAL list list
+E1-empty-original-initial-loss checkpoint EQUAL NoneType NoneType
+E1-empty-original-initial-loss designExpect EQUAL str str
+E1-empty-original-initial-loss member EQUAL dict dict
+E1-empty-original-initial-loss name EQUAL str str
+E1-empty-original-initial-loss observations EQUAL list list
+E1-empty-original-initial-loss pythonOracle EQUAL str str
+E2-empty-original-restored candidates EQUAL list list
+E2-empty-original-restored checkpoint EQUAL NoneType NoneType
+E2-empty-original-restored designExpect EQUAL str str
+E2-empty-original-restored member EQUAL dict dict
+E2-empty-original-restored name EQUAL str str
+E2-empty-original-restored observations EQUAL list list
+E2-empty-original-restored pythonOracle EQUAL str str
+E3-nonempty-corrupt-original-restored-control candidates EQUAL list list
+E3-nonempty-corrupt-original-restored-control checkpoint EQUAL NoneType NoneType
+E3-nonempty-corrupt-original-restored-control designExpect EQUAL str str
+E3-nonempty-corrupt-original-restored-control member EQUAL dict dict
+E3-nonempty-corrupt-original-restored-control name EQUAL str str
+E3-nonempty-corrupt-original-restored-control observations EQUAL list list
+E3-nonempty-corrupt-original-restored-control pythonOracle EQUAL str str
+E4-partial-profile3-empty-original-initial-loss NOT IN REVIEWER SET
+E5-partial-profile3-empty-original-restored NOT IN REVIEWER SET
+E1-empty-original-initial-loss profile 2 objects [('bafkreiavuwl', 0)] records 0 membership 0 complete True cands [] obs 2
+E2-empty-original-restored profile 2 objects [('bafkreiavuwl', 0)] records 0 membership 0 complete True cands [('bafkreiavuwl', 7)] obs 3
+E3-nonempty-corrupt-original-restored-control profile 2 objects [('bafkreiavuwl', 1)] records 0 membership 0 complete True cands [('bafkreiavuwl', 7)] obs 3
+E4-partial-profile3-empty-original-initial-loss profile 3 objects [('bafkreibhair', 0), ('bafkreierosz', 616), ('bafkreig4ttn', 559)] records 1 membership 3 complete False cands [] obs 2
+E5-partial-profile3-empty-original-restored profile 3 objects [('bafkreibhair', 0), ('bafkreierosz', 616), ('bafkreig4ttn', 559)] records 1 membership 3 complete False cands [('bafkreibhair', 616)] obs 3

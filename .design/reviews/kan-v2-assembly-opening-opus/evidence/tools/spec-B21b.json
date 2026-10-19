@@ -1,0 +1,16 @@
+[
+ {
+  "id": "B-C21b-no-offset-sort-vs-BP16",
+  "file": "src/evidence_assembly.rs",
+  "old": "    out.segments.sort_by_key(|s| (s.offset, s.sources[0].input));",
+  "new": "    // reviewer: sort removed",
+  "runs": [
+   [
+    "zz_review_B2_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL if sort is load-bearing for out-of-order offsets"
+ }
+]

@@ -1,0 +1,420 @@
+[
+ {
+  "id": "B-C01-identical-length-only",
+  "file": "src/evidence_assembly.rs",
+  "old": "    for (a, b) in a.chunks(65536).zip(b.chunks(65536)) {\n        work.scan(a.len())?;\n        if a != b {",
+  "new": "    for (a, b) in a.chunks(65536).zip(b.chunks(65536)) {\n        work.scan(a.len())?;\n        if a.len() != b.len() {",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL (same-length conflicts)"
+ },
+ {
+  "id": "B-C02-no-overlap",
+  "file": "src/evidence_assembly.rs",
+  "old": "if s.length > 0 && s.offset < end {",
+  "new": "if false && s.length > 0 && s.offset < end {",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C03-no-chunk-after-end",
+  "file": "src/evidence_assembly.rs",
+  "old": "if first_end.is_some_and(|n| n < frame(observations, input).header.ordinal) {",
+  "new": "if false && first_end.is_some_and(|n| n < frame(observations, input).header.ordinal) {",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C04-no-beyond-extent",
+  "file": "src/evidence_assembly.rs",
+  "old": "if out.expected_bytes.is_some_and(|extent| next > extent) {",
+  "new": "if false && out.expected_bytes.is_some_and(|extent| next > extent) {",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C05-no-trailing-gap",
+  "file": "src/evidence_assembly.rs",
+  "old": "        if end < n {\n            out.issues.push(StreamIssue::Gap(end..n));",
+  "new": "        if false && end < n {\n            out.issues.push(StreamIssue::Gap(end..n));",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C06-extent-last-write-wins",
+  "file": "src/evidence_assembly.rs",
+  "old": "        if out.extents.iter().all(|&(_, x)| x == n) {",
+  "new": "        if true || out.extents.iter().all(|&(_, x)| x == n) {",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C07-no-events-after-terminal",
+  "file": "src/evidence_assembly.rs",
+  "old": "let events_after_terminal = terminals\n            .first()",
+  "new": "let events_after_terminal = false && terminals\n            .first()",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C08-terminal-ignores-ordinal-conflict",
+  "file": "src/evidence_assembly.rs",
+  "old": "[(n, outcome)] if !ordinals.iter().any(|o| o.value == *n && o.conflict) => {",
+  "new": "[(n, outcome)] if !ordinals.iter().any(|o| false && o.value == *n && o.conflict) => {",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C09-any-start-counts",
+  "file": "src/evidence_assembly.rs",
+  "old": "            .any(|&i| frame(&observations, i).header.ordinal == 0);",
+  "new": "            .any(|&i| frame(&observations, i).header.ordinal == 0 || true);",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C10-drop-unconfirmed",
+  "file": "src/evidence_assembly.rs",
+  "old": "unconfirmed |= f.header.unconfirmed_before > 0;",
+  "new": "unconfirmed |= false && f.header.unconfirmed_before > 0;",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C11-no-ordinal-gaps",
+  "file": "src/evidence_assembly.rs",
+  "old": "                if value > n {\n                    gaps.push(n..value);",
+  "new": "                if false && value > n {\n                    gaps.push(n..value);",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C12-extent-lineage-first-only",
+  "file": "src/evidence_assembly.rs",
+  "old": "                        std::slice::from_ref(&i)\n                    } else {\n                        &ordinal.inputs\n                    } {",
+  "new": "                        std::slice::from_ref(&i)\n                    } else {\n                        std::slice::from_ref(&i)\n                    } {",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "author SURVIVE? reviewer BP09a KILL"
+ },
+ {
+  "id": "B-C13-dup-compare-uncharged",
+  "file": "src/evidence_assembly.rs",
+  "old": "        work.scan(a.len())?;\n        if a != b {",
+  "new": "        work.check()?;\n        if a != b {",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "author SURVIVE (self-calibrated)? reviewer BP06 KILL"
+ },
+ {
+  "id": "B-C14-copy-not-scanned",
+  "file": "src/evidence_assembly.rs",
+  "old": "    fn copy(&mut self, n: usize) -> Result<()> {\n        self.scan(n)?;",
+  "new": "    fn copy(&mut self, n: usize) -> Result<()> {\n        self.check()?;",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "author SURVIVE? reviewer BP06 KILL"
+ },
+ {
+  "id": "B-C15-no-occurrence-limit",
+  "file": "src/evidence_assembly.rs",
+  "old": "if inputs.len() > work.limits.occurrences {",
+  "new": "if false && inputs.len() > work.limits.occurrences {",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C16-decode-uncharged",
+  "file": "src/evidence_assembly.rs",
+  "old": "                work.scan(bytes.len())?;\n                match decode::decode(bytes) {",
+  "new": "                work.check()?;\n                match decode::decode(bytes) {",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "reviewer BP06/BP13 KILL"
+ },
+ {
+  "id": "B-C17-writer-bytes-uncharged",
+  "file": "src/evidence_assembly.rs",
+  "old": "            .and_then(|n| n.checked_add(input.writer.len() as u64))",
+  "new": "            .and_then(|n| n.checked_add(0))",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C18-wrapping-offset",
+  "file": "src/evidence_assembly.rs",
+  "old": "let Some(next) = s.offset.checked_add(s.length as u64) else {",
+  "new": "let Some(next) = Some(s.offset.wrapping_add(s.length as u64)) else {",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C19-header-span-cited",
+  "file": "src/evidence_assembly.rs",
+  "old": "bytes: frame(observations, input).body_span.clone(),",
+  "new": "bytes: frame(observations, input).header_span.clone(),",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C20-contiguous-from-nothing",
+  "file": "src/evidence_assembly.rs",
+  "old": "if out.issues.is_empty() && (!out.segments.is_empty() || out.expected_bytes == Some(0)) {",
+  "new": "if out.issues.is_empty() {",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ },
+ {
+  "id": "B-C21-no-offset-sort",
+  "file": "src/evidence_assembly.rs",
+  "old": "    out.segments.sort_by_key(|s| (s.offset, s.sources[0].input));",
+  "new": "    // reviewer: sort removed",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "UNKNOWN: out-of-order offsets"
+ },
+ {
+  "id": "B-C22-pre-preflight-skipped",
+  "file": "src/evidence_assembly.rs",
+  "old": "        if input_bytes > work.limits.input_bytes {\n            return Err(Error::Limit(\"input bytes\"));",
+  "new": "        if false && input_bytes > work.limits.input_bytes {\n            return Err(Error::Limit(\"input bytes\"));",
+  "runs": [
+   [
+    "evidence_assembly",
+    null,
+    null
+   ],
+   [
+    "zz_review_B_probes",
+    null,
+    null
+   ]
+  ],
+  "expect": "KILL"
+ }
+]

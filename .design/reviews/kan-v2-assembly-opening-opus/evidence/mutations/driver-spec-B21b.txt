@@ -1,0 +1,1 @@
+B-C21b-no-offset-sort-vs-BP16: KILLED by test bp16_out_of_ordinal_order_offsets_still_assemble_by_offset ... FAILED | restored_exact=True | expect: KILL if sort is load-bearing for out-of-order offsets
