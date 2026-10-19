@@ -166,8 +166,6 @@ fn audit_prefix(
     }
     let mut frontier = Frontier::default();
     let mut selected = None;
-    let mut historical_issuer: Option<String> = None;
-    let mut admitted = false;
     let mut stmt = conn.prepare(&format!(
         "{RAW_COMMITS} WHERE sequence<=? ORDER BY sequence"
     ))?;
@@ -189,20 +187,12 @@ fn audit_prefix(
         let signed = retained(conn, &record, binding)?;
         match verified.purpose() {
             Purpose::Admitted => {
-                admitted = true;
                 if signed.request.audience != binding.issuer {
                     return Err(corrupt("admitted request audience"));
                 }
             }
             Purpose::RetainedVerified => {
-                if admitted
-                    || historical_issuer
-                        .as_ref()
-                        .is_some_and(|h| h != &signed.request.audience)
-                {
-                    return Err(corrupt("retained-verified prefix"));
-                }
-                historical_issuer = Some(signed.request.audience);
+                return Err(corrupt("retained-verified prefix requires copy profile"));
             }
         }
         frontier = verified.frontier().clone();

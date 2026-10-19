@@ -298,19 +298,12 @@ fn upgraded(historical: [u8; 2]) -> (tempfile::TempDir, Vec<tempfile::TempDir>, 
     (target, sources, frontier)
 }
 
-/// P5a: realistic upgrade shape with historical issuer H != current issuer C,
-/// followed by ordinary admission. Store must accept it.
+/// P5a: even a single historical issuer cannot make a plan-less profile-2 copy
+/// capture-ready. Real imported prefixes belong to profile 3.
 #[test]
-fn p5a_single_historical_issuer_prefix_then_admission_is_accepted() {
-    let (target, _s, frontier) = upgraded([11, 11]);
-    let mut archive = Archive::open(target.path(), binding()).unwrap();
-    assert_eq!(archive.verify().unwrap(), frontier);
-    let next = archive
-        .admit(&request(0, None), &identity(7), &grant_for(6), 200)
-        .unwrap();
-    assert_eq!(next.attestation.purpose(), Purpose::Admitted);
-    assert_eq!(next.attestation.previous(), &frontier);
-    assert_eq!(archive.verify().unwrap().through, 3);
+fn p5a_single_historical_issuer_prefix_requires_copy_profile() {
+    let (target, _s, _) = upgraded([11, 11]);
+    assert!(Archive::open(target.path(), binding()).is_err());
 }
 
 /// P5b: a retained-verified prefix that mixes two historical issuers must be
@@ -328,7 +321,7 @@ fn p5b_mixed_historical_issuers_in_prefix_are_refused() {
 }
 
 #[test]
-fn p5c_historical_proof_purpose_and_bytes_survive_backup_and_rebuild() {
+fn p5c_planless_historical_proofs_refuse_verification_and_rebuild_without_rewriting() {
     fn proofs(path: &Path) -> Vec<Vec<u8>> {
         let c = rusqlite::Connection::open(path).unwrap();
         let mut s = c
@@ -341,20 +334,21 @@ fn p5c_historical_proof_purpose_and_bytes_survive_backup_and_rebuild() {
             .collect();
         rows
     }
-    let (target, _sources, frontier) = upgraded([11, 11]);
-    let a = Archive::open(target.path(), binding()).unwrap();
-    let expected = proofs(&target.path().join("archive.sqlite"));
+    let (target, _sources, _) = upgraded([11, 11]);
+    let source = target.path().join("archive.sqlite");
+    let expected = proofs(&source);
+    assert!(Archive::verify_file(&source, binding()).is_err());
     let output = tempfile::tempdir().unwrap();
-    let backup = output.path().join("backup.sqlite");
-    assert_eq!(a.backup(&backup).unwrap().commits, frontier.through);
-    assert_eq!(proofs(&backup), expected);
     let rebuilt = output.path().join("rebuilt.sqlite");
-    let reader = kan::evidence_store::attested::Recovery::open(&backup, binding()).unwrap();
-    assert_eq!(reader.rebuild(&rebuilt).unwrap().commits, frontier.through);
+    let reader = kan::evidence_store::attested::Recovery::open(&source, binding()).unwrap();
+    assert!(reader.rebuild(&rebuilt).is_err());
+    assert_eq!(proofs(&source), expected, "refusal preserves source proofs");
+    let result = rusqlite::Connection::open(&rebuilt).unwrap();
     assert_eq!(
-        proofs(&rebuilt),
-        expected,
-        "retained-verified must not become admitted"
+        result
+            .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        0
     );
 }
 

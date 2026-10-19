@@ -458,8 +458,8 @@ fn purpose_order_is_a_store_invariant_not_just_a_signature_check() {
         archive.verify().is_err(),
         "retained-verified after admitted must fail"
     );
-    // A retained-verified prefix followed by new admitted rows is the allowed
-    // upgrade shape; neither issue time nor writer position establishes purpose.
+    // Even a correctly signed retained prefix followed by admitted rows cannot
+    // establish copy completeness without the profile-3 recipe.
     let prefix = proof::issue(
         &identity(7),
         &ctx,
@@ -491,13 +491,16 @@ fn purpose_order_is_a_store_invariant_not_just_a_signature_check() {
         [tail.bytes()],
     )
     .unwrap();
-    assert_eq!(archive.verify().unwrap(), *tail.frontier());
+    assert!(archive.verify().is_err(), "profile 2 must be admitted-only");
+    assert!(archive
+        .backup(&temp.path().join("refused-backup.sqlite"))
+        .is_err());
     assert_eq!(
         archive
             .admit(&request(0, None), &identity(7), &grant(), 300)
             .unwrap_err(),
-        Failure::Conflict,
-        "ordinary Append must not confirm an imported record"
+        Failure::Corrupt,
+        "ordinary Append must refuse a plan-less imported prefix"
     );
 }
 
