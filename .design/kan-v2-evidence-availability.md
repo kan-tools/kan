@@ -567,3 +567,33 @@ stdlib-only generator imports no Rust and invokes no archive. The Rust draft
 checks exact bytes, all owner/source-field commitment changes, and refusal cases.
 Compilation, semantic negative controls and fresh review remain required. No
 source or destination migration is implemented by this draft codec.
+
+### Draft read-only source planner
+
+`evidence_store::copy_upgrade::PlannedCopy` opens a profile-1 source in a pinned
+read-only transaction, requires the exact healthy legacy schema and full contents,
+then checks every retained signed service request against explicit historical H
+and target scope. It emits no plan until the whole snapshot passes. This first
+planner refuses damaged derived indexes; the existing separate recovery workflow
+can rebuild those into a new file before planning. It adds no destination writes.
+
+The source digest is SHA-256 of ASCII `tools.kan.archive.copy-source.v1`, one NUL,
+then each record in ascending sequence order: sequence as unsigned64-bit big endian,
+followed by manifest bytes, receipt bytes and canonical raw retained-request CID
+bytes, each framed by its unsigned64-bit big-endian byte length. The digest binds
+the committed record stream; independently staged objects outside that stream are
+not named by this digest. The full source audit still validates those objects;
+no source file is erased. Copy behavior for staged-but-uncommitted objects must be
+resolved explicitly before implementing destination writes.
+
+Reconfirmation compares the externally pinned archive ID first, then reopens and
+fully verifies a source and compares the exact resulting recipe bytes. Matching
+through/tip alone is insufficient: a structurally valid changed unsigned receipt
+at the same frontier must refuse. Holding the planner pins the original snapshot
+while later WAL admissions occur. Full source auditing retains the existing
+offline integrity-check/materialization and unoptimized scan limitations; this
+is not the future bounded degraded-inventory reader.
+
+Runtime draft tests target pinned-source/later-append refusal, same-frontier
+receipt changes, explicit owner/audience/scope selection and missing payloads.
+No copy/resume destination or profile-3 mutation is implemented yet.
