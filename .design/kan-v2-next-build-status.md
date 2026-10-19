@@ -104,3 +104,15 @@ operational gates; they do not justify pretending the software roadmap is comple
 Git-first design/review records await backfill while day#168 / kan#197 prevent
 worktree-local recording. The existing raw-data-and-projections telos is deliberately
 unwitnessed; no witnesses or omitted claim contents were invented.
+
+## Overview review corrections in progress
+
+The review of 67c1263 reproduced live health-writer exclusion during a large
+active scan and Build/Cancel requests discarded during polling. Draft corrections
+use a bounded in-memory active database copy and prioritize actions over polls.
+The existing 128-MiB ceiling now includes a 32-MiB image allowance plus 16-MiB
+working reserve; capacity refusal is explicit. Source copy can refuse after five
+seconds when busy. Tests target writer progress, post-read sealed changes, invalid
+unique health rows, historical worker separation and UI request races. All 23
+Operations Node checks pass; Rust qualification and fresh re-review remain pending.
+The original checkpoint review has not yet returned its final verdict.

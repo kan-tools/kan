@@ -47,10 +47,13 @@ negative values and malformed JSON cannot be quietly filtered out.
 ### Snapshot and projection lifetime
 
 A refresh acquires the existing collection shared lock, validates and captures
-the manifest, and reads one consistent active-generation transaction. Bound that
+the manifest, and copies one consistent active-generation snapshot into an in-memory SQLite
+database in short online-backup steps. Bound that
 single journal by its existing 32 MiB profile, 100,000 attempt ceiling and 1,024
-session ceiling. Copy only typed row values into bounded memory, then end the
-SQLite transaction promptly. The build must not hold a read transaction while
+session ceiling. Parse typed row values from the memory copy; the live journal is no longer held
+in a read transaction during row decoding. A busy or continuously changing source
+may refuse refresh after five seconds. Cancellation is checked between 64-page
+backup steps and parsed rows. The build must not hold a live-source read transaction while
 waiting for a browser, sleeping, or awaiting another generation. SQLite lock
 contention fails the refresh within the existing bounded busy interval; capture
 callbacks still never wait on this process.
@@ -185,10 +188,25 @@ unknown. The source list includes sealed hashes and typed-row snapshot digests;
 historical worker details remain in per-generation history rather than being
 added or promoted to current health. The active worker sample stays with its
 original active snapshot. Hashing streams 64-KiB buffers; the 128-MiB accounting
-includes a 16-MiB allowance for SQLite, manifest and transient buffers, conservative
+includes a 48-MiB allowance for the bounded in-memory active database, SQLite, manifest and transient buffers, conservative
 per-row/container allowances, buffered active rows and retained source metadata.
 Caller-specified test limits can only reduce the production ceilings.
 
 The UI offers explicit load/build/cancel controls, keeps failed-refresh samples
 visibly old, formats exact integer strings and clears results on lock. Rust and
 real-browser qualification are complete for this checkpoint: 58 Rust checks, 54 Node checks, strict v2 Clippy and six demonstrated negative controls. The browser confirmed a deduplicated three-generation result, source disclosure, light/dark/mobile layouts and clearing on lock. Evidence is preserved in `.design/reviews/kan-v2-overview-author/`. Fresh Opus review remains pending; no parent AC is marked complete.
+
+### Review correction in progress
+
+The cold review of 67c1263 reproduced health-writer failures during a large
+active row scan and found Build/Cancel clicks discarded during in-flight polling.
+The original checkpoint is not approved. The correction copies active SQLite
+pages into memory using short backup steps, releases live-source locks before
+parsing, and preserves a five-second/cancellable refusal path for a busy source.
+A fixed 32-MiB image allowance is added to the previous 16-MiB working reserve
+inside the same 128-MiB ceiling. This conservative accounting means some formerly
+accepted large inputs can return capacity-limited; it does not increase the limit.
+Snapshot timestamps name the copy window, not the later parse. Copied schema and
+control rows are revalidated. Build/Cancel preempt polls; actions remain serialized
+and stale replies cannot overwrite newer action state. Tests and fresh re-review
+of the corrected checkpoint remain required.

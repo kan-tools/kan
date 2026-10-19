@@ -31,6 +31,48 @@ fn hash<T: Serialize>(digest: &mut Sha256, value: &T) -> Result<()> {
     Ok(())
 }
 impl Journal {
+    /// Copy a bounded active database into memory using short SQLite backup
+    /// steps. Parsing/deduplication then holds no read lock on the live journal.
+    /// A constantly changing or busy source can refuse refresh after five seconds.
+    pub(crate) fn projection_copy(
+        mut self,
+        check: &mut dyn FnMut() -> Result<()>,
+    ) -> Result<(Self, (u64, u64))> {
+        let start = now();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        self.conn.busy_timeout(Duration::ZERO)?;
+        let mut memory = Connection::open_in_memory()?;
+        memory.execute_batch(
+            "PRAGMA page_size=4096; PRAGMA max_page_count=8192; PRAGMA temp_store=MEMORY;",
+        )?;
+        memory.set_limit(rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH, 32768)?;
+        {
+            let backup = rusqlite::backup::Backup::new(&self.conn, &mut memory)?;
+            loop {
+                check()?;
+                if std::time::Instant::now() >= deadline {
+                    return Err("active snapshot copy timed out; source may be busy".into());
+                }
+                let step = backup.step(64)?;
+                if !(0..=8192).contains(&backup.progress().pagecount) {
+                    return Err(invalid());
+                }
+                match step {
+                    rusqlite::backup::StepResult::Done => break,
+                    rusqlite::backup::StepResult::More => std::thread::yield_now(),
+                    rusqlite::backup::StepResult::Busy | rusqlite::backup::StepResult::Locked => {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    _ => return Err(invalid()),
+                }
+            }
+        }
+        let end = now();
+        self.schema = Self::validate_connection(&memory)?;
+        self.conn = memory;
+        self.read_only = true;
+        Ok((self, (start, end)))
+    }
     /// One pinned read transaction; callbacks must do bounded CPU/memory work and
     /// must not wait for another source or browser. Cancellation is checked per row.
     pub(crate) fn scan_projection(

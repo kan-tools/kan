@@ -148,6 +148,190 @@ fn cumulative_rows_are_deduplicated_without_rewriting_sources() {
     let json = serde_json::to_value(&a).unwrap();
     assert_eq!(json["totals"]["observed"], "3");
 }
+
+/// Regression derived from the cold review's PO1: parsing a large active
+/// rollback journal must not hold its SQLite reader lock across every row.
+#[test]
+fn active_snapshot_parsing_does_not_exclude_health_writes() {
+    let f = Fixture::new();
+    let mut conn = sql(&f.active());
+    let tx = conn.transaction().unwrap();
+    {
+        let mut insert = tx
+            .prepare("INSERT INTO attempts VALUES(?,?,?,?,?,?)")
+            .unwrap();
+        for n in 1000..41000u64 {
+            let mut h = health(3);
+            h.attempt = format!("{n:064x}");
+            insert
+                .execute(rusqlite::params![
+                    h.attempt,
+                    1,
+                    3,
+                    2,
+                    1,
+                    serde_json::to_string(&h).unwrap()
+                ])
+                .unwrap();
+        }
+    }
+    tx.commit().unwrap();
+    drop(conn);
+    let mut writer = Journal::open(&f.root).unwrap();
+    let root = f.root.clone();
+    let (started, ready) = mpsc::sync_channel(1);
+    let builder = std::thread::spawn(move || {
+        overview::build_observed(
+            &root,
+            &AtomicBool::new(false),
+            Limits::default(),
+            &mut |b| {
+                if b == Boundary::MembershipPinned {
+                    started.send(()).unwrap();
+                }
+                Ok(())
+            },
+        )
+    });
+    ready.recv_timeout(Duration::from_secs(5)).unwrap();
+    let mut failures = Vec::new();
+    for n in 500000..500100u64 {
+        let mut h = health(1);
+        h.attempt = format!("{n:064x}");
+        if let Err(e) = writer.record(&h) {
+            failures.push(e.to_string());
+        }
+    }
+    let sampled = builder.join().unwrap().unwrap();
+    assert!(sampled.totals.attempts >= 40001);
+    assert!(
+        failures.is_empty(),
+        "overview row scan excluded the health writer: {failures:?}"
+    );
+}
+
+#[test]
+fn sealed_change_after_row_scan_is_not_published() {
+    let f = Fixture::new();
+    let sealed = f.path(&f.generations().generations[0].id);
+    let mut scans = 0;
+    let result = overview::build_observed(
+        &f.root,
+        &AtomicBool::new(false),
+        Limits::default(),
+        &mut |b| {
+            if b == Boundary::SourceRowsRead {
+                scans += 1;
+                if scans == 2 {
+                    sql(&sealed)
+                        .execute("UPDATE sessions SET updated=updated+1", [])
+                        .unwrap();
+                }
+            }
+            Ok(())
+        },
+    );
+    assert_eq!(scans, 2, "must reach the post-read sealed hash fence");
+    assert!(
+        result.is_err(),
+        "a changed sealed source cannot be published from its earlier hash"
+    );
+}
+
+#[test]
+fn ignored_sqlite_sidecars_and_invalid_unique_health_rows_refuse() {
+    let f = Fixture::new();
+    let sealed = f.path(&f.generations().generations[0].id);
+    std::fs::write(format!("{}-wal", sealed.display()), []).unwrap();
+    assert!(
+        overview::build(&f.root, &AtomicBool::new(false), Limits::default()).is_err(),
+        "even an empty sealed WAL is outside the declared source"
+    );
+    for mutation in ["ack", "gap", "arithmetic"] {
+        let f = Fixture::new();
+        let mut h = health(3);
+        h.attempt = format!("{:064x}", 99);
+        match mutation {
+            "ack" => h.remote_acknowledged = true,
+            "gap" => h.recording_gap = false,
+            _ => h.observed = 4,
+        }
+        sql(&f.active())
+            .execute(
+                "INSERT INTO attempts VALUES(?,?,?,?,?,?)",
+                rusqlite::params![
+                    h.attempt,
+                    1,
+                    h.observed,
+                    h.locally_queued,
+                    h.unconfirmed,
+                    serde_json::to_string(&h).unwrap()
+                ],
+            )
+            .unwrap();
+        assert!(
+            overview::build(&f.root, &AtomicBool::new(false), Limits::default()).is_err(),
+            "unique malformed health row: {mutation}"
+        );
+    }
+}
+
+#[test]
+fn historical_worker_is_hashed_but_not_promoted_to_current_health() {
+    let f = Fixture::new();
+    let sealed = f.path(&f.generations().generations[0].id);
+    let mut worker = kan::evidence_operations::WorkerStatus {
+        sampled_at: 1,
+        state: "idle".into(),
+        queue: None,
+        nonempty_since: None,
+        last_ack_at: None,
+        last_ack_position: None,
+        consecutive_failures: 99,
+        retry_seconds: 0,
+        telemetry_failures: 99,
+    };
+    sql(&sealed)
+        .execute(
+            "INSERT INTO worker VALUES(1,?)",
+            [serde_json::to_string(&worker).unwrap()],
+        )
+        .unwrap();
+    f.reseal(0);
+    worker.consecutive_failures = 2;
+    worker.telemetry_failures = 2;
+    Journal::open(&f.root)
+        .unwrap()
+        .save_worker(&worker)
+        .unwrap();
+    let first = f.build();
+    assert!(first.sources[0].snapshot.worker.is_none());
+    assert_eq!(
+        first
+            .sources
+            .last()
+            .unwrap()
+            .snapshot
+            .worker
+            .as_ref()
+            .unwrap()
+            .consecutive_failures,
+        2
+    );
+    worker.consecutive_failures = 100;
+    sql(&sealed)
+        .execute(
+            "UPDATE worker SET body=?",
+            [serde_json::to_string(&worker).unwrap()],
+        )
+        .unwrap();
+    f.reseal(0);
+    assert_ne!(
+        first.sources[0].snapshot.digest,
+        f.build().sources[0].snapshot.digest,
+        "omitted historical worker still belongs to its snapshot digest"
+    );
+}
 #[test]
 fn intermediate_regressions_conflicting_observers_and_terminals_refuse_publication() {
     for defect in [

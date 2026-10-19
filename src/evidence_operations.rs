@@ -241,16 +241,27 @@ impl Journal {
         )?;
         conn.busy_timeout(Duration::from_millis(100))?;
         conn.set_limit(rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH, 32768)?;
+        let schema_version = Self::validate_connection(&conn)?;
+        if !read_only {
+            conn.execute_batch(
+                "PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA max_page_count=8192;",
+            )?;
+        }
+        Ok(Self {
+            conn,
+            schema: schema_version,
+            read_only,
+            _file_lock: file_lock,
+            collection_lock: None,
+            scope: "selected standalone journal only".into(),
+        })
+    }
+    fn validate_connection(conn: &Connection) -> Result<u8> {
         let schema_version: u8 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         if conn.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))? != PROFILE
             || !matches!(schema_version, 1 | 2)
         {
             return Err(invalid());
-        }
-        if !read_only {
-            conn.execute_batch(
-                "PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA max_page_count=8192;",
-            )?;
         }
         if conn.query_row("PRAGMA page_size", [], |r| r.get::<_, i64>(0))? != 4096 {
             return Err(invalid());
@@ -265,7 +276,7 @@ impl Journal {
                 .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
                 .collect()
         }
-        if schema(&conn)? != schema(&expected)? {
+        if schema(conn)? != schema(&expected)? {
             return Err(invalid());
         }
         if schema_version == 2 {
@@ -286,14 +297,7 @@ impl Journal {
                 return Err(invalid());
             }
         }
-        Ok(Self {
-            conn,
-            schema: schema_version,
-            read_only,
-            _file_lock: file_lock,
-            collection_lock: None,
-            scope: "selected standalone journal only".into(),
-        })
+        Ok(schema_version)
     }
     pub(crate) fn binding(&self) -> Result<(String, String, String, String)> {
         Ok(self.conn.query_row(

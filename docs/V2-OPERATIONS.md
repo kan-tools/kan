@@ -215,3 +215,10 @@ against the same journal: older versions still refuse those attempt writes.
 The current UI uses a conservative five-second freshness window; long worker I/O
 can exceed it and appear stale/unknown while still running. This is not a claim
 that the worker has failed or that capture is complete.
+
+Overview review correction: active row parsing uses a bounded in-memory SQLite
+copy, with short backup steps and a five-second refusal bound when the source stays
+busy. The 128-MiB budget includes a 32-MiB image plus 16-MiB working reserve; fewer
+rows may fit than before. Build/Cancel actions preempt ordinary polling and cannot
+be silently discarded by an in-flight poll. Qualification of this correction is
+pending; the initial checkpoint remains unapproved.
