@@ -173,6 +173,13 @@ No cross-host anti-equivocation or silent merge of observer histories is claimed
 Browser scope access remains governed by the same current grants as inventory;
 owner recovery and publication require separate administrative capabilities.
 
+## Proposed codec checkpoint
+
+`kan-v2-recovery-bundle-codec.md` now specifies the proposed observation schema,
+domain-separated signature preimage, M1/R1 byte framing, member table shapes and
+publication replay rules. It remains a proposal pending independent review and
+independent byte fixtures; no bundle writer exists.
+
 ## Open qualification work
 
 Freeze the complete body field names, member commitment framing, observation
