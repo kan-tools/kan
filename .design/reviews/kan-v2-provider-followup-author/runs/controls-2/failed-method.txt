@@ -1,0 +1,1 @@
+Driver stopped after R-C7 because its explicit assert! diagnostic says delta-after-block-stop cohered rather than the literal word assertion. The test semantically rejected the mutation. Exact source restored by finally. Accept this explicit coherence diagnostic and rerun the complete controls.

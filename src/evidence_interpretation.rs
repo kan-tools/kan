@@ -17,7 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const VERSION: &str = "kan-anthropic-messages/1";
+pub const VERSION: &str = "kan-anthropic-messages/2";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     Request,
@@ -35,6 +35,7 @@ pub enum Kind {
     Attachment,
     ToolFragment,
     Protocol,
+    Framing,
     Error,
     Unsupported,
     Malformed,
@@ -66,6 +67,10 @@ pub struct Item {
     /// Complete event JSON, including fields this adapter does not interpret.
     pub event: Option<Value>,
     pub issues: Vec<Issue>,
+    /// Validated accumulated tool JSON; its enclosing attribution includes the
+    /// block start and every observed fragment through this stop, not just stop.
+    pub tool_input: Option<String>,
+    pub tool_region: Option<Range<usize>>,
 }
 #[derive(Debug)]
 pub struct Document {
@@ -180,7 +185,13 @@ fn item(kind: Kind, region: Range<usize>) -> Item {
         text: None,
         pointer: None,
         event: None,
-        issues: vec![],
+        issues: match kind {
+            Kind::Malformed => vec![Issue::Shape],
+            Kind::Unsupported => vec![Issue::Unknown],
+            _ => vec![],
+        },
+        tool_input: None,
+        tool_region: None,
     }
 }
 fn push(out: &mut Vec<Item>, value: Item, w: &mut Work) -> Result<()> {
@@ -226,7 +237,7 @@ fn block(
             None => (Kind::Malformed, None),
         }
     };
-    let mut i = item(kind, region);
+    let mut i = item(kind, region.clone());
     i.pointer = Some(w.string(&pointer)?);
     i.role = role.map(|s| w.string(s)).transpose()?;
     i.text = text.map(|s| w.string(s)).transpose()?;
@@ -234,10 +245,18 @@ fn block(
         i.kind = Kind::Malformed;
         i.issues.push(Issue::Shape);
     }
-    if kind == Kind::Unsupported {
-        i.issues.push(Issue::Unknown);
+    push(out, i, w)?;
+    if kind == Kind::ToolResult && value.get("content").is_some_and(Value::is_array) {
+        content(
+            &value["content"],
+            &format!("{pointer}/content"),
+            role,
+            region,
+            out,
+            w,
+        )?;
     }
-    push(out, i, w)
+    Ok(())
 }
 fn content(
     value: &Value,
@@ -269,6 +288,12 @@ fn json_body(bytes: &[u8], format: Format, doc: &mut Document, w: &mut Work) -> 
     }
     // Always expose the root, preserving unknown fields and empty contents.
     let mut root = item(Kind::Protocol, region.clone());
+    if format == Format::Response
+        && value.get("type").and_then(Value::as_str) == Some("message")
+        && value.get("role").and_then(Value::as_str) != Some("assistant")
+    {
+        root.issues.push(Issue::Shape);
+    }
     root.pointer = Some(String::new());
     push(&mut doc.items, root, w)?;
     if format == Format::Request {
@@ -341,6 +366,7 @@ struct ActiveBlock {
     stopped: bool,
     fragments: String,
     fragmented: bool,
+    start: usize,
 }
 #[derive(Default)]
 struct State {
@@ -440,6 +466,7 @@ fn event(
                         stopped: false,
                         fragments: String::new(),
                         fragmented: false,
+                        start: i.region.start,
                     });
                 } else {
                     i.issues.push(Issue::BlockIndex);
@@ -456,6 +483,7 @@ fn event(
             let (kind, key, want) = match delta.and_then(|d| d.get("type")).and_then(Value::as_str)
             {
                 Some("text_delta") => (Kind::Text, "text", BlockKind::Text),
+                Some("citations_delta") => (Kind::Protocol, "", BlockKind::Text),
                 Some("thinking_delta") => (Kind::Thinking, "thinking", BlockKind::Thinking),
                 Some("signature_delta") => (Kind::Protocol, "signature", BlockKind::Thinking),
                 Some("input_json_delta") => (Kind::ToolFragment, "partial_json", BlockKind::Tool),
@@ -475,6 +503,15 @@ fn event(
                 } else {
                     i.issues.push(Issue::Unknown);
                 }
+            } else if delta.and_then(|d| d.get("type")).and_then(Value::as_str)
+                == Some("citations_delta")
+            {
+                if !delta
+                    .and_then(|d| d.get("citation"))
+                    .is_some_and(Value::is_object)
+                {
+                    i.issues.push(Issue::Shape);
+                }
             } else if text.is_none() {
                 i.issues.push(Issue::Shape);
             }
@@ -482,7 +519,7 @@ fn event(
                 if b.stopped {
                     i.issues.push(Issue::Sequence);
                 }
-                if b.kind != want {
+                if want != BlockKind::Unknown && b.kind != want {
                     i.issues.push(Issue::DeltaType);
                 }
                 if want == BlockKind::Tool && b.kind == want && !b.stopped {
@@ -506,10 +543,13 @@ fn event(
                 } else {
                     b.stopped = true;
                     state.open_blocks -= 1;
-                    if b.fragmented
-                        && !strict(b.fragments.as_bytes(), w)?.is_some_and(|v| v.is_object())
-                    {
-                        i.issues.push(Issue::ToolJson);
+                    if b.fragmented {
+                        if strict(b.fragments.as_bytes(), w)?.is_some_and(|v| v.is_object()) {
+                            i.tool_input = Some(std::mem::take(&mut b.fragments));
+                            i.tool_region = Some(b.start..i.region.end);
+                        } else {
+                            i.issues.push(Issue::ToolJson);
+                        }
                     }
                 }
             } else {
@@ -564,7 +604,13 @@ fn sse(
     }
     let mut state = State::default();
     let mut start = 0;
-    let mut pos = 0;
+    let mut pos = if bytes.starts_with(b"\xef\xbb\xbf") {
+        w.scan(3)?;
+        3
+    } else {
+        0
+    };
+    let mut unknown_field = false;
     let mut data = Vec::new();
     let mut name: Option<String> = None;
     let mut has_data = false;
@@ -601,8 +647,14 @@ fn sse(
                     }
                 }
             } else {
-                item(Kind::Protocol, start..pos)
+                let mut framing = item(Kind::Framing, start..pos);
+                framing.text = Some(w.string("Undispatched SSE framing")?);
+                framing
             };
+            if unknown_field {
+                i.issues.push(Issue::Unknown);
+                state.invalid = true;
+            }
             // Invalid UTF-8 in event names is never silently repaired.
             if name.as_deref() == Some("\0invalid-utf8") {
                 i.issues.push(Issue::EventName);
@@ -614,6 +666,7 @@ fn sse(
             data.clear();
             name = None;
             has_data = false;
+            unknown_field = false;
         } else if !line.starts_with(b":") {
             let (field, mut value) = match line.iter().position(|&b| b == b':') {
                 Some(n) => (&line[..n], &line[n + 1..]),
@@ -632,7 +685,10 @@ fn sse(
                 b"event" => {
                     name = Some(w.string(std::str::from_utf8(value).unwrap_or("\0invalid-utf8"))?);
                 }
-                _ => {}
+                b"id" | b"retry" => {}
+                _ => {
+                    unknown_field = true;
+                }
             }
         }
     }
@@ -678,6 +734,10 @@ fn interpret_observed(
 }
 /// Map one enclosing region to exact original input spans. Validate the full
 /// contiguous stream and every duplicate source before returning any citations.
+/// Empty chunks at covered offsets are validated but cite no nonempty bytes.
+/// A zero-width region cites every segment containing that point, including
+/// both neighbours at a boundary and all exact duplicates; these are locations,
+/// not evidence that the empty body contains text.
 /// This checks byte correspondence only, never a signature or access grant.
 pub fn map_region(
     stream: &Stream,
@@ -704,11 +764,15 @@ pub fn map_region(
     let mut group = None;
     for s in &stream.segments {
         w.item()?;
-        if s.offset != next as u64 || s.sources.is_empty() {
+        let offset = usize::try_from(s.offset).map_err(|_| Error::Mapping)?;
+        if s.sources.is_empty()
+            || (s.length > 0 && offset != next)
+            || (s.length == 0 && offset > next)
+        {
             return Err(Error::Mapping);
         }
-        let end = next.checked_add(s.length).ok_or(Error::Mapping)?;
-        let piece = bytes.get(next..end).ok_or(Error::Mapping)?;
+        let end = offset.checked_add(s.length).ok_or(Error::Mapping)?;
+        let piece = bytes.get(offset..end).ok_or(Error::Mapping)?;
         let mut first_raw = None;
         for source in &s.sources {
             w.item()?;
@@ -724,12 +788,12 @@ pub fn map_region(
             if frame.body_span != source.bytes {
                 return Err(Error::Mapping);
             }
-            let (direction, offset) = match frame.header.event {
+            let (direction, claimed_offset) = match frame.header.event {
                 Event::RequestChunk { offset } => (0, offset),
                 Event::ResponseChunk { offset } => (1, offset),
                 _ => return Err(Error::Mapping),
             };
-            if offset != s.offset {
+            if claimed_offset != s.offset {
                 return Err(Error::Mapping);
             }
             let input = &inputs[source.input];
@@ -760,19 +824,19 @@ pub fn map_region(
             if raw != piece {
                 return Err(Error::Mapping);
             }
-            let a = next.max(region.start);
+            let a = offset.max(region.start);
             let b = end.min(region.end);
-            if a < b || (region.is_empty() && next <= a && a <= end && a == region.start) {
+            if a < b || (region.is_empty() && offset <= a && a <= end && a == region.start) {
                 if out.len() >= w.limits.citations {
                     return Err(Error::Limit("citations"));
                 }
                 out.push(SourceSpan {
                     input: source.input,
-                    bytes: (source.bytes.start + a - next)..(source.bytes.start + b - next),
+                    bytes: (source.bytes.start + a - offset)..(source.bytes.start + b - offset),
                 });
             }
         }
-        next = end;
+        next = next.max(end);
     }
     if next != bytes.len() {
         return Err(Error::Mapping);
@@ -807,5 +871,36 @@ mod tests {
         );
         assert_eq!(result.unwrap_err(), Error::Cancelled);
         assert_eq!(seen, 1);
+    }
+    #[test]
+    fn accumulated_tool_input_cites_the_whole_observed_block() {
+        let values = [
+            serde_json::json!({"type":"message_start","message":{"type":"message","role":"assistant","content":[]}}),
+            serde_json::json!({"type":"content_block_start","index":3,"content_block":{"type":"tool_use","name":"f","input":{}}}),
+            serde_json::json!({"type":"content_block_delta","index":3,"delta":{"type":"input_json_delta","partial_json":"{\"x\":"}}),
+            serde_json::json!({"type":"content_block_delta","index":3,"delta":{"type":"input_json_delta","partial_json":"1}"}}),
+            serde_json::json!({"type":"content_block_stop","index":3}),
+        ];
+        let bytes = values
+            .iter()
+            .map(|v| format!("data: {v}\n\n"))
+            .collect::<String>();
+        let limits = Limits {
+            input_bytes: 10000,
+            items: 100,
+            output_bytes: 10000,
+            scan_bytes: 10000,
+            citations: 100,
+            duration: Duration::from_secs(5),
+            cancelled: Arc::new(AtomicBool::new(false)),
+        };
+        let d = interpret(bytes.as_bytes(), Format::Sse, limits).unwrap();
+        let end = &d.items[4];
+        assert_eq!(end.tool_input.as_deref(), Some("{\"x\":1}"));
+        assert_eq!(
+            end.tool_region,
+            Some(d.items[1].region.start..end.region.end)
+        );
+        assert!(end.region.start > end.tool_region.as_ref().unwrap().start);
     }
 }

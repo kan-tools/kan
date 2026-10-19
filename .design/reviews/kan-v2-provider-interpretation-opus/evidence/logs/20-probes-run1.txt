@@ -1,0 +1,46 @@
+# 2026-10-19T18:30:37Z cwd=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter/.local-state/reviews/provider-interpretation
+# CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target CARGO_BUILD_JOBS=4
+$ cargo test --offline --locked --features v2-crypto --test zz_review_interp_probes -- --nocapture --test-threads=4
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter/.local-state/reviews/provider-interpretation)
+error[E0283]: type annotations needed for `Vec<_>`
+   --> tests/zz_review_interp_probes.rs:474:17
+    |
+474 |             let mut prim = vec![];
+    |                 ^^^^^^^^
+...
+488 |                     prim.extend(first);
+    |                          ------ type must be known at this point
+    |
+    = note: multiple `impl`s satisfying `Vec<_>: Extend<&u8>` found in the `alloc` crate:
+            - impl<'a, T, A> Extend<&'a T> for Vec<T, A>
+              where T: Copy, T: 'a, A: Allocator;
+            - impl<T, A> Extend<T> for Vec<T, A>
+              where A: Allocator;
+help: consider giving `prim` an explicit type, where the type for struct `Vec<_>` is specified
+    |
+474 |             let mut prim: Vec<_> = vec![];
+    |                         ++++++++
+
+error[E0283]: type annotations needed for `Vec<_>`
+   --> tests/zz_review_interp_probes.rs:474:17
+    |
+474 |             let mut prim = vec![];
+    |                 ^^^^^^^^
+...
+493 |             assert_eq!(prim, &body[it.region.clone()]);
+    |             ------------------------------------------ type must be known at this point
+    |
+    = note: multiple `impl`s satisfying `_: PartialEq<u8>` found in the following crates: `core`, `serde_json`:
+            - impl PartialEq for u8;
+            - impl PartialEq<u8> for Value;
+            - impl<'a> PartialEq<u8> for &'a Value;
+            - impl<'a> PartialEq<u8> for &'a mut Value;
+    = note: required for `Vec<_>` to implement `PartialEq<&[u8]>`
+help: consider giving `prim` an explicit type, where the placeholders `_` are specified
+    |
+474 |             let mut prim: Vec<_> = vec![];
+    |                         ++++++++
+
+For more information about this error, try `rustc --explain E0283`.
+error: could not compile `kan` (test "zz_review_interp_probes") due to 2 previous errors
+# exit=101 2026-10-19T18:30:37Z

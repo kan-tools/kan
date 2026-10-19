@@ -1,0 +1,22 @@
+
+running 1 test
+test empty_chunks_at_covered_offsets_preserve_mapping_and_boundary_lineage ... FAILED
+
+failures:
+
+---- empty_chunks_at_covered_offsets_preserve_mapping_and_boundary_lineage stdout ----
+
+thread 'empty_chunks_at_covered_offsets_preserve_mapping_and_boundary_lineage' (10437525) panicked at tests/evidence_interpretation_followups.rs:109:14:
+valid empty covered chunk must map: Mapping
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    empty_chunks_at_covered_offsets_preserve_mapping_and_boundary_lineage
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter/.local-state/reversion/87ed8c573e8c4f0aaa06831437c4511d)
+    Finished `test` profile [unoptimized] target(s) in 7.81s
+     Running tests/evidence_interpretation_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation_followups-4e80bc39574f69f6)
+error: test failed, to rerun pass `--test evidence_interpretation_followups`
