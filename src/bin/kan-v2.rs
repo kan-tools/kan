@@ -42,6 +42,9 @@ enum Command {
     /// Read the same operations snapshot used by the dashboard.
     #[cfg(feature = "v2-crypto")]
     OpsStatus { journal: PathBuf },
+    /// Build bounded deduplicated totals of retained collection observations.
+    #[cfg(feature = "v2-crypto")]
+    OpsOverview { collection: PathBuf },
     /// Copy a stopped standalone journal into a new collection, preserving the source.
     #[cfg(feature = "v2-crypto")]
     OpsAdopt {
@@ -362,6 +365,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .and_then(|mut j| j.snapshot())
                 .map_err(|_| "operations status unavailable")?;
             print_json(&serde_json::to_value(&snapshot)?)?;
+        }
+        #[cfg(feature = "v2-crypto")]
+        Command::OpsOverview { collection } => {
+            use kan::evidence_operations_collection::overview::{build, Limits};
+            let result = build(
+                &collection,
+                &std::sync::atomic::AtomicBool::new(false),
+                Limits::default(),
+            )
+            .map_err(|e| format!("operations overview failed: {e}"))?;
+            print_json(&serde_json::to_value(result)?)?;
         }
         #[cfg(feature = "v2-crypto")]
         Command::OpsAdopt { source, collection } => {

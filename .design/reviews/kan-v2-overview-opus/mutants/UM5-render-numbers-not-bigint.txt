@@ -1,0 +1,51 @@
+✔ auth is header-only; gap filtering and untrusted values use text (14.405292ms)
+✔ late authenticated response cannot unlock a locked view (0.570167ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.619792ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.806917ms)
+✔ fresh active sessions are current while historical losses remain visible (0.728042ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.834666ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.699083ms)
+✔ unsampled sessions and summary loss units are explicit (0.5425ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.785417ms)
+✔ unsupported status version retains visibly disconnected values (0.469208ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.827625ms)
+✔ locking clears rendered private metadata and closes the inspector (0.500833ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.646167ms)
+✔ future persistence timestamps stay unknown (0.478625ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.632459ms)
+✔ unchanged notices are not announced again on every poll (0.590666ms)
+✖ overview refresh is explicit authenticated POST with exact large counters (0.922959ms)
+✔ lock clears overview and prevents a late result from repainting (0.985917ms)
+✔ failed or limited refresh labels the prior sample explicitly (0.509542ms)
+✔ overview rejects malformed source lists and unsafe numeric counters before rendering (1.577625ms)
+✔ UP1 transport error from a pre-lock overview request cannot repaint a locked view (14.087709ms)
+✔ UP4 relogin after lock ignores the old response and can load again (1.319583ms)
+UP5 state= "Invalid overview snapshot." summary= "1 distinct attempts · 3 observed · 2 locally queued · 1 unconfirmed · 1 attempts with gaps · 1 reporter sessions · at least 8 dropped telemetry observations · 0 unclosed sessions"
+✔ UP5 invalid response after a valid sample keeps prior totals but states invalid (behaviour record) (1.253167ms)
+✔ UP6 cancelled refresh labels the retained prior sample (0.815584ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 23
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 60.191167
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:31:1
+✖ overview refresh is explicit authenticated POST with exact large counters (0.922959ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /18,446,744,073,709,551,614 observed/. Input:
+  
+  '1 distinct attempts · 18,446,744,073,709,552,000 observed · 2 locally queued · 1 unconfirmed · 1 attempts with gaps · 1 reporter sessions · at least 8 dropped telemetry observations · 0 unclosed sessions'
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/overview/tests/operations_ui.test.cjs:31:407)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '1 distinct attempts · 18,446,744,073,709,552,000 observed · 2 locally queued · 1 unconfirmed · 1 attempts with gaps · 1 reporter sessions · at least 8 dropped telemetry observations · 0 unclosed sessions',
+    expected: /18,446,744,073,709,551,614 observed/,
+    operator: 'match'
+  }

@@ -1,0 +1,24 @@
+$ node --test review-evidence/probes/restart_review_probes.test.cjs   (cwd=export root, source unmodified)
+✔ RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints (13.586959ms)
+✔ RP2: restart, same job/manifest/built_at, only totals differ -> totals repaint (1.297ms)
+✔ RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint (0.932125ms)
+✔ RP4: lock -> relogin -> load returns the SAME cached sample -> body is repainted, not left blank (1.258ms)
+✔ RP5: restart observed via last:null in between, then identical-looking sample -> body repainted (0.846541ms)
+✔ RP6: the 8 s timeout labels "timed out", retains prior sample, and releases the request slot (0.771167ms)
+✔ RP7: a queued action does not leak across lock/relogin into the next session (0.909458ms)
+✔ RP8: Build preempts a poll whose headers arrived but whose body is still streaming (1.009416ms)
+✔ RP9: valid A, invalid reply, then valid B (same job/manifest) -> B repaints (1.074708ms)
+✔ RP10: identical sample repeated: neither summary, coverage nor sources are rewritten (no announce churn) (0.934042ms)
+RP11 summary rewrites after key reorder: 1
+✔ RP11 (informational): same sample re-serialised with different key order re-renders but shows identical content (0.713292ms)
+RP12 key bytes at 1024 sources: 485784 10 distinct renders ms: 22.7
+✔ RP12: bounds - 1024 server-shaped sources render; key work is small; 1025 sources are rejected (25.236458ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 76.752542
+exit=0

@@ -1,0 +1,33 @@
+$ node --test review-evidence/probes/restart_review_probes.test.cjs   (cwd=export root, source unmodified)
+✔ RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints (14.863833ms)
+✔ RP2: restart, same job/manifest/built_at, only totals differ -> totals repaint (1.289042ms)
+✔ RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint (0.885208ms)
+✔ RP4: lock -> relogin -> load returns the SAME cached sample -> body is repainted, not left blank (1.245167ms)
+✔ RP5: restart observed via last:null in between, then identical-looking sample -> body repainted (0.973791ms)
+✔ RP6: the 8 s timeout labels "timed out", retains prior sample, and releases the request slot (0.824334ms)
+✔ RP7: a queued action does not leak across lock/relogin into the next session (1.010791ms)
+✖ RP8: Build preempts a poll whose headers arrived but whose body is still streaming (0.756042ms)
+✔ RP9: valid A, invalid reply, then valid B (same job/manifest) -> B repaints (1.484334ms)
+✔ RP10: identical sample repeated: neither summary, coverage nor sources are rewritten (no announce churn) (1.070041ms)
+RP11 summary rewrites after key reorder: 1
+✔ RP11 (informational): same sample re-serialised with different key order re-renders but shows identical content (0.784709ms)
+RP12 key bytes at 1024 sources: 485784 10 distinct renders ms: 24.3
+✔ RP12: bounds - 1024 server-shaped sources render; key work is small; 1025 sources are rejected (27.2505ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 11
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 83.76
+
+✖ failing tests:
+
+test at review-evidence/probes/restart_review_probes.test.cjs:77:1
+✖ RP8: Build preempts a poll whose headers arrived but whose body is still streaming (0.756042ms)
+  TypeError [Error]: u.respondHeaders is not a function
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/review-evidence/probes/restart_review_probes.test.cjs:79:63)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7)
+exit=1

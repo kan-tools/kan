@@ -1,0 +1,38 @@
+  785     1 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/148.0.7778.216/Helpers/chrome_crashpad_handler --monitor-self-annotation=ptype=crashpad-handler --database=/Users/m/Library/Application Support/Google/Chrome/Crashpad --url=https://clients2.google.com/cr/report --annotation=channel= --annotation=plat=OS X --annotation=prod=Chrome_Mac --annotation=ver=148.0.7778.216 --handshake-fd=5
+  823     1 /System/Applications/News.app/Contents/PlugIns/NewsToday2.appex/Contents/MacOS/NewsToday2 -LaunchArguments eyJ0eXBlIjoxLCJzZXJ2aWNlTmFtZSI6ImNvbS5hcHBsZS5uZXdzLndpZGdldCIsImVuaGFuY2VkU2VjdXJpdHkiOmZhbHNlfQ==
+ 1472   949 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node ./server.mjs
+ 1473   949 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node ./server.mjs
+ 1474   949 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl
+ 1476   949 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node /Applications/ChatGPT.app/Contents/Resources/cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs
+ 1504   949 day mcp
+ 1524  1476 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl
+74497   949 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl
+74499   949 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node ./server.mjs
+74500   949 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node ./server.mjs
+74501   949 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node /Applications/ChatGPT.app/Contents/Resources/cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs
+74519   949 day mcp
+74570 74501 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl
+75105 74570 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex sandbox -c shell_environment_policy.inherit="all" -c default_permissions="node_repl" -c permissions.node_repl={filesystem = {"/Applications/ChatGPT.app/Contents/Resources/cua_node/bin" = "read", "/Applications/ChatGPT.app/Contents/Resources/cua_node/lib/node_modules" = "read", "/Users/m/.codex/visualizations/2026/10/16/01a145bd-f5b1-7e43-8d72-aebbf8de3fe6" = "write", "/Users/m/.codex/visualizations/2026/10/16/01a145bd-f5b1-7e43-8d72-aebbf8de3fe6/.agents" = "read", "/Users/m/.codex/visualizations/2026/10/16/01a145bd-f5b1-7e43-8d72-aebbf8de3fe6/.aws" = "read", "/Users/m/.codex/visualizations/2026/10/16/01a145bd-f5b1-7e43-8d72-aebbf8de3fe6/.codex" = "read", "/Users/m/.codex/visualizations/2026/10/16/01a145bd-f5b1-7e43-8d72-aebbf8de3fe6/.git" = "read", "/Users/m/code/kan-tools/kan" = "write", "/Users/m/code/kan-tools/kan/.agents" = "read", "/Users/m/code/kan-tools/kan/.aws" = "read", "/Users/m/code/kan-tools/kan/.codex" = "read", "/Users/m/code/kan-tools/kan/.git" = "read", "/var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpHvlhc4" = "read", ":root" = "read", ":slash_tmp" = "write", ":tmpdir" = "write"}, network = {enabled = false}} -- /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node --experimental-vm-modules /var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpHvlhc4/kernel.js --session-id 32a1b36099744316b31a975289313fa5 --working-dir /Users/m/code/kan-tools/kan
+75106 74570 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex sandbox -c shell_environment_policy.inherit="all" -c default_permissions="node_repl" -c permissions.node_repl={filesystem = {"/Applications/ChatGPT.app/Contents/Resources/cua_node/bin" = "read", "/Applications/ChatGPT.app/Contents/Resources/cua_node/lib/node_modules" = "read", "/Users/m/.codex/visualizations/2026/10/16/01a145bd-f5b1-7e43-8d72-aebbf8de3fe6" = "write", "/Users/m/.codex/visualizations/2026/10/16/01a145bd-f5b1-7e43-8d72-aebbf8de3fe6/.agents" = "read", "/Users/m/.codex/visualizations/2026/10/16/01a145bd-f5b1-7e43-8d72-aebbf8de3fe6/.aws" = "read", "/Users/m/.codex/visualizations/2026/10/16/01a145bd-f5b1-7e43-8d72-aebbf8de3fe6/.codex" = "read", "/Users/m/.codex/visualizations/2026/10/16/01a145bd-f5b1-7e43-8d72-aebbf8de3fe6/.git" = "read", "/Users/m/code/kan-tools/kan" = "write", "/Users/m/code/kan-tools/kan/.agents" = "read", "/Users/m/code/kan-tools/kan/.aws" = "read", "/Users/m/code/kan-tools/kan/.codex" = "read", "/Users/m/code/kan-tools/kan/.git" = "read", "/var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpHvlhc4" = "read", ":root" = "read", ":slash_tmp" = "write", ":tmpdir" = "write"}, network = {enabled = false}} -- /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node --experimental-vm-modules /var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpHvlhc4/trusted-worker.js /Users/m/code/kan-tools/kan
+75107 75105 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node --experimental-vm-modules /var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpHvlhc4/kernel.js --session-id 32a1b36099744316b31a975289313fa5 --working-dir /Users/m/code/kan-tools/kan
+75108 75106 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node --experimental-vm-modules /var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpHvlhc4/trusted-worker.js /Users/m/code/kan-tools/kan
+88112   949 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl
+88113   949 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node /Applications/ChatGPT.app/Contents/Resources/cua_node/lib/node_modules/@oai/cua-repl/bin/cua-repl.mjs
+88114   949 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node ./server.mjs
+88116   949 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node ./server.mjs
+88149   949 day mcp
+88157 88113 /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl
+ 2937  2601 /Users/m/.cargo/bin/day mcp
+ 2938  2601 day mcp
+ 2943  2601 /Users/m/.cargo/bin/kan mcp
+COMMAND     PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+rapportd    622    m   15u  IPv4 0x7f761c7e6b6e8616      0t0  TCP *:49386 (LISTEN)
+rapportd    622    m   16u  IPv6 0x6b28a7b02c298212      0t0  TCP *:49386 (LISTEN)
+ControlCe   649    m   10u  IPv4 0x2902e22ca78c2393      0t0  TCP *:7000 (LISTEN)
+ControlCe   649    m   11u  IPv6 0xb1770d3f5a4d85e0      0t0  TCP *:7000 (LISTEN)
+ControlCe   649    m   12u  IPv4 0xb90132e57673f408      0t0  TCP *:5000 (LISTEN)
+ControlCe   649    m   13u  IPv6 0x7aa48ae5c01fd170      0t0  TCP *:5000 (LISTEN)
+OrbStack   5895    m   87u  IPv4 0xe066b3446b97fc98      0t0  TCP 127.0.0.1:32222 (LISTEN)
+OrbStack   5895    m   88u  IPv6 0x53571f93e4cf145d      0t0  TCP [::1]:32222 (LISTEN)
+OrbStack   5895    m   89u  IPv4 0x1fdaa1f417c5f46f      0t0  TCP 127.0.0.1:56742 (LISTEN)
+t3        52686    m   17u  IPv4 0x7d596b469508c230      0t0  TCP 100.96.192.66:7337 (LISTEN)

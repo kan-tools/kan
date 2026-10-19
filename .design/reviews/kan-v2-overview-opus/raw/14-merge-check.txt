@@ -1,0 +1,48 @@
+files changed by a1007a6 vs 9f1dffa:
+.design/kan-v2-evidence-availability.md
+.design/kan-v2-next-build-status.md
+.github/workflows/ci.yml
+rfcs/4-evidence-contract.md
+src/evidence_store/attested.rs
+tests/evidence_attested_followups.rs
+tests/evidence_attested_store.rs
+
+files changed by 3367e28 vs 9f1dffa:
+.design/kan-v2-collection-overview.md
+.design/kan-v2-next-build-status.md
+.github/workflows/ci.yml
+docs/V2-OPERATIONS.md
+scripts/overview_negative_controls.py
+src/bin/kan-v2.rs
+src/evidence_dashboard.rs
+src/evidence_operations.rs
+src/evidence_operations/projection.rs
+src/evidence_operations_collection.rs
+src/evidence_operations_collection/overview.rs
+tests/evidence_operations_overview.rs
+tests/operations_ui.test.cjs
+web/operations/app.js
+web/operations/index.html
+web/operations/style.css
+
+overlap:
+.design/kan-v2-next-build-status.md
+.github/workflows/ci.yml
+
+evil-merge check (merge tree vs auto-merge):
+auto tree: f3eca6f89e3de5f6ac9212e3720e2bd990af527a
+commit tree: 1659627018976f3bfb156f0d0452bf1cfb2a891c
+
+merge-tree conflicts:
+f3eca6f89e3de5f6ac9212e3720e2bd990af527a
+100644 871b6cabd1a866629a7b8fe6162aa92575edb902 1	.github/workflows/ci.yml
+100644 801066195259c26f714c70a071ed9b964d4ab8c9 2	.github/workflows/ci.yml
+100644 4986353800f807218a3564dcac565d124b956917 3	.github/workflows/ci.yml
+
+Auto-merging .design/kan-v2-next-build-status.md
+Auto-merging .github/workflows/ci.yml
+CONFLICT (content): Merge conflict in .github/workflows/ci.yml
+diff auto-merge(with markers) -> 67c1263:
+ .github/workflows/ci.yml | 6 +-----
+ 1 file changed, 1 insertion(+), 5 deletions(-)
+Only resolution: CI cargo test list = union (adds both evidence_attested_followups and evidence_operations_overview).

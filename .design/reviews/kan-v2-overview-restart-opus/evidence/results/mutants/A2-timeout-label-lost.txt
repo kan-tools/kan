@@ -1,0 +1,102 @@
+# mutant A2-timeout-label-lost
+# before: "overviewError=e.name==='AbortError'?'Overview request timed out.':e.message;"
+# after:  'overviewError=e.message;'
+
+## suite author exit=0
+✔ auth is header-only; gap filtering and untrusted values use text (13.802917ms)
+✔ late authenticated response cannot unlock a locked view (0.582916ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.521ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.5355ms)
+✔ fresh active sessions are current while historical losses remain visible (0.521708ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.55825ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.546791ms)
+✔ unsampled sessions and summary loss units are explicit (0.450292ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.664125ms)
+✔ unsupported status version retains visibly disconnected values (0.805458ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.545458ms)
+✔ locking clears rendered private metadata and closes the inspector (0.567125ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.759667ms)
+✔ future persistence timestamps stay unknown (0.476542ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.616291ms)
+✔ unchanged notices are not announced again on every poll (0.529791ms)
+✔ overview refresh is explicit authenticated POST with exact large counters (0.795959ms)
+✔ lock clears overview and prevents a late result from repainting (0.947791ms)
+✔ failed or limited refresh labels the prior sample explicitly (0.56125ms)
+✔ overview rejects malformed source lists and unsafe numeric counters before rendering (1.437083ms)
+✔ build preempts an in-flight overview poll and ignores its stale reply (0.49325ms)
+✔ cancel preempts a poll while preserving server action order (0.480375ms)
+✔ a second action is queued behind an unfinished action, then dispatched (0.501042ms)
+✔ cached overview shows its age and becomes visibly superseded after rotation (0.7755ms)
+✔ invalid overview replies label retained totals and restart clears them (0.540708ms)
+✔ late overview transport errors cannot repaint after lock (0.508333ms)
+✔ a reused job number after restart cannot retain old overview totals (0.632083ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 58.32225
+
+## suite imported exit=0
+✔ UPa: a poll aborted by a preempting Build never labels the view as timed out/failed (13.359708ms)
+✔ UPb: after a service restart, a new sample with the same job number and manifest must repaint totals (1.214167ms)
+✔ UPc: lock with a queued action dispatches nothing and repaints nothing afterwards (0.793792ms)
+UPd dispatched actions: ["/api/overview/refresh","/api/overview/refresh"]
+✔ UPd: Build, Cancel, Build while an action is in flight: only the last queued action is sent (0.93775ms)
+✔ UPe: a failing action still dispatches the queued action and keeps the prior-sample label (0.755375ms)
+✔ UPf: superseded label survives later overview polls and a failed status poll (0.984292ms)
+✔ UPg: future-dated sample says its clock is ahead, not "0s old" (0.6535ms)
+✔ UPh: relogin after lock ignores the old session's late action reply (0.607ms)
+✔ UPi: after a Build preempts a poll, a following Cancel is still queued (one action in flight) (0.580125ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8059.14775
+
+## suite review exit=1
+✔ RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints (14.516ms)
+✔ RP2: restart, same job/manifest/built_at, only totals differ -> totals repaint (1.277875ms)
+✔ RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint (0.970416ms)
+✔ RP4: lock -> relogin -> load returns the SAME cached sample -> body is repainted, not left blank (1.280542ms)
+✔ RP5: restart observed via last:null in between, then identical-looking sample -> body repainted (0.838834ms)
+✖ RP6: the 8 s timeout labels "timed out", retains prior sample, and releases the request slot (0.9595ms)
+✔ RP7: a queued action does not leak across lock/relogin into the next session (1.1265ms)
+✔ RP8: Build preempts a poll whose headers arrived but whose body is still streaming (1.01475ms)
+✔ RP9: valid A, invalid reply, then valid B (same job/manifest) -> B repaints (1.085125ms)
+✔ RP10: identical sample repeated: neither summary, coverage nor sources are rewritten (no announce churn) (0.906458ms)
+RP11 summary rewrites after key reorder: 1
+✔ RP11 (informational): same sample re-serialised with different key order re-renders but shows identical content (0.711084ms)
+RP12 key bytes at 1024 sources: 485784 10 distinct renders ms: 22.4
+✔ RP12: bounds - 1024 server-shaped sources render; key work is small; 1025 sources are rejected (24.996833ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 11
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 82.144209
+
+✖ failing tests:
+
+test at review-evidence/probes/restart_review_probes.test.cjs:61:1
+✖ RP6: the 8 s timeout labels "timed out", retains prior sample, and releases the request slot (0.9595ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /^Overview request timed out\. Prior sample retained\./. Input:
+  
+  'aborted Prior sample retained.'
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/review-evidence/probes/restart_review_probes.test.cjs:65:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'aborted Prior sample retained.',
+    expected: /^Overview request timed out\. Prior sample retained\./,
+    operator: 'match'
+  }

@@ -134,10 +134,51 @@ Active polling reads one generation, explicitly excluding sealed history. Histor
 reads verify the selected sealed hash and binding. Generation pages are bounded
 to 100 entries; `next` supplies the following offset. Cumulative attempts/sessions
 can recur across generations, so these snapshots **must not be summed**. A bounded
-deduplicated whole-collection overview remains a separate build item. Collections
+deduplicated overview is available through `ops-overview` and explicit dashboard
+refresh (see below). Collections
 currently allow at most 1,024 generations; hitting this limit refuses rotation
 without deleting anything. The dashboard token remains read-only; browser-triggered
 rotation belongs to the forthcoming separate owner admin API.
+
+## Sampled collection overview
+
+```sh
+kan-v2 ops-overview "$HEALTH_COLLECTION"
+kan-v2 dashboard "$HEALTH_COLLECTION" --listen 127.0.0.1:7283 --token-file "$DASHBOARD_TOKEN_FILE"
+```
+
+In Operations, choose **Build overview** for a new sample, **Load last sample**
+for the process-local cache, or **Cancel build**. These actions never rotate or
+remove journals. Standalone journal paths do not have a collection overview.
+
+The overview deduplicates attempts and reporter sessions in generation order,
+retaining whole cumulative observations. Regressions, conflicting observers or
+terminal outcomes, altered sealed files, and counter overflow fail the refresh.
+It copies a consistent active SQLite image in short backup steps, releases live
+source locks before decoding rows, then reads sealed history under the shared
+collection lock. Busy copying refuses the refresh after at most five seconds. Active health writers
+continue; owner rotation refuses while the build holds membership. Status polling
+reads published memory and never rebuilds the overview.
+
+A successful sample lists each included generation/hash and its typed-row digest.
+Its active worker observation belongs to that sample, not current service health.
+New writes or rotation make the sample older; only another explicit build replaces
+it. The UI labels cached sample age and compares its generation with active health
+to identify superseded samples. Failure/cancellation retains the previous sample with its original job and
+frontier. Restart clears the cache and requires a new build. All totals are
+observations-only; gaps remain visible and telemetry loss is a lower bound.
+
+The first profile permits one build, 1,024 generations, 32 MiB per source,
+250,000 distinct attempts, 65,536 sessions and 128 MiB of conservatively accounted
+working storage, including a 48-MiB reserve for the active image and transients.
+Buffered active rows and deduplication maps share the remainder. A row is charged
+its serialized length plus 1,024 bytes; a 1,300-byte charge permits fewer
+than 64,528 retained rows before other charges, and buffered/map entries can
+overlap. The 250,000 identity ceiling is not a practical capacity guarantee.
+A legal collection can exceed it: capacity failure publishes no partial total.
+Per-generation history remains available. JSON totals use decimal strings so
+browser display preserves full u64 precision. This experimental build still
+requires the recorded independent review and browser qualification before cutover.
 
 ## Supervision and shutdown
 
@@ -180,3 +221,10 @@ against the same journal: older versions still refuse those attempt writes.
 The current UI uses a conservative five-second freshness window; long worker I/O
 can exceed it and appear stale/unknown while still running. This is not a claim
 that the worker has failed or that capture is complete.
+
+Overview review correction: active row parsing uses a bounded in-memory SQLite
+copy, with short backup steps and a five-second refusal bound when the source stays
+busy. The 128-MiB budget includes a 32-MiB image plus 16-MiB working reserve; fewer
+rows may fit than before. Build/Cancel actions preempt ordinary polling and cannot
+be silently discarded by an in-flight poll. Qualification of this correction is
+pending; the initial checkpoint remains unapproved.

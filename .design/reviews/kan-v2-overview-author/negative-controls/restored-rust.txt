@@ -1,0 +1,17 @@
+
+running 9 tests
+test overview_browser_fixture ... ignored, manual synthetic browser fixture; explicit output path required
+test published_polling_is_memory_only_and_cancel_preserves_prior_sample ... ok
+test dashboard_overview_requires_auth_and_cannot_mutate_owner_history ... ok
+test bounds_cancellation_and_checked_sum_never_publish_partial_totals ... ok
+test cumulative_rows_are_deduplicated_without_rewriting_sources ... ok
+test real_cli_returns_same_typed_totals ... ok
+test pinned_active_snapshot_releases_sqlite_before_history_and_blocks_rotation ... ok
+test changed_missing_sources_binding_and_membership_fail_visibly ... ok
+test intermediate_regressions_conflicting_observers_and_terminals_refuse_publication ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.78s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build)
+    Finished `test` profile [unoptimized] target(s) in 6.82s
+     Running tests/evidence_operations_overview.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_operations_overview-60b870fdbabb93d8)

@@ -1,0 +1,66 @@
+✔ real endpoint uses header auth and untrusted source stays text (4.750458ms)
+✔ lock aborts pending source and clears every private view (0.919584ms)
+✔ page and scope navigation carry only the selected authenticated pin (1.230542ms)
+✔ download rechecks authorization and denied export clears prior plaintext (1.058291ms)
+✔ old transport errors cannot lock a newer session (0.695917ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.811ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.645666ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.924458ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (1.8595ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.815875ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.591ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.84675ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.751291ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.602875ms)
+✔ partial catalog coverage persists while browsing and retry clears old authority (0.733583ms)
+✔ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (0.94625ms)
+✔ both authorization denial statuses lock an already open Library (1.306416ms)
+✔ Previous is disabled immediately when leaving a later page (0.960958ms)
+✔ malformed duplicate and inconsistent capabilities never open a Library (2.211042ms)
+✔ all directional control families default to exact hex with explicit text access (6.0475ms)
+✔ malformed retry clears partially rendered capabilities and keeps recovery available (0.720417ms)
+✔ malformed scope catalogs are rejected before any option or page request (4.866958ms)
+✔ malformed scope retry clears old plaintext and permits recovery (0.796ms)
+✔ PB1 boundary values are accepted, not falsely rejected (1.038417ms)
+✔ PB2 complete empty catalog still opens without page request (0.4105ms)
+✔ PB3 over-limit scope name and pin request are rejected (0.775875ms)
+✔ PB4 non-string scope/request with a length property are rejected (1.75475ms)
+✔ PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery (0.720167ms)
+✔ PB6 lock during malformed-catalog reply ignores the late reply (0.343292ms)
+✔ PB7 after malformed retry, old scope names and pins cannot be navigated (0.517708ms)
+✔ auth is header-only; gap filtering and untrusted values use text (14.94525ms)
+✔ late authenticated response cannot unlock a locked view (0.597625ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.607625ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.754167ms)
+✔ fresh active sessions are current while historical losses remain visible (0.667708ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.775208ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.751708ms)
+✔ unsampled sessions and summary loss units are explicit (0.565667ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.772292ms)
+✔ unsupported status version retains visibly disconnected values (0.596458ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.936625ms)
+✔ locking clears rendered private metadata and closes the inspector (0.529958ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.681542ms)
+✔ future persistence timestamps stay unknown (0.479459ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.78775ms)
+✔ unchanged notices are not announced again on every poll (0.545417ms)
+✔ overview refresh is explicit authenticated POST with exact large counters (0.763459ms)
+✔ lock clears overview and prevents a late result from repainting (0.868958ms)
+✔ failed or limited refresh labels the prior sample explicitly (0.535083ms)
+✔ overview rejects malformed source lists and unsafe numeric counters before rendering (1.673625ms)
+✔ first paint defaults to platform; System follows live platform changes (1.095792ms)
+✔ explicit choice persists only the theme and overrides platform until System selected (0.731167ms)
+✔ invalid preference, unavailable storage and cross-tab updates degrade safely (0.959583ms)
+✔ production and preview load the same theme controller before content (0.295417ms)
+ℹ tests 54
+ℹ suites 0
+ℹ pass 54
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 74.576042
+exit=0
+operations: ℹ pass 20
+library: ℹ pass 30
+theme: ℹ pass 4

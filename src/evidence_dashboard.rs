@@ -1,5 +1,5 @@
-//! Loopback-only presentation of private operations observations; no mutation API.
-use crate::evidence_operations::Journal;
+//! Loopback operations observations and disposable refresh; no owner mutation API.
+use crate::{evidence_operations::Journal, evidence_operations_collection::overview::Manager};
 use http_body_util::Full;
 use hyper::{
     body::{Bytes, Incoming},
@@ -33,6 +33,7 @@ async fn handle(
     token: Arc<String>,
     journal: PathBuf,
     permit: Arc<tokio::sync::OwnedSemaphorePermit>,
+    overview: Arc<Manager>,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
     if r.headers().get("host").and_then(|v| v.to_str().ok()) != Some(host.as_str())
         || r.headers()
@@ -41,15 +42,43 @@ async fn handle(
     {
         return Ok(denied(StatusCode::FORBIDDEN));
     }
-    if r.method() != hyper::Method::GET {
+    let path = r.uri().path_and_query().map(|p| p.as_str());
+    let overview_action = matches!(path, Some("/api/overview/refresh" | "/api/overview/cancel"));
+    if (overview_action && r.method() != hyper::Method::POST)
+        || (!overview_action && r.method() != hyper::Method::GET)
+    {
         return Ok(denied(StatusCode::METHOD_NOT_ALLOWED));
     }
-    let path = r.uri().path_and_query().map(|p| p.as_str());
     Ok(match path {
         Some("/") => response(StatusCode::OK, "text/html; charset=utf-8", HTML),
         Some("/theme.js") => response(StatusCode::OK, "text/javascript; charset=utf-8", THEME),
         Some("/app.js") => response(StatusCode::OK, "text/javascript; charset=utf-8", JS),
         Some("/style.css") => response(StatusCode::OK, "text/css; charset=utf-8", CSS),
+        Some("/api/overview" | "/api/overview/refresh" | "/api/overview/cancel") => {
+            let wanted = format!("Bearer {token}");
+            if r.headers().get_all("authorization").iter().count() != 1
+                || r.headers().get("authorization").map(|v| v.as_bytes()) != Some(wanted.as_bytes())
+            {
+                return Ok(denied(StatusCode::UNAUTHORIZED));
+            }
+            // Actions have no request body or owner-mutation parameters.
+            if r.headers().contains_key("transfer-encoding")
+                || r.headers()
+                    .get("content-length")
+                    .is_some_and(|v| v.as_bytes() != b"0")
+            {
+                return Ok(denied(StatusCode::BAD_REQUEST));
+            }
+            let value = match path {
+                Some("/api/overview/refresh") => overview.refresh(journal),
+                Some("/api/overview/cancel") => Ok(overview.cancel()),
+                _ => Ok(overview.status()),
+            };
+            match value.and_then(|v| serde_json::to_vec(&v).map_err(Into::into)) {
+                Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
+                Err(_) => denied(StatusCode::SERVICE_UNAVAILABLE),
+            }
+        }
         Some("/api/status") => {
             let wanted = format!("Bearer {token}");
             if r.headers().get_all("authorization").iter().count() != 1
@@ -87,18 +116,19 @@ pub async fn serve(listener: TcpListener, token: String, journal: PathBuf) -> io
     let token = Arc::new(token);
     let slots = Arc::new(Semaphore::new(8));
     let mut tasks = JoinSet::new();
+    let overview = Arc::new(Manager::new());
     loop {
         tokio::select! {
             accepted=listener.accept()=>{
                 let (stream,_)=accepted?;
                 let Ok(permit)=slots.clone().try_acquire_owned() else {continue;};
-                let host=host.clone();let token=token.clone();let journal=journal.clone();
+                let host=host.clone();let token=token.clone();let journal=journal.clone();let overview=overview.clone();
                 tasks.spawn(async move {
                     // Keep the permit alive through the blocking snapshot read too.
                     let permit=Arc::new(permit);
                     let mut builder=hyper::server::conn::http1::Builder::new();
                     builder.keep_alive(false).max_buf_size(16384).timer(hyper_util::rt::TokioTimer::new()).header_read_timeout(Duration::from_secs(5));
-                    let service=hyper::service::service_fn(move |r|{handle(r,host.clone(),token.clone(),journal.clone(),permit.clone())});
+                    let service=hyper::service::service_fn(move |r|{handle(r,host.clone(),token.clone(),journal.clone(),permit.clone(),overview.clone())});
                     let _=tokio::time::timeout(Duration::from_secs(10),builder.serve_connection(TokioIo::new(stream),service)).await;
                 });
             },

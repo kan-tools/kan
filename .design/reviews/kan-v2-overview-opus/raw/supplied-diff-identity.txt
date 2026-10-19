@@ -1,0 +1,4 @@
+supplied ../overview-change.diff vs git diff 9f1dffa 67c1263:
+/tmp/ov-gitdiff.txt /Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/overview-change.diff differ: char 9873, line 114
+vs git diff excluding .design/reviews:
+IDENTICAL

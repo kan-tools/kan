@@ -1,0 +1,87 @@
+✔ auth is header-only; gap filtering and untrusted values use text (13.730083ms)
+✔ late authenticated response cannot unlock a locked view (0.597916ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.647084ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.672667ms)
+✔ fresh active sessions are current while historical losses remain visible (0.719125ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.750084ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.691417ms)
+✔ unsampled sessions and summary loss units are explicit (0.458041ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.610084ms)
+✔ unsupported status version retains visibly disconnected values (0.480875ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.818625ms)
+✔ locking clears rendered private metadata and closes the inspector (0.469875ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.569375ms)
+✔ future persistence timestamps stay unknown (0.408292ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.702708ms)
+✔ unchanged notices are not announced again on every poll (0.555792ms)
+✔ overview refresh is explicit authenticated POST with exact large counters (0.723875ms)
+✖ lock clears overview and prevents a late result from repainting (1.1275ms)
+✔ failed or limited refresh labels the prior sample explicitly (0.864417ms)
+✔ overview rejects malformed source lists and unsafe numeric counters before rendering (1.468042ms)
+✖ UP1 transport error from a pre-lock overview request cannot repaint a locked view (13.539083ms)
+✖ UP4 relogin after lock ignores the old response and can load again (1.464375ms)
+UP5 state= "Invalid overview snapshot." summary= "1 distinct attempts · 3 observed · 2 locally queued · 1 unconfirmed · 1 attempts with gaps · 1 reporter sessions · at least 8 dropped telemetry observations · 0 unclosed sessions"
+✔ UP5 invalid response after a valid sample keeps prior totals but states invalid (behaviour record) (1.16925ms)
+✔ UP6 cancelled refresh labels the retained prior sample (0.860125ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 21
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8061.048
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:32:1
+✖ lock clears overview and prevents a late result from repainting (1.1275ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '1 distinct attempts · 18,446,744,073,709,551,614 observed · 2 locally queued · 1 unconfirmed · 1 attempts with gaps · 1 reporter sessions · at least 8 dropped telemetry observations · 0 unclosed sessions'
+  - ''
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/overview/tests/operations_ui.test.cjs:32:277)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '1 distinct attempts · 18,446,744,073,709,551,614 observed · 2 locally queued · 1 unconfirmed · 1 attempts with gaps · 1 reporter sessions · at least 8 dropped telemetry observations · 0 unclosed sessions',
+    expected: '',
+    operator: 'strictEqual'
+  }
+
+test at tests/zz_review_operations_ui.test.cjs:9:1
+✖ UP1 transport error from a pre-lock overview request cannot repaint a locked view (13.539083ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + undefined
+  - 'No overview loaded.'
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/overview/tests/zz_review_operations_ui.test.cjs:9:251)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'No overview loaded.',
+    operator: 'strictEqual'
+  }
+
+test at tests/zz_review_operations_ui.test.cjs:12:1
+✖ UP4 relogin after lock ignores the old response and can load again (1.464375ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  undefined !== ''
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/overview/tests/zz_review_operations_ui.test.cjs:12:244)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: '',
+    operator: 'strictEqual'
+  }
