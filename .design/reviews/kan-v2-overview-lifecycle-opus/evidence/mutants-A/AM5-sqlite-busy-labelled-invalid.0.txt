@@ -1,0 +1,20 @@
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/review-evidence/cargo.sh test --features v2-crypto --test evidence_operations_overview -- busy_sources_are_distinguished_from_invalid_history --exact --test-threads=1 --nocapture
+
+running 1 test
+test busy_sources_are_distinguished_from_invalid_history ... FAILED
+
+failures:
+
+failures:
+    busy_sources_are_distinguished_from_invalid_history
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.87s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+    Finished `test` profile [unoptimized] target(s) in 6.79s
+     Running tests/evidence_operations_overview.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_operations_overview-60b870fdbabb93d8)
+
+thread 'busy_sources_are_distinguished_from_invalid_history' (9548954) panicked at tests/evidence_operations_overview.rs:359:5:
+assertion failed: busy.reason.unwrap().contains("busy or in use")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_operations_overview`

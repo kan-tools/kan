@@ -1,0 +1,46 @@
+node --test review-evidence/probes/zz_review_operations_ui.test.cjs
+✖ UPa: a poll aborted by a preempting Build never labels the view as timed out/failed (13.160292ms)
+✖ UPb: after a service restart, a new sample with the same job number and manifest must repaint totals (1.634958ms)
+✔ UPc: lock with a queued action dispatches nothing and repaints nothing afterwards (0.936708ms)
+UPd dispatched actions: ["/api/overview/refresh","/api/overview/refresh"]
+✔ UPd: Build, Cancel, Build while an action is in flight: only the last queued action is sent (0.958875ms)
+✔ UPe: a failing action still dispatches the queued action and keeps the prior-sample label (0.802834ms)
+✔ UPf: superseded label survives later overview polls and a failed status poll (0.82375ms)
+✔ UPg: future-dated sample says its clock is ahead, not "0s old" (0.556917ms)
+✔ UPh: relogin after lock ignores the old session's late action reply (0.568542ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 6
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8055.601625
+
+✖ failing tests:
+
+test at review-evidence/probes/zz_review_operations_ui.test.cjs:18:1
+✖ UPa: a poll aborted by a preempting Build never labels the view as timed out/failed (13.160292ms)
+  AssertionError [ERR_ASSERTION]: aborted poll leaked into the label
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/review-evidence/probes/zz_review_operations_ui.test.cjs:22:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Overview request timed out.',
+    expected: /timed out|unavailable|Token/,
+    operator: 'doesNotMatch'
+  }
+
+test at review-evidence/probes/zz_review_operations_ui.test.cjs:29:1
+✖ UPb: after a service restart, a new sample with the same job number and manifest must repaint totals (1.634958ms)
+  AssertionError [ERR_ASSERTION]: summary still shows the pre-restart sample beside the new label
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/review-evidence/probes/zz_review_operations_ui.test.cjs:37:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '1 distinct attempts · 3 observed · 2 locally queued · 1 unconfirmed · 1 attempts with gaps · 1 reporter sessions · at least 8 dropped telemetry observations · 0 unclosed sessions',
+    expected: /^5 distinct attempts/,
+    operator: 'match'
+  }

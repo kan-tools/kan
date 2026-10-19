@@ -1,0 +1,105 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+warning: type alias `BoxErr` is never used
+  --> tests/zz_review_overview_correction.rs:30:6
+   |
+30 | type BoxErr = Box<dyn std::error::Error + Send + Sync>;
+   |      ^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated function `at` is never used
+  --> tests/zz_review_overview_correction.rs:76:8
+   |
+55 | impl Fx {
+   | ------- associated function in this implementation
+...
+76 |     fn at(root: PathBuf) -> Self {
+   |        ^^
+
+warning: `kan` (test "zz_review_overview_correction") generated 2 warnings
+    Finished `test` profile [unoptimized] target(s) in 0.45s
+     Running tests/zz_review_overview_correction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_overview_correction-712331e9fa93d268)
+
+running 9 tests
+test ra1_cross_process_writer_never_fails_during_near_ceiling_refreshes ... RA1 active bytes=27156480 pages=6630
+
+thread 'ra1_cross_process_writer_never_fails_during_near_ceiling_refreshes' (9536687) panicked at tests/zz_review_overview_correction.rs:166:28:
+no child result: 
+running 1 test
+test zz_review_child ... REVIEW-RESULT {"errors":0,"first_errors":[],"max_ms":21.959,"next_id":1000525,"over_50ms":0,"writes":525}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 9.02s
+
+
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test ra2_published_totals_are_a_consistent_committed_prefix_under_churn ... 
+thread 'ra2_published_totals_are_a_consistent_committed_prefix_under_churn' (9536818) panicked at tests/zz_review_overview_correction.rs:166:28:
+no child result: 
+running 1 test
+test zz_review_child ... REVIEW-RESULT {"errors":0,"first_errors":[],"txns":639}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 9.01s
+
+
+
+FAILED
+test ra3a_cancellation_during_copy_is_clean ... RA3a phases/outcomes: {"before-pin:cancelled": 1, "during-active-copy-or-parse:cancelled": 13}
+RA3a post-cancel write 17ms
+ok
+test ra3b_sigkill_during_refresh_leaves_source_untouched ... RA3b completed refresh iterations before each kill: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+RA3b post-kill write 14ms
+ok
+test ra4_busy_versus_invalid_classification ... RA4a exclusive holder: state=failed reason=Some("source busy or in use; retry refresh") after 132ms
+
+thread 'ra4_busy_versus_invalid_classification' (9537184) panicked at tests/zz_review_overview_correction.rs:166:28:
+no child result: 
+running 1 test
+test zz_review_child ... REVIEW-RESULT {"held_ms":7000}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 7.01s
+
+
+
+FAILED
+test ra5_sqlite_memory_highwater_fits_the_reserve ... RA5 active bytes=27156480
+RA5 noop: ? | 7012352  maximum resident set size
+RA5 measure: ? | 76742656  maximum resident set size
+
+thread 'ra5_sqlite_memory_highwater_fits_the_reserve' (9537294) panicked at tests/zz_review_overview_correction.rs:633:68:
+called `Result::unwrap()` on an `Err` value: Error("expected value", line: 1, column: 1)
+FAILED
+test ra6_post_read_sealed_rehash_is_byte_exact ... RA6 append-one-byte: Err("other:operations collection invalid, unavailable or in use")
+RA6 flip-reserve-byte: Err("other:operations collection invalid, unavailable or in use")
+RA6 truncate-trailing-page: Err("other:operations collection invalid, unavailable or in use")
+ok
+test ra7_manager_labels_under_continuous_writer ... 
+thread 'ra7_manager_labels_under_continuous_writer' (9537336) panicked at tests/zz_review_overview_correction.rs:166:28:
+no child result: 
+running 1 test
+test zz_review_child ... REVIEW-RESULT {"errors":0,"first_errors":[],"max_ms":22.303,"next_id":2000690,"over_50ms":0,"writes":690}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 12.02s
+
+
+
+FAILED
+test zz_review_child ... ok
+
+failures:
+
+failures:
+    ra1_cross_process_writer_never_fails_during_near_ceiling_refreshes
+    ra2_published_totals_are_a_consistent_committed_prefix_under_churn
+    ra4_busy_versus_invalid_classification
+    ra5_sqlite_memory_highwater_fits_the_reserve
+    ra7_manager_labels_under_continuous_writer
+
+test result: FAILED. 4 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 72.50s
+
+error: test failed, to rerun pass `--test zz_review_overview_correction`

@@ -1,0 +1,1229 @@
+diff --git a/.design/kan-v2-collection-overview.md b/.design/kan-v2-collection-overview.md
+index 2244d71..2cc2309 100644
+--- a/.design/kan-v2-collection-overview.md
++++ b/.design/kan-v2-collection-overview.md
+@@ -215,7 +215,7 @@ inside the same 128-MiB ceiling. This conservative accounting means some formerl
+ accepted large inputs can return capacity-limited; it does not increase the limit.
+ Snapshot timestamps name the copy window, not the later parse. Copied schema and
+ control rows are revalidated. Build/Cancel preempt polls; actions remain serialized
+-and stale replies cannot overwrite newer action state. The corrected checkpoint passes74 Rust checks,26 Operations Node checks,strict Clippy and13 semantic mutants; fresh re-review remains required.
++and stale replies cannot overwrite newer action state. The corrected checkpoint passes 74 Rust checks, 26 Operations Node checks, strict Clippy and 13 semantic mutants; fresh re-review remains required.
+ 
+ The follow-up distinguishes file-lock and SQLite contention from invalid history.
+ The status API adds `active_generation` (null for standalone journals). The browser
+diff --git a/.design/kan-v2-evidence-availability.md b/.design/kan-v2-evidence-availability.md
+index 66afb09..77ccd33 100644
+--- a/.design/kan-v2-evidence-availability.md
++++ b/.design/kan-v2-evidence-availability.md
+@@ -447,3 +447,91 @@ and must not inherit that writable integrity-check path. Profile-2 initializatio
+ resume, upgrade-plan/history pin, recovery observations, configured service grants,
+ backup/rebuild and a reviewed scalable admission path remain prerequisites before
+ production evidence or RPC exposure.
++
++## Proof lifecycle build contract
++
++The next prerequisite extends the existing profile-2 owner API without silently
++changing its schema. Explicit initialization resume accepts either an empty,
++unversioned interrupted output with the supplied owner binding, or an existing
++profile-2 archive whose binding and full audit match. It never adopts profile 1,
++replaces a binding, repairs records, or guesses the issuer. The empty-file opt-in
++has the same ambiguity as legacy resume: an empty foreign file is indistinguishable.
++
++`Archive::backup` produces a new standalone SQLite file and verifies the entire
++output payload/metadata/proof chain against the explicit owner binding. A new
++proof-aware recovery reader pins a read-only source, carries exact proof bytes
++into a new single-transaction rebuild, rebuilds disposable coordinates from raw
++records, and validates before commit and after durable output publication. It
++refuses missing payloads, proof gaps/extras, invalid proofs, binding mismatch and
++conflicting canonical records. This is full recovery, not degraded inventory or
++metadata-only recovery. Source main database and retained WAL remain unchanged;
++SQLite coordination-sidecar behavior retains the existing declared read-source
++boundary. Destination collision/sidecar checks reuse the existing recovery path.
++
++No new persisted field/file is introduced. Proof copying uses the inventoried
++`EvidenceAttestation` SQL helper; existing backup/recovery file and sidecar
++capabilities own destination media. Tests must prove byte-identical proof/record
++round trips, refusal after corruption, wrong-owner and legacy-profile refusal,
++interrupted initialization at every boundary, process-death rebuild behavior,
++source invariance, and derived-index repair without changing evidence. Fresh
++Opus review is required. Copy-upgrade plans, historical issuer pins, metadata-only
++resolution records and RPC remain separate required work; no parent AC closes
++from this prerequisite alone.
++
++Owner CLI uses the existing `init`, `verify`, `backup`, and `recover` commands
++with the all-or-none `--proof-archive`, `--proof-scope`, `--proof-issuer` pins.
++Omitting them preserves profile-1 behavior; it never guesses profile 2 from disk.
++`init --resume` is the explicit interrupted-creation opt-in. JSON distinguishes
++proof-purpose-dependent verification from historical completeness and never
++labels a local backup independent or automatically promotes rebuilt output.
++
++## Next copy-upgrade schema decision (not implemented)
++
++Profile 2 has an exact schema and no durable upgrade-plan field. Copy migration
++will use a separately versioned profile 3 rather than silently enlarging profile 2
++or inferring an unfinished copy from whichever records happen to exist. Existing
++profile-2 APIs and archives retain their meanings; profile-3 support must be added
++explicitly to owner lifecycle, inventory and admission paths. This supersedes the
++earlier copy-plan destination-profile-2 placeholder only; attestation envelope
++version 1 and original manifest/receipt bytes remain unchanged.
++
++Profile 3 adds one authoritative `upgrade_plan` singleton containing a bounded
++canonical plan envelope. The plan names recipe version 1, source profile 1, exact
++source through/tip, a framed digest over every ordered source manifest, receipt
++and retained-request CID, one historical receipt issuer H, target scope, current
++issuer C, target profile 3, and an owner-generated 32-byte nonce. The fresh archive
++ID is the domain-separated SHA-256 commitment to those exact canonical plan bytes.
++The owner pins that ID out of band; the stored plan must recompute to it. This
++provides a durable binding for resume even before the first copied record, without
++a mutable progress/completion flag or a second authoritative sidecar. The raw
++plan is not historical admission evidence; C's retained-verified proofs continue
++to make only their stated present-time verification claim.
++
++Planning pins and fully verifies the entire legacy source, including all retained
++signed requests, before creating any destination. It refuses missing, damaged,
++foreign-scope, mixed-issuer or invalid requests. Copy execution recomputes the plan
++against a fresh pinned source and requires the exact expected commitment. Each
++record preserves sequence, signed request, manifest and receipt bytes and commits
++its new retained-verified proof atomically with destination metadata. Restart
++compares every existing destination-prefix record and proof against the same plan
++and source; it never replaces existing output bytes or re-signs an acknowledged
++row. Small explicit batches bound each invocation; incomplete output stays a
++visible resumable copy, not a capture-ready archive.
++
++Completion is derived by verifying the planned prefix length and complete framed
++digest, including H, before allowing new admission under C. An incomplete planned
++prefix cannot accept ordinary Append. The proof chain must contain exactly that
++retained-verified prefix followed only by admitted rows. Merely checking that all
++present payloads exist is insufficient. Owner CLI reports source-copy completeness
++separately from payload completeness and never promotes or erases automatically.
++Empty legacy sources require explicit H in the plan, since no receipt can supply
++it; empty history is not evidence of capture completeness.
++
++Before implementation, extend the typed SQL surface and independent catalog for
++the exact plan bytes and derived singleton coordinate. Backup/recovery must carry
++and verify the plan exactly, retain incomplete-copy state, and refuse a changed
++plan even when all individual proofs remain valid. Qualification needs independent
++canonical plan vectors, plan-field mutations, alternate valid source snapshots at
++the same through/tip, partial-copy admission refusal, concurrent destination
++changes, every interruption boundary, exact resume bytes, and source/WAL invariance.
++No profile-3 runtime or source migration is claimed by this design decision.
+diff --git a/.design/kan-v2-next-build-status.md b/.design/kan-v2-next-build-status.md
+index d740fff..da5d96e 100644
+--- a/.design/kan-v2-next-build-status.md
++++ b/.design/kan-v2-next-build-status.md
+@@ -79,6 +79,23 @@ strict all-target v2 Clippy. Fresh Opus review of those corrections at a1007a6 r
+ The complete pre-admission audit is deliberately unoptimized; see the storage
+ checkpoint scope in the governing design for its concurrency threat boundary.
+ 
++## Proof lifecycle continuation (draft)
++
++Permanent worktree `.worktrees/kan-v2-proof-lifecycle`, branch
++`feat/kan-v2-proof-lifecycle`, builds on the collection/storage checkpoint.
++It adds explicit profile-2 initialization resume, fully verified standalone
++backups, and proof-preserving raw recovery into a new file. The owner CLI uses
++all-or-none archive/scope/issuer pins; legacy commands still refuse profile 2.
++No schema field, lifecycle side store, implicit conversion or promotion is added.
++
++Draft regression coverage includes exact bytes, derived repair, wrong owner pins,
++legacy-profile refusal, copied-proof verification, pinned source transactions,
++process death at initialization/rebuild boundaries and real CLI output. Five
++semantic negative controls fail named assertions and restored checks pass. Local
++qualification passes 81 Rust checks and strict all-target v2 Clippy; evidence is
++in `.design/reviews/kan-v2-proof-lifecycle-author/`. Fresh review is pending;
++no parent acceptance criterion is closed from this draft.
++
+ ## Remaining ordered build
+ 
+ 1. Profile-2 authoritative proof storage in permanent worktree
+@@ -113,5 +130,5 @@ use a bounded in-memory active database copy and prioritize actions over polls.
+ The existing 128-MiB ceiling now includes a 32-MiB image allowance plus 16-MiB
+ working reserve; capacity refusal is explicit. Source copy can refuse after five
+ seconds when busy. Tests target writer progress, post-read sealed changes, invalid
+-unique health rows, historical worker separation and UI request races. Author qualification now passes 74 Rust checks,26 Operations Node checks,strict all-target v2 Clippy and13 semantic mutants with restored assertions. Evidence is in `.design/reviews/kan-v2-overview-correction-author/`; fresh re-review remains pending.
++unique health rows, historical worker separation and UI request races. Author qualification now passes 74 Rust checks, 26 Operations Node checks, strict all-target v2 Clippy and 13 semantic mutants with restored assertions. Evidence is in `.design/reviews/kan-v2-overview-correction-author/`; fresh re-review remains pending.
+ The final cold review returned APPROVE WITH FOLLOW-UPS for the overview, with O1 a required code correction, and APPROVE for the storage corrections. The raw report and independent probes are preserved unchanged in `.design/reviews/kan-v2-overview-opus/`. Fresh review of the corrected overview remains required.
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 980b7fa..311e10a 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -33,7 +33,7 @@ jobs:
+       - run: python3 -m pip install cryptography==46.0.3
+       - run: python3 .design/tools/attestation_vectors.py --check
+       - run: python3 .design/tools/attestation_mutations.py
+-      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_attestation --test evidence_attested_store --test evidence_attested_followups --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_operations_collection --test evidence_operations_overview --test evidence_overview_review_regressions --test evidence_reader --test evidence_library_cli --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
++      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_attestation --test evidence_attested_store --test evidence_attested_followups --test evidence_attested_lifecycle --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_operations_collection --test evidence_operations_overview --test evidence_overview_review_regressions --test evidence_reader --test evidence_library_cli --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
+       - run: python3 scripts/check_gateway_global_cap.py
+       - run: python3 scripts/check_v2_supervision.py target/debug/kan-v2
+       - run: cargo test --features v2-crypto --lib evidence_gateway::admission_tests
+diff --git a/docs/V2-OPERATIONS.md b/docs/V2-OPERATIONS.md
+index 593db7d..6900ba2 100644
+--- a/docs/V2-OPERATIONS.md
++++ b/docs/V2-OPERATIONS.md
+@@ -222,9 +222,33 @@ The current UI uses a conservative five-second freshness window; long worker I/O
+ can exceed it and appear stale/unknown while still running. This is not a claim
+ that the worker has failed or that capture is complete.
+ 
++## Profile-2 proof lifecycle (experimental owner tools)
++
++The existing `init`, `verify`, `backup`, and `recover` commands accept explicit
++`--proof-archive <64 lowercase hex> --proof-scope <64 lowercase hex>
++--proof-issuer <static P-256 did:key>` pins. All three are required together; they
++come from owner configuration, never from a server response or automatic discovery.
++Omitting them uses the legacy profile and refuses proof-bearing archives.
++
++`init <new-directory>` creates profile 2 with those pins. `init <directory> --resume`
++explicitly adopts an empty interrupted output or reopens a matching fully valid
++archive. It cannot distinguish an empty foreign file, convert a legacy archive or
++replace a binding. `backup <archive-directory> <new-file>` copies and fully verifies
++proofs and payloads. `recover <source-file> <new-file>` reads a pinned source, rebuilds
++derived lookups, and preserves exact manifest, receipt and attestation bytes. Neither
++a local backup nor successful reconstruction establishes independent backup coverage,
++historical capture completeness, or permission to delete the original.
++
++Recovery never rewrites source records; SQLite may initialize coordination sidecars.
++Preserve database/WAL/SHM together. Missing payloads, invalid proof chains and wrong
++owner pins fail closed. Retain any failed output and retry with a new filename; no
++automatic promotion occurs. Metadata-only browsing and owner-copy upgrades are still
++separate work. These paths have no production migration or cutover approval.
++
+ Overview review correction: active row parsing uses a bounded in-memory SQLite
+ copy, with short backup steps and a five-second refusal bound when the source stays
+ busy. The 128-MiB budget includes a 32-MiB image plus 16-MiB working reserve; fewer
+ rows may fit than before. Build/Cancel actions preempt ordinary polling and cannot
+-be silently discarded by an in-flight poll. Qualification of this correction is
+-pending; the initial checkpoint remains unapproved.
++be silently discarded by an in-flight poll. Author checks and regression mutations pass. The initial review returned APPROVE
++WITH FOLLOW-UPS with a required contention fix; fresh review of this correction
++remains required before merge qualification.
+diff --git a/scripts/attested_lifecycle_negative_controls.py b/scripts/attested_lifecycle_negative_controls.py
+new file mode 100644
+index 0000000..9d90f6b
+--- /dev/null
++++ b/scripts/attested_lifecycle_negative_controls.py
+@@ -0,0 +1,40 @@
++#!/usr/bin/env python3
++"""Compiled proof lifecycle negative controls; restores sources even on failure."""
++from pathlib import Path
++import subprocess
++ROOT=Path(__file__).resolve().parents[1]
++STORE=ROOT/'src/evidence_store.rs'
++PROOF=ROOT/'src/evidence_store/attested.rs'
++OUT=ROOT/'.local-state/reviews/lifecycle-controls'
++
++def main():
++    OUT.mkdir(parents=True,exist_ok=True)
++    originals={p:p.read_text() for p in (STORE,PROOF)}
++    for p,s in originals.items(): (OUT/(p.name+'.original')).write_text(s)
++    store=originals[STORE]; proof=originals[PROOF]
++    cases=[
++        ('drop-proof-copy',STORE,store.replace('attested::copy_proof(&self.ledger.conn, &tx, raw.sequence)?;','let _ = &tx;'),'proof_bytes_survive_backup_rebuild_and_derived_repair'),
++        ('drop-extra-proof-check',PROOF,proof.replace('if u64::try_from(count).ok() != Some(through) {','if false && u64::try_from(count).ok() != Some(through) {'),'recovery_refuses_missing_or_corrupt_proofs_and_payloads'),
++        ('resume-as-legacy',PROOF,proof.replace('Ledger::initialize_empty(root, &path, &mut |_| {}, Some(&binding))?','Ledger::initialize_empty(root, &path, &mut |_| {}, None)?'),'interrupted_initialization_resumes_only_by_explicit_owner_action'),
++        ('drop-backup-proof-audit',PROOF,proof.replace('verify_contents(&reader.reader.ledger, &reader.binding, &base)?;', 'let _ = &reader.binding;'),'backup_success_requires_verifying_the_copied_proof_chain'),
++        ('drop-pinned-read',STORE,store.replace('PRAGMA query_only=ON; BEGIN;','PRAGMA query_only=ON;'),'recovery_pins_source_before_later_admission'),
++    ]
++    try:
++        for name,p,s,test in cases:
++            assert s!=originals[p],name+' inactive'
++            p.write_text(s)
++            run=subprocess.run(['cargo','test','--features','v2-crypto','--test','evidence_attested_lifecycle',test,'--','--exact'],cwd=ROOT,capture_output=True,text=True)
++            text=run.stdout+run.stderr;(OUT/(name+'.txt')).write_text(text)
++            assert run.returncode!=0,name+' SURVIVED'
++            assert 'could not compile' not in text,name+' compile failure'
++            assert 'test '+test+' ... FAILED' in text,name+' no named failure'
++            print('DEMONSTRATED:',name,flush=True)
++            p.write_text(originals[p])
++    finally:
++        for p,s in originals.items():p.write_text(s)
++    args=['cargo','test','--features','v2-crypto','--test','evidence_attested_lifecycle','--test','evidence_store','--test','surface_conformance']
++    run=subprocess.run(args,cwd=ROOT,capture_output=True,text=True)
++    (OUT/'restored.txt').write_text(run.stdout+run.stderr)
++    assert run.returncode==0,'restored baseline failed'
++    print('Five compiled mutants fail; restored lifecycle/store/surface pass.',flush=True)
++if __name__=='__main__':main()
+diff --git a/src/bin/kan-v2.rs b/src/bin/kan-v2.rs
+index 68360a2..92c1200 100644
+--- a/src/bin/kan-v2.rs
++++ b/src/bin/kan-v2.rs
+@@ -30,6 +30,37 @@ struct ProxyCapture {
+     #[arg(long, default_value_t=300, value_parser=clap::value_parser!(u32).range(1..=86400))]
+     deadline_seconds: u32,
+ }
++/// Optional explicit proof profile. All three owner pins are required together.
++#[derive(clap::Args)]
++struct ProofOptions {
++    #[arg(long, requires_all = ["proof_scope", "proof_issuer"])]
++    proof_archive: Option<String>,
++    #[arg(long, requires_all = ["proof_archive", "proof_issuer"])]
++    proof_scope: Option<String>,
++    #[arg(long, requires_all = ["proof_archive", "proof_scope"])]
++    proof_issuer: Option<String>,
++}
++impl ProofOptions {
++    fn binding(
++        self,
++    ) -> Result<Option<kan::evidence_store::attested::Binding>, Box<dyn std::error::Error>> {
++        match (self.proof_archive, self.proof_scope, self.proof_issuer) {
++            (None, None, None) => Ok(None),
++            (Some(archive), Some(scope), Some(issuer)) => {
++                Ok(Some(kan::evidence_store::attested::Binding {
++                    archive: kan::evidence_service::unhex(&archive, 32)?
++                        .try_into()
++                        .map_err(|_| "proof archive must be 32 bytes")?,
++                    scope: kan::evidence_service::unhex(&scope, 32)?
++                        .try_into()
++                        .map_err(|_| "proof scope must be 32 bytes")?,
++                    issuer,
++                }))
++            }
++            _ => Err("all proof owner pins are required together".into()),
++        }
++    }
++}
+ #[derive(Subcommand)]
+ enum Command {
+     /// Initialize a separate private operations journal bound to an existing spool.
+@@ -288,13 +319,21 @@ enum Command {
+         /// Explicitly resume an interrupted initialization or reopen a valid archive.
+         #[arg(long)]
+         resume: bool,
++        #[command(flatten)]
++        proof: ProofOptions,
+     },
+     /// Verify structural evidence in a quiescent file; does not check writable admission.
+-    Verify { database: PathBuf },
++    Verify {
++        database: PathBuf,
++        #[command(flatten)]
++        proof: ProofOptions,
++    },
+     /// Make and verify a consistent local backup into a new file.
+     Backup {
+         archive: PathBuf,
+         destination: PathBuf,
++        #[command(flatten)]
++        proof: ProofOptions,
+     },
+     /// Read exact canonical record bytes despite damaged derived lookups.
+     ReadRecord { database: PathBuf, sequence: u64 },
+@@ -304,6 +343,8 @@ enum Command {
+     Recover {
+         database: PathBuf,
+         destination: PathBuf,
++        #[command(flatten)]
++        proof: ProofOptions,
+     },
+ }
+ 
+@@ -797,36 +838,67 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
+             "{}",
+             serde_json::to_string_pretty(&migration_preflight::preview_identity(&config_root)?)?
+         ),
+-        Command::Init { archive, resume } => {
++        Command::Init {
++            archive,
++            resume,
++            proof,
++        } => {
++            let binding = proof.binding()?;
+             let archive_text = archive
+                 .to_str()
+                 .ok_or("init JSON requires a UTF-8 archive path")?;
+-            let store = if resume {
+-                Ledger::resume_initialization(&archive)
++            let (commits, profile) = if let Some(binding) = binding {
++                let store = if resume {
++                    kan::evidence_store::attested::Archive::resume_initialization(&archive, binding)
++                } else {
++                    kan::evidence_store::attested::Archive::create(&archive, binding)
++                }
++                .map_err(|e| format!("cannot initialize {}: {e}", archive.display()))?;
++                (store.verify()?.through, 2)
+             } else {
+-                Ledger::create(&archive)
+-            }
+-            .map_err(|e| format!("cannot initialize {}: {e}", archive.display()))?;
++                let store = if resume {
++                    Ledger::resume_initialization(&archive)
++                } else {
++                    Ledger::create(&archive)
++                }
++                .map_err(|e| format!("cannot initialize {}: {e}", archive.display()))?;
++                (store.verify()?.commits, 1)
++            };
+             println!(
+                 "{}",
+-                serde_json::json!({"archive":archive_text,"created":if resume { None } else { Some(archive_text) },"resume_requested":resume,"commits":store.verify()?.commits,"experimental":true})
++                serde_json::json!({"archive":archive_text,"created":if resume {None} else {Some(archive_text)},"resume_requested":resume,"commits":commits,"profile":profile,"experimental":true})
+             );
+         }
+-        Command::Verify { database } => {
+-            let report = Ledger::verify_file(&database)?;
++        Command::Verify { database, proof } => {
++            let binding = proof.binding()?;
++            let attested = binding.is_some();
++            let report = if let Some(binding) = binding {
++                kan::evidence_store::attested::Archive::verify_file(&database, binding)?
++            } else {
++                Ledger::verify_file(&database)?
++            };
+             println!(
+                 "{}",
+-                serde_json::json!({"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"through":report.snapshot.through,"tip":report.snapshot.tip.map(|c|c.to_string()),"verification":"structural-closure","writable_admission":"not-checked","cryptographic_admission":"not-verified","historical_completeness":"not-verified"})
++                serde_json::json!({"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"through":report.snapshot.through,"tip":report.snapshot.tip.map(|c|c.to_string()),"verification":if attested {"payloads-writer-requests-and-issuer-proofs"} else {"structural-closure"},"writable_admission":"not-checked","cryptographic_admission":if attested {"proof-purpose-dependent"} else {"not-verified"},"historical_completeness":"not-verified"})
+             );
+         }
+         Command::Backup {
+             archive,
+             destination,
++            proof,
+         } => {
++            let binding = proof.binding()?;
++            let attested = binding.is_some();
+             let destination_text = destination
+                 .to_str()
+                 .ok_or("backup JSON requires a UTF-8 destination path")?;
+-            let report = Ledger::open(&archive)?.backup(&destination).map_err(|e| {
++            let result = if let Some(binding) = binding {
++                kan::evidence_store::attested::Archive::open(&archive, binding)?
++                    .backup(&destination)
++            } else {
++                Ledger::open(&archive)?.backup(&destination)
++            };
++            let report = result.map_err(|e| {
+                 format!(
+                     "backup into {} failed: {e}; any output is retained",
+                     destination.display()
+@@ -834,7 +906,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
+             })?;
+             println!(
+                 "{}",
+-                serde_json::json!({"backup":destination_text,"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"independent_backup":false})
++                serde_json::json!({"backup":destination_text,"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"independent_backup":false,"issuer_proofs":if attested {"verified-preserved"} else {"not-present"}})
+             );
+         }
+         Command::ReadRecord { database, sequence } => {
+@@ -878,7 +950,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
+         Command::Recover {
+             database,
+             destination,
++            proof,
+         } => {
++            let binding = proof.binding()?;
++            let attested = binding.is_some();
+             // JSON paths must be representable BEFORE creating any output file.
+             let source_text = database
+                 .to_str()
+@@ -886,9 +961,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
+             let destination_text = destination
+                 .to_str()
+                 .ok_or("recovery JSON requires a UTF-8 destination path")?;
+-            let reader = RecoveryReader::open(&database)
+-                .map_err(|e| format!("cannot read recovery source {}: {e}", database.display()))?;
+-            let report = reader.rebuild(&destination).map_err(|e| format!(
++            let result = if let Some(binding) = binding {
++                kan::evidence_store::attested::Recovery::open(&database, binding)?
++                    .rebuild(&destination)
++            } else {
++                RecoveryReader::open(&database)?.rebuild(&destination)
++            };
++            let report = result.map_err(|e| format!(
+                 "recovery into {} failed: {e}; destination must be a new file; any output is retained",
+                 destination.display()))?;
+             println!(
+@@ -896,8 +975,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
+                 serde_json::json!({
+                     "source":source_text, "recovered":destination_text, "objects":report.objects,
+                     "commits":report.commits, "bytes":report.bytes, "through":report.snapshot.through,
+-                    "tip":report.snapshot.tip.map(|c|c.to_string()), "verification":"structural-closure",
+-                    "cryptographic_admission":"not-verified", "historical_completeness":"not-verified",
++                    "tip":report.snapshot.tip.map(|c|c.to_string()), "verification":if attested {"payloads-writer-requests-and-issuer-proofs"} else {"structural-closure"},
++                    "cryptographic_admission":if attested {"proof-purpose-dependent"} else {"not-verified"}, "historical_completeness":"not-verified",
+                     "independent_backup":false, "promoted":false
+                 })
+             );
+diff --git a/src/evidence_store.rs b/src/evidence_store.rs
+index 5f282e6..06ac58e 100644
+--- a/src/evidence_store.rs
++++ b/src/evidence_store.rs
+@@ -171,6 +171,9 @@ impl RecoveryReader {
+     /// usable sidecars and hot rollback journals fail closed. Preserve all source
+     /// media together and perform any crash recovery on a separate writable copy.
+     pub fn open(path: &Path) -> Result<Self> {
++        Self::open_profile(path, 1)
++    }
++    fn open_profile(path: &Path, profile: i64) -> Result<Self> {
+         private_file(path)?;
+         let source = std::fs::canonicalize(path)?;
+         let ledger = Ledger {
+@@ -187,7 +190,7 @@ impl RecoveryReader {
+         ledger.conn.busy_timeout(Duration::from_secs(5))?;
+         ledger.conn.execute_batch("PRAGMA query_only=ON; BEGIN;")?;
+         // Reading the profile pins the transaction before the handle escapes.
+-        ledger.check_schema()?;
++        ledger.check_profile(profile)?;
+         Ok(Self { ledger, source })
+     }
+ 
+@@ -255,6 +258,17 @@ impl RecoveryReader {
+         destination: &Path,
+         observe: &mut dyn FnMut(RecoveryBoundary),
+     ) -> Result<Verification> {
++        self.rebuild_profile(destination, observe, None)
++    }
++    fn rebuild_profile(
++        &self,
++        destination: &Path,
++        observe: &mut dyn FnMut(RecoveryBoundary),
++        binding: Option<&attested::Binding>,
++    ) -> Result<Verification> {
++        if let Some(binding) = binding {
++            attested::check_copy_source(&self.ledger.conn, binding, self.snapshot()?.through)?;
++        }
+         let destination = sqlite_destination(&self.source, destination)?;
+         // surface-write: evidence-recovery:archive.sqlite
+         crate::persistence::write_new_owner_only(
+@@ -268,6 +282,9 @@ impl RecoveryReader {
+         target.conn.execute_batch("PRAGMA journal_mode=DELETE; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA fullfsync=ON;")?;
+         let tx = target.conn.unchecked_transaction()?;
+         tx.execute_batch(SCHEMA)?;
++        if let Some(binding) = binding {
++            attested::initialize(&tx, binding)?;
++        }
+         {
+             let mut stmt = self.ledger.conn.prepare(
+                 "SELECT cid,length(bytes),substr(bytes,1,4194304) FROM objects ORDER BY cid",
+@@ -320,19 +337,29 @@ impl RecoveryReader {
+                     tx.execute("INSERT INTO bindings VALUES(?,?,?,?,?,?) ON CONFLICT(scope,writer,slot) DO NOTHING",
+                         params![blob(&b["scopeToken"]), writer(m), blob(&e["slot"]), cid(&e["ciphertext"]), number(&e["length"]), id])?;
+                 }
++                if binding.is_some() {
++                    attested::copy_proof(&self.ledger.conn, &tx, raw.sequence)?;
++                }
+                 observe(RecoveryBoundary::CommitCopied);
+             }
+         }
+         // Verify before publishing even the profile marker. This also rejects
+         // raw histories with missing predecessors or conflicting slot reuse.
+         let expected = target.verify_contents()?;
++        if let Some(binding) = binding {
++            attested::verify_contents(&target, binding, &expected)?;
++        }
+         observe(RecoveryBoundary::Verified);
+         tx.commit()?;
+         observe(RecoveryBoundary::Committed);
+         drop(target);
+         std::fs::File::open(&destination)?.sync_all()?;
+         std::fs::File::open(parent_directory(&destination))?.sync_all()?;
+-        let actual = Ledger::verify_file(&destination)?;
++        let actual = if let Some(binding) = binding {
++            attested::Archive::verify_file(&destination, binding.clone())?
++        } else {
++            Ledger::verify_file(&destination)?
++        };
+         if actual != expected {
+             return Err(Error::Corrupt("rebuild verification changed".into()));
+         }
+@@ -1084,6 +1111,14 @@ impl Ledger {
+         destination: &Path,
+         observe: &mut dyn FnMut(BackupBoundary),
+     ) -> Result<Verification> {
++        let destination = self.backup_copy(destination, observe)?;
++        Self::verify_file(&destination)
++    }
++    fn backup_copy(
++        &self,
++        destination: &Path,
++        observe: &mut dyn FnMut(BackupBoundary),
++    ) -> Result<PathBuf> {
+         let source = std::fs::canonicalize(
+             self.conn
+                 .path()
+@@ -1115,7 +1150,7 @@ impl Ledger {
+         drop(target);
+         std::fs::File::open(&destination)?.sync_all()?;
+         std::fs::File::open(parent_directory(&destination))?.sync_all()?;
+-        Self::verify_file(&destination)
++        Ok(destination)
+     }
+ 
+     pub fn verify_file(path: &Path) -> Result<Verification> {
+diff --git a/src/evidence_store/attested.rs b/src/evidence_store/attested.rs
+index 9cec31b..5a093e9 100644
+--- a/src/evidence_store/attested.rs
++++ b/src/evidence_store/attested.rs
+@@ -217,8 +217,16 @@ fn audit_prefix(
+ }
+ impl Archive {
+     pub fn create(root: &Path, binding: Binding) -> Result<Self> {
++        Self::create_observed(root, binding, &mut |_| {})
++    }
++    /// Fault harness only; callbacks do not establish durability.
++    pub fn create_observed(
++        root: &Path,
++        binding: Binding,
++        observe: &mut dyn FnMut(InitializationBoundary),
++    ) -> Result<Self> {
+         binding.validate()?;
+-        let ledger = Ledger::create_profile(root, &mut |_| {}, Some(&binding))?;
++        let ledger = Ledger::create_profile(root, observe, Some(&binding))?;
+         ledger.conn.set_limit(
+             rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
+             RECOVERY_SQLITE_LENGTH_LIMIT,
+@@ -245,6 +253,52 @@ impl Archive {
+         configure(&archive.ledger.conn)?;
+         Ok(archive)
+     }
++    /// Explicit owner opt-in for interrupted creation. Empty foreign files are
++    /// indistinguishable from interrupted output; no existing profile is converted.
++    pub fn resume_initialization(root: &Path, binding: Binding) -> Result<Self> {
++        binding.validate()?;
++        let path = root.join("archive.sqlite");
++        private_file(&path)?;
++        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
++        let app: i64 = conn.query_row("PRAGMA application_id", [], |r| r.get(0))?;
++        let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
++        drop(conn);
++        let archive = if app == APPLICATION_ID && version == 2 {
++            Self::open(root, binding)?
++        } else {
++            let ledger = Ledger::initialize_empty(root, &path, &mut |_| {}, Some(&binding))?;
++            ledger.conn.set_limit(
++                rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
++                RECOVERY_SQLITE_LENGTH_LIMIT,
++            )?;
++            Self { ledger, binding }
++        };
++        std::fs::File::open(root)?.sync_all()?;
++        std::fs::File::open(parent_directory(root))?.sync_all()?;
++        Ok(archive)
++    }
++    /// Full standalone backup. A failure may leave an incomplete or complete
++    /// output; use a fresh destination, never overwrite or promote automatically.
++    pub fn backup(&self, destination: &Path) -> Result<Verification> {
++        self.backup_observed(destination, &mut |_| {})
++    }
++    pub fn backup_observed(
++        &self,
++        destination: &Path,
++        observe: &mut dyn FnMut(BackupBoundary),
++    ) -> Result<Verification> {
++        let destination = self.ledger.backup_copy(destination, observe)?;
++        Self::verify_file(&destination, self.binding.clone())
++    }
++    /// Full audit of a standalone profile-2 file against owner configuration.
++    /// Read-only SQLite can initialize its declared WAL/SHM coordination files.
++    pub fn verify_file(path: &Path, binding: Binding) -> Result<Verification> {
++        let reader = Recovery::open(path, binding)?;
++        reader.reader.ledger.check_write_profile(true)?;
++        let base = reader.reader.ledger.verify_contents()?;
++        verify_contents(&reader.reader.ledger, &reader.binding, &base)?;
++        Ok(base)
++    }
+     pub fn binding(&self) -> &Binding {
+         &self.binding
+     }
+@@ -389,3 +443,64 @@ impl Archive {
+         })
+     }
+ }
++
++/// Read-only pinned source for a full proof-preserving rebuild. Opening does not
++/// certify raw contents; successful rebuild verifies all metadata, proofs and
++/// payloads. No degraded or metadata-only success is returned by this API.
++pub struct Recovery {
++    reader: RecoveryReader,
++    binding: Binding,
++}
++impl Recovery {
++    pub fn open(path: &Path, binding: Binding) -> Result<Self> {
++        binding.validate()?;
++        let reader = RecoveryReader::open_profile(path, 2)?;
++        check_binding(&reader.ledger.conn, &binding)?;
++        Ok(Self { reader, binding })
++    }
++    pub fn rebuild(&self, destination: &Path) -> Result<Verification> {
++        self.rebuild_observed(destination, &mut |_| {})
++    }
++    pub fn rebuild_observed(
++        &self,
++        destination: &Path,
++        observe: &mut dyn FnMut(RecoveryBoundary),
++    ) -> Result<Verification> {
++        self.reader
++            .rebuild_profile(destination, observe, Some(&self.binding))
++    }
++}
++pub(super) fn check_copy_source(conn: &Connection, binding: &Binding, through: u64) -> Result<()> {
++    check_binding(conn, binding)?;
++    let count: i64 = conn.query_row("SELECT count(*) FROM attestations", [], |r| r.get(0))?;
++    if u64::try_from(count).ok() != Some(through) {
++        return Err(corrupt("attestation cardinality"));
++    }
++    Ok(())
++}
++pub(super) fn copy_proof(
++    source: &Connection,
++    target: &rusqlite::Transaction<'_>,
++    sequence: u64,
++) -> Result<()> {
++    let bytes = envelope(source, sequence)?;
++    // surface-write: evidence-proof-sqlite:attestations
++    crate::persistence::insert_evidence_proof(
++        crate::persistence::SurfaceWrite::EvidenceAttestation,
++        target,
++        i64::try_from(sequence).map_err(|_| Error::Invalid("sequence overflow"))?,
++        &bytes,
++    )?;
++    Ok(())
++}
++pub(super) fn verify_contents(
++    ledger: &Ledger,
++    binding: &Binding,
++    base: &Verification,
++) -> Result<()> {
++    let (frontier, _) = audit_prefix(&ledger.conn, binding, base.snapshot.through, None)?;
++    if frontier.manifest != base.snapshot.tip {
++        return Err(corrupt("attestation tip"));
++    }
++    Ok(())
++}
+diff --git a/src/surface.rs b/src/surface.rs
+index 0f02280..796732e 100644
+--- a/src/surface.rs
++++ b/src/surface.rs
+@@ -17,6 +17,7 @@ impl SurfaceValue {
+ }
+ 
+ /// Experimental v2 artifacts; schema columns are also inspected from SQLite in feature tests.
++/// Profile-2 backup/rebuild preserves these same proof fields; no lifecycle side store exists.
+ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
+     SurfaceValue::new("evidence-proof-sqlite:archive_identity", "singleton"),
+     SurfaceValue::new("evidence-proof-sqlite:archive_identity", "archive"),
+diff --git a/tests/evidence_attested_followups.rs b/tests/evidence_attested_followups.rs
+index 6f9e9fd..016874f 100644
+--- a/tests/evidence_attested_followups.rs
++++ b/tests/evidence_attested_followups.rs
+@@ -327,6 +327,37 @@ fn p5b_mixed_historical_issuers_in_prefix_are_refused() {
+     );
+ }
+ 
++#[test]
++fn p5c_historical_proof_purpose_and_bytes_survive_backup_and_rebuild() {
++    fn proofs(path: &Path) -> Vec<Vec<u8>> {
++        let c = rusqlite::Connection::open(path).unwrap();
++        let mut s = c
++            .prepare("SELECT envelope FROM attestations ORDER BY sequence")
++            .unwrap();
++        let rows = s
++            .query_map([], |r| r.get(0))
++            .unwrap()
++            .map(Result::unwrap)
++            .collect();
++        rows
++    }
++    let (target, _sources, frontier) = upgraded([11, 11]);
++    let a = Archive::open(target.path(), binding()).unwrap();
++    let expected = proofs(&target.path().join("archive.sqlite"));
++    let output = tempfile::tempdir().unwrap();
++    let backup = output.path().join("backup.sqlite");
++    assert_eq!(a.backup(&backup).unwrap().commits, frontier.through);
++    assert_eq!(proofs(&backup), expected);
++    let rebuilt = output.path().join("rebuilt.sqlite");
++    let reader = kan::evidence_store::attested::Recovery::open(&backup, binding()).unwrap();
++    assert_eq!(reader.rebuild(&rebuilt).unwrap().commits, frontier.through);
++    assert_eq!(
++        proofs(&rebuilt),
++        expected,
++        "retained-verified must not become admitted"
++    );
++}
++
+ /// P6: a second profile-2 handle performs a fully proven append between the
+ /// first handle's audit and its writer lock. The first must conflict.
+ #[test]
+diff --git a/tests/evidence_attested_lifecycle.rs b/tests/evidence_attested_lifecycle.rs
+new file mode 100644
+index 0000000..680b535
+--- /dev/null
++++ b/tests/evidence_attested_lifecycle.rs
+@@ -0,0 +1,434 @@
++#![cfg(feature = "v2-storage")]
++use kan::{
++    evidence_service::{hex, Command as Operation, Grant, Request, SignedRequest},
++    evidence_store::{
++        attested::{Archive, Binding, Recovery},
++        Ledger, RecoveryReader,
++    },
++    sign::Identity,
++};
++use rusqlite::Connection;
++use sha2::{Digest, Sha256};
++use std::{io::Write, path::Path, process::Command};
++
++fn identity(n: u8) -> Identity {
++    let mut f = tempfile::NamedTempFile::new().unwrap();
++    f.write_all(&[n; 32]).unwrap();
++    Identity::load_existing(f.path()).unwrap()
++}
++fn binding() -> Binding {
++    Binding {
++        archive: [8; 32],
++        scope: [9; 32],
++        issuer: identity(7).did().to_string(),
++    }
++}
++fn append(a: &mut Archive, n: u8) {
++    let request = SignedRequest::sign(
++        Request {
++            version: 1,
++            scope: hex(&binding().scope),
++            audience: binding().issuer,
++            principal: identity(n).did().to_string(),
++            expires: None,
++            command: Operation::Append {
++                id: hex(&[n; 16]),
++                position: 0,
++                previous: None,
++                ciphertext: hex(b"retained payload"),
++            },
++        },
++        &identity(n),
++    )
++    .unwrap()
++    .bytes()
++    .unwrap();
++    a.admit(
++        &request,
++        &identity(7),
++        &Grant {
++            principal: identity(n).did().to_string(),
++            append: true,
++            inventory: false,
++        },
++        100 + n as u64,
++    )
++    .unwrap();
++}
++fn populate(root: &Path) -> Archive {
++    let mut a = Archive::create(root, binding()).unwrap();
++    append(&mut a, 5);
++    append(&mut a, 6);
++    a
++}
++type Raw = Vec<(i64, Vec<u8>, Vec<u8>, Vec<u8>)>;
++fn raw(path: &Path) -> Raw {
++    let c = Connection::open(path).unwrap();
++    let mut s=c.prepare("SELECT c.sequence,c.manifest,c.receipt,a.envelope FROM commits c JOIN attestations a USING(sequence) ORDER BY c.sequence").unwrap();
++    let rows = s
++        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
++        .unwrap()
++        .map(Result::unwrap)
++        .collect();
++    rows
++}
++// Empty newly initialized WAL files are permitted coordination, not retained frames.
++fn source_bytes(path: &Path) -> Vec<Option<(usize, [u8; 32])>> {
++    [
++        path.to_path_buf(),
++        Path::new(&format!("{}-wal", path.display())).to_path_buf(),
++    ]
++    .iter()
++    .map(|p| {
++        std::fs::read(p)
++            .ok()
++            .filter(|b| !b.is_empty())
++            .map(|b| (b.len(), Sha256::digest(&b).into()))
++    })
++    .collect()
++}
++
++#[test]
++fn proof_bytes_survive_backup_rebuild_and_derived_repair() {
++    let t = tempfile::tempdir().unwrap();
++    let root = t.path().join("source");
++    let a = populate(&root);
++    let db = root.join("archive.sqlite");
++    let original = raw(&db);
++    let backup = t.path().join("backup.sqlite");
++    let v = a.backup(&backup).unwrap();
++    assert_eq!(v.commits, 2);
++    assert_eq!(
++        raw(&backup),
++        original,
++        "backup must preserve exact evidence and proof bytes"
++    );
++    assert!(Ledger::verify_file(&backup).is_err());
++    assert!(RecoveryReader::open(&backup).is_err());
++    drop(a);
++    let c = Connection::open(&db).unwrap();
++    c.execute_batch("PRAGMA foreign_keys=OFF;").unwrap();
++    c.execute("UPDATE commits SET cid='damaged-derived-' || sequence", [])
++        .unwrap();
++    c.execute("DELETE FROM bindings", []).unwrap();
++    drop(c);
++    let before = source_bytes(&db);
++    let r = Recovery::open(&db, binding()).unwrap();
++    let rebuilt = t.path().join("rebuilt.sqlite");
++    assert_eq!(r.rebuild(&rebuilt).unwrap(), v);
++    drop(r);
++    assert_eq!(
++        raw(&rebuilt),
++        original,
++        "rebuild must not mint replacement attestations"
++    );
++    assert_eq!(
++        source_bytes(&db),
++        before,
++        "raw recovery cannot alter source database/WAL"
++    );
++    assert_eq!(Archive::verify_file(&rebuilt, binding()).unwrap(), v);
++    assert!(
++        Archive::verify_file(&db, binding()).is_err(),
++        "source derived damage must remain"
++    );
++}
++
++#[test]
++fn recovery_refuses_missing_or_corrupt_proofs_and_payloads() {
++    for mutation in [
++        "DELETE FROM attestations WHERE sequence=1",
++        "INSERT INTO attestations VALUES(3,X'00')",
++        "UPDATE attestations SET envelope=X'00' WHERE sequence=1",
++        "DELETE FROM objects WHERE cid=(SELECT cid FROM objects LIMIT 1)",
++        "UPDATE objects SET bytes=X'00'",
++        "UPDATE archive_identity SET archive=zeroblob(32)",
++    ] {
++        let t = tempfile::tempdir().unwrap();
++        let root = t.path().join("source");
++        drop(populate(&root));
++        let db = root.join("archive.sqlite");
++        let c = Connection::open(&db).unwrap();
++        c.execute_batch("PRAGMA foreign_keys=OFF;").unwrap();
++        c.execute(mutation, []).unwrap();
++        drop(c);
++        let before = source_bytes(&db);
++        let output = t.path().join("output.sqlite");
++        let result = Recovery::open(&db, binding()).and_then(|r| r.rebuild(&output));
++        assert!(result.is_err(), "must refuse {mutation}");
++        assert!(Archive::verify_file(&db, binding()).is_err());
++        assert_eq!(
++            before,
++            source_bytes(&db),
++            "source unchanged after {mutation}"
++        );
++        if output.exists() {
++            assert!(
++                Archive::verify_file(&output, binding()).is_err(),
++                "no partial success for {mutation}"
++            );
++        }
++    }
++}
++
++#[test]
++fn owner_binding_profile_and_destination_are_explicit() {
++    let t = tempfile::tempdir().unwrap();
++    let root = t.path().join("source");
++    let a = populate(&root);
++    let db = root.join("archive.sqlite");
++    let before = raw(&db);
++    for wrong in [
++        Binding {
++            archive: [0; 32],
++            ..binding()
++        },
++        Binding {
++            scope: [0; 32],
++            ..binding()
++        },
++        Binding {
++            issuer: identity(4).did().to_string(),
++            ..binding()
++        },
++    ] {
++        assert!(Recovery::open(&db, wrong.clone()).is_err());
++        assert!(Archive::resume_initialization(&root, wrong).is_err());
++    }
++    assert!(a.backup(&db).is_err());
++    assert!(Recovery::open(&db, binding())
++        .unwrap()
++        .rebuild(&db)
++        .is_err());
++    let occupied = t.path().join("occupied.sqlite");
++    std::fs::write(&occupied, b"owner bytes").unwrap();
++    assert!(a.backup(&occupied).is_err());
++    assert_eq!(std::fs::read(&occupied).unwrap(), b"owner bytes");
++    assert_eq!(raw(&db), before);
++    let legacy = t.path().join("legacy");
++    drop(Ledger::create(&legacy).unwrap());
++    assert!(Archive::resume_initialization(&legacy, binding()).is_err());
++    assert!(Recovery::open(&legacy.join("archive.sqlite"), binding()).is_err());
++    Ledger::open(&legacy).unwrap();
++}
++
++#[test]
++fn recovery_pins_source_before_later_admission() {
++    let t = tempfile::tempdir().unwrap();
++    let root = t.path().join("source");
++    let mut a = populate(&root);
++    let db = root.join("archive.sqlite");
++    let original = raw(&db);
++    let r = Recovery::open(&db, binding()).unwrap();
++    append(&mut a, 4);
++    let before = source_bytes(&db);
++    assert!(
++        before[1].is_some(),
++        "fixture must retain nonempty WAL frames"
++    );
++    let output = t.path().join("pinned.sqlite");
++    assert_eq!(r.rebuild(&output).unwrap().commits, 2);
++    assert_eq!(raw(&output), original);
++    assert_eq!(
++        before,
++        source_bytes(&db),
++        "rebuild must preserve retained source WAL frames"
++    );
++    assert_eq!(a.verify().unwrap().through, 3);
++}
++
++#[test]
++fn backup_success_requires_verifying_the_copied_proof_chain() {
++    let t = tempfile::tempdir().unwrap();
++    let root = t.path().join("source");
++    let a = populate(&root);
++    let c = Connection::open(root.join("archive.sqlite")).unwrap();
++    c.execute(
++        "UPDATE attestations SET envelope=X'00' WHERE sequence=1",
++        [],
++    )
++    .unwrap();
++    drop(c);
++    let output = t.path().join("bad-backup.sqlite");
++    assert!(
++        a.backup(&output).is_err(),
++        "byte-copy completion is not proof verification"
++    );
++    assert!(output.exists(), "failed output is preserved for diagnosis");
++    assert!(Archive::verify_file(&output, binding()).is_err());
++}
++
++#[test]
++fn lifecycle_crash_child() {
++    let Ok(mode) = std::env::var("KAN_PROOF_LIFECYCLE_CHILD") else {
++        return;
++    };
++    let root = std::path::PathBuf::from(std::env::var_os("KAN_PROOF_LIFECYCLE_ROOT").unwrap());
++    let phase = std::env::var("KAN_PROOF_LIFECYCLE_PHASE").unwrap();
++    let crash = |observed: String| {
++        if observed == phase {
++            std::process::exit(91)
++        }
++    };
++    if mode == "init" {
++        Archive::create_observed(&root, binding(), &mut |b| crash(format!("{b:?}"))).unwrap();
++    } else {
++        let output = root.parent().unwrap().join("output.sqlite");
++        Recovery::open(&root.join("archive.sqlite"), binding())
++            .unwrap()
++            .rebuild_observed(&output, &mut |b| crash(format!("{b:?}")))
++            .unwrap();
++    }
++    panic!("requested crash boundary not reached");
++}
++fn child(root: &Path, mode: &str, phase: &str) {
++    let output = Command::new(std::env::current_exe().unwrap())
++        .args(["--exact", "lifecycle_crash_child", "--nocapture"])
++        .env("KAN_PROOF_LIFECYCLE_CHILD", mode)
++        .env("KAN_PROOF_LIFECYCLE_ROOT", root)
++        .env("KAN_PROOF_LIFECYCLE_PHASE", phase)
++        .output()
++        .unwrap();
++    assert_eq!(
++        output.status.code(),
++        Some(91),
++        "{phase}: {}",
++        String::from_utf8_lossy(&output.stderr)
++    );
++}
++#[test]
++fn interrupted_initialization_resumes_only_by_explicit_owner_action() {
++    for phase in ["FileCreated", "SchemaWritten", "SchemaCommitted", "Ready"] {
++        let t = tempfile::tempdir().unwrap();
++        let root = t.path().join("source");
++        child(&root, "init", phase);
++        let mut a = Archive::resume_initialization(&root, binding()).unwrap();
++        assert_eq!(a.verify().unwrap().through, 0);
++        append(&mut a, 5);
++        drop(a);
++        assert_eq!(
++            Archive::resume_initialization(&root, binding())
++                .unwrap()
++                .verify()
++                .unwrap()
++                .through,
++            1
++        );
++    }
++}
++#[test]
++fn rebuild_process_death_never_publishes_partial_profile() {
++    for phase in ["ObjectCopied", "CommitCopied", "Verified", "Committed"] {
++        let t = tempfile::tempdir().unwrap();
++        let root = t.path().join("source");
++        drop(populate(&root));
++        let db = root.join("archive.sqlite");
++        let original = raw(&db);
++        let before = source_bytes(&db);
++        child(&root, "rebuild", phase);
++        let output = t.path().join("output.sqlite");
++        let check = Archive::verify_file(&output, binding());
++        if phase == "Committed" {
++            assert_eq!(check.unwrap().commits, 2);
++            assert_eq!(raw(&output), original)
++        } else {
++            assert!(check.is_err(), "uncommitted {phase}")
++        }
++        assert_eq!(before, source_bytes(&db));
++        let fresh = t.path().join("fresh.sqlite");
++        Recovery::open(&db, binding())
++            .unwrap()
++            .rebuild(&fresh)
++            .unwrap();
++        assert_eq!(raw(&fresh), original);
++    }
++}
++
++#[test]
++fn owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle() {
++    fn run(args: &[&str]) -> std::process::Output {
++        Command::new(env!("CARGO_BIN_EXE_kan-v2"))
++            .args(args)
++            .output()
++            .unwrap()
++    }
++    let t = tempfile::tempdir().unwrap();
++    let root = t.path().join("source");
++    let pins = [
++        "--proof-archive",
++        &hex(&binding().archive),
++        "--proof-scope",
++        &hex(&binding().scope),
++        "--proof-issuer",
++        &binding().issuer,
++    ];
++    let args = [vec!["init", root.to_str().unwrap()], pins.to_vec()].concat();
++    let incomplete = run(&[
++        "init",
++        root.to_str().unwrap(),
++        "--proof-archive",
++        &hex(&binding().archive),
++    ]);
++    assert!(!incomplete.status.success());
++    assert!(!root.exists(), "pin validation precedes output creation");
++    let initialized = run(&args);
++    assert!(
++        initialized.status.success(),
++        "{}",
++        String::from_utf8_lossy(&initialized.stderr)
++    );
++    assert_eq!(
++        serde_json::from_slice::<serde_json::Value>(&initialized.stdout).unwrap()["profile"],
++        2
++    );
++    let mut a = Archive::open(&root, binding()).unwrap();
++    append(&mut a, 5);
++    drop(a);
++    let db = root.join("archive.sqlite");
++    let original = raw(&db);
++    let backup = t.path().join("backup.sqlite");
++    let copied = run(&[
++        vec!["backup", root.to_str().unwrap(), backup.to_str().unwrap()],
++        pins.to_vec(),
++    ]
++    .concat());
++    assert!(
++        copied.status.success(),
++        "{}",
++        String::from_utf8_lossy(&copied.stderr)
++    );
++    let json: serde_json::Value = serde_json::from_slice(&copied.stdout).unwrap();
++    assert_eq!(json["issuer_proofs"], "verified-preserved");
++    assert_eq!(json["independent_backup"], false);
++    let rebuilt = t.path().join("rebuilt.sqlite");
++    let recovered = run(&[
++        vec![
++            "recover",
++            backup.to_str().unwrap(),
++            rebuilt.to_str().unwrap(),
++        ],
++        pins.to_vec(),
++    ]
++    .concat());
++    assert!(
++        recovered.status.success(),
++        "{}",
++        String::from_utf8_lossy(&recovered.stderr)
++    );
++    let json: serde_json::Value = serde_json::from_slice(&recovered.stdout).unwrap();
++    assert_eq!(json["cryptographic_admission"], "proof-purpose-dependent");
++    assert_eq!(json["promoted"], false);
++    assert_eq!(raw(&rebuilt), original);
++    let verified = run(&[vec!["verify", rebuilt.to_str().unwrap()], pins.to_vec()].concat());
++    assert!(verified.status.success());
++    let json: serde_json::Value = serde_json::from_slice(&verified.stdout).unwrap();
++    assert_eq!(
++        json["verification"],
++        "payloads-writer-requests-and-issuer-proofs"
++    );
++    assert_eq!(json["historical_completeness"], "not-verified");
++    assert!(
++        !run(&["verify", rebuilt.to_str().unwrap()]).status.success(),
++        "legacy CLI must not guess proof profile"
++    );
++}
+diff --git a/tests/evidence_operations_overview.rs b/tests/evidence_operations_overview.rs
+index 6558a2d..c4f2623 100644
+--- a/tests/evidence_operations_overview.rs
++++ b/tests/evidence_operations_overview.rs
+@@ -796,6 +796,6 @@ async fn overview_browser_fixture() {
+     let fixture = Fixture::new();
+     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+     let token = "synthetic-browser-overview-token-32-plus";
+-    std::fs::write(output,serde_json::to_vec(&serde_json::json!({"url":format!("http://{}",listener.local_addr().unwrap()),"token":token})).unwrap()).unwrap();
++    std::fs::write(output,serde_json::to_vec(&serde_json::json!({"url":format!("http://{}",listener.local_addr().unwrap()),"token":token,"synthetic_root":fixture.root})).unwrap()).unwrap();
+     tokio::select! {r=kan::evidence_dashboard::serve(listener,token.into(),fixture.root.clone())=>r.unwrap(),_=tokio::signal::ctrl_c()=>{}}
+ }
+diff --git a/tests/fixtures/read-write-surface.tsv b/tests/fixtures/read-write-surface.tsv
+index 84e6332..b2719d9 100644
+--- a/tests/fixtures/read-write-surface.tsv
++++ b/tests/fixtures/read-write-surface.tsv
+@@ -138,9 +138,9 @@ implemented	authoritative-other	system-config	system	evidence-reader-config:sign
+ implemented	authoritative-other	system-config	system	evidence-reader-config:access-token	*	explicit-owner-configuration	src/bin/kan-v2.rs	select:reader-configuration	caller-owned-no-automatic-creation	.design/kan-v2-reader-library.md#architecture
+ implemented	authoritative-other	system-config	system	evidence-reader-config:private-keys	*	explicit-owner-configuration	src/bin/kan-v2.rs	select:reader-configuration	caller-owned-no-automatic-creation	.design/kan-v2-reader-library.md#architecture
+ implemented	derived	evidence-store	invocation	browser:source-range-download	*	web/library/app.js	explicit-user-download	derive:authorized-source-range	user-selected-copy-of-verified-byte-range	.design/kan-v2-reader-library.md#architecture
+-implemented	derived	evidence-store	system	evidence-proof-sqlite:archive_identity	singleton	src/evidence_store/attested.rs	crate::evidence_store::attested::Archive	validate:attested-evidence-store	validate-against-canonical-records	.design/kan-v2-evidence-availability.md#architecture
+-implemented	authoritative-kan	evidence-store	system	evidence-proof-sqlite:archive_identity	archive	src/evidence_store/attested.rs	crate::evidence_store::attested::Archive	validate:attested-evidence-store	validate-against-canonical-records	.design/kan-v2-evidence-availability.md#architecture
+-implemented	authoritative-kan	evidence-store	system	evidence-proof-sqlite:archive_identity	scope	src/evidence_store/attested.rs	crate::evidence_store::attested::Archive	validate:attested-evidence-store	validate-against-canonical-records	.design/kan-v2-evidence-availability.md#architecture
+-implemented	authoritative-kan	evidence-store	system	evidence-proof-sqlite:archive_identity	issuer	src/evidence_store/attested.rs	crate::evidence_store::attested::Archive	validate:attested-evidence-store	validate-against-canonical-records	.design/kan-v2-evidence-availability.md#architecture
+-implemented	derived	evidence-store	system	evidence-proof-sqlite:attestations	sequence	src/evidence_store/attested.rs	crate::evidence_store::attested::Archive	validate:attested-evidence-store	validate-against-canonical-records	.design/kan-v2-evidence-availability.md#architecture
+-implemented	authoritative-kan	evidence-store	system	evidence-proof-sqlite:attestations	envelope	src/evidence_store/attested.rs	crate::evidence_store::attested::Archive	validate:attested-evidence-store	validate-against-canonical-records	.design/kan-v2-evidence-availability.md#architecture
++implemented	derived	evidence-store	system	evidence-proof-sqlite:archive_identity	singleton	src/evidence_store/attested.rs	crate::evidence_store::attested::Archive	validate:attested-evidence-store	validate-and-preserve-exact-proof-lifecycle	.design/kan-v2-evidence-availability.md#architecture
++implemented	authoritative-kan	evidence-store	system	evidence-proof-sqlite:archive_identity	archive	src/evidence_store/attested.rs	crate::evidence_store::attested::Archive	validate:attested-evidence-store	validate-and-preserve-exact-proof-lifecycle	.design/kan-v2-evidence-availability.md#architecture
++implemented	authoritative-kan	evidence-store	system	evidence-proof-sqlite:archive_identity	scope	src/evidence_store/attested.rs	crate::evidence_store::attested::Archive	validate:attested-evidence-store	validate-and-preserve-exact-proof-lifecycle	.design/kan-v2-evidence-availability.md#architecture
++implemented	authoritative-kan	evidence-store	system	evidence-proof-sqlite:archive_identity	issuer	src/evidence_store/attested.rs	crate::evidence_store::attested::Archive	validate:attested-evidence-store	validate-and-preserve-exact-proof-lifecycle	.design/kan-v2-evidence-availability.md#architecture
++implemented	derived	evidence-store	system	evidence-proof-sqlite:attestations	sequence	src/evidence_store/attested.rs	crate::evidence_store::attested::Archive	validate:attested-evidence-store	validate-and-preserve-exact-proof-lifecycle	.design/kan-v2-evidence-availability.md#architecture
++implemented	authoritative-kan	evidence-store	system	evidence-proof-sqlite:attestations	envelope	src/evidence_store/attested.rs	crate::evidence_store::attested::Archive	validate:attested-evidence-store	validate-and-preserve-exact-proof-lifecycle	.design/kan-v2-evidence-availability.md#architecture
+diff --git a/tests/surface_conformance.rs b/tests/surface_conformance.rs
+index afebaed..da38681 100644
+--- a/tests/surface_conformance.rs
++++ b/tests/surface_conformance.rs
+@@ -449,7 +449,7 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+         "src/evidence_store/attested.rs",
+         "insert_evidence_proof",
+         "EvidenceAttestation",
+-        1,
++        2,
+     ),
+     (
+         "src/evidence_operations_collection.rs",

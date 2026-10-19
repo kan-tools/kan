@@ -1,0 +1,20 @@
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/review-evidence/cargo.sh test --features v2-crypto --test zz_review_proof_lifecycle -- rb4_random_sigkill_during_create_and_resume --exact --test-threads=1 --nocapture
+
+running 1 test
+test rb4_random_sigkill_during_create_and_resume ... FAILED
+
+failures:
+
+failures:
+    rb4_random_sigkill_during_create_and_resume
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.40s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+    Finished `test` profile [unoptimized] target(s) in 0.46s
+     Running tests/zz_review_proof_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_proof_lifecycle-38f45f8bd3aa4b2c)
+
+thread 'rb4_random_sigkill_during_create_and_resume' (9554005) panicked at tests/zz_review_proof_lifecycle.rs:417:47:
+called `Result::unwrap()` on an `Err` value: Sql(SqliteFailure(Error { code: Unknown, extended_code: 1 }, Some("no such table: archive_identity")))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_proof_lifecycle`

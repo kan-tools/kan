@@ -1,0 +1,4 @@
+47319       01:30 /bin/zsh -c source /Users/m/.claude/shell-snapshots/snapshot-zsh-1792405184003-k3cyb7.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BAR
+47320       01:30 /bin/zsh -c source /Users/m/.claude/shell-snapshots/snapshot-zsh-1792405184003-k3cyb7.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB NO_BAR
+47322       01:30 /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -I review-evi
+47573       00:07 node --test tests/operations_review_ui.test.cjs

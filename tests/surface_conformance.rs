@@ -15,6 +15,10 @@ use sha2::{Digest, Sha256};
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
     (
+        "profile-selected-evidence-lifecycle",
+        "tests/evidence_attested_lifecycle.rs",
+    ),
+    (
         "attested-evidence-store",
         "tests/evidence_attested_store.rs",
     ),

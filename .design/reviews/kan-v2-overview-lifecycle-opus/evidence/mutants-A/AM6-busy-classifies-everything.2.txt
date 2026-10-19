@@ -1,0 +1,39 @@
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/review-evidence/cargo.sh test --features v2-crypto --test zz_review_overview_correction -- ra4_busy_versus_invalid_classification --exact --test-threads=1 --nocapture
+
+running 1 test
+test ra4_busy_versus_invalid_classification ... FAILED
+
+failures:
+
+failures:
+    ra4_busy_versus_invalid_classification
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 12.97s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+warning: associated function `at` is never used
+  --> tests/zz_review_overview_correction.rs:75:8
+   |
+54 | impl Fx {
+   | ------- associated function in this implementation
+...
+75 |     fn at(root: PathBuf) -> Self {
+   |        ^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (test "zz_review_overview_correction") generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 0.44s
+     Running tests/zz_review_overview_correction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_overview_correction-712331e9fa93d268)
+RA4a exclusive holder: state=failed reason=Some("source busy or in use; retry refresh") after 137ms
+RA4b reserved holder: Ok((1, 8))
+RA4c hot journal (Some(697864) bytes): state=failed reason=Some("source busy or in use; retry refresh")
+RA4c after writer recovery: state=completed reason=None
+RA4d corrupt page: state=failed reason=Some("source busy or in use; retry refresh")
+
+thread 'ra4_busy_versus_invalid_classification' (9550030) panicked at tests/zz_review_overview_correction.rs:607:9:
+assertion `left == right` failed
+  left: Some("source busy or in use; retry refresh")
+ right: Some("source invalid or unavailable")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_overview_correction`
