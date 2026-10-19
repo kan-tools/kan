@@ -977,3 +977,15 @@ record prefix against that source. Across a complete copy with fixed batch size,
 those repeated prefix passes can cost O(n² / batch-size) I/O. Indexed individual
 lookups do not remove that total-copy cost. Incremental audit optimization needs
 its own proof contract; no large-archive throughput qualification is claimed.
+
+### Follow-up: plan-output custody before source open
+
+The independent inventory checkpoint review reproduced an additional entry-point
+ordering defect: `copy-plan` opened its source before `retain_plan` could reject
+an already-existing output file under a reserved source sidecar name. A fresh
+SQLite reader can consume that file before returning the eventual refusal.
+`validate_plan_destination` now performs the filesystem-only source-family guard
+before `PlannedCopy::open` in the CLI. The retention-time guard remains defense in
+depth. This preserves owner-selected existing files and does not claim protection
+against concurrent hostile path replacement. Regression evidence and a fresh
+review are required before this correction is accepted.

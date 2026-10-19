@@ -429,6 +429,9 @@ fn same_existing_file(a: &Path, b: &Path) -> bool {
 // Conservative Unicode casing also rejects aliases such as long-s in `-ſhm`
 // before a file exists. This is not an emulation of every filesystem's collation;
 // existing-file identity below supplies the actual filesystem alias check.
+// Qualified on case-insensitive APFS; other filesystem collations (including
+// HFS+, NTFS/SMB and ext4 casefold) and arbitrary multi-codepoint aliases are
+// not qualified. This helper does not fence concurrent hostile path replacement.
 fn sqlite_name_eq(a: &std::ffi::OsStr, b: &std::ffi::OsStr) -> bool {
     match (a.to_str(), b.to_str()) {
         (Some(a), Some(b)) => a

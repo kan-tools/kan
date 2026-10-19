@@ -1540,3 +1540,49 @@ fn unicode_source_sidecar_plan_is_refused_before_a_fresh_sqlite_reader_can_consu
     assert_eq!(std::fs::read(&alias).unwrap(), bytes);
     assert_eq!(std::fs::read(&db).unwrap(), before);
 }
+
+#[test]
+fn copy_plan_cli_refuses_preexisting_sidecar_outputs_before_opening_source() {
+    for name in [
+        "archive.sqlite-shm",
+        "archive.sqlite-ſhm",
+        "archive.sqlite-SHM",
+        "archive.sqlite-WAL",
+        "archive.sqlite-JOURNAL",
+    ] {
+        let t = tempfile::tempdir().unwrap();
+        let db = fixture(t.path(), 2, 0);
+        let source = source(&db);
+        let safe = t.path().join("recipe.cbor");
+        kan::evidence_store::copy_upgrade::retain_plan(&safe, &source).unwrap();
+        drop(source);
+        drop(Ledger::open(db.parent().unwrap()).unwrap());
+        let alias = db.with_file_name(name);
+        assert!(!alias.exists());
+        std::fs::copy(&safe, &alias).unwrap();
+        let original = std::fs::read(&alias).unwrap();
+        let before = std::fs::read(&db).unwrap();
+        let o = cli(&[
+            "copy-plan",
+            db.to_str().unwrap(),
+            alias.to_str().unwrap(),
+            "--scope",
+            &service::hex(&[1; 32]),
+            "--issuer",
+            identity(8).did().as_str(),
+            "--historical-issuer",
+            identity(7).did().as_str(),
+            "--nonce",
+            &service::hex(&[9; 32]),
+        ]);
+        assert!(!o.status.success(), "{name}");
+        assert!(o.stdout.is_empty());
+        assert!(
+            String::from_utf8_lossy(&o.stderr).contains("overlaps source SQLite files"),
+            "{name}: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+        assert_eq!(std::fs::read(&alias).unwrap(), original, "{name}");
+        assert_eq!(std::fs::read(&db).unwrap(), before, "{name}");
+    }
+}
