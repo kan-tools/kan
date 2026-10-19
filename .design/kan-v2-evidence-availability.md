@@ -85,8 +85,8 @@ previousSequence = sequence - 1. The proof envelope is closed
 `{statement: <exact canonical statement bytes>, signature: <64 bytes>}` and its
 entire encoding is limited to 16 KiB. The signature input is canonical DAG-CBOR
 `{domain: "tools.kan.service.attestation.v1", statement: <statement CID>}`.
-Use the existing Ed25519/DID verification machinery and reject unsupported
-identity versions. This is a proposed new service-purpose signature, not the
+Use the existing `sign::Identity` P-256 signer and pinned did:key verification
+machinery (64-byte signature encoding); reject unsupported identity versions. This is a proposed new service-purpose signature, not the
 existing Receipt signing preimage. Independent codec fixtures must pin exact
 bytes/preimages/CIDs and reject noncanonical/duplicate/unknown fields.
 
