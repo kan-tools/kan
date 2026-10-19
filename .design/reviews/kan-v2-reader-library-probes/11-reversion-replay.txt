@@ -1,0 +1,42 @@
+     Removed 805 files, 248.4MiB total
+clean-exit=0
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library/.local-state/reversion/91635f750de34296b24ca04ba55d1ee0
+note: untracked and therefore NOT reverted: ['review-evidence/01-focused-tests.txt', 'review-evidence/02-node.txt', 'review-evidence/03-fmt.txt', 'review-evidence/04-clippy-v2-alltargets.txt', 'review-evidence/05-probes-rust.txt', 'review-evidence/06-probes-missing-object.txt', 'review-evidence/07-probes-ui.txt', 'review-evidence/08-mutation-run.txt', 'review-evidence/08-mutation-summary.txt', 'review-evidence/08-pre-mutation-hashes.txt', 'review-evidence/09-mutation-run-extra.txt', 'review-evidence/10-production-diff-vs-author-patch.txt', 'review-evidence/11-reversion-replay.txt', 'review-evidence/mutants/J01.txt', 'review-evidence/mutants/J02.txt', 'review-evidence/mutants/J03.txt', 'review-evidence/mutants/J04.txt', 'review-evidence/mutants/J05.txt', 'review-evidence/mutants/J06.txt', 'review-evidence/mutants/J08.txt', 'review-evidence/mutants/M01.txt', 'review-evidence/mutants/M02.txt', 'review-evidence/mutants/M03.txt', 'review-evidence/mutants/M04.txt', 'review-evidence/mutants/M05.txt', 'review-evidence/mutants/M06.txt', 'review-evidence/mutants/M06b.txt', 'review-evidence/mutants/M07.txt', 'review-evidence/mutants/M08.txt', 'review-evidence/mutants/M09.txt', 'review-evidence/mutants/M10.txt', 'review-evidence/mutants/M11.txt', 'review-evidence/mutants/M12.txt', 'review-evidence/mutants/M13.txt', 'review-evidence/mutants/M14.txt', 'review-evidence/mutants/M15.txt', 'review-evidence/mutants/M16.txt', 'review-evidence/mutants/M17.txt', 'review-evidence/mutants/M18.txt', 'review-evidence/mutants/M19.txt', 'review-evidence/mutants/M20.txt', 'review-evidence/mutants/M21.txt', 'review-evidence/mutants/M22.txt', 'review-evidence/mutants/M23.txt', 'review-evidence/mutants/M24.txt', 'review-evidence/mutants/M25.txt', 'review-evidence/probes/mutate.py', 'review-evidence/probes/ui_probes.test.cjs', 'review-evidence/probes/zz_review_probes.rs', 'review-evidence/tmp/cur-prod.patch']
+What would be reverted (worktree):
+  skipped .design/kan-v2-reader-library.md (not in --include)
+  skipped .design/reviews/kan-v2-reader-library-author/library-clippy.txt (not in --include)
+  skipped .design/reviews/kan-v2-reader-library-author/library-node.txt (not in --include)
+  skipped .design/reviews/kan-v2-reader-library-author/library-reversion.txt (not in --include)
+  skipped .design/reviews/kan-v2-reader-library-author/library-validation.txt (not in --include)
+  skipped .design/reviews/kan-v2-reader-library-author/reversion/01-evidence_library_cli.txt (not in --include)
+  skipped .design/reviews/kan-v2-reader-library-author/reversion/02-evidence_library_cli.txt (not in --include)
+  skipped .design/reviews/kan-v2-reader-library-author/reversion/03-evidence_library_cli.txt (not in --include)
+  skipped .design/reviews/kan-v2-reader-library-author/reversion/production.patch (not in --include)
+  skipped .design/reviews/library-browser/README.md (not in --include)
+  skipped .design/reviews/library-browser/desktop-light.jpg (not in --include)
+  skipped .design/reviews/library-browser/phone-dark.jpg (not in --include)
+  skipped .design/reviews/library-browser/tablet-light.jpg (not in --include)
+  skipped docs/V2-LIBRARY.md (not in --include)
+  skipped review-context.txt (not in --include)
+  reverting src/bin/kan-v2.rs: 2/2 hunk(s)
+  reverting src/evidence_library.rs: 1/1 hunk(s)
+  reverting src/evidence_reader.rs: 1/1 hunk(s)
+  reverting src/evidence_service.rs: 1/1 hunk(s)
+  reverting src/lib.rs: 1/1 hunk(s)
+  reverting src/surface.rs: 1/1 hunk(s)
+  skipped tests/evidence_library_cli.rs (not in --include)
+  skipped tests/evidence_reader.rs (not in --include)
+  skipped tests/fixtures/read-write-surface.tsv (not in --include)
+  skipped tests/library_ui.test.cjs (not in --include)
+  skipped tests/surface_conformance.rs (not in --include)
+  skipped tests/theme_ui.test.cjs (not in --include)
+  reverting web/library/app.js: 1/1 hunk(s)
+  reverting web/library/index.html: 1/1 hunk(s)
+  reverting web/library/style.css: 1/1 hunk(s)
+
+DEMONSTRATED — failed under revert: evidence_library_cli::library_cli_browses_authenticated_retained_source_without_storage_authority
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=evidence_library_cli::library_cli_browses_authenticated_retained_source_without_storage_authority outcome=DEMONSTRATED
+exit=0

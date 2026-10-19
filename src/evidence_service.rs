@@ -175,7 +175,7 @@ fn preimage<T: Serialize>(domain: &[u8], value: &T) -> Result<Vec<u8>> {
     bytes.extend_from_slice(&Sha256::digest(json(value)?));
     Ok(bytes)
 }
-fn author(did: &str) -> Result<Ipld> {
+pub(crate) fn author(did: &str) -> Result<Ipld> {
     let fingerprint = did.strip_prefix("did:key:").ok_or(Failure::Invalid)?;
     if did.len() > 256 || !did.is_ascii() {
         return Err(Failure::Invalid);

@@ -1,0 +1,34 @@
+M01 pin principal check removed	SURVIVED
+M02 pin audience check removed	SURVIVED
+M03 page continuity removed	KILLED by test signed_reply_integrity_page_shape_and_source_membership_are_independent ... FAILED
+M04 page tip binding removed	SURVIVED
+M05 page completeness removed	SURVIVED
+M06 source membership page removed	COMPILE-FAIL (not a semantic kill)
+M07 source read==pinned comparison removed	KILLED by test signed_reply_integrity_page_shape_and_source_membership_are_independent ... FAILED
+M08 retained request scope/audience check removed	SURVIVED
+M09 decode_record scopeToken check removed	KILLED by test signed_reply_integrity_page_shape_and_source_membership_are_independent ... FAILED
+M10 decode_record issuer check removed	KILLED by test signed_reply_integrity_page_shape_and_source_membership_are_independent ... FAILED
+M11 verify_retained_request skipped	KILLED by test signed_reply_integrity_page_shape_and_source_membership_are_independent ... FAILED
+M12 range limit removed	KILLED by test revoked_grants_and_tampered_pins_cannot_read_cached_source ... FAILED
+M13 Reader >16 scopes allowed	SURVIVED
+M14 page after>through local check removed	SURVIVED
+M15 Host check removed	KILLED by test library_http_authority_is_separate_and_denial_does_not_reveal_scope_existence ... FAILED
+M16 Origin check removed	KILLED by test library_http_authority_is_separate_and_denial_does_not_reveal_scope_existence ... FAILED
+M17 duplicate Authorization check removed	SURVIVED
+M18 content-type check removed	SURVIVED
+M19 catalog swallows every failure	SURVIVED
+M20 CSP frame-ancestors/nosniff weakened	SURVIVED
+M21 serve loopback check removed	SURVIVED
+M22 token length floor removed	SURVIVED
+M23 connection deadline removed	SURVIVED
+M24 cache-control removed	KILLED by test library_cli_browses_authenticated_retained_source_without_storage_authority ... FAILED
+J01 late fetch epoch check removed	SURVIVED
+J02 lock does not abort	KILLED by ✖ lock aborts pending source and clears every private view (1.43425ms); ✖ failing tests:; ✖ lock aborts pending source and clears every private view (1.43425ms)
+J03 export reuses displayed source	KILLED by ✖ download rechecks authorization and denied export clears prior plaintext (0.906083ms); ✖ export keeps exact bytes alive until navigation starts and releases on timeout or lock (0.903958ms); ✖ failing tests:; ✖ download rechecks authorization and denied export clears prior plaintext (0.906083ms)
+J04 pagehide lock removed	KILLED by ✖ pagehide locks and no reader persistence or HTML execution sinks are present (0.5435ms); ✖ failing tests:; ✖ pagehide locks and no reader persistence or HTML execution sinks are present (0.5435ms)
+J05 lock keeps export URLs	KILLED by ✖ export keeps exact bytes alive until navigation starts and releases on timeout or lock (2.253791ms); ✖ failing tests:; ✖ export keeps exact bytes alive until navigation starts and releases on timeout or lock (2.253791ms)
+J06 page late epoch check after json removed	SURVIVED
+J07 scope change keeps stale rows clickable (control: buttons cleared?)	SKIPPED-identity
+M06b membership checked at fresh (not pinned) snapshot	KILLED by test source_refuses_a_valid_read_from_a_different_snapshot_history ... FAILED
+M25 pin reply signature not verified	SURVIVED
+J08 both late-response epoch checks removed	KILLED by ✖ lock aborts pending source and clears every private view (1.522ms); ✖ failing tests:; ✖ lock aborts pending source and clears every private view (1.522ms)

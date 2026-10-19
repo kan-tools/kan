@@ -1,0 +1,13 @@
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library-correction/.local-state/reversion/864d792442a0415fbebc83c5040f930d
+What would be reverted (61e24875bda68e8a246e1b68057096ff11b015f5):
+  reverting .design/reviews/kan-v2-library-scope-fix-author/library-node-scope-fix.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-scope-fix-author/library-scope-race.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-scope-fix-author/library-scope-reversion.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-scope-fix-author/reversion/01-node.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-scope-fix-author/reversion/02-node.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-scope-fix-author/reversion/03-node.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-scope-fix-author/reversion/production.patch: 1/1 hunk(s)
+  reverting scripts/revert_v2.py: 1/1 hunk(s)
+  skipped tests/library_ui.test.cjs (test side; --include it to revert it)
+  reverting web/library/app.js: 1/1 hunk(s)
+61e24875bda68e8a246e1b68057096ff11b015f5: DEMONSTRATED; all trailer tests reproduced=True

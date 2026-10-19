@@ -1,0 +1,43 @@
+# K02 access denial no longer locks while browsing
+# file web/library/app.js
+# rc 1 elapsed 0.1s
+✔ real endpoint uses header auth and untrusted source stays text (3.373334ms)
+✔ lock aborts pending source and clears every private view (0.814333ms)
+✔ page and scope navigation carry only the selected authenticated pin (0.952875ms)
+✖ download rechecks authorization and denied export clears prior plaintext (1.264708ms)
+✔ old transport errors cannot lock a newer session (0.982125ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.778042ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.635958ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.626375ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (1.904042ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.581208ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.352583ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.49375ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.557916ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.84425ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 13
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 42.98175
+
+✖ failing tests:
+
+test at tests/library_ui.test.cjs:21:1
+✖ download rechecks authorization and denied export clears prior plaintext (1.264708ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library-correction/tests/library_ui.test.cjs:21:372)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual'
+  }

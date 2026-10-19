@@ -1,0 +1,34 @@
+# Q04 accepted-socket bound 12 -> 5
+# file src/evidence_library.rs
+# rc 0 elapsed 13.8s
+
+running 1 test
+test library_cli_browses_authenticated_retained_source_without_storage_authority ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.75s
+
+
+running 16 tests
+test library_browser_fixture ... ignored, manual browser fixture; requires KAN_LIBRARY_FIXTURE_INFO output path
+test reader_cli_refuses_public_configuration_and_relative_private_key_paths ... ok
+test reader_configuration_scope_count_and_duplicates_are_bounded ... ok
+test reader_refuses_reusing_the_storage_issuer_signing_key ... ok
+test catalog_verification_failure_is_not_an_empty_authorized_inventory ... ok
+test pin_principal_and_audience_are_checked_even_with_valid_signatures ... ok
+test reader_identity_scope_and_decryption_key_are_separate_checks ... ok
+test library_refuses_public_listeners_and_short_tokens_before_serving ... ok
+test reader_rejects_signed_page_completeness_and_tip_mismatches ... ok
+test library_http_authority_is_separate_and_denial_does_not_reveal_scope_existence ... ok
+test revoked_grants_and_tampered_pins_cannot_read_cached_source ... ok
+test source_refuses_a_valid_read_from_a_different_snapshot_history ... ok
+test inventory_is_snapshot_pinned_and_source_ranges_are_exact_across_scopes ... ok
+test signed_reply_integrity_page_shape_and_source_membership_are_independent ... ok
+test large_source_is_returned_in_exact_bounded_ranges ... ok
+test library_queues_a_browser_request_behind_four_idle_connections ... ok
+
+test result: ok. 15 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 5.20s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library-correction)
+    Finished `test` profile [unoptimized] target(s) in 7.15s
+     Running tests/evidence_library_cli.rs (target/debug/deps/evidence_library_cli-ab14b7f82f96c656)
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-6b0841214b94ad1d)

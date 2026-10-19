@@ -1,0 +1,20 @@
+# J01 late fetch epoch check removed
+# file web/library/app.js
+# rc 0 elapsed 0.1s
+✔ real endpoint uses header auth and untrusted source stays text (3.073833ms)
+✔ lock aborts pending source and clears every private view (1.131792ms)
+✔ page and scope navigation carry only the selected authenticated pin (0.971625ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.851834ms)
+✔ old transport errors cannot lock a newer session (0.570458ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.662542ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.593708ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.596333ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (1.7815ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 39.749917

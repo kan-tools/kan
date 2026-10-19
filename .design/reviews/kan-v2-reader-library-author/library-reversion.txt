@@ -1,0 +1,26 @@
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion/f0b023717ea74eda93b3f0f1d9d5aa18
+note: untracked and therefore NOT reverted: ['.design/reviews/library-browser/desktop-light.jpg', '.design/reviews/library-browser/phone-dark.jpg', '.design/reviews/library-browser/tablet-light.jpg']
+What would be reverted (worktree):
+  skipped .design/kan-v2-reader-library.md (not in --include)
+  skipped docs/V2-LIBRARY.md (not in --include)
+  reverting src/bin/kan-v2.rs: 2/2 hunk(s)
+  reverting src/evidence_library.rs: 1/1 hunk(s)
+  reverting src/evidence_reader.rs: 1/1 hunk(s)
+  reverting src/evidence_service.rs: 1/1 hunk(s)
+  reverting src/lib.rs: 1/1 hunk(s)
+  reverting src/surface.rs: 1/1 hunk(s)
+  skipped tests/evidence_library_cli.rs (not in --include)
+  skipped tests/evidence_reader.rs (not in --include)
+  skipped tests/fixtures/read-write-surface.tsv (not in --include)
+  skipped tests/library_ui.test.cjs (not in --include)
+  skipped tests/surface_conformance.rs (not in --include)
+  skipped tests/theme_ui.test.cjs (not in --include)
+  reverting web/library/app.js: 1/1 hunk(s)
+  reverting web/library/index.html: 1/1 hunk(s)
+  reverting web/library/style.css: 1/1 hunk(s)
+
+DEMONSTRATED — failed under revert: evidence_library_cli::library_cli_browses_authenticated_retained_source_without_storage_authority
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=evidence_library_cli::library_cli_browses_authenticated_retained_source_without_storage_authority outcome=DEMONSTRATED

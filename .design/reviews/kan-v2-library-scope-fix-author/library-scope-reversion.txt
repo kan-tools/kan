@@ -1,0 +1,11 @@
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion/c728cad77dee4cd28f751c295be5e28c
+What would be reverted (worktree):
+  reverting scripts/revert_v2.py: 1/1 hunk(s)
+  skipped tests/library_ui.test.cjs (not in --include)
+  reverting web/library/app.js: 1/1 hunk(s)
+
+DEMONSTRATED — failed under revert: node::library_scope_switch
+
+Paste into the commit message:
+
+    Demonstrated-by: revert=HEAD tests=node::library_scope_switch outcome=DEMONSTRATED

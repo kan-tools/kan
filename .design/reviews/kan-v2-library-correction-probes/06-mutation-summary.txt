@@ -1,0 +1,46 @@
+K01 every error locks	KILLED by ✖ unavailable or unverifiable source clears plaintext but preserves other browsing (0.941875ms); ✖ unverifiable page removes old rows and leaves scope recovery available (1.142958ms); ✖ failing tests:
+K02 access denial no longer locks while browsing	KILLED by ✖ download rechecks authorization and denied export clears prior plaintext (1.264708ms); ✖ failing tests:
+K03 401 not treated as denial	SURVIVED
+K04 403 not treated as denial	KILLED by ✖ download rechecks authorization and denied export clears prior plaintext (1.25175ms); ✖ failing tests:
+K05 non-auth error keeps plaintext	KILLED by ✖ unavailable or unverifiable source clears plaintext but preserves other browsing (0.93ms); ✖ failing tests:
+K07 page keeps old rows during load	KILLED by ✖ scope changes remove old-scope rows before a new pin is used (0.868166ms); ✖ unverifiable page removes old rows and leaves scope recovery available (0.535791ms); ✖ failing tests:
+K08 page keeps Next enabled during load	KILLED by ✖ scope changes remove old-scope rows before a new pin is used (0.863ms); ✖ failing tests:
+K08b page keeps Previous enabled during load	SURVIVED
+K09 page keeps old count/coverage during load	KILLED by ✖ unverifiable page removes old rows and leaves scope recovery available (0.868583ms); ✖ failing tests:
+K10 directional controls not forced to hex	KILLED by ✖ directional format controls default to exact hex and permit explicit UTF-8 (0.942958ms); ✖ failing tests:
+K10b isolates U+2066-2069 not forced to hex	SURVIVED
+K10c LRM/RLM/ALM not forced to hex	SURVIVED
+K11 lock keeps capability matrix	KILLED by ✖ capability matrix renders actual service capabilities without claiming unknown support (1.104083ms); ✖ failing tests:
+K12 unknown capability shown Available	KILLED by ✖ capability matrix renders actual service capabilities without claiming unknown support (1.247792ms); ✖ failing tests:
+K13 duplicate capability accepted	SURVIVED
+K14 capability shape check removed	SURVIVED
+J08 both late-response epoch checks removed	KILLED by ✖ lock aborts pending source and clears every private view (1.661708ms); ✖ failing tests:
+M01 pin principal check removed	KILLED by test pin_principal_and_audience_are_checked_even_with_valid_signatures ... FAILED
+M02 pin audience check removed	KILLED by test pin_principal_and_audience_are_checked_even_with_valid_signatures ... FAILED
+M04 page tip binding removed	KILLED by test reader_rejects_signed_page_completeness_and_tip_mismatches ... FAILED
+M05 page completeness removed	KILLED by test reader_rejects_signed_page_completeness_and_tip_mismatches ... FAILED
+M05a empty-incomplete clause removed	KILLED by test reader_rejects_signed_page_completeness_and_tip_mismatches ... FAILED
+M05b complete==last clause removed	KILLED by test reader_rejects_signed_page_completeness_and_tip_mismatches ... FAILED
+M13 Reader >16 scopes allowed	KILLED by test reader_configuration_scope_count_and_duplicates_are_bounded ... FAILED
+M13b duplicate scopes allowed	KILLED by test reader_configuration_scope_count_and_duplicates_are_bounded ... FAILED
+M14 page after>through local check removed	SURVIVED
+M25 pin reply signature not verified	KILLED by test pin_principal_and_audience_are_checked_even_with_valid_signatures ... FAILED
+M17 duplicate Authorization check removed	KILLED by test library_http_authority_is_separate_and_denial_does_not_reveal_scope_existence ... FAILED
+M18 content-type check removed	KILLED by test library_http_authority_is_separate_and_denial_does_not_reveal_scope_existence ... FAILED
+M19 catalog swallows every failure	KILLED by test catalog_verification_failure_is_not_an_empty_authorized_inventory ... FAILED
+M20 nosniff removed	KILLED by test library_http_authority_is_separate_and_denial_does_not_reveal_scope_existence ... FAILED
+M20b frame-ancestors removed	KILLED by test library_http_authority_is_separate_and_denial_does_not_reveal_scope_existence ... FAILED
+M21 serve loopback check removed	KILLED by test library_refuses_public_listeners_and_short_tokens_before_serving ... FAILED
+M22 token length floor removed	KILLED by test library_refuses_public_listeners_and_short_tokens_before_serving ... FAILED
+N01 signer==issuer refusal removed	KILLED by test reader_refuses_reusing_the_storage_issuer_signing_key ... FAILED
+N02 transport AccessLimited not reclassified	KILLED by test catalog_verification_failure_is_not_an_empty_authorized_inventory ... FAILED
+N03 second verify map_err removed	SURVIVED
+Q01 execution bound removed (4 -> 1000)	SURVIVED
+Q02 execution permit dropped before serving	SURVIVED
+Q03 accepted-socket bound 12 -> 1000	SURVIVED
+Q04 accepted-socket bound 12 -> 5	SURVIVED
+Q05 six-second queue deadline removed	SURVIVED
+Q06 overall 35s deadline removed	SURVIVED
+Q07 header read deadline removed	KILLED by test library_queues_a_browser_request_behind_four_idle_connections ... FAILED
+A01 API claims semantic search available	SURVIVED
+A02 API capability fields removed	SURVIVED
