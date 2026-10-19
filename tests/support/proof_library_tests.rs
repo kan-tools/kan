@@ -59,7 +59,7 @@ async fn library_browses_two_same_scope_archives_with_verified_tokens_and_curren
         identity(6),
         vec![kan::evidence_reader::ScopeAccess {
             scope: [9; 32],
-            endpoint: "http://127.0.0.1:1/v1/rpc".into(),
+            endpoint: "invalid-protocol://synthetic-unavailable".into(),
             issuer: identity(8).did().to_string(),
             private_key: PRIVATE,
         }],
@@ -151,6 +151,12 @@ async fn library_browses_two_same_scope_archives_with_verified_tokens_and_curren
         .unwrap()
         .replace_grants(Vec::new())
         .unwrap();
+    let denied = scopes
+        .iter()
+        .find(|entry| entry["binding"]["profile"] == "admitted")
+        .unwrap();
+    ui.call(json!({"action":"proof-page","source":denied["id"],"pin":denied["pin"],"cursor":null,"limit":1}),403).await;
+
     let catalog = ui.call(json!({"action":"catalog"}), 200).await;
     assert_eq!(catalog["scopes"].as_array().unwrap().len(), 1);
     assert_eq!(catalog["coverage"], "partial");
@@ -277,5 +283,73 @@ async fn actual_proof_service_and_library_cli_restart_with_missing_payload() {
         assert_eq!(source["bytes_hex"], service::hex(RAW));
         drop(library_process);
         drop(service_process);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "manual synthetic browser fixture; requires KAN_PROOF_LIBRARY_FIXTURE_INFO"]
+async fn proof_library_browser_fixture() {
+    let output = std::path::PathBuf::from(
+        std::env::var_os("KAN_PROOF_LIBRARY_FIXTURE_INFO").expect("explicit fixture output"),
+    );
+    let stop = output.with_extension("stop");
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let mut admitted = fixture_requests(a.path(), Profile::Admitted, encrypted);
+    let copied = fixture_requests(b.path(), Profile::Copied, encrypted);
+    let mut previous = Some(
+        service::append_manifest(admitted.requests.last().unwrap())
+            .unwrap()
+            .cid()
+            .to_string(),
+    );
+    for n in 3..25 {
+        let bytes = encrypted(n, 8, previous);
+        attested::Archive::open(&admitted.root, admitted.binding.clone())
+            .unwrap()
+            .admit(&bytes, &identity(8), &grant(), 200)
+            .unwrap();
+        previous = Some(service::append_manifest(&bytes).unwrap().cid().to_string());
+        admitted.requests.push(bytes);
+    }
+    admitted.remove(24);
+    admitted.edit(&format!(
+        "UPDATE objects SET bytes=x'00' WHERE cid='{}'",
+        admitted.id(23)
+    ));
+    copied.remove(1);
+    let mut tasks = Vec::new();
+    let mut clients = Vec::new();
+    for f in [&admitted, &copied] {
+        let listener = kan::evidence_http::bind("127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+        let endpoint = format!("http://{}/v2/read", listener.local_addr().unwrap());
+        tasks.push(tokio::spawn(kan::evidence_http::serve_proof(
+            listener,
+            reader(f),
+        )));
+        clients.push(
+            client::Reader::new(
+                identity(6),
+                client::Access {
+                    binding: binding(f),
+                    endpoint,
+                    private_key: PRIVATE,
+                },
+            )
+            .unwrap(),
+        );
+    }
+    let ui = Ui::start(kan::evidence_library::Readers::new(None, clients).unwrap()).await;
+    std::fs::write(&output,serde_json::to_vec(&json!({"url":ui.url.trim_end_matches("/api/library"),"token":TOKEN,"expected_hex":service::hex(RAW),"stop":stop})).unwrap()).unwrap();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(600);
+    while !stop.exists() && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    ui.stop().await;
+    for task in tasks {
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
     }
 }
