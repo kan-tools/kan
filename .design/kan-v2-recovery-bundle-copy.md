@@ -92,8 +92,11 @@ a competing writer, wrong pins/aliases/modes/budgets/conflicts, retained artifac
 output substitution, real logical COMMIT failure, and 15 crash boundaries, including a second physical backup step on a 1 MiB
 synthetic orphan payload. A
 Python oracle independently replays actual files and compares every table cell.
-No compilation has run while the parent's Opus review owns the shared target.
-No acceptance, live-backup installation or writer activation is claimed.
+Full CI39335149369 at ac4e528 passed:46 bundle-creation/copy tests, the remaining
+v2 integration suites, both strict Clippy variants, formatting, MSRV and canary.
+No duplicate local author baseline was run while the parent's Opus review owns
+the shared target. Compiled semantic controls and independent review remain
+pending, so no acceptance, live-backup installation or writer activation is claimed.
 
 A targeted substitution test re-signs the same first observation with the public
 fixture key and a different valid low-S ECDSA signature. The statement checkpoint

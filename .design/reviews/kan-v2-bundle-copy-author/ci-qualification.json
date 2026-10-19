@@ -1,0 +1,23 @@
+{
+  "head": "ac4e528d2981e74327a2850b0549bccbb6f14f6d",
+  "run": "https://github.com/kan-tools/kan/actions/runs/39335149369",
+  "job": "118342656829",
+  "result": "success",
+  "raw_log_sha256": "cb8ff85a528bd56705f1ffc2dfa7f36c551f167fd47fdfe859b6f9d04c610d62",
+  "integration_results": {
+    "tests/evidence_bundle_creation.rs": "ok. 46 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 20.26s",
+    "tests/evidence_inventory.rs": "ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.67s",
+    "tests/evidence_recovery_bundle.rs": "ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.68s",
+    "tests/evidence_recovery_member.rs": "ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s",
+    "tests/evidence_recovery_replay.rs": "ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.23s",
+    "tests/evidence_recovery_replay_review_regressions.rs": "ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.51s",
+    "tests/surface_conformance.rs": "ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.73s"
+  },
+  "lint": [
+    "cargo clippy --workspace --all-targets -- -D warnings",
+    "cargo clippy --features v2-crypto --all-targets -- -D warnings"
+  ],
+  "format": "cargo fmt --all -- --check",
+  "local_qualification": "not run; shared target held by independent publication reviewer",
+  "semantic_controls": "prepared; execution and cold review pending"
+}
