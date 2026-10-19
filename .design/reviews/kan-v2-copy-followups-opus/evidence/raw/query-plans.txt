@@ -1,0 +1,5 @@
+sqlite 3.51.0
+Ledger::read_object (copy_batch src/dst, copy_upgrade:62) -> ['SEARCH objects USING PRIMARY KEY (cid=?)']
+RecoveryReader::read_object (NOT used by copy_batch) -> ['SCAN objects']
+RecoveryReader::record (copy_batch record prefix) -> ['SEARCH commits USING INTEGER PRIMARY KEY (rowid=?)']
+copy_batch source object walk -> ['SCAN objects']

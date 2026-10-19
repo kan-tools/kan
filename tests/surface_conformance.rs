@@ -144,7 +144,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ),
     (
         "src/evidence_store.rs",
-        "&name[..name.len() - suffix.len()]",
+        "base",
         "source-sidecar alias validation (read-only metadata)",
     ),
     (

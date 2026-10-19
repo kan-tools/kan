@@ -1414,3 +1414,129 @@ fn owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars() {
     assert_eq!(std::fs::read(&plan).unwrap(), bytes);
     assert_eq!(std::fs::read(&db).unwrap(), before);
 }
+
+#[test]
+fn unicode_sidecar_aliases_refuse_before_copy_resume_and_preserve_the_plan() {
+    use kan::evidence_store::copy_upgrade::{read_plan_for_copy, retain_plan};
+    let t = tempfile::tempdir().unwrap();
+    let db = fixture(t.path(), 3, 1);
+    let source = source(&db);
+    let root = t.path().join("copy");
+    let safe_plan = t.path().join("recipe.cbor");
+    retain_plan(&safe_plan, &source).unwrap();
+    let mut a = Archive::create(&root, &source, binding(&source)).unwrap();
+    a.copy_batch(&source, &identity(8), 1000, small()).unwrap();
+    drop(a);
+    let pin = source.plan().archive_id();
+    let original = std::fs::read(&safe_plan).unwrap();
+    // Conservative refusal is portable even on a case-sensitive filesystem.
+    // On macOS this spelling is an actual alias of SQLite's reserved -shm.
+    let alias = root.join("archive.sqlite-ſhm");
+    assert!(!alias.exists());
+    retain_plan(&alias, &source).unwrap();
+    assert_eq!(
+        read_plan_for_copy(&alias, &db, &root, &pin)
+            .unwrap_err()
+            .to_string(),
+        "invalid input: destination overlaps source SQLite files"
+    );
+    let key = t.path().join("key");
+    std::fs::write(&key, [8; 32]).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let o = cli(&[
+        "copy-batch",
+        db.to_str().unwrap(),
+        root.to_str().unwrap(),
+        "--plan",
+        alias.to_str().unwrap(),
+        "--key",
+        key.to_str().unwrap(),
+        "--resume",
+        "--copy-profile",
+        "--proof-archive",
+        &service::hex(&pin),
+        "--proof-scope",
+        &service::hex(&[1; 32]),
+        "--proof-issuer",
+        identity(8).did().as_str(),
+    ]);
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("overlaps source SQLite files"));
+    assert_eq!(std::fs::read(&alias).unwrap(), original);
+    // The same spelling is refused at source plan creation, before a write.
+    assert!(retain_plan(&db.with_file_name("archive.sqlite-ſhm"), &source).is_err());
+}
+
+#[test]
+fn sidecar_hardlink_identity_is_rejected_even_with_an_unrelated_plan_name() {
+    use kan::evidence_store::copy_upgrade::{read_plan_for_copy, retain_plan};
+    let t = tempfile::tempdir().unwrap();
+    let db = fixture(t.path(), 1, 0);
+    let source = source(&db);
+    let plan = t.path().join("safe-looking-plan.cbor");
+    retain_plan(&plan, &source).unwrap();
+    let bytes = std::fs::read(&plan).unwrap();
+    let root = t.path().join("copy");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::hard_link(&plan, root.join("archive.sqlite-shm")).unwrap();
+    assert_eq!(
+        read_plan_for_copy(&plan, &db, &root, &source.plan().archive_id())
+            .unwrap_err()
+            .to_string(),
+        "invalid input: destination overlaps source SQLite files"
+    );
+    assert_eq!(std::fs::read(&plan).unwrap(), bytes);
+}
+
+#[test]
+fn unicode_reserved_plan_suffix_is_refused_even_before_any_sidecar_exists() {
+    let t = tempfile::tempdir().unwrap();
+    let db = fixture(t.path(), 1, 0);
+    let c = rusqlite::Connection::open(&db).unwrap();
+    c.execute_batch("PRAGMA journal_mode=DELETE").unwrap();
+    drop(c);
+    let source = source(&db);
+    let alias = db.with_file_name("archive.sqlite-ſhm");
+    assert!(!alias.exists());
+    let before = std::fs::read(&db).unwrap();
+    assert_eq!(
+        kan::evidence_store::copy_upgrade::retain_plan(&alias, &source)
+            .unwrap_err()
+            .to_string(),
+        "invalid input: destination overlaps source SQLite files"
+    );
+    assert!(!alias.exists());
+    assert_eq!(std::fs::read(&db).unwrap(), before);
+}
+
+#[test]
+fn unicode_source_sidecar_plan_is_refused_before_a_fresh_sqlite_reader_can_consume_it() {
+    use kan::evidence_store::copy_upgrade::{read_plan_for_copy, retain_plan};
+    let t = tempfile::tempdir().unwrap();
+    let db = fixture(t.path(), 1, 0);
+    let source = source(&db);
+    let pin = source.plan().archive_id();
+    let safe_plan = t.path().join("recipe.cbor");
+    retain_plan(&safe_plan, &source).unwrap();
+    drop(source);
+    drop(Ledger::open(db.parent().unwrap()).unwrap());
+    let alias = db.with_file_name("archive.sqlite-ſhm");
+    assert!(!alias.exists());
+    std::fs::copy(&safe_plan, &alias).unwrap();
+    let bytes = std::fs::read(&alias).unwrap();
+    let before = std::fs::read(&db).unwrap();
+    let root = t.path().join("copy");
+    assert_eq!(
+        read_plan_for_copy(&alias, &db, &root, &pin)
+            .unwrap_err()
+            .to_string(),
+        "invalid input: destination overlaps source SQLite files"
+    );
+    assert!(!root.exists());
+    assert_eq!(std::fs::read(&alias).unwrap(), bytes);
+    assert_eq!(std::fs::read(&db).unwrap(), before);
+}
