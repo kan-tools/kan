@@ -21,6 +21,12 @@ use tokio::{
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 enum Query {
+    ProofDiscover {
+        source: String,
+        pin: verified::Pin,
+        cursor: Option<verified::Token>,
+        limit: usize,
+    },
     ProofContent {
         source: String,
         pin: verified::Pin,
@@ -93,7 +99,8 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
 async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
-        Query::ProofContent { .. }
+        Query::ProofDiscover { .. }
+        | Query::ProofContent { .. }
         | Query::ProofSnapshot { .. }
         | Query::ProofPage { .. }
         | Query::ProofSource { .. } => return Err(Failure::Invalid.into()),

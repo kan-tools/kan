@@ -452,3 +452,70 @@ async fn proof_content_preserves_missing_inputs_and_exact_source_citations() {
         server.stop().await;
     }
 }
+
+#[tokio::test]
+async fn proof_discovery_continues_verified_inventory_and_keeps_loss_unassigned() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture_requests(dir.path(), profile, captured_request);
+        let server = Server::start(&f).await;
+        let ui =
+            Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+                .await;
+        let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+        let entry = &catalog["scopes"][0];
+        assert!(entry["capabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("attempt-discovery")));
+        let query = json!({"action":"proof-discover","source":entry["id"],"pin":entry["pin"],"cursor":null,"limit":1});
+        let first = ui.call(query.clone(), 200).await;
+        assert_eq!(first["version"], "kan-discovery/1");
+        assert_eq!(first["records"][0]["record"]["sequence"], "3");
+        assert_eq!(first["records"][0]["description"]["ordinal"], "2");
+        assert_eq!(
+            first["records"][0]["description"]["event"]["type"],
+            "request-end"
+        );
+        assert_eq!(first["records"][0]["writer"], identity(6).did().as_str());
+        assert!(!first.to_string().contains("Hello proof archive"));
+        let mut next = query.clone();
+        next["cursor"] = first["next"].clone();
+        next["limit"] = json!(20);
+        let rest = ui.call(next.clone(), 200).await;
+        assert_eq!(rest["records"].as_array().unwrap().len(), 2);
+        assert!(rest["next"].is_null());
+        assert_eq!(
+            rest["records"][1]["description"]["event"]["route"],
+            "/v1/messages"
+        );
+        // Tokens discovered off the currently displayed inventory page still
+        // authorize exactly the selected occurrence, with fresh verification.
+        let raw = ui.call(json!({"action":"proof-source","source":entry["id"],"pin":entry["pin"],"selection":rest["records"][0]["record"]["selection"],"offset":"0","length":"65536"}),200).await;
+        assert!(raw["bytes_hex"]
+            .as_str()
+            .unwrap()
+            .contains(&service::hex(b"Hello proof archive")));
+        f.remove(1);
+        let lost = ui.call(next.clone(), 200).await;
+        assert_eq!(lost["records"][0]["description"], json!({"kind":"missing"}));
+        assert!(lost["records"][0]["writer"].is_null());
+        assert_eq!(lost["records"][1]["description"]["kind"], "capture");
+        next["cursor"] = rest["records"][0]["record"]["selection"].clone();
+        ui.call(next, 403).await;
+        for limit in [0, 21] {
+            let mut invalid = query.clone();
+            invalid["limit"] = json!(limit);
+            ui.call(invalid, 400).await;
+        }
+        server
+            .service
+            .lock()
+            .unwrap()
+            .replace_grants(Vec::new())
+            .unwrap();
+        ui.call(query, 403).await;
+        ui.stop().await;
+        server.stop().await;
+    }
+}

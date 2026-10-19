@@ -343,3 +343,35 @@ test('proof Content keeps unavailable inputs visible and presentation limits pre
  u.node('interpret').click();await tick();await u.respond({version:'kan-content/2',pin_wire:exactPin,occurrences:[{record:{...proofRow,availability:'missing'},writer:null}],observations:[{input:'0',kind:'unavailable',reason:'Missing'}],groups:[],coverage:'explicit selection only'});
  assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('unavailable · Missing')));const inspect=walk(u.node('content-panel')).find(n=>n.textContent==='Inspect source');assert.ok(inspect);inspect.click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'proof-source');await u.respond({},403);assert.equal(u.node('library').hidden,true);assert.equal(u.node('content-panel').children.length,0);
 });
+
+async function openDiscovery(u) {
+ await u.login(); await u.respond({...proofCatalog,scopes:[{...proofEntry('archive-A'),pin_wire:exactPin,capabilities:['attempt-discovery','content-inspection']} ]}); await u.respond(proofPage);
+}
+const discoveredCapture=(sequence,writer='writer-A',ordinal='0')=>({record:{...proofRow,sequence,selection:{signature:'selection-'+sequence}},writer,description:{kind:'capture',attempt:'a'.repeat(64),observer:'collector',ordinal,event:{type:'started',method:'POST',route:'/v1/messages'}}});
+test('discovery continues across pages and groups only equal verified writer/observer/attempt identities',async()=>{
+ const u=ui();await openDiscovery(u);assert.equal(u.node('discovery').hidden,false);
+ u.node('scan-attempts').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'proof-discover');
+ await u.respond({version:'kan-discovery/1',records:[discoveredCapture('3')],next:{signature:'next-discovery'}});
+ assert.match(u.node('discovery-coverage').textContent,/Partial inventory/);
+ u.node('scan-attempts').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).cursor,{signature:'next-discovery'});
+ const second=discoveredCapture('2','writer-A','1'), distinct=discoveredCapture('1','writer-B');
+ await u.respond({version:'kan-discovery/1',records:[second,distinct],next:null});
+ assert.match(u.node('discovery-coverage').textContent,/3 occurrences inspected.*2 attempt groups/);assert.match(u.node('discovery-coverage').textContent,/traffic completeness remains unknown/);
+ const read=walk(u.node('attempts')).find(n=>n.textContent==='Read records 1–2');assert.ok(read);read.click();await tick();await tick();
+ const req=JSON.parse(u.pending[0].opts.body);assert.equal(req.action,'proof-content');assert.deepEqual(req.selections,[{signature:'selection-3'},{signature:'selection-2'}]);
+ await u.respond({},422);const source=walk(u.node('attempts')).find(n=>n.textContent==='Source 2');source.click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).selection,second.record.selection);await u.respond(proofSource);
+});
+test('discovery preserves unassigned loss, treats hostile labels as text, and lock discards late scans',async()=>{
+ const u=ui();await openDiscovery(u);u.node('scan-attempts').click();await tick();
+ const hostile=discoveredCapture('3');hostile.description.event.route='<img src=x onerror=alert(1)>';
+ await u.respond({version:'kan-discovery/1',records:[hostile,{record:{...proofRow,sequence:'2'},writer:null,description:{kind:'missing'}}],next:{signature:'more'}});
+ assert.match(u.node('discovery-coverage').textContent,/1 unassigned/);assert.ok(walk(u.node('attempts')).some(n=>n.textContent.includes('<img src=x onerror=alert(1)>')));
+ u.node('scan-attempts').click();await tick();const pending=u.pending[0];u.node('lock').click();assert.equal(pending.opts.signal.aborted,true);
+ await u.respond({version:'kan-discovery/1',records:[hostile],next:null});assert.equal(u.node('attempts').children.length,0);assert.equal(u.node('discovery').hidden,true);
+});
+test('discovery revocation clears cached descriptions and refresh resets scan coverage',async()=>{
+ const u=ui();await openDiscovery(u);u.node('scan-attempts').click();await tick();await u.respond({version:'kan-discovery/1',records:[discoveredCapture('3')],next:null});
+ u.node('resnapshot').click();await tick();assert.equal(u.node('attempts').children.length,0);await u.respond({pin,pin_wire:exactPin});await u.respond(proofPage);
+ assert.match(u.node('discovery-coverage').textContent,/No capture discovery/);u.node('scan-attempts').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).cursor,null);await u.respond({},403);
+ assert.equal(u.node('library').hidden,true);assert.equal(u.node('attempts').children.length,0);
+});

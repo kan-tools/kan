@@ -11,3 +11,5 @@
 
 .occurrence .availability { font-family: inherit; font-size: .76rem; text-transform: capitalize; color: var(--muted); }
 .occurrence .availability.missing, .occurrence .availability.corrupt { color: var(--amber); font-weight: 650; }
+
+.discovery{padding:24px;margin-bottom:20px}.discovery>p{font-size:12px;line-height:1.6;color:var(--muted)}.attempt{padding:14px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}.attempt>summary{font-weight:650;font-size:14px}.attempt button,#attempts details p button{font-size:11px;margin:4px}.attempt details{margin-top:12px;font-size:12px}#attempts{max-height:55vh;overflow:auto}

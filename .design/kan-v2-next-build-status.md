@@ -21,7 +21,7 @@ and reviews are foundations, not automatic end-to-end completion.
 | Work package | Completion means | Current position |
 |---|---|---|
 | Capture, storage and migration | Supported harness/provider traffic reaches the centralized encrypted ledger; spool/retry and visible recording gaps work; v1 imports reconcile against preserved originals; local and remote use the same server architecture | Substantial implementation; integrated completion still to verify |
-| Library and sessions | Authorized cross-project browsing, readable complete supported conversations/tools/attachments/branches/compaction/gaps, exact source/provenance and working downloads; missing/corrupt evidence stays visible | Proof Library and selected Content integrated in #313; affected Rust/CLI/UI checks pass; actual browser browsing works. File delivery remains unverified; archive-wide sessions remain |
+| Library and sessions | Authorized cross-project browsing, readable complete supported conversations/tools/attachments/branches/compaction/gaps, exact source/provenance and working downloads; missing/corrupt evidence stays visible | Proof Library, selected Content and resumable attempt discovery integrated in #313. Browser discovery → Content works; missing evidence remains visible. File delivery remains unverified; full linked sessions and large-attempt assembly remain |
 | Search and views | Authorized search/facets, stable references, honest index coverage, reproducible saved scope/trust views and relation inspection | Foundations/designs; integrated build remains |
 | Knowledge and annotations | Imported v1 claims and raw/derived evidence remain distinguishable; human/agent tags, annotations, relations and corrections use shared attributed append-only records with citations/history | Foundations/designs; integrated build remains |
 | Analysis and day integration | Explicit and tag-triggered background extraction/summary/assessment jobs, grants/quotas, retries/cancellation, recipe/model/input/output lineage and inspectable results | Integrated build remains |
@@ -302,3 +302,20 @@ publication blocked by unrecoverable staged/orphan keys; and custody checks befo
 any SQLite open. These owner-visible limitations must survive into job/API/UI
 behavior. DDL, wire fixtures, codec, writer, RPC and browser acceptance remain
 separate work; full sessions/search/annotations/views/day/admin stay on the roadmap.
+
+## Integrated attempt discovery continuation
+
+The proof Library can explicitly scan successive pinned inventory pages, group
+verified capture records by archive/writer/observer/attempt and open their selected
+Content or exact Source. Missing, corrupt and unrecognized records stay visible
+and unassigned. No persistent plaintext index was added. Discovery windows retain
+at most 500 descriptions; Content remains bounded to explicit 40-record selections.
+Full linked sessions, large-attempt assembly and persistent authorized search remain.
+
+Affected Rust Library/CLI integrations passed, including discovery continuation,
+current payload loss, signed selection purpose and revocation. The 63 Library UI
+tests and strict library Clippy pass. Real synthetic browser verification traversed
+25 occurrences across two scan batches, changed archives, discovered a three-record
+attempt and read its request Content without manual selection. Lock cleared the
+view; no browser warnings/errors were observed. Fixture services and tab were
+stopped. Independent review remains deferred until integrated feature completion.

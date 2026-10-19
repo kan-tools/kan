@@ -1,5 +1,11 @@
 # Feature: evidence-backed conversation reconstruction
 
+## Current implementation flow
+
+The owner-approved SOP in `kan-v2-next-build-status.md` supersedes the historical
+per-slice review requirements below. Complete integrated implementation first,
+then one thorough independent review campaign.
+
 ## Summary
 A human can open an authorized retained attempt, read its available request and
 response, inspect normalized items against captured bytes, and see gaps and
@@ -269,3 +275,23 @@ open. The new actual IAB recheck confirms browser access but the download event
 still timed out; delivery remains unverified.
 
 Follow-through qualification at 2906902 passes 84 integrations, four units, strict Clippy/fmt and five selected semantic controls with restored 17 assembly tests. Evidence: `.design/reviews/kan-v2-assembly-followup-author/`.
+
+## Resumable attempt discovery
+
+The proof Library adds `proof-discover`: one explicit signed-inventory page of
+1–20 occurrences, each freshly read and verified, with a final authorization
+check. It returns existing source-selection tokens and bounded capture header
+interpretations, never request/response bodies. Missing, corrupt, opaque,
+unsupported and malformed evidence remain unassigned and inspectable. The work
+shares the Content worker limit and has an 8 MiB input / 20 second batch budget.
+Failure returns no partial batch; the caller may retry its unchanged cursor.
+
+The UI groups only by configured archive, scope, verified writer, observer and
+attempt. It retains at most 500 occurrence descriptions in memory; the explicit
+next-window action continues from the signed cursor and discards the prior
+window. Scope/snapshot changes and lock clear discovery. Coverage distinguishes
+scanned windows, the end of pinned inventory, and unknown traffic completeness.
+Content remains explicit selections of at most 40 occurrences, including selection
+across inventory pages. This is attempt navigation, not a persistent search index
+or a claim to reconstruct linked sessions or assemble arbitrarily large attempts.
+Those remain required work in the full frontend checklist.

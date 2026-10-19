@@ -4,6 +4,8 @@
   let token = '', epoch = 0, controller, scopes = [], pin, after = 0, next = null, history = [], selected = null, source = null, hexadecimal = false;
   const selections = new Map();
   let activeSource = null, catalogContent = false;
+  const discovered = new Map();
+  let scanCursor = null, scanComplete = false, scanCount = 0;
   const sourceId = entry => entry.id || entry.scope;
   const isProof = () => activeSource?.protocol === 'kan-proof-reader/1';
   const buttons = new Map(), exports = new Map(), contentSelection = new Set(), checks = new Map();
@@ -30,7 +32,7 @@
   function lock(message = 'Locked · connect to browse authorized evidence.') {
     for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
-    pinWire = null; contentEnabled = false; activeSource = null; selections.clear(); clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
+    pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); selections.clear(); clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
     $('catalog-status').textContent = ''; $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
     $('lock').disabled = true; $('token').value = ''; notice(message); $('token').focus();
   }
@@ -41,7 +43,7 @@
     if (current !== epoch) return null;
     if (!response.ok) {
       const denied = response.status === 401 || response.status === 403;
-      const message = ['content','proof-content'].includes(body.action) && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : ['content','proof-content'].includes(body.action) && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
+      const message = body.action === 'proof-discover' && [422,429].includes(response.status) ? 'Discovery reached a work limit or its workers are busy. Retry the same batch; existing scan coverage is unchanged.' : ['content','proof-content'].includes(body.action) && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : ['content','proof-content'].includes(body.action) && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
         ? 'Retained source is unavailable for this request. Choose another occurrence or refresh the snapshot.'
         : 'This response could not be verified. Retry, refresh the snapshot, or choose another scope.';
       const error = new Error(message); error.accessDenied = denied; error.keepContentSelection = ['content','proof-content'].includes(body.action) && [422,429].includes(response.status); error.readerMessage = message; throw error;
@@ -122,8 +124,8 @@
   }
   function renderCapabilities(value) {
     if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
-    const labels = {'snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
-    const supported = new Set(['snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability']), seen = new Set();
+    const labels = {'attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
+    const supported = new Set(['snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery']), seen = new Set();
     $('capability-list').replaceChildren();
     for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
       for (const capability of items) {
@@ -153,7 +155,7 @@
   }
   async function catalog() {
     clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
-    pinWire = null; contentEnabled = false; activeSource = null; selections.clear();
+    pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); selections.clear();
     scopes = []; pin = null; history = []; after = 0; next = null;
     $('coverage').textContent = ''; $('count').textContent = ''; $('page-position').textContent = '';
     $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
@@ -181,13 +183,81 @@
   }
 
   function choose(entry) {
-    activeSource = entry; pin = entry.pin; pinWire = entry.pin_wire || null; history = [];
+    clearDiscovery(); activeSource = entry; pin = entry.pin; pinWire = entry.pin_wire || null; history = [];
+    $('discovery').hidden = !entry.capabilities?.includes('attempt-discovery');
     contentEnabled = entry.capabilities ? entry.capabilities.includes('content-inspection') : catalogContent;
     $('content-support').textContent = contentEnabled ? 'Select captures on this page. Interpretation covers only this selection.' : 'Selected Content is not yet available for this source. Source and provenance remain browsable.';
   }
+  function clearDiscovery() {
+    discovered.clear(); scanCursor = null; scanComplete = false; scanCount = 0;
+    $('attempts').replaceChildren(); $('discovery').hidden = true;
+    $('discovery-coverage').textContent = 'No capture discovery has run for this snapshot.';
+    $('scan-attempts').disabled = false; $('scan-attempts').textContent = 'Discover attempts';
+  }
+  function renderDiscovery() {
+    const groups = new Map(), other = [];
+    for (const item of discovered.values()) {
+      const d = item.description;
+      if (d.kind !== 'capture') { other.push(item); continue; }
+      const key = JSON.stringify([sourceId(activeSource), item.writer, d.observer, d.attempt]);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    }
+    const root = $('attempts'); root.replaceChildren();
+    $('discovery-coverage').textContent = `${scanCount} occurrences inspected · ${discovered.size} in this window · ${groups.size} attempt groups · ${other.length} unassigned. ${scanComplete ? 'Inventory scan finished; traffic completeness remains unknown.' : 'Partial inventory coverage; continue scanning for older records.'}`;
+    $('scan-attempts').disabled = scanComplete;
+    $('scan-attempts').textContent = discovered.size >= 500 ? 'Continue in a new window' : scanCount ? 'Scan next 20 occurrences' : 'Discover attempts';
+    function sourceButton(parent, item) {
+      const b = textNode('button', `Source ${item.record.sequence}`);
+      b.addEventListener('click', () => run(() => inspect(item.record.sequence))); parent.append(b);
+    }
+    for (const items of groups.values()) {
+      items.sort((a,b) => BigInt(a.description.ordinal) < BigInt(b.description.ordinal) ? -1 : BigInt(a.description.ordinal) > BigInt(b.description.ordinal) ? 1 : 0);
+      const d = items[0].description, card = document.createElement('details'); card.className = 'attempt';
+      const start = items.find(x => x.description.event.type === 'started');
+      card.append(textNode('summary', `${start ? start.description.event.method + ' ' + start.description.event.route : 'Start not observed'} · ${d.observer} · ${items.length} records`));
+      card.append(textNode('p', `Attempt ${d.attempt} · Writer ${items[0].writer}`, 'content-identity'));
+      card.append(textNode('p', 'Records from the scanned window only. Read Content for stream gaps, conflicting ordinals and outcome claims.', 'content-coverage'));
+      if (contentEnabled && pinWire) for (let i=0; i<items.length; i+=40) {
+        const chunk = items.slice(i,i+40), b = textNode('button', `Read records ${i+1}–${i+chunk.length}`);
+        b.addEventListener('click', () => {
+          cancelWork(); clearContent(); clearInspector();
+          for (const item of chunk) contentSelection.add(item.record.sequence);
+          updateSelection(); $('interpret').click();
+        }); card.append(b);
+      }
+      const lineage = document.createElement('details'); lineage.append(textNode('summary','Observed events and source'));
+      for (const item of items) { const row = textNode('p', `Ordinal ${item.description.ordinal} · ${item.description.event.type} `); sourceButton(row,item); lineage.append(row); }
+      card.append(lineage); root.append(card);
+    }
+    if (other.length) {
+      const list = document.createElement('details'); list.append(textNode('summary', `${other.length} unassigned occurrences · missing, corrupt or unrecognized`));
+      for (const item of other) { const row = textNode('p', `${item.description.kind} `); sourceButton(row,item); list.append(row); }
+      root.append(list);
+    }
+  }
+  $('scan-attempts').addEventListener('click', () => run(async () => {
+    if (!pin || !isProof() || scanComplete) return;
+    // One explicit bounded batch; no background whole-archive scan.
+    clearContent(); clearInspector(); $('scan-attempts').disabled = true;
+    notice('Verifying captured records for attempt discovery…');
+    try {
+      const value = await rpc({action:'proof-discover',source:sourceId(activeSource),pin,cursor:scanCursor,limit:20});
+      if (!value) return;
+      if (value.version !== 'kan-discovery/1' || !Array.isArray(value.records) || value.records.length > 20) throw new Error('Invalid discovery response.');
+      for (const item of value.records) {
+        if (!item?.record?.selection || typeof item.record.sequence !== 'string' || !item.description || !['capture','opaque','unsupported','malformed','missing','corrupt'].includes(item.description.kind)) throw new Error('Invalid discovery record.');
+        if (item.description.kind === 'capture' && (typeof item.writer !== 'string' || !/^(0|[1-9][0-9]*)$/.test(item.description.ordinal) || typeof item.description.attempt !== 'string' || !item.description.event)) throw new Error('Invalid capture identity.');
+      }
+      if (discovered.size >= 500) discovered.clear();
+      for (const item of value.records) discovered.set(item.record.sequence,item);
+      scanCount += value.records.length; scanCursor = value.next; scanComplete = value.next === null;
+      renderDiscovery(); notice('Attempt discovery updated · coverage and unassigned evidence are shown.');
+    } finally { $('scan-attempts').disabled = scanComplete; }
+  }));
   function sourceRequest(sequence, offset = 0) {
     if (isProof()) {
-      const selection = selections.get(String(sequence)); if (!selection) throw new Error('Missing verified selection.');
+      const selection = discovered.get(String(sequence))?.record.selection || selections.get(String(sequence)); if (!selection) throw new Error('Missing verified selection.');
       return {action:'proof-source',source:sourceId(activeSource),pin,selection,offset:String(offset),length:'65536'};
     }
     return pinWire ? {action:'source-exact',pin_wire:pinWire,sequence:String(sequence),offset:String(offset),length:'65536'} : {action:'source',pin,sequence,offset,length:65536};
@@ -277,7 +347,7 @@
   $('interpret').addEventListener('click',()=>run(async()=>{
     if(!pinWire||!contentEnabled||!contentSelection.size)return;
     clearContent(false);clearInspector();$('interpret').disabled=true;notice('Verifying selected evidence and interpreting Content…');
-    const value=await rpc(isProof() ? {action:'proof-content',source:sourceId(activeSource),pin,selections:[...contentSelection].map(n=>selections.get(n)),format:$('content-format').value} : {action:'content',pin_wire:pinWire,sequences:[...contentSelection],format:$('content-format').value});if(!value)return;
+    const value=await rpc(isProof() ? {action:'proof-content',source:sourceId(activeSource),pin,selections:[...contentSelection].map(n=>discovered.get(n)?.record.selection || selections.get(n)),format:$('content-format').value} : {action:'content',pin_wire:pinWire,sequences:[...contentSelection],format:$('content-format').value});if(!value)return;
     showContent(value);updateSelection();
   }));
   $('clear-content').addEventListener('click',()=>{cancelWork();clearContent();clearInspector();notice('Content selection cleared.');});
@@ -288,7 +358,7 @@
   });
   $('retry-sources').addEventListener('click', () => run(catalog));
   $('scope').addEventListener('change', () => run(async () => { const chosen = scopes.find(s => sourceId(s) === $('scope').value); if (!chosen) return; choose(chosen); await page(0); }));
-  $('resnapshot').addEventListener('click', () => run(async () => { if (!pin) return; clearContent(); clearInspector(); const value = await rpc(isProof() ? {action:'proof-snapshot',source:sourceId(activeSource)} : {action:'snapshot',scope:$('scope').value}); if (!value) return; if(contentEnabled && typeof value.pin_wire !== 'string') throw new Error('Missing exact snapshot.'); pin = value.pin; pinWire = value.pin_wire || null; const chosen = scopes.find(s => sourceId(s) === $('scope').value); chosen.pin = pin; chosen.pin_wire = pinWire; history = []; await page(0); }));
+  $('resnapshot').addEventListener('click', () => run(async () => { if (!pin) return; clearDiscovery(); clearContent(); clearInspector(); const value = await rpc(isProof() ? {action:'proof-snapshot',source:sourceId(activeSource)} : {action:'snapshot',scope:$('scope').value}); if (!value) return; if(contentEnabled && typeof value.pin_wire !== 'string') throw new Error('Missing exact snapshot.'); pin = value.pin; pinWire = value.pin_wire || null; $('discovery').hidden = !activeSource?.capabilities?.includes('attempt-discovery'); const chosen = scopes.find(s => sourceId(s) === $('scope').value); chosen.pin = pin; chosen.pin_wire = pinWire; history = []; await page(0); }));
   $('next').addEventListener('click', () => run(async () => { if (next === null) return; history.push(after); await page(next); }));
   $('previous').addEventListener('click', () => run(async () => { if (history.length) await page(history.pop()); }));
   $('more').addEventListener('click', () => run(async () => { if (source && source.next !== null) await inspect(selected,source.next); }));
