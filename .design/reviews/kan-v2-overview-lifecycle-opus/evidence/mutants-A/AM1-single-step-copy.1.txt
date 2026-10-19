@@ -1,0 +1,26 @@
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/review-evidence/cargo.sh test --features v2-crypto --test zz_review_overview_correction -- ra1_cross_process_writer_never_fails_during_near_ceiling_refreshes --exact --test-threads=1 --nocapture
+
+running 1 test
+test ra1_cross_process_writer_never_fails_during_near_ceiling_refreshes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 28.27s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+warning: associated function `at` is never used
+  --> tests/zz_review_overview_correction.rs:75:8
+   |
+54 | impl Fx {
+   | ------- associated function in this implementation
+...
+75 |     fn at(root: PathBuf) -> Self {
+   |        ^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (test "zz_review_overview_correction") generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 0.52s
+     Running tests/zz_review_overview_correction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_overview_correction-712331e9fa93d268)
+RA1 active bytes=27156480 pages=6630
+RA1 continuous: writer={"errors":0,"first_errors":[],"max_ms":41.728,"next_id":1000695,"over_50ms":0,"writes":695} refresh_outcomes={"busy:database is locked after 100ms": 2, "ok": 4} ok_build_ms=[2189, 2198, 2245, 2226] active_window_s=[0, 0, 0, 0]
+RA1 20hz: writer={"errors":0,"first_errors":[],"max_ms":18.377,"next_id":1000824,"over_50ms":0,"writes":129} refresh_outcomes={"failure:Capacity(\"memory\") after 1400ms": 6} ok_build_ms=[] active_window_s=[]
+RA1 5hz: writer={"errors":0,"first_errors":[],"max_ms":19.299,"next_id":1000865,"over_50ms":0,"writes":41} refresh_outcomes={"failure:Capacity(\"memory\") after 1400ms": 6} ok_build_ms=[] active_window_s=[]

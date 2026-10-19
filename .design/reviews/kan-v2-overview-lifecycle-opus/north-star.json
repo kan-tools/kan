@@ -1,0 +1,92 @@
+{
+  "excluded_by_trust": 2,
+  "subjects": [
+    {
+      "v": 1,
+      "subject": "telos/raw-data-and-projections",
+      "subjects": [
+        "telos/raw-data-and-projections"
+      ],
+      "claims": [
+        {
+          "cid": "bafyreied3rklhs57yewlxkodui3olxyjj5wkipnkzziibfl2gqkkdbyaee",
+          "kind": "Decision",
+          "subject": "telos/raw-data-and-projections",
+          "author": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+          "text": "Raw attested data is retained in full and never collapsed in the store. Every simplification -- identity, status, confidence, tension, ordering -- is a determined projection computed on demand over that raw data, parameterised by a base the viewer chooses, and therefore swappable: a different base over the same claims yields a different, equally valid view. SPEC section 4.3 states this for identity (M(A,B) as a witness-retaining path-space enriched over the trust structure, so the same SameAs set under a different trust base gives a different identity); the disposable SQLite index, the state fold's poset, and decategorification-only-at-render are the same principle in other places. A field holding a computed value is the failure mode: it asserts an output of the fold as if it were input, and it forecloses every other projection.",
+          "artifacts": [
+            "Commit(\"722dc661b5a91b567dd6522fdf74fbfa896b7dfc\")"
+          ]
+        },
+        {
+          "cid": "bafyreia2ml54lhcarp3qki76dpf5ucdbkadetu7oxzpnfqggirbc3ishge",
+          "kind": "Subject",
+          "subject": "telos/raw-data-and-projections",
+          "author": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+          "title": "Raw data retained, simplifications projected",
+          "artifacts": [
+            "Commit(\"722dc661b5a91b567dd6522fdf74fbfa896b7dfc\")"
+          ]
+        },
+        {
+          "cid": "bafyreiewcw644r2iq6mbjtl4ta7v7ay6jv7ya2p2yhqjgsbt6qhtpgoase",
+          "kind": "Retraction",
+          "subject": "telos/raw-data-and-projections",
+          "author": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+          "supersedes": "bafyreiaezpl7wcys53cfymonkwizs6qb6tb65ckupjkhcrsyi4gfwqbeyy",
+          "artifacts": [
+            "Commit(\"722dc661b5a91b567dd6522fdf74fbfa896b7dfc\")"
+          ]
+        },
+        {
+          "cid": "bafyreia5ewl4kvltsxz6hu6ycczrmwj5vwl7oi3vycvsc4jp26glr5yyyu",
+          "kind": "Relation",
+          "subject": "telos/raw-data-and-projections",
+          "author": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+          "recorded_at": 1786402960047523,
+          "relation": "InTensionWith",
+          "target": "telos/performance-at-scale",
+          "cites": [
+            "bafyreic3xnp2mgxy67sgw6k3znhkntjty6j65pj5twbdto2klc6ktw62y4"
+          ],
+          "artifacts": [
+            "Commit(\"0bd80de2a717a393df44ce83ea67f6ddcc14696a\")"
+          ]
+        },
+        {
+          "cid": "bafyreicakl3rsoinmpbsxtjihiaudfauz3eazxsk5rajq5dfs4ctedsfi4",
+          "kind": "Observation",
+          "subject": "telos/raw-data-and-projections",
+          "author": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+          "recorded_at": 1786519991404246,
+          "text": "THIS TELOS DECLARES NO WITNESSES, DELIBERATELY. Not an oversight, and not work waiting to be done -- recorded here so a later session reads the reason instead of re-deriving it or, worse, closing the gap with a witness that cannot fail.\n\nIn its plain reading this is a MAINTENANCE telos: raw data retained and never collapsed is a property that must keep holding, and the day after the first cache lands is when it is under load. day cannot express that today. `assess telos` is cumulative by design and a claim probe ignores --scope by design, so any witness available now would report met forever after the first pass -- day#138's failure, and what day#86 calls worse than leaving a telos unwitnessed. telos/cross-harness-maintained hit the same wall and was deliberately left undeclared; it is filed as day#171, a design question about the telos model rather than a missing probe.\n\nWhat the witness interview produced instead is telos/raw-data-and-projections-attained, which asks whether the machinery that makes this principle CHECKABLE has been built: a specification of the read/write surface, every stored value declared raw or derived, and a conformance test binding that declaration to the code under the migration matrix's own rule -- a stored value with no committed row is an error, not a pass. That half is attainment, reports met forever once reached, and is witnessed by `spec-conformance`, which reports absent today because the test does not exist yet.\n\nSo the division of labour is: day witnesses the attainment, CI enforces the maintenance. `day assess telos raw-data-and-projections` continuing to say this telos declares no witnesses is the honest reading, not a gap to close.",
+          "cites": [
+            "bafyreif5xgmlbu6nq3dx6aoitftrk3kgysqeaeongax6a2xmy7b6teynte"
+          ],
+          "artifacts": [
+            "Commit(\"3272c72d61c3f75ace5d6d84856d817f338ac017\")"
+          ]
+        }
+      ],
+      "inbound": [
+        {
+          "cid": "bafyreigqup4ysc7vkyedsw7pa367wzdjmygdxu5gdpxdhhbwmtglcjf7ia",
+          "kind": "Relation",
+          "relation": "InTensionWith",
+          "source": "telos/performance-at-scale",
+          "author": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc"
+        }
+      ],
+      "trust": {
+        "base": "Local",
+        "authors": [
+          {
+            "did": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "weight": 1.0
+          }
+        ]
+      },
+      "excluded_by_trust": 0
+    }
+  ]
+}

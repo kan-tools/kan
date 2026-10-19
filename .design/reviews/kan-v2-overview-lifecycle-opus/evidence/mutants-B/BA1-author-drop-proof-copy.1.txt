@@ -1,0 +1,29 @@
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle/review-evidence/cargo.sh test --features v2-crypto --test zz_review_proof_lifecycle -- rb1_exact_authoritative_rows_survive_backup_and_rebuild_with_h_ne_c --exact --test-threads=1 --nocapture
+
+running 1 test
+test rb1_exact_authoritative_rows_survive_backup_and_rebuild_with_h_ne_c ... FAILED
+
+failures:
+
+failures:
+    rb1_exact_authoritative_rows_survive_backup_and_rebuild_with_h_ne_c
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.37s
+
+warning: function `copy_proof` is never used
+   --> src/evidence_store/attested.rs:481:15
+    |
+481 | pub(super) fn copy_proof(
+    |               ^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+    Finished `test` profile [unoptimized] target(s) in 0.45s
+     Running tests/zz_review_proof_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_proof_lifecycle-38f45f8bd3aa4b2c)
+
+thread 'rb1_exact_authoritative_rows_survive_backup_and_rebuild_with_h_ne_c' (9553390) panicked at tests/zz_review_proof_lifecycle.rs:179:36:
+called `Result::unwrap()` on an `Err` value: Corrupt("attestation cardinality")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test zz_review_proof_lifecycle`

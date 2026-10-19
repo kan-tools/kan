@@ -1,0 +1,18 @@
+{
+ "reviewed_commit": "7ab1afa183880a06f409a454a49e87df5b7c33fc",
+ "scope_a": "67c1263..262cad3",
+ "scope_b": "262cad3..7ab1afa",
+ "scope_c": ".design/kan-v2-evidence-availability.md#next-copy-upgrade-schema-decision-not-implemented",
+ "export_vs_git_archive": "1323 tracked files byte-identical before and after; only extra: untracked north-star.json",
+ "supplied_diffs_sha256": {
+  "overview-correction-change.diff": "8249d724f60f88d403f05daa4a772d989edf75efce6d2cf21bfee48efbb0623c",
+  "lifecycle-change.diff": "eede82149d0a7ec9939fabda23441fcf9985825e9b983eb8f613f8dbe9592694"
+ },
+ "north_star_sha256": "64a00fe76d22f33b199d9191acbf21436190472eafb7b5680a12368777e1c19b",
+ "verdicts": {
+  "A": "APPROVE WITH FOLLOW-UPS",
+  "B": "APPROVE WITH FOLLOW-UPS",
+  "C": "APPROVE WITH FOLLOW-UPS (design readiness only)"
+ },
+ "reviewer": "Claude Code Opus 5.5 (claude-opus-5-5), in-session, no subagents"
+}

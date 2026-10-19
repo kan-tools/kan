@@ -222,9 +222,33 @@ The current UI uses a conservative five-second freshness window; long worker I/O
 can exceed it and appear stale/unknown while still running. This is not a claim
 that the worker has failed or that capture is complete.
 
+## Profile-2 proof lifecycle (experimental owner tools)
+
+The existing `init`, `verify`, `backup`, and `recover` commands accept explicit
+`--proof-archive <64 lowercase hex> --proof-scope <64 lowercase hex>
+--proof-issuer <static P-256 did:key>` pins. All three are required together; they
+come from owner configuration, never from a server response or automatic discovery.
+Omitting them uses the legacy profile and refuses proof-bearing archives.
+
+`init <new-directory>` creates profile 2 with those pins. `init <directory> --resume`
+explicitly adopts an empty interrupted output or reopens a matching fully valid
+archive. It cannot distinguish an empty foreign file, convert a legacy archive or
+replace a binding. `backup <archive-directory> <new-file>` copies and fully verifies
+proofs and payloads. `recover <source-file> <new-file>` reads a pinned source, rebuilds
+derived lookups, and preserves exact manifest, receipt and attestation bytes. Neither
+a local backup nor successful reconstruction establishes independent backup coverage,
+historical capture completeness, or permission to delete the original.
+
+Recovery never rewrites source records; SQLite may initialize coordination sidecars.
+Preserve database/WAL/SHM together. Missing payloads, invalid proof chains and wrong
+owner pins fail closed. Retain any failed output and retry with a new filename; no
+automatic promotion occurs. Metadata-only browsing and owner-copy upgrades are still
+separate work. These paths have no production migration or cutover approval.
+
 Overview review correction: active row parsing uses a bounded in-memory SQLite
 copy, with short backup steps and a five-second refusal bound when the source stays
 busy. The 128-MiB budget includes a 32-MiB image plus 16-MiB working reserve; fewer
 rows may fit than before. Build/Cancel actions preempt ordinary polling and cannot
-be silently discarded by an in-flight poll. Qualification of this correction is
-pending; the initial checkpoint remains unapproved.
+be silently discarded by an in-flight poll. Author checks and regression mutations pass. The initial review returned APPROVE
+WITH FOLLOW-UPS with a required contention fix; fresh review of this correction
+remains required before merge qualification.

@@ -217,8 +217,16 @@ fn audit_prefix(
 }
 impl Archive {
     pub fn create(root: &Path, binding: Binding) -> Result<Self> {
+        Self::create_observed(root, binding, &mut |_| {})
+    }
+    /// Fault harness only; callbacks do not establish durability.
+    pub fn create_observed(
+        root: &Path,
+        binding: Binding,
+        observe: &mut dyn FnMut(InitializationBoundary),
+    ) -> Result<Self> {
         binding.validate()?;
-        let ledger = Ledger::create_profile(root, &mut |_| {}, Some(&binding))?;
+        let ledger = Ledger::create_profile(root, observe, Some(&binding))?;
         ledger.conn.set_limit(
             rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
             RECOVERY_SQLITE_LENGTH_LIMIT,
@@ -244,6 +252,52 @@ impl Archive {
         archive.verify()?;
         configure(&archive.ledger.conn)?;
         Ok(archive)
+    }
+    /// Explicit owner opt-in for interrupted creation. Empty foreign files are
+    /// indistinguishable from interrupted output; no existing profile is converted.
+    pub fn resume_initialization(root: &Path, binding: Binding) -> Result<Self> {
+        binding.validate()?;
+        let path = root.join("archive.sqlite");
+        private_file(&path)?;
+        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        let app: i64 = conn.query_row("PRAGMA application_id", [], |r| r.get(0))?;
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        drop(conn);
+        let archive = if app == APPLICATION_ID && version == 2 {
+            Self::open(root, binding)?
+        } else {
+            let ledger = Ledger::initialize_empty(root, &path, &mut |_| {}, Some(&binding))?;
+            ledger.conn.set_limit(
+                rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
+                RECOVERY_SQLITE_LENGTH_LIMIT,
+            )?;
+            Self { ledger, binding }
+        };
+        std::fs::File::open(root)?.sync_all()?;
+        std::fs::File::open(parent_directory(root))?.sync_all()?;
+        Ok(archive)
+    }
+    /// Full standalone backup. A failure may leave an incomplete or complete
+    /// output; use a fresh destination, never overwrite or promote automatically.
+    pub fn backup(&self, destination: &Path) -> Result<Verification> {
+        self.backup_observed(destination, &mut |_| {})
+    }
+    pub fn backup_observed(
+        &self,
+        destination: &Path,
+        observe: &mut dyn FnMut(BackupBoundary),
+    ) -> Result<Verification> {
+        let destination = self.ledger.backup_copy(destination, observe)?;
+        Self::verify_file(&destination, self.binding.clone())
+    }
+    /// Full audit of a standalone profile-2 file against owner configuration.
+    /// Read-only SQLite can initialize its declared WAL/SHM coordination files.
+    pub fn verify_file(path: &Path, binding: Binding) -> Result<Verification> {
+        let reader = Recovery::open(path, binding)?;
+        reader.reader.ledger.check_write_profile(true)?;
+        let base = reader.reader.ledger.verify_contents()?;
+        verify_contents(&reader.reader.ledger, &reader.binding, &base)?;
+        Ok(base)
     }
     pub fn binding(&self) -> &Binding {
         &self.binding
@@ -388,4 +442,65 @@ impl Archive {
             attestation: result.ok_or(Failure::Corrupt)?,
         })
     }
+}
+
+/// Read-only pinned source for a full proof-preserving rebuild. Opening does not
+/// certify raw contents; successful rebuild verifies all metadata, proofs and
+/// payloads. No degraded or metadata-only success is returned by this API.
+pub struct Recovery {
+    reader: RecoveryReader,
+    binding: Binding,
+}
+impl Recovery {
+    pub fn open(path: &Path, binding: Binding) -> Result<Self> {
+        binding.validate()?;
+        let reader = RecoveryReader::open_profile(path, 2)?;
+        check_binding(&reader.ledger.conn, &binding)?;
+        Ok(Self { reader, binding })
+    }
+    pub fn rebuild(&self, destination: &Path) -> Result<Verification> {
+        self.rebuild_observed(destination, &mut |_| {})
+    }
+    pub fn rebuild_observed(
+        &self,
+        destination: &Path,
+        observe: &mut dyn FnMut(RecoveryBoundary),
+    ) -> Result<Verification> {
+        self.reader
+            .rebuild_profile(destination, observe, Some(&self.binding))
+    }
+}
+pub(super) fn check_copy_source(conn: &Connection, binding: &Binding, through: u64) -> Result<()> {
+    check_binding(conn, binding)?;
+    let count: i64 = conn.query_row("SELECT count(*) FROM attestations", [], |r| r.get(0))?;
+    if u64::try_from(count).ok() != Some(through) {
+        return Err(corrupt("attestation cardinality"));
+    }
+    Ok(())
+}
+pub(super) fn copy_proof(
+    source: &Connection,
+    target: &rusqlite::Transaction<'_>,
+    sequence: u64,
+) -> Result<()> {
+    let bytes = envelope(source, sequence)?;
+    // surface-write: evidence-proof-sqlite:attestations
+    crate::persistence::insert_evidence_proof(
+        crate::persistence::SurfaceWrite::EvidenceAttestation,
+        target,
+        i64::try_from(sequence).map_err(|_| Error::Invalid("sequence overflow"))?,
+        &bytes,
+    )?;
+    Ok(())
+}
+pub(super) fn verify_contents(
+    ledger: &Ledger,
+    binding: &Binding,
+    base: &Verification,
+) -> Result<()> {
+    let (frontier, _) = audit_prefix(&ledger.conn, binding, base.snapshot.through, None)?;
+    if frontier.manifest != base.snapshot.tip {
+        return Err(corrupt("attestation tip"));
+    }
+    Ok(())
 }

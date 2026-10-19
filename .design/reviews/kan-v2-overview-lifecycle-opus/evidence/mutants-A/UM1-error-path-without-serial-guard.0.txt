@@ -1,0 +1,35 @@
+node --test tests/operations_ui.test.cjs
+✔ auth is header-only; gap filtering and untrusted values use text (14.055042ms)
+✔ late authenticated response cannot unlock a locked view (0.613125ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.572334ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.583ms)
+✔ fresh active sessions are current while historical losses remain visible (0.552042ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.714959ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.59675ms)
+✔ unsampled sessions and summary loss units are explicit (0.464958ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.621625ms)
+✔ unsupported status version retains visibly disconnected values (0.704541ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.58625ms)
+✔ locking clears rendered private metadata and closes the inspector (0.43875ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.525458ms)
+✔ future persistence timestamps stay unknown (0.427875ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.576333ms)
+✔ unchanged notices are not announced again on every poll (0.520042ms)
+✔ overview refresh is explicit authenticated POST with exact large counters (0.741084ms)
+✔ lock clears overview and prevents a late result from repainting (0.790791ms)
+✔ failed or limited refresh labels the prior sample explicitly (0.61875ms)
+✔ overview rejects malformed source lists and unsafe numeric counters before rendering (1.574334ms)
+✔ build preempts an in-flight overview poll and ignores its stale reply (0.514917ms)
+✔ cancel preempts a poll while preserving server action order (0.505417ms)
+✔ a second action is queued behind an unfinished action, then dispatched (0.468542ms)
+✔ cached overview shows its age and becomes visibly superseded after rotation (0.788625ms)
+✔ invalid overview replies label retained totals and restart clears them (0.558958ms)
+✔ late overview transport errors cannot repaint after lock (0.486292ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 58.667083

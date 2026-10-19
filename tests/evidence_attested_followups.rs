@@ -327,6 +327,37 @@ fn p5b_mixed_historical_issuers_in_prefix_are_refused() {
     );
 }
 
+#[test]
+fn p5c_historical_proof_purpose_and_bytes_survive_backup_and_rebuild() {
+    fn proofs(path: &Path) -> Vec<Vec<u8>> {
+        let c = rusqlite::Connection::open(path).unwrap();
+        let mut s = c
+            .prepare("SELECT envelope FROM attestations ORDER BY sequence")
+            .unwrap();
+        let rows = s
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        rows
+    }
+    let (target, _sources, frontier) = upgraded([11, 11]);
+    let a = Archive::open(target.path(), binding()).unwrap();
+    let expected = proofs(&target.path().join("archive.sqlite"));
+    let output = tempfile::tempdir().unwrap();
+    let backup = output.path().join("backup.sqlite");
+    assert_eq!(a.backup(&backup).unwrap().commits, frontier.through);
+    assert_eq!(proofs(&backup), expected);
+    let rebuilt = output.path().join("rebuilt.sqlite");
+    let reader = kan::evidence_store::attested::Recovery::open(&backup, binding()).unwrap();
+    assert_eq!(reader.rebuild(&rebuilt).unwrap().commits, frontier.through);
+    assert_eq!(
+        proofs(&rebuilt),
+        expected,
+        "retained-verified must not become admitted"
+    );
+}
+
 /// P6: a second profile-2 handle performs a fully proven append between the
 /// first handle's audit and its writer lock. The first must conflict.
 #[test]

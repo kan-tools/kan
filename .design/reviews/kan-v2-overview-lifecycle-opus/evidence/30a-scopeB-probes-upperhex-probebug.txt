@@ -1,0 +1,39 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-proof-lifecycle/.local-state/reviews/lifecycle)
+    Finished `test` profile [unoptimized] target(s) in 6.79s
+     Running tests/zz_review_proof_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_proof_lifecycle-38f45f8bd3aa4b2c)
+
+running 6 tests
+test rb1_exact_authoritative_rows_survive_backup_and_rebuild_with_h_ne_c ... RB1 proofs=4 source tables=["archive_identity", "attestations", "bindings", "commits", "objects", "~pragmas", "~schema"]
+ok
+test rb2_valid_foreign_proof_substitution_is_refused_everywhere ... RB2 branch-seq1: verify=Some(Corrupt("invalid attestation chain")) open=Some("corrupt evidence: invalid attestation chain") rebuild=Some(Corrupt("invalid attestation chain"))
+RB2 branch-tip: verify=Some(Corrupt("invalid attestation chain")) open=Some("corrupt evidence: invalid attestation chain") rebuild=Some(Corrupt("invalid attestation chain"))
+RB2 archive-seq1: verify=Some(Corrupt("invalid attestation chain")) open=Some("corrupt evidence: invalid attestation chain") rebuild=Some(Corrupt("invalid attestation chain"))
+RB2 archive-tip: verify=Some(Corrupt("invalid attestation chain")) open=Some("corrupt evidence: invalid attestation chain") rebuild=Some(Corrupt("invalid attestation chain"))
+ok
+test rb3_cli_pin_permutations_and_profile_mismatch_create_nothing ... 
+thread 'rb3_cli_pin_permutations_and_profile_mismatch_create_nothing' (9551124) panicked at tests/zz_review_proof_lifecycle.rs:290:13:
+init/upper-hex succeeded
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test rb4_random_sigkill_during_create_and_resume ... RB4 x7: create finished=false | dir=false file=false len=0 journal=false wal=false | no-file -> create ok
+RB4 x2: create finished=false | dir=true file=true len=0 journal=false wal=false | resume ok
+RB4 x2: create finished=false | dir=true file=true len=0 journal=true wal=false | resume ok
+RB4 x2: create finished=false | dir=true file=true len=36864 journal=true wal=false | resume ok
+RB4 x2: create finished=true | dir=true file=true len=36864 journal=false wal=false | resume ok
+RB4 x4: resume finished=false | dir=true file=true len=0 journal=false wal=false | resume ok
+RB4 x3: resume finished=false | dir=true file=true len=0 journal=true wal=false | resume ok
+RB4 x1: resume finished=false | dir=true file=true len=36864 journal=true wal=false | resume ok
+RB4 x1: resume finished=true | dir=true file=true len=36864 journal=false wal=false | resume ok
+ok
+test rb5_cross_process_admission_during_rebuild_and_backup ... RB5 writer={"err":0,"first":[],"ok":30} outputs=["rebuild through=21 backup=Ok(24)", "rebuild through=25 backup=Ok(29)", "rebuild through=30 backup=Ok(33)", "rebuild through=34 backup=Ok(38)"]
+ok
+test zz_review_lifecycle_child ... ok
+
+failures:
+
+failures:
+    rb3_cli_pin_permutations_and_profile_mismatch_create_nothing
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.77s
+
+error: test failed, to rerun pass `--test zz_review_proof_lifecycle`

@@ -1,0 +1,24 @@
+
+running 1 test
+test corrupt_source_proofs_are_rejected_before_output_profile_is_committed ... FAILED
+
+failures:
+
+---- corrupt_source_proofs_are_rejected_before_output_profile_is_committed stdout ----
+
+thread 'corrupt_source_proofs_are_rejected_before_output_profile_is_committed' (9590581) panicked at tests/evidence_attested_lifecycle.rs:312:5:
+assertion `left == right` failed: invalid proofs must not commit a profile marker
+  left: 2
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    corrupt_source_proofs_are_rejected_before_output_profile_is_committed
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.18s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade)
+    Finished `test` profile [unoptimized] target(s) in 6.88s
+     Running tests/evidence_attested_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_lifecycle-02231a6624d7c1e3)
+error: test failed, to rerun pass `--test evidence_attested_lifecycle`

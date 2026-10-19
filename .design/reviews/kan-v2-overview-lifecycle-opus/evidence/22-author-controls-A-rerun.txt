@@ -1,0 +1,15 @@
+DEMONSTRATED: remove-connection-bound
+DEMONSTRATED: no-deduplication
+DEMONSTRATED: no-dominance
+DEMONSTRATED: no-sealed-hash
+DEMONSTRATED: no-memory-cap
+DEMONSTRATED: no-cancellation
+DEMONSTRATED: omit-post-read-sealed-hash
+DEMONSTRATED: omit-unique-health-validation
+DEMONSTRATED: promote-historical-worker
+DEMONSTRATED: omit-sealed-sidecar-check
+DEMONSTRATED: discard-action-during-poll
+DEMONSTRATED: hold-active-read-through-parse
+DEMONSTRATED: late-overview-repaint
+13 mutants fail with named assertions; restored checks pass.
+exit=0

@@ -79,6 +79,26 @@ strict all-target v2 Clippy. Fresh Opus review of those corrections at a1007a6 r
 The complete pre-admission audit is deliberately unoptimized; see the storage
 checkpoint scope in the governing design for its concurrency threat boundary.
 
+## Proof lifecycle continuation (draft)
+
+Permanent worktree `.worktrees/kan-v2-proof-lifecycle`, branch
+`feat/kan-v2-proof-lifecycle`, builds on the collection/storage checkpoint.
+It adds explicit profile-2 initialization resume, fully verified standalone
+backups, and proof-preserving raw recovery into a new file. The owner CLI uses
+all-or-none archive/scope/issuer pins; legacy commands still refuse profile 2.
+No schema field, lifecycle side store, implicit conversion or promotion is added.
+
+Draft regression coverage includes exact bytes, derived repair, wrong owner pins,
+legacy-profile refusal, copied-proof verification, pinned source transactions,
+process death at initialization/rebuild boundaries and real CLI output. Five
+semantic negative controls fail named assertions and restored checks pass. Local
+qualification passes 81 Rust checks and strict all-target v2 Clippy; evidence is
+in `.design/reviews/kan-v2-proof-lifecycle-author/`. Fresh actual Opus5.5 review at7ab1afa returned APPROVE WITH FOLLOW-UPS;
+the raw report is in `.design/reviews/kan-v2-overview-lifecycle-opus/`.
+Follow-up qualification at9aca45d closes the named test, CLI and catalog gaps
+(`.design/reviews/kan-v2-proof-lifecycle-followup-author/`); its fresh correction
+review is pending. No parent acceptance criterion is closed by this slice.
+
 ## Remaining ordered build
 
 1. Profile-2 authoritative proof storage in permanent worktree
@@ -113,5 +133,31 @@ use a bounded in-memory active database copy and prioritize actions over polls.
 The existing 128-MiB ceiling now includes a 32-MiB image allowance plus 16-MiB
 working reserve; capacity refusal is explicit. Source copy can refuse after five
 seconds when busy. Tests target writer progress, post-read sealed changes, invalid
-unique health rows, historical worker separation and UI request races. Author qualification now passes 74 Rust checks,26 Operations Node checks,strict all-target v2 Clippy and13 semantic mutants with restored assertions. Evidence is in `.design/reviews/kan-v2-overview-correction-author/`; fresh re-review remains pending.
+unique health rows, historical worker separation and UI request races. Author qualification now passes 74 Rust checks, 26 Operations Node checks, strict all-target v2 Clippy and 13 semantic mutants with restored assertions. Evidence is in `.design/reviews/kan-v2-overview-correction-author/`; fresh re-review remains pending.
 The final cold review returned APPROVE WITH FOLLOW-UPS for the overview, with O1 a required code correction, and APPROVE for the storage corrections. The raw report and independent probes are preserved unchanged in `.design/reviews/kan-v2-overview-opus/`. Fresh review of the corrected overview remains required.
+
+## Authenticated overview browser follow-up
+
+The merged source now has author-run browser evidence for unavailable, building,
+completed, failed, cancelling, cancelled, capacity-limited and client-derived
+superseded states. Old totals survive failed/cancelled/capacity-limited refreshes
+with explicit labels. Light/dark and 390-pixel wrapping were inspected; lock clears
+metadata. Evidence and exact fixture limitations are preserved in
+`.design/reviews/kan-v2-overview-browser-followup/`. This was collected after the
+7ab1afa independent-review export; it does not change that review's scope or verdict.
+
+## Current cold-review disposition
+
+The fresh combined review approved the overview correction at262cad3 and lifecycle
+at7ab1afa with follow-ups; required writer exclusion is resolved. Full compatibility
+execution passed310 checks on macOS. Sustained back-to-back writers can still
+starve overview refresh, and practical overview capacity remains about64.5k
+identities; refusal is visible. Backend deadline/revalidation/window regression
+seams remain follow-ups.
+
+A separate cold review approved the restart rendering fix at7126848 with
+follow-ups. Its12 probes plus an author queue-repeat regression are now in CI;
+49operations checks pass and11UI mutants fail named assertions. Evidence and
+provenance are in `.design/reviews/kan-v2-overview-restart-opus/`. The production
+fix has not changed after that review. The broader browser matrix was collected
+before the restart fix; actual file download delivery remains unverified.

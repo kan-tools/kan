@@ -796,6 +796,6 @@ async fn overview_browser_fixture() {
     let fixture = Fixture::new();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let token = "synthetic-browser-overview-token-32-plus";
-    std::fs::write(output,serde_json::to_vec(&serde_json::json!({"url":format!("http://{}",listener.local_addr().unwrap()),"token":token})).unwrap()).unwrap();
+    std::fs::write(output,serde_json::to_vec(&serde_json::json!({"url":format!("http://{}",listener.local_addr().unwrap()),"token":token,"synthetic_root":fixture.root})).unwrap()).unwrap();
     tokio::select! {r=kan::evidence_dashboard::serve(listener,token.into(),fixture.root.clone())=>r.unwrap(),_=tokio::signal::ctrl_c()=>{}}
 }
