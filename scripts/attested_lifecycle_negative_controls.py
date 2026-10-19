@@ -8,11 +8,14 @@ PROOF=ROOT/'src/evidence_store/attested.rs'
 OUT=ROOT/'.local-state/reviews/lifecycle-controls'
 
 def main():
+    if not __debug__: raise RuntimeError('assertions required')
     OUT.mkdir(parents=True,exist_ok=True)
     originals={p:p.read_text() for p in (STORE,PROOF)}
     for p,s in originals.items(): (OUT/(p.name+'.original')).write_text(s)
     store=originals[STORE]; proof=originals[PROOF]
     cases=[
+        ('drop-exact-standalone-schema',PROOF,proof.replace('reader.reader.ledger.check_write_profile(true)?;', 'let _ = &reader.reader.ledger;'),'standalone_proof_verification_and_backup_refuse_undeclared_schema'),
+        ('drop-precommit-proof-audit',STORE,store.replace('attested::verify_contents(&target, binding, &expected)?;', 'let _ = binding;'),'corrupt_source_proofs_are_rejected_before_output_profile_is_committed'),
         ('drop-proof-copy',STORE,store.replace('attested::copy_proof(&self.ledger.conn, &tx, raw.sequence)?;','let _ = &tx;'),'proof_bytes_survive_backup_rebuild_and_derived_repair'),
         ('drop-extra-proof-check',PROOF,proof.replace('if u64::try_from(count).ok() != Some(through) {','if false && u64::try_from(count).ok() != Some(through) {'),'recovery_refuses_missing_or_corrupt_proofs_and_payloads'),
         ('resume-as-legacy',PROOF,proof.replace('Ledger::initialize_empty(root, &path, &mut |_| {}, Some(&binding))?','Ledger::initialize_empty(root, &path, &mut |_| {}, None)?'),'interrupted_initialization_resumes_only_by_explicit_owner_action'),
@@ -36,5 +39,5 @@ def main():
     run=subprocess.run(args,cwd=ROOT,capture_output=True,text=True)
     (OUT/'restored.txt').write_text(run.stdout+run.stderr)
     assert run.returncode==0,'restored baseline failed'
-    print('Five compiled mutants fail; restored lifecycle/store/surface pass.',flush=True)
+    print(f'{len(cases)} compiled mutants fail; restored lifecycle/store/surface pass.',flush=True)
 if __name__=='__main__':main()

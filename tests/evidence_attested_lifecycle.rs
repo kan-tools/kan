@@ -259,6 +259,67 @@ fn backup_success_requires_verifying_the_copied_proof_chain() {
 }
 
 #[test]
+fn standalone_proof_verification_and_backup_refuse_undeclared_schema() {
+    for extra in [
+        "CREATE TABLE undeclared_notes(body BLOB NOT NULL)",
+        "CREATE INDEX undeclared_proof_index ON attestations(envelope)",
+    ] {
+        let t = tempfile::tempdir().unwrap();
+        let root = t.path().join("source");
+        let a = populate(&root);
+        let db = root.join("archive.sqlite");
+        let c = Connection::open(&db).unwrap();
+        c.execute_batch(extra).unwrap();
+        drop(c);
+        assert!(
+            Archive::verify_file(&db, binding()).is_err(),
+            "standalone verification must refuse extra schema: {extra}"
+        );
+        let output = t.path().join("backup.sqlite");
+        assert!(
+            a.backup(&output).is_err(),
+            "a copied unknown schema cannot be reported as a verified backup"
+        );
+        // A failed backup can leave output; it must still fail verification.
+        if output.exists() {
+            assert!(Archive::verify_file(&output, binding()).is_err());
+        }
+    }
+}
+
+#[test]
+fn corrupt_source_proofs_are_rejected_before_output_profile_is_committed() {
+    let t = tempfile::tempdir().unwrap();
+    let root = t.path().join("source");
+    drop(populate(&root));
+    let db = root.join("archive.sqlite");
+    let c = Connection::open(&db).unwrap();
+    c.execute(
+        "UPDATE attestations SET envelope=X'00' WHERE sequence=1",
+        [],
+    )
+    .unwrap();
+    drop(c);
+    let output = t.path().join("refused.sqlite");
+    assert!(Recovery::open(&db, binding())
+        .unwrap()
+        .rebuild(&output)
+        .is_err());
+    let result = Connection::open(&output).unwrap();
+    let version: i64 = result
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        version, 0,
+        "invalid proofs must not commit a profile marker"
+    );
+    let tables: i64 = result
+        .query_row("SELECT count(*) FROM sqlite_schema", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(tables, 0, "failed proof audit rolls back output schema too");
+}
+
+#[test]
 fn lifecycle_crash_child() {
     let Ok(mode) = std::env::var("KAN_PROOF_LIFECYCLE_CHILD") else {
         return;
