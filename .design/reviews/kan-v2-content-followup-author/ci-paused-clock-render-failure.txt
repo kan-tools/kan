@@ -1,0 +1,30 @@
+CI39320430131 at8cfd267 (includes4ea9167). Full local log SHA256=28890ebbb5ea86aa98c3e6f0f2d5b19de5d641106527f1f0ab5cd7293ed06b51
+
+2026-10-19T20:51:20.0016839Z running 9 tests
+2026-10-19T20:51:20.0020877Z test evidence_content::tests::canonical_decimal_and_new_source_coordinates_preserve_full_width ... ok
+2026-10-19T20:51:20.0022510Z test evidence_content::tests::dropping_request_guard_signals_the_worker ... ok
+2026-10-19T20:51:20.0029434Z test evidence_content::tests::serialized_byte_limit_and_cancellation_refuse_without_partial_output ... ok
+2026-10-19T20:51:20.0031398Z test evidence_content::tests::aggregate_work_is_charged_across_interpretation_and_all_item_mappings ... ok
+2026-10-19T20:51:20.4441248Z test evidence_content::worker_tests::busy_content_http_response_is_distinct_and_retry_succeeds_after_capacity_returns ... ok
+2026-10-19T20:51:20.5941140Z test evidence_content::worker_tests::cancelling_real_content_keeps_worker_admission_until_exit_and_stops_after_first_item ... ok
+2026-10-19T20:51:20.6615372Z test evidence_content::tests::serialized_content_cap_is_independent_of_normalized_output ... ok
+2026-10-19T20:51:20.6869846Z test evidence_content::worker_tests::overall_content_deadline_covers_acquisition_work_after_a_verified_read ... ok
+2026-10-19T20:52:20.0018828Z test evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record has been running for over 60 seconds
+2026-10-19T20:52:27.3880468Z test evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record ... FAILED
+2026-10-19T20:52:27.3881748Z 
+2026-10-19T20:52:27.3882050Z failures:
+2026-10-19T20:52:27.3882321Z 
+2026-10-19T20:52:27.3883187Z ---- evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record stdout ----
+2026-10-19T20:52:27.3884196Z 
+2026-10-19T20:52:27.3885498Z thread 'evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record' (38261) panicked at src/../tests/support/content_worker_unit.rs:216:10:
+2026-10-19T20:52:27.3887467Z called `Result::unwrap()` on an `Err` value: Unavailable
+2026-10-19T20:52:27.3888688Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-10-19T20:52:27.3889871Z 
+2026-10-19T20:52:27.3889880Z 
+2026-10-19T20:52:27.3890119Z failures:
+2026-10-19T20:52:27.3891210Z     evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record
+2026-10-19T20:52:27.3892067Z 
+2026-10-19T20:52:27.3892626Z test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 89 filtered out; finished in 67.39s
+2026-10-19T20:52:27.3893294Z 
+2026-10-19T20:52:27.3893906Z ^[[1m^[[91merror^[[0m: test failed, to rerun pass `--lib`
+2026-10-19T20:52:27.3929925Z ##[error]Process completed with exit code 101.

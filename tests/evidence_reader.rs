@@ -962,7 +962,7 @@ async fn content_preserves_authorized_occurrences_duplicates_unplaced_inputs_and
         .await
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&result).unwrap();
-    assert_eq!(value["version"], "kan-content/1");
+    assert_eq!(value["version"], "kan-content/2");
     assert_eq!(value["occurrences"].as_array().unwrap().len(), 5);
     assert_eq!(value["observations"][1]["kind"], "opaque");
     assert_eq!(value["observations"][3]["kind"], "unsupported");
@@ -986,7 +986,7 @@ async fn content_preserves_authorized_occurrences_duplicates_unplaced_inputs_and
         .unwrap();
     assert_eq!(item["kind"], "context");
     assert_eq!(item["coarse"], true);
-    let citations = item["citations"].as_array().unwrap();
+    let citations = content_citations(&group["request"], item);
     assert_eq!(citations.len(), 2);
     for (citation, sequence) in citations.iter().zip([1, 3]) {
         let bounds = citation["bytes"].as_array().unwrap();
@@ -1463,7 +1463,7 @@ async fn content_accumulated_tool_input_cites_all_fragments_instead_of_only_the_
                 .unwrap()
     );
     let mut retained = Vec::new();
-    for c in tool["citations"].as_array().unwrap() {
+    for c in content_citations(&value["groups"][0]["response"], tool) {
         let input: usize = c["input"].as_str().unwrap().parse().unwrap();
         let seq = value["occurrences"][input]["record"]["sequence"]
             .as_str()
@@ -1566,7 +1566,7 @@ async fn content_handles_realistic_multiturn_history_and_streams_without_repeate
             "source correspondence must be charged once: {scan}"
         );
         for item in result["groups"][0][direction]["items"].as_array().unwrap() {
-            let citations = item["citations"].as_array().unwrap();
+            let citations = content_citations(&result["groups"][0][direction], item);
             assert!(!citations.is_empty() && citations.len() <= sequences.len());
             for citation in citations {
                 let index = citation["input"]
@@ -1580,5 +1580,67 @@ async fn content_handles_realistic_multiturn_history_and_streams_without_repeate
                 );
             }
         }
+    }
+}
+
+fn content_citations<'a>(
+    stream: &'a serde_json::Value,
+    item: &serde_json::Value,
+) -> &'a Vec<serde_json::Value> {
+    let index: usize = item["citation_set"].as_str().unwrap().parse().unwrap();
+    stream["citation_sets"][index].as_array().unwrap()
+}
+
+#[tokio::test]
+async fn content_shares_coarse_citations_past_the_old_boundary_and_one_megabyte() {
+    use kan::evidence_content::Format;
+    for (messages, text_bytes) in [(340, 1000), (341, 1000), (500, 2200)] {
+        let identity = Identity::generate();
+        let mut fixture = Fixture::new(96, &identity).await;
+        let body = serde_json::to_vec(&serde_json::json!({"messages":(0..messages).map(|_|serde_json::json!({"role":"user","content":"x".repeat(text_bytes)})).collect::<Vec<_>>()})).unwrap();
+        for (n, chunk) in body.chunks(65536).enumerate() {
+            fixture.append(&content_frame(
+                'a',
+                n as u64,
+                serde_json::json!({"type":"request-chunk","offset":n*65536}),
+                chunk,
+            ));
+        }
+        let selections = (1..=fixture.position)
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>();
+        let reader = Reader::new(identity, vec![fixture.access()]).unwrap();
+        let pin = reader.snapshot(&svc::hex(&fixture.scope)).await.unwrap();
+        let encoded = reader
+            .content(&pin, &selections, Format::AnthropicMessagesJson)
+            .await
+            .unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        let stream = &result["groups"][0]["request"];
+        assert_eq!(stream["items"].as_array().unwrap().len(), 2 * messages + 1);
+        assert_eq!(
+            stream["citation_sets"].as_array().unwrap().len(),
+            1,
+            "coarse source ranges must be serialized once"
+        );
+        for item in stream["items"].as_array().unwrap() {
+            assert_eq!(item["citation_set"], "0");
+        }
+        let mut exact = Vec::new();
+        for citation in stream["citation_sets"][0].as_array().unwrap() {
+            let input: usize = citation["input"].as_str().unwrap().parse().unwrap();
+            let start: usize = citation["bytes"][0].as_str().unwrap().parse().unwrap();
+            let end: usize = citation["bytes"][1].as_str().unwrap().parse().unwrap();
+            let source = reader
+                .source(&pin, selections[input].parse().unwrap(), start, end - start)
+                .await
+                .unwrap();
+            exact.extend(svc::unhex(&source.bytes_hex, 65536).unwrap());
+        }
+        assert_eq!(exact, body);
+        if messages == 500 {
+            assert!(body.len() > 1024 * 1024);
+        }
+        assert!(encoded.len() < 4 * 1024 * 1024);
     }
 }

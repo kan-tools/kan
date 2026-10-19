@@ -480,6 +480,8 @@ fn creation_crash_child() {
 #[test]
 fn abrupt_death_never_publishes_a_partial_created_bundle() {
     for point in [
+        CreationBoundary::SourceRecordsRead,
+        CreationBoundary::Prepared,
         CreationBoundary::Reserved,
         CreationBoundary::MemberInserted,
         CreationBoundary::HistoryInserted,
@@ -535,6 +537,13 @@ fn abrupt_death_never_publishes_a_partial_created_bundle() {
             observer: identity(10).did(),
         };
         let out = dir.path().join("bundle.sqlite");
+        if matches!(
+            point,
+            CreationBoundary::SourceRecordsRead | CreationBoundary::Prepared
+        ) {
+            assert!(!out.exists());
+            continue;
+        }
         assert!(out.exists());
         let inspected = bundle::inspect(&out, ctx, None, budget());
         if matches!(
@@ -679,6 +688,205 @@ fn complete_bundle_remains_refused_by_standalone_openers_and_inventory() {
     )
     .is_err());
     assert_eq!(std::fs::read(&dst).unwrap(), before);
+}
+
+// Promoted from fresh Opus review918318d, B2-F2. Original probe remains retained.
+#[test]
+fn promoted_b2_preexisting_destination_sidecars_refuse_and_survive() {
+    for suffix in ["-journal", "-wal", "-shm", "-JOURNAL", "-Wal"] {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture(dir.path(), Profile::Admitted);
+        let src = f.root.join("archive.sqlite");
+        let dst = dir.path().join("bundle.sqlite");
+        let observer = identity(10);
+        let side = dir.path().join(format!("bundle.sqlite{suffix}"));
+        // A journal header magic followed by owner bytes.
+        let mut hostile = vec![0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
+        hostile.extend(b"owner sidecar must survive");
+        std::fs::write(&side, &hostile).unwrap();
+        // Case variants are aliases only on case-insensitive filesystems.
+        if suffix != suffix.to_lowercase()
+            && !dir
+                .path()
+                .join(format!("bundle.sqlite{}", suffix.to_lowercase()))
+                .exists()
+        {
+            continue;
+        }
+        let before = std::fs::read(&src).unwrap();
+        let r = bundle::create(create(&f, &src, &dst, &observer));
+        println!(
+            "PASS_B2 {suffix}: {:?}",
+            r.as_ref().err().map(|e| e.to_string())
+        );
+        assert!(matches!(r, Err(CreationError::Refused(_))), "{suffix}");
+        assert!(!dst.exists(), "{suffix}: output reserved despite sidecar");
+        assert_eq!(std::fs::read(&side).unwrap(), hostile);
+        assert_eq!(std::fs::read(&src).unwrap(), before);
+    }
+}
+
+#[test]
+fn promoted_b3_unknown_source_schema_refuses() {
+    for (profile, sql) in [
+        (Profile::Admitted, "CREATE TABLE extra(x);"),
+        (
+            Profile::Admitted,
+            "CREATE INDEX extra_i ON commits(writer);",
+        ),
+        (Profile::Admitted, "CREATE VIEW extra_v AS SELECT 1;"),
+        (
+            Profile::Admitted,
+            "CREATE TRIGGER extra_t AFTER INSERT ON objects BEGIN SELECT 1; END;",
+        ),
+        (
+            Profile::Admitted,
+            "ALTER TABLE commits ADD COLUMN extra INTEGER;",
+        ),
+        (Profile::Copied, "CREATE TABLE extra(x);"),
+        (Profile::Admitted, "PRAGMA user_version=3;"),
+        (Profile::Admitted, "PRAGMA application_id=7;"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture(dir.path(), profile);
+        let src = f.root.join("archive.sqlite");
+        let dst = dir.path().join("bundle.sqlite");
+        let observer = identity(10);
+        let request = create(&f, &src, &dst, &observer);
+        edit(&src, sql);
+        let before = std::fs::read(&src).unwrap();
+        let r = bundle::create(request);
+        println!(
+            "PASS_B3 {profile:?} {sql}: {:?}",
+            r.as_ref().err().map(|e| e.to_string())
+        );
+        assert!(matches!(r, Err(CreationError::Refused(_))), "{sql}");
+        assert!(!dst.exists());
+        assert_eq!(std::fs::read(&src).unwrap(), before);
+    }
+}
+
+#[test]
+fn promoted_b5_proof_coordinates_and_authoritative_cells_refuse() {
+    for (label, sql) in [
+        ("shifted proof", "UPDATE attestations SET sequence=4 WHERE sequence=3;"),
+        ("missing proof", "DELETE FROM attestations WHERE sequence=2;"),
+        ("commit gap", "DELETE FROM attestations WHERE sequence=2; DELETE FROM commits WHERE sequence=2;"),
+        ("manifest byte", "UPDATE commits SET manifest=CAST(manifest||x'00' AS BLOB) WHERE sequence=2;"),
+        ("text manifest", "UPDATE commits SET manifest=CAST(manifest AS TEXT) WHERE sequence=1;"),
+        ("proof byte", "UPDATE attestations SET envelope=CAST(substr(envelope,1,length(envelope)-1)||x'00' AS BLOB) WHERE sequence=3;"),
+        ("second identity", "INSERT INTO archive_identity SELECT 2,archive,scope,issuer FROM archive_identity;"),
+        ("noncanonical cid", "UPDATE objects SET cid=upper(cid) WHERE cid=(SELECT cid FROM objects LIMIT 1);"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture(dir.path(), Profile::Admitted);
+        let src = f.root.join("archive.sqlite");
+        let dst = dir.path().join("bundle.sqlite");
+        let observer = identity(10);
+        let request = create(&f, &src, &dst, &observer);
+        edit(&src, sql);
+        let before = std::fs::read(&src).unwrap();
+        let r = bundle::create(request);
+        println!("PASS_B5 {label}: {:?}", r.as_ref().err().map(|e| e.to_string()));
+        assert!(matches!(r, Err(CreationError::Refused(_))), "{label}");
+        assert!(!dst.exists());
+        assert_eq!(std::fs::read(&src).unwrap(), before);
+    }
+}
+
+#[test]
+fn creation_pins_one_snapshot_between_metadata_and_object_acquisition() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = fixture(dir.path(), Profile::Admitted);
+    let src = f.root.join("archive.sqlite");
+    let dst = dir.path().join("bundle.sqlite");
+    let observer = identity(10);
+    let selected = frontier(&f);
+    let extra = request(3, 8, selected.manifest.as_ref().map(ToString::to_string));
+    let extra_cid = store::ciphertext_cid(&extra);
+    let result = bundle::create_observed(create(&f, &src, &dst, &observer), &mut |point| {
+        if point == CreationBoundary::SourceRecordsRead {
+            let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+            archive.admit(&extra, &identity(8), &grant(), 900).unwrap();
+        }
+    })
+    .unwrap();
+    assert_eq!(frontier(&f).through, 4);
+    assert_eq!(result.replay().member().frontier(), &selected);
+    let db = rusqlite::Connection::open(&dst).unwrap();
+    let count: i64 = db
+        .query_row("SELECT count(*) FROM member_objects", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        count, 3,
+        "snapshot must exclude the later appended request object"
+    );
+    let count: i64 = db
+        .query_row(
+            "SELECT count(*) FROM member_objects WHERE cid=?",
+            [extra_cid.to_string()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn creation_rechecks_sidecars_after_preparation_before_reservation() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = fixture(dir.path(), Profile::Admitted);
+    let src = f.root.join("archive.sqlite");
+    let dst = dir.path().join("bundle.sqlite");
+    let observer = identity(10);
+    let sidecar = dir.path().join("bundle.sqlite-journal");
+    let before = std::fs::read(&src).unwrap();
+    let result = bundle::create_observed(create(&f, &src, &dst, &observer), &mut |point| {
+        if point == CreationBoundary::Prepared {
+            std::fs::write(&sidecar, b"retained owner sidecar").unwrap();
+        }
+    });
+    assert!(matches!(result, Err(CreationError::Refused(_))));
+    assert!(
+        !dst.exists(),
+        "reservation must not occur after the sidecar appears"
+    );
+    assert_eq!(std::fs::read(&sidecar).unwrap(), b"retained owner sidecar");
+    assert_eq!(std::fs::read(&src).unwrap(), before);
+}
+
+#[test]
+fn creation_reports_an_actual_commit_error_as_uncertain() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = fixture(dir.path(), Profile::Admitted);
+    let src = f.root.join("archive.sqlite");
+    let dst = dir.path().join("bundle.sqlite");
+    let observer = identity(10);
+    let mut reader = None;
+    let result = bundle::create_observed(create(&f, &src, &dst, &observer), &mut |point| {
+        if point == CreationBoundary::BeforeCommit {
+            let conn = rusqlite::Connection::open_with_flags(
+                &dst,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .unwrap();
+            conn.execute_batch("BEGIN;").unwrap();
+            let _: i64 = conn
+                .query_row("SELECT count(*) FROM sqlite_schema", [], |r| r.get(0))
+                .unwrap();
+            reader = Some(conn); // Keep a real shared lock through the attempted DELETE-mode commit.
+        }
+    });
+    match result {
+        Err(CreationError::Uncertain { path, cause, .. }) => {
+            assert_eq!(path, dst);
+            assert!(
+                matches!(*cause,bundle::Error::Sql(rusqlite::Error::SqliteFailure(ref e,_)) if e.code==rusqlite::ErrorCode::DatabaseBusy)
+            );
+        }
+        _ => panic!("an attempted COMMIT failure must carry an uncertain outcome"),
+    }
+    drop(reader);
+    assert!(dst.exists());
 }
 
 #[test]

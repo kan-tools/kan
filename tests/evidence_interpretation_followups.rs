@@ -305,3 +305,23 @@ fn citations_and_unknown_deltas_do_not_promote_an_empty_json_key_to_text() {
         assert_eq!(item.event.as_ref().unwrap()["delta"][""], "untyped text");
     }
 }
+
+#[test]
+fn absent_tool_result_content_is_valid_but_explicit_invalid_content_is_not() {
+    for is_error in [false, true] {
+        let bytes = serde_json::to_vec(&json!({"messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"synthetic","is_error":is_error}]}]})).unwrap();
+        let d = p::interpret(&bytes, p::Format::Request, limits()).unwrap();
+        let item = d
+            .items
+            .iter()
+            .find(|i| i.kind == p::Kind::ToolResult)
+            .unwrap();
+        assert!(!item.issues.contains(&p::Issue::Shape));
+        assert!(d
+            .json
+            .as_ref()
+            .unwrap()
+            .pointer(item.pointer.as_ref().unwrap())
+            .is_some());
+    }
+}

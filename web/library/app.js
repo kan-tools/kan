@@ -37,10 +37,10 @@
     if (current !== epoch) return null;
     if (!response.ok) {
       const denied = response.status === 401 || response.status === 403;
-      const message = body.action === 'content' && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Choose fewer occurrences; retained source remains available.' : body.action === 'content' && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
+      const message = body.action === 'content' && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : body.action === 'content' && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
         ? 'Retained source is unavailable for this request. Choose another occurrence or refresh the snapshot.'
         : 'This response could not be verified. Retry, refresh the snapshot, or choose another scope.';
-      const error = new Error(message); error.accessDenied = denied; error.readerMessage = message; throw error;
+      const error = new Error(message); error.accessDenied = denied; error.keepContentSelection = body.action === 'content' && [422,429].includes(response.status); error.readerMessage = message; throw error;
     }
     const value = await response.json(); if (current !== epoch) return null; return value;
     } catch (error) { if (current !== epoch) return null; throw error; }
@@ -49,7 +49,7 @@
     if (error.name === 'AbortError') return;
     const message = error.readerMessage || 'Reader unavailable. Retry, refresh the snapshot, or choose another scope.';
     if (error.accessDenied || $('library').hidden) lock(message);
-    else { clearContent(); clearInspector(); if (!pin) { $('capability-list').replaceChildren(); $('scope').replaceChildren(); $('catalog-status').textContent = 'Source check failed · coverage is unknown. Retry sources.'; $('catalog-status').className = ''; } notice(message, true); }
+    else { clearContent(!error.keepContentSelection); clearInspector(); if (!pin) { $('capability-list').replaceChildren(); $('scope').replaceChildren(); $('catalog-status').textContent = 'Source check failed · coverage is unknown. Retry sources.'; $('catalog-status').className = ''; } notice(message, true); }
   }); }
   function tab(name) {
     $('content-panel').hidden = name !== 'content'; $('content-tab').setAttribute('aria-pressed', String(name === 'content'));
@@ -171,13 +171,42 @@
   function textNode(tag, text, className) { const e=document.createElement(tag);e.textContent=text;if(className)e.className=className;return e; }
   function sourceLink(parent, value, input, label, offset = '0') {
     const occurrence = value.occurrences[Number(input)]; if(!occurrence)throw new Error('Invalid Content citation.');
-    const button=textNode('button',label);button.addEventListener('click',()=>run(async()=>{returnItem=button;await inspect(occurrence.record.sequence,offset);}));parent.append(button);
+    const button=textNode('button',label);button.addEventListener('click',()=>run(async()=>{returnItem=button;await inspect(occurrence.record.sequence,offset);}));parent.append(button);return button;
   }
   function details(parent, title, raw) {
     const d=document.createElement('details');d.append(textNode('summary',title));d.append(textNode('pre',raw));parent.append(d);
   }
+  function citationRenderer(value, stream) {
+    if(!Array.isArray(stream.citation_sets)||stream.citation_sets.length>2048||!Array.isArray(stream.items))throw new Error('Invalid Content citation table.');
+    let total=0;
+    for(const set of stream.citation_sets){
+      if(!Array.isArray(set)||(total+=set.length)>4096)throw new Error('Invalid Content citation table.');
+      for(const c of set)if(!c||!Array.isArray(c.bytes)||c.bytes.length!==2||!value.occurrences[Number(c.input)])throw new Error('Invalid Content citation.');
+    }
+    function resolve(ref){
+      if(typeof ref!=='string'||ref.length>20||!/^(0|[1-9][0-9]*)$/.test(ref))throw new Error('Invalid Content citation reference.');
+      const index=Number(ref);
+      if(!Number.isSafeInteger(index)||index>=stream.citation_sets.length)throw new Error('Invalid Content citation reference.');
+      return stream.citation_sets[index];
+    }
+    const uses=new Map(),shared=new Map();
+    for(const item of stream.items)for(const ref of [item.citation_set,...(item.tool?[item.tool.citation_set]:[])]){resolve(ref);uses.set(ref,(uses.get(ref)||0)+1);}
+    function links(parent, ref, label){let first;for(const c of resolve(ref)){const button=sourceLink(parent,value,c.input,`${label} ${value.occurrences[Number(c.input)].record.sequence} · ${c.bytes.join('–')}`,c.bytes[0]);first ||= button;}return first;}
+    return {
+      append(parent,ref,label){
+        if(uses.get(ref)===1){links(parent,ref,label);return;}
+        if(!shared.has(ref)){
+          const detail=document.createElement('details');detail.className='content-citation-set';
+          const summary=textNode('summary',`Shared source range ${Number(ref)+1} · ${resolve(ref).length} citations`);detail.append(summary);
+          const sources=document.createElement('div');sources.className='content-citations';const target=links(sources,ref,'Source')||summary;detail.append(sources);shared.set(ref,{detail,target});
+        }
+        const button=textNode('button',`Sources · shared range ${Number(ref)+1}`);button.addEventListener('click',()=>{const group=shared.get(ref);group.detail.open=true;group.target.focus();});parent.append(button);
+      },
+      finish(parent){for(const group of shared.values())parent.append(group.detail);}
+    };
+  }
   function showContent(value) {
-    if(value.version!=='kan-content/1'||value.pin_wire!==pinWire||!Array.isArray(value.occurrences)||value.occurrences.length>40||!Array.isArray(value.observations)||!Array.isArray(value.groups))throw new Error('Unsupported Content response.');
+    if(value.version!=='kan-content/2'||value.pin_wire!==pinWire||!Array.isArray(value.occurrences)||value.occurrences.length>40||!Array.isArray(value.observations)||!Array.isArray(value.groups))throw new Error('Unsupported Content response.');
     contentValue=value;$('content-panel').replaceChildren();$('content-tab').disabled=false;
     $('inspection').hidden=false;$('close-inspector').hidden=false;$('selection').textContent='Selected Content';
     $('source-hint').textContent='Observed content · roles and outcomes are claims. Follow citations to verified retained source.';
@@ -187,7 +216,7 @@
     if(!value.groups.length)panel.append(textNode('p','No recognized capture groups in this selection. Every input remains inspectable in Source.'));
     for(const group of value.groups){
       const card=document.createElement('section');card.className='content-group';
-      card.append(textNode('h3',`${group.observer} · ${group.terminal}`));card.append(textNode('p',group.attempt,'content-identity'));card.append(textNode('p',`Observed writer: ${group.writer}`,'content-identity'));
+      card.append(textNode('h3',`${group.observer} · ${group.terminal}`));card.append(textNode('p',group.attempt,'content-identity'));card.append(textNode('p',`Retained request signer: ${group.writer}`,'content-identity'));
       const flags=[];if(group.missing_start)flags.push('Start not selected');if(group.events_after_terminal)flags.push('Events after terminal');if(group.unconfirmed_claim)flags.push('Observer reports unconfirmed capture');
       if(group.ordinal_gaps.length)flags.push(`No recognized capture at ordinals ${group.ordinal_gaps.map(r=>r.join('–')).join(', ')} (end exclusive)`);
       if(group.ordinals.some(o=>o.conflict))flags.push('Conflicting ordinal · both streams withheld conservatively');
@@ -196,7 +225,7 @@
       const lineage=document.createElement('details');lineage.className='content-lineage';lineage.append(textNode('summary','Retained occurrence lineage'));
       for(const ordinal of group.ordinals){const row=document.createElement('p');row.append(textNode('span',`Observed ordinal ${ordinal.value}${ordinal.conflict?' · conflict':''} `));for(const input of ordinal.inputs)sourceLink(row,value,input,`Source ${value.occurrences[Number(input)].record.sequence}`);lineage.append(row);}card.append(lineage);
       for(const direction of ['request','response']){
-        const stream=group[direction],section=document.createElement('section');section.className='content-stream';section.append(textNode('h4',direction==='request'?'Request · supplied history':'Response · observed output'));
+        const stream=group[direction],citations=citationRenderer(value,stream),section=document.createElement('section');section.className='content-stream';section.append(textNode('h4',direction==='request'?'Request · supplied history':'Response · observed output'));
         section.append(textNode('p',`Contiguous selected bytes: ${stream.observed_bytes??'unavailable'} · Consistent observer length claim: ${stream.expected_bytes??'none'}`,'content-coverage'));
         if(stream.extent_claims.length){const claims=document.createElement('details');claims.append(textNode('summary','Observer length claims'));for(const claim of stream.extent_claims){const row=textNode('p',`Claimed bytes: ${claim.bytes} `);sourceLink(row,value,claim.input,`Length claim · Source ${value.occurrences[Number(claim.input)].record.sequence}`);claims.append(row);}section.append(claims);}
         if(stream.state!=='interpreted')section.append(textNode('p',`No readable stream: ${stream.issues.map(i=>i.kind+(i.bytes?' '+i.bytes.join('–'):'')).join(', ')||'absent, incomplete or contradictory selected bytes'}.`,'content-warning'));
@@ -207,11 +236,12 @@
             if(item.issues.length)entry.append(textNode('p',item.issues.join(' · '),'content-warning'));
             if(item.pointer!==null)entry.append(textNode('p',`Parsed JSON location ${item.pointer||'/'}`,'content-pointer'));
             if(item.event_json!==null)details(entry,'Parsed event · numbers may be rounded; Source preserves exact bytes',item.event_json);
-            if(item.tool){details(entry,'Accumulated tool input (derived)',item.tool.json);const refs=document.createElement('div');refs.className='content-citations';refs.append(textNode('span',`Enclosing tool block ${item.tool.region.join('–')} · coarse attribution · end exclusive`));for(const c of item.tool.citations)sourceLink(refs,value,c.input,`Tool input source ${value.occurrences[Number(c.input)].record.sequence} · ${c.bytes.join('–')}`,c.bytes[0]);entry.append(refs);}
+            if(item.tool){details(entry,'Accumulated tool input (derived)',item.tool.json);const refs=document.createElement('div');refs.className='content-citations';refs.append(textNode('span',`Enclosing tool block ${item.tool.region.join('–')} · coarse attribution · end exclusive`));citations.append(refs,item.tool.citation_set,'Tool input source');entry.append(refs);}
             const sources=document.createElement('div');sources.className='content-citations';sources.append(textNode('span',`Enclosing bytes ${item.region.join('–')} · ${item.coarse?'coarse attribution':'attribution'} · end exclusive`));
-            for(const citation of item.citations)sourceLink(sources,value,citation.input,`Source ${value.occurrences[Number(citation.input)].record.sequence} · ${citation.bytes.join('–')}`,citation.bytes[0]);
+            citations.append(sources,item.citation_set,'Source');
             entry.append(sources);section.append(entry);
           }
+          citations.finish(section);
           if(stream.parsed_json!==null)details(section,'Parsed body · numbers may be rounded; Source preserves exact bytes',stream.parsed_json);
         }
         card.append(section);

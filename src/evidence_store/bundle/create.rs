@@ -21,6 +21,8 @@ pub struct Creation<'a> {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CreationBoundary {
+    SourceRecordsRead,
+    Prepared,
     Reserved,
     MemberInserted,
     HistoryInserted,
@@ -146,7 +148,12 @@ fn source_identity(conn: &Connection, context: &Context, work: &mut Work) -> Res
     )?;
     require(rows.next()?.is_none(), "source identity cardinality")
 }
-fn acquire(conn: &Connection, context: Context, work: &mut Work) -> Result<MemberBytes> {
+fn acquire(
+    conn: &Connection,
+    context: Context,
+    work: &mut Work,
+    observe: &mut dyn FnMut(CreationBoundary),
+) -> Result<MemberBytes> {
     source_schema(conn, &context, work)?;
     source_identity(conn, &context, work)?;
     let mut out = MemberBytes {
@@ -215,6 +222,14 @@ fn acquire(conn: &Connection, context: Context, work: &mut Work) -> Result<Membe
             _ => return Err(Error::Invalid("source proof coordinates")),
         }
     }
+    // Finish individual cursors before the phase boundary. BEGIN, rather than
+    // a still-live statement, must hold the shared source snapshot.
+    drop(rows);
+    drop(proof_rows);
+    drop(stmt);
+    drop(proofs);
+    observe(CreationBoundary::SourceRecordsRead);
+    work.check()?;
     out.objects = objects(conn, "objects", 0, work)?;
     Ok(out)
 }
@@ -444,11 +459,14 @@ fn destination_path(source: &Path, destination: &Path) -> Result<PathBuf> {
 pub fn create(request: Creation<'_>) -> std::result::Result<Inspection, CreationError> {
     create_observed(request, &mut |_| {})
 }
+/// Owner-side synchronous phase callback. It confers no additional authority
+/// and is not reachable through a remote request. Callbacks must return promptly;
+/// deadline checks cannot preempt caller code.
 pub fn create_observed(
     request: Creation<'_>,
     observe: &mut dyn FnMut(CreationBoundary),
 ) -> std::result::Result<Inspection, CreationError> {
-    let prepare = || -> Result<_> {
+    let mut prepare = || -> Result<_> {
         require(
             request.observer.did() == request.context.observer,
             "observer pin",
@@ -492,7 +510,7 @@ pub fn create_observed(
             Some(move || cancelled.load(Ordering::Relaxed) || Instant::now() >= deadline),
         )?;
         conn.execute_batch("PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; PRAGMA cache_size=-4096; PRAGMA mmap_size=0; BEGIN;")?;
-        let data = acquire(&conn, request.context.clone(), &mut work);
+        let data = acquire(&conn, request.context.clone(), &mut work, observe);
         work.check()?;
         let data = data?;
         let history = initial_history(
@@ -508,6 +526,7 @@ pub fn create_observed(
         Ok((source, destination, data, history, work))
     };
     let (source, destination, data, history, work) = prepare()?;
+    observe(CreationBoundary::Prepared);
     let last = history
         .last()
         .ok_or(Error::Invalid("empty created history"))?;
