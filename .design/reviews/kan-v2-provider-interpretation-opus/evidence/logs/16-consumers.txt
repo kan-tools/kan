@@ -1,0 +1,52 @@
+$ rg evidence_interpretation|map_region|interpret( (excluding .design)
+./src/evidence_interpretation.rs:682:pub fn map_region(
+./src/lib.rs:82:pub mod evidence_interpretation;
+./scripts/interpretation_negative_controls.py:6:SOURCE=ROOT/'src/evidence_interpretation.rs'
+./scripts/interpretation_negative_controls.py:26:   r=subprocess.run(['cargo','test','--features','v2-crypto','--test','evidence_interpretation',test,'--','--exact','--nocapture'],cwd=ROOT,capture_output=True,text=True,timeout=240)
+./scripts/interpretation_negative_controls.py:32: r=subprocess.run(['cargo','test','--features','v2-crypto','--test','evidence_interpretation'],cwd=ROOT,capture_output=True,text=True,timeout=240)
+./tests/evidence_interpretation.rs:2:use kan::{evidence_assembly as a, evidence_capture::CHUNK, evidence_interpretation as p};
+./tests/evidence_interpretation.rs:291:            let spans = p::map_region(stream, &selected, i.region.clone(), limits()).unwrap();
+./tests/evidence_interpretation.rs:330:            p::map_region(s, &selected, 0..6, limits()).unwrap_err(),
+./tests/evidence_interpretation.rs:337:        p::map_region(s, &selected, 0..7, limits()).unwrap_err(),
+./tests/evidence_interpretation.rs:341:        p::map_region(s, &selected, std::ops::Range { start: 5, end: 2 }, limits()).unwrap_err(),
+./tests/evidence_interpretation.rs:347:        p::map_region(s, &selected, 0..6, l).unwrap_err(),
+./tests/evidence_interpretation.rs:407:            p::map_region(stream, &changed, 0..6, limits()).unwrap_err(),
+./tests/evidence_interpretation.rs:414:        p::map_region(&a.groups[0].response, &selected, 0..6, limits()).unwrap_err(),
+$ rg Unique usage
+src/evidence_interpretation.rs:7:    evidence_reconstruction::{self as decode, Decoded, Unique},
+src/evidence_interpretation.rs:195:    let parsed = serde_json::from_slice::<Unique>(bytes).ok().map(|u| u.0);
+src/evidence_reconstruction.rs:85:    let Unique(value) = serde_json::from_slice(json).map_err(|_| Error::Header)?;
+src/evidence_reconstruction.rs:177:pub(crate) struct Unique(pub(crate) Value);
+src/evidence_reconstruction.rs:178:impl<'de> Deserialize<'de> for Unique {
+src/evidence_reconstruction.rs:182:            type Value = Unique;
+src/evidence_reconstruction.rs:186:            fn visit_bool<E: de::Error>(self, v: bool) -> Result<Unique, E> {
+src/evidence_reconstruction.rs:187:                Ok(Unique(Value::Bool(v)))
+src/evidence_reconstruction.rs:189:            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Unique, E> {
+src/evidence_reconstruction.rs:190:                Ok(Unique(Value::Number(v.into())))
+src/evidence_reconstruction.rs:192:            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Unique, E> {
+src/evidence_reconstruction.rs:193:                Ok(Unique(Value::Number(v.into())))
+src/evidence_reconstruction.rs:195:            fn visit_f64<E: de::Error>(self, v: f64) -> Result<Unique, E> {
+src/evidence_reconstruction.rs:197:                    .map(|n| Unique(Value::Number(n)))
+src/evidence_reconstruction.rs:200:            fn visit_str<E: de::Error>(self, v: &str) -> Result<Unique, E> {
+src/evidence_reconstruction.rs:201:                Ok(Unique(Value::String(v.into())))
+src/evidence_reconstruction.rs:203:            fn visit_unit<E: de::Error>(self) -> Result<Unique, E> {
+src/evidence_reconstruction.rs:204:                Ok(Unique(Value::Null))
+src/evidence_reconstruction.rs:206:            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Unique, A::Error> {
+src/evidence_reconstruction.rs:208:                while let Some(Unique(v)) = seq.next_element()? {
+src/evidence_reconstruction.rs:211:                Ok(Unique(Value::Array(values)))
+src/evidence_reconstruction.rs:213:            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Unique, A::Error> {
+src/evidence_reconstruction.rs:219:                    let Unique(value) = map.next_value()?;
+src/evidence_reconstruction.rs:222:                Ok(Unique(Value::Object(values)))
+$ surface tsv mentions
+$ fs/net/process in module
+$ web references
+web/operations/app.js:7:function notice(text,kind=''){if($('notice').textContent!==text)$('notice').textContent=text;const name='notice '+kind;if($('notice').className!==name)$('notice').className=name;}
+web/operations/app.js:14:  $('sample-count').textContent=list.length+' shown / '+(snapshot?.recent||[]).length+' in the latest sample. Search does not scan older history.';
+web/operations/app.js:17:      const td=document.createElement('td');if(i===0){const button=document.createElement('button');button.className='attempt-link';button.textContent=value;button.title=h.attempt;button.setAttribute('aria-label','Inspect attempt '+h.attempt);button.setAttribute('data-attempt',h.attempt);attemptButtons.set(h.attempt,button);button.addEventListener('click',()=>inspect(item,button));td.title=h.attempt;td.append(button);}else td.textContent=value;if(i===4&&h.unconfirmed)td.className='gap';tr.append(td);
+web/operations/app.js:21:  $('empty').hidden=list.length>0;$('empty').textContent=query?'No matching attempts in the latest sample.':$('gaps-only').checked?'No recording gaps in these recent summaries.':'No capture attempts have been reported yet.';
+web/operations/app.js:29:    const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value;$('inspect-fields').append(dt);$('inspect-fields').append(dd);
+web/operations/app.js:31:  $('copy-result').textContent='';
+web/operations/app.js:36:  $('attempt-id').value='';$('inspect-fields').replaceChildren();$('copy-result').textContent='';
+web/operations/app.js:44:  try{await navigator.clipboard.writeText(value);if(current===generation&&$('inspector').open)$('copy-result').textContent='Identifier copied.';}
+web/operations/app.js:45:  catch{if(current===generation&&$('inspector').open){$('attempt-id').focus();$('attempt-id').select();$('copy-result').textContent='Select and copy the identifier above.';}}
+web/operations/app.js:51:  $('journal-state').textContent=sessionsExhausted?'Reporter capacity exhausted':j.exhausted_observed===true?'Exhaustion recorded':j.schema===1?'Legacy · persistence unknown':near?'Near capacity limit':fresh?'Write observed':'Persistence unknown';

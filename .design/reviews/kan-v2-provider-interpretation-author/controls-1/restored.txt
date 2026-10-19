@@ -1,0 +1,23 @@
+
+running 13 tests
+test duplicate_keys_aliases_depth_and_truncation_are_visible ... ok
+test empty_sse_and_malformed_message_delta_are_explicit ... ok
+test malformed_unknown_error_and_trailing_event_are_visible ... ok
+test exact_budgets_and_cancellation_return_no_partial_document ... ok
+test block_sequence_conflicts_and_sparse_indices_never_complete ... ok
+test missing_event_and_delta_types_are_malformed_not_future_extensions ... ok
+test mapping_refuses_foreign_group_unavailable_source_and_forged_extent ... ok
+test request_history_and_unknown_fields_remain_source_linked ... ok
+test response_json_and_provider_errors_never_claim_stream_completeness ... ok
+test newline_forms_multiline_comments_and_raw_unknown_fields_survive ... ok
+test mapping_refuses_gaps_overlaps_forged_source_bytes_and_ranges ... ok
+test tool_fragments_are_not_repaired_or_replaced_by_empty_initial_input ... ok
+test every_capture_split_preserves_sse_text_and_exact_duplicate_source_spans ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter)
+    Finished `test` profile [unoptimized] target(s) in 7.69s
+     Running tests/evidence_interpretation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation-13fed510d614cbe3)
+
+exit=0

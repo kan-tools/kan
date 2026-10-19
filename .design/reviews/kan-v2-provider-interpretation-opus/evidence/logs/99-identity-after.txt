@@ -1,0 +1,7 @@
+[AFTER] commit=0d048486c0e7c4e9bd2de76f19489b4d173975d4 head=0d048486c0e7c4e9bd2de76f19489b4d173975d4 manifest_paths=3788 export_paths=3789 tree_paths=3788
+[AFTER] north-star.json sha256=64a00fe76d22f33b199d9191acbf21436190472eafb7b5680a12368777e1c19b
+[AFTER] manifest sha256=8bc27125d01fd353b500a014ec86076034ac6d30e65576d9d76f57d7037acbd5
+[AFTER] PASS: export path set == manifest + north-star.json; all sha256+git-blob match; commit tree blobs match; source HEAD pinned, clean, bytes match
+stash@{0}: autostash
+stash@{1}: autostash
+stash@{2}: autostash

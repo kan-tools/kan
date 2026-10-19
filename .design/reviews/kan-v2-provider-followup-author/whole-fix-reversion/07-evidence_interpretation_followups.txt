@@ -1,0 +1,21 @@
+
+running 1 test
+test citations_delta_is_not_a_contradiction_and_unknown_types_do_not_guess_block_kind ... FAILED
+
+failures:
+
+---- citations_delta_is_not_a_contradiction_and_unknown_types_do_not_guess_block_kind stdout ----
+
+thread 'citations_delta_is_not_a_contradiction_and_unknown_types_do_not_guess_block_kind' (10437600) panicked at tests/evidence_interpretation_followups.rs:201:5:
+assertion failed: d.coherent_stop_observed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    citations_delta_is_not_a_contradiction_and_unknown_types_do_not_guess_block_kind
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_interpretation_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation_followups-4e80bc39574f69f6)
+error: test failed, to rerun pass `--test evidence_interpretation_followups`

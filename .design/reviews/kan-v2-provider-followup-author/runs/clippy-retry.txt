@@ -1,0 +1,4 @@
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter)
+    Finished `dev` profile [unoptimized] target(s) in 8.77s
+
+exit=0
