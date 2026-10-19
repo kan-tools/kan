@@ -1,0 +1,21 @@
+RM01-cache-never-invalidated: AUTHOR:FAILED :218 called `Result::unwrap()` on an `Err` value: Invalid("historical restorations") note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace | :174 "later-candidate-keeps-earlier-intent-history": invalid recovery history: historical restorations error: test failed, to rerun pass `--test evidence_recovery_replay` || REVIEWER: REVIEWER-OTHER called `Result::unwrap()` on an `Err` value: Invalid("historical restorations")
+RM02-duplicate-restoration: AUTHOR:KILLED-ACCEPTANCE || REVIEWER: none
+RM03-late-unavailable-accepted: AUTHOR:KILLED-ACCEPTANCE || REVIEWER: none
+RM04-candidate-restoration-bijection: AUTHOR:KILLED-ACCEPTANCE || REVIEWER: none
+RM05-candidate-hash: AUTHOR:DIAGNOSTIC-ONLY candidate-hash-mismatch: candidate without restoration (want candidate hash) || REVIEWER: PROBE P05-restored-wrong-bytes-without-intent=ACCEPTED_HOSTILE
+RM06-candidate-expected-length: AUTHOR:SURVIVED || REVIEWER: PROBE P03-false-signed-length-candidate=ACCEPTED_HOSTILE, P20-partial-copy-issuer-length-constrains-candidate=ACCEPTED_HOSTILE
+RM07-output-losses-empty: AUTHOR:DIAGNOSTIC-ONLY corrupt-orphan-cannot-be-omitted-for-publication: intent output (want publication-blocked-unavailable-object) || REVIEWER: PROBE P04-corrupt-orphan-with-self-consistent-o1=ACCEPTED_HOSTILE
+RM08-partial-copy-publication-guard: AUTHOR:DIAGNOSTIC-ONLY partial-copy-publication-refused: incomplete output (want partial copy publication) || REVIEWER: none
+RM09-verified-requests-conjunct: COMPILE-FAILURE (no evidence)
+RM09b-verified-requests-conjunct: AUTHOR:SURVIVED || REVIEWER: none
+RM10-checkpoint-statement: AUTHOR:KILLED-ACCEPTANCE || REVIEWER: CHECKPOINT-ACCEPTED sequence-one-with-tip-cid
+RM11-checkpoint-context: AUTHOR:FAILED :236 assertion `left == right` failed left: Some(Invalid("external checkpoint absent")) || REVIEWER: CHECKPOINT-ACCEPTED observer-differs, issuer-differs, profile-differs, scope-differs, archive-differs
+RM12-restoration-length: AUTHOR:KILLED-ACCEPTANCE || REVIEWER: none
+RM13-final-loss-coverage: AUTHOR:KILLED-ACCEPTANCE || REVIEWER: none
+RM14-duplicate-intent: AUTHOR:KILLED-ACCEPTANCE || REVIEWER: none
+RM15-observed-output: AUTHOR:KILLED-ACCEPTANCE || REVIEWER: none
+RM16-candidate-order: AUTHOR:KILLED-ACCEPTANCE || REVIEWER: none
+RM17-record-basis-override: AUTHOR:FAILED :185 assertion `left == right` failed: "profile3-restored-failure-observed" left: Array [Object {"basis": String("VerifiedCopyRecipe"), "cid": String("bafkreibhairm35q7xepfeh5puj7loki4w4dxapqhq33vgvcw7bz6msp5my"), "length": Number(616)}, Object {"basis": String("VerifiedCopyRecipe"), "cid": String("bafkreig4ttn6ho77czt5pjfydezgq7i7mz42aktxd4d3a3w37bqnasgfgq"), "length": Number(559)}] || REVIEWER: none
+RM18-record-length-override: AUTHOR:SURVIVED || REVIEWER: PROBE P20-partial-copy-issuer-length-constrains-candidate=ACCEPTED_HOSTILE
+RM19-original-object-basis: AUTHOR:FAILED :185 assertion `left == right` failed: "original-object-basis-survives-restoration" left: Array [Object {"basis": String("UnverifiedMembership"), "cid": String("bafkreidcmzezm23vqipbjgclugta4u75e5ksft2aqyl7gtwvukkv3iszwu"), "length": Number(24)}] || REVIEWER: PROBE P18-orphan-restored-length-from-candidate=PROJECTION_MISMATCH
+RM20-cache-never-used: AUTHOR:SURVIVED || REVIEWER: none
