@@ -144,4 +144,30 @@ mod tests {
             assert!(value(&bytes).is_err(), "{bytes:?}");
         }
     }
+    #[test]
+    fn nesting_and_tagged_cid_boundaries_are_enforced() {
+        let maximum = DecodeConfig::default().max_depth;
+        let mut nested = vec![0x81; maximum];
+        nested.push(0xf6);
+        assert!(value(&nested).is_ok());
+        nested.insert(0, 0x81);
+        assert!(matches!(
+            value(&nested),
+            Err(DecodeError::MaxDepthExceeded { .. })
+        ));
+
+        let cid = atproto_dasl::Cid::from(atproto_dasl::compute_raw_cid(b"synthetic link"));
+        let mut trailing = cid.to_dag_cbor_bytes();
+        trailing.push(0);
+        let mut tagged = vec![0xd8, 42];
+        tagged.extend(atproto_dasl::to_vec(&Ipld::Bytes(trailing)).unwrap());
+        assert!(value(&tagged).is_err());
+
+        // Declared container counts cannot cause eager count-sized allocation.
+        for prefix in [0x9b, 0xbb] {
+            let mut huge_count = vec![prefix];
+            huge_count.extend(u64::MAX.to_be_bytes());
+            assert!(value(&huge_count).is_err());
+        }
+    }
 }
