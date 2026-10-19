@@ -30,3 +30,11 @@ request. The result grants no observation-history, physical-format, publication
 or durability authority. Full loss-event partitioning, restoration/output/state
 replay, checkpoints, schema reads, writer/crash jobs, RPC and UI remain required.
 Fresh actual Opus 5.5 review is pending. No production archive/key was read.
+
+
+After merging the framing audit/follow-through (99f1fba), the combined baseline
+passes 33 integration functions (16 member, 8 commitment, 2 promoted commitment,
+7 observation) and two deterministic polling units. Strict all-target v2 Clippy,
+format and the independent member fixture regeneration check pass. The merge
+keeps both additive CI targets and design sections. No runtime changes were made
+by conflict resolution. The combined source is ready for independent review.
