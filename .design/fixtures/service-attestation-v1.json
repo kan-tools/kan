@@ -1,0 +1,216 @@
+{
+  "status": "proposal-only; no Rust implementation or admission proof",
+  "testPrivateScalar": 1,
+  "pinnedIssuer": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+  "positive": [
+    {
+      "name": "admitted",
+      "manifest": {
+        "v": 1,
+        "kind": "manifest",
+        "body": {
+          "writer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "04040404040404040404040404040404"
+          },
+          "position": 0,
+          "previous": null,
+          "entries": [
+            {
+              "slot": {
+                "$bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+              },
+              "ciphertext": {
+                "$link": "bafkreiao2yfbldzmb73a2bjoemjndtbdoaoqmpzwo4ajmapgv5ju5zy64m"
+              },
+              "length": 28
+            }
+          ]
+        }
+      },
+      "receipt": {
+        "v": 1,
+        "kind": "receipt",
+        "body": {
+          "issuer": {
+            "principal": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+            "verificationMethod": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ#zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "manifest": {
+            "$link": "bafyreibpieeo5gpeqzh6wqu65blyrlzob2xfxix7udj42stkcabemrn3ri"
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "04040404040404040404040404040404"
+          },
+          "position": 0,
+          "durability": "remote-durable",
+          "issuedAt": 1792108800020
+        }
+      },
+      "statement": {
+        "v": 1,
+        "kind": "service-attestation",
+        "body": {
+          "issuer": {
+            "principal": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+            "verificationMethod": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ#zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "sequence": 1,
+          "manifest": {
+            "$link": "bafyreibpieeo5gpeqzh6wqu65blyrlzob2xfxix7udj42stkcabemrn3ri"
+          },
+          "receipt": {
+            "$link": "bafyreifeur6ztv4luidrief77lbbmtukejsetm3t2tvscpcle7lun265tm"
+          },
+          "previousSequence": 0,
+          "previousManifest": null,
+          "previousAttestation": null,
+          "purpose": "admitted",
+          "issuedAt": 1792108800101
+        }
+      },
+      "statementHex": "a361760164626f6479aa66697373756572a3697072696e636970616c78396469643a6b65793a7a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a6f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a237a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a67707572706f73656861646d69747465646772656365697074d82a58250001711220a4a47d99d78ba2071410bffac2164e8a226449b373d4eb213c4b27d746ebdd9b6869737375656441741b000001a142022865686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a6873657175656e6365016a73636f7065546f6b656e582003030303030303030303030303030303030303030303030303030303030303037070726576696f75734d616e6966657374f67070726576696f757353657175656e6365007370726576696f75734174746573746174696f6ef6646b696e6473736572766963652d6174746573746174696f6e",
+      "statementCid": "bafyreidotqpyanteddddubv7hubczdpawrns4pfzusgh7ijb2xxxf73jey",
+      "signingHex": "a266646f6d61696e7820746f6f6c732e6b616e2e736572766963652e6174746573746174696f6e2e76316973746174656d656e74d82a582500017112206e9c1f80366418c63a06bf3d022c8de0b45b2e3cb9a48c7fa121d5ef72ff6926",
+      "signatureHex": "e5bf0472b3111e14ba410495bf97c0bb34ab3ba9cf9effdba374a71dea5bf22b0cab20b1dd6b808fd04e2a516496aaedb493e494375cfeecd6626a9f687bdbcb",
+      "envelopeHex": "a2697369676e61747572655840e5bf0472b3111e14ba410495bf97c0bb34ab3ba9cf9effdba374a71dea5bf22b0cab20b1dd6b808fd04e2a516496aaedb493e494375cfeecd6626a9f687bdbcb6973746174656d656e7459020aa361760164626f6479aa66697373756572a3697072696e636970616c78396469643a6b65793a7a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a6f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a237a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a67707572706f73656861646d69747465646772656365697074d82a58250001711220a4a47d99d78ba2071410bffac2164e8a226449b373d4eb213c4b27d746ebdd9b6869737375656441741b000001a142022865686d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a6873657175656e6365016a73636f7065546f6b656e582003030303030303030303030303030303030303030303030303030303030303037070726576696f75734d616e6966657374f67070726576696f757353657175656e6365007370726576696f75734174746573746174696f6ef6646b696e6473736572766963652d6174746573746174696f6e",
+      "envelopeCid": "bafyreihszq2x4u5ocxr55uinheaghh3edlpycbp73o6mhlovlfutt7ao4e"
+    },
+    {
+      "name": "retained-verified",
+      "manifest": {
+        "v": 1,
+        "kind": "manifest",
+        "body": {
+          "writer": {
+            "principal": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "verificationMethod": "did:key:zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc#zDnaebVRiiKts4HkYSXknYdTZgmWgwRhGuD8LFXimVqaeJZFc",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "06060606060606060606060606060606"
+          },
+          "position": 1,
+          "previous": {
+            "$link": "bafyreibpieeo5gpeqzh6wqu65blyrlzob2xfxix7udj42stkcabemrn3ri"
+          },
+          "entries": [
+            {
+              "slot": {
+                "$bytes": "0505050505050505050505050505050505050505050505050505050505050505"
+              },
+              "ciphertext": {
+                "$link": "bafkreiao2yfbldzmb73a2bjoemjndtbdoaoqmpzwo4ajmapgv5ju5zy64m"
+              },
+              "length": 28
+            },
+            {
+              "slot": {
+                "$bytes": "0707070707070707070707070707070707070707070707070707070707070707"
+              },
+              "ciphertext": {
+                "$link": "bafkreiav4tc2xccayfsimb4nn56e3nf6tmbpyzh6jlzzvpgguqul3jy7ki"
+              },
+              "length": 16
+            }
+          ]
+        }
+      },
+      "receipt": {
+        "v": 1,
+        "kind": "receipt",
+        "body": {
+          "issuer": {
+            "principal": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+            "verificationMethod": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ#zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "manifest": {
+            "$link": "bafyreihmqqxhxzsex2kb64ala5dqqlululnftdjooo4o5cofmr42uk6yki"
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "operation": {
+            "$bytes": "06060606060606060606060606060606"
+          },
+          "position": 1,
+          "durability": "remote-durable",
+          "issuedAt": 1792108800020
+        }
+      },
+      "statement": {
+        "v": 1,
+        "kind": "service-attestation",
+        "body": {
+          "issuer": {
+            "principal": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+            "verificationMethod": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ#zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+            "identityVersion": {
+              "kind": "static",
+              "value": null
+            }
+          },
+          "scopeToken": {
+            "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+          },
+          "sequence": 2,
+          "manifest": {
+            "$link": "bafyreihmqqxhxzsex2kb64ala5dqqlululnftdjooo4o5cofmr42uk6yki"
+          },
+          "receipt": {
+            "$link": "bafyreidua7ih4xdox7qco4evfq2fjx4mjw5c5dwpeg4cw2dl7d6ho6dgxm"
+          },
+          "previousSequence": 1,
+          "previousManifest": {
+            "$link": "bafyreibpieeo5gpeqzh6wqu65blyrlzob2xfxix7udj42stkcabemrn3ri"
+          },
+          "previousAttestation": {
+            "$link": "bafyreidotqpyanteddddubv7hubczdpawrns4pfzusgh7ijb2xxxf73jey"
+          },
+          "purpose": "retained-verified",
+          "issuedAt": 1792108800102
+        }
+      },
+      "statementHex": "a361760164626f6479aa66697373756572a3697072696e636970616c78396469643a6b65793a7a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a6f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a237a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a67707572706f73657172657461696e65642d76657269666965646772656365697074d82a582500017112207407d07e5c6ebfe02770952c3454df8c4dba2e8ecf21b82b686bf8fc777866bb6869737375656441741b000001a142022866686d616e6966657374d82a58250001711220ec842e7be644be941f700b0747082e8ba2da598d2e73b8ee89c56479aa2bd8526873657175656e6365026a73636f7065546f6b656e582003030303030303030303030303030303030303030303030303030303030303037070726576696f75734d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a7070726576696f757353657175656e6365017370726576696f75734174746573746174696f6ed82a582500017112206e9c1f80366418c63a06bf3d022c8de0b45b2e3cb9a48c7fa121d5ef72ff6926646b696e6473736572766963652d6174746573746174696f6e",
+      "statementCid": "bafyreidrgqsl6uyupvtws2wooynynshk7656grzkbr3j7u2gdsu356clfy",
+      "signingHex": "a266646f6d61696e7820746f6f6c732e6b616e2e736572766963652e6174746573746174696f6e2e76316973746174656d656e74d82a58250001711220713424bf53147d67696ace761b86c8eaffbbe3472a0c769fd3461ca9bef84b2e",
+      "signatureHex": "1dca63f9286c261632f255ef21333d83c9fe7e3f0b678002871b0f79d2e8ba9f27c224c6b3aac3b3e8e7439f2abaf9e588d2a21c0aea1aed904d1aad4ea00807",
+      "envelopeHex": "a2697369676e617475726558401dca63f9286c261632f255ef21333d83c9fe7e3f0b678002871b0f79d2e8ba9f27c224c6b3aac3b3e8e7439f2abaf9e588d2a21c0aea1aed904d1aad4ea008076973746174656d656e74590263a361760164626f6479aa66697373756572a3697072696e636970616c78396469643a6b65793a7a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a6f6964656e7469747956657273696f6ea2646b696e64667374617469636576616c7565f672766572696669636174696f6e4d6574686f64786b6469643a6b65793a7a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a237a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a67707572706f73657172657461696e65642d76657269666965646772656365697074d82a582500017112207407d07e5c6ebfe02770952c3454df8c4dba2e8ecf21b82b686bf8fc777866bb6869737375656441741b000001a142022866686d616e6966657374d82a58250001711220ec842e7be644be941f700b0747082e8ba2da598d2e73b8ee89c56479aa2bd8526873657175656e6365026a73636f7065546f6b656e582003030303030303030303030303030303030303030303030303030303030303037070726576696f75734d616e6966657374d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a7070726576696f757353657175656e6365017370726576696f75734174746573746174696f6ed82a582500017112206e9c1f80366418c63a06bf3d022c8de0b45b2e3cb9a48c7fa121d5ef72ff6926646b696e6473736572766963652d6174746573746174696f6e",
+      "envelopeCid": "bafyreihudgxaumzy6ikohfgjbx22iniuj7askoartqva5g75miybqjdf7m"
+    }
+  ]
+}

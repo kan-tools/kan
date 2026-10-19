@@ -8,7 +8,7 @@ This serves `telos/raw-data-and-projections`: evidence loss is represented, neve
 hidden by a projection or repaired by inventing historical provenance.
 
 ## Requirements
-- REQ-1: Retain an independently verifiable issuer attestation binding the exact manifest, receipt, scope, local sequence and preceding admitted frontier. A missing payload must not turn unsigned raw-ledger metadata into authenticated service admission.
+- REQ-1: Retain an independently verifiable issuer attestation binding the exact manifest, receipt, scope, local sequence and preceding admitted manifest and attestation-statement frontier. A missing payload must not turn unsigned raw-ledger metadata into authenticated service admission.
 - REQ-2: New admission commits metadata and its attestation atomically under the existing audited-frontier transaction fence. Exact retries preserve the original receipt/attestation. No success acknowledges an uncommitted attestation; crash recovery cannot expose half-admitted records.
 - REQ-3: Authorized inventory returns each metadata-verified occurrence with explicit available, missing or corrupt payload state. Metadata/signature/partition/frontier corruption remains a whole-request integrity error. Unknown or denied principals see the same access-limited shape before metadata disclosure.
 - REQ-4: Startup and pinned reads can verify a complete metadata chain despite absent payloads. Source access always rechecks authorization, selected-snapshot membership, current object hash, retained writer signature and scope decryption; an available marker is a sampled observation, never an offline read grant.
@@ -47,12 +47,14 @@ verification API separate from full evidence verification.
 ### Proof contract and atomic admission
 
 Use a versioned, domain-separated issuer-signed envelope over exact manifest CID,
-receipt CID, scope, global local sequence, previous sequence/manifest commitment,
+receipt CID, scope, global local sequence, previous sequence/manifest/attestation-statement commitments,
 issuer, attestation purpose and issued-at time. Define closed field sets, canonical
 encoding, safe integer limits, max encoded bytes and signature algorithm in the
 protocol update. The predecessor binds service ordering, which the current
 per-writer manifest chain alone does not establish. Sequence one names an explicit
-empty predecessor. A forked same-height predecessor or a skipped sequence fails.
+empty predecessor. A forked same-height predecessor or a skipped sequence fails. The statement CID
+also commits to receipt, purpose and time, so a snapshot cannot silently substitute
+a different valid statement for the same manifest.
 A proof has purpose `admitted` for new service admission or `retained-verified`
 for explicit upgrade verification; those purposes are never interchangeable in
 provenance text.
@@ -78,20 +80,28 @@ speaker attribution remain separate from either signature.
 The new statement is canonical DAG-CBOR `{v: 1, kind: "service-attestation",
 body}`. The closed body fields are `issuer` (existing static Author), `scopeToken`
 (32 bytes), `sequence` (positive safe integer), `manifest` and `receipt`
-(record CIDs), `previousSequence` (safe integer), `previousManifest` (null only
-at the empty predecessor, otherwise record CID), `purpose` (`admitted` or
+(record CIDs), `previousSequence` (safe integer), `previousManifest` and `previousAttestation` (both null only
+at the empty predecessor, otherwise record CIDs; the latter is the preceding
+statement CID, not an envelope hash), `purpose` (`admitted` or
 `retained-verified`), and `issuedAt` (safe Unix milliseconds). Require
 previousSequence = sequence - 1. The proof envelope is closed
 `{statement: <exact canonical statement bytes>, signature: <64 bytes>}` and its
 entire encoding is limited to 16 KiB. The signature input is canonical DAG-CBOR
 `{domain: "tools.kan.service.attestation.v1", statement: <statement CID>}`.
 Use the existing `sign::Identity` P-256 signer and pinned did:key verification
-machinery (64-byte signature encoding); reject unsupported identity versions. This is a proposed new service-purpose signature, not the
+machinery (64-byte low-S r||s signature encoding); reject DER, high-S, non-P-256
+keys, noncanonical did:key encodings and unsupported identity versions. The
+verification method must be the exact principal plus its fingerprint fragment.
+This is a proposed new service-purpose signature, not the
 existing Receipt signing preimage. Independent codec fixtures must pin exact
 bytes/preimages/CIDs and reject noncanonical/duplicate/unknown fields.
 
 Use new signed `InventorySnapshot` and `InventoryPage` commands and corresponding
-outputs for the proof-bearing profile. `InventorySnapshot` commits to the metadata
+outputs for the proof-bearing profile. `InventorySnapshot` commits to `(through, tip, attestation)` where tip is the
+manifest CID and attestation is the statement CID; genesis is `(0, null, null)`.
+This anchors exact receipt/purpose/time as well as the manifest. The statement
+CID is stable across alternate valid ECDSA signatures; exact retry still returns
+the stored signature bytes. `InventorySnapshot` commits to that metadata
 frontier; `InventoryPage` carries metadata/proof/state at that pin. Keep existing
 Snapshot/Page/Read outputs unchanged for legacy service endpoints. The reader
 configuration explicitly selects legacy or `proof-inventory-v1` per scope; a
@@ -179,7 +189,10 @@ protocol values above are proposals to be reviewed together with the RFC update,
 not existing wire compatibility. Before implementation, the protocol pass must
 supply independent exact-byte fixtures and downgrade refusal. This document is
 a build contract under development, not an implemented format or satisfied
-acceptance criterion. No unresolved owner preference blocks that technical pass.
+acceptance criterion. The proposal now has two exact independent Python/OpenSSL
+fixtures and twenty negative checks in `.design/fixtures/service-attestation-v1.json`
+and `.design/tools/attestation_vectors.py`. These supply a future Rust oracle,
+not cross-implementation conformance, atomic admission or payload availability. No unresolved owner preference blocks that technical pass.
 
 ## Out of Scope
 Inference-provider changes, automatic deletion/retention, owner erasure execution,
@@ -199,3 +212,14 @@ requirements, six criteria, mappings and placeholders. Five branch-only paths
 warn because they are absent from main; all exist in this worktree. Two claims
 remain withheld. Worktree-local recording remains unavailable under day#168 /
 kan#197; Git records are the agreed backfill path.
+
+## Protocol preparation evidence
+
+The proposed RFC 4 section now fixes statement-CID chain/snapshot commitments,
+low-S P-256 signature encoding and downgrade refusal. Independent fixtures use
+public test private scalar 1 and synthetic existing RFC 4 metadata; no actual
+service admission or production identity is involved. Run the checker with the
+existing crypto-oracle Python environment (cryptography 46.0.3); `--check` does
+not rewrite fixtures and `--write` is explicit regeneration. Rust parity, a
+fresh protocol review and the complete storage/service/reader implementation
+remain required before this design's acceptance criteria can be checked off.
