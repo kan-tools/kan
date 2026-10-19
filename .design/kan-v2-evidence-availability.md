@@ -311,12 +311,12 @@ must not leak archive contents to unknown principals.
 
 The first owner-copy upgrade accepts only a complete pinned legacy snapshot.
 Prefix-only salvage is not supported and must not be described as full migration.
-A payload-incomplete recovery copy remains profile 2 with exact proofs and missing
-references. Its authoritative, copy-local recovery descriptor binds archiveId,
-source pin and observed unavailable references; declare this surface with the
-implementation. It cannot pass full restore or strict writable open until an
-explicit owner recovery verifies all payloads. Backup/rebuild preserve both proof
-bytes and recovery descriptors; old profile-1 readers refuse user_version 2.
+A payload-incomplete recovery is an explicit recovery bundle. Its archive member
+retains its original profile (2, or 3 with exact upgrade plan/inventory), exact
+proofs and missing references. Copy-local observations live in a separate
+append-only recovery ledger, not in a widened profile-2 schema. The bundle
+contract below governs its opening, backup, resolution and complete-output
+publication. Old profile-1 readers still refuse the archive member's profile.
 
 ### Revised conformance gate
 
@@ -383,10 +383,11 @@ must retain those distinctions; no view implies independent completeness or fres
 An incomplete-recovery descriptor is an append-only observation (observer, sampled
 time, source pin, unavailable references), not current availability authority.
 Owner recovery retains that observation and appends a resolution after verifying
-all payloads; it never deletes or overwrites the loss observation. Strict open is
-controlled by current full verification and the descriptor/resolution contract,
-not an unlabelled removal of the marker. Declare both physical record surfaces
-with the profile-2 implementation.
+all payloads; it never deletes or overwrites the loss observation. A recovery
+bundle remains a recovery artifact; resuming capture requires explicit publication
+of a separately verified complete output. Removing a marker is never recovery.
+Declare both physical record surfaces and bundle validation with the future
+recovery-bundle implementation; neither belongs to the exact profile-2 schema.
 
 ## Storage checkpoint scope
 
@@ -686,3 +687,79 @@ capture completeness. Backup/recovery cannot mint completion or attestations.
 Crash qualification covers initialization, object/inventory transactions, each
 record/proof transaction and the boundary before the first new admission, with
 source bytes unchanged and all acknowledged destination bytes preserved.
+
+### Cold review decisions C1-C6 (proposed refinements)
+
+The first cold review approved design readiness with required clarifications.
+These decisions refine the proposal; their implementation and fresh review remain
+required.
+
+**Plan custody and one writer.** The plan is unsigned canonical data, not an
+admission envelope. Before creating a destination, the owner retains its exact
+bytes as a private plan artifact and pins the domain-separated archive ID
+separately. Both create-from-plan and explicit resume take those same bytes plus
+the external pin; they verify the commitment before inspecting or creating output.
+An interrupted empty output has no authority to choose a plan. Resume therefore
+requires resupplying the exact artifact; losing it never permits automatic
+re-planning or a guessed nonce. The future CLI must durably write and verify the
+plan artifact before it can create output, with a declared file mutation surface.
+The current read-only planner only returns bytes and performs no artifact writes.
+
+A recipe identifies one logical archive and one designated admitting destination.
+Running it twice or resuming both an incomplete copy and its backup can create
+same-ID forks. Local locks do not prevent cross-host forks. Only one destination
+per recipe may admit; cutover/recovery must fence the old writer before activating
+another. A backup is read-only until an explicit takeover. Reusing a plan is never
+documented as provisioning an independent archive; independent creation requires
+a fresh nonce. Cryptographic anti-equivocation is not claimed.
+
+**Identity binding at every entry point.** Profile-3 archive_identity must equal
+`(plan.archive_id(), plan.target().scope, plan.target().issuer)`. The plan's recipe,
+source and target profiles must match recipe 1, profile 1 and profile 3. Writable
+open, verification, backup, rebuild and degraded inventory all check this against
+explicit owner configuration. No opener may infer the trusted binding from the
+stored plan or silently drop it. A changed plan remains invalid even if each
+individual retained proof verifies. Standalone profile 2 remains unchanged.
+
+**Recovery observations are copy-local, separate from logical archive schema.**
+Profile 3 adds only upgrade_plan and upgrade_objects. Loss observations and their
+resolutions belong to a separately versioned recovery-bundle format, because two
+physical copies of one archive can have different availability. They do not
+change what the issuer's admission proof says, and they are not schema extensions
+to profile 2 or 3. This explicitly supersedes the earlier ambiguous instruction
+to add descriptor/resolution surfaces "with the profile-2 implementation."
+
+An owner-provisioned recovery-bundle handle pins its copy identity, archive
+identity/profile and source frontier, and requires the accompanying append-only
+observation ledger. It never auto-detects standalone mode when that ledger is
+missing. Bundle APIs must verify observer identity, bounded canonical records,
+predecessor linkage and the configured observation frontier before using claims.
+Observations state what that observer saw at that time; they never certify current
+availability. Source proofs retain their separate issuer authority. The physical
+record encoding, publication protocol and surface inventory require a dedicated
+design/implementation checkpoint before any bundle writer exists.
+
+Bundle backup/rebuild preserves the archive's exact proofs, any profile-3 plan
+and original-object inventory, and the full observation/resolution history.
+Existing standalone-file backup commands are insufficient for a bundle and must
+refuse a bundle handle, rather than silently copying only its archive member.
+The bundle itself is never capture-ready. Explicit owner resolution verifies all
+payloads, appends a resolution without rewriting loss observations, and publishes
+a new complete standalone output with the original logical profile and proofs.
+The bundle is retained as ground truth, and the resolution identifies the exact
+complete output/frontier; publication failure cannot count as completed recovery.
+Merely filling missing blobs or deleting a descriptor never activates capture.
+Low-level standalone archive APIs make no claim to validate an accompanying
+recovery bundle; instance configuration must select the bundle-aware boundary.
+
+**Framing, audit cost and source scope.** The byte framing is the explicit
+sequence/count/domain recipe specified above and tested by the independent
+Python oracle. A live PlannedCopy handle reuses one fully audited pinned source
+across batches. Reopening after interruption currently requires a fresh full
+source signature audit before that handle is trusted; the cost is deliberately
+visible and can be quadratic across many tiny process invocations. A future
+digest-only resume optimization needs its own trust proof and review; an arbitrary
+owner-supplied decoded plan is not itself proof of valid request signatures.
+Recipe 1 refuses raw or imported records without exactly one valid retained
+signed service request matching the manifest. Such sources must use the separate
+legacy import/salvage workflows; no synthetic historical admission is minted.

@@ -1,0 +1,10 @@
+DEMONSTRATED: skip-request-authentication
+DEMONSTRATED: allow-current-k256
+DEMONSTRATED: omit-staged-object-inventory
+DEMONSTRATED: ignore-owner-archive
+DEMONSTRATED: ignore-receipts-in-source-digest
+DEMONSTRATED: confirm-frontier-only
+DEMONSTRATED: ignore-historical-issuer
+DEMONSTRATED: ignore-target-scope
+DEMONSTRATED: unpin-source-transaction
+9 compiled mutants fail; restored plan/source tests pass.

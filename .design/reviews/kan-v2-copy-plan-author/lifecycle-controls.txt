@@ -1,0 +1,8 @@
+DEMONSTRATED: drop-exact-standalone-schema
+DEMONSTRATED: drop-precommit-proof-audit
+DEMONSTRATED: drop-proof-copy
+DEMONSTRATED: drop-extra-proof-check
+DEMONSTRATED: resume-as-legacy
+DEMONSTRATED: drop-backup-proof-audit
+DEMONSTRATED: drop-pinned-read
+7 compiled mutants fail; restored lifecycle/store/surface pass.
