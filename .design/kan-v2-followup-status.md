@@ -18,6 +18,24 @@ for acceptance. The complete human frontend remains required by
 | Background analysis/day | Server-first architecture | Inspectable run/assessment records, scheduler/worker contracts, grants/quotas and source lineage |
 | Deployment and migration cutover | Runbooks and synthetic evidence only | Reader placement decision, real installation/key placement and owner-approved cutover remain separate |
 
+## Accepted delivery order
+
+The owner approved this roadmap after #286/#287:
+
+1. Library resilience: partial healthy browsing, request bounds, regression gaps
+   and real-browser export qualification. Implementation is now in
+   `.design/kan-v2-library-resilience.md`; fresh review remains pending. Actual
+   download delivery is still unverified in IAB.
+2. Missing-evidence rows with authenticated metadata surviving payload loss;
+   preserve the admission boundary described below.
+3. Implement the bounded deduplicated collection overview in #287.
+4. Human conversation browsing: messages, tools, attachments, branches and gaps,
+   with exact mapping back to retained evidence.
+5. Search/filters, annotations/saved views, analysis and integrated human admin.
+
+These are cumulative workstreams, not permission to call the frontend complete
+after step 1. Deployment placement and live cutover remain separate.
+
 ## Exact #285 review follow-ups
 
 The authoritative report and disposition are

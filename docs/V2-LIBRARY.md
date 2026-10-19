@@ -68,7 +68,7 @@ remains governed by that service's own restart/configuration contract.
 
 Bounds: 40 inventory records per API page, 256 KiB per API source range, 16 KiB
 request body, four executing browser connections plus eight queued connections,
-a 6-second queue deadline, 5-second header deadline and 35-second overall
+a 6-second queue deadline, 5-second header deadline, 3-second body deadline and 35-second overall
 connection deadline including queue time. Additional connections are refused;
 this is bounded burst handling, not immunity to a hostile local process. A range currently decrypts one bounded
 service object in memory. It is not streaming decryption. The current service can fail an entire inventory
@@ -100,9 +100,21 @@ UTF-8 toggle shows the exact original text; it does not sanitize or rewrite the
 source. Byte ranges remain the unambiguous comparison/export representation.
 
 The reader refuses a signing principal equal to any configured storage issuer.
-Only a verified signed access-denial result may exclude a scope from the catalog;
-a bad reply signature produces a verification error. If another configured scope
-is unreachable, the current all-or-error catalog remains unavailable rather than
-publishing a partial catalog as complete. Per-scope error rows are future work.
+A verified signed access-denial result omits the scope without identifying it.
+Unreachable, malformed or unverifiable sources instead produce `coverage: partial`
+alongside any successfully authorized scope pins. Failed scope identifiers,
+endpoints and counts are not returned. Even if no scope succeeds, partial is
+visibly distinct from a completed check with no currently authorized scopes.
+The persistent coverage notice survives page/source navigation. **Retry sources**
+clears old pins, rows and plaintext before rechecking grants; lock also clears
+coverage. A failure while retrying leaves coverage unknown and retry available.
+
+Each upstream signed read has a five-second deadline. Catalog checks run in
+groups of at most four (sixteen configured scopes maximum): up to twenty seconds.
+A source range requires two calls, up to ten seconds. Queue + header + body +
+maximum catalog budget is thirty-four seconds inside the thirty-five-second
+connection limit. Scheduling/CPU overhead can still exhaust the whole deadline;
+a slow healthy service is temporarily unavailable, never declared absent.
+Cancellation drops the in-flight checks. Excess connections remain refused.
 The visible capability matrix is populated from the authenticated API; unknown
 capabilities are labeled client-unsupported, never presented as working controls.

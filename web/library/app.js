@@ -15,7 +15,7 @@
     for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
     clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
-    $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
+    $('catalog-status').textContent = ''; $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
     $('lock').disabled = true; $('token').value = ''; notice(message); $('token').focus();
   }
   async function rpc(body) {
@@ -37,7 +37,7 @@
     if (error.name === 'AbortError') return;
     const message = error.readerMessage || 'Reader unavailable. Retry, refresh the snapshot, or choose another scope.';
     if (error.accessDenied || $('library').hidden) lock(message);
-    else { clearInspector(); notice(message, true); }
+    else { clearInspector(); if (!pin) { $('capability-list').replaceChildren(); $('scope').replaceChildren(); $('catalog-status').textContent = 'Source check failed · coverage is unknown. Retry sources.'; } notice(message, true); }
   }); }
   function tab(name) {
     $('source-panel').hidden = name !== 'source'; $('provenance').hidden = name !== 'provenance';
@@ -103,19 +103,34 @@
       }
     }
   }
+  async function catalog() {
+    clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
+    scopes = []; pin = null; history = []; after = 0; next = null;
+    $('coverage').textContent = ''; $('count').textContent = ''; $('page-position').textContent = '';
+    $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
+    $('capability-list').replaceChildren(); $('catalog-status').textContent = 'Checking configured sources…';
+    notice('Checking scope access…');
+    const value = await rpc({action:'catalog'}); if (!value) return;
+    if (value.version !== 1 || !['complete','partial'].includes(value.coverage)) throw new Error('Unsupported reader version or coverage.');
+    renderCapabilities(value);
+    scopes = value.scopes;
+    for (const scope of scopes) { const option = document.createElement('option'); option.value = scope.scope; option.textContent = scope.scope; $('scope').append(option); }
+    $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;
+    const partial = value.coverage === 'partial';
+    $('catalog-status').className = partial ? 'partial' : '';
+    $('catalog-status').textContent = partial
+      ? 'Partial coverage · some configured sources could not be verified. Available scopes remain browsable. Retry sources to check again.'
+      : 'Source checks complete · only currently authorized scopes are shown.';
+    if (!scopes.length) {
+      notice(partial ? 'No verified scope is available from this incomplete check. Retry sources.' : 'No currently authorized scopes.');
+      return;
+    }
+    $('scope').value = scopes[0].scope; pin = scopes[0].pin; await page(0);
+  }
   $('connect').addEventListener('submit', event => {
-    event.preventDefault(); token = $('token').value; $('token').value = '';
-    run(async () => {
-      notice('Checking scope access…'); const value = await rpc({action:'catalog'}); if (!value) return;
-      if (value.version !== 1) throw new Error('Unsupported reader version.');
-      renderCapabilities(value);
-      scopes = value.scopes; $('scope').replaceChildren();
-      for (const scope of scopes) { const option = document.createElement('option'); option.value = scope.scope; option.textContent = scope.scope; $('scope').append(option); }
-      $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;
-      if (!scopes.length) { notice('No currently authorized scopes.'); return; }
-      $('scope').value = scopes[0].scope; pin = scopes[0].pin; history = []; await page(0);
-    });
+    event.preventDefault(); token = $('token').value; $('token').value = ''; run(catalog);
   });
+  $('retry-sources').addEventListener('click', () => run(catalog));
   $('scope').addEventListener('change', () => run(async () => { const chosen = scopes.find(s => s.scope === $('scope').value); if (!chosen) return; pin = chosen.pin; history = []; await page(0); }));
   $('resnapshot').addEventListener('click', () => run(async () => { if (!pin) return; clearInspector(); const value = await rpc({action:'snapshot',scope:$('scope').value}); if (!value) return; pin = value.pin; const chosen = scopes.find(s => s.scope === $('scope').value); chosen.pin = pin; history = []; await page(0); }));
   $('next').addEventListener('click', () => run(async () => { if (next === null) return; history.push(after); await page(next); }));

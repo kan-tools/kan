@@ -149,12 +149,16 @@ impl Reader {
         .bytes()?;
         // Transport-level AccessLimited means a reply signature failed, not a
         // verified service denial. Only a signed result may exclude a scope.
-        let reply = evidence_http::send(&access.endpoint, &access.issuer, &request)
-            .await
-            .map_err(|failure| match failure {
-                Failure::AccessLimited => Failure::Corrupt,
-                other => other,
-            })?;
+        let reply = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            evidence_http::send(&access.endpoint, &access.issuer, &request),
+        )
+        .await
+        .map_err(|_| Failure::Unavailable)?
+        .map_err(|failure| match failure {
+            Failure::AccessLimited => Failure::Corrupt,
+            other => other,
+        })?;
         reply
             .verify(&request, &access.issuer)
             .map_err(|_| Failure::Corrupt)?;
