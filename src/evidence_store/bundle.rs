@@ -18,10 +18,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod copy;
 mod create;
 mod mutation;
 mod publish;
 mod restore;
+pub use copy::{
+    backup, backup_observed, rebuild, rebuild_observed, BundleCopy, BundleCopyError, CopiedBundle,
+    CopyBoundary,
+};
 pub use create::{create, create_observed, Creation, CreationBoundary, CreationError};
 pub use publish::{
     publish, publish_observed, record_publication_failure, FailedPublication, Publication,
@@ -257,6 +262,7 @@ fn identity(conn: &Connection, context: &Context, work: &mut Work) -> Result<()>
     )?;
     require(rows.next()?.is_none(), "identity cardinality")
 }
+#[derive(PartialEq, Eq)]
 struct EncodedRow {
     sequence: u64,
     manifest: Vec<u8>,
@@ -286,6 +292,7 @@ fn objects(
     }
     Ok(out)
 }
+#[derive(PartialEq, Eq)]
 struct Acquired {
     plan: Option<Vec<u8>>,
     membership: Vec<(Cid, u64)>,

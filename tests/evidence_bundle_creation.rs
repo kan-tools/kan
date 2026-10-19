@@ -2152,3 +2152,6 @@ fn retry_with_different_bytes_for_restored_cid_refuses() {
     );
     assert_eq!(restoration_row_dump(&dst), snapshot);
 }
+
+#[path = "support/bundle_copy_tests.rs"]
+mod bundle_copy_tests;
