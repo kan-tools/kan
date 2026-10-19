@@ -1,0 +1,181 @@
+{
+ "dir": "/var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/kanrev-fsalias-r9kzo7gs",
+ "volume_case_insensitive": true,
+ "aliases": {
+  "shm": [
+   {
+    "cand": "Shm",
+    "codepoints": [
+     "0x53",
+     "0x68",
+     "0x6d"
+    ],
+    "replaced": "s",
+    "model_refuses": true
+   },
+   {
+    "cand": "ſhm",
+    "codepoints": [
+     "0x17f",
+     "0x68",
+     "0x6d"
+    ],
+    "replaced": "s",
+    "model_refuses": true
+   },
+   {
+    "cand": "sHm",
+    "codepoints": [
+     "0x73",
+     "0x48",
+     "0x6d"
+    ],
+    "replaced": "h",
+    "model_refuses": true
+   },
+   {
+    "cand": "shM",
+    "codepoints": [
+     "0x73",
+     "0x68",
+     "0x4d"
+    ],
+    "replaced": "m",
+    "model_refuses": true
+   }
+  ],
+  "wal": [
+   {
+    "cand": "Wal",
+    "codepoints": [
+     "0x57",
+     "0x61",
+     "0x6c"
+    ],
+    "replaced": "w",
+    "model_refuses": true
+   },
+   {
+    "cand": "wAl",
+    "codepoints": [
+     "0x77",
+     "0x41",
+     "0x6c"
+    ],
+    "replaced": "a",
+    "model_refuses": true
+   },
+   {
+    "cand": "waL",
+    "codepoints": [
+     "0x77",
+     "0x61",
+     "0x4c"
+    ],
+    "replaced": "l",
+    "model_refuses": true
+   }
+  ],
+  "journal": [
+   {
+    "cand": "Journal",
+    "codepoints": [
+     "0x4a",
+     "0x6f",
+     "0x75",
+     "0x72",
+     "0x6e",
+     "0x61",
+     "0x6c"
+    ],
+    "replaced": "j",
+    "model_refuses": true
+   },
+   {
+    "cand": "jOurnal",
+    "codepoints": [
+     "0x6a",
+     "0x4f",
+     "0x75",
+     "0x72",
+     "0x6e",
+     "0x61",
+     "0x6c"
+    ],
+    "replaced": "o",
+    "model_refuses": true
+   },
+   {
+    "cand": "joUrnal",
+    "codepoints": [
+     "0x6a",
+     "0x6f",
+     "0x55",
+     "0x72",
+     "0x6e",
+     "0x61",
+     "0x6c"
+    ],
+    "replaced": "u",
+    "model_refuses": true
+   },
+   {
+    "cand": "jouRnal",
+    "codepoints": [
+     "0x6a",
+     "0x6f",
+     "0x75",
+     "0x52",
+     "0x6e",
+     "0x61",
+     "0x6c"
+    ],
+    "replaced": "r",
+    "model_refuses": true
+   },
+   {
+    "cand": "jourNal",
+    "codepoints": [
+     "0x6a",
+     "0x6f",
+     "0x75",
+     "0x72",
+     "0x4e",
+     "0x61",
+     "0x6c"
+    ],
+    "replaced": "n",
+    "model_refuses": true
+   },
+   {
+    "cand": "journAl",
+    "codepoints": [
+     "0x6a",
+     "0x6f",
+     "0x75",
+     "0x72",
+     "0x6e",
+     "0x41",
+     "0x6c"
+    ],
+    "replaced": "a",
+    "model_refuses": true
+   },
+   {
+    "cand": "journaL",
+    "codepoints": [
+     "0x6a",
+     "0x6f",
+     "0x75",
+     "0x72",
+     "0x6e",
+     "0x61",
+     "0x4c"
+    ],
+    "replaced": "l",
+    "model_refuses": true
+   }
+  ]
+ }
+}
+UNACCOUNTED (fs alias not refused by name model): []

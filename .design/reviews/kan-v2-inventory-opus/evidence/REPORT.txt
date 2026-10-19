@@ -1,0 +1,433 @@
+INDEPENDENT ADVERSARIAL REVIEW — kan v2 degraded inventory, frozen commit 2f6a309
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), cold session, no subagents/delegation, 2026-10-19.
+Skill: /Users/m/.codex/plugins/cache/kan-tools/day/0.12.0-beta.3/skills/adversarial-review/SKILL.md
+
+=================================================================================================
+0. INDEPENDENCE, TARGET, NORTH STAR
+- Step 0: I did not write any code under review. This session had no prior context of the work, and
+  no fork or subagent was used.
+- Target, explicit rather than inferred:
+  - Export: .local-state/reviews/inventory of worktree kan-v2-degraded-inventory, branch
+    feat/kan-v2-degraded-inventory, commit 2f6a30918b39542613300f49906f55c6682b6811.
+  - A = f656994: ../alias-change.diff == `git diff 1d2ddfe f656994 -- <design, src, tests>`.
+  - B = ../inventory-change.diff == `git diff caf3d95 2f6a309 -- ':!.design/reviews'`, with
+    .design/kan-v2-degraded-inventory.md.
+  - C = .design/kan-v2-recovery-bundles.md and .design/kan-v2-recovery-bundle-codec.md, against C-F2 in
+    .design/kan-v2-evidence-availability.md:816-826 (also :314-319, :734-761).
+  - Both supplied diffs were re-derived from git and their SHA-256 values are equal.
+- Context reads (Git-first):
+  - I did not run kan or day. day#168/kan#197 make worktree kan/day unreliable, and probes must not
+    leave traces. That is a stated constraint, not a "no teloi" result.
+  - The north star comes from the supplied north-star.json: telos/raw-data-and-projections.
+    "Raw attested data is retained in full and never collapsed in the store. Every simplification ...
+    is a determined projection computed on demand over that raw data".
+  - north-star.json reports excluded_by_trust: 2 at top level. I did not reconstruct those claims.
+  - The telos deliberately declares no witnesses (its own Observation). I invented none.
+  - All three scopes serve it: they show loss as data (B), keep raw evidence custody intact (A),
+    and design how loss/restoration history is retained without collapsing it (C).
+  - Tension with telos/performance-at-scale (an InTensionWith edge on record): B's NOT INDEXED payload
+    scan trades latency for bounded materialization. This is disclosed and not performance-qualified.
+    That is honest, not silent drift.
+
+=================================================================================================
+1. INTEGRITY OF THE FROZEN EXPORT (raw/00, raw/99, raw/99c, raw/99d)
+- Before the review:
+  - All 2391 manifest SHA-256 values match.
+  - Manifest name set == `git -C <worktree> ls-tree -r --full-tree 2f6a309` (2391).
+  - The only extra file is north-star.json; nothing is missing.
+  - The worktree HEAD was 2f6a309.
+- After the review:
+  - The same checks pass: 2391/2391 hashes, an identical file set, and only north-star.json extra.
+  - Git blobs vs export bytes over absolute export paths: 0 mismatches (raw/99d).
+  - verify_identity.py prints RESULT: FAIL only because of its strict "repo HEAD == manifest commit"
+    condition. During the review another session committed 994c63b
+    ("docs(v2): ground recovery and conversation reconstruction contracts") in the PARENT worktree and
+    left edits there. I made no Git writes, and the frozen commit and the export are unaffected.
+- Retained failed method:
+  - raw/00b and raw/99b fed relative paths to `git hash-object --stdin-paths`, which resolved them
+    against the parent worktree.
+  - 99b's "5 mismatches" are exactly the parent's new edits. Neither file is evidence about the export.
+- Patch backup: BSD `patch -R` left src/evidence_store.rs.orig. It was byte-identical to the frozen
+  file and has been deleted.
+- Clean-up:
+  - The temporary probe tests/zz_review_probe.rs was removed after `cmp` against the retained copy.
+  - The export has no .local-state/target/.lake.
+  - mtimes of src/evidence_store.rs and src/evidence_store/inventory.rs changed because the mutation
+    runner rewrote them, but their bytes equal the manifest.
+
+=================================================================================================
+2. EXECUTED VERIFICATION (raw/)
+- 01 `cargo clean -p kan` (shared target): removed 904 files.
+- 02 targeted suites, all passing: 127 functions, matching the author.
+  - evidence_attested_lifecycle 11, evidence_copy_destination 32, evidence_copy_source 10,
+    evidence_inventory 15, evidence_store 34, recovery_cli 6, surface_conformance 19.
+  - A's 112 = these minus inventory's 15.
+- 03 production VM callback unit test sqlite_vm_deadline_and_cancel_interrupt_unyielding_queries: ok.
+  - It asserts that the watchdog was NOT the interrupt source.
+- 04 memory fixture, --nocapture:
+  - object peak 10,649,600 B; manifest peak 10,076,160 B; ceiling 64 MiB.
+  - The indexed-lookup mutant fails this test (section 5).
+- 05 `cargo clippy --features v2-crypto --all-targets -- -D warnings`: exit 0.
+- 06 `cargo fmt --all -- --check`: exit 0.
+- 07 `cargo check --no-default-features --features v2-storage --all-targets`: exit 0.
+  - Exactly the three preexisting capture-wait dead-code warnings (with_capture_wait, CaptureWait,
+    capture_busy). Nothing new.
+- 09 rerun on the restored tree after mutations: evidence_copy_destination 32/32, evidence_inventory 15/15.
+- Not run:
+  - the full CI test list, default-feature clippy, Linux/Windows/MSRV, Node/browser;
+  - the unchanged compatibility/performance matrices (no concrete new concern there);
+  - Python vector checkers (no codec vectors exist for C).
+
+=================================================================================================
+3. SCOPE A — Unicode/inode SQLite family correction (f656994)
+
+Code read: src/evidence_store.rs:407-489.
+- sqlite_paths gives the family: main + -journal/-wal/-shm.
+- same_existing_file compares (dev, ino) after following symlinks.
+- sqlite_name_eq compares chars after to_uppercase then to_lowercase; non-UTF-8 falls back to ASCII.
+- sqlite_destination:
+  - canonicalizes the destination parent;
+  - refuses if any target-family path equals any source-family path by name model OR by existing
+    identity;
+  - then refuses `<base>-<suffix>` when the suffix matches a reserved name and <base> resolves to the
+    source;
+  - then refuses existing destination sidecars.
+- Source paths are canonical at every caller:
+  - RecoveryReader::open :190;
+  - Ledger backup_copy :1209;
+  - read_plan_for_copy copy_upgrade.rs:174.
+
+Analysis: a target/source family collision can only be:
+- main vs main (identity check);
+- main vs sidecar, or sidecar vs main (identity when the main exists; otherwise the basename check
+  against the existing source);
+- same suffix vs same suffix (implies main aliases main).
+Different reserved suffixes cannot alias each other ("journal"/"wal"/"shm" differ in length and
+letters). So the remaining exposure is a filesystem alias spelling of a reserved suffix that the name
+model does not equate.
+
+Hostile probes:
+- probes/fs_alias_bruteforce.py on this host's case-insensitive APFS:
+  - Brute-forced every single-codepoint replacement of 1 or 2 suffix characters, U+0020..U+2FFFF, plus
+    the separator.
+  - Real aliases found: shm {Shm, ſhm, sHm, shM}, wal {Wal, wAl, waL}, journal {7 case variants}.
+  - No separator alias.
+  - 0 aliases are unaccounted for by the name model.
+- probe_a1 (run1.txt), through the real entry points retain_plan (source dir) and read_plan_for_copy
+  (destination dir):
+  - All 16 alias/plain names were refused, including mixed forms "ſHM", "ARCHIVE.SQLITE-shm" and
+    "Archive.SQLite-ſhm".
+  - Plan and source bytes were unchanged.
+  - Legitimate neighbours were accepted: plan-shm.cbor, archive.sqlite-shmx, archive.sqlite.shm,
+    plan-ſ.cbor, notes.db-ſhm.
+- probe_a2, backup/recovery interfaces that share the helper:
+  - Ledger::backup refused archive.sqlite-ſhm, -WAL, ARCHIVE.SQLITE, and through a symlinked directory
+    linkdir/archive.sqlite-journal and linkdir/Archive.sqlite-ſhm.
+  - RecoveryReader::rebuild refused -ſhm and linkdir/ARCHIVE.sqlite-Wal.
+  - The positive backup succeeded and the source bytes were unchanged.
+
+Reversion and mutants (mutations/):
+- Complete production reversion: reverse of `git diff 1d2ddfe f656994 -- src/evidence_store.rs`, which
+  shows as 2 hunks with default context; the author's -U0 view is 4.
+  - Exactly the four named tests FAILED; the other 28 passed.
+  - Restored: 32/32 pass.
+- A-M1 drop `|| same_existing_file(target, source)`: KILLED (sidecar_hardlink_identity...).
+- A-M2 ASCII-only name equality: KILLED (unicode_reserved_plan_suffix_is_refused_even_before_any_sidecar_exists).
+- A-M3 disable the basename-suffix check: KILLED (older plan_custody_refuses_sqlite_families...).
+- Note: each guard is pinned by exactly one test. My probes did not independently kill A-M1/A-M2
+  because the other two layers cover existing sidecars (defence in depth).
+
+FINDING F-A1 [LOW, demonstrated; preexisting ordering, not introduced by f656994]: CLI copy-plan destroys
+an existing file at a Unicode/case alias of the source's -shm before refusing.
+- Code: src/bin/kan-v2.rs:886 calls PlannedCopy::open, which opens SQLite on the source, BEFORE :896
+  retain_plan performs plan_outside_sqlite.
+- Probe probe_a3 (run1.txt):
+  - A copy of the owner's plan placed at archive.sqlite-ſhm → exit 1 "destination overlaps source SQLite
+    files", target_preserved=false, length after = 32768. The WAL-index was reinitialised over it.
+  - archive.sqlite-SHM: same result.
+  - -WAL: preserved.
+  - -JOURNAL: refused as "attempt to write a readonly database", preserved.
+  - Control (an ordinary existing path): "File exists", preserved.
+- The prior review (REPORT.txt §F1) said copy-plan "necessarily opens the source before retain_plan".
+  That is inaccurate: plan_outside_sqlite needs only the two paths.
+- Mitigating facts:
+  - A file at that name already lives in SQLite's own namespace. Any open of the source (legacy
+    service, copy-batch confirm) would consume it as well.
+  - No plan is ever created there anymore.
+- Follow-up: run the path-only custody check before PlannedCopy::open, and add a regression with a
+  pre-existing alias output.
+
+Limits for A:
+- Only this host's APFS was tested. HFS+, ext4 casefold, NTFS/SMB collations and multi-codepoint
+  sequences beyond single-codepoint substitution were not tested. The design also disclaims them.
+- The helper does not defend against concurrent hostile namespace replacement (TOCTOU between check
+  and open/create); this is disclaimed.
+- The author's non-UTF-8 fallback (ASCII) was not exercised on Linux.
+
+SCOPE A VERDICT: APPROVE WITH FOLLOW-UPS.
+- The correction does what it claims. Every observed filesystem alias is refused at retain, read,
+  backup and rebuild. The four regressions fail on complete reversion and pass on restore.
+- Remaining requirements:
+  - F-A1, ordering + regression;
+  - document the per-filesystem limit next to the helper's existing comment.
+
+=================================================================================================
+4. SCOPE B — read-only profile-2/3 inventory (src/evidence_store/inventory.rs, 597 lines)
+
+REQ/AC coverage (evidence = code read + commands run; design-doc assertions not counted):
+- REQ-1 explicit profile/schema/binding, no writable/integrity/immutable/autodetect: MET.
+  - Profile is an enum chosen by the caller (:16-27); bounded exact schema comparison (:116-142);
+    check_binding + stored_plan (:143-155).
+  - The open is SQLITE_OPEN_READ_ONLY (persistence.rs:199-204), and the configuration callback runs
+    before BEGIN/profile read (evidence_store.rs:184-205).
+  - The require-payloads-at-startup control was KILLED by 6 tests. WAL byte-invariance test passes.
+- REQ-2 complete metadata/proof chain without payloads: MET.
+  - :224-330 verifies every row against the previous frontier, checks purpose, and checks cardinality
+    (:277-284).
+  - The profile-3 digest recomputation mirrors copy_upgrade.rs PlannedCopy::open framing.
+  - Controls KILLED: cardinality (B-M1), schema (B-M2), three purpose guards, digest refusal.
+- REQ-3 descending pages, exact bytes, sampled states, metadata errors refuse: PARTIAL, see F-B1.
+  - Pages are proof-anchored through verify_at at the expected frontier (:378-419); the predecessor
+    comes from the verified proof; next is empty only at genesis.
+  - Missing vs Corrupt are distinct (B-M5 KILLED).
+- REQ-4 fresh source recheck, no grant: MET.
+  - :490-543: new RecoveryReader, plan/binding, exact verify_at(selection.frontier), payload, then
+    verify_retained_request (receipt issuer == request audience, manifest equality,
+    evidence_service.rs:336-349).
+  - Tests: same-height valid replacement and forged writer under a valid issuer proof (control KILLED).
+  - My probe_b4: profile-3 admitted-suffix rows source Available; the writer was confirmed.
+- REQ-5 separate budgets, VM deadlines/cancellation, bounded materialization: PARTIAL, see F-B2.
+  - Implemented: :106-115 for startup/page/source; :471-480 temporarily raises the value limit only
+    for a declared-length-checked payload.
+  - Memory fixture verified.
+- REQ-6 recipe-metadata match separate from payload/admission: MET.
+  - :285-330 and :348-351. B-M7 KILLED by 2 tests. No admission API exists in the module.
+- AC-1 MET for missing/wrong-hash/wrong-length on both profiles, tip and middle, across restart.
+  - Not met for the F-B1 corruption class.
+- AC-2 MET. Owner/profile/metadata/receipt/missing/extra proofs, purpose, issuer and recipe tests run
+  and are pinned by controls.
+- AC-3 MET (source_rechecks..., selected_valid_same_height..., issuer_attested_...).
+- AC-4 MET. WAL test, memory fixture with 96 MiB rows, indexed mutant fails.
+- AC-5 PARTIAL.
+  - Row/byte/item budgets, early-empty-page errors and cursor context are covered.
+  - Page-level VM cancellation is not pinned (B-M6 survives).
+- AC-6 this review. It is a compiled-control demonstration, not closure of any parent frontend AC.
+
+FINDING F-B1 [MEDIUM, demonstrated, fail-closed]: one payload's SQLite storage class flipped BLOB→TEXT
+refuses every page that contains it. Older rows can then never be browsed.
+- Code: inventory.rs:458-481.
+  - `length(bytes)` of TEXT counts characters.
+  - For the archive's ASCII JSON signed-request payloads this equals the declared byte length, so the
+    length check passes.
+  - Then `r.get::<_, Vec<u8>>` on TEXT raises rusqlite InvalidColumnType, which propagates as Error::Sql.
+- Probe probe_b1 (run1.txt):
+  - Same-length TEXT → "WHOLE PAGE REFUSED: Invalid column type Text ... substr(bytes,1,?2)".
+  - Different-length TEXT and INTEGER → correctly per-row Corrupt.
+- Probe probe_b5 (run2-b5.txt, two failed attempts retained):
+  - A real one-bit on-disk flip of the record-header serial type (2N+12 → 2N+13) reproduces it.
+  - The rows=40 page is refused; the rows=1 tip page still works; the cursor past the damaged row is
+    refused; the healthy tip still sources.
+  - Schema `bytes BLOB NOT NULL CHECK(length...)` (evidence_store.rs:30) does not constrain typeof, and
+    integrity_check would not flag this.
+- Consequence: this contradicts REQ-3/AC-1 ("independently sampled ... corrupt", "healthy neighbours
+  retain exact metadata"). It is fail-closed: no false Available, no mutation, no false provenance.
+- Required fix: select typeof(bytes) in the length probe and classify non-blob as Corrupt (and the
+  same in source()). Add the bit-flip regression and a reversion demo.
+  - Must land before any RPC/Library adapter consumes this API and before AC-1 is checked.
+
+FINDING F-B2 [LOW-MEDIUM, test gap]: page-level SQLite VM cancellation/deadline is unpinned.
+- Mutant B-M6 deletes `configure_read` from page() (:362), which removes page VM cancellation and
+  re-tightening of the allocation limit. It SURVIVES all 15 tests: per-row work.check catches the
+  cancelled flag before any SQL runs.
+- The production mechanism does work when present (probe_b3, 400k-row object table):
+  - cancel at 5 ms → "interrupted" after 7.6 ms;
+  - 15 ms deadline → interrupted at 15.0 ms;
+  - the handle is reusable afterwards;
+  - an uncancelled 3-row page takes 122 ms.
+- The cancellation error surfaces as SQL "interrupted", not the typed "inventory cancelled or timed
+  out". The RPC adapter should map both.
+- Follow-up: commit a page-level cancellation test like probe_b3.
+
+Other survivors (judged):
+- B-M8 (startup commit item budget): survives because the fixture is profile 3, where the
+  upgrade_objects loop also counts. Add a profile-2 item-budget case. LOW.
+- B-M3 cursor-context check, B-M4 source selection-binding check, B-M9 source purpose recheck,
+  B-M10 source scope recheck: all survive. Each is redundant with exact proof verification:
+  - the frontier embeds archive/scope/issuer and the statement CID;
+  - archive_id = plan hash binds the plan;
+  - manifest equality binds the scopeToken.
+  Defence in depth, untested in isolation. Acceptable; optionally pin them with typed-error asserts.
+
+Probes with no finding:
+- probe_b2: a 400 KB unrelated object key does not poison the NOT INDEXED scan.
+- probe_b4: a writer admits while the inventory is pinned; the pinned snapshot stays at 3; the new
+  snapshot (4) refuses the old cursor; the old exact selection still sources (it is not
+  snapshot-bound, which is correct).
+
+Disclosure gaps to carry into RPC integration (not defects of this slice):
+- The handle keeps a read transaction open indefinitely. In WAL mode this prevents checkpoint
+  progress past its snapshot, so the WAL can grow while a long-lived inventory is held. Bound the
+  handle lifetime in the adapter.
+- Every sample is an O(objects) scan. The measured cost is 122 ms per 3-row page at 400k objects in a
+  debug build.
+
+SCOPE B VERDICT: APPROVE WITH FOLLOW-UPS.
+- Sound, read-only and proof-anchored; owner/profile binding and fresh-source rechecks hold under
+  hostile probes; author controls reproduced 10/10 KILLED.
+- Remaining requirements:
+  - F-B1 fix + regression (mandatory before consumers or AC-1 closure);
+  - F-B2 page-level VM cancellation test;
+  - a profile-2 startup item-budget case;
+  - lifetime/WAL disclosure for the adapter.
+- Linear scan and startup cost are disclosed and not qualified. No parent frontend AC is closed.
+- Remote grants, admission, bundle writer and activation are absent: grep of the module shows no
+  admission/write API.
+
+=================================================================================================
+5. MUTATION/CONTROL TABLE (mutations/SUMMARY.txt; reviewer's runner mutation_runner.py)
+- A-REVERSION complete f656994 production: the 4 named tests FAILED, 28 passed; restored 32/32.
+- A-M1/A-M2/A-M3: KILLED (named above).
+- Author controls, rerun independently with identical patterns: 10/10 KILLED, no compile errors.
+  indexed-large-row-materialization, omit-sqlite-vm-callback (unit), require-payloads-at-startup,
+  omit-payload-hash, omit-retained-position, omit-admitted-prefix-guard, omit-historical-issuer,
+  omit-metadata-digest-refusal, ignore-page-row-limit, omit-writer-verification.
+- Reviewer B mutants:
+  - KILLED: M1 cardinality, M2 schema, M5 missing→corrupt, M7 recipe-completeness.
+  - SURVIVED: M3, M4, M6, M8, M9, M10 (judged in section 4).
+
+=================================================================================================
+6. SCOPE C — DESIGN ONLY: KNB1 recovery bundles + codec
+
+What is sound, and continuity with the original C-F2 (availability.md:816-826):
+- Not selectable as a standalone member: distinct application_id 0x4b4e4231 and no
+  commits/attestations tables.
+  - Every existing opener checks application_id/user_version (evidence_store.rs:738-749).
+  - Preserved.
+- Filling blobs cannot bypass history: restored_objects is append-only with a 1:1 pairing to
+  observations, and member_objects is never updated. Preserved.
+- Manual privileged extraction is out of scope. Preserved.
+- Source-copy completeness is independent of payload completeness: whole-output verification requires
+  profile-3 completion. Preserved, but see C-2.
+- History/custody:
+  - loss observations are retained after restoration;
+  - backup/rebuild carries the whole observation history;
+  - no standalone fallback;
+  - publication is intent/observed/failed with cross-file uncertainty;
+  - activation and fencing are separate.
+  Preserved. The domain-separated preimage reuses the reviewed attestation pattern
+  (evidence_attestation.rs:120-126) with a distinct domain, so cross-protocol signature reuse is
+  excluded.
+- Refinement that must be stated in the parent document: availability.md:314-319 and :740-748 speak of
+  a "separate append-only recovery ledger". The proposal puts observations in the same KNB1 outer file
+  (one transaction boundary). That is a defensible refinement, but the parent should record it
+  explicitly so the custody requirement is not read as dropped.
+
+Required design refinements before DDL/vectors are frozen:
+- C-1 [MUST] The two documents contradict each other on normative bytes and tables.
+  - bundles.md:71-79 specifies statement `{v:1,kind:"recovery-observation",body}`, with bundle,
+    sequence and previous inside the body. codec.md:26-40 specifies a flat statement
+    {version, domain, bundle, profile, archive, scope, issuer, observer, sequence, previous,
+    sampledAt, event, body}.
+  - bundles.md:45-52 lists bundle_identity holding "initial member commitment and source frontier" and
+    tables member_commits/member_attestations/member_upgrade_plan/member_upgrade_objects.
+    codec.md:131-148 has bundle_identity without M1/frontier and tables member_records/member_plan/
+    member_membership.
+  - Declare one normative source and delete or align the other. Independent implementations would
+    otherwise diverge.
+- C-2 [MUST] A partial profile-3 member has no defined resolution path.
+  - bundles.md:131 says partial copies "must first be completed by the reviewed source-copy workflow".
+    But that workflow writes standalone profile-3 destinations whose resume performs full payload
+    audits, and publication requires profile-3 completion. No operation continues a copy inside a
+    bundle.
+  - Either specify a bundle-aware continuation from the original pinned legacy source (same plan and
+    archive ID) with its own observations, or declare such members unresolvable in-bundle and state the
+    restart path (new nonce ⇒ new archive ID) and how the bundle's history is retained.
+- C-3 [MUST] Canonical rules for `unavailable` entries (codec.md:89-94) are missing:
+  - entry ordering and uniqueness;
+  - exact set equality (not superset) of the creation-time coverage across linked records;
+  - how a CID that is both a record occurrence and original membership (C-F3 shared CIDs) is
+    represented: one entry per (occurrence, cid)? null-occurrence membership entry too?
+  Without these, two verifiers can accept or reject the same chain differently.
+- C-4 [MUST] Storage-class rule for M1 "raw bytes" (codec.md:54-75). A non-BLOB member cell (the F-B1
+  class) must either refuse creation or be framed with an explicit storage-class tag. Otherwise the
+  "copy corrupt bytes exactly" promise is undefined for exactly the corruption seen in F-B1.
+- C-5 [SHOULD] publication-intent (codec.md:100-102) should commit to the expected output commitment.
+  Alternatively, specify output M1 as a deterministic function of member M1 + R1 + the rules for
+  unrestored profile-2 orphans (dropped? recorded?). Resume can then verify "this exact output", not
+  merely "some verified output with the right frontier".
+- C-6 [SHOULD] Use a distinct domain/label for the output commitment. codec.md:54 reuses
+  tools.kan.recovery.member.v1 for both member and output (publication-observed.output).
+- C-7 [SHOULD] codec.md:95 `restored` has no member reference, while codec.md text requires restore
+  events to "reference the member fixed at creation". Either add the field or state that chain linkage
+  to `created` is the binding.
+- C-8 [SHOULD] State that several attempt IDs may each reach publication-observed, which yields several
+  complete outputs with one logical archive ID, and that the activation design must select exactly one
+  and fence.
+  - Also specify when the owner's external observation checkpoint advances (e.g. every job returns the
+    new frontier for owner persistence). Tail truncation beyond the checkpoint is undetectable, and the
+    observer key is online on the host, so the signature gives attribution, not tamper evidence, beyond
+    the checkpoint.
+
+Hostile-ambiguity/escape review:
+- No standalone escape through ordinary configuration.
+- Publication output paths must reuse scope A's custody helper before any SQLite open; F-A1's lesson
+  applies.
+- Observation reordering/forking is excluded by the previous-CID chain + external checkpoint;
+  equivocation across copies is disclaimed.
+- No fabricated objects (absent rows stay absent).
+- Timestamp ordering is explicitly not authority.
+
+SCOPE C VERDICT: APPROVE WITH FOLLOW-UPS — as a DESIGN DIRECTION ONLY.
+- This is not approval of a codec, DDL or storage.
+- C-1..C-4 must be resolved in the codec patch and C-5..C-8 answered before frozen DDL, independent
+  positive and re-signed-negative vectors and an independent encoder/verifier exist.
+- A fresh review is required before any writer.
+
+=================================================================================================
+7. SCOPE-NARROWING AND HOUSE RULES (raw/08)
+- Additions in the diffs (excluding reviews):
+  - "this first implementation does not claim indexed large-archive page latency";
+  - "the later RPC adapter must separately bound its encoded response".
+- Both are legitimate. Both were named in the design before implementation (the integration-order
+  section predates caf3d95..2f6a309) and are separable.
+- House rules:
+  - Inventory is read-only (no fold mutation, nothing destroyed).
+  - No new persisted surface. Existing TSV rows were extended with the new readers.
+  - No cites/provenance edits, no second UI, no blocking hooks.
+  - Nothing violated.
+
+=================================================================================================
+8. RECORDING (Step 7/8)
+- I did not record a day/kan verdict. The task forbids Git or log writes, and day#168/kan#197 make
+  worktree kan/day unreliable. Git-preserved evidence is the agreed path.
+- `day next` was not run, for the same reason.
+
+=================================================================================================
+9. PRECISE LIMITS OF THIS REVIEW
+- One host: macOS APFS case-insensitive, debug builds, synthetic fixtures only.
+- Not done: production keys/archives/providers, full CI matrix, other filesystems, Linux/Windows.
+- Latency numbers are illustrative, not qualification.
+- The memory peaks rely on the author's child-rusage fixture.
+- C was reviewed as text: there are no codec vectors, DDL or writer to execute.
+
+=================================================================================================
+OVERALL VERDICT: **APPROVE WITH FOLLOW-UPS**
+
+A's correction is verified by complete reversion and by an exhaustive single-codepoint filesystem
+alias probe. B is a sound, read-only, proof-anchored storage boundary whose claimed guards are pinned
+by reproduced controls. C points in the right direction and preserves C-F2's history/custody intent.
+
+None of the findings violates a kan invariant:
+- no destruction of subjects or retained evidence by the reviewed code paths;
+- no false Available or forged provenance;
+- no write/activation.
+
+Named follow-ups:
+- F-B1 (MEDIUM, mandatory before any consumer or AC-1 closure): non-BLOB payload classified Corrupt,
+  plus the bit-flip regression.
+- F-B2: page-level VM cancellation test.
+- Profile-2 startup item-budget test.
+- F-A1: copy-plan path custody before the source open, plus a regression.
+- WAL/handle-lifetime disclosure for the RPC adapter.
+- C-1..C-4 (MUST) and C-5..C-8 (SHOULD) before codec freeze.
+- The parent-document note that observations move into the KNB1 outer file.

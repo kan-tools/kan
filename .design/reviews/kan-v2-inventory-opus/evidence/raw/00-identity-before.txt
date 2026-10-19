@@ -1,0 +1,7 @@
+[before] repo=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory HEAD=2f6a30918b39542613300f49906f55c6682b6811 manifest_commit=2f6a30918b39542613300f49906f55c6682b6811 head_match=True
+[before] manifest files=2391 git ls-tree files=2391 export files(excl review-evidence)=2392
+[before] manifest==ls-tree: True
+[before] extra vs ls-tree: ['north-star.json']
+[before] missing vs ls-tree: []
+[before] hash mismatches/missing: 0
+[before] RESULT: OK
