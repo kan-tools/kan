@@ -1,0 +1,24 @@
+
+running 1 test
+test independent_python_member_output_and_restoration_framing_matches ... FAILED
+
+failures:
+
+---- independent_python_member_output_and_restoration_framing_matches stdout ----
+
+thread 'independent_python_member_output_and_restoration_framing_matches' (9967473) panicked at tests/evidence_recovery_commitment.rs:101:14:
+called `Result::unwrap()` on an `Err` value: Shape("duplicate or unordered CID")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    independent_python_member_output_and_restoration_framing_matches
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment)
+    Finished `test` profile [unoptimized] target(s) in 7.24s
+     Running tests/evidence_recovery_commitment.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_commitment-5a89bc2efd1208f4)
+error: test failed, to rerun pass `--test evidence_recovery_commitment`
+
+exit=101

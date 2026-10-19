@@ -1,0 +1,8 @@
+promoted-run PA1 rows: 1255  base rows: 9  mutations: 1246
+labels: {'Err': 1108, 'Capture': 116, 'Unsupported': 31}
+lines with corpus content not at line start (interleaved): 1 ['test review_pa1_capture_projection_is_lossless_over_mutation_corpus ... started\t']
+retained original pa1-corpus.tsv lines: 1257  last line: captures=117 violations=0
+retained original corpus rows: 1256
+row sets identical (promoted vs original): False
+run2 (prefix-stripped): promoted rows 1256 original rows 1256 identical multiset: True
+=> corpus = 1256 rows (10 base + 1246 mutations) + 1 summary line = 1257 file lines; captures=117 incl. 10 base frames

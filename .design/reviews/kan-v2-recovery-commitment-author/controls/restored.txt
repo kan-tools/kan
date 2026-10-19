@@ -1,0 +1,18 @@
+
+running 8 tests
+test skipped_extra_and_reordered_sections_never_finish ... ok
+test profile_plan_and_cid_shape_cannot_be_silently_reinterpreted ... ok
+test sorted_unique_cids_are_required_and_candidate_hashes_are_checked ... ok
+test missing_empty_corrupt_and_restored_bytes_remain_distinct ... ok
+test independent_python_member_output_and_restoration_framing_matches ... ok
+test local_limits_cancellation_and_failed_work_are_explicit ... ok
+test failure_mid_payload_and_candidate_verification_consumes_budget_and_poisons ... ok
+test maximum_objects_and_metadata_bounds_do_not_change_framing ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state)
+    Finished `test` profile [unoptimized] target(s) in 7.53s
+     Running tests/evidence_recovery_commitment.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_commitment-5a89bc2efd1208f4)
+
+exit=0

@@ -1,0 +1,24 @@
+
+running 1 test
+test sorted_unique_cids_are_required_and_candidate_hashes_are_checked ... FAILED
+
+failures:
+
+---- sorted_unique_cids_are_required_and_candidate_hashes_are_checked stdout ----
+
+thread 'sorted_unique_cids_are_required_and_candidate_hashes_are_checked' (9920956) panicked at tests/evidence_recovery_commitment.rs:181:9:
+assertion failed: m.original_object(keys[1], b"corrupt").is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    sorted_unique_cids_are_required_and_candidate_hashes_are_checked
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state)
+    Finished `test` profile [unoptimized] target(s) in 7.37s
+     Running tests/evidence_recovery_commitment.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_commitment-5a89bc2efd1208f4)
+error: test failed, to rerun pass `--test evidence_recovery_commitment`
+
+exit=101

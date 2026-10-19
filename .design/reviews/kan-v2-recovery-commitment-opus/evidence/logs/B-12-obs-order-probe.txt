@@ -1,0 +1,7 @@
+probe-19 bafkreig5oy7ysh7jztklygxpbivxnzy4xv4ywouvsraumrkfrev2ypl22u 
+probe-20 bafkreigprr4i76bl33bs4jdlqoq3ptpcmkcstytwpzuyt5iljyvzp2xqpe
+text order a<b: True  binary order a<b: False  -> discriminating: True
+shapePositive names: ['maximum-loss-count-and-lengths', 'nonempty-metadata-frontier', 'maximum-restoration-length', 'canonical-cid-text-order']
+positive canonical-cid-text-order: first entry=probe-19 -> text order; expected reason=None
+negative binary-cid-order: first entry=probe-20 -> binary order; expected reason=None
+sameKeyRoles observer==issuer: True  equals main observer: True

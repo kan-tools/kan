@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/multifault_gen.py", line 30, in <module>
+    add('created-later+short-member', 1, st, 'position + body width')
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/review-evidence/probes/multifault_gen.py", line 19, in add
+    prev = o.verify(bytes.fromhex(rows[0]['envelopeHex']), ctx, None)
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/.design/tools/recovery_observation_vectors.py", line 92, in verify
+    key=context(ctx)
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/.design/tools/recovery_observation_vectors.py", line 69, in context
+    for name in ['bundle','archive','scope']:blob(ctx[name],32)
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/.design/tools/recovery_observation_vectors.py", line 53, in blob
+    def blob(value,length):require(type(value) is bytes and len(value)==length,'byte-width')
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment/.design/tools/recovery_observation_vectors.py", line 42, in require
+    if not ok:raise Rejected(reason)
+oracle.Rejected: byte-width

@@ -1,0 +1,417 @@
+INDEPENDENT ADVERSARIAL REVIEW — recovery-commitment export (pinned a8927a64005b8fc27ae55bcb17577cb3ff070fd6)
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), cold session, no subagents or delegation. 2026-10-19.
+Independence: I wrote none of the code under review and had no prior context. No conflict of interest to declare.
+Recording: git-first only (day#168/kan#197).
+- No `kan` or `day` command was run. No verdict claim was recorded and no kan log or index was touched.
+- Skill Step 7 is NOT executed; this file is the record.
+- No witnesses were invented. The 2 excluded_by_trust claims are not reconstructed.
+Raw material:
+- Commands: review-evidence/COMMANDS.txt.
+- Logs: review-evidence/logs/.
+- Per-scope probes, outputs and controls: review-evidence/{A,B,C}/.
+- Sources: review-evidence/{probes,scripts}/.
+
+=====================================================================================================
+0. CUSTODY / IDENTITY
+- Manifest ../recovery-commitment-identity.json pins commit a8927a6 and 2883 files.
+- review-evidence/scripts/integrity.py checks all of the following, using `git -C <repo>` with explicit commits:
+  - the manifest path set equals `git ls-tree -r --full-tree a8927a6`;
+  - the manifest sha256 equals the sha256 of every git blob;
+  - the export bytes equal the manifest;
+  - `git hash-object` of each export file equals the tree OID.
+  - Before (integrity/before.json): OK. The only extra is north-star.json (sha256 64a00fe7…, unchanged at the end).
+  - After (integrity/after.json): OK, with the same single extra.
+  - Parent worktree HEAD is a8927a6 and `git status --short` is empty (integrity/parent-git-after.txt).
+- Git root discovery from the export resolves to the parent worktree; .local-state/ is gitignored there.
+  - No git writes, no parent edits, no network: every cargo call used --offline --locked.
+  - No live archives, no keys other than the public oracle test scalars, no installs, no process kills.
+- Heavy jobs ran one at a time.
+  - CARGO_TARGET_DIR=…/kan-v2-library-resilience/.local-state/target, CARGO_BUILD_JOBS=4.
+  - `cargo clean -p kan` ran first (logs/10-clean: 891 files removed).
+  - The log shows `Compiling kan … (…/recovery-commitment)`, i.e. the export itself.
+- Temporary files outside review-evidence. Each was byte-compared to its retained copy, then removed (COMMANDS.txt):
+  - tests/zz_review_commitment_probes.rs (mine);
+  - tests/zz_review_multifault.rs (mine);
+  - tests/zz_review_observation_probes.rs (the prior reviewer's unmodified source).
+- In-place source mutations were restored and sha256-checked against the manifest after every case (mutate.py,
+  sql_reversion.py). The author control scripts restore themselves; their final restored-suite runs passed.
+- Review units: a8927a6 (A), a78fa61 (B) and ede35ec (C), plus the governing docs as of a8927a6.
+  `main...HEAD` is not the review unit.
+
+NORTH STAR (from supplied north-star.json; kan not queried)
+- telos/raw-data-and-projections, Decision bafyreied3rk…: "Raw attested data is retained in full and never
+  collapsed in the store… A field holding a computed value is the failure mode."
+- It deliberately declares no witnesses (Observation bafyreicakl3r…). I invented none.
+- It is InTensionWith telos/performance-at-scale.
+- Fit:
+  - A's framing keeps original corrupt and empty bytes and the original keys verbatim. It commits to raw bytes and
+    is explicitly "not a verified member", so a digest is never presented as truth.
+  - The bounded and streaming design (fixed memory, per-chunk polling) is where the performance tension is
+    engaged. It is resolved by bounding work, not by collapsing or sampling data. No drift found.
+  - B and C are test, fixture and decision follow-through and change no stored representation.
+
+BASELINE (logs/11 and final logs/90; identical results)
+- cargo test --features v2-crypto over the four targets: 8 commitment + 7 observation + 15 reconstruction + 2 review
+  regressions = 32 functions, all pass. The cfg gate is not vacuous: v2-crypto ⇒ v2-service ⇒ v2-storage
+  (Cargo.toml [features]), and test counts are nonzero.
+- Python oracles:
+  - logs/12: recovery_observation_vectors.py --check via KAN_CRYPTO_ORACLE_PYTHON: 6 chain, 4 shape, 57 hostile.
+  - logs/13: recovery_commitments.py --check: 9 member/output and 4 restoration vectors.
+  - logs/14: recovery_bundle_schema.py: 6 tests OK (sqlite 3.51.0).
+- Strict `cargo clippy --features v2-crypto --all-targets -- -D warnings`: exit 0 (logs/15).
+- `cargo fmt --all -- --check`: exit 0 (logs/16).
+- I did not rerun the full CI matrix; there was no concrete concern. The CI change only adds this test target
+  (git diff a8927a6^ a8927a6 -- .github; logs/C-02).
+
+=====================================================================================================
+A. STREAMING M1/O1/R1 FRAMING (a8927a6: src/evidence_recovery_commitment.rs, tests/evidence_recovery_commitment.rs,
+   scripts/recovery_commitment_negative_controls.py; governing codec doc :47-64, :84-86, :123-125, :335-355)
+
+Code read: src/evidence_recovery_commitment.rs:1-403 (all).
+- Framing (:188-238, :250-347, :358-402): the domain, then the header fields, plan, counts and sections, exactly as
+  in codec doc :54-63.
+  - Profile 2 requires no plan and zero membership.
+  - Profile 3 requires a plan of 1..4096 bytes.
+- raw_key (:156-163) admits only CIDv1/raw/sha2-256 (36 bytes).
+- ordered (:164-171) is a strict `<` on `Cid::to_string()`, i.e. canonical base32 text, not binary.
+- Poisoning:
+  - `operation` (:239-249) sets failed=true before running and clears it only on Ok.
+  - `candidate` (:369-395) does the same inline.
+  - Both finish() functions refuse when failed.
+- Meter (:65-117):
+  - duration must be in (0, 3600 s]; the declared total items are pre-checked against limits.items.
+  - check() polls cancellation and the deadline; spend() checks before each charge; Core::put (:133-140) charges
+    and polls per 64 KiB chunk.
+  - Candidate verification (:382-386) is charged and polled per chunk, separately from the framing.
+- Memory: the builders hold a Sha256 state, counters and one Option<String> (the last CID text). There is no
+  section buffer and no sort, which matches the codec doc :337-339 claim.
+- No consumer: `grep evidence_recovery_commitment src/` finds only lib.rs:30.
+
+Independent implementation (review-evidence/probes/indep_commitments.py; logs/A-20, A-20b)
+- Written from codec-doc prose only. It does not import the author oracle.
+  - Stored fixture: 9/9 M1, 9/9 O1 and 4/4 R1 match.
+- Order census:
+  - The new cid-text-order-framing objects, membership-cid-text-order-framing membership and R1#3 discriminate text
+    order from binary order.
+  - The older staged, partial-copy and R1#2 multi-key cases do not discriminate (text order == binary order).
+- Five new reviewer vectors. They cover:
+  - 3 contiguous records;
+  - mixed correct, corrupt and empty objects over discriminating pairs;
+  - profile 3 with 5 membership and 4 objects;
+  - 64 KiB−1, 64 KiB, 64 KiB+1 and 192 KiB objects;
+  - profile 3 with empty membership;
+  - maximum record fields and a 4096-byte plan.
+- Failed reviewer attempt retained: logs/A-21-probes-run1-FAILED-reviewer-duplicate-key-bug.
+  - My generator reused a CID across two pairs; Rust correctly refused the duplicate. My prose implementation lacked
+    a duplicate check.
+  - Fixed generator: logs/A-20b. Retained buggy vectors: probes/reviewer-vectors-run1-BUGGY-duplicate.json.
+
+Reviewer Rust probes (probes/zz_review_commitment_probes.rs; logs/A-22: 10/10 pass; tables in A/probe-out/)
+- RA1, exact vectors and exact work accounting:
+  - Rust M1/O1/R1 equal my prose implementation on all 5 vectors.
+  - A byte budget equal to the preimage-stream length succeeds and length−1 gives Budget, for M1 and O1.
+  - For R1 the exact budget is stream + Σ candidate bytes, which proves "verification and commitment hashing" are
+    both charged and nothing else is.
+- RA2: on 3 discriminating pairs, text order is accepted and binary order refused, for membership, original objects
+  and R1. This is SEMANTIC (acceptance), not a label.
+- RA3, all refused:
+  - membership after begin_records; begin_records or begin_objects twice;
+  - a record before begin_records; an object in the records phase;
+  - finish with fewer objects, or in the membership or records phase;
+  - record sequence 0, a repeated sequence, a record beyond the count;
+  - begin_records with fewer membership rows; an extra R1 candidate.
+  - Accepted, as it should be: an object key that sorts below the last membership key (order is per section).
+- RA4, exact edges:
+  - membership length 0 refused, 1 and 4 MiB accepted, 4 MiB+1 refused;
+  - each of manifest, receipt and proof: 0 refused, 1 and max accepted, max+1 refused;
+  - plan: 0 refused, 1 and 4096 accepted, 4097 refused;
+  - issuer: 0 refused, 80 accepted, 81 refused;
+  - original object: 0 and 4 MiB accepted, 4 MiB+1 refused;
+  - an EMPTY candidate whose CID matches the empty bytes is refused, as is a 4 MiB+1 candidate with a matching CID;
+  - counts above SAFE refused; duration 0 and 3601 s refused, 3600 s accepted.
+- RA5: DAG-CBOR codec, CIDv0, sha2-512 and identity multihash are refused in membership, objects and candidates.
+- RA6: every failure kind poisons every later operation and finish. The kinds tested are shape, phase, length,
+  budget mid-object, cancel then uncancel, record shape, and R1 budget during verification.
+- RA7: missing, empty, corrupt and correct originals give 4 distinct M1 values and 4 distinct O1 values, with M1≠O1.
+- RA8, per-chunk polling, timing-based (recorded rather than assumed):
+  - SHA-256 of 4 MiB took 103.7 ms in this build.
+  - Cancellation set about 2 ms into one 4 MiB original_object returned Cancelled after 3.17 ms.
+  - The same holds for one 4 MiB R1 candidate (3.16 ms).
+  - A 5 ms deadline expiring inside one object returned Budget at 6.3 ms.
+  - The probe self-skips if hashing is under 30 ms; it did not skip.
+- RA9: items == declared total is accepted; total−1 gives Budget at construction (both builders). finish after the
+  deadline gives Budget.
+- RA10 (characterisation, not asserted as a defect): the Domain::Output builder frames empty and hash-mismatched
+  object bytes. Codec doc :86-87 says O1 commits to a *fully verified* output. Verifying that output is a caller duty
+  that this module does not perform, as module doc :1-5 states.
+
+Compiled controls
+- Author's nine (reproduced unmodified, with OUT redirected and --offline added: scripts/author_controls_adapted.py,
+  logs/A-31, A/author-controls/):
+  - All 9 DEMONSTRATED; the restored suite passes.
+  - I classified each by its failing assertion. All 9 are SEMANTIC, not label-only:
+    - binary-cid-order: the canonical fixture is refused.
+    - poisoned-builder: begin_records returns Ok after a failure.
+    - record-order: record(2) is accepted.
+    - output-domain: O1 == M1.
+    - original-key: digest changed.
+    - candidate-hash: wrong bytes accepted.
+    - duplicate-cid: duplicate accepted.
+    - byte-budget: over budget, Ok.
+    - cancellation: Ok while cancelled.
+- Reviewer's 26 (A/controls/, logs/A-30; each restored and hash-checked; tests = 8 author + 10 reviewer):
+  - Killed by author tests (and mine):
+    - AC00 (author binary-order, again);
+    - AC12 (item pre-check removed): ERROR-TIMING only; Budget arrives later, still refused;
+    - AC14 deadline removed; AC15 finish re-check removed; AC18 verification not charged;
+    - AC19 and AC20 poisoning not set; AC21 object max+1; AC22 any codec;
+    - AC23 receipt/proof swapped; AC24 membership length unframed.
+  - SURVIVED all 8 author tests, killed ONLY by reviewer probes:
+    - AC01 put unchunked, AC02 verification unchunked, AC25 no per-spend check: RA8 only. "Polls at most every
+      64 KiB" (codec doc :346) is unpinned by the author suite.
+    - AC03 empty candidate allowed: RA4 only, SEMANTIC.
+      - The author test at tests/evidence_recovery_commitment.rs:141-143 uses cid(b"X") with b"". The hash mismatch
+        masks the nonempty rule, so the rule from codec doc :343 is unpinned.
+    - AC04 membership length 0: RA4/RA6, SEMANTIC.
+    - AC05 proof bound 16385, AC06 plan 4097, AC07 empty plan, AC08 issuer bound removed: RA4, SEMANTIC (an
+      out-of-bound input gets a digest).
+    - AC09 membership accepted after begin_records: RA3, SEMANTIC. A misframed stream can finish.
+    - AC10 MemberFraming::finish count check removed: RA3, SEMANTIC.
+      - A member digest is produced over fewer objects than the framed N(count).
+      - This is exactly the "digest over a silently shortened member" class that codec doc :340-342 and module doc
+        :178-179 say is prevented. The production code IS correct (:342-345); only the author tests do not pin it.
+    - AC16 the ≤SAFE count checks: RA4. AC17 the 3600 s cap: RA4.
+  - SURVIVED everything (equivalent mutants, explained):
+    - AC11, no `last` reset at begin_objects: records never set `last`, and begin_records already resets it (:279).
+    - AC13, runtime item check removed: redundant given the pre-check (:77) plus the per-section counts.
+
+Findings A
+- A-F1 [LOW-MEDIUM, test gap, no production defect]: 12 guards are unpinned by the author suite. The
+  highest-value ones are:
+  - AC10, member finish with fewer objects than declared;
+  - AC09, a membership row accepted after begin_records;
+  - AC03, the empty-candidate rule masked by a hash mismatch;
+  - AC01/02/25, per-chunk polling, which is the design's stated bound.
+  Promote RA3, RA4 and RA8 (or equivalents) before any consumer relies on this module.
+- A-F2 [LOW, unwritten rule]: Rust bounds the header issuer to 1..80 bytes (:190-193). Neither the codec M1 recipe
+  (:54-55) nor the Python framing oracle has this rule; the oracle accepts any string. The draft DDL bounds it to
+  56..80 printable-ASCII bytes. These are three different local issuer rules. DID semantics are intentionally out of
+  scope, but the framing-level bound should be written down once, or removed.
+- A-F3 [INFO, API hazard for later]: the Output-domain builder frames unverified bytes (RA10). The future
+  publication verifier must compute O1 only after per-object verification. O1 from this builder is not evidence that
+  the output verified.
+- A-F4 [INFO]: the per-chunk polling evidence (RA8) is timing-based. It is robust here, with a 30x margin, but it is
+  not deterministic. A deterministic test would need an injectable clock or polling hook.
+- Header DID validity, member semantics, record signatures, plan truth, candidate membership, historical selection
+  and publication readiness are NOT checked here, by design (module doc :1-5; codec doc :349-351). Framing is NOT
+  archive truth or publication authority, and nothing here suggests otherwise.
+SCOPE A VERDICT: APPROVE WITH FOLLOW-UPS. The framing is byte-exact against an independent prose implementation, and
+bounded as specified (exact work accounting, per-chunk cancellation and deadline, fixed state, poisoning). The
+author's nine controls are genuinely semantic. The follow-ups are test pinning (A-F1) and one unwritten bound (A-F2).
+There is no consumer.
+
+=====================================================================================================
+B. FOLLOW-THROUGH OF THE PRIOR OPUS REVIEW (a78fa61; prior report .design/reviews/kan-v2-recovery-wire-opus/evidence/REPORT.txt)
+
+Preservation of raw originals (logs/B-16)
+- The retained REPORT.txt equals the prior session's single Write(REPORT.txt) in its retained transcript
+  recovery-wire.jsonl, except for one line.
+- That line comes from the prior reviewer's own in-session Bash edit ("demonstrated 13" → "12" semantic-acceptance
+  cases). The edit is recorded in the same transcript, and 12 is the correct count of S01-S08, S19, P05, D17 and
+  sign-false.
+- There is no post-session author edit. The failed reviewer methods (A-30, B-30, CB1, schema run1) are retained.
+- PA3: the retained probe source (evidence/A/probes/zz_review_decoder_probes.rs:172-174) contains NO escape sequences.
+  The "escaped-type-key" and "escaped-value" rows are byte-identical to "plain", and "extra-escaped-key" is a plain
+  extra key.
+  - The prior report's PA3 labels (REPORT.txt:82-84) therefore overstate escape coverage.
+  - RETENTION.md's "Author reading note" corrects this accurately without editing the raw report. Confirmed.
+
+Production change: none. `git diff a78fa61^ a78fa61 -- src` is 0 lines (logs/B-02).
+
+B-F1/C-F1, discriminating CID order (logs/B-12, A-20)
+- Observation side:
+  - probe-19 → bafkreig5…, probe-20 → bafkreigp…. Text order says 19<20; binary order says 20<19.
+  - Locating each CID's binary form inside the exact signed envelopes:
+    - shapePositive "canonical-cid-text-order" lists probe-19 first (text order);
+    - negative "binary-cid-order" lists probe-20 first (binary order), expecting entry-order-unique.
+  - The Rust test consumes both arrays (tests/evidence_recovery_observation.rs:79-90, :141).
+- Control BC1 (the author's binary-order mutation in src/evidence_recovery_observation.rs; logs/B-20) is KILLED and
+  SEMANTIC:
+  - Rust refuses the canonical shape positive (entry-order-unique) and accepts the binary-order negative.
+  - Prior reviewer S10/S11 flip the same way.
+- Member, output and R1 side: covered in A. The census shows real discrimination; AC00 and RA2 are semantic kills.
+
+C-F2, SQL byte/ASCII/NUL (logs/B-10, B-11; B/sql-reversion/)
+- Whole-correction reversion was done inside the export, not with scripts/revert_v2.py:
+  - the SQL file was replaced with the a78fa61^ blob (git show), and the retained test file was kept;
+  - the full suite then has 5 ok and 1 FAIL (test_identifier_byte_bounds_ascii_and_embedded_nul);
+  - after restoring, it is 6 ok and the hash matches.
+- Beyond the author's evidence: each of the 5 U0 hunks (observer, issuer, member_objects.cid,
+  member_membership.cid, restored_objects.cid), reverted ALONE, also fails that test. Every hunk is individually
+  pinned.
+- Reviewer SQL probes (probes/sql_probe.py), 31/31 as expected on a UTF-8 database:
+  - 55/56/80/81-byte DIDs, '!' and '~' accepted;
+  - space, tab, DEL, SOH, leading NUL, lone 0x80 / C3 invalid UTF-8 refused;
+  - BLOB binds refused;
+  - CIDs of 0/1/128/129 bytes in all three tables.
+- Clause mutants:
+  - the equality clause is load-bearing (embedded and trailing NUL);
+  - the GLOB clause is load-bearing (newline, space);
+  - the byte-length clause is REDUNDANT once the equality clause holds (byte length == char length).
+- B-N1 [LOW, new, fail-closed]: the constraints are encoding-dependent.
+  - In a PRAGMA encoding='UTF-16le' or 'UTF-16be' database, CAST(text AS BLOB) yields UTF-16 bytes. Every valid ASCII
+    DID and CID is then REFUSED (4 probes; logs/B-11).
+  - Nothing in the DDL, the codec doc or the parent pins database text encoding (grep, logs/B-11 context).
+  - Pin `encoding=UTF-8` (check it on open and create) before the DDL is frozen. It fails closed, so there is no
+    integrity loss.
+- B-N2 [INFO]: the byte-length clause duplicates the char-length bound under the equality clause. That is harmless
+  defence in depth; do not count it as an independent guard.
+- None of this accepts the DDL. It remains a draft (codec doc :294-303).
+
+B-F2, same-key role decision
+- Decision text: codec doc :307-314 and parent recovery-bundles.md:256-262.
+- Fixture: sameKeyRoles, observer == issuer == the main observer DID.
+- Test: tests/evidence_recovery_observation.rs:197-205.
+- Control BC2 (refuse observer==issuer in Context::validate; logs/B-20) is KILLED and SEMANTIC: the same-key test
+  fails, and prior probe D17 flips to refused. The fixture genuinely pins the acceptance decision.
+- Semantic consistency: parent REQ-1 (recovery-bundles.md:12) asks for observer authority "separate from" the issuer.
+  - The decision reads that as role and signature-domain separation. I verified the two domains really differ:
+    - the observation preimage is {domain:"tools.kan.recovery.observation.v1", statement:CID}
+      (src/evidence_recovery_observation.rs:111-116);
+    - the issuer/service proof preimage has the same shape with "tools.kan.service.attestation.v1"
+      (src/evidence_attestation.rs:120-126).
+  - So an observer signature cannot be replayed as an issuer proof, even under one key. The reading is coherent and
+    explicitly recorded. It is not silent narrowing.
+  - Residual: with key reuse, compromise of one role compromises both. That is disclosed.
+  - "Jobs default to distinct keys and disclose reuse" is UNVERIFIABLE: no job exists.
+
+B-F3, multi-fault diagnostic precedence (probes/multifault_gen.py with oracle Python; probes/zz_review_multifault.rs;
+logs/B-13b, B-14; B/probe-out/multifault.tsv)
+- Failed reviewer attempt retained: logs/B-13-…-run1-FAILED-reviewer-context-bug.
+- Two signed multi-fault envelopes, generated by the author's independent oracle:
+  - created at sequence 2 + 31-byte member: Python says created-position, Rust says byte-width;
+  - unavailable at sequence 1 + empty entries: Python says created-position, Rust says entries-bound.
+  - Both implementations REFUSE both. A single-fault control agrees (byte-width / byte-width).
+- This is consistent with the recorded decision (codec doc :316-320): labels are pinned only for single-fault inputs,
+  and acceptance and byte identity are the contract.
+- Control BC3 (Rust created-position moved before body) is KILLED, label-only.
+  - The author vector "unknown-event" at sequence 1 is a single fault in both current implementations, which check
+    the event before position. It becomes a two-fault input under the swap.
+  - It is not an acceptance change. Do not cite it as a security boundary.
+
+C-F4, >4 MiB expected length
+- Text: codec doc :329-333 and parent recovery-bundles.md:261-262. They name `forensic-recovery-required` even when
+  no physical row survives.
+- This is consistent with every representable bound:
+  - the wire expectedLength and restored length cap at 4194304 (src/evidence_recovery_observation.rs:178, :204;
+    oracle vector "oversize-restoration");
+  - M1 membership caps at 4 MiB (RA4).
+- The refusal itself is UNVERIFIABLE as behaviour: no creation path or writer exists.
+
+Signed false semantic cases (logs/B-14, B-15)
+- The prior reviewer's unmodified probe source and probes.json were re-run on this tree. The positive chain is
+  unchanged since 1833ee5, so the vectors still apply.
+- pb1-differential.tsv and pb2-rust-only.tsv are BYTE-IDENTICAL to the retained originals.
+- All 12 semantic-false cases still authenticate at the wire layer: S01-S08, S19, P05 fork, D17 and sign-false-member-digest.
+- They remain mandatory rejects for the future full verifier (codec doc :289-291), which does not exist. None is met.
+
+SCOPE B VERDICT: APPROVE WITH FOLLOW-UPS.
+- Every prior follow-up assigned to this round is addressed with real, discriminating and individually pinned
+  evidence, and the decisions are semantically coherent.
+- New follow-up: B-N1 (pin the UTF-8 database encoding).
+- This does NOT accept the DDL, the writer or the KNB1 format, and no parent AC-1..AC-6 is checked
+  (recovery-bundles.md:22-27).
+
+=====================================================================================================
+C. PROMOTED PA1/PA2 DECODER REGRESSIONS (ede35ec: tests/evidence_reconstruction_review_regressions.rs)
+
+- No production change. `git diff ede35ec^ ede35ec -- src` is empty, and src/evidence_reconstruction.rs is
+  byte-identical between c04ee13 and a8927a6 (logs/C-02; restored hash fbe93e92…).
+- Faithfulness (logs/C-01-probe-vs-promoted.diff): compared with the original reviewer source, PA1 and PA2 differ
+  only in:
+  - rustfmt formatting;
+  - REVIEW_OUT file writes replaced by eprintln;
+  - an added `assert!(captures > 10, "nonvacuous accepted corpus")`.
+  The corpus construction, the replacements and the expected labels are identical.
+- Corpus (logs/C-11, C-12), from the promoted test's own output:
+  - 1256 rows (10 base frames + 1246 mutations), 117 Captures, 0 violations;
+  - the multiset is IDENTICAL to the original reviewer's retained pa1-corpus.tsv.
+  - Note: "1257" (in the prior report and the prompt) is that file's line count, including the summary line. There
+    are 1246 mutations.
+- PA2 rows (logs/C-11):
+  - null, 0 and u64::MAX give Capture;
+  - -1, 1.5, "0" and 2^64 give Err(Header);
+  - an absent clock with unknown version, observer, event or outcome stays Unsupported(…);
+  - an absent clock on all 10 recognized events gives Err(Header).
+  These match the original findings.
+- Author controls (adapted with the output path redirected and --offline added: scripts/decoder_author_controls_adapted.py;
+  logs/C-10):
+  - 03 clock-before-unsupported: DEMONSTRATED. PA2 fails at :180 (Err(Header) vs Unsupported(Version)). This is the
+    original CA4 survivor, now killed.
+  - 04 unit-extras guard removed: DEMONSTRATED. PA1 reports 3 violations, forwarding-intent/extra-event-{0,1,2}.
+  - The restored suite passes.
+- Reviewer controls (C/controls/, logs/C-20):
+  - CC1, clock check removed (reverts that part of c04ee13): killed by PA1, PA2 and the author's 15-suite.
+  - CC2, unit-extra off by one: killed by PA1 and the author's suite.
+  - CC3, VACUITY (all small frames Opaque): PA1 fails on the nonvacuity assert (captures=0). The guard is live.
+  - CC4 (projection skips a null clock: 97 violations) and CC5 (absent `method` defaulted: 1 violation) are
+    projection-narrowing mutations in src/evidence_capture.rs. Within these two targets ONLY PA1 kills them, so the
+    property generalises beyond the two original fixes (closes prior A-F2).
+- C-N1 [INFO]: the nonvacuity floor (>10) is far below the observed 117. A change that refuses most previously
+  accepted mutants would not trip PA1, though PA2 and the author suite cover the clock cases. Pinning the exact
+  capture count would be stronger, at the cost of brittleness.
+- Not upgraded: these pin header decoding and lossless projection only. They do not constitute occurrence assembly,
+  reconstruction completeness or frontend acceptance; all AC-1..AC-8 of the session reconstruction remain open.
+SCOPE C VERDICT: APPROVE. It is a faithful, non-vacuous promotion that pins both original independent findings (A-F1 via
+PA2's unknown-precedence rows, A-F2 via the PA1 property). Both author controls reproduce, and extra mutations show
+general reach.
+
+=====================================================================================================
+SCOPE-NARROWING (logs/60-scope-narrowing-grep.txt)
+- In a8927a6: "DID/record/plan truth, candidate membership and full state replay are not supplied", "full member and
+  state verification are separate prerequisites", and the module doc "does not check record signatures…".
+- These were named before this checkpoint, as prerequisites in codec doc :298-303. They are genuinely separable and
+  do not defer what this checkpoint claims (bounded framing). LEGITIMATE.
+- a78fa61 and ede35ec add no new narrowing.
+  - The same-key and label decisions are recorded interpretations with fixtures and controls, not silent drift.
+
+FORBIDDEN PATTERNS (CLAUDE.md house rules)
+- No subject mutation or destruction, no blocking hooks, no new UI surface, no cites edges, and no persistence change
+  (so there is no surface-contract row due).
+- No raw-data collapse: original corrupt and empty bytes and the original keys are framed verbatim.
+
+EXPLICITLY UNQUALIFIED (nothing here verifies or accepts):
+- full member/proof validation (record signatures, issuer proof chain, plan truth, profile-3 completion);
+- the exact unavailable-loss vector and its 32-entry/16 KiB partition;
+- historical candidate selection and state/publication replay;
+- external checkpoint verification;
+- the KNB1 writer, storage consumer, crash outcomes, owner jobs, RPC and UI;
+- DDL freezing; cross-copy anti-equivocation.
+
+UNTESTED / LIMITS
+- The full CI matrix and Node/browser suites were not rerun.
+- RA8 is timing-based (30x margin, no skip occurred). Filesystem stalls and caller acquisition are out of the
+  module's bound by design.
+- Only sqlite 3.51.0 (Python) was used for DDL probes. UTF-16 behaviour was observed there only.
+- Mutations were run against the listed test targets only. Other crate tests may also catch CC4 and CC5.
+- kan/day were not invoked (git-first). The north star is as supplied, and telos liveness was not cross-checked
+  against a log.
+
+=====================================================================================================
+OVERALL VERDICT: **APPROVE WITH FOLLOW-UPS**
+- A's streaming framing is byte-exact against an independent prose implementation, including discriminating
+  text-vs-binary CID order. It is bounded as the design states: exact work accounting, per-chunk cancellation and
+  deadline, fixed state, and poisoning. No production defect was found.
+- B closes the prior review's follow-ups with discriminating fixtures, individually pinned SQL hunks and coherent
+  recorded decisions. The 12 signed false claims still authenticate and remain future-verifier obligations.
+- C faithfully and non-vacuously pins the prior independent decoder findings.
+- Concrete follow-ups:
+  - A-F1: promote tests for member finish-count (AC10), membership after begin_records (AC09), the nonempty
+    candidate (AC03), per-chunk polling (AC01/02/25) and the local bound edges.
+  - A-F2: write down or remove the Rust-only 1..80-byte issuer bound.
+  - A-F3: O1 must only be computed over verified output bytes by the future verifier.
+  - B-N1: pin the UTF-8 database encoding for the draft DDL.
+  - C-N1 (optional): a tighter nonvacuity floor.
+- None reaches REDIRECT or BLOCK. Each is a test, documentation or draft gap in front of components with no consumer.
+  Framing is not archive truth or publication authority, and nothing here accepts the KNB1 format, DDL, writer or any
+  parent AC.

@@ -1,0 +1,17 @@
+{
+  "label": "final",
+  "commit": "a8927a64005b8fc27ae55bcb17577cb3ff070fd6",
+  "manifest_files": 2883,
+  "git_blobs_at_commit": 2883,
+  "on_disk_files_excluding_review_evidence": 2884,
+  "missing_from_disk": [],
+  "extra_on_disk": [
+    "north-star.json"
+  ],
+  "disk_sha256_mismatch": [],
+  "git_only_not_in_manifest": [],
+  "manifest_only_not_in_git": [],
+  "git_blob_sha256_vs_manifest_mismatch": [],
+  "disk_git_oid_mismatch": []
+}
+RESULT: OK (only extra: north-star.json)
