@@ -24,7 +24,7 @@ jobs:
       - run: ./scripts/check-citations.sh --self-test
       - run: ./scripts/check-citations.sh
       - run: python3 scripts/evidence_reference.py --check
-      - run: node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs tests/theme_ui.test.cjs
+      - run: node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs tests/operations_restart_review.test.cjs tests/theme_ui.test.cjs
       - run: python3 tests/test_revert_v2.py
 
       - uses: Swatinem/rust-cache@v2

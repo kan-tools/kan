@@ -1,0 +1,16 @@
+$ grep -niE 'out of scope|deferred|follow-up|future work|for now|TODO|later|remains required|not constitute|unverified' review-evidence/results/range-full.diff
+10:+### Restart rendering follow-up
+18:+Fresh review of this correction remains required.
+37:+review finishes; fresh review of this correction remains required.
+43:+These author-run incorporated probes do not constitute a fresh review verdict.
+64:+ℹ todo 0
+97:+ℹ todo 0
+127:+ℹ todo 0
+156:+✔ UPf: superseded label survives later overview polls and a failed status poll (0.992333ms)
+193:+ℹ todo 0
+207:+✔ UPf: superseded label survives later overview polls and a failed status poll (1.093334ms)
+244:+ℹ todo 0
+285:+ℹ todo 0
+300:+ℹ todo 0
+356:+ℹ todo 0
+515:+test('UPf: superseded label survives later overview polls and a failed status poll',async()=>{

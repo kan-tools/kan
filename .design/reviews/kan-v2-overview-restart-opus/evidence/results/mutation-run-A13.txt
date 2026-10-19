@@ -1,0 +1,4 @@
+$ python3 -I review-evidence/probes/mutate.py "$PWD" ../ui-restart-identity.json A13
+A13-finally-keeps-queued                 author=survived imported=KILLED(hang) review=survived
+app.js restored; sha256 matches manifest: True
+exit=0

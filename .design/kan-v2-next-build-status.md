@@ -93,8 +93,11 @@ legacy-profile refusal, copied-proof verification, pinned source transactions,
 process death at initialization/rebuild boundaries and real CLI output. Five
 semantic negative controls fail named assertions and restored checks pass. Local
 qualification passes 81 Rust checks and strict all-target v2 Clippy; evidence is
-in `.design/reviews/kan-v2-proof-lifecycle-author/`. Fresh review is pending;
-no parent acceptance criterion is closed from this draft.
+in `.design/reviews/kan-v2-proof-lifecycle-author/`. Fresh actual Opus5.5 review at7ab1afa returned APPROVE WITH FOLLOW-UPS;
+the raw report is in `.design/reviews/kan-v2-overview-lifecycle-opus/`.
+Follow-up qualification at9aca45d closes the named test, CLI and catalog gaps
+(`.design/reviews/kan-v2-proof-lifecycle-followup-author/`); its fresh correction
+review is pending. No parent acceptance criterion is closed by this slice.
 
 ## Remaining ordered build
 
@@ -142,3 +145,19 @@ with explicit labels. Light/dark and 390-pixel wrapping were inspected; lock cle
 metadata. Evidence and exact fixture limitations are preserved in
 `.design/reviews/kan-v2-overview-browser-followup/`. This was collected after the
 7ab1afa independent-review export; it does not change that review's scope or verdict.
+
+## Current cold-review disposition
+
+The fresh combined review approved the overview correction at262cad3 and lifecycle
+at7ab1afa with follow-ups; required writer exclusion is resolved. Full compatibility
+execution passed310 checks on macOS. Sustained back-to-back writers can still
+starve overview refresh, and practical overview capacity remains about64.5k
+identities; refusal is visible. Backend deadline/revalidation/window regression
+seams remain follow-ups.
+
+A separate cold review approved the restart rendering fix at7126848 with
+follow-ups. Its12 probes plus an author queue-repeat regression are now in CI;
+49operations checks pass and11UI mutants fail named assertions. Evidence and
+provenance are in `.design/reviews/kan-v2-overview-restart-opus/`. The production
+fix has not changed after that review. The broader browser matrix was collected
+before the restart fix; actual file download delivery remains unverified.

@@ -1,0 +1,145 @@
+# mutant K2-key-totals-only
+# before: "s.last_job+':'+JSON.stringify(v)"
+# after:  "s.last_job+':'+JSON.stringify(v.totals)"
+
+## suite author exit=1
+✔ auth is header-only; gap filtering and untrusted values use text (15.243ms)
+✔ late authenticated response cannot unlock a locked view (0.689333ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.636958ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.828041ms)
+✔ fresh active sessions are current while historical losses remain visible (0.684708ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.728084ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.7245ms)
+✔ unsampled sessions and summary loss units are explicit (0.620291ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.801334ms)
+✔ unsupported status version retains visibly disconnected values (0.91775ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.689625ms)
+✔ locking clears rendered private metadata and closes the inspector (0.544417ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.602ms)
+✔ future persistence timestamps stay unknown (0.474125ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.679083ms)
+✔ unchanged notices are not announced again on every poll (0.614166ms)
+✔ overview refresh is explicit authenticated POST with exact large counters (0.854584ms)
+✔ lock clears overview and prevents a late result from repainting (0.932ms)
+✔ failed or limited refresh labels the prior sample explicitly (0.618667ms)
+✔ overview rejects malformed source lists and unsafe numeric counters before rendering (1.601584ms)
+✔ build preempts an in-flight overview poll and ignores its stale reply (0.585834ms)
+✔ cancel preempts a poll while preserving server action order (0.579666ms)
+✔ a second action is queued behind an unfinished action, then dispatched (0.532208ms)
+✔ cached overview shows its age and becomes visibly superseded after rotation (0.868958ms)
+✔ invalid overview replies label retained totals and restart clears them (0.630458ms)
+✔ late overview transport errors cannot repaint after lock (0.4765ms)
+✖ a reused job number after restart cannot retain old overview totals (0.808625ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 26
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 65.9145
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:45:1
+✖ a reused job number after restart cannot retain old overview totals (0.808625ms)
+  AssertionError [ERR_ASSERTION]: new sample time must replace prior coverage time even with identical rows
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/tests/operations_ui.test.cjs:53:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'Complete for 1 selected observation snapshots, built 12/31/1969, 4:03:20 PM. Raw capture completeness remains unknown. Active generation: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.',
+    expected: 'Complete for 1 selected observation snapshots, built 12/31/1969, 4:03:20 PM. Raw capture completeness remains unknown. Active generation: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.',
+    operator: 'notStrictEqual'
+  }
+
+## suite imported exit=0
+✔ UPa: a poll aborted by a preempting Build never labels the view as timed out/failed (15.405833ms)
+✔ UPb: after a service restart, a new sample with the same job number and manifest must repaint totals (1.381791ms)
+✔ UPc: lock with a queued action dispatches nothing and repaints nothing afterwards (0.910083ms)
+UPd dispatched actions: ["/api/overview/refresh","/api/overview/refresh"]
+✔ UPd: Build, Cancel, Build while an action is in flight: only the last queued action is sent (0.978208ms)
+✔ UPe: a failing action still dispatches the queued action and keeps the prior-sample label (0.741375ms)
+✔ UPf: superseded label survives later overview polls and a failed status poll (0.905416ms)
+✔ UPg: future-dated sample says its clock is ahead, not "0s old" (0.728459ms)
+✔ UPh: relogin after lock ignores the old session's late action reply (0.729917ms)
+✔ UPi: after a Build preempts a poll, a following Cancel is still queued (one action in flight) (0.711792ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8055.264
+
+## suite review exit=1
+✖ RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints (16.731625ms)
+✔ RP2: restart, same job/manifest/built_at, only totals differ -> totals repaint (1.710334ms)
+✖ RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint (1.145583ms)
+✔ RP4: lock -> relogin -> load returns the SAME cached sample -> body is repainted, not left blank (1.561792ms)
+✔ RP5: restart observed via last:null in between, then identical-looking sample -> body repainted (1.072708ms)
+✔ RP6: the 8 s timeout labels "timed out", retains prior sample, and releases the request slot (0.960791ms)
+✔ RP7: a queued action does not leak across lock/relogin into the next session (0.978458ms)
+✔ RP8: Build preempts a poll whose headers arrived but whose body is still streaming (1.097125ms)
+✔ RP9: valid A, invalid reply, then valid B (same job/manifest) -> B repaints (1.212833ms)
+✔ RP10: identical sample repeated: neither summary, coverage nor sources are rewritten (no announce churn) (1.089ms)
+RP11 summary rewrites after key reorder: 0
+✔ RP11 (informational): same sample re-serialised with different key order re-renders but shows identical content (0.816625ms)
+✖ RP12: bounds - 1024 server-shaped sources render; key work is small; 1025 sources are rejected (17.081ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 9
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 77.098333
+
+✖ failing tests:
+
+test at review-evidence/probes/restart_review_probes.test.cjs:31:1
+✖ RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints (16.731625ms)
+  AssertionError [ERR_ASSERTION]: source digest from pre-restart sample still shown
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/review-evidence/probes/restart_review_probes.test.cjs:34:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa · active snapshot · row digest cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    expected: /row digest e{64}$/,
+    operator: 'match'
+  }
+
+test at review-evidence/probes/restart_review_probes.test.cjs:41:1
+✖ RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint (1.145583ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  1 !== 2
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/review-evidence/probes/restart_review_probes.test.cjs:44:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 2,
+    operator: 'strictEqual'
+  }
+
+test at review-evidence/probes/restart_review_probes.test.cjs:104:1
+✖ RP12: bounds - 1024 server-shaped sources render; key work is small; 1025 sources are rejected (17.081ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  1 !== 1024
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/review-evidence/probes/restart_review_probes.test.cjs:110:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 1024,
+    operator: 'strictEqual'
+  }

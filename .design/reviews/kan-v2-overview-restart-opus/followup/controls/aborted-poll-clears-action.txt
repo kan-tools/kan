@@ -1,0 +1,27 @@
+✖ UPi: after a Build preempts a poll, a following Cancel is still queued (one action in flight) (14.814167ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8048.511375
+
+✖ failing tests:
+
+test at tests/operations_review_ui.test.cjs:96:1
+✖ UPi: after a Build preempts a poll, a following Cancel is still queued (one action in flight) (14.814167ms)
+  AssertionError [ERR_ASSERTION]: a second action was dispatched concurrently with Build
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/tests/operations_review_ui.test.cjs:101:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual'
+  }

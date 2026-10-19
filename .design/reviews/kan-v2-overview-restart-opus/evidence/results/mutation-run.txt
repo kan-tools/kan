@@ -1,0 +1,71 @@
+$ python3 -I review-evidence/probes/mutate.py "$PWD" ../ui-restart-identity.json
+K0-revert-to-manifest-key                author=KILLED   imported=KILLED   review=KILLED  
+    author: a reused job number after restart cannot retain old overview totals
+    imported: UPb: after a service restart, a new sample with the same job number and manifest must repaint totals
+    review: RP12: bounds - 1024 server-shaped sources render; key work is small; 1025 sources are rejected
+    review: RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints
+    review: RP2: restart, same job/manifest/built_at, only totals differ -> totals repaint
+    review: RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint
+    review: RP9: valid A, invalid reply, then valid B (same job/manifest) -> B repaints
+K1-key-built_at-only                     author=survived imported=survived review=KILLED  
+    review: RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints
+    review: RP2: restart, same job/manifest/built_at, only totals differ -> totals repaint
+    review: RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint
+    review: RP9: valid A, invalid reply, then valid B (same job/manifest) -> B repaints
+K2-key-totals-only                       author=KILLED   imported=survived review=KILLED  
+    author: a reused job number after restart cannot retain old overview totals
+    review: RP12: bounds - 1024 server-shaped sources render; key work is small; 1025 sources are rejected
+    review: RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints
+    review: RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint
+K3-key-built_at+totals                   author=survived imported=survived review=KILLED  
+    review: RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints
+    review: RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint
+K4-key-all-but-sources                   author=survived imported=survived review=KILLED  
+    review: RP1: restart, same job/manifest/built_at/totals, only a source row digest differs -> source list repaints
+    review: RP3: restart, same everything except the sealed source set (generation added) -> coverage + sources repaint
+K5-key-drop-last_job[equiv?]             author=survived imported=survived review=survived
+K6-no-early-return                       author=KILLED   imported=survived review=KILLED  
+    author: a reused job number after restart cannot retain old overview totals
+    review: RP10: identical sample repeated: neither summary, coverage nor sources are rewritten (no announce churn)
+K7-null-last-keeps-key                   author=survived imported=survived review=KILLED  
+    review: RP5: restart observed via last:null in between, then identical-looking sample -> body repainted
+K8-clearOverview-keeps-key               author=survived imported=survived review=KILLED  
+    review: RP4: lock -> relogin -> load returns the SAME cached sample -> body is repainted, not left blank
+A0-finally-drop-serial(author)           author=survived imported=KILLED   review=survived
+    imported: UPi: after a Build preempts a poll, a following Cancel is still queued (one action in flight)
+A1-catch-drop-serial(author)             author=survived imported=KILLED   review=KILLED  
+    imported: UPa: a poll aborted by a preempting Build never labels the view as timed out/failed
+    review: RP8: Build preempts a poll whose headers arrived but whose body is still streaming
+A2-timeout-label-lost                    author=survived imported=survived review=KILLED  
+    review: RP6: the 8 s timeout labels "timed out", retains prior sample, and releases the request slot
+A3-preempt-no-abort                      author=survived imported=KILLED   review=survived
+    imported: UPa: a poll aborted by a preempting Build never labels the view as timed out/failed
+    imported: UPi: after a Build preempts a poll, a following Cancel is still queued (one action in flight)
+A4-lock-no-abort                         author=survived imported=KILLED   review=KILLED  
+    imported: UPc: lock with a queued action dispatches nothing and repaints nothing afterwards
+    review: RP7: a queued action does not leak across lock/relogin into the next session
+A5-lock-keeps-queued                     author=survived imported=survived review=KILLED  
+    review: RP7: a queued action does not leak across lock/relogin into the next session
+A6-no-preemption                         author=KILLED   imported=KILLED   review=KILLED  
+    author: build preempts an in-flight overview poll and ignores its stale reply
+    author: cancel preempts a poll while preserving server action order
+    imported: UPa: a poll aborted by a preempting Build never labels the view as timed out/failed
+    review: RP8: Build preempts a poll whose headers arrived but whose body is still streaming
+A7-catch-drop-generation[equiv?]         author=survived imported=survived review=survived
+A8-finally-drop-generation[equiv?]       author=survived imported=survived review=survived
+A9-success-drop-generation[equiv?]       author=survived imported=survived review=survived
+A10-success-drop-serial                  author=KILLED   imported=survived review=survived
+    author: build preempts an in-flight overview poll and ignores its stale reply
+    author: cancel preempts a poll while preserving server action order
+A11-queued-never-dispatched              author=KILLED   imported=KILLED   review=survived
+    author: a second action is queued behind an unfinished action, then dispatched
+    imported: UPd: Build, Cancel, Build while an action is in flight: only the last queued action is sent
+    imported: UPe: a failing action still dispatches the queued action and keeps the prior-sample label
+    imported: UPi: after a Build preempts a poll, a following Cancel is still queued (one action in flight)
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/review-evidence/probes/mutate.py", line 90, in <module>
+    main()
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/review-evidence/probes/mutate.py", line 64, in main
+    assert n == 1, f'{name}: anchor count {n}'
+AssertionError: A12-no-clearTimeout[equiv?]: anchor count 2
+exit=1
