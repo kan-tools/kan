@@ -1,4 +1,5 @@
 //! Human evidence Library. Loopback presentation with a separate read capability.
+use crate::evidence_content::ContentError;
 use crate::evidence_reader::{Pin, Reader};
 use crate::evidence_service::Failure;
 use http_body_util::{BodyExt, Full, Limited};
@@ -64,7 +65,7 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
         r#"{"error":"reader request unavailable or refused"}"#,
     )
 }
-async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, Failure> {
+async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
         Query::Content {
@@ -73,7 +74,7 @@ async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, Failure> {
             format,
         } => {
             return reader
-                .content(&content::pin(&pin_wire)?, &sequences, format)
+                .content_detailed(&content::pin(&pin_wire)?, &sequences, format)
                 .await
         }
         Query::ContentPage {
@@ -160,7 +161,7 @@ async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, Failure> {
         } => serde_json::to_value(reader.source(&pin, sequence, offset, length).await?)
             .map_err(|_| Failure::Invalid),
     }?;
-    serde_json::to_vec(&value).map_err(|_| Failure::Invalid)
+    serde_json::to_vec(&value).map_err(|_| ContentError::Read(Failure::Invalid))
 }
 async fn handle(
     r: Request<Incoming>,
@@ -238,9 +239,19 @@ async fn handle(
     };
     Ok(match query(&reader, request).await {
         Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
-        Err(Failure::AccessLimited) => denied(StatusCode::FORBIDDEN),
-        Err(Failure::Missing) => denied(StatusCode::NOT_FOUND),
-        Err(Failure::Invalid) => denied(StatusCode::BAD_REQUEST),
+        Err(ContentError::Read(Failure::AccessLimited)) => denied(StatusCode::FORBIDDEN),
+        Err(ContentError::Read(Failure::Missing)) => denied(StatusCode::NOT_FOUND),
+        Err(ContentError::Read(Failure::Invalid)) => denied(StatusCode::BAD_REQUEST),
+        Err(ContentError::Limited) => response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "application/json",
+            r#"{"error":"content-limit"}"#,
+        ),
+        Err(ContentError::Busy) => response(
+            StatusCode::TOO_MANY_REQUESTS,
+            "application/json",
+            r#"{"error":"content-busy"}"#,
+        ),
         Err(_) => denied(StatusCode::SERVICE_UNAVAILABLE),
     })
 }

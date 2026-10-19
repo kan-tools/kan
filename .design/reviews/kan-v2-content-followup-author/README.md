@@ -1,0 +1,7 @@
+# Content review corrections — author qualification in progress
+
+This branch begins at bb1e0ab. The baseline's actual Opus review is still finishing; final verdict and raw evidence will be incorporated from its original branch. Prepared fixes respond to the review's concrete reproduced findings, without treating a draft report as acceptance.
+
+Source correspondence is validated once per immutable borrowed stream; per-item mapping retains exact duplicate and boundary citations with bounded work. Content presentation limits and busy workers have fixed HTTP outcomes separate from verification failures. The UI exposes observer length claims and unexpected starts and re-enables Interpret when Source supersedes work. Provider version 3 flags malformed error/tool-result shapes and preserves resolving pointers. A private no-op-in-production observation seam allows deterministic real-Reader cancellation/permit tests; it is not an HTTP or environment control.
+
+The staged frontend has 47 passing Node tests, including nine promoted independent review probes. Seven semantic mutations fail assertions; exact restored app/test SHA256 values and raw outputs are retained here. These are staged-file results, not yet a whole-branch acceptance claim. Rust changes have been formatted but not compiled or tested. Remote CI and fresh independent review remain pending. The machine has less than 15GiB free and the original review owns the shared local build target; no parallel heavy local build is started.

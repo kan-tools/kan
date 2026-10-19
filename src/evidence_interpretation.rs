@@ -17,7 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const VERSION: &str = "kan-anthropic-messages/2";
+pub const VERSION: &str = "kan-anthropic-messages/3";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
     Request,
@@ -245,6 +245,13 @@ fn block(
         i.kind = Kind::Malformed;
         i.issues.push(Issue::Shape);
     }
+    if kind == Kind::ToolResult
+        && !value
+            .get("content")
+            .is_some_and(|v| v.is_string() || v.is_array())
+    {
+        i.issues.push(Issue::Shape);
+    }
     push(out, i, w)?;
     if kind == Kind::ToolResult && value.get("content").is_some_and(Value::is_array) {
         content(
@@ -339,7 +346,14 @@ fn json_body(bytes: &[u8], format: Format, doc: &mut Document, w: &mut Work) -> 
         }
     } else if value.get("type").and_then(Value::as_str) == Some("error") {
         let mut i = item(Kind::Error, region.clone());
-        i.pointer = Some(w.string("/error")?);
+        i.pointer = Some(w.string(if value.get("error").is_some() {
+            "/error"
+        } else {
+            ""
+        })?);
+        if !value.get("error").is_some_and(Value::is_object) {
+            i.issues.push(Issue::Shape);
+        }
         push(&mut doc.items, i, w)?;
     } else if value.get("type").and_then(Value::as_str) == Some("message") {
         let role = value.get("role").and_then(Value::as_str);
@@ -745,6 +759,60 @@ pub fn map_region(
     region: Range<usize>,
     limits: Limits,
 ) -> Result<Vec<SourceSpan>> {
+    let started = Instant::now();
+    let mapping = validate_mapping(stream, inputs, limits.clone())?;
+    let mut remaining = limits;
+    remaining.duration = remaining
+        .duration
+        .checked_sub(started.elapsed())
+        .ok_or(Error::Limit("duration"))?;
+    mapping.map(region, remaining)
+}
+
+/// Immutable, request-local source correspondence. Construction validates every
+/// segment and duplicate against retained capture bytes. Both inputs and stream
+/// remain borrowed, so subsequent mappings cannot substitute mutable sources.
+pub(crate) struct ValidatedMapping<'a, 'b> {
+    stream: &'a Stream,
+    _inputs: &'a [Input<'b>],
+    pub(crate) scanned_bytes: u64,
+}
+impl ValidatedMapping<'_, '_> {
+    pub(crate) fn map(&self, region: Range<usize>, limits: Limits) -> Result<Vec<SourceSpan>> {
+        let mut w = Work::new(limits)?;
+        let bytes = self.stream.contiguous.as_deref().ok_or(Error::Mapping)?;
+        if region.start > region.end || region.end > bytes.len() {
+            return Err(Error::Mapping);
+        }
+        let mut out = vec![];
+        for segment in &self.stream.segments {
+            w.item()?;
+            let offset = usize::try_from(segment.offset).map_err(|_| Error::Mapping)?;
+            let end = offset.checked_add(segment.length).ok_or(Error::Mapping)?;
+            let a = offset.max(region.start);
+            let b = end.min(region.end);
+            for source in &segment.sources {
+                w.item()?;
+                if a < b || (region.is_empty() && offset <= a && a <= end && a == region.start) {
+                    if out.len() >= w.limits.citations {
+                        return Err(Error::Limit("citations"));
+                    }
+                    out.push(SourceSpan {
+                        input: source.input,
+                        bytes: (source.bytes.start + a - offset)..(source.bytes.start + b - offset),
+                    });
+                }
+            }
+        }
+        w.check()?;
+        Ok(out)
+    }
+}
+pub(crate) fn validate_mapping<'a, 'b>(
+    stream: &'a Stream,
+    inputs: &'a [Input<'b>],
+    limits: Limits,
+) -> Result<ValidatedMapping<'a, 'b>> {
     let mut w = Work::new(limits)?;
     let bytes = stream.contiguous.as_deref().ok_or(Error::Mapping)?;
     if bytes.len() > w.limits.input_bytes {
@@ -754,13 +822,10 @@ pub fn map_region(
         || stream
             .expected_bytes
             .is_some_and(|n| n != bytes.len() as u64)
-        || region.start > region.end
-        || region.end > bytes.len()
     {
         return Err(Error::Mapping);
     }
     let mut next = 0usize;
-    let mut out = vec![];
     let mut group = None;
     for s in &stream.segments {
         w.item()?;
@@ -824,17 +889,6 @@ pub fn map_region(
             if raw != piece {
                 return Err(Error::Mapping);
             }
-            let a = offset.max(region.start);
-            let b = end.min(region.end);
-            if a < b || (region.is_empty() && offset <= a && a <= end && a == region.start) {
-                if out.len() >= w.limits.citations {
-                    return Err(Error::Limit("citations"));
-                }
-                out.push(SourceSpan {
-                    input: source.input,
-                    bytes: (source.bytes.start + a - offset)..(source.bytes.start + b - offset),
-                });
-            }
         }
         next = next.max(end);
     }
@@ -842,7 +896,11 @@ pub fn map_region(
         return Err(Error::Mapping);
     }
     w.check()?;
-    Ok(out)
+    Ok(ValidatedMapping {
+        stream,
+        _inputs: inputs,
+        scanned_bytes: w.scan,
+    })
 }
 #[cfg(test)]
 mod tests {

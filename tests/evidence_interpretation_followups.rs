@@ -239,3 +239,51 @@ fn sequence_issue_is_attached_to_the_block_start_that_follows_message_delta() {
     let d = p::interpret(&events(&v), p::Format::Sse, limits()).unwrap();
     assert!(d.items[2].issues.contains(&p::Issue::Sequence));
 }
+
+#[test]
+fn malformed_error_and_tool_result_shapes_have_resolving_pointers_and_reasons() {
+    for bytes in [
+        br#"{"type":"error"}"#.as_slice(),
+        br#"{"type":"error","error":7}"#.as_slice(),
+    ] {
+        let d = p::interpret(bytes, p::Format::Response, limits()).unwrap();
+        let i = d.items.iter().find(|i| i.kind == p::Kind::Error).unwrap();
+        assert!(i.issues.contains(&p::Issue::Shape));
+        assert!(d
+            .json
+            .as_ref()
+            .unwrap()
+            .pointer(i.pointer.as_ref().unwrap())
+            .is_some());
+    }
+    for value in [
+        json!(null),
+        json!({"type":"text","text":"kept in raw JSON"}),
+        json!(7),
+    ] {
+        let bytes=serde_json::to_vec(&json!({"messages":[{"role":"user","content":[{"type":"tool_result","content":value}]}]})).unwrap();
+        let d = p::interpret(&bytes, p::Format::Request, limits()).unwrap();
+        let item = d
+            .items
+            .iter()
+            .find(|i| i.kind == p::Kind::ToolResult)
+            .unwrap();
+        assert!(item.issues.contains(&p::Issue::Shape));
+        assert_eq!(
+            d.json
+                .as_ref()
+                .unwrap()
+                .pointer("/messages/0/content/0/content"),
+            Some(&value)
+        );
+    }
+}
+#[test]
+fn unknown_sse_field_reason_is_local_to_its_event() {
+    let raw = b"future-field: value\ndata: {\"type\":\"ping\"}\n\ndata: {\"type\":\"ping\"}\n\n";
+    let d = p::interpret(raw, p::Format::Sse, limits()).unwrap();
+    assert_eq!(d.items.len(), 2);
+    assert_eq!(d.items[0].issues, vec![p::Issue::Unknown]);
+    assert!(d.items[1].issues.is_empty());
+    assert!(!d.coherent_stop_observed);
+}

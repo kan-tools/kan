@@ -1,0 +1,75 @@
+✔ real endpoint uses header auth and untrusted source stays text (4.488959ms)
+✔ lock aborts pending source and clears every private view (0.783209ms)
+✔ page and scope navigation carry only the selected authenticated pin (0.876417ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.881042ms)
+✔ old transport errors cannot lock a newer session (0.9785ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.875166ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.770375ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.623708ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (2.014792ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.995375ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.374041ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.552125ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.564167ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.599917ms)
+✔ partial catalog coverage persists while browsing and retry clears old authority (0.990708ms)
+✔ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (0.925125ms)
+✔ both authorization denial statuses lock an already open Library (1.1775ms)
+✔ Previous is disabled immediately when leaving a later page (0.709875ms)
+✔ malformed duplicate and inconsistent capabilities never open a Library (2.226083ms)
+✔ all directional control families default to exact hex with explicit text access (5.529916ms)
+✔ malformed retry clears partially rendered capabilities and keeps recovery available (0.749375ms)
+✔ malformed scope catalogs are rejected before any option or page request (4.630709ms)
+✔ malformed scope retry clears old plaintext and permits recovery (0.769458ms)
+✔ PB1 boundary values are accepted, not falsely rejected (1.266042ms)
+✔ PB2 complete empty catalog still opens without page request (0.4675ms)
+✔ PB3 over-limit scope name and pin request are rejected (0.761125ms)
+✔ PB4 non-string scope/request with a length property are rejected (1.503167ms)
+✔ PB5 malformed retry from partial resets capabilities, styling and keeps lock/recovery (0.708958ms)
+✔ PB6 lock during malformed-catalog reply ignores the late reply (0.374375ms)
+✔ PB7 after malformed retry, old scope names and pins cannot be navigated (0.556667ms)
+✔ Content preserves opaque pins and large sequence strings through source return (1.024167ms)
+✔ Content lock, scope, selection and format changes discard late plaintext (2.383917ms)
+✔ Content unplaced input is visible and denied citations clear all plaintext (0.709625ms)
+✔ Content refuses wrong snapshot and missing exact pins before exposing items (0.992833ms)
+✔ Content labels supplied history and derived numbers, with separate tool block citations (0.824ms)
+✔ Content exposes unexpected starts and every exact observer length claim beside unavailable streams (0.812459ms)
+✔ Content limits and busy workers have distinct fixed messages without claiming failed verification (1.013125ms)
+✔ Source supersedes pending Content and leaves Interpret available for the current selection (0.62425ms)
+✔ pass_u2 late Content reply after resnapshot is suppressed (0.534917ms)
+✔ pass_u3 invalid citation index leaves no partial Content (0.665542ms)
+✔ pass_u4 hostile strings in every rendered field stay text and set no attributes (0.805875ms)
+✔ pass_u5 page navigation clears selection and disables Interpret (1.017875ms)
+✔ pass_u7 duplicate lineage citations navigate to each distinct occurrence (0.671333ms)
+✖ pass_u10 more than 40 occurrences or wrong version is refused (0.955916ms)
+✔ pass_u11 format change keeps selection but clears Content (0.919834ms)
+✔ pass_u12 v1 reader without content capability keeps numeric v1 page/source and no checkboxes (0.494083ms)
+✔ pass_u13 refreshed snapshot missing pin_wire is refused; old signed snapshot stays coherent (0.607583ms)
+ℹ tests 47
+ℹ suites 0
+ℹ pass 46
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 86.735417
+
+✖ failing tests:
+
+test at tests/library_ui.test.cjs:222:1
+✖ pass_u10 more than 40 occurrences or wrong version is refused (0.955916ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  2 !== 0
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/.local-state/ui-followup-stage/tests/library_ui.test.cjs:225:10)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 0,
+    operator: 'strictEqual'
+  }
+
+exit=1
