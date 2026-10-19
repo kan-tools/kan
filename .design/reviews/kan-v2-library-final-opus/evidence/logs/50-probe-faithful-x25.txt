@@ -1,0 +1,125 @@
+--- run 1 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.400365584s
+PROBE first_admission: caller_wait=100ms spent_ms=8.785 call_ms=43.417 ok=true start_rel_ms=8.821 window_rel_ms=[8.812,14.653] admission_started_inside_window=true
+PROBE totals: admissions=87 observed=87 queued=87 unconfirmed=0 windows=3 missed_attempts=20 admissions_with_spent>0=[0, 39, 64] later_windows_overlapping_an_admission=2 later_windows_with_a_waiting_admission=2 total_spent_ms=26.890
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.40s
+--- run 2 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.369117458s
+PROBE first_admission: caller_wait=100ms spent_ms=9.056 call_ms=28.478 ok=true start_rel_ms=2.301 window_rel_ms=[2.296,9.836] admission_started_inside_window=true
+PROBE totals: admissions=87 observed=87 queued=87 unconfirmed=0 windows=5 missed_attempts=18 admissions_with_spent>0=[0, 19, 43, 51, 55] later_windows_overlapping_an_admission=4 later_windows_with_a_waiting_admission=4 total_spent_ms=44.617
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.37s
+--- run 3 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.316379542s
+PROBE first_admission: caller_wait=100ms spent_ms=9.052 call_ms=28.211 ok=true start_rel_ms=2.564 window_rel_ms=[2.560,10.099] admission_started_inside_window=true
+PROBE totals: admissions=87 observed=87 queued=87 unconfirmed=0 windows=3 missed_attempts=19 admissions_with_spent>0=[0, 55, 75] later_windows_overlapping_an_admission=2 later_windows_with_a_waiting_admission=2 total_spent_ms=27.170
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.32s
+--- run 4 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.401677083s
+PROBE first_admission: caller_wait=100ms spent_ms=8.111 call_ms=27.446 ok=true start_rel_ms=2.394 window_rel_ms=[2.389,9.933] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=2 missed_attempts=21 admissions_with_spent>0=[0, 63] later_windows_overlapping_an_admission=1 later_windows_with_a_waiting_admission=1 total_spent_ms=17.156
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.40s
+--- run 5 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.300777583s
+PROBE first_admission: caller_wait=100ms spent_ms=8.765 call_ms=28.276 ok=true start_rel_ms=2.335 window_rel_ms=[2.330,9.877] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=1 missed_attempts=21 admissions_with_spent>0=[0] later_windows_overlapping_an_admission=0 later_windows_with_a_waiting_admission=0 total_spent_ms=8.765
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.30s
+--- run 6 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.348409041s
+PROBE first_admission: caller_wait=100ms spent_ms=9.055 call_ms=28.493 ok=true start_rel_ms=2.389 window_rel_ms=[2.384,9.900] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=3 missed_attempts=20 admissions_with_spent>0=[0, 74, 78] later_windows_overlapping_an_admission=2 later_windows_with_a_waiting_admission=2 total_spent_ms=24.124
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.35s
+--- run 7 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.313743542s
+PROBE first_admission: caller_wait=100ms spent_ms=9.030 call_ms=28.103 ok=true start_rel_ms=2.418 window_rel_ms=[2.412,8.458] admission_started_inside_window=true
+PROBE totals: admissions=87 observed=87 queued=87 unconfirmed=0 windows=1 missed_attempts=21 admissions_with_spent>0=[0] later_windows_overlapping_an_admission=0 later_windows_with_a_waiting_admission=0 total_spent_ms=9.030
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.31s
+--- run 8 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.372759167s
+PROBE first_admission: caller_wait=100ms spent_ms=9.058 call_ms=28.352 ok=true start_rel_ms=2.317 window_rel_ms=[2.313,9.853] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=1 missed_attempts=22 admissions_with_spent>0=[0] later_windows_overlapping_an_admission=0 later_windows_with_a_waiting_admission=0 total_spent_ms=9.058
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.37s
+--- run 9 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.323813584s
+PROBE first_admission: caller_wait=100ms spent_ms=8.318 call_ms=32.440 ok=true start_rel_ms=2.346 window_rel_ms=[2.342,9.889] admission_started_inside_window=true
+PROBE totals: admissions=87 observed=87 queued=87 unconfirmed=0 windows=1 missed_attempts=21 admissions_with_spent>0=[0] later_windows_overlapping_an_admission=0 later_windows_with_a_waiting_admission=0 total_spent_ms=8.318
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.32s
+--- run 10 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.383034417s
+PROBE first_admission: caller_wait=100ms spent_ms=9.052 call_ms=28.354 ok=true start_rel_ms=2.407 window_rel_ms=[2.400,9.951] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=2 missed_attempts=21 admissions_with_spent>0=[0, 20] later_windows_overlapping_an_admission=1 later_windows_with_a_waiting_admission=1 total_spent_ms=18.113
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.38s
+--- run 11 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.3309145s
+PROBE first_admission: caller_wait=100ms spent_ms=9.047 call_ms=28.581 ok=true start_rel_ms=2.241 window_rel_ms=[2.237,9.777] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=4 missed_attempts=18 admissions_with_spent>0=[0, 19, 52, 64] later_windows_overlapping_an_admission=3 later_windows_with_a_waiting_admission=3 total_spent_ms=36.217
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.33s
+--- run 12 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.357628375s
+PROBE first_admission: caller_wait=100ms spent_ms=9.060 call_ms=28.469 ok=true start_rel_ms=2.432 window_rel_ms=[2.428,9.967] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=3 missed_attempts=20 admissions_with_spent>0=[0, 58, 80] later_windows_overlapping_an_admission=2 later_windows_with_a_waiting_admission=2 total_spent_ms=27.168
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.36s
+--- run 13 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.37419925s
+PROBE first_admission: caller_wait=100ms spent_ms=9.029 call_ms=28.631 ok=true start_rel_ms=2.477 window_rel_ms=[2.473,10.055] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=3 missed_attempts=20 admissions_with_spent>0=[0, 46, 87] later_windows_overlapping_an_admission=2 later_windows_with_a_waiting_admission=2 total_spent_ms=23.241
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.37s
+--- run 14 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.299858875s
+PROBE first_admission: caller_wait=100ms spent_ms=9.054 call_ms=28.362 ok=true start_rel_ms=2.381 window_rel_ms=[2.376,9.919] admission_started_inside_window=true
+PROBE totals: admissions=87 observed=87 queued=87 unconfirmed=0 windows=2 missed_attempts=20 admissions_with_spent>0=[0, 79] later_windows_overlapping_an_admission=1 later_windows_with_a_waiting_admission=1 total_spent_ms=18.107
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.30s
+--- run 15 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.366483125s
+PROBE first_admission: caller_wait=100ms spent_ms=9.038 call_ms=28.576 ok=true start_rel_ms=2.362 window_rel_ms=[2.357,9.905] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=3 missed_attempts=20 admissions_with_spent>0=[0, 47, 51] later_windows_overlapping_an_admission=2 later_windows_with_a_waiting_admission=2 total_spent_ms=26.417
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.37s
+--- run 16 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.336600458s
+PROBE first_admission: caller_wait=100ms spent_ms=9.061 call_ms=28.373 ok=true start_rel_ms=2.279 window_rel_ms=[2.275,9.817] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=4 missed_attempts=18 admissions_with_spent>0=[0, 16, 24, 77] later_windows_overlapping_an_admission=3 later_windows_with_a_waiting_admission=3 total_spent_ms=36.215
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.34s
+--- run 17 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.346766375s
+PROBE first_admission: caller_wait=100ms spent_ms=8.147 call_ms=27.393 ok=true start_rel_ms=2.333 window_rel_ms=[2.328,9.872] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=3 missed_attempts=19 admissions_with_spent>0=[0, 77, 85] later_windows_overlapping_an_admission=2 later_windows_with_a_waiting_admission=2 total_spent_ms=26.248
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.35s
+--- run 18 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.388647667s
+PROBE first_admission: caller_wait=100ms spent_ms=9.065 call_ms=29.469 ok=true start_rel_ms=2.521 window_rel_ms=[2.516,10.054] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=3 missed_attempts=20 admissions_with_spent>0=[0, 49, 61] later_windows_overlapping_an_admission=2 later_windows_with_a_waiting_admission=2 total_spent_ms=27.185
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.39s
+--- run 19 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.397848917s
+PROBE first_admission: caller_wait=100ms spent_ms=8.818 call_ms=27.443 ok=true start_rel_ms=2.315 window_rel_ms=[2.311,9.828] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=5 missed_attempts=18 admissions_with_spent>0=[0, 24, 64, 71, 83] later_windows_overlapping_an_admission=4 later_windows_with_a_waiting_admission=4 total_spent_ms=44.391
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.40s
+--- run 20 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.421638375s
+PROBE first_admission: caller_wait=100ms spent_ms=9.064 call_ms=29.404 ok=true start_rel_ms=2.399 window_rel_ms=[2.394,9.929] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=2 missed_attempts=22 admissions_with_spent>0=[0, 62] later_windows_overlapping_an_admission=1 later_windows_with_a_waiting_admission=1 total_spent_ms=17.939
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.42s
+--- run 21 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.377931209s
+PROBE first_admission: caller_wait=100ms spent_ms=9.019 call_ms=28.435 ok=true start_rel_ms=2.381 window_rel_ms=[2.376,9.896] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=3 missed_attempts=20 admissions_with_spent>0=[0, 31, 71] later_windows_overlapping_an_admission=2 later_windows_with_a_waiting_admission=2 total_spent_ms=27.111
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.38s
+--- run 22 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.346878s
+PROBE first_admission: caller_wait=100ms spent_ms=9.063 call_ms=28.431 ok=true start_rel_ms=2.380 window_rel_ms=[2.376,9.915] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=2 missed_attempts=21 admissions_with_spent>0=[0, 78] later_windows_overlapping_an_admission=1 later_windows_with_a_waiting_admission=1 total_spent_ms=18.115
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.35s
+--- run 23 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.321334708s
+PROBE first_admission: caller_wait=100ms spent_ms=9.055 call_ms=28.508 ok=true start_rel_ms=2.249 window_rel_ms=[2.246,9.543] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=3 missed_attempts=19 admissions_with_spent>0=[0, 20, 24] later_windows_overlapping_an_admission=2 later_windows_with_a_waiting_admission=2 total_spent_ms=27.116
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.32s
+--- run 24 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.325976209s
+PROBE first_admission: caller_wait=100ms spent_ms=8.577 call_ms=27.538 ok=true start_rel_ms=2.296 window_rel_ms=[2.292,9.835] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=1 missed_attempts=21 admissions_with_spent>0=[0] later_windows_overlapping_an_admission=0 later_windows_with_a_waiting_admission=0 total_spent_ms=8.577
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.33s
+--- run 25 exit=0
+PROBE fault=None capture_ok=true drain_ok=true elapsed_total=1.371075583s
+PROBE first_admission: caller_wait=100ms spent_ms=9.048 call_ms=28.448 ok=true start_rel_ms=2.368 window_rel_ms=[2.364,8.433] admission_started_inside_window=true
+PROBE totals: admissions=88 observed=88 queued=88 unconfirmed=0 windows=2 missed_attempts=21 admissions_with_spent>0=[0, 31] later_windows_overlapping_an_admission=1 later_windows_with_a_waiting_admission=1 total_spent_ms=18.097
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.37s

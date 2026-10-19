@@ -1,0 +1,3 @@
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+    Finished `dev` profile [unoptimized] target(s) in 8.55s
+exit=0

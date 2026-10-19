@@ -1,0 +1,14 @@
+T1-window-not-installed [kill] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: KILLED: tests/evidence_capture_contention.rs:365:14: capture must reach its first admission: Timeout | tests/evidence_capture_contention.rs:409:72: called `Result::unwrap()` on an `Err` value: Any { .. } x3
+T2-admit_with_wait-skips-window [kill] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: KILLED: tests/evidence_capture_contention.rs:364:14: capture must reach its first admission: Disconnected | tests/evidence_capture_contention.rs:411:72: called `Result::unwrap()` on an `Err` value: Any { .. } x3
+T3-both-methods-skip-window [kill] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: KILLED: tests/evidence_capture_contention.rs:365:14: capture must reach its first admission: Disconnected | tests/evidence_capture_contention.rs:412:72: called `Result::unwrap()` on an `Err` value: Any { .. } x3
+T4-ack-before-lock [probe] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: KILLED: tests/evidence_capture_contention.rs:367:44: called `Result::unwrap()` on an `Err` value: SqliteFailure(Error { code: DatabaseBusy, extended_code: 5 }, Some("database is locked")) | tests/evidence_capture_contention.rs:412:72: called `Result::unwrap()` on an `Err` value: Any { .. } x5
+T5-first-window-holds-no-lock [probe] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: SURVIVED(passed) x3
+T6-no-wait-for-ack [kill] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: KILLED: tests/evidence_capture_contention.rs:363:44: called `Result::unwrap()` on an `Err` value: SqliteFailure(Error { code: DatabaseBusy, extended_code: 5 }, Some("database is locked")) | tests/evidence_capture_contention.rs:409:72: called `Result::unwrap()` on an `Err` value: Any { .. } x3
+T7-wrapper-discards-spent [probe] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: SURVIVED(passed) x3

@@ -1,0 +1,46 @@
+src/evidence_library.rs
+sha256-before=f679327d791feca82ab0069f1d26b859c9949f139f5603ffa79ba97734288bf8
+OLD:
+let budget = ConnectionBudget::new();
+    let mut tasks
+NEW:
+let budget = ConnectionBudget { sockets: Arc::new(Semaphore::new(4096)), requests: Arc::new(Semaphore::new(4)) };
+    let mut tasks
+$ ['/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience-correction/review-evidence/cargo.sh', 'test', '--features', 'v2-crypto', '--test', 'evidence_reader', 'library_refuses_thirteenth_socket_at_the_live_admission_boundary', '--', '--exact']
+exit=101
+
+running 1 test
+test library_refuses_thirteenth_socket_at_the_live_admission_boundary ... FAILED
+
+failures:
+
+---- library_refuses_thirteenth_socket_at_the_live_admission_boundary stdout ----
+
+thread 'library_refuses_thirteenth_socket_at_the_live_admission_boundary' (8999899) panicked at tests/evidence_reader.rs:1120:5:
+thirteenth socket must close at admission, not join an unbounded queue: Err(Elapsed(()))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    library_refuses_thirteenth_socket_at_the_live_admission_boundary
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 18 filtered out; finished in 2.19s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience-correction)
+warning: associated function `new` is never used
+   --> src/evidence_library.rs:246:8
+    |
+245 | impl ConnectionBudget {
+    | --------------------- associated function in this implementation
+246 |     fn new() -> Self {
+    |        ^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 6.88s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+error: test failed, to rerun pass `--test evidence_reader`
+
+sha256-after-restore=f679327d791feca82ab0069f1d26b859c9949f139f5603ffa79ba97734288bf8 match=True
+R31 [kill] library_refuses_thirteenth_socket_at_the_live_admission_boundary: KILLED(named assertion) | restored=True

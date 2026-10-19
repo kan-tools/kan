@@ -1,0 +1,2 @@
+$ git diff --stat HEAD^ HEAD -- src/evidence_store.rs src/evidence_service.rs src/evidence_http.rs tests/fixtures/read-write-surface.tsv src/bin/
+(empty = unchanged)

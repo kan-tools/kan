@@ -1,0 +1,38 @@
+web/library/app.js
+sha256-before=8777c126d5814adde84b8e89a160fa889deb1fed7522600ab32ad23d94ec4438
+OLD:
+ $('catalog-status').className = ''; }
+NEW:
+ }
+$ ['node', '--test', '--test-name-pattern=^malformed\\ retry\\ clears\\ partially\\ rendered\\ capabilities\\ and\\ keeps\\ recovery\\ available$', 'tests/library_ui.test.cjs']
+exit=1
+✖ malformed retry clears partially rendered capabilities and keeps recovery available (2.764ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 36.111167
+
+✖ failing tests:
+
+test at tests/library_ui.test.cjs:46:1
+✖ malformed retry clears partially rendered capabilities and keeps recovery available (2.764ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  'partial' !== ''
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience-correction/tests/library_ui.test.cjs:46:655)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'partial',
+    expected: '',
+    operator: 'strictEqual'
+  }
+
+sha256-after-restore=8777c126d5814adde84b8e89a160fa889deb1fed7522600ab32ad23d94ec4438 match=True
+STYLE [kill] malformed retry clears partially rendered capabilities and keeps recovery available: KILLED(named assertion) | restored=True

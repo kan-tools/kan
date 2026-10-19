@@ -1,0 +1,20 @@
+file=src/evidence_library.rs
+--- old
+Duration::from_secs(3),
+        Limited::new
++++ new
+Duration::from_secs(4),
+        Limited::new
+
+$ cargo test -j4 --features v2-crypto --test evidence_reader library_body_read_deadline_returns_an_explicit_timeout -- --exact
+exit=0
+
+running 1 test
+test library_body_read_deadline_returns_an_explicit_timeout ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 4.08s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+    Finished `test` profile [unoptimized] target(s) in 6.72s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+

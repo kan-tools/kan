@@ -1,0 +1,2 @@
+10:+- REQ-1: Keep successfully authorized scopes usable when another configured scope is unreachable, malformed or unverifiable. Emit an explicit complete/partial catalog-coverage field. Verified denial remains omitted; never expose failed-scope identifiers, endpoints, failure counts, pins or source bytes in the catalog response body. This default profile does not conceal timing.
+36:+writer window during active capture; it does not promise a specific duty cycle

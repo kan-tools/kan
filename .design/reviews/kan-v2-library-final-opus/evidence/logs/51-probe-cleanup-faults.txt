@@ -1,0 +1,51 @@
+$ cargo.sh test --features v2-crypto --test zz_review_p4_probe probe_p4_capture_panics_before_admission -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/zz_review_p4_probe.rs (target/debug/deps/zz_review_p4_probe-37cf4e4f20ba4f73)
+
+running 1 test
+
+thread '<unnamed>' (9054522) panicked at tests/zz_review_p4_probe.rs:220:14:
+capture must reach its first admission: Disconnected
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread '<unnamed>' (9054523) panicked at tests/zz_review_p4_probe.rs:169:13:
+probe: injected capture panic before first admission
+PROBE fault=PanicBeforeAdmission capture_ok=false drain_ok=false elapsed_total=45.890166ms
+
+thread 'probe_p4_capture_panics_before_admission' (9054519) panicked at tests/zz_review_p4_probe.rs:279:28:
+called `Result::unwrap()` on an `Err` value: Any { .. }
+test probe_p4_capture_panics_before_admission ... FAILED
+
+failures:
+
+failures:
+    probe_p4_capture_panics_before_admission
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `--test zz_review_p4_probe`
+exit=101 wall=0.20s
+$ cargo.sh test --features v2-crypto --test zz_review_p4_probe probe_p4_capture_panics_after_forward -- --exact --nocapture
+    Finished `test` profile [unoptimized] target(s) in 0.10s
+     Running tests/zz_review_p4_probe.rs (target/debug/deps/zz_review_p4_probe-37cf4e4f20ba4f73)
+
+running 1 test
+
+thread '<unnamed>' (9054556) panicked at tests/zz_review_p4_probe.rs:196:13:
+probe: injected capture panic after forward
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+PROBE fault=PanicAfterCapture capture_ok=false drain_ok=true elapsed_total=1.346253958s
+
+thread 'probe_p4_capture_panics_after_forward' (9054550) panicked at tests/zz_review_p4_probe.rs:279:28:
+called `Result::unwrap()` on an `Err` value: Any { .. }
+test probe_p4_capture_panics_after_forward ... FAILED
+
+failures:
+
+failures:
+    probe_p4_capture_panics_after_forward
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 1.35s
+
+error: test failed, to rerun pass `--test zz_review_p4_probe`
+exit=101 wall=1.49s

@@ -1,0 +1,21 @@
+binary=target/debug/deps/evidence_capture_contention-cd3d36ed54c693da
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=4 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=3 (5 ms each, ~9% duty): observed=87 queued=87 unconfirmed=0
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=3 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=3 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+assertion failed: held > 0
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=3 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=6 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=5 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0

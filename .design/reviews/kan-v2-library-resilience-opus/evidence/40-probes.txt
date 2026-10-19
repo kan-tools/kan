@@ -1,0 +1,35 @@
+$ cargo test -j4 --features v2-crypto --test evidence_reader probe_ -- --nocapture --test-threads=1
+exit=0
+
+running 4 tests
+test probe_p1_denial_only_catalog_is_complete ... P1 status=200 body={"capabilities":["snapshot-inventory","source-ranges","provenance"],"coverage":"complete","scopes":[{"pin":{"reply":{"reply":{"issuer":"did:key:zDnaewrDV4QM4mkiRmuNmdrNDDG7DkYFbV2mYCdRzC6gtcND8","request":"669076e07c33030a860af95d1f50f2718356ecf289873f34b64ba7a0858c21d0","result":{"Ok":{"kind":"snapshot","through":0,"tip":null}},"version":1},"signature":"6f3d2da134a174a710ff18bfc70dfae06837eb52c4cb8e3218b0776488d1917d675a09c5b790e6f572855ccddd5dd24d230a967a01aca275c473fcecf885f6e0"},"request":"7b2272657175657374223a7b2276657273696f6e223a312c2273636f7065223a2235313531353135313531353135313531353135313531353135313531353135313531353135313531353135313531353135313531353135313531353135313531222c2261756469656e6365223a226469643a6b65793a7a446e61657772445634514d346d6b69526d754e6d64724e44444737446b59466256326d594364527a43366774634e4438222c227072696e636970616c223a226469643a6b65793a7a446e616562437a48394d33634d5759666a5134485a56454657427a74514570344c3541615667316132314e5738326d62222c2265787069726573223a313739323337373230392c22636f6d6d616e64223a7b226f7065726174696f6e223a22736e617073686f74227d7d2c227369676e6174757265223a223932313961303638383731326437303134316231613933396339376334313766663433343865636466313330306133386436303662343263393733316434303133343639356536646661363664643633343563633665366565353764643836353962373232313266363330373865383863666264663965356637313964626664227d"},"scope":"5151515151515151515151515151515151515151515151515151515151515151"}],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"],"version":1}
+ok
+test probe_p2_sixteen_stalled_scopes_fit_budget_and_keep_order ... P2a all-16-stalled elapsed=20.064302208s status=200 body={"capabilities":["snapshot-inventory","source-ranges","provenance"],"coverage":"partial","scopes":[],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"],"version":1}
+P2b one-stall-per-wave elapsed=20.03520575s status=200 coverage="partial" n=12
+ok
+test probe_p3_latency_reveals_stalled_wave_count ... P3 stalled=[] elapsed=0.12s coverage="complete" scopes=8
+P3 stalled=[0] elapsed=5.10s coverage="partial" scopes=7
+P3 stalled=[0, 1] elapsed=5.10s coverage="partial" scopes=6
+P3 stalled=[0, 4] elapsed=10.02s coverage="partial" scopes=6
+ok
+test probe_p4_client_disconnect_releases_execution_permits ... P4 after-disconnect GET elapsed=1.119875ms read=Ok(Ok(3882)) first_line=Some("HTTP/1.1 200 OK")
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 63.04s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+    Finished `test` profile [unoptimized] target(s) in 6.72s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+
+$ cargo test -j4 --features v2-crypto --lib probe_whole_deadline_includes_queue_time
+exit=0
+
+running 1 test
+test evidence_library::budget_tests::probe_whole_deadline_includes_queue_time ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 73 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+    Finished `test` profile [unoptimized] target(s) in 5.78s
+     Running unittests src/lib.rs (target/debug/deps/kan-7f955e5e00633d5f)
+

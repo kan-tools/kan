@@ -1,0 +1,58 @@
+    Finished `test` profile [unoptimized] target(s) in 0.25s
+     Running tests/evidence_library_cli.rs (target/debug/deps/evidence_library_cli-95b26762f3467431)
+
+running 1 test
+test library_cli_browses_authenticated_retained_source_without_storage_authority ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.72s
+
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+
+running 18 tests
+test library_browser_fixture ... ignored, manual browser fixture; requires KAN_LIBRARY_FIXTURE_INFO output path
+test reader_cli_refuses_public_configuration_and_relative_private_key_paths ... ok
+test reader_configuration_scope_count_and_duplicates_are_bounded ... ok
+test catalog_verification_failure_is_not_an_empty_authorized_inventory ... ok
+test pin_principal_and_audience_are_checked_even_with_valid_signatures ... ok
+test library_refuses_public_listeners_and_short_tokens_before_serving ... ok
+test reader_identity_scope_and_decryption_key_are_separate_checks ... ok
+test reader_refuses_reusing_the_storage_issuer_signing_key ... ok
+test library_http_authority_is_separate_and_denial_does_not_reveal_scope_existence ... ok
+test reader_rejects_signed_page_completeness_and_tip_mismatches ... ok
+test inventory_is_snapshot_pinned_and_source_ranges_are_exact_across_scopes ... ok
+test revoked_grants_and_tampered_pins_cannot_read_cached_source ... ok
+test source_refuses_a_valid_read_from_a_different_snapshot_history ... ok
+test signed_reply_integrity_page_shape_and_source_membership_are_independent ... ok
+test large_source_is_returned_in_exact_bounded_ranges ... ok
+test library_body_read_deadline_returns_an_explicit_timeout ... ok
+test library_queues_a_browser_request_behind_four_idle_connections ... ok
+test catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources ... ok
+
+test result: ok. 17 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 6.05s
+
+     Running tests/surface_conformance.rs (target/debug/deps/surface_conformance-e9fd7d9feebd78e5)
+
+running 19 tests
+test catalog_is_well_formed_and_cites_real_designs ... ok
+test compiler_resolves_filesystem_aliases_to_the_single_mutation_facade ... ok
+test persistence_modules_cannot_add_an_unreviewed_path_literal ... ok
+test every_implemented_value_has_exactly_one_catalog_row_and_no_row_is_fiction ... ok
+test every_filesystem_mutation_names_its_catalog_surface_at_the_call_site ... ok
+test every_module_that_mutates_the_filesystem_is_registered ... ok
+test every_persistence_facade_call_is_independently_inventoried ... ok
+test sqlite_is_recomputed_from_authoritative_claims_not_from_itself ... ok
+test the_catalog_represents_authority_source_and_scope_as_independent_axes ... ok
+test workspace_routes_overlay_io_through_overlay_capabilities ... ok
+test overlay_is_recomputed_from_authoritative_git_tree_claims ... ok
+test production_workspace_recovers_when_a_projection_column_has_the_wrong_type ... ok
+test production_workspace_recovers_when_projection_metadata_has_the_wrong_type ... ok
+test production_workspace_bypasses_an_unremovable_semantically_poisoned_projection ... ok
+test production_workspace_bypasses_an_unremovable_corrupt_projection ... ok
+test caller_selected_role_key_is_an_implemented_authoritative_surface ... ok
+test production_workspace_bypasses_an_unopenable_projection_path ... ok
+test production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json ... ok
+test production_workspace_recreates_a_malformed_projection_schema ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.12s
+
+exit=0

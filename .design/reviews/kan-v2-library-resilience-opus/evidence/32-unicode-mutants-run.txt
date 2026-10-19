@@ -1,0 +1,5 @@
+U19-no-alm: KILLED [all directional control families default to exact hex with explicit text access=KILLED, directional format controls default to exact hex and permit explicit UTF-8=SURVIVED]
+U20-no-lrm-rlm: KILLED [all directional control families default to exact hex with explicit text access=KILLED, directional format controls default to exact hex and permit explicit UTF-8=SURVIVED]
+U21-no-isolates: KILLED [all directional control families default to exact hex with explicit text access=KILLED, directional format controls default to exact hex and permit explicit UTF-8=SURVIVED]
+U22-no-embeddings: KILLED [all directional control families default to exact hex with explicit text access=KILLED, directional format controls default to exact hex and permit explicit UTF-8=SURVIVED]
+U22b-only-rlo-missing: KILLED [all directional control families default to exact hex with explicit text access=KILLED, directional format controls default to exact hex and permit explicit UTF-8=KILLED]

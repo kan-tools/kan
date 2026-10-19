@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+
+running 1 test
+test library_browser_fixture ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 23.95s
+

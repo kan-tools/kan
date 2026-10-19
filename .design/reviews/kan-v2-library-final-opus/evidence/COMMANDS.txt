@@ -1,0 +1,36 @@
+$ cargo.sh test --features v2-crypto --test evidence_capture_contention -- --nocapture
+$ cargo.sh test --features v2-crypto --test evidence_reader -- --include-ignored
+$ cargo.sh test --features v2-crypto --lib evidence_library
+$ cargo.sh test --features v2-crypto --test evidence_library_cli
+$ cargo.sh test --features v2-crypto --test evidence_reader
+$ cargo.sh test --features v2-crypto --lib evidence_library::budget_tests
+$ cargo.sh test --features v2-crypto --test evidence_library_cli
+$ KAN_LIBRARY_FIXTURE_INFO=review-evidence/logs/fixture-info.json cargo.sh test --features v2-crypto --test evidence_reader library_browser_fixture -- --exact --ignored --nocapture  [run_in_background, 90 s cap]
+$ curl -s POST $U/api/library {action:catalog} (loopback fixture)
+$ pkill -INT -f "evidence_reader-.*library_browser_fixture"
+$ node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/theme_ui.test.cjs
+$ python3 tests/test_revert_v2.py
+$ ./scripts/check-citations.sh --self-test
+$ ./scripts/check-citations.sh
+$ python3 scripts/evidence_reference.py --check
+$ review-evidence/cargo.sh clippy --features v2-crypto --all-targets -- -D warnings
+$ review-evidence/cargo.sh clippy --workspace --all-targets -- -D warnings
+$ review-evidence/cargo.sh fmt --all -- --check
+$ for i in 1..30: cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture
+$ for i in 1..10: cargo.sh test --features v2-crypto --test evidence_capture_contention -- --nocapture
+$ cp review-evidence/probes/zz_review_p4_probe.rs tests/; for i in 1..25: cargo.sh test --features v2-crypto --test zz_review_p4_probe probe_p4_faithful_first_admission_wait -- --exact --nocapture
+$ cargo.sh test --features v2-crypto --test zz_review_p4_probe probe_p4_capture_panics_before_admission -- --exact --nocapture
+$ cargo.sh test --features v2-crypto --test zz_review_p4_probe probe_p4_capture_panics_after_forward -- --exact --nocapture
+$ git show a95f28f:tests/evidence_capture_contention.rs > tests/zz_review_parent_contention.rs; for i in 1..10: cargo.sh test --features v2-crypto --test zz_review_parent_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture
+$ python3 -I review-evidence/probes/mutations.py ROOT review-evidence/mutants T1..T7
+$ (rev2) python3 -I review-evidence/probes/mutations.py ROOT review-evidence/mutants T1..T7
+$ (probe rev2 with spent>0 assertion) faithful x10; FirstWindowNoLock x5
+$ python3 -I review-evidence/probes/mutations.py ROOT review-evidence/mutants P1-capture-never-waits P2-capture-wait-1ms S05-serve-sockets-5 S11-serve-sockets-11 S4096-serve-sockets-4096
+$ for i in 1..25: cargo.sh test --features v2-crypto --test evidence_reader library_refuses_thirteenth_socket_at_the_live_admission_boundary -- --exact
+$ rm tests/zz_review_p4_probe.rs tests/zz_review_parent_contention.rs (copies retained under review-evidence/probes/)
+$ review-evidence/cargo.sh clean -p kan
+$ review-evidence/cargo.sh build --features v2-crypto --all-targets
+$ review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention -- --nocapture
+$ review-evidence/cargo.sh test --features v2-crypto --test evidence_reader
+$ review-evidence/cargo.sh test --features v2-crypto --lib evidence_library::budget_tests
+$ review-evidence/cargo.sh test --features v2-crypto --test evidence_library_cli

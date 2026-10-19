@@ -1,0 +1,91 @@
+--- run 1 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 7.55075ms inside capture 1.271527417s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.34s
+--- run 2 exit=0
+P4 writer windows=3 (first coordinated, then periodic; first 7.537458ms inside capture 1.270134709s): observed=87 queued=87 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.33s
+--- run 3 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 7.539792ms inside capture 1.26798625s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.36s
+--- run 4 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 5.646791ms inside capture 1.285081083s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.35s
+--- run 5 exit=0
+P4 writer windows=3 (first coordinated, then periodic; first 7.538ms inside capture 1.292743458s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.36s
+--- run 6 exit=0
+P4 writer windows=4 (first coordinated, then periodic; first 7.536833ms inside capture 1.259891042s): observed=87 queued=87 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.36s
+--- run 7 exit=0
+P4 writer windows=4 (first coordinated, then periodic; first 7.547667ms inside capture 1.276996333s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.34s
+--- run 8 exit=0
+P4 writer windows=1 (first coordinated, then periodic; first 7.511041ms inside capture 1.260593542s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.31s
+--- run 9 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 7.538125ms inside capture 1.336989958s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.39s
+--- run 10 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 7.53575ms inside capture 1.25284875s): observed=87 queued=87 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.30s
+--- run 11 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 7.542833ms inside capture 1.26337275s): observed=87 queued=87 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.33s
+--- run 12 exit=0
+P4 writer windows=3 (first coordinated, then periodic; first 7.540125ms inside capture 1.297988417s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.39s
+--- run 13 exit=0
+P4 writer windows=3 (first coordinated, then periodic; first 7.515125ms inside capture 1.294787875s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.35s
+--- run 14 exit=0
+P4 writer windows=1 (first coordinated, then periodic; first 7.357791ms inside capture 1.291791208s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.38s
+--- run 15 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 5.815667ms inside capture 1.31059075s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.38s
+--- run 16 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 7.519166ms inside capture 1.291915458s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.40s
+--- run 17 exit=0
+P4 writer windows=4 (first coordinated, then periodic; first 7.548167ms inside capture 1.305903542s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.36s
+--- run 18 exit=0
+P4 writer windows=5 (first coordinated, then periodic; first 7.5135ms inside capture 1.359828417s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.44s
+--- run 19 exit=0
+P4 writer windows=3 (first coordinated, then periodic; first 7.513833ms inside capture 1.337101458s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.43s
+--- run 20 exit=0
+P4 writer windows=3 (first coordinated, then periodic; first 7.52025ms inside capture 1.34201725s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.43s
+--- run 21 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 7.514084ms inside capture 1.340007833s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.41s
+--- run 22 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 7.512709ms inside capture 1.351811s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.40s
+--- run 23 exit=0
+P4 writer windows=4 (first coordinated, then periodic; first 7.510166ms inside capture 1.363850583s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.45s
+--- run 24 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 7.5125ms inside capture 1.343705625s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.44s
+--- run 25 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 7.5105ms inside capture 1.337955917s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.38s
+--- run 26 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 7.51175ms inside capture 1.342929709s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.41s
+--- run 27 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 7.520167ms inside capture 1.331889958s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.39s
+--- run 28 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 6.587ms inside capture 1.332848375s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.42s
+--- run 29 exit=0
+P4 writer windows=3 (first coordinated, then periodic; first 7.51575ms inside capture 1.351086417s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.44s
+--- run 30 exit=0
+P4 writer windows=2 (first coordinated, then periodic; first 5.564458ms inside capture 1.338013291s): observed=88 queued=88 unconfirmed=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.39s
+SUMMARY pass=30 fail=0

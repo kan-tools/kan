@@ -1,0 +1,50 @@
+✔ real endpoint uses header auth and untrusted source stays text (4.137208ms)
+✔ lock aborts pending source and clears every private view (0.93775ms)
+✔ page and scope navigation carry only the selected authenticated pin (1.229291ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.934541ms)
+✔ old transport errors cannot lock a newer session (0.637542ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.795166ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.651ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.695209ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (2.02975ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.710125ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.432542ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.807208ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.967916ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.511ms)
+✔ partial catalog coverage persists while browsing and retry clears old authority (0.720417ms)
+✔ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (1.052541ms)
+✔ both authorization denial statuses lock an already open Library (1.196167ms)
+✔ Previous is disabled immediately when leaving a later page (0.605834ms)
+✔ malformed duplicate and inconsistent capabilities never open a Library (2.088625ms)
+✔ all directional control families default to exact hex with explicit text access (5.82575ms)
+✔ malformed retry clears partially rendered capabilities and keeps recovery available (0.637708ms)
+✔ auth is header-only; gap filtering and untrusted values use text (28.338833ms)
+✔ late authenticated response cannot unlock a locked view (0.584208ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.687792ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.750625ms)
+✔ fresh active sessions are current while historical losses remain visible (0.686084ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.759959ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.680875ms)
+✔ unsampled sessions and summary loss units are explicit (0.577833ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.6845ms)
+✔ unsupported status version retains visibly disconnected values (0.49725ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.627875ms)
+✔ locking clears rendered private metadata and closes the inspector (0.707708ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.654584ms)
+✔ future persistence timestamps stay unknown (0.436541ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.559416ms)
+✔ unchanged notices are not announced again on every poll (0.513791ms)
+✔ first paint defaults to platform; System follows live platform changes (1.175292ms)
+✔ explicit choice persists only the theme and overrides platform until System selected (0.737875ms)
+✔ invalid preference, unavailable storage and cross-tab updates degrade safely (0.965916ms)
+✔ production and preview load the same theme controller before content (0.663375ms)
+ℹ tests 41
+ℹ suites 0
+ℹ pass 41
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 68.844667
+exit=0

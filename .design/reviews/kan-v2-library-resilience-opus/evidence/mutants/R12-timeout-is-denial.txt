@@ -1,0 +1,31 @@
+file=src/evidence_reader.rs
+--- old
+.map_err(|_| Failure::Unavailable)?
+        .map_err(|failure|
++++ new
+.map_err(|_| Failure::AccessLimited)?
+        .map_err(|failure|
+
+$ cargo test -j4 --features v2-crypto --test evidence_reader catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources -- --exact
+exit=0
+
+running 1 test
+test catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 5.61s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+    Finished `test` profile [unoptimized] target(s) in 6.72s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+
+$ cargo test -j4 --features v2-crypto --test evidence_reader catalog_verification_failure_is_not_an_empty_authorized_inventory -- --exact
+exit=0
+
+running 1 test
+test catalog_verification_failure_is_not_an_empty_authorized_inventory ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.08s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+

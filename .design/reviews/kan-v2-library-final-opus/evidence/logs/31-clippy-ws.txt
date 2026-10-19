@@ -1,0 +1,22 @@
+    Checking tokio v1.52.4
+    Checking rusqlite v0.40.1
+    Checking tokio-util v0.7.18
+    Checking tokio-rustls v0.26.4
+    Checking tower v0.5.3
+    Checking hickory-proto v0.25.2
+    Checking atproto-dasl v0.14.5
+    Checking tower-http v0.6.11
+    Checking h2 v0.4.15
+    Checking rmcp v2.2.0
+    Checking tokio-stream v0.1.18
+    Checking fs4 v1.1.0
+    Checking hyper v1.10.1
+    Checking hickory-resolver v0.25.2
+    Checking hyper-util v0.1.20
+    Checking hyper-rustls v0.27.9
+    Checking reqwest v0.12.28
+    Checking atproto-identity v0.14.5
+    Checking atproto-repo v0.14.5
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final)
+    Finished `dev` profile [unoptimized] target(s) in 9.36s
+exit=0

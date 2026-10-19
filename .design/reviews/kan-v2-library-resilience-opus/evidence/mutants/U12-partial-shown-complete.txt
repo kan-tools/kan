@@ -1,0 +1,76 @@
+file=web/library/app.js
+--- old
+const partial = value.coverage === 'partial';
++++ new
+const partial = false;
+
+$ node --test --test-reporter=tap --test-name-pattern=^partial\ catalog\ coverage\ persists\ while\ browsing\ and\ retry\ clears\ old\ authority$ tests/library_ui.test.cjs
+exit=1
+TAP version 13
+# Subtest: partial catalog coverage persists while browsing and retry clears old authority
+not ok 1 - partial catalog coverage persists while browsing and retry clears old authority
+  ---
+  duration_ms: 2.711833
+  type: 'test'
+  location: '/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience/tests/library_ui.test.cjs:39:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /Partial coverage/. Input:
+    
+    'Source checks complete · only currently authorized scopes are shown.'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: 'Source checks complete · only currently authorized scopes are shown.'
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience/tests/library_ui.test.cjs:39:205)
+    async Test.run (node:internal/test_runner/test:1069:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 32.04725
+
+$ node --test --test-reporter=tap --test-name-pattern=^incomplete\ empty\ catalog\ differs\ from\ complete\ empty\ and\ late\ retry\ cannot\ repaint\ after\ lock$ tests/library_ui.test.cjs
+exit=1
+TAP version 13
+# Subtest: incomplete empty catalog differs from complete empty and late retry cannot repaint after lock
+not ok 1 - incomplete empty catalog differs from complete empty and late retry cannot repaint after lock
+  ---
+  duration_ms: 2.587125
+  type: 'test'
+  location: '/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience/tests/library_ui.test.cjs:40:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /incomplete check/. Input:
+    
+    'No currently authorized scopes.'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: 'No currently authorized scopes.'
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience/tests/library_ui.test.cjs:40:335)
+    async Test.run (node:internal/test_runner/test:1069:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 32.62
+

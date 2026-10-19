@@ -61,7 +61,7 @@ x25519-dalek = { version = "2", features = ["static_secrets"] }
 [dev-dependencies]
 rusqlite = { version = "0.40.1", features = ["bundled", "trace"] }
 tempfile = "3.27.0"
-tokio = { version = "1.52.4", features = ["process"] }
+tokio = { version = "1.52.4", features = ["process", "test-util"] }
 
 # Test fixtures deliberately corrupt/remove files. Production library code
 # raises this lint to deny in src/lib.rs; integration-test crates inherit this

@@ -1,0 +1,209 @@
+INDEPENDENT REVIEW — 8124878 against a95f28f (correction after the retained BLOCK)
+Reviewer: Claude Code, claude-opus-5-5, fresh session, no delegation. I wrote none
+of the code under review. Export: .local-state/reviews/opus-fixture-final
+(detached HEAD 8124878). macOS arm64, rustc 1.96.1, 4 build jobs, one heavy job
+at a time, this export's target/ only. Synthetic loopback only. No kan/day reads
+or writes (north star taken from the supplied north-star.json; the adversarial-
+review skill's `day review record` step was deliberately skipped). No installs,
+deploys, merges, production archives or keys.
+
+VERDICT: APPROVE WITH FOLLOW-UPS
+
+======================================================================
+1. North star
+======================================================================
+north-star.json: telos/raw-data-and-projections ("Raw attested data is retained in
+full and never collapsed in the store ... A field holding a computed value is the
+failure mode"). It deliberately declares no witnesses (Observation bafyreicakl3r...);
+none are invented here. excluded_by_trust: 2 — the two withheld claims stay withheld.
+This correction changes only tests, CI and docs: no store, no persisted field, so the
+telos is not touched. Its relevance is evidence discipline: a required CI job that
+passes by luck invites rerun-until-green.
+
+======================================================================
+2. What changed (git diff a95f28f 8124878, excluding retained review artifacts)
+======================================================================
+- tests/evidence_capture_contention.rs: CoordinatedSink wrapper + FirstCaptureWindow
+  rendezvous; P4 first writer window coordinated from the first Sink call; timestamp
+  assertions; "~9% duty" message removed; capture/drainer joins before unwrap.
+- tests/evidence_reader.rs: 13th-socket test also asserts the first twelve accept a
+  partial request and stay open (no close/response within 50 ms each).
+- .github/workflows/ci.yml: adds library_ui.test.cjs, --test evidence_reader,
+  --test evidence_library_cli, --lib evidence_library::budget_tests.
+- REPORT.md -> REPORT.txt: same blob 1b7f166c6f650a7e83e7221edc458f1ad9de9ca0
+  (logs/25-rename.txt). Remaining "REPORT.md" strings are inside retained verbatim
+  historical records (a reversion log, a prior result.txt) — correct to leave.
+- .design/kan-v2-library-resilience.md: REQ-1 scoped to "in the catalog response
+  body. This default profile does not conceal timing." + a Resolved Question.
+- src/, web/, Cargo.*, tests/fixtures/: unchanged (logs/94-production-unchanged.txt).
+
+======================================================================
+3. The blocker: does the P4 fix close the flake without hiding a capture defect?
+======================================================================
+Mechanism (read): EncryptedSpool::admit_with_wait -> Spool::with_capture_wait ->
+enqueue_generated, which opens TransactionBehavior::Immediate BEFORE any crypto
+(src/evidence_spool.rs:392-395). The wrapper blocks the first Sink call until the
+drainer holds BEGIN IMMEDIATE (tests/evidence_capture_contention.rs:222-230,
+361-371), so the first production admission must hit a held write lock.
+
+3a. Flake closed (macOS; Linux CI not run)
+- HEAD P4 solo 30/30 pass (logs/40-p4-repeat30.txt); full contention suite 10/10
+  (logs/41-contention-suite-x10.txt); post-clean-rebuild 1/1. 41/41 total.
+- observed == queued in every run (87 or 88), unconfirmed=0.
+- windows=1 (no periodic window won) in 2/30 solo and 4/10 suite runs, plus the
+  post-rebuild run. Under the parent's counting (held starts at 0) each of those is
+  an `assertion failed: held > 0`. Parent P4 verbatim, unmutated, here: 9/10 pass,
+  1/10 `held > 0` (logs/52-parent-p4-baseline-x10.txt) — the original flake
+  reproduced, and its cause removed.
+- First window measured 5.1–7.6 ms, always inside the capture interval
+  (1.25–1.42 s).
+
+3b. Active capture interval vs. proof of an actual SQLite wait — kept distinct
+P4 asserts only that the drainer's self-reported window lies inside capture's
+wall-clock span. That is NOT proof that capture waited. My instrumented faithful
+copy (probes/zz_review_p4_probe.rs) records what PRODUCTION returned:
+- 35/35 runs (logs/50 x25, logs/54 x10): the first admission started ~5 µs after
+  the window opened, production's busy handler returned spent = 8.06–9.07 ms
+  (caller_wait 100 ms), ok=true. So the coordinated window does produce a real,
+  measured SQLite busy wait in capture — in practice.
+- Later periodic windows: 0–4 per run won the lock (18–22 attempts missed per run).
+  Every later window that won overlapped an admission that waited (later_waited ==
+  later_overlap in all 25 runs). Duty is sparse; the new message no longer claims
+  otherwise.
+- P4 itself does not assert spent > 0. See 3d.
+
+3c. Does it hide capture defects? No — it exposes them deterministically.
+Production mutants (mutants/P1-*.txt, P2-*.txt; logs/55):
+- P1 capture_busy never waits: HEAD P4 KILLED 10/10 at :417 "brief contention must
+  not disable capture". Parent P4: 9 by that assertion, 1 by `held > 0`. Q2 also
+  KILLED 10/10 ("admission did not wait: [0, …]").
+- P2 capture wait capped at 1 ms: HEAD P4 KILLED 10/10 by the same named assertion;
+  parent 8 + 2 `held > 0`; Q2 KILLED 10/10.
+The fix turns a lucky catch into a guaranteed one, and the named capture assertion is
+what fires.
+
+3d. Can the coordination be removed while the test still claims contention?
+(mutants/T*.txt, logs/53-fixture-mutants.txt; all named panics, no compile errors)
+- T1 window not installed (None): KILLED x3 "capture must reach its first
+  admission: Timeout".
+- T2 admit_with_wait skips the window: KILLED x3 "...: Disconnected".
+- T3 both methods skip: KILLED x3 "...: Disconnected".
+- T4 acknowledge before locking: KILLED x5, drainer BEGIN IMMEDIATE DatabaseBusy
+  (capture wins the race).
+- T6 don't wait for acknowledgement: KILLED x3, same DatabaseBusy.
+- T5 rendezvous kept, first window holds NO lock: SURVIVED x3. P4 passes and still
+  prints "first coordinated".
+- T7 wrapper discards the production spent value: SURVIVED x3 (fidelity unpinned;
+  harmless here because spent ≈ 9 ms against a 1 s allowance).
+So the rendezvous cannot be removed silently, but the lock inside it can, because
+`held` starts at 1 (`assert!(held > 0)` is now vacuous) and the timestamps are the
+writer's own. Focused demonstration of the cheap fix (probe rev2, logs/54): asserting
+the first admission's returned spent > 0 passes the faithful mode 10/10 and kills a
+T5-equivalent mode 5/5 ("first admission must wait on the coordinated writer lock:
+… spent: 0ns"). This is a strengthening, not a weakened assertion.
+Severity: follow-up, not block. Producing T5 means deleting two lines of the test's
+own writer, which is a visible diff. Every production-side defect I tried is caught,
+and the author's README claims only "a brief writer window during active capture",
+not proof that every acquisition collided. That claim is accurate.
+
+3e. Cleanup when capture panics (probe, logs/51)
+- Panic before the first admission: the dropped window disconnects the rendezvous.
+  The drainer fails at once; the test fails in 46 ms with capture's panic unwrapped
+  first. No hang.
+- Panic after forward: stop is set and the drainer joins OK; the test fails in
+  1.35 s. No leftover processes.
+Residual flake margin: the first admission's cap is min(1 s allowance, 100 ms) =
+100 ms. A false failure needs the drainer descheduled ~95 ms inside its 5 ms
+window. Unlikely, and not measured on Linux.
+
+======================================================================
+4. 13th-socket test (lower bound)
+======================================================================
+mutants/S*.txt — production serve budget replaced:
+- 5 sockets: KILLED x3, evidence_reader.rs:1135 "admitted socket 5 closed or
+  responded early: Ok(Err(... ConnectionReset ...))".
+- 11 sockets: KILLED x3, :1135 "admitted socket 11 closed or responded early".
+- 4096 sockets: KILLED x3, :1124 "thirteenth socket must close at admission, not
+  join an unbounded queue: Err(Elapsed(()))".
+(The fifth-socket queue test survives all three; it isn't designed for this bound.)
+HEAD stability: 25/25, 0.77–0.82 s (logs/56). The earlier review's 5/11 gap is
+closed. The partial-write assert never fired (the kernel accepts the bytes); the
+read check is what discriminates.
+
+======================================================================
+5. Verification runs (raw logs in logs/)
+======================================================================
+contention 6/6 (10) · reader 18/18 + 1 ignored (11) · ignored library_browser_fixture
+run on loopback: catalog HTTP 200, coverage "complete", stopped by SIGINT, test ok,
+no listener left (11b, 11c) · budget_tests 3/3 (12) · real CLI 1/1 (13) ·
+Node 41/41 (20) · Python test_revert_v2 7/7 (21) · check-citations self-test + full
+exit 0 (22, 23) · evidence_reference --check exit 0 (24) · clippy --features
+v2-crypto --all-targets -D warnings exit 0 (30) · clippy --workspace --all-targets
+-D warnings exit 0 (31) · fmt --check exit 0 (32).
+Not re-run by me: the a95f28f style-fix Demonstrated-by replay (the trailer is
+present; the brief said it need not be redone). I made no claim about it.
+
+======================================================================
+6. REQ/AC impact of this correction
+======================================================================
+REQ-1 / AC-1 — partial (spec wording), behaviour unchanged. The qualifier matches
+  what the Architecture section already admitted (latency reveals stalled groups)
+  and the recorded owner choice (rich metadata default, obfuscation non-default). It
+  is an honest clarification, not an obfuscation feature, and claims no timing
+  hiding. I cannot verify the owner decision's provenance from artifacts here (no
+  kan read); it is cited only in prose.
+REQ-2 / AC-2 "refusal of excess sockets" — met, strengthened: upper and lower live
+  bounds now both fail named assertions (5/11/4096).
+REQ-6 / AC-6 — met: production unchanged and no fabricated test-only trailer; the
+  new pins are now in ci.yml (reader, real CLI, budget units, library_ui); review
+  report preserved byte-for-byte.
+AC-4 "mutations fail assertions, not compilation" — met for every mutant in this
+  review (after I fixed a classifier bug in my own driver: rev1 misread cargo's
+  "error: test failed" as a compile error; rev1 output is retained in
+  mutants/_rev1-misclassified/, and the raw logs show named panics).
+Capture contention (P4) is not a REQ of this design; its CI flake was the blocker,
+  and it is closed (section 3).
+Still open, not addressed by this range: R11/R13 deadline tolerance (+1 s); client
+  scope-entry shape checks; REQ-5/AC-5 real browser download delivery (no browser
+  run; no claim from screenshots); Linux CI timing of P4; the full roadmap and the
+  missing-evidence proposal.
+
+======================================================================
+7. Scope-narrowing and house rules
+======================================================================
+- REQ-1 "in the catalog response body ... does not conceal timing": narrowed during
+  correction. Legitimate per the cited earlier owner choice; record provenance in
+  kan when writes are allowed.
+- Fixture README "does not promise a specific duty cycle or prove that every SQLite
+  acquisition collided": accurate, and supported by section 3b.
+House rules (CLAUDE.md): no store mutation, no new surface, no enforcement hook, no
+cites touched. No violations.
+
+======================================================================
+8. Follow-ups
+======================================================================
+1. P4: assert the first admission's returned spent > 0 inside CoordinatedSink, and
+   drop or replace the vacuous `assert!(held > 0)`. Kills T5 (demonstrated).
+2. Optionally pin wrapper fidelity (T7): e.g. Σ spent recorded by the wrapper must
+   match what reached the Recorder.
+3. Measure P4 repeatedly on Linux CI. The macOS evidence here is necessary, not
+   sufficient.
+4. Carry forward: R11/R13 tolerance, client scope-entry shape, real browser file
+   delivery, owner-decision provenance for the REQ-1 qualifier.
+
+======================================================================
+9. Restoration and cleanup
+======================================================================
+- 1170 tracked files byte-identical pre/post (logs/01 vs logs/90; git diff HEAD
+  clean). The only untracked items are the pre-existing north-star.json and
+  review-evidence/.
+- Temporary tests/zz_review_p4_probe.rs and tests/zz_review_parent_contention.rs
+  were cmp-verified against the retained copies, then removed.
+- cargo clean -p kan (1565 files removed), rebuild --all-targets, then focused
+  contention/reader/budget/CLI: all pass (logs/91).
+- No fixture processes or listeners remain (logs/92).
+- target/ NOT deleted (instruction). It contains my probe binaries
+  zz_review_p4_probe-37cf4e4f20ba4f73 (same name as the prior reviewer's, now
+  overwritten) and zz_review_parent_contention-527d9a5ff1a94bbd;
+  zz_review_probe-165f9159ec825e19 predates both reviews.
+Commands: COMMANDS.txt. Probes/driver: probes/. Mutant logs: mutants/.

@@ -1,0 +1,60 @@
+file=web/library/app.js
+--- old
+\u061c\u200e
++++ new
+\u200e
+
+$ node --test --test-reporter=tap --test-name-pattern=^all\ directional\ control\ families\ default\ to\ exact\ hex\ with\ explicit\ text\ access$ tests/library_ui.test.cjs
+exit=1
+TAP version 13
+# Subtest: all directional control families default to exact hex with explicit text access
+not ok 1 - all directional control families default to exact hex with explicit text access
+  ---
+  duration_ms: 2.676125
+  type: 'test'
+  location: '/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience/tests/library_ui.test.cjs:44:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    U+61c
+    
+    'a؜z' !== '61d89c7a'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '61d89c7a'
+  actual: 'a؜z'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience/tests/library_ui.test.cjs:44:467)
+    async Test.run (node:internal/test_runner/test:1069:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 31.9105
+
+$ node --test --test-reporter=tap --test-name-pattern=^directional\ format\ controls\ default\ to\ exact\ hex\ and\ permit\ explicit\ UTF\-8$ tests/library_ui.test.cjs
+exit=0
+TAP version 13
+# Subtest: directional format controls default to exact hex and permit explicit UTF-8
+ok 1 - directional format controls default to exact hex and permit explicit UTF-8
+  ---
+  duration_ms: 2.729
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 31.86525
+
