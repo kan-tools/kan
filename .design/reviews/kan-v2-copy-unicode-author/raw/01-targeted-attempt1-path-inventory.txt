@@ -1,0 +1,178 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination)
+    Finished `test` profile [unoptimized] target(s) in 7.41s
+     Running tests/evidence_attested_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_lifecycle-02231a6624d7c1e3)
+
+running 11 tests
+test lifecycle_crash_child ... ok
+test corrupt_source_proofs_are_rejected_before_output_profile_is_committed ... ok
+test backup_success_requires_verifying_the_copied_proof_chain ... ok
+test recovery_pins_source_before_later_admission ... ok
+test owner_binding_profile_and_destination_are_explicit ... ok
+test proof_bytes_survive_backup_rebuild_and_derived_repair ... ok
+test standalone_proof_verification_and_backup_refuse_undeclared_schema ... ok
+test interrupted_initialization_resumes_only_by_explicit_owner_action ... ok
+test owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle ... ok
+test rebuild_process_death_never_publishes_partial_profile ... ok
+test recovery_refuses_missing_or_corrupt_proofs_and_payloads ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.64s
+
+     Running tests/evidence_copy_destination.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_destination-e9770359e29db79f)
+
+running 32 tests
+test initialization_death_child ... ok
+test copy_death_child ... ok
+test independent_sqlite_inventory_matches_the_copy_surface_catalog ... ok
+test owner_cli_copy_preconditions_refuse_without_creating_output ... ok
+test admission_rechecks_original_membership_after_staging_under_writer_transaction ... ok
+test later_admission_can_share_an_original_staged_object_without_changing_membership ... ok
+test empty_record_history_is_incomplete_until_all_staged_objects_are_copied ... ok
+test incomplete_copy_backup_remains_incomplete_and_resume_rejects_wrong_object_length ... ok
+test concurrent_owner_batches_revalidate_under_the_writer_transaction ... ok
+test owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars ... ok
+test owner_recipe_refusals_happen_before_destination_creation ... ok
+test owner_recipe_signer_and_profile_are_required_before_mutation ... ok
+test plan_custody_refuses_sqlite_families_before_opening_or_writing ... ok
+test rebuild_death_child ... ok
+test pinned_wal_source_copies_its_original_snapshot_and_later_confirmation_refuses ... ok
+test bounded_copy_preserves_original_bytes_and_acknowledged_proofs_before_new_admission ... ok
+test profile3_rejects_mixed_historical_issuers_with_a_specific_reason ... ok
+test owner_cli_pins_private_recipe_and_explicit_profile_through_lifecycle ... ok
+test profile3_rejects_retained_after_admission_and_admission_inside_original_prefix ... ok
+test resume_refuses_self_consistent_foreign_object_prefix_before_advancing ... ok
+test sidecar_hardlink_identity_is_rejected_even_with_an_unrelated_plan_name ... ok
+test unicode_reserved_plan_suffix_is_refused_even_before_any_sidecar_exists ... ok
+test resume_refuses_valid_foreign_receipt_prefix_before_signing_more_proofs ... ok
+test interrupted_initialization_requires_explicit_resume_with_retained_recipe ... ok
+test unicode_source_sidecar_plan_is_refused_before_a_fresh_sqlite_reader_can_consume_it ... ok
+test unicode_sidecar_aliases_refuse_before_copy_resume_and_preserve_the_plan ... ok
+test rebuild_repairs_derived_columns_and_keeps_authoritative_copy_bytes ... ok
+test profile3_schema_drift_refuses_open_verify_resume_and_stale_handle_backup ... ok
+test byte_budget_never_splits_objects_or_admits_before_complete_source ... ok
+test rebuild_refuses_lost_or_replaced_authoritative_evidence_without_publishing_profile ... ok
+test rebuild_process_death_publishes_all_copy_authority_or_no_profile ... ok
+test every_copy_transaction_boundary_resumes_without_replacing_acknowledged_bytes ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.34s
+
+     Running tests/evidence_copy_source.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_source-b92f66d790c08427)
+
+running 10 tests
+test staged_but_uncommitted_objects_are_part_of_the_source_commitment ... ok
+test planning_and_confirmation_preserve_database_and_retained_wal_bytes ... ok
+test unchanged_source_confirmation_still_requires_the_external_owner_pin ... ok
+test same_frontier_with_a_changed_unsigned_receipt_fails_exact_plan_confirmation ... ok
+test source_plan_is_pinned_and_reconfirmation_detects_later_admission ... ok
+test plans_require_explicit_scope_historical_issuer_and_all_source_payloads ... ok
+test derived_damage_requires_separate_recovery_and_preserves_the_exact_recipe ... ok
+test structurally_healthy_raw_archives_cannot_bypass_request_authentication ... ok
+test source_fingerprint_matches_an_independent_python_byte_oracle ... ok
+test source_planning_refuses_extra_schema_and_wrong_profiles_without_rewriting ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.89s
+
+     Running tests/evidence_store.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_store-c9974c98d962e200)
+
+running 34 tests
+test concurrent_retry_has_one_commit_and_identical_receipts ... ok
+test crash_worker ... ok
+test audited_partition_frontier_fences_new_writes_and_exact_retries ... ok
+test bare_relative_create_and_backup_succeed_without_overwrite ... ok
+test initialization_crash_worker ... ok
+{"bytes": 16, "commits": 0, "objects": 1}
+test cid_shaped_tokens_survive_storage_and_independent_backup_verification ... ok
+test backup_normalizes_and_catalogs_transient_sidecars ... ok
+test database_columns_match_independent_surface_catalog ... ok
+test open_rejects_corrupt_content_before_journal_conversion ... ok
+test initialization_rejects_foreign_media_without_replacing_it ... ok
+test recovery_crash_worker ... ok
+test backup_restore_and_independent_oracle ... ok
+test recovery_large_row_worker ... ok
+{"bytes": 11, "commits": 2, "objects": 2}
+test lifecycle_destinations_preserve_existing_sqlite_namespaces ... ok
+test first_manifest_must_name_earliest_slot_use ... ok
+test partition_scope_range_guard_rejects_both_foreign_directions ... ok
+{"bytes": 11, "commits": 2, "objects": 2}
+test corruption_is_not_an_empty_archive ... ok
+test canonical_backup_and_rebuild_pass_writer_schema_admission ... ok
+test recovery_rejects_overlapping_sqlite_namespaces_and_existing_sidecars ... ok
+test abrupt_exit_matrix_recovers_atomic_commits_and_exact_retries ... ok
+test initialization_resumes_each_publication_boundary_without_resetting_evidence ... ok
+test relative_path_worker ... ok
+test retry_conflicts_and_atomic_validation ... ok
+test snapshot_pages_survive_appends_and_reject_unknown_frontiers ... ok
+test recovery_rejects_structurally_valid_but_inconsistent_raw_history ... ok
+test recovery_snapshot_is_pinned_before_concurrent_appends ... ok
+test recovery_scan_reports_unrelated_raw_key_damage_without_hiding_record_access ... ok
+test writer_admission_rejects_foreign_schema_without_mutating_evidence ... ok
+test recovery_length_limit_preserves_maximum_valid_chunks ... ok
+test recovery_ignores_derived_damage_and_preserves_exact_evidence ... ok
+test recovery_rejects_raw_damage_without_hiding_intact_records ... ok
+test recovery_large_rows_hit_sqlite_limit_before_materialization ... ok
+test recovery_process_crashes_never_publish_a_partial_archive ... ok
+test chunks_and_total_archive_exceed_legacy_cap ... ok
+
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.96s
+
+     Running tests/recovery_cli.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/recovery_cli-8f2c94a09c387bb5)
+
+running 6 tests
+test cli_init_and_backup_reject_non_utf8_output_before_mutation ... ok
+test cli_recovery_rejects_non_utf8_output_before_creating_it ... ok
+test cli_recovery_fails_explicitly_on_bad_raw_data_and_retains_incomplete_output ... ok
+test cli_missing_or_corrupt_evidence_is_never_empty_success ... ok
+test cli_reads_and_rebuilds_damaged_derived_data_without_touching_original ... ok
+test cli_init_resume_is_explicit_and_preserves_existing_evidence ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+
+     Running tests/surface_conformance.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/surface_conformance-e9fd7d9feebd78e5)
+
+running 19 tests
+test catalog_is_well_formed_and_cites_real_designs ... ok
+test compiler_resolves_filesystem_aliases_to_the_single_mutation_facade ... ok
+test persistence_modules_cannot_add_an_unreviewed_path_literal ... FAILED
+test every_implemented_value_has_exactly_one_catalog_row_and_no_row_is_fiction ... ok
+test every_filesystem_mutation_names_its_catalog_surface_at_the_call_site ... ok
+test every_module_that_mutates_the_filesystem_is_registered ... ok
+test every_persistence_facade_call_is_independently_inventoried ... ok
+test sqlite_is_recomputed_from_authoritative_claims_not_from_itself ... ok
+test the_catalog_represents_authority_source_and_scope_as_independent_axes ... ok
+test workspace_routes_overlay_io_through_overlay_capabilities ... ok
+test overlay_is_recomputed_from_authoritative_git_tree_claims ... ok
+test production_workspace_bypasses_an_unremovable_corrupt_projection ... ok
+test production_workspace_bypasses_an_unremovable_semantically_poisoned_projection ... ok
+test production_workspace_recovers_when_projection_metadata_has_the_wrong_type ... ok
+test production_workspace_recovers_when_a_projection_column_has_the_wrong_type ... ok
+test caller_selected_role_key_is_an_implemented_authoritative_surface ... ok
+test production_workspace_bypasses_an_unopenable_projection_path ... ok
+test production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json ... ok
+test production_workspace_recreates_a_malformed_projection_schema ... ok
+
+failures:
+
+---- persistence_modules_cannot_add_an_unreviewed_path_literal stdout ----
+
+thread 'persistence_modules_cannot_add_an_unreviewed_path_literal' (9790936) panicked at tests/surface_conformance.rs:978:5:
+persistence path inventory mismatch
+unreviewed: [
+    (
+        "src/evidence_store.rs",
+        "base",
+    ),
+]
+stale: [
+    (
+        "src/evidence_store.rs",
+        "&name[..name.len() - suffix.len()]",
+    ),
+]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    persistence_modules_cannot_add_an_unreviewed_path_literal
+
+test result: FAILED. 18 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.23s
+
+error: test failed, to rerun pass `--test surface_conformance`

@@ -953,3 +953,27 @@ reads is inaccurate: `src` is `&source.reader().ledger` and uses indexed
 `Ledger::read_object`; `RecoveryReader::read_object` is not called there. The
 unmodified review remains intact. Full source/destination audits still run, and
 no bounded latency or large-archive performance claim is made.
+
+### Unicode SQLite alias correction (in qualification)
+
+The fresh correction review independently reproduced plan destruction through
+`archive.sqlite-ſhm` on this host's case-insensitive filesystem, both on copy
+resume and on a fresh source reader. ASCII comparisons and basename-only inode
+checks were insufficient. The new correction compares filesystem identity across
+all source/target SQLite family paths, and conservatively compares Unicode case
+expansions for currently absent reserved paths. Basename aliases are checked with
+the same suffix rule. This is not an emulation of every filesystem collation or
+a defense against concurrent hostile namespace replacement.
+
+Regression fixtures cover destination resume, a fresh source reader, creation
+before any sidecar exists, and a sidecar hard-linked to an innocuous plan name.
+Each refusal must leave the original plan/source bytes unchanged. Qualification
+and a new cold Opus verdict are required before accepting this correction.
+
+Copy cost disclosure: the CLI reopens and fully verifies the source on each
+invocation. API callers may retain one verified pinned `PlannedCopy`, but each
+batch still audits its destination and re-compares the entire copied object and
+record prefix against that source. Across a complete copy with fixed batch size,
+those repeated prefix passes can cost O(n² / batch-size) I/O. Indexed individual
+lookups do not remove that total-copy cost. Incremental audit optimization needs
+its own proof contract; no large-archive throughput qualification is claimed.
