@@ -200,3 +200,39 @@ accepted recognized frames must round-trip to the parsed JSON value across the
 mutation corpus, and absent clocks on unknown versions/observers/events/outcomes
 remain Unsupported. This pins classification precedence and catches future
 optional-field or unit-variant narrowing before a consumer is added.
+
+## Next implementation checkpoint: bounded occurrence assembly
+
+The next pure component consumes a bounded caller-selected list of authorized
+occurrences, with caller-supplied scope/writer identity and available or typed
+unavailable frame bytes. Source indices refer back to that complete input list;
+the caller must retain snapshot/proof/occurrence lineage with each index. This
+component grants no access and discovers no additional records. All inputs,
+including malformed, opaque, unsupported and unavailable ones, remain represented.
+
+Group recognized captures only by scope, authenticated writer, observer and attempt.
+Preserve each input at its observer ordinal. Exact duplicate frames may share one
+stream segment but retain every source index; different frames at the same ordinal
+are visible conflicts, never last-write-wins. Report observed ordinal holes without
+expanding missing integers or treating wall clocks/transport links as identity.
+
+Request/response assembly retains offset segments with exact frame-body spans.
+Checked end arithmetic, holes, overlaps, chunks after request-end and conflicting request-end claims prevent
+a synthetic contiguous rendering. Never allocate by a claimed offset or pad a hole.
+A contiguous response prefix and a claimed terminal outcome do not certify complete
+capture. An unknown request extent stays unknown. Metadata and other events remain
+inspectable as observations; provider semantics and metadata-chunk interpretation
+belong to the adapter stage.
+
+Explicit occurrence, encoded-input, scanned-byte, assembled-byte and time/cancel
+budgets return a refusal without partial success. Containers are bounded by input
+count; byte budgets are not an exact RSS/CPU promise. Arithmetic uses native u64
+coordinates and this pure result has no wire serializer. The later API must use
+validated decimal strings for JavaScript.
+
+Qualification must independently cover isolation, exact duplicates, same-ordinal
+conflicts, missing starts/terminals, contradictory request extents, offset overflow,
+large sparse coordinates, non-ASCII/binary source spans, unavailable input,
+determinism and cancellation/budget boundaries. This checkpoint does not implement
+provider adapters, source authorization, the Content API or the session UI and
+closes no full-session acceptance criterion.
