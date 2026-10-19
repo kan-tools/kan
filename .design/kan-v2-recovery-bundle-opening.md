@@ -88,6 +88,9 @@ to creator/restorer transactions and publication crash windows.
 `recovery_bundle_files.py` uses Python SQLite to construct physical files from
 the 45 independent signed replay cases. It uses the previously reviewed proposed SQL fixture; the runtime DDL copy must
 match that fixture exactly, and this is not a second semantic-schema oracle. Hostile
-physical mutations and snapshot/cancellation regressions are drafted. None has
-yet been Rust-qualified or independently reviewed. No writer or public UI is
+physical mutations and snapshot/cancellation regressions are locally qualified:
+117 pre-merge integration checks, two snapshot units, selected controls, strict
+lint, and a 45-function combined run after replay correction. Raw failures and
+classified survivors are retained in the author review directories. Fresh
+independent review remains required. No writer or public UI is
 introduced by this draft, and no parent acceptance criterion closes.
