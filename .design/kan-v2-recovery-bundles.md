@@ -216,3 +216,39 @@ independent positive/re-signed-negative fixtures and obtain fresh Opus review of
 C-F2 before any writer exists. Then implement storage, crash tests and owner job
 APIs; only afterward integrate the human recovery workflow. These are required
 remaining steps, not completion claims or a reduction of the full frontend scope.
+
+## Design review follow-through: custody and owner-visible limits
+
+Before any SQLite open of a source, bundle or publication output, each operation
+must perform the filesystem-only path custody checks for every proposed output
+against every participating SQLite file and its reserved sidecar namespace.
+Recheck at creation/retention as well. This carries the copy-plan pre-open lesson
+into creation, restoration and publication; it does not claim a hostile
+namespace-replacement fence or qualification on untested filesystems.
+
+The partial-copy restart reference lives **only in external owner job records**
+under the later job schema: old bundle ID, pinned observation checkpoint, old
+plan identity and the new copy plan/output identity. KNB1 and copy-plan v1 do not
+contain a restart/superseded event or provenance field. Neither file's signed
+history may be presented as asserting that relationship. Until the external job
+record contract is implemented and reviewed, the UI cannot report a provenance-
+linked restart as a completed capability.
+
+Two distinct owner-visible recovery limits remain named roadmap work:
+
+- `forensic-recovery-required`: non-BLOB, malformed-key, unreadable or oversized
+  original cells cannot be encoded in KNB1. Inventory may still browse healthy
+  neighbours and report corruption, but the recovery job must retain the source
+  and failed output, disclose this refusal, and offer no successful bundle claim.
+  A forensic preservation/recovery format and workflow remain unimplemented.
+- `publication-blocked-unavailable-object`: any required key without verified
+  original or restoration bytes blocks KNB1 publication, including a never-
+  admitted staged/orphan object. If no bytes can be recovered, this is terminal
+  for that proposed publication under KNB1; retain the bundle and expose the key
+  and its original loss state. Later verified recovery may allow a new attempt.
+  No discard-orphan escape hatch or automatic erasure is implied.
+
+These are proposed capability/refusal labels, not implemented RPC enum values.
+They complement the already explicit partial-profile-3 limitation. The storage
+writer, owner jobs and full human frontend must implement and test them before
+claiming recovery coverage.

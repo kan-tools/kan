@@ -263,3 +263,13 @@ is not detectable. The online observer key can attribute new statements but does
 not itself provide an independent tamper-evidence or non-equivocation witness.
 An uncertain response may require explicit inspection and checkpoint advancement;
 do not derive the external pin from the bundle being verified.
+
+### Scope-C follow-through before format acceptance
+
+The governing bundle design's "custody and owner-visible limits" section is part
+of this codec contract: pre-open path checks cover all participating databases;
+partial-copy restart provenance is external job state only; forensic-only source
+cells are a named recovery gap; unrecoverable staged/orphan keys explicitly block
+publication. None changes the byte recipes or adds a silently unsigned field to
+the closed observation schema. Draft SQL and wire fixtures still require their
+own independent review before acceptance or any storage writer.
