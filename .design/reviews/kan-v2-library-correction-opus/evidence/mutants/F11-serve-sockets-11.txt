@@ -1,0 +1,55 @@
+src/evidence_library.rs
+sha256-before=f679327d791feca82ab0069f1d26b859c9949f139f5603ffa79ba97734288bf8
+OLD:
+let budget = ConnectionBudget::new();
+    let mut tasks
+NEW:
+let budget = ConnectionBudget { sockets: Arc::new(Semaphore::new(11)), requests: Arc::new(Semaphore::new(4)) };
+    let mut tasks
+$ ['/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience-correction/review-evidence/cargo.sh', 'test', '--features', 'v2-crypto', '--test', 'evidence_reader', 'library_refuses_thirteenth_socket_at_the_live_admission_boundary', '--', '--exact']
+exit=0
+
+running 1 test
+test library_refuses_thirteenth_socket_at_the_live_admission_boundary ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.19s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience-correction)
+warning: associated function `new` is never used
+   --> src/evidence_library.rs:246:8
+    |
+245 | impl ConnectionBudget {
+    | --------------------- associated function in this implementation
+246 |     fn new() -> Self {
+    |        ^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 6.76s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+
+$ ['/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience-correction/review-evidence/cargo.sh', 'test', '--features', 'v2-crypto', '--test', 'evidence_reader', 'library_queues_a_browser_request_behind_four_idle_connections', '--', '--exact']
+exit=0
+
+running 1 test
+test library_queues_a_browser_request_behind_four_idle_connections ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 5.05s
+
+warning: associated function `new` is never used
+   --> src/evidence_library.rs:246:8
+    |
+245 | impl ConnectionBudget {
+    | --------------------- associated function in this implementation
+246 |     fn new() -> Self {
+    |        ^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+
+sha256-after-restore=f679327d791feca82ab0069f1d26b859c9949f139f5603ffa79ba97734288bf8 match=True
+F11-serve-sockets-11 [probe] library_refuses_thirteenth_socket_at_the_live_admission_boundary: SURVIVED(passed); library_queues_a_browser_request_behind_four_idle_connections: SURVIVED(passed) | restored=True

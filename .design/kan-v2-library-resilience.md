@@ -7,7 +7,7 @@ source fails, bounded request scheduling and stronger regression evidence. Serve
 not erase accessible neighbours or promote unverified metadata to authority.
 
 ## Requirements
-- REQ-1: Keep successfully authorized scopes usable when another configured scope is unreachable, malformed or unverifiable. Emit an explicit complete/partial catalog-coverage field. Verified denial remains omitted; never expose failed-scope identifiers, endpoints, failure counts, pins or source bytes.
+- REQ-1: Keep successfully authorized scopes usable when another configured scope is unreachable, malformed or unverifiable. Emit an explicit complete/partial catalog-coverage field. Verified denial remains omitted; never expose failed-scope identifiers, endpoints, failure counts, pins or source bytes in the catalog response body. This default profile does not conceal timing.
 - REQ-2: Bound remote calls to five seconds each, catalog concurrency to four within the existing sixteen-scope configuration limit, request-body reading to three seconds, and keep four executing/twelve accepted connections with six-second queue and thirty-five-second whole-connection deadlines. Cancellation must drop unfinished reads.
 - REQ-3: Show partial catalog coverage persistently during page/source navigation; supply an explicit retry-sources action. Clear prior pins, rows and plaintext before rechecking sources. Lock must invalidate late replies and clear coverage and capability metadata.
 - REQ-4: Pin actual API capability lists and negative UI cases: 401/403 denial, Previous during loading, malformed/duplicate capabilities and all directional-control families. Preserve byte-exact explicit UTF-8 inspection.
@@ -62,6 +62,7 @@ clipboard, automatic export, browser persistence or new plaintext server surface
 - Continue in a permanent worktree, stacked on the Library and overview-design PRs.
 - Partial catalog failure is visible without exposing identifiers whose grants could not be verified. This preserves the original pre-filter authorization contract.
 - Five-second per-call limits make bounded partial results practical; they are visible availability limits, not proof that a slow source is absent.
+- The owner selected rich metadata by default and non-default obfuscation. This checkpoint therefore qualifies the response-body disclosure boundary without claiming timing/volume hiding. Timing obfuscation remains a separate capability, not an implemented feature of this profile.
 
 ## Open Questions
 No new owner preference is needed for this checkpoint. Deployment placement is

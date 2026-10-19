@@ -1106,9 +1106,13 @@ async fn library_refuses_thirteenth_socket_at_the_live_admission_boundary() {
         reader,
     )));
     let mut held = Vec::new();
-    for _ in 0..12 {
+    for index in 0..12 {
         let mut socket = tokio::net::TcpStream::connect(addr).await.unwrap();
-        socket.write_all(b"GET / HTTP/1.1\r\n").await.unwrap();
+        let wrote = socket.write_all(b"GET / HTTP/1.1\r\n").await;
+        assert!(
+            wrote.is_ok(),
+            "socket {index} among the first twelve must accept a partial request: {wrote:?}"
+        );
         held.push(socket);
         tokio::task::yield_now().await;
     }
@@ -1122,5 +1126,16 @@ async fn library_refuses_thirteenth_socket_at_the_live_admission_boundary() {
             || matches!(closed,Ok(Err(ref e)) if matches!(e.kind(),std::io::ErrorKind::ConnectionReset|std::io::ErrorKind::ConnectionAborted)),
         "thirteenth socket must close at admission, not join an unbounded queue: {closed:?}"
     );
+    // Pin the lower bound too: a server admitting only five or eleven sockets
+    // must not pass merely because it also refuses the thirteenth one.
+    for (index, socket) in held.iter_mut().enumerate() {
+        let state =
+            tokio::time::timeout(std::time::Duration::from_millis(50), socket.read(&mut byte))
+                .await;
+        assert!(
+            state.is_err(),
+            "admitted socket {index} closed or responded early: {state:?}"
+        );
+    }
     drop(held);
 }

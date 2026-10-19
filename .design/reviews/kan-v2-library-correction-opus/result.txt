@@ -1,0 +1,61 @@
+# Correction review: a95f28f vs e71cdf8
+
+## Verdict: **BLOCK** (one hunk only)
+
+The five test pins, the retry-styling fix, the doc change and the `Demonstrated-by` trailer all hold up when run. The blocker is the CI fix to the contention test (`tests/evidence_capture_contention.rs:308-327`). It gives the test's background writer zero wait (`busy_timeout(ZERO)`) but still requires `assert!(held > 0)` at `:341`. Capture holds SQLite's write lock at about 92–100% of the moments the writer tries, so the writer often gets no window at all.
+
+- **HEAD's version is flaky:** P4 failed with `assertion failed: held > 0` in 6 of 35 runs (5/12, then 1/20, then 0/3 in full-suite runs).
+- **The old version wasn't, locally:** HEAD^'s helper passed 15/15 here.
+- **CI will keep hitting it:** CI runs this test (`ci.yml:34`). CI's original failure took 5.54 s, which means the writer was already locked out for its whole 5 s wait on Linux. A writer that doesn't wait at all is likely to get zero windows there too. That part is an inference; I didn't run Linux CI.
+
+Production code is unaffected. But a required CI job that passes or fails by luck pushes people to rerun until green, which undermines the evidence discipline the repo relies on. Under ADR-52 the fix for this hunk needs its own review round. Nothing else in the correction needs rework.
+
+**Does the helper still show real overlapping contention and complete capture?** Partly. When the writer gets windows (1–6 per run), they fall inside capture's active span (230–1225 ms out of 0–1245 ms). Capture was complete in every run I checked (observed equals queued, 87 or 88). But the overlap is sparse and random. The "~9% duty" the test prints is false; the real figure is 0–2.3%.
+
+## REQ/AC impact
+
+| Item | Verdict | Evidence |
+|---|---|---|
+| R03: verified denial stays `complete` | met | assertion at `evidence_reader.rs:712`; the mutant fails it ("verified denial is not an availability failure") |
+| R08: no failure-count field | met | exact JSON key checks at `:716` and `:1003`; the mutant fails both tests |
+| R12: timeout is not a denial | met | a stalled source after revoke must report `partial`; the mutant fails at `:737` |
+| REQ-1 wording vs the timing note | partial (spec) | the docs now say counts aren't exposed "in the response body" and admit response timing leaks some information. REQ-1 itself still says "never expose … failure counts". The narrowing is honest but has no owner sign-off. |
+| R24: whole deadline includes queue time | met | the new test is inside `#[cfg(test)]` (`evidence_library.rs:272`); the mutant fails at `:367` |
+| R31: live 13th-socket refusal | met, but the test is weak | fails on its own 2 s check (`Err(Elapsed)`), not a runner timeout; stable 38/38. **Gap:** if serve builds its own budget of 5 or 11 sockets, both live socket tests still pass. The test never checks that the 12 held sockets are still admitted when the 13th is closed. |
+| R11/R13 (+1 s tolerance) | still open, recorded | listed in the author's follow-ups README |
+| Stale partial styling after failed retry | met | replay shows `DEMONSTRATED`; the failure is the new check (`'partial' !== ''`, `library_ui.test.cjs:46:655`). My own revert of the line fails it too. |
+| Mutants fail assertions, not compilation | met | all six required mutants fail a named assertion; none is a compile error |
+| Browser download delivery, client scope-entry checks | unverifiable | I ran no browser; earlier screenshots don't count |
+| Storage unchanged, evidence retained | met, with a CI gap | no storage or fixture changes; the retained first Opus review matches e71 (278/278 hashes). **But** `ci.yml` runs neither `evidence_reader`, the `budget_tests` unit tests, nor `library_ui.test.cjs`, so none of the new pins is enforced by CI. The first review didn't flag this. |
+
+North star: coverage is computed per request and never stored, and no storage changed, so `telos/raw-data-and-projections` isn't affected. No house-rule violations.
+
+## What I ran
+
+- **Tests:** budget units 3/3, reader 18/18 (+1 ignored manual fixture), contention 6/6 in the full-suite run (flaky when P4 is repeated, as above), Node 41/41, Python 7/7.
+- **Lint:** strict v2 all-target Clippy and fmt both exit 0.
+- **Revert replay:** `revert_v2.py --verify HEAD` reports `DEMONSTRATED`. The trailer only exercises the UI fix, since every Rust change is test-only. The Rust pins rest on the mutation runs, which I reproduced with my own script (`probes/mutations.py`, using this export's `target/` with 4 build jobs).
+- **Restoration:** all 1118 tracked files are byte-identical before and after, checked twice. Then `cargo clean -p kan`, a rebuild, and the focused tests passed again.
+
+## Follow-ups
+
+1. **(Blocker)** Make P4's contention guaranteed instead of left to luck: a bounded busy wait or scheduled windows, plus a minimum number of windows inside capture's span, checked by timestamps. Fix the duty message and measure on Linux CI.
+2. Add `evidence_reader`, `evidence_library::budget_tests` and `library_ui.test.cjs` to `ci.yml`.
+3. In the 13th-socket test, check that the 12 held sockets are still open when the 13th is closed, then re-run my 5- and 11-socket probes.
+4. Qualify REQ-1's wording, or get owner sign-off on the timing leak.
+5. Still open from before: R11/R13, client scope-entry shape checks, actual browser file delivery.
+
+## Limitations
+
+- All runs were on macOS; the CI flake estimate is an inference.
+- The P4 failure rate moves with machine load (5/12 vs 1/20), so I report counts rather than one rate.
+- No browser runs and no kan/day reads or writes. I skipped the skill's `day review record` step because of the no-writes rule.
+
+## Cleanup (I deleted nothing)
+
+- `target/` (1.5 G). It holds my probe binaries `zz_review_p4_probe-37cf4e4f20ba4f73` and `zz_review_parent_p4-7ed5dcc1f0f7afe7`. `zz_review_probe-165f9159ec825e19` was there before me.
+- `.local-state/reversion/d67bcd59c8054734957dd707c84845f0/` (replay export, gitignored).
+- `review-evidence/` (untracked; keep it as evidence).
+- My temporary probe files in `tests/` are removed and confirmed gone, and no processes or listeners are left running.
+
+Everything, including `REPORT.md`, raw logs, mutant logs, probe sources and hash lists, is in `review-evidence/`.

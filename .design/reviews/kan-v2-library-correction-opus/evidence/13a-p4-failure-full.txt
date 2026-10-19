@@ -1,0 +1,15 @@
+
+running 1 test
+
+thread 'p4_capture_beside_brief_periodic_writer' (8995545) panicked at tests/evidence_capture_contention.rs:341:5:
+assertion failed: held > 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.29s
+

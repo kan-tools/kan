@@ -1,0 +1,8 @@
+R03 [kill] catalog_verification_failure_is_not_an_empty_authorized_inventory: KILLED(named assertion) | restored=True
+R08 [kill] catalog_verification_failure_is_not_an_empty_authorized_inventory: KILLED(named assertion); catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources: KILLED(named assertion) | restored=True
+R12 [kill] catalog_verification_failure_is_not_an_empty_authorized_inventory: KILLED(named assertion) | restored=True
+R24 [kill] evidence_library::budget_tests::whole_connection_deadline_includes_time_spent_queued: KILLED(named assertion) | restored=True
+R31 [kill] library_refuses_thirteenth_socket_at_the_live_admission_boundary: KILLED(named assertion) | restored=True
+STYLE [kill] malformed retry clears partially rendered capabilities and keeps recovery available: KILLED(named assertion) | restored=True
+F05-serve-sockets-5 [probe] library_refuses_thirteenth_socket_at_the_live_admission_boundary: SURVIVED(passed); library_queues_a_browser_request_behind_four_idle_connections: SURVIVED(passed) | restored=True
+F11-serve-sockets-11 [probe] library_refuses_thirteenth_socket_at_the_live_admission_boundary: SURVIVED(passed); library_queues_a_browser_request_behind_four_idle_connections: SURVIVED(passed) | restored=True

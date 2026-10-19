@@ -1,0 +1,62 @@
+# Independent correction review: a95f28f vs e71cdf8
+
+Reviewer: Claude Opus 5.5 (`claude-opus-5-5`), fresh independent session, no delegation.
+Scope: the correction commit only (`HEAD` a95f28f against `HEAD^` e71cdf8), not a rerun of the initial campaign.
+Design: `.design/kan-v2-library-resilience.md`. North star: the operator-supplied `north-star.json` (main read, `excluded_by_trust: 2`, two withheld claims). `telos/raw-data-and-projections` is live and deliberately has no witnesses; I invented none. I ran no kan/day commands (no writes, and no second read of the production log), so Step 7 (`day review record`) was **not** performed.
+Authority: the owner's 2026-10-18 v2 front-end authorization (`CLAUDE.md:69-71`) supersedes the older one-UI fence. No network beyond synthetic loopback, no installs, no deploys, no merges.
+
+## Verdict: **BLOCK** (narrow; one hunk)
+
+The five test pins, the retry-styling fix, the docs and the reversion trailer all hold up when executed. I reproduced each one and every kill is a named, compiled assertion. The blocker is the correction's CI fix in `tests/evidence_capture_contention.rs:308-327`. It sets `busy_timeout(Duration::ZERO)` and skips busy windows, but keeps `assert!(held > 0)` at `:341`. Capture holds SQLite's write lock at roughly 92–100% of the writer's attempt instants, so the writer often gets no window at all. Measured locally: the real P4 test failed `assertion failed: held > 0` in **6 of 35 runs** (5/12, then 1/20, then 0/3 in suite runs). The instrumented copy got zero windows in 3 of 10. The pre-correction helper (HEAD^) passed **15/15** locally. The correction replaces a Linux-only `DatabaseBusy` panic with a cross-platform flake in a test that CI runs (`ci.yml:34`). CI's original 5.54 s failure shows the writer was already starved for its full 5 s wait on Linux. Inference, not verified: a zero-wait writer is at least as likely to get `held == 0` there. Production is unaffected. However, a required CI job that passes or fails on scheduler luck invites rerun-until-green, and that defeats the evidence discipline this repo depends on. Per ADR-52, the fix for this hunk gets its own review round. Nothing else in the correction needs rework to clear this BLOCK. The follow-ups listed below are separate.
+
+The helper's question, answered directly. When windows happen (1–6 per run), they fall inside the capture span (230–1225 ms within 0–1245 ms). Every one of 45+ runs had complete capture (`observed == queued`, 87/88). So the helper shows *real but sparse and nondeterministic* overlap. The printed "~9% duty" is false: measured held duty is 0–2.3% (≤6 × 5 ms over ~1.3 s).
+
+## REQ/AC impact (correction only)
+
+| Item | Verdict | Evidence |
+|---|---|---|
+| REQ-1/AC-1 verified denial stays `complete` (R03) | met | `tests/evidence_reader.rs:712-715`; mutant killed at `:712` "verified denial is not an availability failure" (`mutants/R03.txt`) |
+| REQ-1/AC-1 no failure count / failed-source field (R08) | met | exact key sets at `:716-730`, `:1003-1018`; mutant killed in both tests (`mutants/R08.txt`) |
+| REQ-1 timeout ≠ denial (R12) | met | `:732-737` (stall after revoke → `partial`); mutant killed at `:737` (`mutants/R12.txt`) |
+| REQ-1 privacy text vs timing | partial (spec) | `.design/...resilience.md:33-34` and `docs/V2-LIBRARY.md:106-107` now say "in the response body" and admit a latency side channel, but REQ-1's line ("never expose … failure counts") is unqualified. The narrowing is honest and recorded, but it happened during implementation and lacks owner sign-off ("No new owner preference is needed" in Open Questions). |
+| REQ-2/AC-2 whole deadline includes queue (R24) | met | `src/evidence_library.rs:344-377` is inside `#[cfg(test)] mod budget_tests` (`:272-273`); mutant killed at `:367` (`mutants/R24.txt`) |
+| REQ-2/AC-2 live 13th-socket refusal (R31) | met for unbounded, partial fidelity | Mutant killed by the test's own 2 s assertion `Err(Elapsed(()))` at `:1120`, not a runner timeout. Stable 38/38 (30 isolated at ~0.15 s, 8 full-suite parallel). **Gap:** a serve-side budget of 5 or 11 sockets **survives** both live socket tests (`mutants/F05-serve-sockets-5.txt`, `F11-…`). The test never checks that the 12 held sockets are still admitted when the 13th closes, so it can't tell "refused the 13th" from "dropped them all". Only the unit test pins `ConnectionBudget::new()` = 12, and a serve that builds its own budget (the R31 shape) bypasses it. |
+| REQ-2 R11/R13 +1 s mutant tolerance | open, recorded | unchanged; listed in `followups/README.md:29-30` |
+| REQ-3/AC-3 stale partial styling after failed retry | met | `web/library/app.js:40`; replay DEMONSTRATED with named `'partial' !== ''` at `library_ui.test.cjs:46:655` (`20-revert-verify.txt`, reversion logs); independent STYLE mutant killed |
+| REQ-4/AC-4 mutations fail assertions, not compilation | met | all six required kills are `KILLED(named assertion)`, none a compile error (`30-mutations-run.txt`) |
+| REQ-5/AC-5 browser delivery | unverifiable | I ran no browser. Download stays unverified and prior screenshots don't count. Client scope-entry shape validation is still open. |
+| REQ-6/AC-6 storage unchanged, evidence retained, ledger | met, with CI gap | no store/spool/capture/fixture changes (`51-storage-ci-unchanged.txt`). Retained Opus hashes are 278/278 equal to e71. Ledger updated (`.design/kan-v2-followup-status.md:26-30`). **But** `ci.yml` runs neither `--test evidence_reader`, `--lib evidence_library::budget_tests` nor `tests/library_ui.test.cjs`, so none of R03/R08/R12/R24/R31/STYLE is CI-enforced. The initial review didn't raise this. |
+| Contention helper (correction claim) | **defective** | see Verdict; `13-p4-repeat.txt`, `13a-p4-failure-full.txt`, `14-p4-instrumented.txt`, `41-p4-clean-20.txt`, `42-parent-p4-baseline.txt` |
+
+North star: no stored computed values. Coverage is computed per query and never persisted, and no storage surface changed, so `telos/raw-data-and-projections` isn't touched. House rules: the front end is authorized, no `cites` are involved, nothing is enforced, and the fold is untouched.
+
+## Commands run (raw output in this directory)
+
+- `10-budget.txt` budget units 3/3 · `11-reader.txt` reader 18/18 + 1 ignored manual fixture · `12-contention.txt` contention 6/6 (that run passed)
+- `15-node-all.txt` Node 41/41 (library 21) · `16-python.txt` Python 7/7 · `17-clippy.txt` `cargo clippy --features v2-crypto --all-targets -- -D warnings` exit 0 · `18-fmt.txt` exit 0
+- `20-revert-verify.txt` `scripts/revert_v2.py --verify HEAD --helper …/revert-demo.py`: `DEMONSTRATED; all trailer tests reproduced=True`. Limitation: the trailer only demonstrates the UI hunk, because all Rust additions are test-side. The Rust pins rest on mutation evidence, which I reproduced independently.
+- `30-mutations-run.txt` and `mutants/*.txt` come from my own driver `probes/mutations.py`, adapted from the retained script with the absent author `cargo.sh` replaced by `review-evidence/cargo.sh` (this export's `target/`, 4 jobs). Every file was hashed before and after.
+- `90-hash-compare.txt`, `93-final-hash-compare.txt`: all 1118 tracked files byte-identical. `91-clean.txt`: `cargo clean -p kan`. `92-post-restore-focused.txt`: rebuilt and reran budget 3/3, reader 18/18, contention 6/6, Node 41/41. (Its blank Node `exit=` is a zsh `PIPESTATUS` artifact; the pass counts are authoritative.)
+- `40-thirteenth-socket-loop.txt` stability: 38/38.
+
+## Follow-ups (after the BLOCK fix)
+
+1. **(Blocker) Fix the P4 helper** so contention is guaranteed, not left to luck. Options: a bounded busy wait (e.g. 100–500 ms), or a writer that holds windows on a schedule capture can't starve. Assert a minimum number of windows *inside* the capture span using timestamps. Fix the "~9% duty" print. Re-measure on Linux CI over many runs.
+2. Add `--test evidence_reader`, `--lib evidence_library::budget_tests` and `node --test tests/library_ui.test.cjs` to `ci.yml`; otherwise these pins are only manual.
+3. In the live 13th-socket test, assert that the 12 held sockets are still open (read pending, not EOF) when the 13th closes, and that a fresh connection is admitted once one is released. Re-run the F05/F11 probes.
+4. Qualify REQ-1's text, or get owner sign-off, on the timing side channel.
+5. Still open from before: R11/R13 +1 s tolerance, client scope-entry shape validation, actual browser file delivery.
+
+## Limitations
+
+- Everything ran on macOS (Darwin 25.6, rustc 1.96.1, Node 24.1, Python 3.9.6). I did not run Linux CI; the CI flake estimate is an inference.
+- The P4 failure rate swings with system load (5/12 vs 1/20). I report observed counts, not a single rate.
+- No browser execution, no download verification, no kan/day reads or writes, and no `day review record`.
+
+## Cleanup list (nothing deleted by me)
+
+- `target/` (this export, 1.5 G), including my probe binaries `target/debug/deps/zz_review_p4_probe-37cf4e4f20ba4f73` and `zz_review_parent_p4-7ed5dcc1f0f7afe7`. `zz_review_probe-165f9159ec825e19` was already there and isn't mine.
+- `.local-state/reversion/d67bcd59c8054734957dd707c84845f0/`, the revert-replay export and logs (gitignored).
+- `review-evidence/`, this directory (untracked; keep as evidence).
+- Probe sources are kept only under `review-evidence/probes/`; the temporary copies in `tests/` were removed and verified absent.
+- No processes or listeners left running.
