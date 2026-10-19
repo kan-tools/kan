@@ -445,7 +445,7 @@ pub(super) fn source_path(path: &Path, work: &Work) -> Result<PathBuf> {
     }
     Ok(source)
 }
-fn destination_path(source: &Path, destination: &Path) -> Result<PathBuf> {
+pub(super) fn destination_path(source: &Path, destination: &Path) -> Result<PathBuf> {
     let target = super::super::sqlite_destination(source, destination)?;
     match std::fs::symlink_metadata(&target) {
         Ok(_) => Err(Error::Invalid("destination already exists")),

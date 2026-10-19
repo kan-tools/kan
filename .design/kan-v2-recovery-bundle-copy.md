@@ -89,7 +89,14 @@ and blocked kernel calls remain outside this owner-custody guarantee.
 Prepared tests cover both profiles, missing/corrupt/empty originals, subsequent
 restorations and failed/observed publication history, one pinned snapshot against
 a competing writer, wrong pins/aliases/modes/budgets/conflicts, retained artifacts,
-output substitution, real logical COMMIT failure, and 14 crash boundaries. A
+output substitution, real logical COMMIT failure, and 15 crash boundaries, including a second physical backup step on a 1 MiB
+synthetic orphan payload. A
 Python oracle independently replays actual files and compares every table cell.
 No compilation has run while the parent's Opus review owns the shared target.
 No acceptance, live-backup installation or writer activation is claimed.
+
+A targeted substitution test re-signs the same first observation with the public
+fixture key and a different valid low-S ECDSA signature. The statement checkpoint
+and replay remain valid, but envelope bytes differ. Exact destination comparison
+must reject this: matching a statement-chain head alone does not preserve the
+retained signature bytes. This fixture never accepts a non-test observer key.

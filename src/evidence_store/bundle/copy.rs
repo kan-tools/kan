@@ -204,12 +204,12 @@ fn copy(
             observe(phase);
             work.check()?;
             // A step may commit internally, including the first step for a
-            // small database. From here any error has an uncertain outcome.
-            attempted = Some(captured.clone());
+            // small database. Errors after a step is attempted are uncertain.
             loop {
                 phase = CopyBoundary::CopyStep;
                 observe(phase);
                 work.check()?;
+                attempted = Some(captured.clone());
                 match backup.step(64)? {
                     rusqlite::backup::StepResult::Done => break,
                     rusqlite::backup::StepResult::More => {}

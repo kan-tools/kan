@@ -306,6 +306,43 @@ fn copies_enforce_output_page_ceiling_before_reporting_success() {
 }
 
 #[test]
+fn same_checkpoint_with_different_valid_signature_is_not_an_exact_copy() {
+    for physical in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, source, pin) = lost_bundle(dir.path());
+        let output = dir.path().join("resigned.sqlite");
+        let result = run(copy_request(&source, &output, &pin), physical, |p| {
+            if p == bundle::CopyBoundary::Synced {
+                let changed = std::process::Command::new(
+                    std::env::var_os("KAN_CRYPTO_ORACLE_PYTHON")
+                        .unwrap_or_else(|| "python3".into()),
+                )
+                .args(["-B", ".design/tools/recovery_copy_resign_fixture.py"])
+                .arg(&output)
+                .output()
+                .unwrap();
+                assert!(
+                    changed.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&changed.stderr)
+                );
+            }
+        });
+        assert!(
+            matches!(result,Err(bundle::BundleCopyError::Uncertain{ref cause,..}) if matches!(**cause,bundle::Error::Invalid("copied bundle cells differ")))
+        );
+        let still_valid =
+            bundle::inspect(&output, pin.context.clone(), Some(&pin), budget()).unwrap();
+        assert_eq!(
+            still_valid.replay().latest(),
+            &pin,
+            "replay identity alone cannot replace exact cell comparison"
+        );
+        assert_ne!(restoration_row_dump(&source), restoration_row_dump(&output));
+    }
+}
+
+#[test]
 fn logical_copy_actual_commit_failure_is_uncertain_and_retained() {
     let dir = tempfile::tempdir().unwrap();
     let (_, source, pin) = lost_bundle(dir.path());
@@ -347,17 +384,71 @@ fn logical_copy_actual_commit_failure_is_uncertain_and_retained() {
 }
 
 #[test]
+fn physical_copy_cancel_before_first_step_is_incomplete() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, source, pin) = lost_bundle(dir.path());
+    let output = dir.path().join("cancelled.sqlite");
+    let req = copy_request(&source, &output, &pin);
+    let cancelled = req.budget.cancelled.clone();
+    let result = bundle::backup_observed(req, |phase| {
+        if phase == bundle::CopyBoundary::CopyStep {
+            cancelled.store(true, Ordering::Relaxed)
+        }
+    });
+    assert!(matches!(
+        result,
+        Err(bundle::BundleCopyError::Incomplete {
+            phase: bundle::CopyBoundary::CopyStep,
+            ..
+        })
+    ));
+    assert!(output.exists());
+    let db =
+        rusqlite::Connection::open_with_flags(&output, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    assert_eq!(
+        db.query_row("PRAGMA application_id", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
 #[ignore = "explicit synthetic bundle copy crash child"]
 fn copy_crash_child() {
     let root = PathBuf::from(std::env::var_os("KAN_BUNDLE_COPY_CRASH_ROOT").unwrap());
     let wanted = std::env::var("KAN_BUNDLE_COPY_CRASH_PHASE").unwrap();
     let physical = std::env::var("KAN_BUNDLE_COPY_PHYSICAL").unwrap() == "true";
-    let (_, source, pin) = lost_bundle(&root);
+    let (source, pin) = if wanted == "CopyStep2" {
+        let f = fixture(&root, Profile::Admitted);
+        let archive = f.root.join("archive.sqlite");
+        let bytes = vec![43u8; 1024 * 1024];
+        let db = rusqlite::Connection::open(&archive).unwrap();
+        db.execute(
+            "INSERT INTO objects VALUES(?1,?2)",
+            rusqlite::params![store::ciphertext_cid(&bytes).to_string(), bytes],
+        )
+        .unwrap();
+        drop(db);
+        let source = root.join("bundle.sqlite");
+        let observer = identity(10);
+        let created = bundle::create(create(&f, &archive, &source, &observer)).unwrap();
+        (source, created.replay().latest().clone())
+    } else {
+        let (_, source, pin) = lost_bundle(&root);
+        (source, pin)
+    };
+    let mut steps = 0;
     let _ = run(
         copy_request(&source, &root.join("copy.sqlite"), &pin),
         physical,
         |p| {
-            if format!("{p:?}") == wanted {
+            if p == bundle::CopyBoundary::CopyStep {
+                steps += 1;
+            }
+            if format!("{p:?}") == wanted
+                || (wanted == "CopyStep2" && p == bundle::CopyBoundary::CopyStep && steps == 2)
+            {
                 std::fs::write(root.join("at-copy-boundary"), wanted.as_bytes()).unwrap();
                 loop {
                     std::thread::sleep(Duration::from_secs(1));
@@ -377,6 +468,7 @@ fn copy_abrupt_death_retains_honest_outputs_and_source_history() {
                 "Reserved",
                 "BeforeCommit",
                 "CopyStep",
+                "CopyStep2",
                 "Committed",
                 "Synced",
                 "Reopened",
