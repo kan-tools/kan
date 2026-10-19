@@ -289,7 +289,7 @@ fn every_capture_split_preserves_sse_text_and_exact_duplicate_source_spans() {
         assert!(d.coherent_stop_observed);
         for i in &d.items {
             let spans = p::map_region(stream, &selected, i.region.clone(), limits()).unwrap();
-            let mut primary = vec![];
+            let mut primary: Vec<u8> = vec![];
             for span in &spans {
                 assert!(span.bytes.start <= span.bytes.end);
                 if span.input != 2 {
@@ -388,4 +388,39 @@ fn exact_budgets_and_cancellation_return_no_partial_document() {
         p::interpret(&bytes, p::Format::Sse, b).unwrap_err(),
         p::Error::Limit("duration")
     );
+}
+
+#[test]
+fn mapping_refuses_foreign_group_unavailable_source_and_forged_extent() {
+    let raw = vec![wire(0, 0, b"abc"), wire(1, 3, b"def")];
+    let selected = inputs(&raw);
+    let assembly = assembled(&selected);
+    let stream = &assembly.groups[0].response;
+    for mode in 0..3 {
+        let mut changed = inputs(&raw);
+        match mode {
+            0 => changed[1].scope = [2; 32],
+            1 => changed[1].writer = "foreign",
+            _ => changed[1].payload = a::Payload::Unavailable(a::Unavailable::Missing),
+        }
+        assert_eq!(
+            p::map_region(stream, &changed, 0..6, limits()).unwrap_err(),
+            p::Error::Mapping
+        );
+    }
+    let mut a = assembled(&selected);
+    a.groups[0].response.expected_bytes = Some(7);
+    assert_eq!(
+        p::map_region(&a.groups[0].response, &selected, 0..6, limits()).unwrap_err(),
+        p::Error::Mapping
+    );
+}
+#[test]
+fn empty_sse_and_malformed_message_delta_are_explicit() {
+    assert_eq!(parse(b"", p::Format::Sse).items[0].kind, p::Kind::Truncated);
+    let mut values = text_stream();
+    values[4] = json!({"type":"message_delta"});
+    let d = parse(&events(&values), p::Format::Sse);
+    assert!(!d.coherent_stop_observed);
+    assert!(d.items[4].issues.contains(&p::Issue::Shape));
 }

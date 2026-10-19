@@ -674,7 +674,13 @@ pub fn map_region(
     if bytes.len() > w.limits.input_bytes {
         return Err(Error::Limit("input bytes"));
     }
-    if !stream.issues.is_empty() || region.start > region.end || region.end > bytes.len() {
+    if !stream.issues.is_empty()
+        || stream
+            .expected_bytes
+            .is_some_and(|n| n != bytes.len() as u64)
+        || region.start > region.end
+        || region.end > bytes.len()
+    {
         return Err(Error::Mapping);
     }
     let mut next = 0usize;
