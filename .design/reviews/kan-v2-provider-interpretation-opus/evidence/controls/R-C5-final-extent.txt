@@ -1,0 +1,79 @@
+# control R-C5-final-extent
+# concern: map_region accepts contiguous bytes beyond the segment layout
+# file: src/evidence_interpretation.rs
+# old: '    if next != bytes.len() {\n        return Err(Error::Mapping);'
+# new: '    if false && next != bytes.len() {\n        return Err(Error::Mapping);' occ=None
+$ cargo test --offline --locked --features v2-crypto --no-fail-fast --test evidence_interpretation --test zz_review_interp_probes
+
+running 13 tests
+test missing_event_and_delta_types_are_malformed_not_future_extensions ... ok
+test duplicate_keys_aliases_depth_and_truncation_are_visible ... ok
+test malformed_unknown_error_and_trailing_event_are_visible ... ok
+test empty_sse_and_malformed_message_delta_are_explicit ... ok
+test newline_forms_multiline_comments_and_raw_unknown_fields_survive ... ok
+test mapping_refuses_foreign_group_unavailable_source_and_forged_extent ... ok
+test response_json_and_provider_errors_never_claim_stream_completeness ... ok
+test exact_budgets_and_cancellation_return_no_partial_document ... ok
+test request_history_and_unknown_fields_remain_source_linked ... ok
+test block_sequence_conflicts_and_sparse_indices_never_complete ... ok
+test mapping_refuses_gaps_overlaps_forged_source_bytes_and_ranges ... ok
+test tool_fragments_are_not_repaired_or_replaced_by_empty_initial_input ... ok
+test every_capture_split_preserves_sse_text_and_exact_duplicate_source_spans ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+
+running 27 tests
+test char_j5_nested_tool_result_content_is_not_rendered ... ok
+test pass_b1_exact_edges_for_request_format ... ok
+test char_j3_numeric_fidelity_of_retained_json ... ok
+test char_j6_issue_labelling_consistency ... ok
+test char_s3_dataless_named_block_after_stop ... ok
+test char_m9_empty_request_body_and_request_end_only ... ok
+test pass_b2_duration_bounds ... ok
+test pass_j1_nested_escaped_duplicate_alias_refuses_whole_body ... ok
+test char_s2_bom_and_unknown_field_lines ... ok
+test pass_j4_pointers_resolve_and_request_history_is_context_not_observation ... ok
+test pass_j7_hostile_strings_are_inert_data ... ok
+test char_m8_valid_assembly_with_empty_chunk_cannot_be_mapped ... ok
+test pass_m2_forged_duplicate_with_different_frame_refuses ... ok
+test char_s5_known_protocol_extensions ... ok
+test pass_m3_forged_cross_direction_segment_refuses ... ok
+test pass_m5_forged_span_into_header_bytes_refuses ... ok
+test pass_m4_forged_frame_offset_refuses ... ok
+test pass_m6_forged_trailing_contiguous_bytes_refuse ... FAILED
+test pass_m7_citation_and_work_edges_and_empty_regions ... ok
+test pass_s1_independent_writer_all_newlines_no_names ... ok
+test pass_s7_invalid_utf8_and_sentinel_names ... ok
+test pass_s6_tool_fragment_strictness ... ok
+test pass_s4_lifecycle_contradictions_never_cohere ... ok
+test pass_m1_multibyte_escaped_sse_spans_across_three_chunks_and_triplicates ... ok
+test pass_j2_depth_limit_holds_despite_unbounded_depth_feature_and_does_not_overflow ... ok
+test pass_s8_fuzz_tiling_and_coherence_implies_clean ... ok
+test pass_j8_fuzz_request_json_no_panic_and_pointers_resolve ... ok
+
+failures:
+
+---- pass_m6_forged_trailing_contiguous_bytes_refuse stdout ----
+
+thread 'pass_m6_forged_trailing_contiguous_bytes_refuse' (10405061) panicked at tests/zz_review_interp_probes.rs:552:50:
+called `Result::unwrap_err()` on an `Ok` value: []
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    pass_m6_forged_trailing_contiguous_bytes_refuse
+
+test result: FAILED. 26 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter/.local-state/reviews/provider-interpretation)
+    Finished `test` profile [unoptimized] target(s) in 7.78s
+     Running tests/evidence_interpretation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation-13fed510d614cbe3)
+     Running tests/zz_review_interp_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_interp_probes-d6e3675465ebac24)
+error: test failed, to rerun pass `--test zz_review_interp_probes`
+error: 1 target failed:
+    `--test zz_review_interp_probes`
+
+# exit=101
+# classification: KILLED-BY pass_m6_forged_trailing_contiguous_bytes_refuse @ tests/zz_review_interp_probes.rs:552
+# restored sha256 42f3f027e785912d102cd9e926f84a173e818b24d57bbf40fb78050fe9b2d5b8 == manifest

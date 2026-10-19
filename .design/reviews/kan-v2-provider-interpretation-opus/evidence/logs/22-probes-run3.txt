@@ -1,0 +1,57 @@
+# 2026-10-19T18:30:53Z cwd=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter/.local-state/reviews/provider-interpretation
+# CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target CARGO_BUILD_JOBS=4
+$ cargo test --offline --locked --features v2-crypto --test zz_review_interp_probes -- --nocapture --test-threads=4
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter/.local-state/reviews/provider-interpretation)
+    Finished `test` profile [unoptimized] target(s) in 0.44s
+     Running tests/zz_review_interp_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_interp_probes-d6e3675465ebac24)
+
+running 27 tests
+J5 tool_result items: [(None, [])]
+J3 big integer retained as 1.2345678901234568e+29; 1.0 as 1.0; -0 as -0.0
+J6 unknown root type issues=[]
+J3 1e400 body -> items [Malformed]
+J6 response role=user items=[(Protocol, None, []), (Text, Some("user"), [])]
+J6 message without content items=[(Protocol, Some(""), []), (Context, Some("/messages/0"), []), (Malformed, None, [])]
+test char_j5_nested_tool_result_content_is_not_rendered ... ok
+test char_j3_numeric_fidelity_of_retained_json ... ok
+M8 issues=[] contiguous=Some("abcdefgh") segs=[(0, 6), (3, 0), (6, 2)]
+test char_j6_issue_labelling_consistency ... ok
+M8 map_region(0..8) = Err(Mapping)
+M9 empty request: items=[(Malformed, 0..0)] spans=[]
+S2 BOM: first=Protocol issues=[] coherent=false
+test char_m9_empty_request_body_and_request_end_only ... ok
+M8b issues=[] contiguous=Some([97, 98, 99]) map=Err(Mapping)
+S3 dataless 'event: message_start' after stop: kind=Protocol issues=[] coherent=true
+test char_m8_valid_assembly_with_empty_chunk_cannot_be_mapped ... ok
+S2 garbage-after-stop: kind=Protocol issues=[] event=None coherent=true
+test char_s3_dataless_named_block_after_stop ... ok
+test char_s2_bom_and_unknown_field_lines ... ok
+S5 citations_delta issues=[Unknown, DeltaType] kind=Unsupported
+test pass_b1_exact_edges_for_request_format ... ok
+S5 empty-fragment tool: coherent=false toolJson=true
+test pass_j1_nested_escaped_duplicate_alias_refuses_whole_body ... ok
+test pass_j4_pointers_resolve_and_request_history_is_context_not_observation ... ok
+test pass_b2_duration_bounds ... ok
+test pass_j7_hostile_strings_are_inert_data ... ok
+S5 no-delta tool (input {} placeholder only): coherent=true
+test char_s5_known_protocol_extensions ... ok
+test pass_m2_forged_duplicate_with_different_frame_refuses ... ok
+test pass_m3_forged_cross_direction_segment_refuses ... ok
+test pass_m4_forged_frame_offset_refuses ... ok
+test pass_m5_forged_span_into_header_bytes_refuses ... ok
+test pass_m6_forged_trailing_contiguous_bytes_refuse ... ok
+M7 empty region 3..3 cites [SourceSpan { input: 0, bytes: 255..255 }, SourceSpan { input: 2, bytes: 255..255 }, SourceSpan { input: 1, bytes: 252..252 }]
+M7 empty region 6..6 cites [SourceSpan { input: 1, bytes: 255..255 }]
+test pass_m7_citation_and_work_edges_and_empty_regions ... ok
+test pass_s1_independent_writer_all_newlines_no_names ... ok
+test pass_m1_multibyte_escaped_sse_spans_across_three_chunks_and_triplicates ... ok
+test pass_s4_lifecycle_contradictions_never_cohere ... ok
+test pass_s7_invalid_utf8_and_sentinel_names ... ok
+test pass_s6_tool_fragment_strictness ... ok
+test pass_j2_depth_limit_holds_despite_unbounded_depth_feature_and_does_not_overflow ... ok
+test pass_s8_fuzz_tiling_and_coherence_implies_clean ... ok
+test pass_j8_fuzz_request_json_no_panic_and_pointers_resolve ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+# exit=0 2026-10-19T18:30:54Z

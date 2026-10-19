@@ -1,0 +1,58 @@
+# control B-X1-dup-compare-partial-charge
+# concern: duplicate comparison charged one byte per chunk instead of its length
+# file: src/evidence_assembly.rs
+# old: '        work.scan(a.len())?;\n        if a != b {'
+# new: '        work.scan(a.len().min(1))?;\n        if a != b {' occ=None
+$ cargo test --offline --locked --features v2-crypto --no-fail-fast --test evidence_assembly --test evidence_assembly_review_regressions
+
+running 13 tests
+test every_non_capture_and_unavailable_input_has_a_result ... ok
+test ordinal_conflicts_keep_both_bytes_and_prevent_synthetic_rendering ... ok
+test observed_missing_admission_and_unexpected_start_stay_visible ... ok
+test repeated_semantic_chunk_at_a_new_ordinal_is_an_overlap_not_deduplicated ... ok
+test a_chunk_after_request_end_cannot_silently_become_a_closed_request ... ok
+test scope_writer_observer_attempt_isolation_ignores_transport_link_claims ... ok
+test completed_terminal_is_only_a_claim_and_does_not_fill_missing_evidence ... ok
+test empty_request_extent_and_unknown_extent_remain_distinct ... ok
+test exact_budget_edges_cancellation_and_repeat_are_deterministic ... ok
+test terminal_at_a_conflicting_ordinal_cannot_select_a_winner ... ok
+test sparse_u64_and_overflow_coordinates_never_allocate_by_claimed_extent ... ok
+test shuffled_selection_preserves_exact_binary_spans_and_duplicate_lineage ... ok
+test holes_overlaps_and_contradictory_extents_are_not_repaired ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+test stream_offset_order_can_differ_from_observer_ordinal_order ... ok
+test duplicate_request_end_retains_every_extent_source ... ok
+test ordinal_gaps_do_not_mean_unplaced_inputs_are_absent ... ok
+test scan_accounting_pins_decode_duplicate_comparison_and_copy ... FAILED
+
+failures:
+
+---- scan_accounting_pins_decode_duplicate_comparison_and_copy stdout ----
+
+thread 'scan_accounting_pins_decode_duplicate_comparison_and_copy' (10407851) panicked at tests/evidence_assembly_review_regressions.rs:57:5:
+assertion `left == right` failed: absolute decode/comparison/copy accounting
+  left: 1284
+ right: 1792
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    scan_accounting_pins_decode_duplicate_comparison_and_copy
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter/.local-state/reviews/provider-interpretation)
+    Finished `test` profile [unoptimized] target(s) in 7.76s
+     Running tests/evidence_assembly.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_assembly-ab2b7afbe8d062d0)
+     Running tests/evidence_assembly_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_assembly_review_regressions-bfce74943978b5ce)
+error: test failed, to rerun pass `--test evidence_assembly_review_regressions`
+error: 1 target failed:
+    `--test evidence_assembly_review_regressions`
+
+# exit=101
+# classification: KILLED-BY scan_accounting_pins_decode_duplicate_comparison_and_copy @ tests/evidence_assembly_review_regressions.rs:57
+# restored sha256 fbf12cb1fdd49083138897fade0ac009b2e2d5ecbdb09cbc812d6ecce25dc78d == manifest

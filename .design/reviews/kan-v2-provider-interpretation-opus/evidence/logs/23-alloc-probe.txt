@@ -1,0 +1,21 @@
+# 2026-10-19T18:30:59Z cwd=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter/.local-state/reviews/provider-interpretation
+# CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target CARGO_BUILD_JOBS=4
+$ cargo test --offline --locked --features v2-crypto --test zz_review_interp_alloc -- --nocapture --test-threads=1
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter/.local-state/reviews/provider-interpretation)
+    Finished `test` profile [unoptimized] target(s) in 0.34s
+     Running tests/zz_review_interp_alloc.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_interp_alloc-0e564a6a9bf181bc)
+
+running 1 test
+test alloc_amplification ... ALLOC json-zero-array: input=1048579 items=1 output_budget_used=1048579 scanned=1048579 peak_heap=16778539 retained_heap=16778515 peak/input=16.0 peak/output_budget=16.0 time=36.236084ms
+ALLOC json-empty-object-array: input=1048582 items=1 output_budget_used=1048582 scanned=1048582 peak_heap=16778539 retained_heap=16778515 peak/input=16.0 peak/output_budget=16.0 time=26.031625ms
+ALLOC request-many-empty-text-blocks: input=1048583 items=349514 output_budget_used=13170413 scanned=1048583 peak_heap=116980924 retained_heap=116980826 peak/input=111.6 peak/output_budget=8.9 time=150.274833ms
+ALLOC sse-many-empty-events: input=1048572 items=116508 output_budget_used=582540 scanned=1281588 peak_heap=22952168 retained_heap=22952136 peak/input=21.9 peak/output_budget=39.4 time=59.785042ms
+ALLOC sse-many-blank-lines: input=1048576 items=1048576 output_budget_used=0 scanned=1048576 peak_heap=176160768 retained_heap=176160744 peak/input=168.0 peak/output_budget=inf time=101.745541ms
+ALLOC sse-sparse-indices: input=1048667 items=8526 output_budget_used=1986496 scanned=2037652 peak_heap=14725615 retained_heap=14057957 peak/input=14.0 peak/output_budget=7.4 time=33.150375ms
+ALLOC sse-giant-unterminated-line: input=1048576 items=1 output_budget_used=0 scanned=1048576 peak_heap=672 retained_heap=648 peak/input=0.0 peak/output_budget=inf time=2.914208ms
+ALLOC sse-giant-data-string: input=1048586 items=1 output_budget_used=2097157 scanned=2097164 peak_heap=3146412 retained_heap=1049232 peak/input=3.0 peak/output_budget=1.5 time=5.080125ms
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.95s
+
+# exit=0 2026-10-19T18:31:00Z

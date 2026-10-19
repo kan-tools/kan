@@ -1,0 +1,1 @@
+Initial system python3 freeze attempt failed before extraction: TypeError extractall() got an unexpected keyword argument 'filter'. Empty export directory removed, retrying with configured Homebrew Python. No source bytes changed.
