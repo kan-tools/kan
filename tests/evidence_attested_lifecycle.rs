@@ -8,6 +8,7 @@ use kan::{
     sign::Identity,
 };
 use rusqlite::Connection;
+use sha2::{Digest, Sha256};
 use std::{io::Write, path::Path, process::Command};
 
 fn identity(n: u8) -> Identity {
@@ -71,13 +72,19 @@ fn raw(path: &Path) -> Raw {
         .collect();
     rows
 }
-fn source_bytes(path: &Path) -> Vec<Option<Vec<u8>>> {
+// Empty newly initialized WAL files are permitted coordination, not retained frames.
+fn source_bytes(path: &Path) -> Vec<Option<(usize, [u8; 32])>> {
     [
         path.to_path_buf(),
         Path::new(&format!("{}-wal", path.display())).to_path_buf(),
     ]
     .iter()
-    .map(|p| std::fs::read(p).ok())
+    .map(|p| {
+        std::fs::read(p)
+            .ok()
+            .filter(|b| !b.is_empty())
+            .map(|b| (b.len(), Sha256::digest(&b).into()))
+    })
     .collect()
 }
 
@@ -100,6 +107,7 @@ fn proof_bytes_survive_backup_rebuild_and_derived_repair() {
     assert!(RecoveryReader::open(&backup).is_err());
     drop(a);
     let c = Connection::open(&db).unwrap();
+    c.execute_batch("PRAGMA foreign_keys=OFF;").unwrap();
     c.execute("UPDATE commits SET cid='damaged-derived-' || sequence", [])
         .unwrap();
     c.execute("DELETE FROM bindings", []).unwrap();
