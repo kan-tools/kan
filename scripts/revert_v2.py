@@ -26,6 +26,7 @@ import tarfile
 import uuid
 
 NODE_TESTS = {
+    'library_scope_shapes': ('tests/library_ui.test.cjs', 'malformed scope catalogs are rejected before any option or page request'),
     'library_retry_style': ('tests/library_ui.test.cjs', 'malformed retry clears partially rendered capabilities and keeps recovery available'),
     'library_partial_catalog': ('tests/library_ui.test.cjs', 'partial catalog coverage persists while browsing and retry clears old authority'),
     'library_capabilities': ('tests/library_ui.test.cjs', 'capability matrix renders actual service capabilities without claiming unknown support'),

@@ -1,0 +1,19 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next)
+    Finished `test` profile [unoptimized] target(s) in 1.18s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 1 test
+
+thread 'p4_capture_beside_brief_periodic_writer' (9285273) panicked at tests/evidence_capture_contention.rs:423:5:
+first admission must wait on the coordinated writer lock: 0ns
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.46s
+
+error: test failed, to rerun pass `--test evidence_capture_contention`

@@ -44,3 +44,16 @@ test('malformed duplicate and inconsistent capabilities never open a Library',as
 test('all directional control families default to exact hex with explicit text access',async()=>{for(const point of [0x061c,0x200e,0x200f,0x202a,0x202b,0x202c,0x202d,0x202e,0x2066,0x2067,0x2068,0x2069]){const u=ui();await open(u);u.node('rows').children[0].click();await tick();const utf8='a'+String.fromCodePoint(point)+'z',bytes_hex=Buffer.from(utf8).toString('hex');await u.respond({...source,utf8,bytes_hex,total_bytes:Buffer.byteLength(utf8),next:null});assert.equal(u.node('source').textContent,bytes_hex,'U+'+point.toString(16));u.node('encoding').click();assert.equal(u.node('source').textContent,utf8);}});
 
 test('malformed retry clears partially rendered capabilities and keeps recovery available',async()=>{const u=ui();await u.login();await u.respond({...catalog,coverage:'partial'});await u.respond(page);assert.equal(u.node('catalog-status').className,'partial');u.node('retry-sources').click();await tick();await u.respond({...catalog,capabilities:['provenance','provenance']});assert.equal(u.node('library').hidden,false);assert.equal(u.node('scope').children.length,0);assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('rows').children.length,0);assert.match(u.node('catalog-status').textContent,/coverage is unknown/);assert.equal(u.node('catalog-status').className,'');u.node('retry-sources').click();await tick();await u.respond(catalog);await u.respond(page);assert.equal(u.node('rows').children.length,1);});
+
+test('malformed scope catalogs are rejected before any option or page request',async()=>{
+ for(const scopes of [null,{},[null],[[]],[{scope:'',pin}],[{scope:7,pin}],[{scope:'a',pin:null}],[{scope:'a',pin:{request:'',reply:{}}}],[{scope:'a',pin:{request:'x',reply:[]}}],[{scope:'a',pin},{scope:'a',pin}],Array.from({length:17},(_,i)=>({scope:String(i),pin}))]) {
+  const u=ui();await u.login();await u.respond({...catalog,scopes});
+  assert.equal(u.node('library').hidden,true);assert.equal(u.node('scope').children.length,0);assert.equal(u.pending.length,0);
+ }
+});
+test('malformed scope retry clears old plaintext and permits recovery',async()=>{
+ const u=ui();await open(u);u.node('rows').children[0].click();await tick();await u.respond(source);
+ u.node('retry-sources').click();await tick();await u.respond({...catalog,scopes:[{scope:'a',pin},null]});
+ assert.equal(u.node('source').textContent,'');assert.equal(u.node('scope').children.length,0);assert.equal(u.node('rows').children.length,0);assert.equal(u.pending.length,0);
+ u.node('retry-sources').click();await tick();await u.respond(catalog);await u.respond(page);assert.equal(u.node('rows').children.length,1);
+});

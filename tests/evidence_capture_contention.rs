@@ -213,20 +213,23 @@ impl capture::Sink for FrontierSink<'_> {
 struct FirstCaptureWindow {
     request: std::sync::mpsc::SyncSender<Instant>,
     locked: std::sync::mpsc::Receiver<()>,
+    spent: std::sync::mpsc::SyncSender<Duration>,
 }
 struct CoordinatedSink<'a> {
     inner: Box<dyn capture::Sink + 'a>,
     first: Option<FirstCaptureWindow>,
 }
 impl CoordinatedSink<'_> {
-    fn first_window(&mut self) {
+    fn first_window(&mut self) -> Option<std::sync::mpsc::SyncSender<Duration>> {
         if let Some(first) = self.first.take() {
             first.request.send(Instant::now()).unwrap();
             first
                 .locked
                 .recv_timeout(Duration::from_secs(5))
                 .expect("synthetic writer must establish first contention window");
+            return Some(first.spent);
         }
+        None
     }
 }
 impl capture::Sink for CoordinatedSink<'_> {
@@ -240,8 +243,12 @@ impl capture::Sink for CoordinatedSink<'_> {
         frame: &[u8],
         wait: Duration,
     ) -> (Result<(), capture::Unconfirmed>, Duration) {
-        self.first_window();
-        self.inner.admit_with_wait(operation, frame, wait)
+        let first = self.first_window();
+        let result = self.inner.admit_with_wait(operation, frame, wait);
+        if let Some(spent) = first {
+            spent.send(result.1).unwrap();
+        }
+        result
     }
 }
 
@@ -352,6 +359,7 @@ async fn p4_capture_beside_brief_periodic_writer() {
     let (p, s) = (path.clone(), stop.clone());
     let (request, requested) = std::sync::mpsc::sync_channel(0);
     let (locked, lock_ready) = std::sync::mpsc::sync_channel(0);
+    let (spent, first_spent) = std::sync::mpsc::sync_channel(1);
     let drainer = std::thread::spawn(move || {
         let c = rusqlite::Connection::open(&p).unwrap();
         // This synthetic writer must not assume it wins SQLite's lock race.
@@ -401,6 +409,7 @@ async fn p4_capture_beside_brief_periodic_writer() {
         Some(FirstCaptureWindow {
             request,
             locked: lock_ready,
+            spent,
         }),
     )
     .join();
@@ -410,6 +419,13 @@ async fn p4_capture_beside_brief_periodic_writer() {
     task.abort();
     let h = capture_result.unwrap();
     let (held, first_admission, first_start, first_end) = drain_result.unwrap();
+    let waited = first_spent
+        .try_recv()
+        .expect("first admission must report its actual wait");
+    assert!(
+        waited > Duration::ZERO,
+        "first admission must wait on the coordinated writer lock: {waited:?}"
+    );
     assert!(held > 0);
     assert!(capture_started <= first_admission && first_admission <= first_start);
     assert!(first_start < first_end && first_end <= capture_finished);

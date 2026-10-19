@@ -1,0 +1,91 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next)
+    Finished `test` profile [unoptimized] target(s) in 0.53s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 1 test
+P4 writer windows=3 (first coordinated, then periodic; first 6.093416ms inside capture 1.278633292s): observed=88 queued=88 unconfirmed=0
+test p4_capture_beside_brief_periodic_writer ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.36s
+
+    Finished `test` profile [unoptimized] target(s) in 0.10s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 1 test
+P4 writer windows=1 (first coordinated, then periodic; first 6.081209ms inside capture 1.231030458s): observed=88 queued=88 unconfirmed=0
+test p4_capture_beside_brief_periodic_writer ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.30s
+
+    Finished `test` profile [unoptimized] target(s) in 0.10s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 1 test
+P4 writer windows=5 (first coordinated, then periodic; first 7.543792ms inside capture 1.267880583s): observed=87 queued=87 unconfirmed=0
+test p4_capture_beside_brief_periodic_writer ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.33s
+
+    Finished `test` profile [unoptimized] target(s) in 0.10s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 1 test
+P4 writer windows=1 (first coordinated, then periodic; first 7.54425ms inside capture 1.341167459s): observed=88 queued=88 unconfirmed=0
+test p4_capture_beside_brief_periodic_writer ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.41s
+
+    Finished `test` profile [unoptimized] target(s) in 0.10s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 1 test
+P4 writer windows=4 (first coordinated, then periodic; first 7.539917ms inside capture 1.262967416s): observed=88 queued=88 unconfirmed=0
+test p4_capture_beside_brief_periodic_writer ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.35s
+
+    Finished `test` profile [unoptimized] target(s) in 0.10s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 1 test
+P4 writer windows=2 (first coordinated, then periodic; first 7.542292ms inside capture 1.258159875s): observed=88 queued=88 unconfirmed=0
+test p4_capture_beside_brief_periodic_writer ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.31s
+
+    Finished `test` profile [unoptimized] target(s) in 0.10s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 1 test
+P4 writer windows=2 (first coordinated, then periodic; first 7.53575ms inside capture 1.242921083s): observed=87 queued=87 unconfirmed=0
+test p4_capture_beside_brief_periodic_writer ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.31s
+
+    Finished `test` profile [unoptimized] target(s) in 0.10s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 1 test
+P4 writer windows=1 (first coordinated, then periodic; first 7.53925ms inside capture 1.229994125s): observed=88 queued=88 unconfirmed=0
+test p4_capture_beside_brief_periodic_writer ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.29s
+
+    Finished `test` profile [unoptimized] target(s) in 0.10s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 1 test
+P4 writer windows=2 (first coordinated, then periodic; first 5.984708ms inside capture 1.236083292s): observed=88 queued=88 unconfirmed=0
+test p4_capture_beside_brief_periodic_writer ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.31s
+
+    Finished `test` profile [unoptimized] target(s) in 0.10s
+     Running tests/evidence_capture_contention.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+running 1 test
+P4 writer windows=1 (first coordinated, then periodic; first 6.069375ms inside capture 1.21977125s): observed=87 queued=87 unconfirmed=0
+test p4_capture_beside_brief_periodic_writer ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.29s
+
