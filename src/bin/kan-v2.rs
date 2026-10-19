@@ -962,10 +962,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .to_str()
                 .ok_or("recovery JSON requires a UTF-8 destination path")?;
             let result = if let Some(binding) = binding {
-                kan::evidence_store::attested::Recovery::open(&database, binding)?
+                kan::evidence_store::attested::Recovery::open(&database, binding)
+                    .map_err(|e| {
+                        format!("cannot read recovery source {}: {e}", database.display())
+                    })?
                     .rebuild(&destination)
             } else {
-                RecoveryReader::open(&database)?.rebuild(&destination)
+                RecoveryReader::open(&database)
+                    .map_err(|e| {
+                        format!("cannot read recovery source {}: {e}", database.display())
+                    })?
+                    .rebuild(&destination)
             };
             let report = result.map_err(|e| format!(
                 "recovery into {} failed: {e}; destination must be a new file; any output is retained",

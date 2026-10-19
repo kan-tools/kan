@@ -478,6 +478,8 @@ fn owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle() {
     );
     let json: serde_json::Value = serde_json::from_slice(&recovered.stdout).unwrap();
     assert_eq!(json["cryptographic_admission"], "proof-purpose-dependent");
+    assert_eq!(json["historical_completeness"], "not-verified");
+    assert_eq!(json["independent_backup"], false);
     assert_eq!(json["promoted"], false);
     assert_eq!(raw(&rebuilt), original);
     let verified = run(&[vec!["verify", rebuilt.to_str().unwrap()], pins.to_vec()].concat());
@@ -488,8 +490,28 @@ fn owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle() {
         "payloads-writer-requests-and-issuer-proofs"
     );
     assert_eq!(json["historical_completeness"], "not-verified");
+    assert_eq!(json["cryptographic_admission"], "proof-purpose-dependent");
+    assert_eq!(json["writable_admission"], "not-checked");
     assert!(
         !run(&["verify", rebuilt.to_str().unwrap()]).status.success(),
         "legacy CLI must not guess proof profile"
     );
+    let missing = t.path().join("missing.sqlite");
+    let refused = t.path().join("refused.sqlite");
+    for owner_pins in [vec![], pins.to_vec()] {
+        let result = run(&[
+            vec![
+                "recover",
+                missing.to_str().unwrap(),
+                refused.to_str().unwrap(),
+            ],
+            owner_pins,
+        ]
+        .concat());
+        assert!(!result.status.success());
+        assert!(!refused.exists());
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(stderr.contains("cannot read recovery source"), "{stderr}");
+        assert!(stderr.contains(missing.to_str().unwrap()), "{stderr}");
+    }
 }
