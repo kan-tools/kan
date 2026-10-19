@@ -453,3 +453,48 @@ fn every_structured_reference_arm_round_trips_with_typed_binary_ids() {
         );
     }
 }
+
+#[test]
+fn future_envelope_preserves_cid_shaped_untagged_bytes() {
+    let identity = Identity::generate();
+    let claim = signed_claim(&identity);
+    let encoded = codec::encode_claim(&claim, REV).unwrap();
+    let Ipld::Map(mut fields) = atproto_dasl::from_reader(&encoded[..]).unwrap() else {
+        panic!("map");
+    };
+    fields.insert("codec".into(), Ipld::String("kan-claim-v99".into()));
+    let Some(Ipld::Map(content)) = fields.get_mut("content") else {
+        panic!("content map")
+    };
+    content.insert(
+        "$type".into(),
+        Ipld::String("tools.kan.defs#claimContentV99".into()),
+    );
+    let cid = claim.id().unwrap().cid().clone();
+    let opaque = cid.to_dag_cbor_bytes();
+    content.insert("futureBytes".into(), Ipld::Bytes(opaque.clone()));
+    content.insert("futureLink".into(), Ipld::Link(cid));
+    fields.insert("signature".into(), Ipld::Bytes(opaque));
+    let bytes = atproto_dasl::to_vec(&Ipld::Map(fields)).unwrap();
+    let result = codec::decode_record(&bytes, VerificationContext::StaticDidKey).unwrap();
+    assert!(matches!(result.claim, DecodedClaim::Unsupported(_)));
+    assert_eq!(codec::encode_decoded(&result).unwrap(), bytes);
+}
+
+#[test]
+fn cid_shaped_signature_is_not_confused_with_a_canonicality_failure_or_accepted() {
+    let claim = signed_claim(&Identity::generate());
+    let encoded = codec::encode_claim(&claim, REV).unwrap();
+    let Ipld::Map(mut fields) = atproto_dasl::from_reader(&encoded[..]).unwrap() else {
+        panic!("map")
+    };
+    fields.insert(
+        "signature".into(),
+        Ipld::Bytes(claim.id().unwrap().cid().to_dag_cbor_bytes()),
+    );
+    let bytes = atproto_dasl::to_vec(&Ipld::Map(fields)).unwrap();
+    assert!(matches!(
+        codec::decode(&bytes, VerificationContext::StaticDidKey),
+        Err(codec::DecodeError::Claim(_))
+    ));
+}

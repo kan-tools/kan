@@ -1112,3 +1112,5 @@ pub enum Error {
     #[error(transparent)]
     Encode(#[from] atproto_dasl::EncodeError),
 }
+
+mod ipld_decode;
