@@ -561,3 +561,53 @@ impl Drop for Manager {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn active_snapshot_reports_the_copy_window_not_later_parsing() {
+        let dir = tempfile::tempdir().unwrap();
+        let spool = dir.path().join("spool");
+        let health = dir.path().join("health");
+        let root = dir.path().join("collection");
+        let identity = crate::sign::Identity::generate();
+        crate::evidence_spool::Spool::create(
+            &spool,
+            &"01".repeat(32),
+            identity.did().as_str(),
+            identity.did().as_str(),
+            1 << 20,
+        )
+        .unwrap();
+        drop(Journal::create(&health, &spool).unwrap());
+        super::super::adopt(&health, &root).unwrap();
+        let (manifest, _) = manifest_snapshot(&root).unwrap();
+        let generation = manifest.generations.last().unwrap();
+        rusqlite::Connection::open(generation_path(&root, &generation.id))
+            .unwrap()
+            .execute("INSERT INTO sessions VALUES('timing-fixture',1,0,0)", [])
+            .unwrap();
+        let mut parsed_at = None;
+        let selected = source(
+            &root,
+            generation,
+            &manifest.binding,
+            &AtomicBool::new(false),
+            &mut |_| {
+                // The timestamp contract must survive slow parsing after the
+                // source lock has been released. No public test seam is added.
+                std::thread::sleep(std::time::Duration::from_millis(1100));
+                parsed_at = Some(operations::now());
+                Ok(())
+            },
+            &mut |_| Ok(()),
+        )
+        .unwrap();
+        assert!(
+            selected.snapshot.finished_at < parsed_at.expect("fixture row was not parsed"),
+            "snapshot end must describe the earlier active copy, not row parsing"
+        );
+    }
+}

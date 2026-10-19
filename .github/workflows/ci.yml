@@ -38,6 +38,8 @@ jobs:
       - run: python3 scripts/check_v2_supervision.py target/debug/kan-v2
       - run: cargo test --features v2-crypto --lib evidence_gateway::admission_tests
       - run: cargo test --features v2-crypto --lib evidence_operations::tests
+      - run: cargo test --features v2-crypto --lib evidence_operations::projection::tests
+      - run: cargo test --features v2-crypto --lib evidence_operations_collection::overview::tests
       - run: cargo test --features v2-crypto --lib evidence_library::budget_tests
       - run: cargo test --features v2-crypto --lib evidence_spool::tests
       - run: cargo test --features v2-crypto --lib evidence_store::admission_tests
