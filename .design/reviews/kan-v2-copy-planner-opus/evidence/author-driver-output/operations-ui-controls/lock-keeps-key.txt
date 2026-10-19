@@ -1,0 +1,37 @@
+✖ RP4: lock -> relogin -> load returns the SAME cached sample -> body is repainted, not left blank (13.620167ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 42.311166
+
+✖ failing tests:
+
+test at tests/operations_restart_review.test.cjs:46:1
+✖ RP4: lock -> relogin -> load returns the SAME cached sample -> body is repainted, not left blank (13.620167ms)
+  AssertionError [ERR_ASSERTION]: label says cached sample but body stayed blank after relogin
+  + actual - expected
+  
+    {
+  +   coverage: '',
+  +   sources: [],
+  +   summary: ''
+  -   coverage: 'Complete for 1 selected observation snapshots, built 10/19/2026, 4:05:25 AM. Raw capture completeness remains unknown. Active generation: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.',
+  -   sources: [
+  -     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa · active snapshot · row digest cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
+  -   ],
+  -   summary: '1 distinct attempts · 3 observed · 2 locally queued · 1 unconfirmed · 1 attempts with gaps · 1 reporter sessions · at least 8 dropped telemetry observations · 0 unclosed sessions'
+    }
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner/tests/operations_restart_review.test.cjs:51:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: { summary: '', coverage: '', sources: [] },
+    expected: { summary: '1 distinct attempts · 3 observed · 2 locally queued · 1 unconfirmed · 1 attempts with gaps · 1 reporter sessions · at least 8 dropped telemetry observations · 0 unclosed sessions', coverage: 'Complete for 1 selected observation snapshots, built 10/19/2026, 4:05:25 AM. Raw capture completeness remains unknown. Active generation: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.', sources: [ 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa · active snapshot · row digest cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' ] },
+    operator: 'deepStrictEqual'
+  }

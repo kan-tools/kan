@@ -1,0 +1,16 @@
+
+running 8 tests
+test derived_damage_requires_separate_recovery_and_preserves_the_exact_recipe ... ok
+test planning_and_confirmation_preserve_database_and_retained_wal_bytes ... ok
+test plans_require_explicit_scope_historical_issuer_and_all_source_payloads ... ok
+test same_frontier_with_a_changed_unsigned_receipt_fails_exact_plan_confirmation ... ok
+test source_fingerprint_matches_an_independent_python_byte_oracle ... ok
+test source_plan_is_pinned_and_reconfirmation_detects_later_admission ... ok
+test staged_but_uncommitted_objects_are_part_of_the_source_commitment ... ok
+test structurally_healthy_raw_archives_cannot_bypass_request_authentication ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner)
+    Finished `test` profile [unoptimized] target(s) in 0.39s
+     Running tests/evidence_copy_source.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_source-b92f66d790c08427)

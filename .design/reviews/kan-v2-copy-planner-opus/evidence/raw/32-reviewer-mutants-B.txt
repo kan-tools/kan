@@ -1,0 +1,7 @@
+context-profile2-only-dropped | evidence_attested_lifecycle=KILLED owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle | recovery_cli=survived
+context-legacy-only-dropped | evidence_attested_lifecycle=KILLED owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle | recovery_cli=survived
+backup-claims-independent | evidence_attested_lifecycle=KILLED owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle | recovery_cli=survived
+legacy-verify-claims-proofs | evidence_attested_lifecycle=survived | recovery_cli=survived
+verify-claims-writable-checked | evidence_attested_lifecycle=KILLED owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle | recovery_cli=survived
+restored kan-v2.rs
+exit=0

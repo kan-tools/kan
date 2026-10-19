@@ -1,0 +1,24 @@
+✖ UPb: after a service restart, a new sample with the same job number and manifest must repaint totals (13.181458ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 41.057958
+
+✖ failing tests:
+
+test at tests/operations_review_ui.test.cjs:29:1
+✖ UPb: after a service restart, a new sample with the same job number and manifest must repaint totals (13.181458ms)
+  AssertionError [ERR_ASSERTION]: summary still shows the pre-restart sample beside the new label
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner/tests/operations_review_ui.test.cjs:37:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '1 distinct attempts · 3 observed · 2 locally queued · 1 unconfirmed · 1 attempts with gaps · 1 reporter sessions · at least 8 dropped telemetry observations · 0 unclosed sessions',
+    expected: /^5 distinct attempts/,
+    operator: 'match'
+  }

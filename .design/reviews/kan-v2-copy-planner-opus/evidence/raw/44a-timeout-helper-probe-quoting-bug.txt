@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner/review-evidence/probes/timeout_helper_probe.py", line 27, in <module>
+    gpid = int(pidfile.read_text()); size1 = beat.stat().st_size; time.sleep(0.5); size2 = beat.stat().st_size
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1256, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1242, in open
+    return io.open(self, mode, buffering, encoding, errors, newline,
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pathlib.py", line 1110, in _opener
+    return self._accessor.open(self, flags, mode)
+FileNotFoundError: [Errno 2] No such file or directory: '/var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/tmpg_0nxqpp/grandchild.pid'

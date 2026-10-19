@@ -1,0 +1,5 @@
+synthetic: raised RuntimeError('reviewer-synthetic-tree timed out; process group stopped; not a demonstrated assertion') after 2.0s
+synthetic: grandchild 58509 alive=False heartbeat_grew=False
+a13: raised RuntimeError('reviewer-a13-real-timers timed out; process group stopped; not a demonstrated assertion') after 20.0s
+a13: node --test processes remaining=[]
+app.js restored=True

@@ -1,0 +1,22 @@
+
+running 1 test
+test changing_each_owner_pin_or_source_coordinate_changes_archive_identity ... FAILED
+
+failures:
+
+---- changing_each_owner_pin_or_source_coordinate_changes_archive_identity stdout ----
+
+thread 'changing_each_owner_pin_or_source_coordinate_changes_archive_identity' (9611216) panicked at tests/evidence_copy_plan.rs:76:9:
+through
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    changing_each_owner_pin_or_source_coordinate_changes_archive_identity
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade/.local-state/reviews/copy-planner)
+    Finished `test` profile [unoptimized] target(s) in 6.90s
+     Running tests/evidence_copy_plan.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_plan-1aa9d01a6c5f6aca)
+error: test failed, to rerun pass `--test evidence_copy_plan`
