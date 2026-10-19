@@ -87,7 +87,7 @@ function render(s){snapshot=s;const w=s.worker,q=w?.queue;const now=Date.now()/1
   else if(stale.length||unseen)notice('A health reporter is stale or has no recent sampled heartbeat. Capture coverage is unknown.','warning');
   else if(!unclosed.length)notice('No active capture reporter is recorded. Capture coverage is unknown.','warning');
   else notice('Status is current. Capture completion and archive acknowledgment are separate observations.');
-  rows();
+  rows();if(overviewData)labelOverview();
 }
 async function refresh(){if(!token||busy)return;busy=true;const current=generation;const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),8000);try{const r=await fetch('/api/status',{headers:{Authorization:'Bearer '+token},cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal});if(!r.ok)throw new Error(r.status===401?'Token rejected. Lock and reconnect.':'Status unavailable. Retained values may be stale.');const s=await r.json();if(s.version!==2||!s.journal)throw new Error('Unsupported status version.');if(current===generation)render(s);}catch(e){if(current!==generation)return;notice(e.name==='AbortError'?'Status request timed out. Retained values may be stale.':e.message,'error');$('updated').textContent='Disconnected · last values retained';}finally{clearTimeout(timeout);busy=false;}}
 $('connect').addEventListener('submit',e=>{e.preventDefault();generation++;token=$('token').value;$('token').value='';refresh();});
@@ -95,8 +95,8 @@ $('refresh').addEventListener('click',refresh);$('gaps-only').addEventListener('
 $('lock').addEventListener('click',()=>{generation++;token='';snapshot=null;clearOverview();attemptButtons.clear();closeInspector();$('search').value='';$('gaps-only').checked=false;$('rows').replaceChildren();for(const id of ['pending','bytes','acked','acktime','gaps','attempts','telemetry','worker','retry','capacity-label','age','journal-state','journal-pages','journal-limits','journal-persistence','journal-scope','coverage-history','sample-count'])$(id).textContent='';$('capacity').value=0;$('journal-capacity').value=0;$('data').hidden=true;$('login').hidden=false;$('lock').hidden=true;$('refresh').disabled=true;$('updated').textContent='Locked';notice('Locked. Enter your token to reconnect.');$('token').focus();});
 setInterval(()=>{refresh();if(overviewEnabled)loadOverview();},5000);
 
-let overviewEnabled=false,overviewBusy=false,overviewKey='';
-function clearOverview(){overviewEnabled=false;overviewBusy=false;overviewKey='';$('overview-state').textContent='No overview loaded.';for(const id of ['overview-summary','overview-coverage'])$(id).textContent='';$('overview-sources').replaceChildren();$('overview-cancel').disabled=true;$('overview-build').disabled=false;$('overview-load').disabled=false;}
+let overviewEnabled=false,overviewKey='',overviewRequest=null,overviewSerial=0,overviewQueued='',overviewData=null,overviewError='';
+function clearOverview(){if(overviewRequest)overviewRequest.controller.abort();overviewRequest=null;overviewSerial++;overviewQueued='';overviewData=null;overviewError='';overviewEnabled=false;overviewKey='';$('overview-state').textContent='No overview loaded.';for(const id of ['overview-summary','overview-coverage'])$(id).textContent='';$('overview-sources').replaceChildren();$('overview-cancel').disabled=true;$('overview-build').disabled=false;$('overview-load').disabled=false;}
 function validateOverview(s){
  const states=['unavailable','building','cancelling','cancelled','completed','failed','capacity-limited'];
  if(!s||s.version!==1||!states.includes(s.state)||!Number.isSafeInteger(s.job)||s.job<0)throw new Error('Unsupported overview response.');
@@ -108,17 +108,36 @@ function validateOverview(s){
   if(v.sources.at(-1).generation!==v.active||v.sources.at(-1).sealed_sha256!==null||v.sources.slice(0,-1).some(x=>x.sealed_sha256===null))throw new Error('Invalid overview frontier.');
  }
 }
-function renderOverview(s){validateOverview(s);const building=s.state==='building'||s.state==='cancelling';$('overview-cancel').disabled=!building;$('overview-build').disabled=building;
- $('overview-state').textContent='Overview '+s.state+(s.reason?' · '+s.reason:'')+(s.last&&s.last_job!==s.job?' · Prior sample retained; this refresh has not replaced it.':'');
- if(!s.last)return;const v=s.last,key=s.last_job+':'+v.manifest_sha256;if(key===overviewKey)return;overviewKey=key;
+function labelOverview(){
+ const s=overviewData;
+ if(overviewError){$('overview-state').textContent=overviewError+(s?.last?' Prior sample retained.':'');return;}
+ if(!s)return;
+ let label='Overview '+s.state+(s.reason?' · '+s.reason:'')+(s.last&&s.last_job!==s.job?' · Prior sample retained; this refresh has not replaced it.':'');
+ if(s.last){const age=Math.floor(Date.now()/1000-s.last.built_at);label+=' · Cached sample · '+(age<0?'sample clock is ahead':age<60?age+'s old':Math.floor(age/60)+'m old');
+  const active=snapshot?.active_generation;
+  if(typeof active==='string'&&/^[a-f0-9]{32}$/.test(active)&&active!==s.last.active)label+=' · Superseded by active generation '+active+'. Build a new overview.';
+ }
+ if(overviewQueued)label+=' · Action queued.';
+ $('overview-state').textContent=label;
+}
+function renderOverview(s){validateOverview(s);overviewData=s;overviewError='';const building=s.state==='building'||s.state==='cancelling';$('overview-cancel').disabled=!building;$('overview-build').disabled=building;labelOverview();
+ if(!s.last){overviewKey='';for(const id of ['overview-summary','overview-coverage'])$(id).textContent='';$('overview-sources').replaceChildren();return;}
+ const v=s.last,key=s.last_job+':'+v.manifest_sha256;if(key===overviewKey)return;overviewKey=key;
  const t=v.totals,n=k=>BigInt(t[k]).toLocaleString();
  $('overview-summary').textContent=n('attempts')+' distinct attempts · '+n('observed')+' observed · '+n('locally_queued')+' locally queued · '+n('unconfirmed')+' unconfirmed · '+n('attempts_with_gaps')+' attempts with gaps · '+n('sessions')+' reporter sessions · at least '+n('telemetry_dropped_lower_bound')+' dropped telemetry observations · '+n('unclosed_sessions')+' unclosed sessions';
  $('overview-coverage').textContent='Complete for '+v.sources.length+' selected observation snapshots, built '+time(v.built_at)+'. Raw capture completeness remains unknown. Active generation: '+v.active+'.';
  $('overview-sources').replaceChildren();for(const source of v.sources){const li=document.createElement('li');li.textContent=source.generation+' · '+(source.sealed_sha256?'sealed SHA-256 '+source.sealed_sha256:'active snapshot')+' · row digest '+source.snapshot.digest;$('overview-sources').append(li);}
 }
-async function loadOverview(action=''){if(!token||overviewBusy)return;overviewEnabled=true;overviewBusy=true;const current=generation,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);$('overview-load').disabled=true;
- try{const r=await fetch('/api/overview'+action,{method:action?'POST':'GET',headers:{Authorization:'Bearer '+token},cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal});if(!r.ok)throw new Error(r.status===401?'Token rejected.':'Overview unavailable. Prior sample retained.');const s=await r.json();if(current===generation)renderOverview(s);}
- catch(e){if(current===generation)$('overview-state').textContent=e.name==='AbortError'?'Overview request timed out. Prior sample retained.':e.message;}
- finally{clearTimeout(timeout);if(current===generation){overviewBusy=false;$('overview-load').disabled=false;}}
+async function loadOverview(action=''){
+ if(!token)return;
+ if(overviewRequest){
+  if(!action)return;
+  if(overviewRequest.action){overviewQueued=action;$('overview-state').textContent='Overview action queued until the current request finishes.';return;}
+  overviewRequest.controller.abort();
+ }
+ overviewEnabled=true;const current=generation,serial=++overviewSerial,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),8000);overviewRequest={action,controller};$('overview-load').disabled=true;
+ try{const r=await fetch('/api/overview'+action,{method:action?'POST':'GET',headers:{Authorization:'Bearer '+token},cache:'no-store',credentials:'omit',redirect:'error',signal:controller.signal});if(!r.ok)throw new Error(r.status===401?'Token rejected.':'Overview unavailable.');const s=await r.json();if(current===generation&&serial===overviewSerial)renderOverview(s);}
+ catch(e){if(current===generation&&serial===overviewSerial){overviewError=e.name==='AbortError'?'Overview request timed out.':e.message;labelOverview();}}
+ finally{clearTimeout(timeout);if(current===generation&&serial===overviewSerial){overviewRequest=null;$('overview-load').disabled=false;const queued=overviewQueued;overviewQueued='';if(queued)loadOverview(queued);}}
 }
 $('overview-load').addEventListener('click',()=>loadOverview());$('overview-build').addEventListener('click',()=>loadOverview('/refresh'));$('overview-cancel').addEventListener('click',()=>loadOverview('/cancel'));

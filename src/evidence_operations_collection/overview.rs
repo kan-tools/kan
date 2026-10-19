@@ -11,7 +11,7 @@ use std::{
 };
 
 const SOURCE_LIMIT: u64 = 32 * 1024 * 1024;
-const WORKING_RESERVE: usize = 16 * 1024 * 1024; // SQLite, manifest, hashing and bounded row buffers.
+const WORKING_RESERVE: usize = 48 * 1024 * 1024; // 32-MiB active SQLite copy + 16 MiB for SQLite/cache/transients.
 #[derive(Debug, Clone, Copy)]
 pub struct Limits {
     pub attempts: usize,
@@ -236,6 +236,7 @@ fn source(
     binding: &Binding,
     flag: &AtomicBool,
     visit: &mut dyn FnMut(Observation) -> Result<()>,
+    hook: &mut dyn FnMut(Boundary) -> Result<()>,
 ) -> Result<Source> {
     cancel(flag)?;
     let path = generation_path(root, &g.id);
@@ -252,6 +253,12 @@ fn source(
         }
     }
     let journal = Journal::open_file(&path, false, true)?;
+    let (journal, active_window) = if g.sealed_sha256.is_none() {
+        let (copy, window) = journal.projection_copy(&mut || cancel(flag))?;
+        (copy, Some(window))
+    } else {
+        (journal, None)
+    };
     let expected = (
         binding.spool.clone(),
         binding.writer.clone(),
@@ -262,6 +269,11 @@ fn source(
         cancel(flag)?;
         visit(row)
     })?;
+    if let Some((start, end)) = active_window {
+        snapshot.started_at = start;
+        snapshot.finished_at = end;
+    }
+    hook(Boundary::SourceRowsRead)?;
     // Recheck sealed bytes after the SQLite read so a changed source is never
     // promoted merely because it passed a pre-open hash.
     if let Some(expected) = &g.sealed_sha256 {
@@ -281,6 +293,7 @@ fn source(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Boundary {
     MembershipPinned,
+    SourceRowsRead,
     ActiveRead,
     GenerationRead,
     BeforePublish,
@@ -314,33 +327,45 @@ pub fn build_observed(
     let active = m.generations.last().ok_or_else(invalid)?;
     let mut attempt_count = 0usize;
     let mut session_count = 0usize;
-    let active_source = source(root, active, &m.binding, flag, &mut |row| {
-        match &row {
-            Observation::Attempt { .. } => {
-                attempt_count += 1;
-                if attempt_count > limits.attempts {
-                    return Err(Box::new(Failure::Capacity("attempts")));
+    let active_source = source(
+        root,
+        active,
+        &m.binding,
+        flag,
+        &mut |row| {
+            match &row {
+                Observation::Attempt { .. } => {
+                    attempt_count += 1;
+                    if attempt_count > limits.attempts {
+                        return Err(Box::new(Failure::Capacity("attempts")));
+                    }
+                }
+                Observation::Session { .. } => {
+                    session_count += 1;
+                    if session_count > limits.sessions {
+                        return Err(Box::new(Failure::Capacity("sessions")));
+                    }
                 }
             }
-            Observation::Session { .. } => {
-                session_count += 1;
-                if session_count > limits.sessions {
-                    return Err(Box::new(Failure::Capacity("sessions")));
-                }
-            }
-        }
-        budget.add(cost(&row)?)?;
-        active_rows.push(row);
-        Ok(())
-    })?;
+            budget.add(cost(&row)?)?;
+            active_rows.push(row);
+            Ok(())
+        },
+        hook,
+    )?;
     hook(Boundary::ActiveRead)?;
     let mut aggregate = Aggregate::new(limits);
     let mut sources = Vec::new();
     budget.add(serde_json::to_vec(&active_source)?.len() + 1024)?;
     for g in &m.generations[..m.generations.len() - 1] {
-        let sampled = source(root, g, &m.binding, flag, &mut |row| {
-            aggregate.add(row, &mut budget)
-        })?;
+        let sampled = source(
+            root,
+            g,
+            &m.binding,
+            flag,
+            &mut |row| aggregate.add(row, &mut budget),
+            hook,
+        )?;
         budget.add(serde_json::to_vec(&sampled)?.len() + 1024)?;
         sources.push(sampled);
         hook(Boundary::GenerationRead)?;
@@ -371,6 +396,18 @@ pub fn build_observed(
         accounted_bytes: budget.used,
         memory_limit: limits.bytes,
     })
+}
+
+fn source_busy(error: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
+    error.is::<operations::projection::SourceBusy>()
+        || matches!(
+            error.downcast_ref::<fs4::TryLockError>(),
+            Some(fs4::TryLockError::WouldBlock)
+        )
+        || error
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|e| e.kind() == std::io::ErrorKind::WouldBlock)
+        || matches!(error.downcast_ref::<rusqlite::Error>(),Some(rusqlite::Error::SqliteFailure(e,_)) if matches!(e.code,rusqlite::ErrorCode::DatabaseBusy|rusqlite::ErrorCode::DatabaseLocked))
 }
 
 /// Published memory only. A prior result stays explicitly associated with its
@@ -480,6 +517,9 @@ impl Manager {
                                     "conflicting cumulative observations".into()
                                 }
                                 Some(Failure::Overflow) => "counter overflow".into(),
+                                _ if source_busy(error.as_ref()) => {
+                                    "source busy or in use; retry refresh".into()
+                                }
                                 _ => "source invalid or unavailable".into(),
                             });
                         }

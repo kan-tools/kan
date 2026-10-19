@@ -1,0 +1,67 @@
+✔ auth is header-only; gap filtering and untrusted values use text (15.189666ms)
+✔ late authenticated response cannot unlock a locked view (0.629833ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.620542ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.58625ms)
+✔ fresh active sessions are current while historical losses remain visible (0.579459ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.882625ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.791417ms)
+✔ unsampled sessions and summary loss units are explicit (0.529416ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.734708ms)
+✔ unsupported status version retains visibly disconnected values (0.5015ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.8795ms)
+✔ locking clears rendered private metadata and closes the inspector (0.451875ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.597ms)
+✔ future persistence timestamps stay unknown (0.504208ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.710875ms)
+✔ unchanged notices are not announced again on every poll (0.606833ms)
+✔ overview refresh is explicit authenticated POST with exact large counters (0.754ms)
+✔ lock clears overview and prevents a late result from repainting (0.771458ms)
+✖ failed or limited refresh labels the prior sample explicitly (0.733708ms)
+✔ overview rejects malformed source lists and unsafe numeric counters before rendering (1.74675ms)
+✔ UP1 transport error from a pre-lock overview request cannot repaint a locked view (15.269208ms)
+✔ UP4 relogin after lock ignores the old response and can load again (1.5125ms)
+UP5 state= "Invalid overview snapshot." summary= "1 distinct attempts · 3 observed · 2 locally queued · 1 unconfirmed · 1 attempts with gaps · 1 reporter sessions · at least 8 dropped telemetry observations · 0 unclosed sessions"
+✔ UP5 invalid response after a valid sample keeps prior totals but states invalid (behaviour record) (0.941167ms)
+✖ UP6 cancelled refresh labels the retained prior sample (1.013625ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 22
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 60.84625
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:33:1
+✖ failed or limited refresh labels the prior sample explicitly (0.733708ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Prior sample retained/. Input:
+  
+  'Overview capacity-limited · memory bound reached'
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/overview/tests/operations_ui.test.cjs:33:349)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'Overview capacity-limited · memory bound reached',
+    expected: /Prior sample retained/,
+    operator: 'match'
+  }
+
+test at tests/zz_review_operations_ui.test.cjs:14:1
+✖ UP6 cancelled refresh labels the retained prior sample (1.013625ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /cancelled.*Prior sample retained/. Input:
+  
+  'Overview cancelled'
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/overview/tests/zz_review_operations_ui.test.cjs:14:291)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'Overview cancelled',
+    expected: /cancelled.*Prior sample retained/,
+    operator: 'match'
+  }

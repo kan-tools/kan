@@ -1,0 +1,72 @@
+
+running 8 tests
+test p7_non_p256_issuer_binding_is_refused_at_create ... ok
+test p1_profile1_archive_is_refused_by_attested_open_without_writes ... ok
+test p2_signature_only_mutation_refuses_open_with_named_audit_error ... ok
+test p3_retry_of_earlier_row_detects_proof_replacement_under_lock ... FAILED
+test p6_concurrent_proven_append_from_second_handle_conflicts ... ok
+test p5b_mixed_historical_issuers_in_prefix_are_refused ... ok
+test p4_retry_of_earlier_row_detects_receipt_replacement_under_lock ... ok
+test p5a_single_historical_issuer_prefix_then_admission_is_accepted ... ok
+
+failures:
+
+---- p3_retry_of_earlier_row_detects_proof_replacement_under_lock stdout ----
+
+thread 'p3_retry_of_earlier_row_detects_proof_replacement_under_lock' (9474254) panicked at tests/evidence_attested_followups.rs:184:56:
+called `Result::unwrap_err()` on an `Ok` value: [162, 105, 115, 105, 103, 110, 97, 116, 117, 114, 101, 88, 64, 5, 157, 21, 31, 90, 17, 45, 99, 18, 252, 88, 194, 72, 11, 24, 112, 239, 131, 216, 101, 132, 140, 224, 169, 60, 53, 161, 251, 64, 228, 233, 246, 50, 179, 216, 6, 38, 222, 234, 194, 39, 12, 193, 245, 108, 108, 137, 62, 69, 65, 57, 195, 174, 136, 101, 54, 254, 86, 83, 169, 11, 28, 236, 150, 105, 115, 116, 97, 116, 101, 109, 101, 110, 116, 89, 2, 50, 163, 97, 118, 1, 100, 98, 111, 100, 121, 171, 102, 105, 115, 115, 117, 101, 114, 163, 105, 112, 114, 105, 110, 99, 105, 112, 97, 108, 120, 57, 100, 105, 100, 58, 107, 101, 121, 58, 122, 68, 110, 97, 101, 106, 103, 109, 65, 72, 77, 76, 107, 66, 80, 77, 66, 87, 110, 107, 66, 120, 121, 71, 120, 112, 88, 120, 56, 76, 103, 69, 52, 87, 74, 65, 89, 68, 104, 119, 90, 122, 121, 111, 82, 65, 100, 100, 70, 111, 105, 100, 101, 110, 116, 105, 116, 121, 86, 101, 114, 115, 105, 111, 110, 162, 100, 107, 105, 110, 100, 102, 115, 116, 97, 116, 105, 99, 101, 118, 97, 108, 117, 101, 246, 114, 118, 101, 114, 105, 102, 105, 99, 97, 116, 105, 111, 110, 77, 101, 116, 104, 111, 100, 120, 107, 100, 105, 100, 58, 107, 101, 121, 58, 122, 68, 110, 97, 101, 106, 103, 109, 65, 72, 77, 76, 107, 66, 80, 77, 66, 87, 110, 107, 66, 120, 121, 71, 120, 112, 88, 120, 56, 76, 103, 69, 52, 87, 74, 65, 89, 68, 104, 119, 90, 122, 121, 111, 82, 65, 100, 100, 70, 35, 122, 68, 110, 97, 101, 106, 103, 109, 65, 72, 77, 76, 107, 66, 80, 77, 66, 87, 110, 107, 66, 120, 121, 71, 120, 112, 88, 120, 56, 76, 103, 69, 52, 87, 74, 65, 89, 68, 104, 119, 90, 122, 121, 111, 82, 65, 100, 100, 70, 103, 112, 117, 114, 112, 111, 115, 101, 104, 97, 100, 109, 105, 116, 116, 101, 100, 103, 114, 101, 99, 101, 105, 112, 116, 216, 42, 88, 37, 0, 1, 113, 18, 32, 151, 221, 230, 230, 165, 170, 230, 106, 58, 119, 2, 126, 129, 220, 149, 21, 49, 208, 80, 206, 35, 217, 253, 29, 84, 218, 192, 126, 134, 117, 245, 205, 104, 105, 115, 115, 117, 101, 100, 65, 116, 26, 0, 1, 134, 160, 104, 109, 97, 110, 105, 102, 101, 115, 116, 216, 42, 88, 37, 0, 1, 113, 18, 32, 39, 228, 19, 6, 102, 245, 49, 189, 35, 252, 108, 162, 144, 134, 153, 39, 81, 48, 45, 239, 118, 12, 51, 176, 29, 188, 25, 210, 169, 41, 96, 122, 104, 115, 101, 113, 117, 101, 110, 99, 101, 1, 105, 97, 114, 99, 104, 105, 118, 101, 73, 100, 88, 32, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 106, 115, 99, 111, 112, 101, 84, 111, 107, 101, 110, 88, 32, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 112, 112, 114, 101, 118, 105, 111, 117, 115, 77, 97, 110, 105, 102, 101, 115, 116, 246, 112, 112, 114, 101, 118, 105, 111, 117, 115, 83, 101, 113, 117, 101, 110, 99, 101, 0, 115, 112, 114, 101, 118, 105, 111, 117, 115, 65, 116, 116, 101, 115, 116, 97, 116, 105, 111, 110, 246, 100, 107, 105, 110, 100, 115, 115, 101, 114, 118, 105, 99, 101, 45, 97, 116, 116, 101, 115, 116, 97, 116, 105, 111, 110]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    p3_retry_of_earlier_row_detects_proof_replacement_under_lock
+
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
+
+running 10 tests
+test proof_crash_worker ... ok
+test database_columns_match_independent_surface_catalog ... ok
+test owner_binding_is_not_selected_by_database ... ok
+test same_height_proof_fork_between_audit_and_commit_is_rejected ... ok
+test authorization_precedes_storage_and_retries ... ok
+test atomic_admission_retry_and_legacy_refusal ... ok
+test purpose_order_is_a_store_invariant_not_just_a_signature_check ... ok
+test unproven_raw_append_between_audit_and_commit_conflicts ... ok
+test proof_mutations_and_payload_loss_refuse_writable_open ... ok
+test process_death_keeps_both_metadata_and_proof_or_neither ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.34s
+
+
+running 19 tests
+test catalog_is_well_formed_and_cites_real_designs ... ok
+test compiler_resolves_filesystem_aliases_to_the_single_mutation_facade ... ok
+test persistence_modules_cannot_add_an_unreviewed_path_literal ... ok
+test every_implemented_value_has_exactly_one_catalog_row_and_no_row_is_fiction ... ok
+test every_filesystem_mutation_names_its_catalog_surface_at_the_call_site ... ok
+test every_module_that_mutates_the_filesystem_is_registered ... ok
+test every_persistence_facade_call_is_independently_inventoried ... ok
+test sqlite_is_recomputed_from_authoritative_claims_not_from_itself ... ok
+test the_catalog_represents_authority_source_and_scope_as_independent_axes ... ok
+test workspace_routes_overlay_io_through_overlay_capabilities ... ok
+test overlay_is_recomputed_from_authoritative_git_tree_claims ... ok
+test production_workspace_bypasses_an_unremovable_corrupt_projection ... ok
+test production_workspace_recovers_when_a_projection_column_has_the_wrong_type ... ok
+test production_workspace_bypasses_an_unremovable_semantically_poisoned_projection ... ok
+test production_workspace_recovers_when_projection_metadata_has_the_wrong_type ... ok
+test caller_selected_role_key_is_an_implemented_authoritative_surface ... ok
+test production_workspace_bypasses_an_unopenable_projection_path ... ok
+test production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json ... ok
+test production_workspace_recreates_a_malformed_projection_schema ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.10s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/overview)
+    Finished `test` profile [unoptimized] target(s) in 7.03s
+     Running tests/evidence_attested_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_followups-a0c68bfd07b1cb59)
+error: test failed, to rerun pass `--test evidence_attested_followups`
+     Running tests/evidence_attested_store.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_store-a792e1b4f0d5a339)
+     Running tests/surface_conformance.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/surface_conformance-e9fd7d9feebd78e5)
+error: 1 target failed:
+    `--test evidence_attested_followups`

@@ -1,0 +1,2 @@
+OM3-drop-valid-health-in-scan: KILLED by=reviewer-only ran=18 author_failed=[] reviewer_failed=['po4b_invalid_unique_active_attempt_is_refused_not_summed']
+SM9-uncatalogued-index-on-legacy-table-in-profile2: SURVIVED by=- ran=37 author_failed=[] reviewer_failed=[]

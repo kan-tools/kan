@@ -1,0 +1,56 @@
+Done. Both verdicts are in `review-evidence/REPORT.txt`; raw logs, probes and mutant logs are alongside it.
+
+## Verdicts
+
+**Overview (3367e28): APPROVE WITH FOLLOW-UPS.** One follow-up (O1) is a required code fix.
+
+**Storage follow-ups (a1007a6): APPROVE**, for this correction round only. All six parent acceptance criteria of the evidence-availability design remain open.
+
+## What I ran
+After `cargo clean -p kan`, everything was compiled from this export, one heavy job at a time.
+- **Author's checks reproduce:**
+  - 58 overview Rust checks pass.
+  - The 37 storage checks pass, plus 52 neighbouring storage checks.
+  - 54 Node checks pass.
+  - Strict v2 Clippy and fmt pass.
+  - The author's six negative controls all fail as intended on the final code.
+- **My own work:** 13 Rust probes, 6 UI probes, a memory-measurement probe and 29 compiled mutants. Mutants count only when a named test fails, not a compile error.
+- **Export:** identical to `git archive 67c1263` (apart from the supplied `north-star.json`) before and after. All 1,503 files are byte-identical to my starting snapshot. The supplied diff leaves out the 70 review-evidence files.
+
+## Overview findings
+- **O1 (medium, must fix in code):** the active-journal read holds its database lock while it parses and hashes every row. Health-journal writes give up after waiting 100 ms.
+  - Debug build, 60k-row journal: the lock was held about 1.3 s, and every concurrent health write failed with "database is locked".
+  - Release build, near the 32 MiB limit: scans took 108–259 ms, writes stalled up to 158 ms, and 4 of 10 refreshes failed. No writes were lost on this machine, but slower hardware would lose them.
+  - This contradicts the design's requirement to release the transaction promptly and prove capture continues, and the runbook's "health writers continue". The author's test only writes after the lock is released, so it can't catch this.
+  - Fix: copy raw values inside the transaction, end it, then parse and hash, and add a regression test. Rewording the docs won't close this.
+- **O2:** "database busy" and "rotation in progress" errors both show as "source invalid or unavailable".
+- **O3:** Build and Cancel clicks are silently ignored while any overview request, including the 5 s poll, is in flight (`web/operations/app.js:119`).
+- **O4:** memory accounting is safe but about 4× too cautious (26 MB actual vs 109 MB counted). The budget runs out at about 85k distinct attempts, so the documented 250,000 limit can never be reached.
+- **O5:** a cached sample looks exactly like a fresh one (only the build time differs), and the "superseded" state named in AC-5 doesn't exist.
+- **O6 (test gaps):** only my probes catch removing the lock-file check, the row-validity check, the Transfer-Encoding refusal, the checked session sum, and the UI's error-path lock guard. Three mutants survive everything, including the post-read re-hash of sealed files, which has no test hook.
+- **O7:** "real-browser qualification complete" overstates it. The real browser only covered the completed and lock states.
+
+Everything else on your checklist held under direct test: complete row scans, hostile rows, snapshot binding, before/after hashes, no file or metadata changes, whole-row dominance, deduplication and overflow, cancellation, the single worker, memory-only polling, 15 hostile HTTP cases, exact u64 strings, and the lock/generation guards.
+
+**Overview acceptance criteria:**
+- AC-1 and AC-2 are met on this evidence.
+- AC-3 remains open: the UI shows a sample's age only through its build time (O5).
+- AC-4 remains open: the active-capture requirement fails under load (O1), and overview connection limits are untested.
+- AC-5 remains open: there's no superseded state, the real browser only covered completed/lock, and clicks can be dropped (O3).
+- AC-6 remains open until the runbook claim is corrected and the O1 fix gets its own review.
+
+## Storage follow-ups
+- Every earlier finding the round claims to close is closed, and the committed tests now catch each matching mutant: the four previously untested checks, the retry race returning Conflict, and undeclared indexes on the proof tables.
+- The `set_limit` errors now propagate. That can't be tested without fault injection.
+- The signature-mutation fix is genuine: the old case was renamed, and the new test flips a byte inside the 64-byte signature itself.
+- The AC-3 rewording ("logical writes", with the WAL checkpoint disclosed) is a legitimate, recorded qualification.
+- The merge's only manual edit is the CI test list, correctly combining both new suites.
+- Raw SQL updates still go uncaught, as the design now discloses.
+- **Minor optional gap:** an index added on a legacy table by the new profile still escapes the catalog check.
+
+## Cleanup
+- Every mutated file was restored to its exact hash.
+- The author's control script wrote output inside the export; I moved it into review-evidence and removed the directory.
+- No processes or listeners of mine remain.
+- Inert test binaries and release build artifacts remain in the shared target, which I didn't copy or delete.
+- No kan/day writes.

@@ -1,0 +1,12 @@
+25:+and cannot perform owner rotation or erasure. A standalone journal cannot supply
+41:+real-browser qualification are complete for this checkpoint: 58 Rust checks, 54 Node checks, strict v2 Clippy and six demonstrated negative controls. The browser confirmed a deduplicated three-generation result, source disclosure, light/dark/mobile layouts
+61:+### Storage review follow-ups
+63:+Fresh actual Claude Code Opus 5.5 approved 9f1dffa with follow-ups for the owner-side
+91:+approved 9f1dffa with follow-ups (106 core + 58 lifecycle/service checks). The
+95:+strict all-target v2 Clippy. Fresh review of those corrections remains pending.
+109:+   and real light/dark/mobile browser inspection. Fresh Opus review remains pending;
+168:+The first profile permits one build, 1,024 generations, 32 MiB per source,
+173:+browser display preserves full u64 precision. This experimental build still
+191:+reviewed experimental checkpoint. Upgrade planning, proof-preserving backup/recovery,
+1389:+            "retry acknowledged a receipt its stored proof does not attest: receipt_matches_first={}",
+2027:+async fn dashboard_overview_requires_auth_and_cannot_mutate_owner_history() {

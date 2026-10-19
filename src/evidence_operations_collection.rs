@@ -54,9 +54,9 @@ fn lock(root: &Path, exclusive: bool) -> Result<File> {
     private(&path, false, 0)?;
     let file = File::open(path)?;
     if exclusive {
-        fs4::FileExt::try_lock(&file).map_err(|_| invalid())?;
+        fs4::FileExt::try_lock(&file)?;
     } else {
-        fs4::FileExt::try_lock_shared(&file).map_err(|_| invalid())?;
+        fs4::FileExt::try_lock_shared(&file)?;
     }
     Ok(file)
 }
@@ -153,6 +153,7 @@ pub fn open(root: &Path) -> Result<Journal> {
     if Binding::of(&journal)? != m.binding {
         return Err(invalid());
     }
+    journal.active_generation = Some(m.active.clone());
     journal.scope = format!(
         "active generation {} only; sealed history excluded",
         m.active
