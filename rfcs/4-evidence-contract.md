@@ -84,6 +84,81 @@ The local snapshot coordinate is `(through, tip)`: the global journal sequence a
 
 Backups use the [SQLite online backup API](https://www.sqlite.org/backup.html), finish into a self-contained owner-only destination, and verify hashes, closure, chain, receipt bindings and indexed coordinates. Copying an active main database without its WAL is not backup. A failed or interrupted backup is incomplete, never overwritten or certified by file existence. A local verified backup is not evidence of independent off-machine recovery.
 
+### Proposed payload-independent admission attestation (not implemented)
+
+This extension is a proposal for `.design/kan-v2-evidence-availability.md`.
+Schema-1 receipts and manifests remain byte-identical and unsigned as defined
+above. No existing binary, endpoint or archive advertises this profile.
+
+An attestation statement is canonical DAG-CBOR exactly
+`{v: 1, kind: "service-attestation", body}`. Its closed body contains:
+
+| Field | Value |
+|---|---|
+| issuer | Static Author with canonical base58btc P-256 did:key, compressed SEC1 public key, exact `principal#fingerprint` method, static/null identity version |
+| scopeToken | Exactly 32 bytes |
+| sequence | Global local sequence in 1…2^53−1 |
+| manifest, receipt | Exact canonical record CIDs, CIDv1/DAG-CBOR/SHA2-256 |
+| previousSequence | sequence − 1 |
+| previousManifest | Null at sequence 1; otherwise the immediately preceding manifest CID |
+| previousAttestation | Null at sequence 1; otherwise the immediately preceding **statement CID** |
+| purpose | Exactly `admitted` or `retained-verified` |
+| issuedAt | Unsigned safe Unix milliseconds; no historical/backdated inference |
+
+The complete envelope is canonical DAG-CBOR exactly
+`{statement: <canonical statement bytes>, signature: <64 bytes>}`, at most
+16,384 bytes including framing. Both nested statement and outer envelope must
+pass strict decoding; duplicate/unknown fields, nonminimal integers, trailing
+bytes and unsupported versions are errors, not an automatic fallback. Existing
+restricted scalar and depth bounds apply. Do not deserialize CID-shaped byte
+strings as links. Require the P-256 public key to be a valid curve point and its
+DID to reproduce exactly under canonical formatting before signature verification.
+
+The signature input is canonical DAG-CBOR
+`{domain: "tools.kan.service.attestation.v1", statement: <statement CID>}`.
+Use ECDSA P-256 with SHA-256 and fixed-width big-endian r||s; require 0 < r < n
+and 0 < s ≤ n/2. DER, high-S and other algorithms are refused. A valid signature
+is not a capability grant: verify against the separately configured issuer and
+scope, never a principal selected by the untrusted envelope.
+
+The statement CID is the attestation identity used by the chain. Using it rather
+than a signature/envelope hash keeps the identity independent of ECDSA nonce
+choice. Preserve exact stored envelope bytes on retries regardless. Verification
+requires contiguous sequence and exact preceding manifest **and** statement
+commitments, matching issuer/scope, and structural binding of the exact receipt
+to its manifest. New admission requires the current receipt issuer; an explicit
+upgrade preserves the historical receipt issuer and distinguishes the present
+verification issuer using `retained-verified`. No signature proves unavailable
+original writer bytes independently of the attesting service's prior verification.
+
+The proposed inventory snapshot is `(through, tip, attestation)`: through is the
+local sequence, tip its manifest CID and attestation its statement CID. Genesis
+is `(0, null, null)` only. The third coordinate prevents substitution of another
+valid receipt/purpose/time statement for an unchanged manifest at the same height.
+Pin all three in signed InventorySnapshot/InventoryPage replies and independently
+verify metadata chain linkage before exposing rows. Legacy Snapshot/Page/Read
+remain unchanged. A reader explicitly configured for `proof-inventory-v1` must
+refuse unknown/unsupported profile responses; it must never fall back silently.
+
+The new SQLite profile and atomic proof insertion, upgrade plan, proof-preserving
+backup/recovery, RPC framing and reader wiring remain to be implemented and
+qualified together. In particular, these vectors do not authorize removing
+legacy payload/admission checks. Initial damaged-archive browsing is explicitly
+read-only; strict writable store verification remains unchanged. Read-only here
+means no authoritative evidence/schema/index mutation. As with RecoveryReader,
+SQLite coordination WAL/SHM initialization must be explicitly surface-declared;
+no hidden checkpoint or immutable-mode bypass of a live WAL is permitted. Hot
+rollback journals or unusable sidecars fail closed; recovery uses a separate copy.
+
+Proposal byte fixtures are in `.design/fixtures/service-attestation-v1.json`,
+with `.design/tools/attestation_vectors.py --check` as an independent Python
+DAG-CBOR/OpenSSL oracle. The public synthetic private scalar is 1. Two valid
+statements pin bytes/CIDs/preimages/signatures and chain linkage; twenty hostile
+checks include wrong issuer, changed purpose/scope, invalid integers, high-S,
+zero signatures, extra envelope fields, oversized and trailing inputs. No Rust
+implementation exists yet, so these are preparation for cross-implementation
+conformance, not evidence that it has passed.
+
 ## Canonicalization and equivalence
 
 Use [DAG-CBOR](https://ipld.io/specs/codecs/dag-cbor/spec/): definite lengths, shortest integer/length encodings, text map keys ordered by encoded length then bytes, tag 42 only for CIDs, and one object without trailing bytes. The restricted scalar set above is additionally enforced. Record CID is CIDv1/DAG-CBOR/SHA2-256 over those exact bytes. No normalization or re-encoding of noncanonical input is accepted. Re-encoding must reproduce input byte for byte. Sorted-set fields reject duplicates and unsorted input rather than rewriting it; ordered fields retain order. Unknown positive versions or kinds are retained byte-exactly as unsupported after envelope/canonical/bounds validation. A malformed known kind is invalid, never relabeled unsupported.
