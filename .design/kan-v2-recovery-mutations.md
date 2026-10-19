@@ -59,3 +59,9 @@ perform all-participant namespace and inode checks before SQLite opens, and
 must not present those existing checks as a hostile path-replacement fence or
 a promise that no other hard link exists. These remain mutation qualification
 obligations, not properties established by read-only inspection.
+
+
+## Creation draft under implementation
+The first mutation slice is `bundle::create`/`create_observed` in `src/evidence_store/bundle/create.rs`. It acquires profile2/3 raw bytes in one read transaction, checks the selected frontier, constructs and replays the initial signed loss history, exclusively reserves a new output and commits member/history/markers together. After commit begins, failure carries the expected checkpoint as an uncertain outcome. Files are synchronized and independently reopened before success. The source and failed output remain retained. The creation result does not activate a writer.
+
+The draft exposes an explicit main-file page ceiling and names rollback-journal/RAM overhead separately; it does not promise a whole-filesystem quota. Acquisition counts include newly constructed history. Each semantic audit/replay is bounded by the configured replay limits, with a shared overall deadline and cancellation flag; the combined CPU/byte pass count is a fixed multiple of that per-pass ceiling, not an exact RSS measure. Reopen uses the output-size allowance and the remaining deadline. Tests drafted for loss preservation, physical types, pins/frontier, all-participant aliases, cancellation/outcome uncertainty, source invariance and abrupt process death at eight boundaries. Compilation, behavioral controls, independent oracle comparison and fresh review are pending. Restoration/publication/jobs/RPC/UI remain required next slices.
