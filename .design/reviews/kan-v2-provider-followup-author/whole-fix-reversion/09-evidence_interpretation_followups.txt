@@ -1,0 +1,9 @@
+
+running 1 test
+test empty_chunks_at_covered_offsets_preserve_mapping_and_boundary_lineage ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter/.local-state/reversion/87ed8c573e8c4f0aaa06831437c4511d)
+    Finished `test` profile [unoptimized] target(s) in 8.00s
+     Running tests/evidence_interpretation_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation_followups-4e80bc39574f69f6)

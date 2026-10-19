@@ -1,0 +1,201 @@
+diff --git a/.design/kan-v2-provider-interpretation.md b/.design/kan-v2-provider-interpretation.md
+index 6f859a0..681af49 100644
+--- a/.design/kan-v2-provider-interpretation.md
++++ b/.design/kan-v2-provider-interpretation.md
+@@ -55,0 +56,15 @@ Combined qualification after merging the reader/assembly follow-through: 97 affe
++
++## Fresh review and version 2 follow-through
++Fresh actual Opus 5.5 reviewed frozen 0d04848: provider APPROVE WITH FOLLOW-UPS and parent reader/assembly follow-through APPROVE. The complete report and raw results are retained under `.design/reviews/kan-v2-provider-interpretation-opus/`; source identities matched before and after. A-F1/A-F2 must be qualified before accepting Content integration.
++
++Version `kan-anthropic-messages/2` promotes independent source-forgery/state tests and pins absolute JSON/SSE output accounting. It accepts validated empty chunks at covered offsets when mapping; empty regions cite all segments touching the point, including both adjacent segments and duplicates. Such zero-width citations locate evidence; they do not assert nonempty content. RequestEnd-only empty streams still have no chunk citations, so consumers also retain ordinal/extent lineage.
++
++Nested array tool results now emit their text/attachment/unknown children with root JSON pointers. Malformed and Unsupported items carry explicit Shape/Unknown reasons; wrong response roles are flagged. Completed accumulated tool JSON is exposed separately with an enclosing block-wide `tool_region`, while the stop event keeps its own exact event region. The consumer must map both independently. Request items remain supplied history; the human renderer labels that on each item, including historical assistant/tool content.
++
++Primary references rechecked 2026-10-19: [Anthropic citations](https://platform.claude.com/docs/en/build-with-claude/citations) specifies citations_delta on text blocks; supported citation objects no longer create a false DeltaType conflict. Unknown delta types keep Unknown without guessing an incompatible block kind. [Tool streaming](https://platform.claude.com/docs/en/docs/agents-and-tools/tool-use/fine-grained-tool-streaming) requires concatenating and parsing fragments; an empty-only fragment sequence remains invalid JSON, while an empty fragment followed by a valid object is accepted. The initial empty object is a placeholder, not repaired input. No evidence was found that empty-only fragments constitute a valid final object.
++
++[WHATWG SSE](https://html.spec.whatwg.org/multipage/server-sent-events.html) specifies stripping one leading UTF-8 BOM. Version 2 parses past it while keeping it inside the first source region and charging those bytes. Dataless blocks become visibly Undispatched Framing; they are not message events, including after a stop. Unknown field names receive Unknown and prevent a coherent-stop assertion; id/retry/comments remain ordinary framing.
++
++A-F3 allocation evidence is retained: the byte counters do not measure heap. A consuming API must bound items separately, account cumulative mapping passes, bound worker admission through cancellation, and cap actual serialized output independently. A-F6 remains an explicit parser limitation: parsed Values may round integers outside i64/u64 and reject exponent overflow; parsed JSON is a derived display, never a raw numeric record. Exact captured bytes remain available through Source. No global decoder-number or serde feature change is made here.
++
++Version 2 changes are drafted; new tests, selected controls, whole-production-fix reversion and fresh review remain pending. Parent human-frontend/recovery acceptance remains open.
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 42ab95d..05d5fae 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -44 +44 @@ jobs:
+-      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_attestation --test evidence_copy_plan --test evidence_copy_source --test evidence_copy_destination --test evidence_inventory --test evidence_attested_store --test evidence_attested_followups --test evidence_attested_lifecycle --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_reconstruction --test evidence_assembly --test evidence_assembly_review_regressions --test evidence_interpretation --test evidence_reconstruction_review_regressions --test evidence_recovery_observation --test evidence_recovery_commitment --test evidence_recovery_commitment_review_regressions --test evidence_recovery_member --test evidence_recovery_member_review_regressions --test evidence_recovery_member_corrections --test evidence_recovery_replay --test evidence_recovery_replay_review_regressions --test evidence_recovery_bundle --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_operations_collection --test evidence_operations_overview --test evidence_overview_review_regressions --test evidence_reader --test evidence_library_cli --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
++      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_attestation --test evidence_copy_plan --test evidence_copy_source --test evidence_copy_destination --test evidence_inventory --test evidence_attested_store --test evidence_attested_followups --test evidence_attested_lifecycle --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_reconstruction --test evidence_assembly --test evidence_assembly_review_regressions --test evidence_interpretation --test evidence_interpretation_review_regressions --test evidence_interpretation_followups --test evidence_reconstruction_review_regressions --test evidence_recovery_observation --test evidence_recovery_commitment --test evidence_recovery_commitment_review_regressions --test evidence_recovery_member --test evidence_recovery_member_review_regressions --test evidence_recovery_member_corrections --test evidence_recovery_replay --test evidence_recovery_replay_review_regressions --test evidence_recovery_bundle --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_operations_collection --test evidence_operations_overview --test evidence_overview_review_regressions --test evidence_reader --test evidence_library_cli --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
+diff --git a/src/evidence_interpretation.rs b/src/evidence_interpretation.rs
+index 991eb06..a70d7e2 100644
+--- a/src/evidence_interpretation.rs
++++ b/src/evidence_interpretation.rs
+@@ -20 +20 @@ use std::{
+-pub const VERSION: &str = "kan-anthropic-messages/1";
++pub const VERSION: &str = "kan-anthropic-messages/2";
+@@ -37,0 +38 @@ pub enum Kind {
++    Framing,
+@@ -68,0 +70,4 @@ pub struct Item {
++    /// Validated accumulated tool JSON; its enclosing attribution includes the
++    /// block start and every observed fragment through this stop, not just stop.
++    pub tool_input: Option<String>,
++    pub tool_region: Option<Range<usize>>,
+@@ -183 +188,7 @@ fn item(kind: Kind, region: Range<usize>) -> Item {
+-        issues: vec![],
++        issues: match kind {
++            Kind::Malformed => vec![Issue::Shape],
++            Kind::Unsupported => vec![Issue::Unknown],
++            _ => vec![],
++        },
++        tool_input: None,
++        tool_region: None,
+@@ -229 +240 @@ fn block(
+-    let mut i = item(kind, region);
++    let mut i = item(kind, region.clone());
+@@ -237,2 +248,10 @@ fn block(
+-    if kind == Kind::Unsupported {
+-        i.issues.push(Issue::Unknown);
++    push(out, i, w)?;
++    if kind == Kind::ToolResult && value.get("content").is_some_and(Value::is_array) {
++        content(
++            &value["content"],
++            &format!("{pointer}/content"),
++            role,
++            region,
++            out,
++            w,
++        )?;
+@@ -240 +259 @@ fn block(
+-    push(out, i, w)
++    Ok(())
+@@ -271,0 +291,6 @@ fn json_body(bytes: &[u8], format: Format, doc: &mut Document, w: &mut Work) ->
++    if format == Format::Response
++        && value.get("type").and_then(Value::as_str) == Some("message")
++        && value.get("role").and_then(Value::as_str) != Some("assistant")
++    {
++        root.issues.push(Issue::Shape);
++    }
+@@ -343,0 +369 @@ struct ActiveBlock {
++    start: usize,
+@@ -442,0 +469 @@ fn event(
++                        start: i.region.start,
+@@ -458,0 +486 @@ fn event(
++                Some("citations_delta") => (Kind::Protocol, "", BlockKind::Text),
+@@ -477,0 +506,9 @@ fn event(
++            } else if delta.and_then(|d| d.get("type")).and_then(Value::as_str)
++                == Some("citations_delta")
++            {
++                if !delta
++                    .and_then(|d| d.get("citation"))
++                    .is_some_and(Value::is_object)
++                {
++                    i.issues.push(Issue::Shape);
++                }
+@@ -485 +522 @@ fn event(
+-                if b.kind != want {
++                if want != BlockKind::Unknown && b.kind != want {
+@@ -509,4 +546,7 @@ fn event(
+-                    if b.fragmented
+-                        && !strict(b.fragments.as_bytes(), w)?.is_some_and(|v| v.is_object())
+-                    {
+-                        i.issues.push(Issue::ToolJson);
++                    if b.fragmented {
++                        if strict(b.fragments.as_bytes(), w)?.is_some_and(|v| v.is_object()) {
++                            i.tool_input = Some(std::mem::take(&mut b.fragments));
++                            i.tool_region = Some(b.start..i.region.end);
++                        } else {
++                            i.issues.push(Issue::ToolJson);
++                        }
+@@ -567 +607,7 @@ fn sse(
+-    let mut pos = 0;
++    let mut pos = if bytes.starts_with(b"\xef\xbb\xbf") {
++        w.scan(3)?;
++        3
++    } else {
++        0
++    };
++    let mut unknown_field = false;
+@@ -604 +650,3 @@ fn sse(
+-                item(Kind::Protocol, start..pos)
++                let mut framing = item(Kind::Framing, start..pos);
++                framing.text = Some(w.string("Undispatched SSE framing")?);
++                framing
+@@ -605,0 +654,4 @@ fn sse(
++            if unknown_field {
++                i.issues.push(Issue::Unknown);
++                state.invalid = true;
++            }
+@@ -616,0 +669 @@ fn sse(
++            unknown_field = false;
+@@ -635 +688,4 @@ fn sse(
+-                _ => {}
++                b"id" | b"retry" => {}
++                _ => {
++                    unknown_field = true;
++                }
+@@ -680,0 +737,4 @@ fn interpret_observed(
++/// Empty chunks at covered offsets are validated but cite no nonempty bytes.
++/// A zero-width region cites every segment containing that point, including
++/// both neighbours at a boundary and all exact duplicates; these are locations,
++/// not evidence that the empty body contains text.
+@@ -707 +767,5 @@ pub fn map_region(
+-        if s.offset != next as u64 || s.sources.is_empty() {
++        let offset = usize::try_from(s.offset).map_err(|_| Error::Mapping)?;
++        if s.sources.is_empty()
++            || (s.length > 0 && offset != next)
++            || (s.length == 0 && offset > next)
++        {
+@@ -710,2 +774,2 @@ pub fn map_region(
+-        let end = next.checked_add(s.length).ok_or(Error::Mapping)?;
+-        let piece = bytes.get(next..end).ok_or(Error::Mapping)?;
++        let end = offset.checked_add(s.length).ok_or(Error::Mapping)?;
++        let piece = bytes.get(offset..end).ok_or(Error::Mapping)?;
+@@ -727 +791 @@ pub fn map_region(
+-            let (direction, offset) = match frame.header.event {
++            let (direction, claimed_offset) = match frame.header.event {
+@@ -732 +796 @@ pub fn map_region(
+-            if offset != s.offset {
++            if claimed_offset != s.offset {
+@@ -763 +827 @@ pub fn map_region(
+-            let a = next.max(region.start);
++            let a = offset.max(region.start);
+@@ -765 +829 @@ pub fn map_region(
+-            if a < b || (region.is_empty() && next <= a && a <= end && a == region.start) {
++            if a < b || (region.is_empty() && offset <= a && a <= end && a == region.start) {
+@@ -771 +835 @@ pub fn map_region(
+-                    bytes: (source.bytes.start + a - next)..(source.bytes.start + b - next),
++                    bytes: (source.bytes.start + a - offset)..(source.bytes.start + b - offset),
+@@ -775 +839 @@ pub fn map_region(
+-        next = end;
++        next = next.max(end);
+@@ -810,0 +875,31 @@ mod tests {
++    #[test]
++    fn accumulated_tool_input_cites_the_whole_observed_block() {
++        let values = [
++            serde_json::json!({"type":"message_start","message":{"type":"message","role":"assistant","content":[]}}),
++            serde_json::json!({"type":"content_block_start","index":3,"content_block":{"type":"tool_use","name":"f","input":{}}}),
++            serde_json::json!({"type":"content_block_delta","index":3,"delta":{"type":"input_json_delta","partial_json":"{\"x\":"}}),
++            serde_json::json!({"type":"content_block_delta","index":3,"delta":{"type":"input_json_delta","partial_json":"1}"}}),
++            serde_json::json!({"type":"content_block_stop","index":3}),
++        ];
++        let bytes = values
++            .iter()
++            .map(|v| format!("data: {v}\n\n"))
++            .collect::<String>();
++        let limits = Limits {
++            input_bytes: 10000,
++            items: 100,
++            output_bytes: 10000,
++            scan_bytes: 10000,
++            citations: 100,
++            duration: Duration::from_secs(5),
++            cancelled: Arc::new(AtomicBool::new(false)),
++        };
++        let d = interpret(bytes.as_bytes(), Format::Sse, limits).unwrap();
++        let end = &d.items[4];
++        assert_eq!(end.tool_input.as_deref(), Some("{\"x\":1}"));
++        assert_eq!(
++            end.tool_region,
++            Some(d.items[1].region.start..end.region.end)
++        );
++        assert!(end.region.start > end.tool_region.as_ref().unwrap().start);
++    }

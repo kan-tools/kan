@@ -1,0 +1,3 @@
+FAILED METHOD: reused wrapper explicitly changed directory to recovery-opening; this is not provider validation. No provider claim follows from this log.
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening)
+    Finished `dev` profile [unoptimized] target(s) in 8.57s

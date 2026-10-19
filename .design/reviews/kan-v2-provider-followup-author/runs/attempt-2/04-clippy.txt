@@ -1,0 +1,31 @@
+$ cargo clippy --features v2-crypto --all-targets -- -D warnings
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter)
+error: useless use of `vec!`
+   --> tests/evidence_interpretation_review_regressions.rs:465:9
+    |
+465 | /         &vec![
+466 | |             ms(),
+467 | |             json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+468 | |             json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"é😀\"\\\u{2028}"}}),
+...   |
+471 | |             mstop(),
+472 | |         ],
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#useless_vec
+    = note: `-D clippy::useless-vec` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::useless_vec)]`
+help: you can use a slice directly
+    |
+465 ~         &[ms(),
+466 +             json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+467 ~             json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"é😀\"\\\u{2028}"}}),
+468 +             json!({"type":"content_block_stop","index":0}),
+469 +             md(),
+470 ~             mstop()],
+    |
+
+error: could not compile `kan` (test "evidence_interpretation_review_regressions") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+
+exit=101
