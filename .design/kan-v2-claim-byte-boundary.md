@@ -43,9 +43,9 @@ parser; do not silently broaden its narrower scalar contract.
 Permanent branchfeat/kan-v2-codec-boundary starts from frozen918318d. Changes are
 not made to the separate Content/creation reviewer export. Git-first recording
 continues under day#168/kan#197; no live log reads, migrations, key access,
-reconstructed excluded claims or invented witnesses. Current tests and code
-are prepared but have not yet been compiled; the shared target is reserved for
-the independent Content/creation reviewer.
+reconstructed excluded claims or invented witnesses. The candidate has now passed author qualification and fresh independent Opus
+review at bf3c44e. The report in `reviews/kan-v2-combined-followups-opus/`
+identifies remaining regression-test follow-ups; parent acceptance stays open.
 
 
 ## Failure evidence follow-through

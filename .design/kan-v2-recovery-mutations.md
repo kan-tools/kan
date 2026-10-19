@@ -119,9 +119,9 @@ Prepared checks cover atomic append, original history/bytes, exact retry after
 later restorations, stale/invalid/foreign candidate and wrong observer refusal,
 pre-sign validation, cancellation, lost completion, concurrent writers and
 abrupt death at eight phases with the independent Python history oracle.
-These have not yet been compiled or executed; parent creation/Content review
-holds the shared local build target. This candidate requires qualification,
-semantic controls, and its own fresh actual Opus5.5 review. It does not close
+These passed author qualification and fresh actual Opus5.5 review at bf3c44e;
+see `reviews/kan-v2-combined-followups-opus/`. Real COMMIT failure and different
+retry candidate tests remain follow-ups. This checkpoint does not close
 publication, backup/rebuild, remote availability or human recovery job ACs.
 
 ## Creation review follow-ups — candidate
