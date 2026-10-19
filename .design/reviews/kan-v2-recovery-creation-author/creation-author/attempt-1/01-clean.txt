@@ -1,0 +1,4 @@
+$ cargo clean -p kan
+     Removed 987 files, 287.5MiB total
+
+exit=0

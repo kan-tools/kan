@@ -1,0 +1,40 @@
+$ cargo clippy --features v2-crypto --all-targets -- -D warnings
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-mutations)
+error: useless conversion to the same type: `std::string::String`
+   --> tests/evidence_bundle_creation.rs:194:19
+    |
+194 |         observer: observer.did().into(),
+    |                   ^^^^^^^^^^^^^^^^^^^^^ help: consider removing `.into()`: `observer.did()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#useless_conversion
+    = note: `-D clippy::useless-conversion` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::useless_conversion)]`
+
+error: useless conversion to the same type: `std::string::String`
+   --> tests/evidence_bundle_creation.rs:344:45
+    |
+344 |             2 => request.context.observer = identity(11).did().into(),
+    |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider removing `.into()`: `identity(11).did()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#useless_conversion
+
+error: useless conversion to the same type: `std::string::String`
+   --> tests/evidence_bundle_creation.rs:534:21
+    |
+534 |             issuer: identity(8).did().into(),
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^ help: consider removing `.into()`: `identity(8).did()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#useless_conversion
+
+error: useless conversion to the same type: `std::string::String`
+   --> tests/evidence_bundle_creation.rs:535:23
+    |
+535 |             observer: identity(10).did().into(),
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider removing `.into()`: `identity(10).did()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#useless_conversion
+
+error: could not compile `kan` (test "evidence_bundle_creation") due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...
+
+exit=101
