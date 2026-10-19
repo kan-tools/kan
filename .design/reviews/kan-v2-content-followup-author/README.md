@@ -28,3 +28,14 @@ failures; restored suites passed. Exact source hashes, driver and logs are under
 `controls-final/`. Retained browser DOM/screenshots are under`browser-final/`;
 actual browser download delivery remains unverified. Fresh correction review
 is still required.
+
+## Linux byte-cap qualification correction
+
+CI run39317588912 at918318d hit the unchanged20s deadline after five verified
+reads, before the byte-cap test could reach its ninth read. This is retained in
+`ci-byte-cap-clock-failure.txt`. The candidate test now pauses Tokio time with a
+cooperatively runnable task to prevent automatic advancement while socket I/O
+is pending. It still uses real encrypted1MB records and the production8MiB cap;
+it asserts nine reads at refusal, successful eight-record selection and no
+virtual-time advancement. The separate deadline test remains unchanged.
+This test correction has not yet been independently reviewed or requalified.

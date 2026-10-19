@@ -1,0 +1,41 @@
+test	Run cargo test --features v2-crypto --lib evidence_content	﻿2026-10-19T20:31:03.0822139Z ##[group]Run cargo test --features v2-crypto --lib evidence_content
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.0822628Z ^[[36;1mcargo test --features v2-crypto --lib evidence_content^[[0m
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.0892168Z shell: /usr/bin/bash -e {0}
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.0892445Z env:
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.0892669Z   CARGO_HOME: /home/runner/.cargo
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.0892946Z   CARGO_INCREMENTAL: 0
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.0893179Z   CARGO_TERM_COLOR: always
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.0893418Z   CACHE_ON_FAILURE: false
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.0893647Z ##[endgroup]
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.3067036Z ^[[1m^[[92m    Finished^[[0m `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.3201972Z ^[[1m^[[92m     Running^[[0m unittests src/lib.rs (target/debug/deps/kan-56c8ebe3183961a5)
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.3226215Z 
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.3226522Z running 9 tests
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.3245641Z test evidence_content::tests::canonical_decimal_and_new_source_coordinates_preserve_full_width ... ok
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.3246955Z test evidence_content::tests::dropping_request_guard_signals_the_worker ... ok
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.3248163Z test evidence_content::tests::serialized_byte_limit_and_cancellation_refuse_without_partial_output ... ok
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.3249570Z test evidence_content::tests::aggregate_work_is_charged_across_interpretation_and_all_item_mappings ... ok
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:03.8326067Z test evidence_content::worker_tests::busy_content_http_response_is_distinct_and_retry_succeeds_after_capacity_returns ... ok
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:04.0025781Z test evidence_content::tests::serialized_content_cap_is_independent_of_normalized_output ... ok
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:04.0035806Z test evidence_content::worker_tests::cancelling_real_content_keeps_worker_admission_until_exit_and_stops_after_first_item ... ok
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:04.1093305Z test evidence_content::worker_tests::overall_content_deadline_covers_acquisition_work_after_a_verified_read ... ok
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6771654Z test evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record ... FAILED
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6772426Z 
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6772552Z failures:
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6772722Z 
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6773197Z ---- evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record stdout ----
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6773823Z 
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6774839Z thread 'evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record' (38181) panicked at src/../tests/support/content_worker_unit.rs:197:5:
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6775772Z assertion `left == right` failed: never fetch the tenth selected record after exceeding8MiB
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6776188Z   left: 5
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6776370Z  right: 9
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6776683Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6776977Z 
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6777355Z 
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6777444Z failures:
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6777817Z     evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6778199Z 
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6778474Z test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 87 filtered out; finished in 36.35s
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6778831Z 
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.6790626Z ^[[1m^[[91merror^[[0m: test failed, to rerun pass `--lib`
+test	Run cargo test --features v2-crypto --lib evidence_content	2026-10-19T20:31:39.8255489Z ##[error]Process completed with exit code 101.
