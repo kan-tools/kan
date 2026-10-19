@@ -1,0 +1,97 @@
+[
+  {
+    "id": "B-C12-extent-lineage-first-only",
+    "file": "src/evidence_assembly.rs",
+    "old": "                        std::slice::from_ref(&i)\n                    } else {\n                        &ordinal.inputs\n                    } {",
+    "new": "                        std::slice::from_ref(&i)\n                    } else {\n                        std::slice::from_ref(&i)\n                    } {",
+    "runs": [
+      [
+        "evidence_assembly",
+        null,
+        null
+      ],
+      [
+        "zz_review_B_probes",
+        null,
+        null
+      ]
+    ],
+    "expect": "author SURVIVE? reviewer BP09a KILL"
+  },
+  {
+    "id": "B-C13-dup-compare-uncharged",
+    "file": "src/evidence_assembly.rs",
+    "old": "        work.scan(a.len())?;\n        if a != b {",
+    "new": "        work.check()?;\n        if a != b {",
+    "runs": [
+      [
+        "evidence_assembly",
+        null,
+        null
+      ],
+      [
+        "zz_review_B_probes",
+        null,
+        null
+      ]
+    ],
+    "expect": "author SURVIVE (self-calibrated)? reviewer BP06 KILL"
+  },
+  {
+    "id": "B-C14-copy-not-scanned",
+    "file": "src/evidence_assembly.rs",
+    "old": "    fn copy(&mut self, n: usize) -> Result<()> {\n        self.scan(n)?;",
+    "new": "    fn copy(&mut self, n: usize) -> Result<()> {\n        self.check()?;",
+    "runs": [
+      [
+        "evidence_assembly",
+        null,
+        null
+      ],
+      [
+        "zz_review_B_probes",
+        null,
+        null
+      ]
+    ],
+    "expect": "author SURVIVE? reviewer BP06 KILL"
+  },
+  {
+    "id": "B-C16-decode-uncharged",
+    "file": "src/evidence_assembly.rs",
+    "old": "                work.scan(bytes.len())?;\n                match decode::decode(bytes) {",
+    "new": "                work.check()?;\n                match decode::decode(bytes) {",
+    "runs": [
+      [
+        "evidence_assembly",
+        null,
+        null
+      ],
+      [
+        "zz_review_B_probes",
+        null,
+        null
+      ]
+    ],
+    "expect": "reviewer BP06/BP13 KILL"
+  },
+  {
+    "id": "B-C21-no-offset-sort",
+    "file": "src/evidence_assembly.rs",
+    "old": "    out.segments.sort_by_key(|s| (s.offset, s.sources[0].input));",
+    "new": "    // reviewer: sort removed",
+    "runs": [
+      [
+        "evidence_assembly",
+        null,
+        null
+      ],
+      [
+        "zz_review_B_probes",
+        null,
+        null
+      ]
+    ],
+    "expect": "UNKNOWN: out-of-order offsets"
+  }
+]

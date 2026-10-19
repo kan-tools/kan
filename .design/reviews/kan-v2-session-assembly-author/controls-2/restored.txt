@@ -1,0 +1,23 @@
+
+running 13 tests
+test every_non_capture_and_unavailable_input_has_a_result ... ok
+test a_chunk_after_request_end_cannot_silently_become_a_closed_request ... ok
+test empty_request_extent_and_unknown_extent_remain_distinct ... ok
+test completed_terminal_is_only_a_claim_and_does_not_fill_missing_evidence ... ok
+test exact_budget_edges_cancellation_and_repeat_are_deterministic ... ok
+test observed_missing_admission_and_unexpected_start_stay_visible ... ok
+test ordinal_conflicts_keep_both_bytes_and_prevent_synthetic_rendering ... ok
+test repeated_semantic_chunk_at_a_new_ordinal_is_an_overlap_not_deduplicated ... ok
+test holes_overlaps_and_contradictory_extents_are_not_repaired ... ok
+test scope_writer_observer_attempt_isolation_ignores_transport_link_claims ... ok
+test sparse_u64_and_overflow_coordinates_never_allocate_by_claimed_extent ... ok
+test shuffled_selection_preserves_exact_binary_spans_and_duplicate_lineage ... ok
+test terminal_at_a_conflicting_ordinal_cannot_select_a_winner ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly)
+    Finished `test` profile [unoptimized] target(s) in 7.50s
+     Running tests/evidence_assembly.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_assembly-ab2b7afbe8d062d0)
+
+exit=0

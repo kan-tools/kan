@@ -1,0 +1,21 @@
+
+running 1 test
+test exact_budget_edges_cancellation_and_repeat_are_deterministic ... FAILED
+
+failures:
+
+failures:
+    exact_budget_edges_cancellation_and_repeat_are_deterministic
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly)
+    Finished `test` profile [unoptimized] target(s) in 7.62s
+     Running tests/evidence_assembly.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_assembly-ab2b7afbe8d062d0)
+
+thread 'exact_budget_edges_cancellation_and_repeat_are_deterministic' (10285506) panicked at tests/evidence_assembly.rs:301:44:
+called `Result::unwrap_err()` on an `Ok` value: Assembly { observations: [Capture(Frame { header: Header { version: 2, attempt: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", observer: Collector, ordinal: 0, observed_at_unix_micros: None, elapsed_micros: 0, unconfirmed_before: 0, event: RequestChunk { offset: 0 } }, body: [97, 98, 99], header_span: 9..251, body_span: 251..254 }), Capture(Frame { header: Header { version: 2, attempt: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", observer: Collector, ordinal: 0, observed_at_unix_micros: None, elapsed_micros: 0, unconfirmed_before: 0, event: RequestChunk { offset: 0 } }, body: [97, 98, 99], header_span: 9..251, body_span: 251..254 })], groups: [Group { scope: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], writer: "verified-writer", observer: Collector, attempt: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", ordinals: [Ordinal { value: 0, inputs: [0, 1], conflict: false }], ordinal_gaps: [], missing_start: true, unexpected_starts: [], terminal: Unknown, events_after_terminal: false, unconfirmed_claim: false, request: Stream { segments: [Segment { offset: 0, length: 3, sources: [SourceSpan { input: 0, bytes: 251..254 }, SourceSpan { input: 1, bytes: 251..254 }] }], extents: [], expected_bytes: None, issues: [], contiguous: Some([97, 98, 99]) }, response: Stream { segments: [], extents: [], expected_bytes: None, issues: [], contiguous: None } }], scanned_bytes: 765, assembled_bytes: 3 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_assembly`
+
+exit=101
