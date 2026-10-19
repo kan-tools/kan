@@ -883,6 +883,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             historical_issuer,
             nonce,
         } => {
+            kan::evidence_store::copy_upgrade::validate_plan_destination(&database, &plan)?;
             let source = kan::evidence_store::copy_upgrade::PlannedCopy::open(
                 &database,
                 kan::evidence_copy_plan::Target {
