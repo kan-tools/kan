@@ -133,6 +133,12 @@ impl Fixture {
                             let mut reply=state.lock().unwrap().dispatch(&bytes,kan::evidence_operations::now()).unwrap();
                             let mode=fault.load(Ordering::Relaxed);
                             if mode==10 {std::future::pending::<()>().await;}
+                            if mode==11 && matches!(reply.reply.result,Ok(Output::Evidence{..})) {
+                                let request=SignedRequest::decode(&bytes).unwrap();
+                                let scope: [u8;32]=svc::unhex(&request.request.scope,32).unwrap().try_into().unwrap();
+                                let replacement=Service::new(Ledger::open(&signing.with_file_name("archive")).unwrap(),scope,Identity::load_existing(&signing).unwrap(),vec![]).unwrap();
+                                *state.lock().unwrap()=replacement;
+                            }
                             if mode==1 {reply.signature="00".repeat(64);}
                             if mode==2 {if let Ok(Output::Page{records,..})=&mut reply.reply.result {if let Some(row)=records.first_mut(){row.sequence+=1;}}}
                             if mode==3 {if let Ok(Output::Evidence{record,..})=&mut reply.reply.result {record.sequence+=1;}}
@@ -1138,4 +1144,412 @@ async fn library_refuses_thirteenth_socket_at_the_live_admission_boundary() {
         );
     }
     drop(held);
+}
+
+fn content_frame(attempt: char, ordinal: u64, event: serde_json::Value, body: &[u8]) -> Vec<u8> {
+    let header = serde_json::to_vec(
+        &serde_json::json!({"version":2,"attempt":attempt.to_string().repeat(64),
+        "observer":"collector","ordinal":ordinal,"observed_at_unix_micros":null,"elapsed_micros":0,
+        "unconfirmed_before":0,"event":event}),
+    )
+    .unwrap();
+    let mut out = b"KANC2".to_vec();
+    out.extend((header.len() as u32).to_be_bytes());
+    out.extend(header);
+    out.extend(body);
+    out
+}
+#[tokio::test]
+async fn content_preserves_authorized_occurrences_duplicates_unplaced_inputs_and_exact_spans() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut a = Fixture::new(31, &identity).await;
+    let body = br#"{"messages":[{"role":"user","content":"<script>hostile()</script>"}]}"#;
+    let frame = content_frame(
+        '1',
+        9007199254740993,
+        serde_json::json!({"type":"request-chunk","offset":0}),
+        body,
+    );
+    a.append(&frame);
+    a.append(b"opaque input");
+    a.append(&frame);
+    a.append(&content_frame(
+        '2',
+        0,
+        serde_json::json!({"type":"future-event"}),
+        b"",
+    ));
+    a.append(&content_frame(
+        '2',
+        1,
+        serde_json::json!({"type":"request-chunk","offset":"bad"}),
+        b"x",
+    ));
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    let result = reader
+        .content(
+            &pin,
+            &["1", "2", "3", "4", "5"].map(String::from),
+            Format::AnthropicMessagesJson,
+        )
+        .await
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&result).unwrap();
+    assert_eq!(value["version"], "kan-content/1");
+    assert_eq!(value["occurrences"].as_array().unwrap().len(), 5);
+    assert_eq!(value["observations"][1]["kind"], "opaque");
+    assert_eq!(value["observations"][3]["kind"], "unsupported");
+    assert_eq!(value["observations"][4]["kind"], "malformed");
+    let group = &value["groups"][0];
+    assert_eq!(group["ordinals"][0]["value"], "9007199254740993");
+    assert_eq!(
+        group["ordinals"][0]["inputs"],
+        serde_json::json!(["0", "2"])
+    );
+    assert_eq!(group["terminal"], "unknown");
+    assert_eq!(
+        group["ordinal_gaps"][0],
+        serde_json::json!(["0", "9007199254740993"])
+    );
+    let item = group["request"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["kind"] == "context")
+        .unwrap();
+    assert_eq!(item["kind"], "context");
+    assert_eq!(item["coarse"], true);
+    let citations = item["citations"].as_array().unwrap();
+    assert_eq!(citations.len(), 2);
+    for (citation, sequence) in citations.iter().zip([1, 3]) {
+        let bounds = citation["bytes"].as_array().unwrap();
+        let start: usize = bounds[0].as_str().unwrap().parse().unwrap();
+        let end: usize = bounds[1].as_str().unwrap().parse().unwrap();
+        let source = reader
+            .source(&pin, sequence, start, end - start)
+            .await
+            .unwrap();
+        assert_eq!(svc::unhex(&source.bytes_hex, 1000).unwrap(), body);
+        assert_eq!(
+            source.record.manifest,
+            value["occurrences"][(sequence - 1) as usize]["record"]["manifest"]
+                .as_str()
+                .unwrap()
+        );
+    }
+    let opaque = kan::evidence_content::pin(value["pin_wire"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        kan::evidence_content::pin_wire(&opaque).unwrap(),
+        kan::evidence_content::pin_wire(&pin).unwrap()
+    );
+}
+#[tokio::test]
+async fn content_refuses_invalid_selections_tampering_and_revocation_without_partial_success() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut a = Fixture::new(32, &identity).await;
+    a.append(b"secret-selection-canary");
+    a.append(b"second");
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    let format = Format::AnthropicMessagesSse;
+    for sequences in [
+        vec![],
+        vec!["0".into()],
+        vec!["01".into()],
+        vec!["1".into(), "1".into()],
+        vec!["1".into(); 41],
+        vec!["18446744073709551616".into()],
+    ] {
+        assert_eq!(
+            reader.content(&pin, &sequences, format).await.unwrap_err(),
+            Failure::Invalid
+        );
+    }
+    assert_eq!(
+        reader
+            .content(&pin, &["1".into(), "3".into()], format)
+            .await
+            .unwrap_err(),
+        Failure::Missing
+    );
+    for mode in 1..=9 {
+        a.mode.store(mode, Ordering::Relaxed);
+        assert!(
+            reader.content(&pin, &["1".into()], format).await.is_err(),
+            "mode {mode}"
+        );
+    }
+    a.mode.store(0, Ordering::Relaxed);
+    let mut bad = pin.clone();
+    if let Ok(Output::Snapshot { through, .. }) = &mut bad.reply.reply.result {
+        *through += 1;
+    }
+    assert!(reader.content(&bad, &["1".into()], format).await.is_err());
+    reader.content(&pin, &["1".into()], format).await.unwrap();
+    a.revoke();
+    assert_eq!(
+        reader
+            .content(&pin, &["1".into()], format)
+            .await
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
+}
+#[tokio::test]
+async fn content_cancelling_acquisition_releases_admission_and_does_not_cache_a_grant() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut a = Fixture::new(33, &identity).await;
+    a.append(b"cancel-canary");
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    a.mode.store(10, Ordering::Relaxed);
+    let sequences = ["1".into()];
+    let format = Format::AnthropicMessagesSse;
+    let mut first = Box::pin(reader.content(&pin, &sequences, format));
+    let mut second = Box::pin(reader.content(&pin, &sequences, format));
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(30), &mut first)
+            .await
+            .is_err()
+    );
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(30), &mut second)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        reader.content(&pin, &sequences, format).await.unwrap_err(),
+        Failure::Unavailable
+    );
+    drop(first);
+    drop(second);
+    a.mode.store(0, Ordering::Relaxed);
+    assert!(reader.content(&pin, &sequences, format).await.is_ok());
+    a.revoke();
+    assert_eq!(
+        reader.content(&pin, &sequences, format).await.unwrap_err(),
+        Failure::AccessLimited
+    );
+}
+
+#[tokio::test]
+async fn content_http_routes_share_authority_and_return_exact_coordinates() {
+    let identity = Identity::generate();
+    let mut a = Fixture::new(34, &identity).await;
+    let body = br#"{"messages":[{"role":"user","content":"content-http-canary"}]}"#;
+    a.append(&content_frame(
+        '3',
+        0,
+        serde_json::json!({"type":"request-chunk","offset":0}),
+        body,
+    ));
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    struct Stop(JoinHandle<std::io::Result<()>>);
+    impl Drop for Stop {
+        fn drop(&mut self) {
+            self.0.abort();
+        }
+    }
+    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
+        listener,
+        "synthetic-content-library-token-32-chars".into(),
+        reader,
+    )));
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let url = format!("http://{addr}/api/library");
+    let request = |v: serde_json::Value| {
+        client
+            .post(&url)
+            .header("content-type", "application/json")
+            .bearer_auth("synthetic-content-library-token-32-chars")
+            .body(v.to_string())
+    };
+    let catalog: serde_json::Value = serde_json::from_slice(
+        &request(serde_json::json!({"action":"catalog"}))
+            .send()
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    let wire = catalog["scopes"][0]["pin_wire"].as_str().unwrap();
+    assert!(!wire.contains("content-http-canary"));
+    let page = request(
+        serde_json::json!({"action":"content-page","pin_wire":wire,"after":"0","limit":40}),
+    )
+    .send()
+    .await
+    .unwrap();
+    assert!(page.status().is_success());
+    let value: serde_json::Value = serde_json::from_slice(&page.bytes().await.unwrap()).unwrap();
+    assert_eq!(value["through"], "1");
+    assert_eq!(value["records"][0]["sequence"], "1");
+    let query = serde_json::json!({"action":"content","pin_wire":wire,"sequences":["1"],"format":"anthropic-messages-json"});
+    let output = request(query.clone()).send().await.unwrap();
+    assert!(output.status().is_success());
+    assert_eq!(output.headers()["cache-control"], "no-store");
+    let value: serde_json::Value = serde_json::from_slice(&output.bytes().await.unwrap()).unwrap();
+    assert!(value["groups"][0]["request"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|i| i["text"] == "content-http-canary"));
+    let source=request(serde_json::json!({"action":"source-exact","pin_wire":wire,"sequence":"1","offset":"0","length":"65536"})).send().await.unwrap();
+    assert!(source.status().is_success());
+    let source: serde_json::Value = serde_json::from_slice(&source.bytes().await.unwrap()).unwrap();
+    assert_eq!(source["offset"], "0");
+    assert_eq!(source["record"]["sequence"], "1");
+    assert!(source["total_bytes"].is_string());
+    for bad in [
+        serde_json::json!({"action":"content","pin_wire":wire,"sequences":[1],"format":"anthropic-messages-json"}),
+        serde_json::json!({"action":"content-page","pin_wire":wire,"after":"00","limit":40}),
+        serde_json::json!({"action":"source-exact","pin_wire":wire,"sequence":"1.0","offset":"0","length":"1"}),
+    ] {
+        let response = request(bad).send().await.unwrap();
+        assert_eq!(response.status(), 400);
+        assert!(!String::from_utf8_lossy(&response.bytes().await.unwrap())
+            .contains("content-http-canary"));
+    }
+    assert_eq!(
+        request(query.clone())
+            .header("origin", "https://evil.invalid")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    assert_eq!(
+        client
+            .post(&url)
+            .header("content-type", "application/json")
+            .body(query.to_string())
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    a.revoke();
+    let denied = request(query).send().await.unwrap();
+    assert_eq!(denied.status(), 403);
+    assert!(
+        !String::from_utf8_lossy(&denied.bytes().await.unwrap()).contains("content-http-canary")
+    );
+}
+
+/// Real encrypted/signed synthetic captures for Content browser qualification.
+#[tokio::test]
+#[ignore = "manual Content browser fixture; requires KAN_LIBRARY_FIXTURE_INFO"]
+async fn content_browser_fixture() {
+    let output = std::env::var_os("KAN_LIBRARY_FIXTURE_INFO").expect("explicit output path");
+    let identity = Identity::generate();
+    let mut a = Fixture::new(35, &identity).await;
+    a.append(&content_frame(
+        '4',
+        0,
+        serde_json::json!({"type":"started","method":"POST","route":"/v1/messages"}),
+        b"",
+    ));
+    let request=br#"{"system":"You are a helpful assistant.","messages":[{"role":"user","content":[{"type":"text","text":"Explain provenance. <img src=https://untrusted.invalid/tracker onerror=alert(1)>"},{"type":"image","source":{"type":"url","url":"https://untrusted.invalid/attachment"}},{"type":"future-widget","note":"retained, unsupported"}]}]}"#;
+    a.append(&content_frame(
+        '4',
+        1,
+        serde_json::json!({"type":"request-chunk","offset":0}),
+        request,
+    ));
+    a.append(&content_frame(
+        '4',
+        2,
+        serde_json::json!({"type":"request-end","bytes":request.len()}),
+        b"",
+    ));
+    let events = [
+        serde_json::json!({"type":"message_start","message":{"type":"message","role":"assistant","content":[]}}),
+        serde_json::json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+        serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Provenance connects an interpretation to the exact retained evidence. Inspect the source before trusting a claim. ☃"}}),
+        serde_json::json!({"type":"content_block_stop","index":0}),
+        serde_json::json!({"type":"message_delta","delta":{"stop_reason":"end_turn"}}),
+        serde_json::json!({"type":"message_stop"}),
+    ];
+    let response = events
+        .iter()
+        .map(|v| format!("event: {}\ndata: {v}\n\n", v["type"].as_str().unwrap()))
+        .collect::<String>();
+    let split = response.len() / 2;
+    let first = content_frame(
+        '4',
+        3,
+        serde_json::json!({"type":"response-chunk","offset":0}),
+        &response.as_bytes()[..split],
+    );
+    a.append(&first);
+    a.append(&content_frame(
+        '4',
+        4,
+        serde_json::json!({"type":"response-chunk","offset":split}),
+        &response.as_bytes()[split..],
+    ));
+    a.append(&first);
+    a.append(&content_frame(
+        '4',
+        5,
+        serde_json::json!({"type":"terminal","outcome":"completed"}),
+        b"",
+    ));
+    a.append(&content_frame(
+        '5',
+        0,
+        serde_json::json!({"type":"future-event"}),
+        b"",
+    ));
+    a.append(b"Opaque imported note\0\xff");
+    a.append(&content_frame(
+        '6',
+        3,
+        serde_json::json!({"type":"response-chunk","offset":8}),
+        b"gap",
+    ));
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let token = "synthetic-browser-content-access-token";
+    std::fs::write(
+        output,
+        serde_json::to_vec(&serde_json::json!({"url":format!("http://{addr}"),"token":token}))
+            .unwrap(),
+    )
+    .unwrap();
+    tokio::select! {r=kan::evidence_library::serve(listener,token.into(),reader)=>r.unwrap(),_=tokio::signal::ctrl_c()=>{}}
+}
+
+#[tokio::test]
+async fn content_rechecks_current_grant_after_successful_acquisition() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut a = Fixture::new(36, &identity).await;
+    a.append(&content_frame(
+        '7',
+        0,
+        serde_json::json!({"type":"request-chunk","offset":0}),
+        br#"{"messages":[{"role":"user","content":"late-revocation-canary"}]}"#,
+    ));
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    a.mode.store(11, Ordering::Relaxed);
+    assert_eq!(
+        reader
+            .content(&pin, &["1".into()], Format::AnthropicMessagesJson)
+            .await
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
 }

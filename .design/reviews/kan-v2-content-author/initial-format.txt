@@ -1,0 +1,603 @@
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:11:
+ use std::{
+     collections::BTreeSet,
+     io::{self, Write},
+-    sync::{atomic::{AtomicBool, Ordering}, Arc},
++    sync::{
++        atomic::{AtomicBool, Ordering},
++        Arc,
++    },
+     time::{Duration, Instant},
+ };
+ 
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:31:
+ }
+ /// Canonical decimal coordinates only: no floating point or alternate spellings.
+ pub fn coordinate(s: &str) -> Result<u64, Failure> {
+-    if s.is_empty() || s.len() > 20 || !s.bytes().all(|b| b.is_ascii_digit())
+-        || (s.len() > 1 && s.starts_with('0')) { return Err(Failure::Invalid); }
++    if s.is_empty()
++        || s.len() > 20
++        || !s.bytes().all(|b| b.is_ascii_digit())
++        || (s.len() > 1 && s.starts_with('0'))
++    {
++        return Err(Failure::Invalid);
++    }
+     s.parse().map_err(|_| Failure::Invalid)
+ }
+ pub fn pin(wire: &str) -> Result<Pin, Failure> {
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:39:
+-    if wire.len() > 12000 { return Err(Failure::Invalid); }
++    if wire.len() > 12000 {
++        return Err(Failure::Invalid);
++    }
+     serde_json::from_str(wire).map_err(|_| Failure::Invalid)
+ }
+ pub fn pin_wire(pin: &Pin) -> Result<String, Failure> {
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:54:
+         "bytes_hex":value.bytes_hex,"utf8":value.utf8})
+ }
+ struct Cancel(Arc<AtomicBool>);
+-impl Drop for Cancel { fn drop(&mut self) { self.0.store(true, Ordering::Relaxed); } }
++impl Drop for Cancel {
++    fn drop(&mut self) {
++        self.0.store(true, Ordering::Relaxed);
++    }
++}
+ impl Reader {
+     /// Every selected occurrence is fully acquired or the whole operation refuses.
+     /// Dropping this future cancels borrowed reads and signals the bounded worker.
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:61:
+-    pub async fn content(&self, pin: &Pin, sequences: &[String], format: Format) -> Result<Vec<u8>, Failure> {
+-        if sequences.is_empty() || sequences.len() > PAGE_LIMIT { return Err(Failure::Invalid); }
+-        let sequences: Vec<_> = sequences.iter().map(|s| coordinate(s)).collect::<Result<_,_>>()?;
+-        if sequences.contains(&0) || sequences.iter().collect::<BTreeSet<_>>().len() != sequences.len() {
++    pub async fn content(
++        &self,
++        pin: &Pin,
++        sequences: &[String],
++        format: Format,
++    ) -> Result<Vec<u8>, Failure> {
++        if sequences.is_empty() || sequences.len() > PAGE_LIMIT {
+             return Err(Failure::Invalid);
+         }
++        let sequences: Vec<_> = sequences
++            .iter()
++            .map(|s| coordinate(s))
++            .collect::<Result<_, _>>()?;
++        if sequences.contains(&0)
++            || sequences.iter().collect::<BTreeSet<_>>().len() != sequences.len()
++        {
++            return Err(Failure::Invalid);
++        }
+         // Owned by worker, not the cancelled connection. No queue of abandoned jobs.
+-        let permit = self.content_workers.clone().try_acquire_owned().map_err(|_| Failure::Unavailable)?;
++        let permit = self
++            .content_workers
++            .clone()
++            .try_acquire_owned()
++            .map_err(|_| Failure::Unavailable)?;
+         let cancelled = Arc::new(AtomicBool::new(false));
+         let _cancel = Cancel(cancelled.clone());
+         let deadline = Instant::now() + DEADLINE;
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:72:
+         let work = async {
+-            let mut acquired = Vec::new(); let mut bytes = 0usize;
++            let mut acquired = Vec::new();
++            let mut bytes = 0usize;
+             for sequence in &sequences {
+                 let row = self.acquire(pin, *sequence).await?;
+-                bytes = bytes.checked_add(row.plaintext.len()).ok_or(Failure::Unavailable)?;
+-                if bytes > INPUT { return Err(Failure::Unavailable); }
++                bytes = bytes
++                    .checked_add(row.plaintext.len())
++                    .ok_or(Failure::Unavailable)?;
++                if bytes > INPUT {
++                    return Err(Failure::Unavailable);
++                }
+                 acquired.push(row);
+             }
+             let wire = pin_wire(pin)?;
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:81:
+             let result = tokio::task::spawn_blocking(move || {
+                 let _permit = permit;
+                 render(acquired, wire, format, cancelled, deadline)
+-            }).await.map_err(|_| Failure::Unavailable)??;
++            })
++            .await
++            .map_err(|_| Failure::Unavailable)??;
+             // A pin is not a current grant. Check again after interpretation.
+             self.page(pin, sequences[0] - 1, 1).await?;
+             Ok(result)
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:88:
+         };
+-        tokio::time::timeout(DEADLINE, work).await.map_err(|_| Failure::Unavailable)?
++        tokio::time::timeout(DEADLINE, work)
++            .await
++            .map_err(|_| Failure::Unavailable)?
+     }
+ }
+ struct Budget {
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:93:
+-    deadline: Instant, cancelled: Arc<AtomicBool>, scan: u64, output: u64,
+-    items: usize, citations: usize,
++    deadline: Instant,
++    cancelled: Arc<AtomicBool>,
++    scan: u64,
++    output: u64,
++    items: usize,
++    citations: usize,
+ }
+ impl Budget {
+     fn check(&self) -> Result<Duration, Failure> {
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:98:
+-        if self.cancelled.load(Ordering::Relaxed) { return Err(Failure::Unavailable); }
+-        self.deadline.checked_duration_since(Instant::now()).filter(|d| !d.is_zero()).ok_or(Failure::Unavailable)
++        if self.cancelled.load(Ordering::Relaxed) {
++            return Err(Failure::Unavailable);
++        }
++        self.deadline
++            .checked_duration_since(Instant::now())
++            .filter(|d| !d.is_zero())
++            .ok_or(Failure::Unavailable)
+     }
+     fn limits(&self) -> Result<provider::Limits, Failure> {
+-        Ok(provider::Limits { input_bytes: INPUT, items: self.items, output_bytes: self.output,
+-            scan_bytes: self.scan, citations: self.citations, duration: self.check()?, cancelled: self.cancelled.clone() })
++        Ok(provider::Limits {
++            input_bytes: INPUT,
++            items: self.items,
++            output_bytes: self.output,
++            scan_bytes: self.scan,
++            citations: self.citations,
++            duration: self.check()?,
++            cancelled: self.cancelled.clone(),
++        })
+     }
+     fn charge_scan(&mut self, n: u64) -> Result<(), Failure> {
+-        self.check()?; self.scan = self.scan.checked_sub(n).ok_or(Failure::Unavailable)?; Ok(())
++        self.check()?;
++        self.scan = self.scan.checked_sub(n).ok_or(Failure::Unavailable)?;
++        Ok(())
+     }
+ }
+-fn pair(a: impl ToString, b: impl ToString) -> Value { json!([a.to_string(),b.to_string()]) }
++fn pair(a: impl ToString, b: impl ToString) -> Value {
++    json!([a.to_string(), b.to_string()])
++}
+ fn stream_issue(i: &assembly::StreamIssue) -> Value {
+     use assembly::StreamIssue::*;
+     match i {
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:113:
+         Gap(r) => json!({"kind":"gap","bytes":pair(r.start,r.end)}),
+-        OffsetOverflow{input} => json!({"kind":"offset-overflow","input":input.to_string()}),
+-        Overlap{input} => json!({"kind":"overlap","input":input.to_string()}),
+-        BeyondExtent{input} => json!({"kind":"beyond-extent","input":input.to_string()}),
+-        ChunkAfterEnd{input} => json!({"kind":"chunk-after-end","input":input.to_string()}),
++        OffsetOverflow { input } => json!({"kind":"offset-overflow","input":input.to_string()}),
++        Overlap { input } => json!({"kind":"overlap","input":input.to_string()}),
++        BeyondExtent { input } => json!({"kind":"beyond-extent","input":input.to_string()}),
++        ChunkAfterEnd { input } => json!({"kind":"chunk-after-end","input":input.to_string()}),
+         ConflictingExtents => json!({"kind":"conflicting-extents"}),
+         OrdinalConflict => json!({"kind":"ordinal-conflict"}),
+     }
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:121:
+ }
+ fn item_kind(k: provider::Kind) -> &'static str {
+     use provider::Kind::*;
+-    match k { Context=>"context",System=>"system",Text=>"text",ToolUse=>"tool-use",ToolResult=>"tool-result",
+-        Thinking=>"thinking",Attachment=>"attachment",ToolFragment=>"tool-fragment",Protocol=>"protocol",
+-        Error=>"error",Unsupported=>"unsupported",Malformed=>"malformed",Truncated=>"truncated" }
++    match k {
++        Context => "context",
++        System => "system",
++        Text => "text",
++        ToolUse => "tool-use",
++        ToolResult => "tool-result",
++        Thinking => "thinking",
++        Attachment => "attachment",
++        ToolFragment => "tool-fragment",
++        Protocol => "protocol",
++        Error => "error",
++        Unsupported => "unsupported",
++        Malformed => "malformed",
++        Truncated => "truncated",
++    }
+ }
+ fn issue_kind(i: provider::Issue) -> &'static str {
+     use provider::Issue::*;
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:130:
+-    match i { Shape=>"shape",EventName=>"event-name",Sequence=>"sequence",BlockIndex=>"block-index",
+-        DeltaType=>"delta-type",ToolJson=>"tool-json",Unknown=>"unknown" }
++    match i {
++        Shape => "shape",
++        EventName => "event-name",
++        Sequence => "sequence",
++        BlockIndex => "block-index",
++        DeltaType => "delta-type",
++        ToolJson => "tool-json",
++        Unknown => "unknown",
++    }
+ }
+-fn stream(stream: &assembly::Stream, inputs: &[assembly::Input<'_>], format: provider::Format, budget: &mut Budget) -> Result<Value, Failure> {
++fn stream(
++    stream: &assembly::Stream,
++    inputs: &[assembly::Input<'_>],
++    format: provider::Format,
++    budget: &mut Budget,
++) -> Result<Value, Failure> {
+     budget.check()?;
+     let mut result = json!({"expected_bytes":stream.expected_bytes.map(|n|n.to_string()),
+         "extent_claims":stream.extents.iter().map(|(i,n)|json!({"input":i.to_string(),"bytes":n.to_string()})).collect::<Vec<_>>(),
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:137:
+         "issues":stream.issues.iter().map(stream_issue).collect::<Vec<_>>(),
+         "observed_bytes":stream.contiguous.as_ref().map(|b|b.len().to_string()),
+         "state":"unavailable","items":[],"parsed_json":null,"coherent_stop_observed":false});
+-    let Some(bytes) = stream.contiguous.as_deref() else { return Ok(result); };
+-    if !stream.issues.is_empty() || stream.expected_bytes.is_some_and(|n| n != bytes.len() as u64) {
++    let Some(bytes) = stream.contiguous.as_deref() else {
+         return Ok(result);
++    };
++    if !stream.issues.is_empty()
++        || stream
++            .expected_bytes
++            .is_some_and(|n| n != bytes.len() as u64)
++    {
++        return Ok(result);
+     }
+-    let document = provider::interpret(bytes,format,budget.limits()?).map_err(|_|Failure::Unavailable)?;
++    let document =
++        provider::interpret(bytes, format, budget.limits()?).map_err(|_| Failure::Unavailable)?;
+     budget.charge_scan(document.scanned_bytes)?;
+-    budget.output = budget.output.checked_sub(document.output_bytes).ok_or(Failure::Unavailable)?;
+-    budget.items = budget.items.checked_sub(document.items.len()).ok_or(Failure::Unavailable)?;
++    budget.output = budget
++        .output
++        .checked_sub(document.output_bytes)
++        .ok_or(Failure::Unavailable)?;
++    budget.items = budget
++        .items
++        .checked_sub(document.items.len())
++        .ok_or(Failure::Unavailable)?;
+     let mut items = Vec::new();
+     for item in document.items {
+         // Full-source validation happens on every mapping. Account all passes
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:151:
+         // across calls, rather than resetting the request work budget per item.
+         let mut charge = 0u64;
+         for segment in &stream.segments {
+-            for (n,source) in segment.sources.iter().enumerate() {
+-                let assembly::Payload::Available(original) = inputs.get(source.input).ok_or(Failure::Corrupt)?.payload else { return Err(Failure::Corrupt); };
+-                charge = charge.checked_add(original.len() as u64).and_then(|v|v.checked_add(source.bytes.len() as u64))
+-                    .and_then(|v|v.checked_add(if n>0 {original.len() as u64} else {0})).ok_or(Failure::Unavailable)?;
++            for (n, source) in segment.sources.iter().enumerate() {
++                let assembly::Payload::Available(original) =
++                    inputs.get(source.input).ok_or(Failure::Corrupt)?.payload
++                else {
++                    return Err(Failure::Corrupt);
++                };
++                charge = charge
++                    .checked_add(original.len() as u64)
++                    .and_then(|v| v.checked_add(source.bytes.len() as u64))
++                    .and_then(|v| v.checked_add(if n > 0 { original.len() as u64 } else { 0 }))
++                    .ok_or(Failure::Unavailable)?;
+             }
+         }
+         let mut limits = budget.limits()?;
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:161:
+         limits.items = 2 * PAGE_LIMIT;
+         budget.charge_scan(charge)?;
+-        let citations = provider::map_region(stream,inputs,item.region.clone(),limits).map_err(|_|Failure::Corrupt)?;
+-        budget.citations = budget.citations.checked_sub(citations.len()).ok_or(Failure::Unavailable)?;
+-        let citations: Vec<_> = citations.into_iter().map(|s|json!({"input":s.input.to_string(),"bytes":pair(s.bytes.start,s.bytes.end)})).collect();
++        let citations = provider::map_region(stream, inputs, item.region.clone(), limits)
++            .map_err(|_| Failure::Corrupt)?;
++        budget.citations = budget
++            .citations
++            .checked_sub(citations.len())
++            .ok_or(Failure::Unavailable)?;
++        let citations: Vec<_> = citations
++            .into_iter()
++            .map(|s| json!({"input":s.input.to_string(),"bytes":pair(s.bytes.start,s.bytes.end)}))
++            .collect();
+         items.push(json!({"kind":item_kind(item.kind),"region":pair(item.region.start,item.region.end),"coarse":item.coarse,
+             "role":item.role,"index":item.index.map(|n|n.to_string()),"text":item.text,"pointer":item.pointer,
+             "event_json":item.event.map(|v|v.to_string()),"issues":item.issues.into_iter().map(issue_kind).collect::<Vec<_>>(),"citations":citations}));
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:169:
+     }
+-    result["state"] = json!("interpreted"); result["items"] = json!(items);
+-    result["parsed_json"] = json!(document.json.map(|v|v.to_string()));
++    result["state"] = json!("interpreted");
++    result["items"] = json!(items);
++    result["parsed_json"] = json!(document.json.map(|v| v.to_string()));
+     result["coherent_stop_observed"] = json!(document.coherent_stop_observed);
+     Ok(result)
+ }
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:175:
+-fn render(acquired: Vec<Acquired>, pin_wire: String, format: Format, cancelled: Arc<AtomicBool>, deadline: Instant) -> Result<Vec<u8>, Failure> {
+-    let mut budget = Budget { deadline,cancelled,scan:SCAN,output:OUTPUT as u64,items:ITEMS,citations:CITATIONS };
+-    let inputs: Vec<_> = acquired.iter().map(|a|assembly::Input {scope:a.scope,writer:&a.writer,payload:assembly::Payload::Available(&a.plaintext)}).collect();
+-    let assembled = assembly::assemble(&inputs,assembly::Limits { occurrences:PAGE_LIMIT,input_bytes:(INPUT+PAGE_LIMIT*1024) as u64,
+-        scan_bytes:budget.scan,assembled_bytes:INPUT as u64,duration:budget.check()?,cancelled:budget.cancelled.clone() }).map_err(|_|Failure::Unavailable)?;
++fn render(
++    acquired: Vec<Acquired>,
++    pin_wire: String,
++    format: Format,
++    cancelled: Arc<AtomicBool>,
++    deadline: Instant,
++) -> Result<Vec<u8>, Failure> {
++    let mut budget = Budget {
++        deadline,
++        cancelled,
++        scan: SCAN,
++        output: OUTPUT as u64,
++        items: ITEMS,
++        citations: CITATIONS,
++    };
++    let inputs: Vec<_> = acquired
++        .iter()
++        .map(|a| assembly::Input {
++            scope: a.scope,
++            writer: &a.writer,
++            payload: assembly::Payload::Available(&a.plaintext),
++        })
++        .collect();
++    let assembled = assembly::assemble(
++        &inputs,
++        assembly::Limits {
++            occurrences: PAGE_LIMIT,
++            input_bytes: (INPUT + PAGE_LIMIT * 1024) as u64,
++            scan_bytes: budget.scan,
++            assembled_bytes: INPUT as u64,
++            duration: budget.check()?,
++            cancelled: budget.cancelled.clone(),
++        },
++    )
++    .map_err(|_| Failure::Unavailable)?;
+     budget.charge_scan(assembled.scanned_bytes)?;
+-    let observations: Vec<_> = assembled.observations.iter().enumerate().map(|(i,o)| {
+-        use assembly::Observation::*;
+-        let (kind,reason,ordinal) = match o {
+-            Capture(f)=>("capture",None,Some(f.header.ordinal.to_string())), Opaque=>("opaque",None,None),
+-            Unsupported(v)=>("unsupported",Some(format!("{v:?}")),None), Malformed(v)=>("malformed",Some(format!("{v:?}")),None),
+-            Unavailable(v)=>("unavailable",Some(format!("{v:?}")),None),
+-        };
+-        json!({"input":i.to_string(),"kind":kind,"reason":reason,"ordinal":ordinal})
+-    }).collect();
++    let observations: Vec<_> = assembled
++        .observations
++        .iter()
++        .enumerate()
++        .map(|(i, o)| {
++            use assembly::Observation::*;
++            let (kind, reason, ordinal) = match o {
++                Capture(f) => ("capture", None, Some(f.header.ordinal.to_string())),
++                Opaque => ("opaque", None, None),
++                Unsupported(v) => ("unsupported", Some(format!("{v:?}")), None),
++                Malformed(v) => ("malformed", Some(format!("{v:?}")), None),
++                Unavailable(v) => ("unavailable", Some(format!("{v:?}")), None),
++            };
++            json!({"input":i.to_string(),"kind":kind,"reason":reason,"ordinal":ordinal})
++        })
++        .collect();
+     let mut groups = Vec::new();
+     for group in &assembled.groups {
+         budget.check()?;
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:193:
+-        let response_format = match format { Format::AnthropicMessagesJson=>provider::Format::Response,Format::AnthropicMessagesSse=>provider::Format::Sse };
+-        let request = stream(&group.request,&inputs,provider::Format::Request,&mut budget)?;
+-        let response = stream(&group.response,&inputs,response_format,&mut budget)?;
++        let response_format = match format {
++            Format::AnthropicMessagesJson => provider::Format::Response,
++            Format::AnthropicMessagesSse => provider::Format::Sse,
++        };
++        let request = stream(
++            &group.request,
++            &inputs,
++            provider::Format::Request,
++            &mut budget,
++        )?;
++        let response = stream(&group.response, &inputs, response_format, &mut budget)?;
+         groups.push(json!({"scope":service::hex(&group.scope),"writer":group.writer,"observer":match group.observer {Observer::Collector=>"collector",Observer::Gateway=>"gateway"},
+             "attempt":group.attempt,"ordinals":group.ordinals.iter().map(|o|json!({"value":o.value.to_string(),"inputs":o.inputs.iter().map(|i|i.to_string()).collect::<Vec<_>>(),"conflict":o.conflict})).collect::<Vec<_>>(),
+             "ordinal_gaps":group.ordinal_gaps.iter().map(|r|pair(r.start,r.end)).collect::<Vec<_>>(),
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_content.rs:206:
+         "pin_wire":pin_wire,"occurrences":occurrences,"observations":observations,"groups":groups,
+         "coverage":"explicit selection only; ordinal gaps mean no recognized capture, not absent inputs; protocol claims do not prove complete capture",
+         "scan_bytes":(SCAN-budget.scan).to_string()});
+-    bounded_json(&value,OUTPUT,&budget)
++    bounded_json(&value, OUTPUT, &budget)
+ }
+-struct BoundedWriter<'a> { bytes: Vec<u8>, limit: usize, budget: &'a Budget }
++struct BoundedWriter<'a> {
++    bytes: Vec<u8>,
++    limit: usize,
++    budget: &'a Budget,
++}
+ impl Write for BoundedWriter<'_> {
+     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+-        self.budget.check().map_err(|_|io::Error::other("content cancelled or timed out"))?;
+-        if bytes.len() > self.limit.saturating_sub(self.bytes.len()) { return Err(io::Error::other("content output limit")); }
+-        self.bytes.extend_from_slice(bytes); Ok(bytes.len())
++        self.budget
++            .check()
++            .map_err(|_| io::Error::other("content cancelled or timed out"))?;
++        if bytes.len() > self.limit.saturating_sub(self.bytes.len()) {
++            return Err(io::Error::other("content output limit"));
++        }
++        self.bytes.extend_from_slice(bytes);
++        Ok(bytes.len())
+     }
+-    fn flush(&mut self) -> io::Result<()> { Ok(()) }
++    fn flush(&mut self) -> io::Result<()> {
++        Ok(())
++    }
+ }
+ fn bounded_json(value: &impl Serialize, limit: usize, budget: &Budget) -> Result<Vec<u8>, Failure> {
+-    let mut writer = BoundedWriter { bytes:Vec::new(),limit,budget };
+-    serde_json::to_writer(&mut writer,value).map_err(|_|Failure::Unavailable)?;
+-    budget.check()?; Ok(writer.bytes)
++    let mut writer = BoundedWriter {
++        bytes: Vec::new(),
++        limit,
++        budget,
++    };
++    serde_json::to_writer(&mut writer, value).map_err(|_| Failure::Unavailable)?;
++    budget.check()?;
++    Ok(writer.bytes)
+ }
+ 
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_library.rs:17:
+ #[derive(Deserialize)]
+ #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
+ enum Query {
+-    Content { pin_wire: String, sequences: Vec<String>, format: crate::evidence_content::Format },
+-    ContentPage { pin_wire: String, after: String, limit: usize },
+-    SourceExact { pin_wire: String, sequence: String, offset: String, length: String },
++    Content {
++        pin_wire: String,
++        sequences: Vec<String>,
++        format: crate::evidence_content::Format,
++    },
++    ContentPage {
++        pin_wire: String,
++        after: String,
++        limit: usize,
++    },
++    SourceExact {
++        pin_wire: String,
++        sequence: String,
++        offset: String,
++        length: String,
++    },
+     Catalog,
+     Snapshot {
+         scope: String,
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_library.rs:54:
+ async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, Failure> {
+     use crate::evidence_content as content;
+     let value: serde_json::Value = match query {
+-        Query::Content { pin_wire, sequences, format } => return reader.content(&content::pin(&pin_wire)?, &sequences, format).await,
+-        Query::ContentPage { pin_wire, after, limit } => {
+-            let page = reader.page(&content::pin(&pin_wire)?, content::coordinate(&after)?, limit).await?;
+-            Ok(serde_json::json!({"scope":page.scope,"through":page.through.to_string(),"tip":page.tip,
++        Query::Content {
++            pin_wire,
++            sequences,
++            format,
++        } => {
++            return reader
++                .content(&content::pin(&pin_wire)?, &sequences, format)
++                .await
++        }
++        Query::ContentPage {
++            pin_wire,
++            after,
++            limit,
++        } => {
++            let page = reader
++                .page(
++                    &content::pin(&pin_wire)?,
++                    content::coordinate(&after)?,
++                    limit,
++                )
++                .await?;
++            Ok(
++                serde_json::json!({"scope":page.scope,"through":page.through.to_string(),"tip":page.tip,
+                 "records":page.records.iter().map(content::occurrence).collect::<Vec<_>>(),
+-                "next":page.next.map(|n|n.to_string()),"coverage":page.coverage}))
+-        },
+-        Query::SourceExact { pin_wire, sequence, offset, length } => {
+-            let offset = usize::try_from(content::coordinate(&offset)?).map_err(|_|Failure::Invalid)?;
+-            let length = usize::try_from(content::coordinate(&length)?).map_err(|_|Failure::Invalid)?;
+-            Ok(content::source(reader.source(&content::pin(&pin_wire)?, content::coordinate(&sequence)?, offset, length).await?))
+-        },
++                "next":page.next.map(|n|n.to_string()),"coverage":page.coverage}),
++            )
++        }
++        Query::SourceExact {
++            pin_wire,
++            sequence,
++            offset,
++            length,
++        } => {
++            let offset =
++                usize::try_from(content::coordinate(&offset)?).map_err(|_| Failure::Invalid)?;
++            let length =
++                usize::try_from(content::coordinate(&length)?).map_err(|_| Failure::Invalid)?;
++            Ok(content::source(
++                reader
++                    .source(
++                        &content::pin(&pin_wire)?,
++                        content::coordinate(&sequence)?,
++                        offset,
++                        length,
++                    )
++                    .await?,
++            ))
++        }
+ 
+         Query::Catalog => {
+             let mut scopes = Vec::new();
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_library.rs:95:
+                 serde_json::json!({"version":1,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},"capabilities":["snapshot-inventory","source-ranges","provenance"],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]}),
+             )
+         }
+-        Query::Snapshot { scope } => { let pin = reader.snapshot(&scope).await?; Ok(serde_json::json!({"pin_wire":content::pin_wire(&pin)?,"pin":pin})) },
++        Query::Snapshot { scope } => {
++            let pin = reader.snapshot(&scope).await?;
++            Ok(serde_json::json!({"pin_wire":content::pin_wire(&pin)?,"pin":pin}))
++        }
+         Query::Page { pin, after, limit } => {
+             serde_json::to_value(reader.page(&pin, after, limit).await?)
+                 .map_err(|_| Failure::Invalid)
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_library.rs:108:
+         } => serde_json::to_value(reader.source(&pin, sequence, offset, length).await?)
+             .map_err(|_| Failure::Invalid),
+     }?;
+-    serde_json::to_vec(&value).map_err(|_|Failure::Invalid)
++    serde_json::to_vec(&value).map_err(|_| Failure::Invalid)
+ }
+ async fn handle(
+     r: Request<Incoming>,
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_reader.rs:287:
+     }
+     /// Complete, currently authorized plaintext. Never a Source-range fragment.
+     pub(crate) async fn acquire(&self, pin: &Pin, sequence: u64) -> Result<Acquired, Failure> {
+-        if sequence == 0 { return Err(Failure::Invalid); }
++        if sequence == 0 {
++            return Err(Failure::Invalid);
++        }
+         let (access, through, _) = self.check_pin(pin)?;
+         if sequence > through {
+             return Err(Failure::Missing);
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/evidence_reader.rs:322:
+         let ciphertext = service::unhex(&ciphertext, service::MAX_PAYLOAD)?;
+         let plaintext = evidence_crypto::open(&access.private_key, &access.scope, &ciphertext)
+             .map_err(|_| Failure::Corrupt)?;
+-        Ok(Acquired { scope: access.scope, record, writer: signed.request.principal,
+-            service_issuer: access.issuer.clone(), plaintext })
++        Ok(Acquired {
++            scope: access.scope,
++            record,
++            writer: signed.request.principal,
++            service_issuer: access.issuer.clone(),
++            plaintext,
++        })
+     }
+-
+ }
+ 
+ pub(crate) struct Acquired {
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-inspection/src/lib.rs:79:
+ #[cfg(feature = "v2-crypto")]
+ pub mod evidence_assembly;
+ #[cfg(feature = "v2-crypto")]
+-pub mod evidence_interpretation;
+-#[cfg(feature = "v2-crypto")]
+ pub mod evidence_content;
++#[cfg(feature = "v2-crypto")]
++pub mod evidence_interpretation;
+ #[cfg(feature = "v2-crypto")]
+ pub mod evidence_reconstruction;
+ 
