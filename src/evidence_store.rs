@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use crate::evidence::{self, Decoded, Kind, Record};
 
 pub mod attested;
+pub mod copied;
 pub mod copy_upgrade;
 
 type CommitProofHook<'a> =
@@ -267,8 +268,20 @@ impl RecoveryReader {
         observe: &mut dyn FnMut(RecoveryBoundary),
         binding: Option<&attested::Binding>,
     ) -> Result<Verification> {
+        self.rebuild_with_plan(destination, observe, binding, None)
+    }
+    fn rebuild_with_plan(
+        &self,
+        destination: &Path,
+        observe: &mut dyn FnMut(RecoveryBoundary),
+        binding: Option<&attested::Binding>,
+        plan: Option<&crate::evidence_copy_plan::Plan>,
+    ) -> Result<Verification> {
         if let Some(binding) = binding {
             attested::check_copy_source(&self.ledger.conn, binding, self.snapshot()?.through)?;
+            if let Some(plan) = plan {
+                copied::check_plan(&self.ledger.conn, binding, plan)?;
+            }
         }
         let destination = sqlite_destination(&self.source, destination)?;
         // surface-write: evidence-recovery:archive.sqlite
@@ -285,6 +298,10 @@ impl RecoveryReader {
         tx.execute_batch(SCHEMA)?;
         if let Some(binding) = binding {
             attested::initialize(&tx, binding)?;
+            if let Some(plan) = plan {
+                copied::initialize(&tx, binding, plan)?;
+                copied::copy_inventory(&self.ledger.conn, &tx)?;
+            }
         }
         {
             let mut stmt = self.ledger.conn.prepare(
@@ -348,7 +365,11 @@ impl RecoveryReader {
         // raw histories with missing predecessors or conflicting slot reuse.
         let expected = target.verify_contents()?;
         if let Some(binding) = binding {
-            attested::verify_contents(&target, binding, &expected)?;
+            if let Some(plan) = plan {
+                copied::full_audit(&target, binding, plan)?;
+            } else {
+                attested::verify_contents(&target, binding, &expected)?;
+            }
         }
         observe(RecoveryBoundary::Verified);
         tx.commit()?;
@@ -357,7 +378,11 @@ impl RecoveryReader {
         std::fs::File::open(&destination)?.sync_all()?;
         std::fs::File::open(parent_directory(&destination))?.sync_all()?;
         let actual = if let Some(binding) = binding {
-            attested::Archive::verify_file(&destination, binding.clone())?
+            if plan.is_some() {
+                copied::Archive::verify_file(&destination, binding.clone())?.contents
+            } else {
+                attested::Archive::verify_file(&destination, binding.clone())?
+            }
         } else {
             Ledger::verify_file(&destination)?
         };
@@ -545,6 +570,14 @@ impl Ledger {
         observe: &mut dyn FnMut(InitializationBoundary),
         binding: Option<&attested::Binding>,
     ) -> Result<Self> {
+        Self::create_with_plan(root, observe, binding, None)
+    }
+    fn create_with_plan(
+        root: &Path,
+        observe: &mut dyn FnMut(InitializationBoundary),
+        binding: Option<&attested::Binding>,
+        plan: Option<&crate::evidence_copy_plan::Plan>,
+    ) -> Result<Self> {
         if !root.exists() {
             if !parent_directory(root).is_dir() {
                 return Err(Error::Invalid("archive parent must already exist"));
@@ -578,7 +611,7 @@ impl Ledger {
             &[],
         )?;
         observe(InitializationBoundary::FileCreated);
-        Self::initialize_empty(root, &path, observe, binding)
+        Self::initialize_with_plan(root, &path, observe, binding, plan)
     }
 
     /// Explicitly adopt an empty interrupted SQLite initialization, or reopen a
@@ -608,6 +641,15 @@ impl Ledger {
         observe: &mut dyn FnMut(InitializationBoundary),
         binding: Option<&attested::Binding>,
     ) -> Result<Self> {
+        Self::initialize_with_plan(root, path, observe, binding, None)
+    }
+    fn initialize_with_plan(
+        root: &Path,
+        path: &Path,
+        observe: &mut dyn FnMut(InitializationBoundary),
+        binding: Option<&attested::Binding>,
+        plan: Option<&crate::evidence_copy_plan::Plan>,
+    ) -> Result<Self> {
         let mut conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA fullfsync=ON;")?;
@@ -628,6 +670,13 @@ impl Ledger {
         if let Some(binding) = binding {
             attested::initialize(&tx, binding)?;
         }
+        if let Some(plan) = plan {
+            copied::initialize(
+                &tx,
+                binding.ok_or(Error::Invalid("copy binding required"))?,
+                plan,
+            )?;
+        }
         observe(InitializationBoundary::SchemaWritten);
         tx.commit()?;
         observe(InitializationBoundary::SchemaCommitted);
@@ -635,7 +684,13 @@ impl Ledger {
         std::fs::File::open(root)?.sync_all()?;
         std::fs::File::open(parent_directory(root))?.sync_all()?;
         let ledger = Self { conn };
-        ledger.check_profile(if binding.is_some() { 2 } else { 1 })?;
+        ledger.check_profile(if plan.is_some() {
+            3
+        } else if binding.is_some() {
+            2
+        } else {
+            1
+        })?;
         observe(InitializationBoundary::Ready);
         Ok(ledger)
     }
@@ -683,6 +738,16 @@ impl Ledger {
         if attested {
             expected.execute_batch(attested::SCHEMA)?;
         }
+        self.check_schema_against(&expected)
+    }
+    fn check_copy_schema(&self) -> Result<()> {
+        let expected = Connection::open_in_memory()?;
+        expected.execute_batch(SCHEMA)?;
+        expected.execute_batch(attested::SCHEMA)?;
+        expected.execute_batch(copied::SCHEMA)?;
+        self.check_schema_against(&expected)
+    }
+    fn check_schema_against(&self, expected: &Connection) -> Result<()> {
         let query = "SELECT type,name,tbl_name,sql FROM main.sqlite_schema ORDER BY type,name";
         let mut expected_stmt = expected.prepare(query)?;
         let mut actual_stmt = self.conn.prepare(query)?;

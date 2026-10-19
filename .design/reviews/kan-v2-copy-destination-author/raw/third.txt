@@ -1,0 +1,30 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination)
+error[E0433]: cannot find module or crate `service` in this scope
+   --> tests/evidence_attested_followups.rs:441:19
+    |
+441 |     let archive = service::hex(&pins.archive);
+    |                   ^^^^^^^ use of unresolved module or unlinked crate `service`
+    |
+    = help: if you wanted to use a crate named `service`, use `cargo add service` to add it to your `Cargo.toml`
+help: a struct with a similar name exists (notice the capitalization)
+    |
+441 -     let archive = service::hex(&pins.archive);
+441 +     let archive = Service::hex(&pins.archive);
+    |
+
+error[E0433]: cannot find module or crate `service` in this scope
+   --> tests/evidence_attested_followups.rs:442:17
+    |
+442 |     let scope = service::hex(&pins.scope);
+    |                 ^^^^^^^ use of unresolved module or unlinked crate `service`
+    |
+    = help: if you wanted to use a crate named `service`, use `cargo add service` to add it to your `Cargo.toml`
+help: a struct with a similar name exists (notice the capitalization)
+    |
+442 -     let scope = service::hex(&pins.scope);
+442 +     let scope = Service::hex(&pins.scope);
+    |
+
+For more information about this error, try `rustc --explain E0433`.
+error: could not compile `kan` (test "evidence_attested_followups") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

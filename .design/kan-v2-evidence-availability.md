@@ -364,6 +364,9 @@ catch-up subscription. Live cutover must quiesce legacy admission before pinning
 its final plan and account for pending spools explicitly; later legacy appends
 are absent from that destination and cannot be silently treated as migrated.
 
+As refined by C-F1 below, this mixed-purpose rule belongs to profile 3 only;
+profile 2 refuses every retained-verified row.
+
 Proof purpose is a storage audit invariant in addition to individual signature
 validity: retained-verified occurs only in a contiguous upgrade prefix, all with
 one pinned historical receipt issuer; later admission creates admitted only.
@@ -410,6 +413,10 @@ filesystem threat model. The strict next audit refuses such corruption.
 The full pre-admission scan is a correctness baseline, not a large-archive
 throughput qualification. A cached verified-prefix optimization needs its own
 integrity and performance review before production use.
+
+The original mixed-purpose profile-2 checkpoint below is superseded by C-F1:
+profile 2 is admitted-only, and these positive historical-prefix cases must be
+re-established under profile 3.
 
 Full store audit also enforces unique manifest and writer-operation identities
 through exact schema validation plus integrity checks, contiguous sequence,
@@ -491,7 +498,8 @@ labels a local backup independent or automatically promotes rebuilt output.
 Profile 2 has an exact schema and no durable upgrade-plan field. Copy migration
 will use a separately versioned profile 3 rather than silently enlarging profile 2
 or inferring an unfinished copy from whichever records happen to exist. Existing
-profile-2 APIs and archives retain their meanings; profile-3 support must be added
+profile-2 APIs retain their admitted-only meaning after C-F1 (experimental
+plan-less retained prefixes are refused); profile-3 support must be added
 explicitly to owner lifecycle, inventory and admission paths. This supersedes the
 earlier copy-plan destination-profile-2 placeholder only; attestation envelope
 version 1 and original manifest/receipt bytes remain unchanged.
@@ -816,3 +824,95 @@ a payload-complete but unfinished profile-3 copy remains unfinished and cannot
 admit. Publishing it does not finish migration or authorize a second writer.
 Physical encoding, atomic publication and activation tests remain open for the
 bundle-specific design review; the copy-only schema approval does not close them.
+
+
+## Profile-3 destination qualification contract
+
+Fresh review 17c1ce6e (preserved in kan-v2-purpose-gate-opus) approved the
+admitted-only prerequisite with follow-ups. Before accepting this destination
+slice, establish these named cases under profile 3:
+
+- A complete single-H retained-verified prefix accepts ordinary admission under C,
+  continuing the exact proof frontier. Clock regression never changes ordering.
+- Backup and rebuild preserve every retained proof byte and purpose; recovery may
+  rebuild derived lookups but must never relabel retained evidence as admitted.
+- A mixed-H retained prefix refuses for historical issuer mismatch. A retained row
+  after the planned prefix refuses for its position, independently of signature
+  validity. Admission inside the planned prefix refuses as well.
+- Interrupted initialization and every copy transaction boundary resume only with
+  the same retained recipe and external archive pin. Existing proof bytes remain
+  fixed, including after an acknowledgment is lost.
+- The original inventory is immutable, includes staged objects, and permits later
+  admission to reference an original CID without reattributing it. Partial copies
+  cannot admit. The admission transaction rechecks completeness after staging.
+- A private exact plan artifact precedes output creation. Explicit profile-3
+  lifecycle CLI calls preserve incomplete-copy status; they never activate a
+  writer or claim an independent archive. Invalid pins, lost plans, changed
+  sources, unsupported schemas and bad budgets refuse before useful mutation.
+
+The implementation remains a full-scan correctness baseline: batch write counts
+and bytes are bounded, but source verification and prefix audits are not a
+bounded-latency or large-archive performance claim. Read-only degraded inventory,
+recovery bundles, RPC/spool integration, RetryImported, and owner takeover remain
+separate required roadmap checkpoints. No live archive is migrated by this work.
+
+## Owner copy storage checkpoint
+
+`evidence_store::copied::{Archive,Recovery}` and `kan-v2 copy-plan` /
+`copy-batch` implement the profile-3 owner storage path. This checkpoint does not
+add profile 3 to the HTTP service, delivery spool or Library. The existing raw
+`read-record` / `read-object` commands remain explicitly profile 1. Approval of
+this storage checkpoint cannot stand in for those required integrations.
+
+The source is a healthy profile-1 **service archive**, not an arbitrary v1 kan
+repository. Repository discovery/import remains the earlier raw-v1 import path;
+this upgrade preserves the service records produced by that path. If derived
+source columns are damaged, use the separate profile-1 rebuild first and retain
+the damaged original as evidence.
+
+The owner first freezes the source and retains a recipe in a new private file:
+
+```sh
+kan-v2 copy-plan SOURCE/archive.sqlite PLAN.cbor \
+  --scope SCOPE_HEX --issuer CURRENT_ISSUER_DID \
+  --historical-issuer SOURCE_ISSUER_DID --nonce FRESH_32_BYTE_HEX
+```
+
+Retain the reported `archive` pin separately from `PLAN.cbor`. Keep the original
+source and its backup. The plan binds all objects, including uncommitted staged
+bytes, plus exact original manifests and receipts. A later source change makes
+confirmation fail even when the manifest frontier is unchanged.
+
+```sh
+kan-v2 copy-batch SOURCE/archive.sqlite DESTINATION \
+  --plan PLAN.cbor --key CURRENT_ISSUER_PRIVATE_KEY \
+  --copy-profile --proof-archive EXTERNAL_ARCHIVE_PIN \
+  --proof-scope SCOPE_HEX --proof-issuer CURRENT_ISSUER_DID \
+  --objects 128 --records 128 --bytes 16777216
+```
+
+Repeat with `--resume` for existing output. Copy batches insert original objects
+and their immutable membership first, then exact records and newly signed
+retained-verified proofs, atomically. Each batch verifies its existing prefix
+against the pinned source. It never rewrites an acknowledged proof. A lost final
+acknowledgment is resolved by explicit resume, including an already completed
+copy with later admitted records. Counts and bytes limit writes, not audit time.
+
+`copy.source_copy_complete` must be true before the owner API can admit new
+records. `objects_written=0, records_written=0` may mean already complete or a
+budget that cannot advance the current phase; inspect the explicit status.
+Original membership remains fixed even if later admission shares a staged CID.
+
+`verify DATABASE`, `backup ARCHIVE NEW_FILE` and `recover DATABASE NEW_FILE`
+accept the same `--copy-profile` and all three proof pins. Stored recipe bytes
+must agree with those explicit pins. They report copy completeness separately
+from full payload/proof validation; a valid partial backup or rebuild remains
+incomplete and cannot admit. Recovery reconstructs derived columns and preserves
+all authoritative bytes. Missing or corrupt authoritative evidence refuses and
+leaves any failed output for inspection. No command promotes output, activates a
+service, fences another host, or certifies an independent backup.
+
+The plan/copy schemas and CLI are being qualified in the dedicated permanent
+`kan-v2-copy-destination` worktree. Fresh independent review and CI are required
+before treating this checkpoint as accepted. Host power-loss, production-size
+throughput, cross-host fencing and live migration are not demonstrated here.

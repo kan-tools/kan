@@ -454,9 +454,11 @@ fn purpose_order_is_a_store_invariant_not_just_a_signature_check() {
             [invalid_order.bytes()],
         )
         .unwrap();
-    assert!(
-        archive.verify().is_err(),
-        "retained-verified after admitted must fail"
+    // Profile 2 now refuses any retained row; this is the admitted-only gate,
+    // not a specific test of historical-purpose ordering under profile 3.
+    assert_eq!(
+        archive.verify().unwrap_err().to_string(),
+        "corrupt evidence: retained-verified prefix requires copy profile"
     );
     // Even a correctly signed retained prefix followed by admitted rows cannot
     // establish copy completeness without the profile-3 recipe.
@@ -491,10 +493,17 @@ fn purpose_order_is_a_store_invariant_not_just_a_signature_check() {
         [tail.bytes()],
     )
     .unwrap();
-    assert!(archive.verify().is_err(), "profile 2 must be admitted-only");
-    assert!(archive
-        .backup(&temp.path().join("refused-backup.sqlite"))
-        .is_err());
+    assert_eq!(
+        archive.verify().unwrap_err().to_string(),
+        "corrupt evidence: retained-verified prefix requires copy profile"
+    );
+    assert_eq!(
+        archive
+            .backup(&temp.path().join("refused-backup.sqlite"))
+            .unwrap_err()
+            .to_string(),
+        "corrupt evidence: retained-verified prefix requires copy profile"
+    );
     assert_eq!(
         archive
             .admit(&request(0, None), &identity(7), &grant(), 300)

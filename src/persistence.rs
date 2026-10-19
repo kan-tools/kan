@@ -37,6 +37,8 @@ pub enum SurfaceWrite {
     EvidenceOperationsCollection,
     EvidenceArchive,
     EvidenceAttestation,
+    EvidenceCopy,
+    EvidenceCopyPlan,
     EvidenceBackup,
     EvidenceRecovery,
     EvidenceRecoverySource,
@@ -70,6 +72,8 @@ impl SurfaceWrite {
         Self::EvidenceOperationsCollection,
         Self::EvidenceArchive,
         Self::EvidenceAttestation,
+        Self::EvidenceCopy,
+        Self::EvidenceCopyPlan,
         Self::EvidenceBackup,
         Self::EvidenceRecovery,
         Self::EvidenceRecoverySource,
@@ -151,6 +155,11 @@ impl SurfaceWrite {
             Self::EvidenceAttestation => &[
                 "evidence-proof-sqlite:archive_identity",
                 "evidence-proof-sqlite:attestations",
+            ],
+            Self::EvidenceCopyPlan => &["evidence-copy-plan:artifact"],
+            Self::EvidenceCopy => &[
+                "evidence-copy-sqlite:upgrade_plan",
+                "evidence-copy-sqlite:upgrade_objects",
             ],
             Self::EvidenceArchive => &[
                 "evidence-crypto:chunk",
@@ -326,6 +335,30 @@ pub fn insert_evidence_proof(
     tx.execute(
         "INSERT INTO attestations VALUES(?,?)",
         rusqlite::params![sequence, envelope],
+    )?;
+    Ok(())
+}
+
+#[cfg(feature = "v2-storage")]
+pub fn initialize_evidence_copy(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    plan: &[u8],
+) -> rusqlite::Result<()> {
+    tx.execute_batch(crate::evidence_store::copied::SCHEMA)?;
+    tx.execute("INSERT INTO upgrade_plan VALUES(1,?)", [plan])?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
+pub fn insert_evidence_copy_object(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    cid: &str,
+    length: i64,
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO upgrade_objects VALUES(?,?)",
+        rusqlite::params![cid, length],
     )?;
     Ok(())
 }

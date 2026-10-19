@@ -1,0 +1,22 @@
+
+running 1 test
+test every_persistence_facade_call_is_independently_inventoried ... FAILED
+
+failures:
+
+---- every_persistence_facade_call_is_independently_inventoried stdout ----
+
+thread 'every_persistence_facade_call_is_independently_inventoried' (9690794) panicked at tests/surface_conformance.rs:1383:17:
+src/evidence_store/copy_upgrade.rs write_new_owner_only labels `evidence-copy-plan:artifact` with capability `EvidenceArchive`, whose allowed artifacts are ["evidence-crypto:chunk", "evidence-service:request", "evidence-db:archive.sqlite", "evidence-db:archive.sqlite-wal", "evidence-db:archive.sqlite-journal", "evidence-db:archive.sqlite-shm"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    every_persistence_facade_call_is_independently_inventoried
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.07s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination)
+    Finished `test` profile [unoptimized] target(s) in 7.14s
+     Running tests/surface_conformance.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/surface_conformance-e9fd7d9feebd78e5)
+error: test failed, to rerun pass `--test surface_conformance`

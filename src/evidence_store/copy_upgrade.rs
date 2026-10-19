@@ -4,7 +4,7 @@ use crate::{
     evidence_copy_plan::{Plan, Source, Target},
     evidence_service as service,
 };
-const SOURCE_DOMAIN: &[u8] = b"tools.kan.archive.copy-source.v1\0";
+pub(super) const SOURCE_DOMAIN: &[u8] = b"tools.kan.archive.copy-source.v1\0";
 
 /// A verified complete legacy snapshot retained by a read-only transaction.
 /// A plan decoded from disk cannot construct this value without re-verification.
@@ -12,7 +12,7 @@ pub struct PlannedCopy {
     reader: RecoveryReader,
     plan: Plan,
 }
-fn frame(hash: &mut Sha256, bytes: &[u8]) {
+pub(super) fn frame(hash: &mut Sha256, bytes: &[u8]) {
     hash.update((bytes.len() as u64).to_be_bytes());
     hash.update(bytes);
 }
@@ -123,10 +123,42 @@ impl PlannedCopy {
         }
         Ok(checked)
     }
+    pub(super) fn reader(&self) -> &RecoveryReader {
+        &self.reader
+    }
     pub fn plan(&self) -> &Plan {
         &self.plan
     }
     pub fn snapshot(&self) -> Result<Snapshot> {
         self.reader.snapshot()
     }
+}
+
+/// Retain a recipe before creating its destination. The new file is private and
+/// durable; errors leave any output for explicit owner inspection.
+pub fn retain_plan(path: &Path, plan: &Plan) -> Result<()> {
+    // surface-write: evidence-copy-plan:artifact
+    crate::persistence::write_new_owner_only(
+        crate::persistence::SurfaceWrite::EvidenceCopyPlan,
+        path,
+        plan.bytes(),
+    )?;
+    std::fs::File::open(parent_directory(path))?.sync_all()?;
+    let actual = read_plan(path, &plan.archive_id())?;
+    if actual.bytes() != plan.bytes() {
+        return Err(Error::Conflict("retained recipe changed"));
+    }
+    Ok(())
+}
+/// Read bounded private recipe bytes and compare the separately supplied pin.
+pub fn read_plan(path: &Path, expected_archive: &[u8; 32]) -> Result<Plan> {
+    use std::io::Read;
+    private_file(path)?;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)?
+        .take(crate::evidence_copy_plan::MAX_PLAN_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    let plan = Plan::decode(&bytes)?;
+    plan.check_archive(expected_archive)?;
+    Ok(plan)
 }
