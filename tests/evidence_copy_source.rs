@@ -290,3 +290,88 @@ fn derived_damage_requires_separate_recovery_and_preserves_the_exact_recipe() {
     assert_eq!(restored.plan().bytes(), plan.bytes());
     assert_eq!(std::fs::read(&db).unwrap(), damaged);
 }
+
+#[test]
+fn structurally_healthy_raw_archives_cannot_bypass_request_authentication() {
+    use atproto_dasl::Ipld;
+    fn record(kind: &str, body: std::collections::BTreeMap<String, Ipld>) -> evidence::Record {
+        let value = Ipld::Map(
+            [
+                ("v".into(), Ipld::Integer(1)),
+                ("kind".into(), Ipld::String(kind.into())),
+                ("body".into(), Ipld::Map(body)),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let Decoded::Known(value) = evidence::encode(&value).unwrap() else {
+            panic!()
+        };
+        value
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("original");
+    let mut s = service(&root);
+    append(&mut s, 1);
+    let issuer = s.issuer();
+    drop(s);
+    let source = RecoveryReader::open(&root.join("archive.sqlite")).unwrap();
+    let original = source.record(1).unwrap();
+    let Ipld::List(entries) = &original.manifest.body()["entries"] else {
+        panic!()
+    };
+    let Ipld::Map(entry) = &entries[0] else {
+        panic!()
+    };
+    let Ipld::Link(id) = &entry["ciphertext"] else {
+        panic!()
+    };
+    let original_request = source.read_object(id).unwrap();
+    for attack in ["invalid-signature", "different-slot"] {
+        let mut bytes = original_request.clone();
+        if attack == "invalid-signature" {
+            let mut request: SignedRequest = serde_json::from_slice(&bytes).unwrap();
+            request.signature = "00".repeat(64);
+            bytes = request.bytes().unwrap();
+        }
+        let mut body = original.manifest.body().clone();
+        let Ipld::List(entries) = body.get_mut("entries").unwrap() else {
+            panic!()
+        };
+        let Ipld::Map(entry) = &mut entries[0] else {
+            panic!()
+        };
+        entry.insert(
+            "ciphertext".into(),
+            Ipld::Link(kan::evidence_store::ciphertext_cid(&bytes)),
+        );
+        entry.insert("length".into(), Ipld::Integer(bytes.len() as i128));
+        if attack == "different-slot" {
+            entry.insert("slot".into(), Ipld::Bytes(vec![0; 32]));
+        }
+        let manifest = record("manifest", body);
+        let mut body = original.receipt.body().clone();
+        body.insert("manifest".into(), Ipld::Link(manifest.cid().clone()));
+        let receipt = record("receipt", body);
+        let target_root = dir.path().join(attack);
+        let mut ledger = Ledger::create(&target_root).unwrap();
+        ledger.stage(&bytes).unwrap();
+        ledger.commit(manifest.bytes(), receipt.bytes()).unwrap();
+        assert_eq!(
+            ledger.verify().unwrap().commits,
+            1,
+            "raw structure is valid"
+        );
+        drop(ledger);
+        assert!(
+            PlannedCopy::open(
+                &target_root.join("archive.sqlite"),
+                target(),
+                issuer.clone(),
+                [9; 32]
+            )
+            .is_err(),
+            "planner must authenticate source requests and exact manifests: {attack}"
+        );
+    }
+}
