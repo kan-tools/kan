@@ -1,0 +1,42 @@
+✔ real endpoint uses header auth and untrusted source stays text (3.934375ms)
+✔ lock aborts pending source and clears every private view (1.546166ms)
+✔ page and scope navigation carry only the selected authenticated pin (1.068167ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.941791ms)
+✔ old transport errors cannot lock a newer session (0.64675ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.80725ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.720291ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.686ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (2.508541ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.8075ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.539708ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.56825ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.647875ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.872833ms)
+✔ auth is header-only; gap filtering and untrusted values use text (28.134875ms)
+✔ late authenticated response cannot unlock a locked view (0.920958ms)
+✔ missing/stale data and HTTP failure cannot look healthy (0.664542ms)
+✔ absent and stale capture reporters remain explicitly unknown (0.673292ms)
+✔ fresh active sessions are current while historical losses remain visible (0.66425ms)
+✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.798167ms)
+✔ future clock samples produce consistent badges and retain uncertain reporter history (0.667375ms)
+✔ unsampled sessions and summary loss units are explicit (0.457291ms)
+✔ journal capacity is independent, sticky and never an exact coverage claim (0.617292ms)
+✔ unsupported status version retains visibly disconnected values (0.484917ms)
+✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.772792ms)
+✔ locking clears rendered private metadata and closes the inspector (0.747292ms)
+✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.606791ms)
+✔ future persistence timestamps stay unknown (0.475291ms)
+✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.59525ms)
+✔ unchanged notices are not announced again on every poll (0.531375ms)
+✔ first paint defaults to platform; System follows live platform changes (1.149292ms)
+✔ explicit choice persists only the theme and overrides platform until System selected (0.769209ms)
+✔ invalid preference, unavailable storage and cross-tab updates degrade safely (0.834958ms)
+✔ production and preview load the same theme controller before content (0.51775ms)
+ℹ tests 34
+ℹ suites 0
+ℹ pass 34
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 68.898959

@@ -1,0 +1,46 @@
+**APPROVE WITH FOLLOW-UPS.** This covers only the correction checkpoint df74506 → 61e2487 → 22facfa → a8cbf21, not the full frontend. I'm a fresh Opus 5.5 session, I didn't write this code, and I delegated nothing. The corrections are correct and don't weaken authorization, cancellation or plaintext lifetime. AC-3 remains **unmet** and download delivery remains **unverified**; I haven't counted either as closed.
+
+**What I reviewed.** All four commits are real objects in this export. The index and working tree are byte-identical to a8cbf21, except for one extra staged file, `review-context.txt`. That file still says "Parent: 833bef3", which is out of date for this range. The north star is `telos/raw-data-and-projections`, taken from that file: it's live, deliberately unwitnessed, and two claims are still withheld. I didn't query kan, and I made no kan/day writes, so the skill's Steps 7–8 (recording the verdict and checking what comes next) weren't done.
+
+## Verification I ran (raw output in `review-evidence/`)
+- **Tests:** after a fresh `kan` compile, reader 15 passed (+1 ignored), CLI 1, surface 19, Node 34.
+- **Lint and format:** strict v2 all-target Clippy and `cargo fmt --check` both exit 0.
+- **Trailer replay:** `revert_v2.py --verify` reports DEMONSTRATED for 61e2487, 22facfa and a8cbf21. Every reverted run rebuilt and failed on an actual assertion; there were no compile kills or timeouts.
+- **Restoration:** all 278 tracked file hashes are identical before and after. Rebuilding after `cargo clean -p kan` passes everything again. No processes or listeners are left.
+
+## Correction coverage
+| Item | Verdict | Evidence |
+|---|---|---|
+| Stale rows/continuation cleared before scope change | met | `app.js:73-75`; mutants K07, K08, K09 killed |
+| Non-auth errors clear plaintext, keep browsing; auth denial locks | met | `app.js:26-40`; K01, K02, K04, K05 killed. K03 (401 not treated as denial mid-session) survives |
+| Directional controls default to hex | met | `app.js:58`; K10 killed. Isolates (U+2066–2069) and LRM/RLM/ALM are untested (K10b, K10c survive) |
+| Bad reply signature → Corrupt, not grant denial | met | `evidence_reader.rs:150-160`. Inside `send`, `AccessLimited` only comes from the signature check (`evidence_service.rs:324`). A real revocation is a *signed* result and still returns 403 (`tests/evidence_reader.rs:296-307,457-462`). N02 and M19 killed |
+| Signer cannot equal issuer | met | `evidence_reader.rs:102`; N01 killed |
+| 4 executing / 8 queued, 6 s queue, 35 s overall | met in code, weakly tested | My timing probes (07): 5th connection served at 4.9 s; 13th refused immediately; 12 idle sockets close at 5.0 / 10.0 / 6.07 s. Only Q07 is killed |
+| API-driven capability matrix | partial | UI rendering tested (K11, K12). Nothing pins what the API sends: A01 and A02 survive |
+| M25 / M04 / M05 / M19 / M21 | **all now killed** | Also killed: M01, M02, M13, M13b, M17, M18, M20, M20b, M22. M14 and N03 survive but are equivalent |
+
+## Remaining findings
+1. **AC-3 is still unmet.** One missing or corrupt object still fails its whole page, and absence is still reported as corruption (`evidence_service.rs:625-627,672-674`). This is now disclosed (`docs/V2-LIBRARY.md:91-96`), not fixed.
+2. **The catalog is all-or-nothing.** One forged or unreachable scope makes the whole catalog return 503 (`evidence_library.rs:55`). Because this happens before the Library opens, the UI locks (`app.js:39`). Under df74506 a forged scope merely vanished; now every valid neighbour is hidden. That's honest and documented (`V2-LIBRARY.md:104-106`), but it cuts against the telos.
+3. **The queue test can't tell queued from unbounded.** It has no elapsed-time lower bound, so it also passes with the execution limit removed. That's mutants Q01 and Q02, which finish about 4 s *faster* because the fifth request is served at once. The 12-socket bound and the 6 s and 35 s deadlines are also untested (Q03–Q06 survive). On the 100 ms settle: it isn't what makes the reverted code fail. The old code dropped the fifth socket in the accept loop regardless of timing, and my probe P1b got the same result with no settle at all. It's only a scheduling assumption, and when that assumption fails the test passes silently rather than failing.
+4. **Minor gaps:**
+   - A 401 mid-session keeps the view open instead of locking (K03).
+   - Duplicate and badly shaped capability lists aren't tested (K13, K14).
+   - The new queue code sits inside `tokio::select!` (`evidence_library.rs:174-191`), which rustfmt doesn't format, so the fmt pass doesn't actually cover it.
+   - A *signed* denial caused by clock skew still hides a scope without saying why. That's the intended single-denial-shape design, but "the catalog cannot silently go empty" only holds for signature failures.
+5. **Still open from the first review:** the remote-call and connection timeout budgets aren't composed; the token comparison isn't constant-time; there's no external-request trace; and real-browser coverage of all states is partial. AC-1, AC-2, AC-4, AC-5 and AC-6 stay partial, and the parent full-frontend criteria stay open.
+
+## Exact limits
+- I used no browser. The capability-matrix screenshots are the author's, and I haven't re-verified them.
+- Download delivery is unverified.
+- I tested only against the synthetic service fixture: no production service, keys or provider calls.
+
+**Follow-ups:**
+1. Return per-occurrence unavailable rows and separate missing from corrupt (AC-3).
+2. Return per-scope error rows in the catalog instead of failing all of it.
+3. Give the queue test an elapsed-time lower bound, plus tests for the 13th connection and the 6 s deadline.
+4. Add an API-side assertion for the capability lists.
+5. Test 401 locking and the isolate/LRM characters.
+
+Everything is in `review-evidence/`; start with `README.md` there. The build cache in `target/` and the reversion exports under `.local-state/reversion/` are left for you to remove after I exit.

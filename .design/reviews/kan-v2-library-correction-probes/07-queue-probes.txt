@@ -1,0 +1,18 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library-correction)
+    Finished `test` profile [unoptimized] target(s) in 6.57s
+     Running tests/zz_review_queue_probes.rs (target/debug/deps/zz_review_queue_probes-5207ed8e0950cf83)
+
+running 5 tests
+test probe_p1_fifth_request_latency_behind_four_idle ... P1 fifth GET behind 4 idle: 4.90s status=HTTP/1.1 200 OK
+ok
+test probe_p1b_fifth_request_without_settle ... P1b fifth GET behind 4 idle, no settle: 5.00s status=HTTP/1.1 200 OK
+ok
+test probe_p2_thirteenth_connection_behind_twelve_idle ... P2 13th GET behind 12 idle: 0.00s status=<closed without response>
+ok
+test probe_p3_per_socket_close_times_for_twelve_idle ... P3 close times (s) for idle sockets 1..12: 5.00 5.01 5.02 5.02 10.01 10.01 10.02 10.03 6.06 6.07 6.07 6.08
+ok
+test probe_p4_queued_request_served_after_queue_drains ... P4 GET at 5.5s behind 12 idle: +4.50s status=HTTP/1.1 200 OK
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.20s
+

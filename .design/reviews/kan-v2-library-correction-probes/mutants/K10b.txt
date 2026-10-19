@@ -1,0 +1,25 @@
+# K10b isolates U+2066-2069 not forced to hex
+# file web/library/app.js
+# rc 0 elapsed 0.1s
+✔ real endpoint uses header auth and untrusted source stays text (2.987125ms)
+✔ lock aborts pending source and clears every private view (1.076417ms)
+✔ page and scope navigation carry only the selected authenticated pin (0.921792ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.952334ms)
+✔ old transport errors cannot lock a newer session (0.723958ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.920458ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.694459ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.688041ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (2.252166ms)
+✔ scope changes remove old-scope rows before a new pin is used (0.62925ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.379ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.532917ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.56425ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.607ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 43.93

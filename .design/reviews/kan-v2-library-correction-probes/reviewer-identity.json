@@ -1,0 +1,7 @@
+{
+  "type": "system",
+  "subtype": "init",
+  "model": "claude-opus-5-5",
+  "session_id": "efa9d730-4e15-4369-b0cd-ca2869a01b29",
+  "claude_code_version": "2.1.300"
+}

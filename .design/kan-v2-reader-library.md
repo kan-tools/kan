@@ -182,3 +182,14 @@ all passed before and after restoration. Exact generated trailer and raw logs
 are in `reviews/kan-v2-library-correction-author/`. Desktop/phone browser checks
 confirm the visible matrix and corrected navigation. Fresh correction review
 is pending; the earlier approval covers only df74506.
+
+## Correction review outcome
+Fresh actual Claude Code Opus 5.5 session
+efa9d730-4e15-4369-b0cd-ca2869a01b29 approved df74506..a8cbf21 with follow-ups.
+The exact report, disposition and probe/reversion logs are retained under
+`.design/reviews/kan-v2-library-correction-2026-10-18.*` and
+`kan-v2-library-correction-probes/`. The corrections preserve authorization and
+plaintext clearing; all three correction trailers replayed with actual assertion
+failures. The criteria above remain open at their documented partial/unmet state.
+Per-record unavailable evidence, per-scope catalog recovery, stronger resource
+boundary tests and actual browser file delivery are not supplied by that approval.

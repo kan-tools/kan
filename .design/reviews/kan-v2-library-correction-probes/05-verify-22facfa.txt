@@ -1,0 +1,17 @@
+Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library-correction/.local-state/reversion/df7e17c6a1fc4599afb2527fa93cf79a
+What would be reverted (22facfaf006a1e2907f5f1a105059ec8f22bb955):
+  reverting .design/kan-v2-reader-library.md: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-errors-author/library-errors-reversion.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-errors-author/library-node-errors.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-errors-author/reversion/01-node.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-errors-author/reversion/02-node.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-errors-author/reversion/03-node.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-errors-author/reversion/04-node.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-errors-author/reversion/05-node.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-errors-author/reversion/06-node.txt: 1/1 hunk(s)
+  reverting .design/reviews/kan-v2-library-errors-author/reversion/production.patch: 1/1 hunk(s)
+  reverting docs/V2-LIBRARY.md: 1/1 hunk(s)
+  reverting scripts/revert_v2.py: 1/1 hunk(s)
+  skipped tests/library_ui.test.cjs (test side; --include it to revert it)
+  reverting web/library/app.js: 3/3 hunk(s)
+22facfaf006a1e2907f5f1a105059ec8f22bb955: DEMONSTRATED; all trailer tests reproduced=True

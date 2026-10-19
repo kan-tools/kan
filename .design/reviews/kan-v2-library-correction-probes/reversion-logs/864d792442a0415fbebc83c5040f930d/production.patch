@@ -1,0 +1,228 @@
+diff --git a/.design/reviews/kan-v2-library-scope-fix-author/library-node-scope-fix.txt b/.design/reviews/kan-v2-library-scope-fix-author/library-node-scope-fix.txt
+new file mode 100644
+index 0000000..ad3dd97
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-scope-fix-author/library-node-scope-fix.txt
+@@ -0,0 +1,38 @@
++✔ real endpoint uses header auth and untrusted source stays text (3.404708ms)
++✔ lock aborts pending source and clears every private view (1.3375ms)
++✔ page and scope navigation carry only the selected authenticated pin (1.118875ms)
++✔ download rechecks authorization and denied export clears prior plaintext (1.097542ms)
++✔ old transport errors cannot lock a newer session (0.662708ms)
++✔ range reads do not accumulate plaintext and inspector close returns focus (0.739709ms)
++✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.570083ms)
++✔ source view can inspect exact bytes even when UTF-8 contains controls (0.60675ms)
++✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (1.886083ms)
++✔ scope changes remove old-scope rows before a new pin is used (0.957917ms)
++✔ auth is header-only; gap filtering and untrusted values use text (31.298ms)
++✔ late authenticated response cannot unlock a locked view (0.603375ms)
++✔ missing/stale data and HTTP failure cannot look healthy (0.600375ms)
++✔ absent and stale capture reporters remain explicitly unknown (0.610041ms)
++✔ fresh active sessions are current while historical losses remain visible (0.577541ms)
++✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.688625ms)
++✔ future clock samples produce consistent badges and retain uncertain reporter history (0.609542ms)
++✔ unsampled sessions and summary loss units are explicit (0.48125ms)
++✔ journal capacity is independent, sticky and never an exact coverage claim (0.802916ms)
++✔ unsupported status version retains visibly disconnected values (0.578709ms)
++✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.671083ms)
++✔ locking clears rendered private metadata and closes the inspector (0.735875ms)
++✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.563458ms)
++✔ future persistence timestamps stay unknown (0.414542ms)
++✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.550583ms)
++✔ unchanged notices are not announced again on every poll (0.557834ms)
++✔ first paint defaults to platform; System follows live platform changes (1.148ms)
++✔ explicit choice persists only the theme and overrides platform until System selected (0.75725ms)
++✔ invalid preference, unavailable storage and cross-tab updates degrade safely (0.800667ms)
++✔ production and preview load the same theme controller before content (1.081416ms)
++ℹ tests 30
++ℹ suites 0
++ℹ pass 30
++ℹ fail 0
++ℹ cancelled 0
++ℹ skipped 0
++ℹ todo 0
++ℹ duration_ms 70.736708
+diff --git a/.design/reviews/kan-v2-library-scope-fix-author/library-scope-race.txt b/.design/reviews/kan-v2-library-scope-fix-author/library-scope-race.txt
+new file mode 100644
+index 0000000..705a347
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-scope-fix-author/library-scope-race.txt
+@@ -0,0 +1,27 @@
++✖ scope changes remove old-scope rows before a new pin is used (2.735166ms)
++ℹ tests 1
++ℹ suites 0
++ℹ pass 0
++ℹ fail 1
++ℹ cancelled 0
++ℹ skipped 0
++ℹ todo 0
++ℹ duration_ms 32.40675
++
++✖ failing tests:
++
++test at .local-state/library-scope-race.test.cjs:30:1
++✖ scope changes remove old-scope rows before a new pin is used (2.735166ms)
++  AssertionError [ERR_ASSERTION]: old rows must not remain actionable under a new scope pin
++  
++  1 !== 0
++  
++      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/library-scope-race.test.cjs:30:239)
++      at async Test.run (node:internal/test_runner/test:1069:7)
++      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
++    generatedMessage: false,
++    code: 'ERR_ASSERTION',
++    actual: 1,
++    expected: 0,
++    operator: 'strictEqual'
++  }
+diff --git a/.design/reviews/kan-v2-library-scope-fix-author/library-scope-reversion.txt b/.design/reviews/kan-v2-library-scope-fix-author/library-scope-reversion.txt
+new file mode 100644
+index 0000000..b5e9dae
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-scope-fix-author/library-scope-reversion.txt
+@@ -0,0 +1,11 @@
++Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion/c728cad77dee4cd28f751c295be5e28c
++What would be reverted (worktree):
++  reverting scripts/revert_v2.py: 1/1 hunk(s)
++  skipped tests/library_ui.test.cjs (not in --include)
++  reverting web/library/app.js: 1/1 hunk(s)
++
++DEMONSTRATED — failed under revert: node::library_scope_switch
++
++Paste into the commit message:
++
++    Demonstrated-by: revert=HEAD tests=node::library_scope_switch outcome=DEMONSTRATED
+diff --git a/.design/reviews/kan-v2-library-scope-fix-author/reversion/01-node.txt b/.design/reviews/kan-v2-library-scope-fix-author/reversion/01-node.txt
+new file mode 100644
+index 0000000..3a0fbf2
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-scope-fix-author/reversion/01-node.txt
+@@ -0,0 +1,16 @@
++TAP version 13
++# Subtest: scope changes remove old-scope rows before a new pin is used
++ok 1 - scope changes remove old-scope rows before a new pin is used
++  ---
++  duration_ms: 2.405375
++  type: 'test'
++  ...
++1..1
++# tests 1
++# suites 0
++# pass 1
++# fail 0
++# cancelled 0
++# skipped 0
++# todo 0
++# duration_ms 31.197583
+diff --git a/.design/reviews/kan-v2-library-scope-fix-author/reversion/02-node.txt b/.design/reviews/kan-v2-library-scope-fix-author/reversion/02-node.txt
+new file mode 100644
+index 0000000..3bfe104
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-scope-fix-author/reversion/02-node.txt
+@@ -0,0 +1,32 @@
++TAP version 13
++# Subtest: scope changes remove old-scope rows before a new pin is used
++not ok 1 - scope changes remove old-scope rows before a new pin is used
++  ---
++  duration_ms: 2.608958
++  type: 'test'
++  location: '/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion/c728cad77dee4cd28f751c295be5e28c/tests/library_ui.test.cjs:30:1'
++  failureType: 'testCodeFailure'
++  error: |-
++    old rows must not remain actionable under a new scope pin
++    
++    1 !== 0
++    
++  code: 'ERR_ASSERTION'
++  name: 'AssertionError'
++  expected: 0
++  actual: 1
++  operator: 'strictEqual'
++  stack: |-
++    TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reversion/c728cad77dee4cd28f751c295be5e28c/tests/library_ui.test.cjs:30:239)
++    async Test.run (node:internal/test_runner/test:1069:7)
++    async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3)
++  ...
++1..1
++# tests 1
++# suites 0
++# pass 0
++# fail 1
++# cancelled 0
++# skipped 0
++# todo 0
++# duration_ms 31.377208
+diff --git a/.design/reviews/kan-v2-library-scope-fix-author/reversion/03-node.txt b/.design/reviews/kan-v2-library-scope-fix-author/reversion/03-node.txt
+new file mode 100644
+index 0000000..9d60570
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-scope-fix-author/reversion/03-node.txt
+@@ -0,0 +1,16 @@
++TAP version 13
++# Subtest: scope changes remove old-scope rows before a new pin is used
++ok 1 - scope changes remove old-scope rows before a new pin is used
++  ---
++  duration_ms: 2.347125
++  type: 'test'
++  ...
++1..1
++# tests 1
++# suites 0
++# pass 1
++# fail 0
++# cancelled 0
++# skipped 0
++# todo 0
++# duration_ms 30.383167
+diff --git a/.design/reviews/kan-v2-library-scope-fix-author/reversion/production.patch b/.design/reviews/kan-v2-library-scope-fix-author/reversion/production.patch
+new file mode 100644
+index 0000000..b0be675
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-scope-fix-author/reversion/production.patch
+@@ -0,0 +1,23 @@
++diff --git a/scripts/revert_v2.py b/scripts/revert_v2.py
++index cebfc05..e13d737 100644
++--- a/scripts/revert_v2.py
+++++ b/scripts/revert_v2.py
++@@ -28,0 +29 @@ NODE_TESTS = {
+++    'library_scope_switch': ('tests/library_ui.test.cjs', 'scope changes remove old-scope rows before a new pin is used'),
++diff --git a/tests/library_ui.test.cjs b/tests/library_ui.test.cjs
++index 0e0a6c1..d24a36c 100644
++--- a/tests/library_ui.test.cjs
+++++ b/tests/library_ui.test.cjs
++@@ -28,0 +29,2 @@ test('export keeps exact bytes alive until navigation starts and releases on tim
+++
+++test('scope changes remove old-scope rows before a new pin is used',async()=>{const u=ui();await open(u);assert.equal(u.node('rows').children.length,1);u.node('scope').value='allowed-B';u.node('scope').events.change();await tick();assert.equal(u.node('rows').children.length,0,'old rows must not remain actionable under a new scope pin');assert.equal(u.node('next').disabled,true);await u.respond({...page,through:0,next:null,records:[]});assert.equal(u.node('empty').hidden,false);});
++diff --git a/web/library/app.js b/web/library/app.js
++index 66ad4da..5d5bb45 100644
++--- a/web/library/app.js
+++++ b/web/library/app.js
++@@ -62 +62,4 @@
++-    clearInspector(); notice('Reading the selected snapshot…');
+++    clearInspector(); buttons.clear(); $('rows').replaceChildren();
+++    $('count').textContent = ''; $('coverage').textContent = ''; $('page-position').textContent = 'Loading…';
+++    $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
+++    notice('Reading the selected snapshot…');
+diff --git a/scripts/revert_v2.py b/scripts/revert_v2.py
+index cebfc05..e13d737 100644
+--- a/scripts/revert_v2.py
++++ b/scripts/revert_v2.py
+@@ -28,0 +29 @@ NODE_TESTS = {
++    'library_scope_switch': ('tests/library_ui.test.cjs', 'scope changes remove old-scope rows before a new pin is used'),
+diff --git a/tests/library_ui.test.cjs b/tests/library_ui.test.cjs
+index 0e0a6c1..d24a36c 100644
+--- a/tests/library_ui.test.cjs
++++ b/tests/library_ui.test.cjs
+@@ -28,0 +29,2 @@ test('export keeps exact bytes alive until navigation starts and releases on tim
++
++test('scope changes remove old-scope rows before a new pin is used',async()=>{const u=ui();await open(u);assert.equal(u.node('rows').children.length,1);u.node('scope').value='allowed-B';u.node('scope').events.change();await tick();assert.equal(u.node('rows').children.length,0,'old rows must not remain actionable under a new scope pin');assert.equal(u.node('next').disabled,true);await u.respond({...page,through:0,next:null,records:[]});assert.equal(u.node('empty').hidden,false);});
+diff --git a/web/library/app.js b/web/library/app.js
+index 66ad4da..5d5bb45 100644
+--- a/web/library/app.js
++++ b/web/library/app.js
+@@ -62 +62,4 @@
+-    clearInspector(); notice('Reading the selected snapshot…');
++    clearInspector(); buttons.clear(); $('rows').replaceChildren();
++    $('count').textContent = ''; $('coverage').textContent = ''; $('page-position').textContent = 'Loading…';
++    $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
++    notice('Reading the selected snapshot…');

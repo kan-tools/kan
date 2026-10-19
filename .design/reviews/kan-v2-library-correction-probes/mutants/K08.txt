@@ -1,0 +1,43 @@
+# K08 page keeps Next enabled during load
+# file web/library/app.js
+# rc 1 elapsed 0.1s
+✔ real endpoint uses header auth and untrusted source stays text (3.186833ms)
+✔ lock aborts pending source and clears every private view (0.8695ms)
+✔ page and scope navigation carry only the selected authenticated pin (0.962375ms)
+✔ download rechecks authorization and denied export clears prior plaintext (0.869959ms)
+✔ old transport errors cannot lock a newer session (0.675917ms)
+✔ range reads do not accumulate plaintext and inspector close returns focus (0.796917ms)
+✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.672917ms)
+✔ source view can inspect exact bytes even when UTF-8 contains controls (0.677541ms)
+✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (2.340625ms)
+✖ scope changes remove old-scope rows before a new pin is used (0.863ms)
+✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.595875ms)
+✔ unverifiable page removes old rows and leaves scope recovery available (0.54525ms)
+✔ directional format controls default to exact hex and permit explicit UTF-8 (0.618792ms)
+✔ capability matrix renders actual service capabilities without claiming unknown support (0.8615ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 13
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 43.789083
+
+✖ failing tests:
+
+test at tests/library_ui.test.cjs:30:1
+✖ scope changes remove old-scope rows before a new pin is used (0.863ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reader-library/.local-state/reviews/opus-library-correction/tests/library_ui.test.cjs:30:346)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:752:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual'
+  }
