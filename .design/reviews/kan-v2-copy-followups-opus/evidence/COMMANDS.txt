@@ -1,0 +1,21 @@
+Commands executed by the reviewer (cwd = frozen export unless noted). Raw output files in raw/ and controls/.
+
+raw/identity-before.txt   python3 -I tools/verify_identity.py <export> ../copy-followups-identity.json <parent worktree>
+raw/diff-identity.txt     git -C <parent> diff 2058633 423054a -- . ':!.design/reviews/kan-v2-copy-followups-author' | cmp - ../copy-followups-change.diff   (identical)
+(fs check, not saved)     scratch mktemp dir: write a.sqlite-shm, read back as A.SQLITE-SHM and a.sqlite-ſhm (both resolve), removed
+raw/query-plans.txt       python3 -I tools/query_plans.py   (in-memory schema copy, EXPLAIN QUERY PLAN)
+raw/00-clean.txt          cargo clean -p kan   (removed 855 files)
+raw/01-targeted.txt       cargo test --features v2-crypto --test evidence_copy_destination --test evidence_copy_source --test surface_conformance --test evidence_copy_plan
+raw/10-probes.txt         (temporary tests/zz_review_followups.rs) cargo test --features v2-crypto --test zz_review_followups -- --nocapture --test-threads=1
+raw/11-probe-p3.txt       same file with P3 added: cargo test --features v2-crypto --test zz_review_followups p3 -- --nocapture
+                          probe copy kept at probes/zz_review_followups.rs (sha256 6ac8c570...), tests/zz_review_followups.rs then removed (cmp-verified first)
+raw/20-mutants-stdout.txt python3 -I tools/mutate.py <export> <export>/review-evidence/controls   (15 cases; per-case logs controls/*.txt; restore + sha256 check per case)
+raw/30-clippy.txt         cargo clippy --features v2-crypto --all-targets -- -D warnings
+raw/31-fmt.txt            cargo fmt --all -- --check
+raw/40-final-targeted.txt same command as 01, on restored tree after probe removal
+raw/90-identity-after.txt python3 -I tools/verify_identity.py ... (after)
+read-only parent checks   git -C <parent> rev-parse HEAD / status --short / diff --stat ; stat of two modified parent files (see REPORT section 1)
+
+Environment: CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target, CARGO_BUILD_JOBS=4,
+one cargo job at a time. Not run: the author's scripts/copy_destination_followup_controls.py (it writes to <export>/.local-state);
+its six cases were reproduced by tools/mutate.py with identical patterns.

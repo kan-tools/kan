@@ -1,0 +1,63 @@
+Mon Oct 19 12:37:15 UTC 2026
++ cargo test --features v2-crypto --test zz_review_followups -- --nocapture --test-threads=1
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/copy-followups)
+warning: unused variable: `key`
+   --> tests/zz_review_followups.rs:317:9
+    |
+317 |     let key = key(t.path());
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_key`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (test "zz_review_followups") generated 1 warning (run `cargo fix --test "zz_review_followups" -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 0.38s
+     Running tests/zz_review_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_followups-0d3824fa657faf2a)
+
+running 4 tests
+test a_alias_attacks_refuse_and_preserve_bytes ... A retain symlinked dir -> Err("invalid input: destination overlaps source SQLite files"); journal created=false
+A retain NFD dir spelling -> Err("invalid input: destination overlaps source SQLite files"); journal created=false
+A retain ASCII-case dir -> Err("invalid input: destination overlaps source SQLite files"); journal created=false
+A retain dotdot -> Err("invalid input: destination overlaps source SQLite files"); journal created=false
+A retain long-s main name + -journal -> Err("invalid input: destination aliases source SQLite sidecar"); journal created=false
+A retain upper main + -Journal -> Err("invalid input: destination overlaps source SQLite files"); journal created=false
+A read_for_copy symlinked dir -> Err("invalid input: destination overlaps source SQLite files")
+A read_for_copy NFD dir spelling -> Err("invalid input: destination overlaps source SQLite files")
+A read_for_copy ASCII-case dir -> Err("invalid input: destination overlaps source SQLite files")
+A read_for_copy dotdot -> Err("invalid input: destination overlaps source SQLite files")
+A read_for_copy long-s main name + -journal -> Err("invalid input: destination aliases source SQLite sidecar")
+A read_for_copy upper main + -Journal -> Err("invalid input: destination overlaps source SQLite files")
+A read_for_copy long-s main -> Err("invalid input: plan aliases a SQLite database")
+A read_for_copy NFD main dir -> Err("invalid input: plan aliases a SQLite database")
+A read_for_copy dest-root symlink -> Err("invalid input: destination overlaps source SQLite files")
+A read_for_copy symlink plan file -> Err("invalid input: expected regular plan file")
+ok
+test l_legitimate_paths_complete_and_resume ... L source-dir neighbour archive.sqlite.plan: retain=Ok(()) read_for_copy_exact=Ok(true)
+L source-dir neighbour archive.sqlite-journal.cbor: retain=Ok(()) read_for_copy_exact=Ok(true)
+L source-dir neighbour archive.sqlite-wal-plan: retain=Ok(()) read_for_copy_exact=Ok(true)
+L source-dir neighbour plan-shm: retain=Ok(()) read_for_copy_exact=Ok(true)
+L relative copy-plan: exit=Some(0) stdout={"archive":"180771a502f1bf404ac0299a0e4bdf04d1977d36a4da2da1dc9a6ec383ed3355","plan":"rel-plan.cbor","profile":3,"promoted":false,"source_through":2} stderr=
+L relative first batch: exit=Some(0) stdout={"activated":false,"bytes_written":17,"copy":{"copied_records":0,"original_objects":1,"planned_records":2,"source_copy_complete":false},"objects_written":1,"profile":3,"promoted":false,"records_written":0} stderr=
+L complete after resume 2: exit=Some(0) stdout={"activated":false,"bytes_written":1689,"copy":{"copied_records":2,"original_objects":3,"planned_records":2,"source_copy_complete":true},"objects_written":0,"profile":3,"promoted":false,"records_written":1} stderr=
+L dest listing: ["archive.sqlite", "recipe.cbor"]
+L absent destination parent: Err("No such file or directory (os error 2)")
+ok
+test p1_destination_long_s_shm_alias_on_resume ... P1 first batch (legit plan): exit=Some(0) stdout={"activated":false,"bytes_written":17,"copy":{"copied_records":0,"original_objects":1,"planned_records":3,"source_copy_complete":false},"objects_written":1,"profile":3,"promoted":false,"records_written":0} stderr=
+P1 dest listing after first batch: ["archive.sqlite"]
+P1 control ASCII -shm read_plan_for_copy: Err(Invalid("destination overlaps source SQLite files"))
+P1 -shm exists before alias placement: false
+P1 alias visible as ASCII -shm (same file): true
+P1 read_plan_for_copy(DEST/archive.sqlite-ſhm): Ok(379)
+P1 resume with alias plan: exit=Some(0) stdout={"activated":false,"bytes_written":624,"copy":{"copied_records":0,"original_objects":2,"planned_records":3,"source_copy_complete":false},"objects_written":1,"profile":3,"promoted":false,"records_written":0} stderr=
+P1 alias plan after resume: exists=false unchanged=false len=None (orig 379)
+P1 dest listing after resume: ["archive.sqlite"]
+ok
+test p2_source_long_s_shm_alias ... P2 with live reader: -shm exists=true listing=["archive.sqlite", "archive.sqlite-shm", "archive.sqlite-wal"]
+P2 retain_plan(SRC/archive.sqlite-ſhm) with live reader: Err("File exists (os error 17)")
+P2 existing -shm unchanged after refusal: true
+P2 after drop: -shm exists=true listing=["archive.sqlite", "archive.sqlite-shm", "archive.sqlite-wal"]
+P2 source shm persists after close; alias placement would overwrite it, stop
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.25s
+
+exit=0

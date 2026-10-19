@@ -1,0 +1,11 @@
+commit 423054a7c2a1db31a4cc081b114a0f10bb6aa792 tree 1334829aa6ebeb813c0151a5935c4d0c0fd954ae
+manifest_files 2291 git_tree_files 2291
+sha256_mismatch_or_missing []
+disk_extra_not_in_manifest ['north-star.json']
+manifest_missing_on_disk []
+git_tree_not_in_manifest []
+manifest_not_in_git_tree []
+git_blob_mismatch []
+RESULT MISMATCH
+90c370add9c0dafaf5376faebddacdbc50ac7aa66476726d762a4b01b88df42d  ../copy-followups-identity.json
+f8cf769ffd9df3ddc080bdd20aa609c387e6cb4c3b704db7c1dfc844af832bad  ../copy-followups-change.diff

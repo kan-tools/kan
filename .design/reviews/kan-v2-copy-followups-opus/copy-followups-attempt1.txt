@@ -1,0 +1,1 @@
+Runner startup failed before invoking Claude: global destination replacement changed root to nonexistent kan-v2-copy-copy-followups. Exit 1; corrected root. No review was launched.

@@ -1,0 +1,688 @@
+diff --git a/.design/kan-v2-evidence-availability.md b/.design/kan-v2-evidence-availability.md
+index 1148d53..77b14d6 100644
+--- a/.design/kan-v2-evidence-availability.md
++++ b/.design/kan-v2-evidence-availability.md
+@@ -916,3 +916,40 @@ The plan/copy schemas and CLI are being qualified in the dedicated permanent
+ `kan-v2-copy-destination` worktree. Fresh independent review and CI are required
+ before treating this checkpoint as accepted. Host power-loss, production-size
+ throughput, cross-host fencing and live migration are not demonstrated here.
++
++### Owner-copy review follow-ups (2026-10-19)
++
++The cold Opus review of d9b2110 approved this storage checkpoint with follow-ups;
++its unmodified report and probes are retained in
++`reviews/kan-v2-copy-destination-opus/evidence/REPORT.txt`. No parent acceptance
++criterion is closed by that verdict.
++
++Plan custody now uses the same SQLite family and filesystem-alias collision
++rules as archive outputs. `retain_plan` takes the verified source, rejects its
++main/sidecar names before creating a file, and still retains private exact bytes.
++`read_plan_for_copy` checks both source and destination families before the CLI
++opens either database. The bare `read_plan` function is only a bounded decoder;
++it confers no path-safety guarantee. These checks retain the trusted-filesystem
++assumption; they do not fence hostile concurrent filesystem replacement.
++
++Schema-drift tests name the exact refusal at open, file verification, resume,
++existing-handle verification and backup. Two additional resume tests use valid
++foreign object membership and a valid historical receipt with a current retained
++proof: local verification succeeds, but advancing against a different exact
++source prefix refuses before writing. The earlier wrong-length test is renamed
++to describe the earlier guard it actually exercises. CLI tests attribute explicit
++profile/pins, key identity, private plan permissions, byte budget, missing resume
++output, initialization path and SQLite-path refusals.
++
++`copied::Archive::create` initializes an empty archive without proving signing-key
++possession. API executors requiring no output before that check must verify the
++key first; the owner CLI does. Every copying batch verifies the signer.
++`copy_batch(issued_at)` takes Unix milliseconds, whereas `admit(now)` uses Unix
++seconds for the service expiry contract. Those units are now documented at the
++API boundary. Non-private recipe errors name the plan rather than a database.
++
++The original report's claim that copy batches perform per-object NOT INDEXED
++reads is inaccurate: `src` is `&source.reader().ledger` and uses indexed
++`Ledger::read_object`; `RecoveryReader::read_object` is not called there. The
++unmodified review remains intact. Full source/destination audits still run, and
++no bounded latency or large-archive performance claim is made.
+diff --git a/.design/kan-v2-followup-status.md b/.design/kan-v2-followup-status.md
+index b52bbc6..5652f5d 100644
+--- a/.design/kan-v2-followup-status.md
++++ b/.design/kan-v2-followup-status.md
+@@ -19,6 +19,35 @@ for acceptance. The complete human frontend remains required by
+ | Background analysis/day | Server-first architecture | Inspectable run/assessment records, scheduler/worker contracts, grants/quotas and source lineage |
+ | Deployment and migration cutover | Runbooks and synthetic evidence only | Reader placement decision, real installation/key placement and owner-approved cutover remain separate |
+ 
++## Current checkpoint overlay — 2026-10-19
++
++The preceding table and delivery-order text retain the earlier roadmap state.
++Use these later checkpoint records for implementation status:
++
++- #290 Library/codec follow-ups: source through 5784efa; actual browser file
++  delivery remains unverified.
++- #291 proof storage: a1007a6; independently reviewed corrections and CI green.
++- #292 bounded collection overview: d94359c; fresh Opus APPROVE (scope C in
++  `reviews/kan-v2-purpose-gate-opus/evidence/REPORT.txt`), CI green, real browser
++  restart evidence. Sustained-write refresh starvation and memory refusal remain
++  declared bounds, not universal performance guarantees.
++- #293 proof-preserving lifecycle: 58ba158; reviewed corrections, CI green.
++- #294 source-copy planner and codec: 619613d; CI green. The independent oracle
++  sort and named-reason follow-ups are closed in #295.
++- #295 destination: d9b2110; fresh Opus APPROVE WITH FOLLOW-UPS, preserved in
++  `reviews/kan-v2-copy-destination-opus/evidence/REPORT.txt`. Plan-file custody
++  and coverage follow-ups are being qualified separately. Linux/MSRV/migration
++  passed; the performance run initially failed the unchanged context ratio
++  (8.3 > 8), with its single retry still pending at this writing.
++- Degraded inventory and recovery-bundle designs are on the permanent
++  `feat/kan-v2-degraded-inventory` worktree branch. Inventory implementation is
++  an unqualified draft. No bundle writer, remote proof adapter, or full human
++  conversation workflow is accepted by these storage checkpoints.
++
++The next sequence remains inventory/bundles and remote integration, followed by
++conversation reconstruction, search/views/annotations, background assessment and
++integrated administration. All PRs remain stacked drafts; no live cutover.
++
+ ## Accepted delivery order
+ 
+ The owner approved this roadmap after #286/#287:
+diff --git a/scripts/copy_destination_followup_controls.py b/scripts/copy_destination_followup_controls.py
+new file mode 100644
+index 0000000..5ae1cd0
+--- /dev/null
++++ b/scripts/copy_destination_followup_controls.py
+@@ -0,0 +1,50 @@
++#!/usr/bin/env python3
++"""Synthetic compiled controls; run alone against the shared Cargo cache."""
++from pathlib import Path
++import subprocess
++ROOT=Path(__file__).resolve().parents[1]
++OUT=ROOT/'.local-state/reviews/copy-destination-followup-controls'
++def main():
++    if not __debug__: raise RuntimeError('assertions required')
++    cases=[
++        ('remove-plan-custody-guards','src/evidence_store/copy_upgrade.rs',
++         '    if same_existing_file(database, plan) {',
++         '    return Ok(());\n    #[allow(unreachable_code)]\n    if same_existing_file(database, plan) {',
++         'evidence_copy_destination','plan_custody_refuses_sqlite_families_before_opening_or_writing'),
++        ('skip-cli-copy-path-checks','src/bin/kan-v2.rs',
++         'kan::evidence_store::copy_upgrade::read_plan_for_copy(\n                &plan,\n                &database,\n                &archive,\n                &binding.archive,\n            )?',
++         'kan::evidence_store::copy_upgrade::read_plan(&plan, &binding.archive)?',
++         'evidence_copy_destination','owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars'),
++        ('omit-profile3-full-audit-schema','src/evidence_store/copied.rs',
++         '    ledger.check_profile(3)?;\n    ledger.check_copy_schema()?;', '    ledger.check_profile(3)?;',
++         'evidence_copy_destination','profile3_schema_drift_refuses_open_verify_resume_and_stale_handle_backup'),
++        ('skip-object-prefix-comparison','src/evidence_store/copied.rs',
++         'if id != expected.get::<_, String>(0)? || length != expected.get::<_, i64>(1)? {',
++         'if false && (id != expected.get::<_, String>(0)? || length != expected.get::<_, i64>(1)?) {',
++         'evidence_copy_destination','resume_refuses_self_consistent_foreign_object_prefix_before_advancing'),
++        ('skip-record-prefix-comparison','src/evidence_store/copied.rs',
++         'if old.manifest.bytes() != expected.manifest.bytes()\n                || old.receipt.bytes() != expected.receipt.bytes()\n            {',
++         'if false && (old.manifest.bytes() != expected.manifest.bytes()\n                || old.receipt.bytes() != expected.receipt.bytes())\n            {',
++         'evidence_copy_destination','resume_refuses_valid_foreign_receipt_prefix_before_signing_more_proofs'),
++        ('omit-cli-explicit-profile','src/bin/kan-v2.rs',
++         'if !proof.copy_profile {', 'if false && !proof.copy_profile {',
++         'evidence_copy_destination','owner_cli_copy_preconditions_refuse_without_creating_output'),
++    ]
++    OUT.mkdir(parents=True,exist_ok=True)
++    originals={ROOT/c[1]:(ROOT/c[1]).read_text() for c in cases}
++    try:
++        for name,filename,old,new,suite,test in cases:
++            p=ROOT/filename;before=originals[p];assert before.count(old)==1,(name,'pattern count',before.count(old))
++            p.write_text(before.replace(old,new,1))
++            run=subprocess.run(['cargo','test','--features','v2-crypto','--test',suite,test,'--','--exact'],cwd=ROOT,capture_output=True,text=True,timeout=120)
++            log=run.stdout+run.stderr;(OUT/(name+'.txt')).write_text(log)
++            assert run.returncode!=0,name+' SURVIVED'
++            assert 'could not compile' not in log,name+' compile error'
++            assert 'test '+test+' ... FAILED' in log,name+' missing named failure'
++            print('DEMONSTRATED:',name,flush=True);p.write_text(before)
++    finally:
++        for p,before in originals.items():p.write_text(before)
++    run=subprocess.run(['cargo','test','--features','v2-crypto','--test','evidence_copy_destination','--test','evidence_copy_source','--test','surface_conformance'],cwd=ROOT,capture_output=True,text=True,timeout=180)
++    (OUT/'restored.txt').write_text(run.stdout+run.stderr);assert run.returncode==0,'restored baseline failed'
++    print(f'{len(cases)} compiled controls; restored suites passed.',flush=True)
++if __name__=='__main__':main()
+diff --git a/src/bin/kan-v2.rs b/src/bin/kan-v2.rs
+index b5b92dc..c335e24 100644
+--- a/src/bin/kan-v2.rs
++++ b/src/bin/kan-v2.rs
+@@ -893,7 +893,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
+                 fixed_hex(&nonce)?,
+             )?;
+             let path = plan.to_str().ok_or("plan JSON requires a UTF-8 path")?;
+-            kan::evidence_store::copy_upgrade::retain_plan(&plan, source.plan())?;
++            kan::evidence_store::copy_upgrade::retain_plan(&plan, &source)?;
+             print_json(
+                 &serde_json::json!({"plan":path,"archive":hex(&source.plan().archive_id()),"source_through":source.plan().source().through,"profile":3,"promoted":false}),
+             )?;
+@@ -913,7 +913,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
+                 return Err("copy-batch requires --copy-profile and all owner pins".into());
+             }
+             let binding = proof.binding()?.ok_or("copy requires owner pins")?;
+-            let recipe = kan::evidence_store::copy_upgrade::read_plan(&plan, &binding.archive)?;
++            let recipe = kan::evidence_store::copy_upgrade::read_plan_for_copy(
++                &plan,
++                &database,
++                &archive,
++                &binding.archive,
++            )?;
+             let source = kan::evidence_store::copy_upgrade::PlannedCopy::confirm(
+                 &database,
+                 &recipe,
+diff --git a/src/evidence_store/copied.rs b/src/evidence_store/copied.rs
+index 3ba60aa..3577658 100644
+--- a/src/evidence_store/copied.rs
++++ b/src/evidence_store/copied.rs
+@@ -236,6 +236,9 @@ pub struct Archive {
+ impl Archive {
+     /// The owner must retain the exact plan artifact and external binding before
+     /// calling. The verified source is required even for empty initialization.
++    /// This initializes an empty archive; it does not certify possession of the
++    /// signing key. An executor that requires no output before key verification
++    /// must check that key first (the owner CLI does). Batches check the signer.
+     pub fn create(root: &Path, source: &PlannedCopy, binding: attested::Binding) -> Result<Self> {
+         Self::create_observed(root, source, binding, &mut |_| {})
+     }
+@@ -345,6 +348,7 @@ impl Archive {
+         let destination = self.inner.ledger.backup_copy(destination, observe)?;
+         Self::verify_file(&destination, self.binding().clone())
+     }
++    /// `now` is Unix seconds, matching service request expiry.
+     pub fn admit(
+         &mut self,
+         bytes: &[u8],
+@@ -366,6 +370,7 @@ impl Archive {
+         self.inner
+             .admit_observed(bytes, signer, grant, now, observe)
+     }
++    /// `issued_at` is Unix milliseconds, matching retained proof timestamps.
+     pub fn copy_batch(
+         &mut self,
+         source: &PlannedCopy,
+diff --git a/src/evidence_store/copy_upgrade.rs b/src/evidence_store/copy_upgrade.rs
+index c02c531..db1e4ad 100644
+--- a/src/evidence_store/copy_upgrade.rs
++++ b/src/evidence_store/copy_upgrade.rs
+@@ -136,7 +136,9 @@ impl PlannedCopy {
+ 
+ /// Retain a recipe before creating its destination. The new file is private and
+ /// durable; errors leave any output for explicit owner inspection.
+-pub fn retain_plan(path: &Path, plan: &Plan) -> Result<()> {
++pub fn retain_plan(path: &Path, source: &PlannedCopy) -> Result<()> {
++    plan_outside_sqlite(&source.reader.source, path)?;
++    let plan = source.plan();
+     // surface-write: evidence-copy-plan:artifact
+     crate::persistence::write_new_owner_only(
+         crate::persistence::SurfaceWrite::EvidenceCopyPlan,
+@@ -150,10 +152,52 @@ pub fn retain_plan(path: &Path, plan: &Plan) -> Result<()> {
+     }
+     Ok(())
+ }
+-/// Read bounded private recipe bytes and compare the separately supplied pin.
++// A plan is an ordinary retained file, never a SQLite main file or sidecar.
++fn plan_outside_sqlite(database: &Path, plan: &Path) -> Result<()> {
++    if same_existing_file(database, plan) {
++        return Err(Error::Invalid("plan aliases a SQLite database"));
++    }
++    sqlite_destination(database, plan)?;
++    Ok(())
++}
++
++/// Validate plan custody against both SQLite families before any database opens.
++/// An absent destination root must have an existing parent, as creation requires.
++/// This protects owner-selected paths under the same trusted-filesystem contract
++/// as archive creation; it does not fence concurrent hostile path replacement.
++pub fn read_plan_for_copy(
++    path: &Path,
++    source: &Path,
++    destination_root: &Path,
++    expected_archive: &[u8; 32],
++) -> Result<Plan> {
++    let source = std::fs::canonicalize(source)?;
++    plan_outside_sqlite(&source, path)?;
++    let root = if destination_root.exists() {
++        std::fs::canonicalize(destination_root)?
++    } else {
++        std::fs::canonicalize(parent_directory(destination_root))?.join(
++            destination_root
++                .file_name()
++                .ok_or(Error::Invalid("destination directory"))?,
++        )
++    };
++    plan_outside_sqlite(&root.join("archive.sqlite"), path)?;
++    read_plan(path, expected_archive)
++}
++
++/// Decode bounded private recipe bytes and compare the separately supplied pin.
++/// This decoder never opens SQLite. Executors must use `read_plan_for_copy` to
++/// protect artifact custody before opening either source or destination.
+ pub fn read_plan(path: &Path, expected_archive: &[u8; 32]) -> Result<Plan> {
+     use std::io::Read;
+-    private_file(path)?;
++    private_file(path).map_err(|e| match e {
++        Error::Invalid("database must be owner-only") => Error::Invalid("plan must be owner-only"),
++        Error::Invalid("expected regular database file") => {
++            Error::Invalid("expected regular plan file")
++        }
++        other => other,
++    })?;
+     let mut bytes = Vec::new();
+     std::fs::File::open(path)?
+         .take(crate::evidence_copy_plan::MAX_PLAN_BYTES as u64 + 1)
+diff --git a/tests/evidence_copy_destination.rs b/tests/evidence_copy_destination.rs
+index 5403fb3..9b7f799 100644
+--- a/tests/evidence_copy_destination.rs
++++ b/tests/evidence_copy_destination.rs
+@@ -280,7 +280,7 @@ fn owner_recipe_signer_and_profile_are_required_before_mutation() {
+     assert!(Archive::open(&root, binding(&s)).is_err());
+ }
+ #[test]
+-fn incomplete_copy_backup_remains_incomplete_and_resume_checks_the_exact_prefix() {
++fn incomplete_copy_backup_remains_incomplete_and_resume_rejects_wrong_object_length() {
+     let t = tempfile::tempdir().unwrap();
+     let path = fixture(t.path(), 2, 2);
+     let s = source(&path);
+@@ -667,8 +667,8 @@ fn owner_recipe_refusals_happen_before_destination_creation() {
+         use std::os::unix::fs::PermissionsExt;
+         std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+     }
+-    kan::evidence_store::copy_upgrade::retain_plan(&plan, s.plan()).unwrap();
+-    assert!(kan::evidence_store::copy_upgrade::retain_plan(&plan, s.plan()).is_err());
++    kan::evidence_store::copy_upgrade::retain_plan(&plan, &s).unwrap();
++    assert!(kan::evidence_store::copy_upgrade::retain_plan(&plan, &s).is_err());
+     let exact = std::fs::read(&plan).unwrap();
+     let pin = hex(&s.plan().archive_id());
+     let scope = hex(&[1; 32]);
+@@ -1032,3 +1032,385 @@ fn pinned_wal_source_copies_its_original_snapshot_and_later_confirmation_refuses
+     assert_eq!(found, 0);
+     assert!(PlannedCopy::confirm(&path, s.plan(), &s.plan().archive_id()).is_err());
+ }
++
++#[test]
++fn plan_custody_refuses_sqlite_families_before_opening_or_writing() {
++    use kan::evidence_store::copy_upgrade::{read_plan_for_copy, retain_plan};
++    let t = tempfile::tempdir().unwrap();
++    let db = fixture(t.path(), 1, 0);
++    let source = source(&db);
++    let before = std::fs::read(&db).unwrap();
++    let root = t.path().join("copy");
++    for suffix in ["", "-journal", "-wal", "-shm", "-JOURNAL"] {
++        let plan = PathBuf::from(format!("{}{suffix}", db.display()));
++        assert!(retain_plan(&plan, &source).is_err(), "accepted {suffix}");
++    }
++    assert!(!db.with_file_name("archive.sqlite-journal").exists());
++    assert_eq!(std::fs::read(&db).unwrap(), before);
++    // A pre-existing artifact must also be protected before SQLite gets opened.
++    drop(source);
++    let source = self::source(&db);
++    let bytes = source.plan().bytes().to_vec();
++    let pin = source.plan().archive_id();
++    drop(source);
++    for base in [&db, &root.join("archive.sqlite")] {
++        std::fs::create_dir_all(base.parent().unwrap()).unwrap();
++        for suffix in ["-journal", "-wal", "-shm", "-JOURNAL"] {
++            let path = PathBuf::from(format!("{}{suffix}", base.display()));
++            // Source may have retained empty WAL sidecars; do not overwrite them.
++            if path.exists() {
++                continue;
++            }
++            std::fs::write(&path, &bytes).unwrap();
++            let error = read_plan_for_copy(&path, &db, &root, &pin)
++                .unwrap_err()
++                .to_string();
++            assert!(error.contains("overlaps source SQLite files"), "{error}");
++            assert_eq!(std::fs::read(&path).unwrap(), bytes);
++            std::fs::remove_file(&path).unwrap();
++        }
++    }
++    // Filesystem aliases must not make sidecar paths safe.
++    let alias = t.path().join("alias.sqlite");
++    std::fs::hard_link(&db, &alias).unwrap();
++    let alias_plan = alias.with_file_name("alias.sqlite-journal");
++    let source = self::source(&db);
++    assert!(retain_plan(&alias_plan, &source)
++        .unwrap_err()
++        .to_string()
++        .contains("aliases source SQLite sidecar"));
++    assert!(!alias_plan.exists());
++    assert!(read_plan_for_copy(&alias, &db, &root, &pin)
++        .unwrap_err()
++        .to_string()
++        .contains("plan aliases"));
++    let good = t.path().join("recipe.cbor");
++    retain_plan(&good, &source).unwrap();
++    assert_eq!(
++        read_plan_for_copy(&good, &db, &root, &pin).unwrap().bytes(),
++        bytes
++    );
++}
++
++#[test]
++fn profile3_schema_drift_refuses_open_verify_resume_and_stale_handle_backup() {
++    for sql in [
++        "CREATE INDEX extra_index ON commits(cid)",
++        "CREATE TRIGGER extra_trigger AFTER INSERT ON objects BEGIN SELECT 1; END",
++        "CREATE VIEW extra_view AS SELECT cid FROM objects",
++        "CREATE TABLE extra_table(x)",
++    ] {
++        let t = tempfile::tempdir().unwrap();
++        let db = fixture(t.path(), 2, 1);
++        let source = source(&db);
++        let root = t.path().join("copy");
++        let archive = Archive::create(&root, &source, binding(&source)).unwrap();
++        let c = rusqlite::Connection::open(root.join("archive.sqlite")).unwrap();
++        c.execute_batch(sql).unwrap();
++        drop(c);
++        let expected = "invalid input: unsupported writable archive schema";
++        assert_eq!(
++            Archive::open(&root, binding(&source))
++                .err()
++                .unwrap()
++                .to_string(),
++            expected
++        );
++        assert_eq!(
++            Archive::verify_file(&root.join("archive.sqlite"), binding(&source))
++                .unwrap_err()
++                .to_string(),
++            expected
++        );
++        assert_eq!(
++            Archive::resume_initialization(&root, &source, binding(&source))
++                .err()
++                .unwrap()
++                .to_string(),
++            expected
++        );
++        assert_eq!(archive.verify().unwrap_err().to_string(), expected);
++        assert_eq!(
++            archive
++                .backup(&t.path().join("backup.sqlite"))
++                .unwrap_err()
++                .to_string(),
++            expected
++        );
++    }
++}
++
++#[test]
++fn resume_refuses_self_consistent_foreign_object_prefix_before_advancing() {
++    let t = tempfile::tempdir().unwrap();
++    let db = fixture(t.path(), 2, 1);
++    let source = source(&db);
++    let root = t.path().join("copy");
++    let mut a = Archive::create(&root, &source, binding(&source)).unwrap();
++    let foreign = b"valid hash and length, absent from planned source";
++    let cid = kan::evidence_store::ciphertext_cid(foreign).to_string();
++    let c = rusqlite::Connection::open(root.join("archive.sqlite")).unwrap();
++    c.execute(
++        "INSERT INTO objects VALUES(?,?)",
++        rusqlite::params![cid, foreign],
++    )
++    .unwrap();
++    c.execute(
++        "INSERT INTO upgrade_objects VALUES(?,?)",
++        rusqlite::params![cid, foreign.len() as i64],
++    )
++    .unwrap();
++    // Local consistency passes: refusal must compare with the exact source.
++    assert!(!a.verify().unwrap().copy.source_copy_complete);
++    let before = rows(&root);
++    assert_eq!(
++        a.copy_batch(&source, &identity(8), 1000, small())
++            .unwrap_err()
++            .to_string(),
++        "corrupt evidence: original object inventory differs from source prefix"
++    );
++    assert_eq!(rows(&root), before);
++    assert_eq!(
++        c.query_row("SELECT count(*) FROM objects", [], |r| r.get::<_, i64>(0))
++            .unwrap(),
++        1
++    );
++}
++
++#[test]
++fn resume_refuses_valid_foreign_receipt_prefix_before_signing_more_proofs() {
++    use kan::evidence_attestation::{self as proof, Context, Frontier, Purpose};
++    let t = tempfile::tempdir().unwrap();
++    let db = fixture(t.path(), 2, 0);
++    let source = source(&db);
++    let root = t.path().join("copy");
++    let pins = binding(&source);
++    let mut a = Archive::create(&root, &source, pins.clone()).unwrap();
++    a.copy_batch(
++        &source,
++        &identity(8),
++        1000,
++        Budget {
++            objects: 10,
++            records: 1,
++            bytes: MAX_CHUNK,
++        },
++    )
++    .unwrap();
++    let foreign_root = t.path().join("foreign");
++    let mut s = Service::new(
++        Ledger::create(&foreign_root).unwrap(),
++        [1; 32],
++        identity(7),
++        vec![grant(6)],
++    )
++    .unwrap();
++    assert!(s
++        .dispatch(&request(6, 7, 0, None), 999)
++        .unwrap()
++        .reply
++        .result
++        .is_ok());
++    drop(s);
++    let r = RecoveryReader::open(&foreign_root.join("archive.sqlite"))
++        .unwrap()
++        .record(1)
++        .unwrap();
++    let ctx = Context {
++        archive: pins.archive,
++        scope: pins.scope,
++        issuer: &pins.issuer,
++    };
++    let envelope = proof::issue(
++        &identity(8),
++        &ctx,
++        &r.manifest,
++        &r.receipt,
++        &Frontier::default(),
++        Purpose::RetainedVerified,
++        1000,
++    )
++    .unwrap();
++    let original = rows(&root);
++    assert_eq!(original[0].0, r.manifest.bytes());
++    assert_ne!(original[0].1, r.receipt.bytes());
++    let c = rusqlite::Connection::open(root.join("archive.sqlite")).unwrap();
++    c.execute(
++        "UPDATE commits SET receipt=? WHERE sequence=1",
++        [r.receipt.bytes()],
++    )
++    .unwrap();
++    c.execute(
++        "UPDATE attestations SET envelope=? WHERE sequence=1",
++        [envelope.bytes()],
++    )
++    .unwrap();
++    assert_eq!(a.verify().unwrap().copy.copied_records, 1);
++    let before = rows(&root);
++    assert_eq!(
++        a.copy_batch(&source, &identity(8), 2000, small())
++            .unwrap_err()
++            .to_string(),
++        "corrupt evidence: copied record differs from source"
++    );
++    assert_eq!(rows(&root), before);
++}
++
++#[test]
++fn owner_cli_copy_preconditions_refuse_without_creating_output() {
++    use kan::evidence_service::hex;
++    let t = tempfile::tempdir().unwrap();
++    let db = fixture(t.path(), 1, 0);
++    let source = source(&db);
++    let plan = t.path().join("plan.cbor");
++    kan::evidence_store::copy_upgrade::retain_plan(&plan, &source).unwrap();
++    let key = t.path().join("key");
++    let wrong_key = t.path().join("wrong-key");
++    for (path, n) in [(&key, 8), (&wrong_key, 5)] {
++        std::fs::write(path, [n; 32]).unwrap();
++        #[cfg(unix)]
++        {
++            use std::os::unix::fs::PermissionsExt;
++            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
++        }
++    }
++    let pin = hex(&source.plan().archive_id());
++    let scope = hex(&[1; 32]);
++    let issuer = identity(8).did().to_string();
++    let pins = [
++        "--proof-archive",
++        &pin,
++        "--proof-scope",
++        &scope,
++        "--proof-issuer",
++        &issuer,
++    ];
++    for case in 0..7 {
++        let root = t.path().join(format!("refused-{case}"));
++        let selected_key = if case == 2 { &wrong_key } else { &key };
++        let mut args = vec![
++            "copy-batch",
++            db.to_str().unwrap(),
++            root.to_str().unwrap(),
++            "--plan",
++            plan.to_str().unwrap(),
++            "--key",
++            selected_key.to_str().unwrap(),
++        ];
++        if case != 0 {
++            args.push("--copy-profile");
++        }
++        if case != 1 {
++            args.extend(pins);
++        }
++        let expected = match case {
++            0 => "copy-batch requires --copy-profile and all owner pins",
++            1 => "the following required arguments were not provided",
++            2 => "copy signer differs from owner issuer",
++            3 => {
++                args.extend(["--bytes", "4194303"]);
++                "invalid input: copy budget"
++            }
++            4 => {
++                args.push("--resume");
++                "No such file or directory"
++            }
++            5 => {
++                args = vec!["init", root.to_str().unwrap(), "--copy-profile"];
++                args.extend(pins);
++                "profile 3 initialization requires copy-batch"
++            }
++            6 => {
++                #[cfg(unix)]
++                {
++                    use std::os::unix::fs::PermissionsExt;
++                    std::fs::set_permissions(&plan, std::fs::Permissions::from_mode(0o644))
++                        .unwrap();
++                }
++                #[cfg(not(unix))]
++                {
++                    continue;
++                }
++                "plan must be owner-only"
++            }
++            _ => unreachable!(),
++        };
++        let output = cli(&args);
++        assert!(!output.status.success(), "case {case} accepted");
++        assert!(output.stdout.is_empty());
++        assert!(
++            String::from_utf8_lossy(&output.stderr).contains(expected),
++            "case {case}: {}",
++            String::from_utf8_lossy(&output.stderr)
++        );
++        assert!(!root.exists(), "case {case} created output");
++    }
++    assert_eq!(std::fs::read(&plan).unwrap(), source.plan().bytes());
++}
++
++#[test]
++fn owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars() {
++    use kan::evidence_service::hex;
++    let t = tempfile::tempdir().unwrap();
++    let db = fixture(t.path(), 1, 0);
++    let source = source(&db);
++    let before = std::fs::read(&db).unwrap();
++    let scope = hex(&[1; 32]);
++    let issuer = identity(8).did().to_string();
++    let historical = identity(7).did().to_string();
++    let nonce = hex(&[9; 32]);
++    let pin = hex(&source.plan().archive_id());
++    let key = t.path().join("key");
++    std::fs::write(&key, [8; 32]).unwrap();
++    #[cfg(unix)]
++    {
++        use std::os::unix::fs::PermissionsExt;
++        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
++    }
++    let journal = db.with_file_name("archive.sqlite-journal");
++    for path in [&db, &journal] {
++        let o = cli(&[
++            "copy-plan",
++            db.to_str().unwrap(),
++            path.to_str().unwrap(),
++            "--scope",
++            &scope,
++            "--issuer",
++            &issuer,
++            "--historical-issuer",
++            &historical,
++            "--nonce",
++            &nonce,
++        ]);
++        assert!(!o.status.success());
++        assert!(o.stdout.is_empty());
++        assert!(String::from_utf8_lossy(&o.stderr).contains("SQLite"));
++    }
++    assert!(!journal.exists());
++    let root = t.path().join("copy");
++    std::fs::create_dir(&root).unwrap();
++    let plan = root.join("archive.sqlite-journal");
++    kan::evidence_store::copy_upgrade::retain_plan(&plan, &source).unwrap();
++    let bytes = std::fs::read(&plan).unwrap();
++    let o = cli(&[
++        "copy-batch",
++        db.to_str().unwrap(),
++        root.to_str().unwrap(),
++        "--plan",
++        plan.to_str().unwrap(),
++        "--key",
++        key.to_str().unwrap(),
++        "--copy-profile",
++        "--proof-archive",
++        &pin,
++        "--proof-scope",
++        &scope,
++        "--proof-issuer",
++        &issuer,
++    ]);
++    assert!(!o.status.success());
++    assert!(String::from_utf8_lossy(&o.stderr).contains("overlaps source SQLite files"));
++    assert!(!root.join("archive.sqlite").exists());
++    assert_eq!(std::fs::read(&plan).unwrap(), bytes);
++    assert_eq!(std::fs::read(&db).unwrap(), before);
++}
+diff --git a/tests/fixtures/read-write-surface.tsv b/tests/fixtures/read-write-surface.tsv
+index dd171d5..d37042a 100644
+--- a/tests/fixtures/read-write-surface.tsv
++++ b/tests/fixtures/read-write-surface.tsv
+@@ -148,4 +148,4 @@ implemented	derived	evidence-store	system	evidence-copy-sqlite:upgrade_plan	sing
+ implemented	authoritative-kan	evidence-store	system	evidence-copy-sqlite:upgrade_plan	envelope	src/evidence_store/copied.rs	crate::evidence_store::copied::Archive	validate:recipe-bound-copy	retain-exact-recipe-and-original-membership	.design/kan-v2-evidence-availability.md#final-review-decisions-for-the-first-profile-3-storage-slice
+ implemented	authoritative-kan	evidence-store	system	evidence-copy-sqlite:upgrade_objects	cid	src/evidence_store/copied.rs	crate::evidence_store::copied::Archive	validate:recipe-bound-copy	retain-exact-recipe-and-original-membership	.design/kan-v2-evidence-availability.md#final-review-decisions-for-the-first-profile-3-storage-slice
+ implemented	authoritative-kan	evidence-store	system	evidence-copy-sqlite:upgrade_objects	length	src/evidence_store/copied.rs	crate::evidence_store::copied::Archive	validate:recipe-bound-copy	retain-exact-recipe-and-original-membership	.design/kan-v2-evidence-availability.md#final-review-decisions-for-the-first-profile-3-storage-slice
+-implemented	authoritative-kan	evidence-store	system	evidence-copy-plan:artifact	*	src/evidence_store/copy_upgrade.rs	crate::evidence_store::copy_upgrade::read_plan	validate:recipe-bound-copy	retain-exact-owner-recipe	.design/kan-v2-evidence-availability.md#cold-review-decisions-c1-c6-proposed-refinements
++implemented	authoritative-kan	evidence-store	system	evidence-copy-plan:artifact	*	src/evidence_store/copy_upgrade.rs	crate::evidence_store::copy_upgrade::{read_plan,read_plan_for_copy}	validate:recipe-bound-copy	retain-exact-owner-recipe	.design/kan-v2-evidence-availability.md#cold-review-decisions-c1-c6-proposed-refinements
