@@ -1097,8 +1097,10 @@ completion marker is not represented as completion of an older partial pin.
 
 Three new integration tests cover both profiles, appends between independent
 page openings, malformed/forked/future/rolled-back coordinates, payload loss,
-and invalid current metadata after the selected prefix. They are prepared but
-not yet locally compiled: the independent publication review owns the shared
-Cargo target. Format and whitespace checks pass. This foundation does not yet
+and invalid current metadata after the selected prefix. CI39336616906 at497065a
+passed all21 inventory tests, the surrounding v2/workspace suites, strict lint,
+formatting, MSRV and canary. No duplicate local baseline was run while the
+publication review owns the shared Cargo target. Semantic controls and fresh
+independent review remain pending. This foundation does not yet
 implement the authenticated remote protocol, HTTP adapter, Reader or Library
 display. The integrated acceptance criteria above remain open.
