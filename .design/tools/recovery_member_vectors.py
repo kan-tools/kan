@@ -57,6 +57,7 @@ def losses(m):
     complete=m['profile']==2 or len(m['records'])>=codec.decode(m['plan'])['sourceThrough']
     for seq,raw,_,_ in m['records']:
         e=codec.decode(raw)['body']['entries'][0];cid='b'+framing.base64.b32encode(e['ciphertext'].raw).decode().lower().rstrip('=');length=e['length']
+        if cid==framing.raw_cid(b''):raise ValueError('empty service request CID')
         if length>2*1024*1024+4096:raise ValueError('service request length')
         if cid in referenced:raise ValueError('reused service request CID')
         coords.append((seq,cid,length,'IssuerMetadata'));referenced.add(cid)
@@ -117,7 +118,8 @@ def vectors():
     contradiction('hash-valid-false-authenticated-length',m,o,'hash-valid bytes contradict authenticated length')
     m,o=build(2,1);empty=framing.raw_cid(b'')
     edit_manifest(m,0,lambda b:b['entries'][0].update(ciphertext=codec.Link(codec.cid_bytes(empty)),length=1));m['objects']=[[empty,b'']]
-    contradiction('empty-cid-false-authenticated-length',m,o,'hash-valid bytes contradict authenticated length')
+    contradiction('empty-cid-false-authenticated-length',m,o,'empty service request CID')
+    m['objects']=[];contradiction('empty-service-cid-with-no-original',m,o,'empty service request CID')
     m,o=build(2,1);edit_manifest(m,0,lambda b:b['entries'][0].update(length=2*1024*1024+4097));m['objects']=[]
     contradiction('unrepresentable-service-request-length',m,o,'service request length')
     m,o=build(2,2);e=codec.decode(m['records'][0][1])['body']['entries'][0]
@@ -131,6 +133,10 @@ def vectors():
     for cidlength in m['membership']:
         if codec.cid_bytes(cidlength[0])!=referenced:cidlength[1]+=1
     cases.append(pack('partial-membership-length-does-not-corrupt-valid-bytes',m,o,complete=False))
+    m,o=build(3,3);m['records']=m['records'][:2];m['objects']=[]
+    cases.append(pack('partial-copy-issuer-losses-keep-authenticated-length',m,o,complete=False))
+    m,o=build(2,1);edit_manifest(m,0,lambda b:b['entries'][0].update(length=2*1024*1024+4096));m['objects']=[]
+    cases.append(pack('exact-max-request-length-without-bytes',m,o))
     return {'status':'independent signed construction and M1/loss oracle; no complete second member validator','publicPrivateScalars':[3,4,5,6],'cases':cases}
 
 def main():

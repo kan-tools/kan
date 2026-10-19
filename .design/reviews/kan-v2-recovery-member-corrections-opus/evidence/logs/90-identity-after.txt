@@ -1,0 +1,8 @@
+# date: 2026-10-19T15:57:57Z
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections
+# cmd: python3 -I review-evidence/scripts/identity_check.py /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections-identity.json /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member after
+# ---
+[after] commit=b11cbf42af09d09113e467f5cf9cdea82ef9ade0 repo_HEAD=b11cbf42af09d09113e467f5cf9cdea82ef9ade0 manifest_files=3252 export_files_checked=3252 git_tree_entries=3252 blob_mismatches=0
+[after] extras_allowed_present=['north-star.json', 'review-evidence']
+[after] problems=0
+# --- exit=0

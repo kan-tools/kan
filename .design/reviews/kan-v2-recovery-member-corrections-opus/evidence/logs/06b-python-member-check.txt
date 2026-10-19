@@ -1,0 +1,6 @@
+# date: 2026-10-19T15:52:13Z
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections
+# cmd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-encryption/.local-state/crypto-oracle-env/bin/python .design/tools/recovery_member_vectors.py --check
+# ---
+22 independently constructed member cases; all constructed issuer chains independently verified; no full verifier claim
+# --- exit=0

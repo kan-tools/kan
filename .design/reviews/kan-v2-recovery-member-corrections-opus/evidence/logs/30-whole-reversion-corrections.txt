@@ -1,0 +1,38 @@
+# date: 2026-10-19T15:57:22Z
+# cwd: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections
+# cmd: cargo test --offline --features v2-crypto --no-fail-fast --test evidence_recovery_member_corrections
+# ---
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reviews/member-corrections)
+    Finished `test` profile [unoptimized] target(s) in 7.23s
+     Running tests/evidence_recovery_member_corrections.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_corrections-139989e045e17eb4)
+
+running 2 tests
+test incomplete_membership_has_no_authenticated_length_or_byte_classification ... FAILED
+test authentic_bytes_with_false_metadata_are_not_repairable_loss ... FAILED
+
+failures:
+
+---- incomplete_membership_has_no_authenticated_length_or_byte_classification stdout ----
+
+thread 'incomplete_membership_has_no_authenticated_length_or_byte_classification' (10108187) panicked at tests/evidence_recovery_member_corrections.rs:124:5:
+assertion `left == right` failed
+  left: Some(77)
+ right: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- authentic_bytes_with_false_metadata_are_not_repairable_loss stdout ----
+
+thread 'authentic_bytes_with_false_metadata_are_not_repairable_loss' (10108186) panicked at tests/evidence_recovery_member_corrections.rs:112:9:
+hash-valid-false-authenticated-length: contradictory metadata accepted as repairable loss
+
+
+failures:
+    authentic_bytes_with_false_metadata_are_not_repairable_loss
+    incomplete_membership_has_no_authenticated_length_or_byte_classification
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `--test evidence_recovery_member_corrections`
+error: 1 target failed:
+    `--test evidence_recovery_member_corrections`
+# --- exit=101
