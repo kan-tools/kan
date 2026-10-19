@@ -1,0 +1,69 @@
+CASE {"name": "AC24-membership-length-unframed", "file": "src/evidence_recovery_commitment.rs", "old": "s.core.frame(&key)?;\n            s.core.n(length)?;", "new": "s.core.frame(&key)?;"}
+CMD cargo test --offline --locked --no-fail-fast --features v2-crypto --test evidence_recovery_commitment --test zz_review_commitment_probes -- --test-threads=1
+
+running 8 tests
+test failure_mid_payload_and_candidate_verification_consumes_budget_and_poisons ... ok
+test independent_python_member_output_and_restoration_framing_matches ... FAILED
+test local_limits_cancellation_and_failed_work_are_explicit ... ok
+test maximum_objects_and_metadata_bounds_do_not_change_framing ... ok
+test missing_empty_corrupt_and_restored_bytes_remain_distinct ... ok
+test profile_plan_and_cid_shape_cannot_be_silently_reinterpreted ... ok
+test skipped_extra_and_reordered_sections_never_finish ... ok
+test sorted_unique_cids_are_required_and_candidate_hashes_are_checked ... ok
+
+failures:
+
+---- independent_python_member_output_and_restoration_framing_matches stdout ----
+
+thread 'independent_python_member_output_and_restoration_framing_matches' (9966346) panicked at tests/evidence_recovery_commitment.rs:111:9:
+assertion `left == right` failed: "partial-copy-framing"
+  left: "c569f01f4171dc542522477e0578a92fb6f7a2b60bad5c72d8e1b9fc5dce6bbc"
+ right: String("19309d2b71fe83dd8e60df16796c137a5cf913abdfe9e6818a3d8d39625a742f")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    independent_python_member_output_and_restoration_framing_matches
+
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+
+
+running 10 tests
+test rv_a10_output_domain_does_not_verify_objects ... ok
+test rv_a1_vectors_and_exact_work_accounting ... FAILED
+test rv_a2_text_order_accepted_binary_order_refused ... ok
+test rv_a3_section_count_sequence_boundaries ... ok
+test rv_a4_local_bounds_exact_edges ... ok
+test rv_a5_non_raw_sha256_cids_refused_everywhere ... ok
+test rv_a6_any_failure_poisons_all_later_operations ... ok
+test rv_a7_presence_states_are_distinct ... ok
+test rv_a8_cancellation_and_deadline_are_polled_within_one_payload ... ok
+test rv_a9_item_edges_and_finish_rechecks ... ok
+
+failures:
+
+---- rv_a1_vectors_and_exact_work_accounting stdout ----
+
+thread 'rv_a1_vectors_and_exact_work_accounting' (9966356) panicked at tests/zz_review_commitment_probes.rs:144:9:
+assertion `left == right` failed: rv-profile3-membership5-objects4 M1
+  left: "cc9449882234431078e269fc4f5610792bd5390b9cf37c5ed23a92b1cb6d82c2"
+ right: String("06d9378df439c8c32f06fcdafd802f92502a6d0ea6f046c4388b7d686f9e038e")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    rv_a1_vectors_and_exact_work_accounting
+
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment)
+    Finished `test` profile [unoptimized] target(s) in 7.28s
+     Running tests/evidence_recovery_commitment.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_commitment-5a89bc2efd1208f4)
+error: test failed, to rerun pass `--test evidence_recovery_commitment`
+     Running tests/zz_review_commitment_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_commitment_probes-50969c86e5ace5da)
+error: test failed, to rerun pass `--test zz_review_commitment_probes`
+error: 2 targets failed:
+    `--test evidence_recovery_commitment`
+    `--test zz_review_commitment_probes`
+
+exit=101 elapsed=9.0s restored_hash_ok=True

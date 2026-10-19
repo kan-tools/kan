@@ -1,0 +1,1403 @@
+CASE {"name": "CC3-vacuity-all-small-frames-opaque", "file": "src/evidence_reconstruction.rs", "old": "pub fn decode(bytes: &[u8]) -> Result<Decoded<'_>, Error> {", "new": "pub fn decode(bytes: &[u8]) -> Result<Decoded<'_>, Error> {\n    if bytes.len() < 4096 {\n        return Ok(Decoded::Opaque);\n    }"}
+CMD cargo test --offline --locked --no-fail-fast --features v2-crypto --test evidence_reconstruction_review_regressions --test evidence_reconstruction -- --test-threads=1
+
+running 15 tests
+test all_truncated_header_prefixes_fail_without_panicking ... FAILED
+test bounded_header_body_and_total_before_materialization ... FAILED
+test capture_family_size_limit_precedes_unknown_envelope_classification ... ok
+test current_production_recorder_event_forms_roundtrip_with_exact_bodies ... FAILED
+test duplicate_and_escaped_alias_keys_never_choose_a_winner ... FAILED
+test every_recognized_event_rejects_extra_fields_including_unit_variants ... FAILED
+test exact_spans_binary_body_and_u64_coordinates_are_not_rounded ... FAILED
+test identifiers_and_started_string_bounds_match_recorder ... FAILED
+test malformed_json_encoding_trailing_data_and_nested_input_refuse ... FAILED
+test multibyte_and_escaped_header_text_preserves_original_byte_spans ... FAILED
+test mutated_bounded_inputs_never_panic_or_claim_spans_outside_input ... ok
+test non_chunk_events_cannot_smuggle_body_bytes ... FAILED
+test opaque_and_unsupported_are_distinct_from_malformed_capture ... FAILED
+test recognized_header_requires_explicit_timestamp_even_when_unknown ... FAILED
+test recognized_shapes_reject_missing_extra_wrong_type_and_bad_integer_fields ... FAILED
+
+failures:
+
+---- all_truncated_header_prefixes_fail_without_panicking stdout ----
+
+thread 'all_truncated_header_prefixes_fail_without_panicking' (9984048) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Opaque
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- bounded_header_body_and_total_before_materialization stdout ----
+
+thread 'bounded_header_body_and_total_before_materialization' (9984049) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Opaque
+
+---- current_production_recorder_event_forms_roundtrip_with_exact_bodies stdout ----
+
+thread 'current_production_recorder_event_forms_roundtrip_with_exact_bodies' (9984051) panicked at tests/evidence_reconstruction.rs:298:13:
+explicit panic
+
+---- duplicate_and_escaped_alias_keys_never_choose_a_winner stdout ----
+
+thread 'duplicate_and_escaped_alias_keys_never_choose_a_winner' (9984052) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Opaque
+
+---- every_recognized_event_rejects_extra_fields_including_unit_variants stdout ----
+
+thread 'every_recognized_event_rejects_extra_fields_including_unit_variants' (9984053) panicked at tests/evidence_reconstruction.rs:339:9:
+assertion failed: matches!(decode(&wire(&header.to_string(), b"")).unwrap(),
+    Decoded::Capture(_))
+
+---- exact_spans_binary_body_and_u64_coordinates_are_not_rounded stdout ----
+
+thread 'exact_spans_binary_body_and_u64_coordinates_are_not_rounded' (9984054) panicked at tests/evidence_reconstruction.rs:26:9:
+explicit panic
+
+---- identifiers_and_started_string_bounds_match_recorder stdout ----
+
+thread 'identifiers_and_started_string_bounds_match_recorder' (9984055) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Opaque
+
+---- malformed_json_encoding_trailing_data_and_nested_input_refuse stdout ----
+
+thread 'malformed_json_encoding_trailing_data_and_nested_input_refuse' (9984056) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Opaque
+
+---- multibyte_and_escaped_header_text_preserves_original_byte_spans stdout ----
+
+thread 'multibyte_and_escaped_header_text_preserves_original_byte_spans' (9984057) panicked at tests/evidence_reconstruction.rs:315:9:
+explicit panic
+
+---- non_chunk_events_cannot_smuggle_body_bytes stdout ----
+
+thread 'non_chunk_events_cannot_smuggle_body_bytes' (9984059) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Opaque
+
+---- opaque_and_unsupported_are_distinct_from_malformed_capture stdout ----
+
+thread 'opaque_and_unsupported_are_distinct_from_malformed_capture' (9984060) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Opaque
+
+---- recognized_header_requires_explicit_timestamp_even_when_unknown stdout ----
+
+thread 'recognized_header_requires_explicit_timestamp_even_when_unknown' (9984061) panicked at tests/evidence_reconstruction.rs:359:5:
+assertion failed: matches!(decode(&wire(&header.to_string(), b"")), Ok(Decoded::Capture(_)))
+
+---- recognized_shapes_reject_missing_extra_wrong_type_and_bad_integer_fields stdout ----
+
+thread 'recognized_shapes_reject_missing_extra_wrong_type_and_bad_integer_fields' (9984062) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Opaque
+
+
+failures:
+    all_truncated_header_prefixes_fail_without_panicking
+    bounded_header_body_and_total_before_materialization
+    current_production_recorder_event_forms_roundtrip_with_exact_bodies
+    duplicate_and_escaped_alias_keys_never_choose_a_winner
+    every_recognized_event_rejects_extra_fields_including_unit_variants
+    exact_spans_binary_body_and_u64_coordinates_are_not_rounded
+    identifiers_and_started_string_bounds_match_recorder
+    malformed_json_encoding_trailing_data_and_nested_input_refuse
+    multibyte_and_escaped_header_text_preserves_original_byte_spans
+    non_chunk_events_cannot_smuggle_body_bytes
+    opaque_and_unsupported_are_distinct_from_malformed_capture
+    recognized_header_requires_explicit_timestamp_even_when_unknown
+    recognized_shapes_reject_missing_extra_wrong_type_and_bad_integer_fields
+
+test result: FAILED. 2 passed; 13 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 2 tests
+test review_pa1_capture_projection_is_lossless_over_mutation_corpus ... FAILED
+test review_pa2_timestamp_distinction_and_unsupported_precedence ... FAILED
+
+failures:
+
+---- review_pa1_capture_projection_is_lossless_over_mutation_corpus stdout ----
+started	base	Opaque
+started	drop-top-attempt	Opaque
+started	set-top-attempt-0	Opaque
+started	set-top-attempt-1	Opaque
+started	set-top-attempt-2	Opaque
+started	set-top-attempt-3	Opaque
+started	set-top-attempt-4	Opaque
+started	set-top-attempt-5	Opaque
+started	set-top-attempt-6	Opaque
+started	set-top-attempt-7	Opaque
+started	set-top-attempt-8	Opaque
+started	set-top-attempt-9	Opaque
+started	set-top-attempt-10	Opaque
+started	set-top-attempt-11	Opaque
+started	set-top-attempt-12	Opaque
+started	drop-top-elapsed_micros	Opaque
+started	set-top-elapsed_micros-0	Opaque
+started	set-top-elapsed_micros-1	Opaque
+started	set-top-elapsed_micros-2	Opaque
+started	set-top-elapsed_micros-3	Opaque
+started	set-top-elapsed_micros-4	Opaque
+started	set-top-elapsed_micros-5	Opaque
+started	set-top-elapsed_micros-6	Opaque
+started	set-top-elapsed_micros-7	Opaque
+started	set-top-elapsed_micros-8	Opaque
+started	set-top-elapsed_micros-9	Opaque
+started	set-top-elapsed_micros-10	Opaque
+started	set-top-elapsed_micros-11	Opaque
+started	set-top-elapsed_micros-12	Opaque
+started	drop-top-event	Opaque
+started	drop-top-observed_at_unix_micros	Opaque
+started	set-top-observed_at_unix_micros-0	Opaque
+started	set-top-observed_at_unix_micros-1	Opaque
+started	set-top-observed_at_unix_micros-2	Opaque
+started	set-top-observed_at_unix_micros-3	Opaque
+started	set-top-observed_at_unix_micros-4	Opaque
+started	set-top-observed_at_unix_micros-5	Opaque
+started	set-top-observed_at_unix_micros-6	Opaque
+started	set-top-observed_at_unix_micros-7	Opaque
+started	set-top-observed_at_unix_micros-8	Opaque
+started	set-top-observed_at_unix_micros-9	Opaque
+started	set-top-observed_at_unix_micros-10	Opaque
+started	set-top-observed_at_unix_micros-11	Opaque
+started	set-top-observed_at_unix_micros-12	Opaque
+started	drop-top-observer	Opaque
+started	set-top-observer-0	Opaque
+started	set-top-observer-1	Opaque
+started	set-top-observer-2	Opaque
+started	set-top-observer-3	Opaque
+started	set-top-observer-4	Opaque
+started	set-top-observer-5	Opaque
+started	set-top-observer-6	Opaque
+started	set-top-observer-7	Opaque
+started	set-top-observer-8	Opaque
+started	set-top-observer-9	Opaque
+started	set-top-observer-10	Opaque
+started	set-top-observer-11	Opaque
+started	set-top-observer-12	Opaque
+started	drop-top-ordinal	Opaque
+started	set-top-ordinal-0	Opaque
+started	set-top-ordinal-1	Opaque
+started	set-top-ordinal-2	Opaque
+started	set-top-ordinal-3	Opaque
+started	set-top-ordinal-4	Opaque
+started	set-top-ordinal-5	Opaque
+started	set-top-ordinal-6	Opaque
+started	set-top-ordinal-7	Opaque
+started	set-top-ordinal-8	Opaque
+started	set-top-ordinal-9	Opaque
+started	set-top-ordinal-10	Opaque
+started	set-top-ordinal-11	Opaque
+started	set-top-ordinal-12	Opaque
+started	drop-top-unconfirmed_before	Opaque
+started	set-top-unconfirmed_before-0	Opaque
+started	set-top-unconfirmed_before-1	Opaque
+started	set-top-unconfirmed_before-2	Opaque
+started	set-top-unconfirmed_before-3	Opaque
+started	set-top-unconfirmed_before-4	Opaque
+started	set-top-unconfirmed_before-5	Opaque
+started	set-top-unconfirmed_before-6	Opaque
+started	set-top-unconfirmed_before-7	Opaque
+started	set-top-unconfirmed_before-8	Opaque
+started	set-top-unconfirmed_before-9	Opaque
+started	set-top-unconfirmed_before-10	Opaque
+started	set-top-unconfirmed_before-11	Opaque
+started	set-top-unconfirmed_before-12	Opaque
+started	drop-top-version	Opaque
+started	set-top-version-0	Opaque
+started	set-top-version-1	Opaque
+started	set-top-version-2	Opaque
+started	set-top-version-3	Opaque
+started	set-top-version-4	Opaque
+started	set-top-version-5	Opaque
+started	set-top-version-6	Opaque
+started	set-top-version-7	Opaque
+started	set-top-version-8	Opaque
+started	set-top-version-9	Opaque
+started	set-top-version-10	Opaque
+started	set-top-version-11	Opaque
+started	set-top-version-12	Opaque
+started	drop-event-method	Opaque
+started	set-event-method-0	Opaque
+started	set-event-method-1	Opaque
+started	set-event-method-2	Opaque
+started	set-event-method-3	Opaque
+started	set-event-method-4	Opaque
+started	set-event-method-5	Opaque
+started	set-event-method-6	Opaque
+started	set-event-method-7	Opaque
+started	set-event-method-8	Opaque
+started	set-event-method-9	Opaque
+started	set-event-method-10	Opaque
+started	set-event-method-11	Opaque
+started	set-event-method-12	Opaque
+started	drop-event-route	Opaque
+started	set-event-route-0	Opaque
+started	set-event-route-1	Opaque
+started	set-event-route-2	Opaque
+started	set-event-route-3	Opaque
+started	set-event-route-4	Opaque
+started	set-event-route-5	Opaque
+started	set-event-route-6	Opaque
+started	set-event-route-7	Opaque
+started	set-event-route-8	Opaque
+started	set-event-route-9	Opaque
+started	set-event-route-10	Opaque
+started	set-event-route-11	Opaque
+started	set-event-route-12	Opaque
+started	extra-top-0	Opaque
+started	extra-event-0	Opaque
+started	extra-top-1	Opaque
+started	extra-event-1	Opaque
+started	extra-top-2	Opaque
+started	extra-event-2	Opaque
+request-chunk	base	Opaque
+request-chunk	drop-top-attempt	Opaque
+request-chunk	set-top-attempt-0	Opaque
+request-chunk	set-top-attempt-1	Opaque
+request-chunk	set-top-attempt-2	Opaque
+request-chunk	set-top-attempt-3	Opaque
+request-chunk	set-top-attempt-4	Opaque
+request-chunk	set-top-attempt-5	Opaque
+request-chunk	set-top-attempt-6	Opaque
+request-chunk	set-top-attempt-7	Opaque
+request-chunk	set-top-attempt-8	Opaque
+request-chunk	set-top-attempt-9	Opaque
+request-chunk	set-top-attempt-10	Opaque
+request-chunk	set-top-attempt-11	Opaque
+request-chunk	set-top-attempt-12	Opaque
+request-chunk	drop-top-elapsed_micros	Opaque
+request-chunk	set-top-elapsed_micros-0	Opaque
+request-chunk	set-top-elapsed_micros-1	Opaque
+request-chunk	set-top-elapsed_micros-2	Opaque
+request-chunk	set-top-elapsed_micros-3	Opaque
+request-chunk	set-top-elapsed_micros-4	Opaque
+request-chunk	set-top-elapsed_micros-5	Opaque
+request-chunk	set-top-elapsed_micros-6	Opaque
+request-chunk	set-top-elapsed_micros-7	Opaque
+request-chunk	set-top-elapsed_micros-8	Opaque
+request-chunk	set-top-elapsed_micros-9	Opaque
+request-chunk	set-top-elapsed_micros-10	Opaque
+request-chunk	set-top-elapsed_micros-11	Opaque
+request-chunk	set-top-elapsed_micros-12	Opaque
+request-chunk	drop-top-event	Opaque
+request-chunk	drop-top-observed_at_unix_micros	Opaque
+request-chunk	set-top-observed_at_unix_micros-0	Opaque
+request-chunk	set-top-observed_at_unix_micros-1	Opaque
+request-chunk	set-top-observed_at_unix_micros-2	Opaque
+request-chunk	set-top-observed_at_unix_micros-3	Opaque
+request-chunk	set-top-observed_at_unix_micros-4	Opaque
+request-chunk	set-top-observed_at_unix_micros-5	Opaque
+request-chunk	set-top-observed_at_unix_micros-6	Opaque
+request-chunk	set-top-observed_at_unix_micros-7	Opaque
+request-chunk	set-top-observed_at_unix_micros-8	Opaque
+request-chunk	set-top-observed_at_unix_micros-9	Opaque
+request-chunk	set-top-observed_at_unix_micros-10	Opaque
+request-chunk	set-top-observed_at_unix_micros-11	Opaque
+request-chunk	set-top-observed_at_unix_micros-12	Opaque
+request-chunk	drop-top-observer	Opaque
+request-chunk	set-top-observer-0	Opaque
+request-chunk	set-top-observer-1	Opaque
+request-chunk	set-top-observer-2	Opaque
+request-chunk	set-top-observer-3	Opaque
+request-chunk	set-top-observer-4	Opaque
+request-chunk	set-top-observer-5	Opaque
+request-chunk	set-top-observer-6	Opaque
+request-chunk	set-top-observer-7	Opaque
+request-chunk	set-top-observer-8	Opaque
+request-chunk	set-top-observer-9	Opaque
+request-chunk	set-top-observer-10	Opaque
+request-chunk	set-top-observer-11	Opaque
+request-chunk	set-top-observer-12	Opaque
+request-chunk	drop-top-ordinal	Opaque
+request-chunk	set-top-ordinal-0	Opaque
+request-chunk	set-top-ordinal-1	Opaque
+request-chunk	set-top-ordinal-2	Opaque
+request-chunk	set-top-ordinal-3	Opaque
+request-chunk	set-top-ordinal-4	Opaque
+request-chunk	set-top-ordinal-5	Opaque
+request-chunk	set-top-ordinal-6	Opaque
+request-chunk	set-top-ordinal-7	Opaque
+request-chunk	set-top-ordinal-8	Opaque
+request-chunk	set-top-ordinal-9	Opaque
+request-chunk	set-top-ordinal-10	Opaque
+request-chunk	set-top-ordinal-11	Opaque
+request-chunk	set-top-ordinal-12	Opaque
+request-chunk	drop-top-unconfirmed_before	Opaque
+request-chunk	set-top-unconfirmed_before-0	Opaque
+request-chunk	set-top-unconfirmed_before-1	Opaque
+request-chunk	set-top-unconfirmed_before-2	Opaque
+request-chunk	set-top-unconfirmed_before-3	Opaque
+request-chunk	set-top-unconfirmed_before-4	Opaque
+request-chunk	set-top-unconfirmed_before-5	Opaque
+request-chunk	set-top-unconfirmed_before-6	Opaque
+request-chunk	set-top-unconfirmed_before-7	Opaque
+request-chunk	set-top-unconfirmed_before-8	Opaque
+request-chunk	set-top-unconfirmed_before-9	Opaque
+request-chunk	set-top-unconfirmed_before-10	Opaque
+request-chunk	set-top-unconfirmed_before-11	Opaque
+request-chunk	set-top-unconfirmed_before-12	Opaque
+request-chunk	drop-top-version	Opaque
+request-chunk	set-top-version-0	Opaque
+request-chunk	set-top-version-1	Opaque
+request-chunk	set-top-version-2	Opaque
+request-chunk	set-top-version-3	Opaque
+request-chunk	set-top-version-4	Opaque
+request-chunk	set-top-version-5	Opaque
+request-chunk	set-top-version-6	Opaque
+request-chunk	set-top-version-7	Opaque
+request-chunk	set-top-version-8	Opaque
+request-chunk	set-top-version-9	Opaque
+request-chunk	set-top-version-10	Opaque
+request-chunk	set-top-version-11	Opaque
+request-chunk	set-top-version-12	Opaque
+request-chunk	drop-event-offset	Opaque
+request-chunk	set-event-offset-0	Opaque
+request-chunk	set-event-offset-1	Opaque
+request-chunk	set-event-offset-2	Opaque
+request-chunk	set-event-offset-3	Opaque
+request-chunk	set-event-offset-4	Opaque
+request-chunk	set-event-offset-5	Opaque
+request-chunk	set-event-offset-6	Opaque
+request-chunk	set-event-offset-7	Opaque
+request-chunk	set-event-offset-8	Opaque
+request-chunk	set-event-offset-9	Opaque
+request-chunk	set-event-offset-10	Opaque
+request-chunk	set-event-offset-11	Opaque
+request-chunk	set-event-offset-12	Opaque
+request-chunk	extra-top-0	Opaque
+request-chunk	extra-event-0	Opaque
+request-chunk	extra-top-1	Opaque
+request-chunk	extra-event-1	Opaque
+request-chunk	extra-top-2	Opaque
+request-chunk	extra-event-2	Opaque
+request-end	base	Opaque
+request-end	drop-top-attempt	Opaque
+request-end	set-top-attempt-0	Opaque
+request-end	set-top-attempt-1	Opaque
+request-end	set-top-attempt-2	Opaque
+request-end	set-top-attempt-3	Opaque
+request-end	set-top-attempt-4	Opaque
+request-end	set-top-attempt-5	Opaque
+request-end	set-top-attempt-6	Opaque
+request-end	set-top-attempt-7	Opaque
+request-end	set-top-attempt-8	Opaque
+request-end	set-top-attempt-9	Opaque
+request-end	set-top-attempt-10	Opaque
+request-end	set-top-attempt-11	Opaque
+request-end	set-top-attempt-12	Opaque
+request-end	drop-top-elapsed_micros	Opaque
+request-end	set-top-elapsed_micros-0	Opaque
+request-end	set-top-elapsed_micros-1	Opaque
+request-end	set-top-elapsed_micros-2	Opaque
+request-end	set-top-elapsed_micros-3	Opaque
+request-end	set-top-elapsed_micros-4	Opaque
+request-end	set-top-elapsed_micros-5	Opaque
+request-end	set-top-elapsed_micros-6	Opaque
+request-end	set-top-elapsed_micros-7	Opaque
+request-end	set-top-elapsed_micros-8	Opaque
+request-end	set-top-elapsed_micros-9	Opaque
+request-end	set-top-elapsed_micros-10	Opaque
+request-end	set-top-elapsed_micros-11	Opaque
+request-end	set-top-elapsed_micros-12	Opaque
+request-end	drop-top-event	Opaque
+request-end	drop-top-observed_at_unix_micros	Opaque
+request-end	set-top-observed_at_unix_micros-0	Opaque
+request-end	set-top-observed_at_unix_micros-1	Opaque
+request-end	set-top-observed_at_unix_micros-2	Opaque
+request-end	set-top-observed_at_unix_micros-3	Opaque
+request-end	set-top-observed_at_unix_micros-4	Opaque
+request-end	set-top-observed_at_unix_micros-5	Opaque
+request-end	set-top-observed_at_unix_micros-6	Opaque
+request-end	set-top-observed_at_unix_micros-7	Opaque
+request-end	set-top-observed_at_unix_micros-8	Opaque
+request-end	set-top-observed_at_unix_micros-9	Opaque
+request-end	set-top-observed_at_unix_micros-10	Opaque
+request-end	set-top-observed_at_unix_micros-11	Opaque
+request-end	set-top-observed_at_unix_micros-12	Opaque
+request-end	drop-top-observer	Opaque
+request-end	set-top-observer-0	Opaque
+request-end	set-top-observer-1	Opaque
+request-end	set-top-observer-2	Opaque
+request-end	set-top-observer-3	Opaque
+request-end	set-top-observer-4	Opaque
+request-end	set-top-observer-5	Opaque
+request-end	set-top-observer-6	Opaque
+request-end	set-top-observer-7	Opaque
+request-end	set-top-observer-8	Opaque
+request-end	set-top-observer-9	Opaque
+request-end	set-top-observer-10	Opaque
+request-end	set-top-observer-11	Opaque
+request-end	set-top-observer-12	Opaque
+request-end	drop-top-ordinal	Opaque
+request-end	set-top-ordinal-0	Opaque
+request-end	set-top-ordinal-1	Opaque
+request-end	set-top-ordinal-2	Opaque
+request-end	set-top-ordinal-3	Opaque
+request-end	set-top-ordinal-4	Opaque
+request-end	set-top-ordinal-5	Opaque
+request-end	set-top-ordinal-6	Opaque
+request-end	set-top-ordinal-7	Opaque
+request-end	set-top-ordinal-8	Opaque
+request-end	set-top-ordinal-9	Opaque
+request-end	set-top-ordinal-10	Opaque
+request-end	set-top-ordinal-11	Opaque
+request-end	set-top-ordinal-12	Opaque
+request-end	drop-top-unconfirmed_before	Opaque
+request-end	set-top-unconfirmed_before-0	Opaque
+request-end	set-top-unconfirmed_before-1	Opaque
+request-end	set-top-unconfirmed_before-2	Opaque
+request-end	set-top-unconfirmed_before-3	Opaque
+request-end	set-top-unconfirmed_before-4	Opaque
+request-end	set-top-unconfirmed_before-5	Opaque
+request-end	set-top-unconfirmed_before-6	Opaque
+request-end	set-top-unconfirmed_before-7	Opaque
+request-end	set-top-unconfirmed_before-8	Opaque
+request-end	set-top-unconfirmed_before-9	Opaque
+request-end	set-top-unconfirmed_before-10	Opaque
+request-end	set-top-unconfirmed_before-11	Opaque
+request-end	set-top-unconfirmed_before-12	Opaque
+request-end	drop-top-version	Opaque
+request-end	set-top-version-0	Opaque
+request-end	set-top-version-1	Opaque
+request-end	set-top-version-2	Opaque
+request-end	set-top-version-3	Opaque
+request-end	set-top-version-4	Opaque
+request-end	set-top-version-5	Opaque
+request-end	set-top-version-6	Opaque
+request-end	set-top-version-7	Opaque
+request-end	set-top-version-8	Opaque
+request-end	set-top-version-9	Opaque
+request-end	set-top-version-10	Opaque
+request-end	set-top-version-11	Opaque
+request-end	set-top-version-12	Opaque
+request-end	drop-event-bytes	Opaque
+request-end	set-event-bytes-0	Opaque
+request-end	set-event-bytes-1	Opaque
+request-end	set-event-bytes-2	Opaque
+request-end	set-event-bytes-3	Opaque
+request-end	set-event-bytes-4	Opaque
+request-end	set-event-bytes-5	Opaque
+request-end	set-event-bytes-6	Opaque
+request-end	set-event-bytes-7	Opaque
+request-end	set-event-bytes-8	Opaque
+request-end	set-event-bytes-9	Opaque
+request-end	set-event-bytes-10	Opaque
+request-end	set-event-bytes-11	Opaque
+request-end	set-event-bytes-12	Opaque
+request-end	extra-top-0	Opaque
+request-end	extra-event-0	Opaque
+request-end	extra-top-1	Opaque
+request-end	extra-event-1	Opaque
+request-end	extra-top-2	Opaque
+request-end	extra-event-2	Opaque
+forwarding-intent	base	Opaque
+forwarding-intent	drop-top-attempt	Opaque
+forwarding-intent	set-top-attempt-0	Opaque
+forwarding-intent	set-top-attempt-1	Opaque
+forwarding-intent	set-top-attempt-2	Opaque
+forwarding-intent	set-top-attempt-3	Opaque
+forwarding-intent	set-top-attempt-4	Opaque
+forwarding-intent	set-top-attempt-5	Opaque
+forwarding-intent	set-top-attempt-6	Opaque
+forwarding-intent	set-top-attempt-7	Opaque
+forwarding-intent	set-top-attempt-8	Opaque
+forwarding-intent	set-top-attempt-9	Opaque
+forwarding-intent	set-top-attempt-10	Opaque
+forwarding-intent	set-top-attempt-11	Opaque
+forwarding-intent	set-top-attempt-12	Opaque
+forwarding-intent	drop-top-elapsed_micros	Opaque
+forwarding-intent	set-top-elapsed_micros-0	Opaque
+forwarding-intent	set-top-elapsed_micros-1	Opaque
+forwarding-intent	set-top-elapsed_micros-2	Opaque
+forwarding-intent	set-top-elapsed_micros-3	Opaque
+forwarding-intent	set-top-elapsed_micros-4	Opaque
+forwarding-intent	set-top-elapsed_micros-5	Opaque
+forwarding-intent	set-top-elapsed_micros-6	Opaque
+forwarding-intent	set-top-elapsed_micros-7	Opaque
+forwarding-intent	set-top-elapsed_micros-8	Opaque
+forwarding-intent	set-top-elapsed_micros-9	Opaque
+forwarding-intent	set-top-elapsed_micros-10	Opaque
+forwarding-intent	set-top-elapsed_micros-11	Opaque
+forwarding-intent	set-top-elapsed_micros-12	Opaque
+forwarding-intent	drop-top-event	Opaque
+forwarding-intent	drop-top-observed_at_unix_micros	Opaque
+forwarding-intent	set-top-observed_at_unix_micros-0	Opaque
+forwarding-intent	set-top-observed_at_unix_micros-1	Opaque
+forwarding-intent	set-top-observed_at_unix_micros-2	Opaque
+forwarding-intent	set-top-observed_at_unix_micros-3	Opaque
+forwarding-intent	set-top-observed_at_unix_micros-4	Opaque
+forwarding-intent	set-top-observed_at_unix_micros-5	Opaque
+forwarding-intent	set-top-observed_at_unix_micros-6	Opaque
+forwarding-intent	set-top-observed_at_unix_micros-7	Opaque
+forwarding-intent	set-top-observed_at_unix_micros-8	Opaque
+forwarding-intent	set-top-observed_at_unix_micros-9	Opaque
+forwarding-intent	set-top-observed_at_unix_micros-10	Opaque
+forwarding-intent	set-top-observed_at_unix_micros-11	Opaque
+forwarding-intent	set-top-observed_at_unix_micros-12	Opaque
+forwarding-intent	drop-top-observer	Opaque
+forwarding-intent	set-top-observer-0	Opaque
+forwarding-intent	set-top-observer-1	Opaque
+forwarding-intent	set-top-observer-2	Opaque
+forwarding-intent	set-top-observer-3	Opaque
+forwarding-intent	set-top-observer-4	Opaque
+forwarding-intent	set-top-observer-5	Opaque
+forwarding-intent	set-top-observer-6	Opaque
+forwarding-intent	set-top-observer-7	Opaque
+forwarding-intent	set-top-observer-8	Opaque
+forwarding-intent	set-top-observer-9	Opaque
+forwarding-intent	set-top-observer-10	Opaque
+forwarding-intent	set-top-observer-11	Opaque
+forwarding-intent	set-top-observer-12	Opaque
+forwarding-intent	drop-top-ordinal	Opaque
+forwarding-intent	set-top-ordinal-0	Opaque
+forwarding-intent	set-top-ordinal-1	Opaque
+forwarding-intent	set-top-ordinal-2	Opaque
+forwarding-intent	set-top-ordinal-3	Opaque
+forwarding-intent	set-top-ordinal-4	Opaque
+forwarding-intent	set-top-ordinal-5	Opaque
+forwarding-intent	set-top-ordinal-6	Opaque
+forwarding-intent	set-top-ordinal-7	Opaque
+forwarding-intent	set-top-ordinal-8	Opaque
+forwarding-intent	set-top-ordinal-9	Opaque
+forwarding-intent	set-top-ordinal-10	Opaque
+forwarding-intent	set-top-ordinal-11	Opaque
+forwarding-intent	set-top-ordinal-12	Opaque
+forwarding-intent	drop-top-unconfirmed_before	Opaque
+forwarding-intent	set-top-unconfirmed_before-0	Opaque
+forwarding-intent	set-top-unconfirmed_before-1	Opaque
+forwarding-intent	set-top-unconfirmed_before-2	Opaque
+forwarding-intent	set-top-unconfirmed_before-3	Opaque
+forwarding-intent	set-top-unconfirmed_before-4	Opaque
+forwarding-intent	set-top-unconfirmed_before-5	Opaque
+forwarding-intent	set-top-unconfirmed_before-6	Opaque
+forwarding-intent	set-top-unconfirmed_before-7	Opaque
+forwarding-intent	set-top-unconfirmed_before-8	Opaque
+forwarding-intent	set-top-unconfirmed_before-9	Opaque
+forwarding-intent	set-top-unconfirmed_before-10	Opaque
+forwarding-intent	set-top-unconfirmed_before-11	Opaque
+forwarding-intent	set-top-unconfirmed_before-12	Opaque
+forwarding-intent	drop-top-version	Opaque
+forwarding-intent	set-top-version-0	Opaque
+forwarding-intent	set-top-version-1	Opaque
+forwarding-intent	set-top-version-2	Opaque
+forwarding-intent	set-top-version-3	Opaque
+forwarding-intent	set-top-version-4	Opaque
+forwarding-intent	set-top-version-5	Opaque
+forwarding-intent	set-top-version-6	Opaque
+forwarding-intent	set-top-version-7	Opaque
+forwarding-intent	set-top-version-8	Opaque
+forwarding-intent	set-top-version-9	Opaque
+forwarding-intent	set-top-version-10	Opaque
+forwarding-intent	set-top-version-11	Opaque
+forwarding-intent	set-top-version-12	Opaque
+forwarding-intent	extra-top-0	Opaque
+forwarding-intent	extra-event-0	Opaque
+forwarding-intent	extra-top-1	Opaque
+forwarding-intent	extra-event-1	Opaque
+forwarding-intent	extra-top-2	Opaque
+forwarding-intent	extra-event-2	Opaque
+transport-link	base	Opaque
+transport-link	drop-top-attempt	Opaque
+transport-link	set-top-attempt-0	Opaque
+transport-link	set-top-attempt-1	Opaque
+transport-link	set-top-attempt-2	Opaque
+transport-link	set-top-attempt-3	Opaque
+transport-link	set-top-attempt-4	Opaque
+transport-link	set-top-attempt-5	Opaque
+transport-link	set-top-attempt-6	Opaque
+transport-link	set-top-attempt-7	Opaque
+transport-link	set-top-attempt-8	Opaque
+transport-link	set-top-attempt-9	Opaque
+transport-link	set-top-attempt-10	Opaque
+transport-link	set-top-attempt-11	Opaque
+transport-link	set-top-attempt-12	Opaque
+transport-link	drop-top-elapsed_micros	Opaque
+transport-link	set-top-elapsed_micros-0	Opaque
+transport-link	set-top-elapsed_micros-1	Opaque
+transport-link	set-top-elapsed_micros-2	Opaque
+transport-link	set-top-elapsed_micros-3	Opaque
+transport-link	set-top-elapsed_micros-4	Opaque
+transport-link	set-top-elapsed_micros-5	Opaque
+transport-link	set-top-elapsed_micros-6	Opaque
+transport-link	set-top-elapsed_micros-7	Opaque
+transport-link	set-top-elapsed_micros-8	Opaque
+transport-link	set-top-elapsed_micros-9	Opaque
+transport-link	set-top-elapsed_micros-10	Opaque
+transport-link	set-top-elapsed_micros-11	Opaque
+transport-link	set-top-elapsed_micros-12	Opaque
+transport-link	drop-top-event	Opaque
+transport-link	drop-top-observed_at_unix_micros	Opaque
+transport-link	set-top-observed_at_unix_micros-0	Opaque
+transport-link	set-top-observed_at_unix_micros-1	Opaque
+transport-link	set-top-observed_at_unix_micros-2	Opaque
+transport-link	set-top-observed_at_unix_micros-3	Opaque
+transport-link	set-top-observed_at_unix_micros-4	Opaque
+transport-link	set-top-observed_at_unix_micros-5	Opaque
+transport-link	set-top-observed_at_unix_micros-6	Opaque
+transport-link	set-top-observed_at_unix_micros-7	Opaque
+transport-link	set-top-observed_at_unix_micros-8	Opaque
+transport-link	set-top-observed_at_unix_micros-9	Opaque
+transport-link	set-top-observed_at_unix_micros-10	Opaque
+transport-link	set-top-observed_at_unix_micros-11	Opaque
+transport-link	set-top-observed_at_unix_micros-12	Opaque
+transport-link	drop-top-observer	Opaque
+transport-link	set-top-observer-0	Opaque
+transport-link	set-top-observer-1	Opaque
+transport-link	set-top-observer-2	Opaque
+transport-link	set-top-observer-3	Opaque
+transport-link	set-top-observer-4	Opaque
+transport-link	set-top-observer-5	Opaque
+transport-link	set-top-observer-6	Opaque
+transport-link	set-top-observer-7	Opaque
+transport-link	set-top-observer-8	Opaque
+transport-link	set-top-observer-9	Opaque
+transport-link	set-top-observer-10	Opaque
+transport-link	set-top-observer-11	Opaque
+transport-link	set-top-observer-12	Opaque
+transport-link	drop-top-ordinal	Opaque
+transport-link	set-top-ordinal-0	Opaque
+transport-link	set-top-ordinal-1	Opaque
+transport-link	set-top-ordinal-2	Opaque
+transport-link	set-top-ordinal-3	Opaque
+transport-link	set-top-ordinal-4	Opaque
+transport-link	set-top-ordinal-5	Opaque
+transport-link	set-top-ordinal-6	Opaque
+transport-link	set-top-ordinal-7	Opaque
+transport-link	set-top-ordinal-8	Opaque
+transport-link	set-top-ordinal-9	Opaque
+transport-link	set-top-ordinal-10	Opaque
+transport-link	set-top-ordinal-11	Opaque
+transport-link	set-top-ordinal-12	Opaque
+transport-link	drop-top-unconfirmed_before	Opaque
+transport-link	set-top-unconfirmed_before-0	Opaque
+transport-link	set-top-unconfirmed_before-1	Opaque
+transport-link	set-top-unconfirmed_before-2	Opaque
+transport-link	set-top-unconfirmed_before-3	Opaque
+transport-link	set-top-unconfirmed_before-4	Opaque
+transport-link	set-top-unconfirmed_before-5	Opaque
+transport-link	set-top-unconfirmed_before-6	Opaque
+transport-link	set-top-unconfirmed_before-7	Opaque
+transport-link	set-top-unconfirmed_before-8	Opaque
+transport-link	set-top-unconfirmed_before-9	Opaque
+transport-link	set-top-unconfirmed_before-10	Opaque
+transport-link	set-top-unconfirmed_before-11	Opaque
+transport-link	set-top-unconfirmed_before-12	Opaque
+transport-link	drop-top-version	Opaque
+transport-link	set-top-version-0	Opaque
+transport-link	set-top-version-1	Opaque
+transport-link	set-top-version-2	Opaque
+transport-link	set-top-version-3	Opaque
+transport-link	set-top-version-4	Opaque
+transport-link	set-top-version-5	Opaque
+transport-link	set-top-version-6	Opaque
+transport-link	set-top-version-7	Opaque
+transport-link	set-top-version-8	Opaque
+transport-link	set-top-version-9	Opaque
+transport-link	set-top-version-10	Opaque
+transport-link	set-top-version-11	Opaque
+transport-link	set-top-version-12	Opaque
+transport-link	drop-event-exchange	Opaque
+transport-link	set-event-exchange-0	Opaque
+transport-link	set-event-exchange-1	Opaque
+transport-link	set-event-exchange-2	Opaque
+transport-link	set-event-exchange-3	Opaque
+transport-link	set-event-exchange-4	Opaque
+transport-link	set-event-exchange-5	Opaque
+transport-link	set-event-exchange-6	Opaque
+transport-link	set-event-exchange-7	Opaque
+transport-link	set-event-exchange-8	Opaque
+transport-link	set-event-exchange-9	Opaque
+transport-link	set-event-exchange-10	Opaque
+transport-link	set-event-exchange-11	Opaque
+transport-link	set-event-exchange-12	Opaque
+transport-link	extra-top-0	Opaque
+transport-link	extra-event-0	Opaque
+transport-link	extra-top-1	Opaque
+transport-link	extra-event-1	Opaque
+transport-link	extra-top-2	Opaque
+transport-link	extra-event-2	Opaque
+http-metadata-chunk	base	Opaque
+http-metadata-chunk	drop-top-attempt	Opaque
+http-metadata-chunk	set-top-attempt-0	Opaque
+http-metadata-chunk	set-top-attempt-1	Opaque
+http-metadata-chunk	set-top-attempt-2	Opaque
+http-metadata-chunk	set-top-attempt-3	Opaque
+http-metadata-chunk	set-top-attempt-4	Opaque
+http-metadata-chunk	set-top-attempt-5	Opaque
+http-metadata-chunk	set-top-attempt-6	Opaque
+http-metadata-chunk	set-top-attempt-7	Opaque
+http-metadata-chunk	set-top-attempt-8	Opaque
+http-metadata-chunk	set-top-attempt-9	Opaque
+http-metadata-chunk	set-top-attempt-10	Opaque
+http-metadata-chunk	set-top-attempt-11	Opaque
+http-metadata-chunk	set-top-attempt-12	Opaque
+http-metadata-chunk	drop-top-elapsed_micros	Opaque
+http-metadata-chunk	set-top-elapsed_micros-0	Opaque
+http-metadata-chunk	set-top-elapsed_micros-1	Opaque
+http-metadata-chunk	set-top-elapsed_micros-2	Opaque
+http-metadata-chunk	set-top-elapsed_micros-3	Opaque
+http-metadata-chunk	set-top-elapsed_micros-4	Opaque
+http-metadata-chunk	set-top-elapsed_micros-5	Opaque
+http-metadata-chunk	set-top-elapsed_micros-6	Opaque
+http-metadata-chunk	set-top-elapsed_micros-7	Opaque
+http-metadata-chunk	set-top-elapsed_micros-8	Opaque
+http-metadata-chunk	set-top-elapsed_micros-9	Opaque
+http-metadata-chunk	set-top-elapsed_micros-10	Opaque
+http-metadata-chunk	set-top-elapsed_micros-11	Opaque
+http-metadata-chunk	set-top-elapsed_micros-12	Opaque
+http-metadata-chunk	drop-top-event	Opaque
+http-metadata-chunk	drop-top-observed_at_unix_micros	Opaque
+http-metadata-chunk	set-top-observed_at_unix_micros-0	Opaque
+http-metadata-chunk	set-top-observed_at_unix_micros-1	Opaque
+http-metadata-chunk	set-top-observed_at_unix_micros-2	Opaque
+http-metadata-chunk	set-top-observed_at_unix_micros-3	Opaque
+http-metadata-chunk	set-top-observed_at_unix_micros-4	Opaque
+http-metadata-chunk	set-top-observed_at_unix_micros-5	Opaque
+http-metadata-chunk	set-top-observed_at_unix_micros-6	Opaque
+http-metadata-chunk	set-top-observed_at_unix_micros-7	Opaque
+http-metadata-chunk	set-top-observed_at_unix_micros-8	Opaque
+http-metadata-chunk	set-top-observed_at_unix_micros-9	Opaque
+http-metadata-chunk	set-top-observed_at_unix_micros-10	Opaque
+http-metadata-chunk	set-top-observed_at_unix_micros-11	Opaque
+http-metadata-chunk	set-top-observed_at_unix_micros-12	Opaque
+http-metadata-chunk	drop-top-observer	Opaque
+http-metadata-chunk	set-top-observer-0	Opaque
+http-metadata-chunk	set-top-observer-1	Opaque
+http-metadata-chunk	set-top-observer-2	Opaque
+http-metadata-chunk	set-top-observer-3	Opaque
+http-metadata-chunk	set-top-observer-4	Opaque
+http-metadata-chunk	set-top-observer-5	Opaque
+http-metadata-chunk	set-top-observer-6	Opaque
+http-metadata-chunk	set-top-observer-7	Opaque
+http-metadata-chunk	set-top-observer-8	Opaque
+http-metadata-chunk	set-top-observer-9	Opaque
+http-metadata-chunk	set-top-observer-10	Opaque
+http-metadata-chunk	set-top-observer-11	Opaque
+http-metadata-chunk	set-top-observer-12	Opaque
+http-metadata-chunk	drop-top-ordinal	Opaque
+http-metadata-chunk	set-top-ordinal-0	Opaque
+http-metadata-chunk	set-top-ordinal-1	Opaque
+http-metadata-chunk	set-top-ordinal-2	Opaque
+http-metadata-chunk	set-top-ordinal-3	Opaque
+http-metadata-chunk	set-top-ordinal-4	Opaque
+http-metadata-chunk	set-top-ordinal-5	Opaque
+http-metadata-chunk	set-top-ordinal-6	Opaque
+http-metadata-chunk	set-top-ordinal-7	Opaque
+http-metadata-chunk	set-top-ordinal-8	Opaque
+http-metadata-chunk	set-top-ordinal-9	Opaque
+http-metadata-chunk	set-top-ordinal-10	Opaque
+http-metadata-chunk	set-top-ordinal-11	Opaque
+http-metadata-chunk	set-top-ordinal-12	Opaque
+http-metadata-chunk	drop-top-unconfirmed_before	Opaque
+http-metadata-chunk	set-top-unconfirmed_before-0	Opaque
+http-metadata-chunk	set-top-unconfirmed_before-1	Opaque
+http-metadata-chunk	set-top-unconfirmed_before-2	Opaque
+http-metadata-chunk	set-top-unconfirmed_before-3	Opaque
+http-metadata-chunk	set-top-unconfirmed_before-4	Opaque
+http-metadata-chunk	set-top-unconfirmed_before-5	Opaque
+http-metadata-chunk	set-top-unconfirmed_before-6	Opaque
+http-metadata-chunk	set-top-unconfirmed_before-7	Opaque
+http-metadata-chunk	set-top-unconfirmed_before-8	Opaque
+http-metadata-chunk	set-top-unconfirmed_before-9	Opaque
+http-metadata-chunk	set-top-unconfirmed_before-10	Opaque
+http-metadata-chunk	set-top-unconfirmed_before-11	Opaque
+http-metadata-chunk	set-top-unconfirmed_before-12	Opaque
+http-metadata-chunk	drop-top-version	Opaque
+http-metadata-chunk	set-top-version-0	Opaque
+http-metadata-chunk	set-top-version-1	Opaque
+http-metadata-chunk	set-top-version-2	Opaque
+http-metadata-chunk	set-top-version-3	Opaque
+http-metadata-chunk	set-top-version-4	Opaque
+http-metadata-chunk	set-top-version-5	Opaque
+http-metadata-chunk	set-top-version-6	Opaque
+http-metadata-chunk	set-top-version-7	Opaque
+http-metadata-chunk	set-top-version-8	Opaque
+http-metadata-chunk	set-top-version-9	Opaque
+http-metadata-chunk	set-top-version-10	Opaque
+http-metadata-chunk	set-top-version-11	Opaque
+http-metadata-chunk	set-top-version-12	Opaque
+http-metadata-chunk	drop-event-direction	Opaque
+http-metadata-chunk	set-event-direction-0	Opaque
+http-metadata-chunk	set-event-direction-1	Opaque
+http-metadata-chunk	set-event-direction-2	Opaque
+http-metadata-chunk	set-event-direction-3	Opaque
+http-metadata-chunk	set-event-direction-4	Opaque
+http-metadata-chunk	set-event-direction-5	Opaque
+http-metadata-chunk	set-event-direction-6	Opaque
+http-metadata-chunk	set-event-direction-7	Opaque
+http-metadata-chunk	set-event-direction-8	Opaque
+http-metadata-chunk	set-event-direction-9	Opaque
+http-metadata-chunk	set-event-direction-10	Opaque
+http-metadata-chunk	set-event-direction-11	Opaque
+http-metadata-chunk	set-event-direction-12	Opaque
+http-metadata-chunk	drop-event-offset	Opaque
+http-metadata-chunk	set-event-offset-0	Opaque
+http-metadata-chunk	set-event-offset-1	Opaque
+http-metadata-chunk	set-event-offset-2	Opaque
+http-metadata-chunk	set-event-offset-3	Opaque
+http-metadata-chunk	set-event-offset-4	Opaque
+http-metadata-chunk	set-event-offset-5	Opaque
+http-metadata-chunk	set-event-offset-6	Opaque
+http-metadata-chunk	set-event-offset-7	Opaque
+http-metadata-chunk	set-event-offset-8	Opaque
+http-metadata-chunk	set-event-offset-9	Opaque
+http-metadata-chunk	set-event-offset-10	Opaque
+http-metadata-chunk	set-event-offset-11	Opaque
+http-metadata-chunk	set-event-offset-12	Opaque
+http-metadata-chunk	drop-event-total	Opaque
+http-metadata-chunk	set-event-total-0	Opaque
+http-metadata-chunk	set-event-total-1	Opaque
+http-metadata-chunk	set-event-total-2	Opaque
+http-metadata-chunk	set-event-total-3	Opaque
+http-metadata-chunk	set-event-total-4	Opaque
+http-metadata-chunk	set-event-total-5	Opaque
+http-metadata-chunk	set-event-total-6	Opaque
+http-metadata-chunk	set-event-total-7	Opaque
+http-metadata-chunk	set-event-total-8	Opaque
+http-metadata-chunk	set-event-total-9	Opaque
+http-metadata-chunk	set-event-total-10	Opaque
+http-metadata-chunk	set-event-total-11	Opaque
+http-metadata-chunk	set-event-total-12	Opaque
+http-metadata-chunk	extra-top-0	Opaque
+http-metadata-chunk	extra-event-0	Opaque
+http-metadata-chunk	extra-top-1	Opaque
+http-metadata-chunk	extra-event-1	Opaque
+http-metadata-chunk	extra-top-2	Opaque
+http-metadata-chunk	extra-event-2	Opaque
+http-metadata	base	Opaque
+http-metadata	drop-top-attempt	Opaque
+http-metadata	set-top-attempt-0	Opaque
+http-metadata	set-top-attempt-1	Opaque
+http-metadata	set-top-attempt-2	Opaque
+http-metadata	set-top-attempt-3	Opaque
+http-metadata	set-top-attempt-4	Opaque
+http-metadata	set-top-attempt-5	Opaque
+http-metadata	set-top-attempt-6	Opaque
+http-metadata	set-top-attempt-7	Opaque
+http-metadata	set-top-attempt-8	Opaque
+http-metadata	set-top-attempt-9	Opaque
+http-metadata	set-top-attempt-10	Opaque
+http-metadata	set-top-attempt-11	Opaque
+http-metadata	set-top-attempt-12	Opaque
+http-metadata	drop-top-elapsed_micros	Opaque
+http-metadata	set-top-elapsed_micros-0	Opaque
+http-metadata	set-top-elapsed_micros-1	Opaque
+http-metadata	set-top-elapsed_micros-2	Opaque
+http-metadata	set-top-elapsed_micros-3	Opaque
+http-metadata	set-top-elapsed_micros-4	Opaque
+http-metadata	set-top-elapsed_micros-5	Opaque
+http-metadata	set-top-elapsed_micros-6	Opaque
+http-metadata	set-top-elapsed_micros-7	Opaque
+http-metadata	set-top-elapsed_micros-8	Opaque
+http-metadata	set-top-elapsed_micros-9	Opaque
+http-metadata	set-top-elapsed_micros-10	Opaque
+http-metadata	set-top-elapsed_micros-11	Opaque
+http-metadata	set-top-elapsed_micros-12	Opaque
+http-metadata	drop-top-event	Opaque
+http-metadata	drop-top-observed_at_unix_micros	Opaque
+http-metadata	set-top-observed_at_unix_micros-0	Opaque
+http-metadata	set-top-observed_at_unix_micros-1	Opaque
+http-metadata	set-top-observed_at_unix_micros-2	Opaque
+http-metadata	set-top-observed_at_unix_micros-3	Opaque
+http-metadata	set-top-observed_at_unix_micros-4	Opaque
+http-metadata	set-top-observed_at_unix_micros-5	Opaque
+http-metadata	set-top-observed_at_unix_micros-6	Opaque
+http-metadata	set-top-observed_at_unix_micros-7	Opaque
+http-metadata	set-top-observed_at_unix_micros-8	Opaque
+http-metadata	set-top-observed_at_unix_micros-9	Opaque
+http-metadata	set-top-observed_at_unix_micros-10	Opaque
+http-metadata	set-top-observed_at_unix_micros-11	Opaque
+http-metadata	set-top-observed_at_unix_micros-12	Opaque
+http-metadata	drop-top-observer	Opaque
+http-metadata	set-top-observer-0	Opaque
+http-metadata	set-top-observer-1	Opaque
+http-metadata	set-top-observer-2	Opaque
+http-metadata	set-top-observer-3	Opaque
+http-metadata	set-top-observer-4	Opaque
+http-metadata	set-top-observer-5	Opaque
+http-metadata	set-top-observer-6	Opaque
+http-metadata	set-top-observer-7	Opaque
+http-metadata	set-top-observer-8	Opaque
+http-metadata	set-top-observer-9	Opaque
+http-metadata	set-top-observer-10	Opaque
+http-metadata	set-top-observer-11	Opaque
+http-metadata	set-top-observer-12	Opaque
+http-metadata	drop-top-ordinal	Opaque
+http-metadata	set-top-ordinal-0	Opaque
+http-metadata	set-top-ordinal-1	Opaque
+http-metadata	set-top-ordinal-2	Opaque
+http-metadata	set-top-ordinal-3	Opaque
+http-metadata	set-top-ordinal-4	Opaque
+http-metadata	set-top-ordinal-5	Opaque
+http-metadata	set-top-ordinal-6	Opaque
+http-metadata	set-top-ordinal-7	Opaque
+http-metadata	set-top-ordinal-8	Opaque
+http-metadata	set-top-ordinal-9	Opaque
+http-metadata	set-top-ordinal-10	Opaque
+http-metadata	set-top-ordinal-11	Opaque
+http-metadata	set-top-ordinal-12	Opaque
+http-metadata	drop-top-unconfirmed_before	Opaque
+http-metadata	set-top-unconfirmed_before-0	Opaque
+http-metadata	set-top-unconfirmed_before-1	Opaque
+http-metadata	set-top-unconfirmed_before-2	Opaque
+http-metadata	set-top-unconfirmed_before-3	Opaque
+http-metadata	set-top-unconfirmed_before-4	Opaque
+http-metadata	set-top-unconfirmed_before-5	Opaque
+http-metadata	set-top-unconfirmed_before-6	Opaque
+http-metadata	set-top-unconfirmed_before-7	Opaque
+http-metadata	set-top-unconfirmed_before-8	Opaque
+http-metadata	set-top-unconfirmed_before-9	Opaque
+http-metadata	set-top-unconfirmed_before-10	Opaque
+http-metadata	set-top-unconfirmed_before-11	Opaque
+http-metadata	set-top-unconfirmed_before-12	Opaque
+http-metadata	drop-top-version	Opaque
+http-metadata	set-top-version-0	Opaque
+http-metadata	set-top-version-1	Opaque
+http-metadata	set-top-version-2	Opaque
+http-metadata	set-top-version-3	Opaque
+http-metadata	set-top-version-4	Opaque
+http-metadata	set-top-version-5	Opaque
+http-metadata	set-top-version-6	Opaque
+http-metadata	set-top-version-7	Opaque
+http-metadata	set-top-version-8	Opaque
+http-metadata	set-top-version-9	Opaque
+http-metadata	set-top-version-10	Opaque
+http-metadata	set-top-version-11	Opaque
+http-metadata	set-top-version-12	Opaque
+http-metadata	drop-event-direction	Opaque
+http-metadata	set-event-direction-0	Opaque
+http-metadata	set-event-direction-1	Opaque
+http-metadata	set-event-direction-2	Opaque
+http-metadata	set-event-direction-3	Opaque
+http-metadata	set-event-direction-4	Opaque
+http-metadata	set-event-direction-5	Opaque
+http-metadata	set-event-direction-6	Opaque
+http-metadata	set-event-direction-7	Opaque
+http-metadata	set-event-direction-8	Opaque
+http-metadata	set-event-direction-9	Opaque
+http-metadata	set-event-direction-10	Opaque
+http-metadata	set-event-direction-11	Opaque
+http-metadata	set-event-direction-12	Opaque
+http-metadata	drop-event-headers	Opaque
+http-metadata	set-event-headers-0	Opaque
+http-metadata	set-event-headers-1	Opaque
+http-metadata	set-event-headers-2	Opaque
+http-metadata	set-event-headers-3	Opaque
+http-metadata	set-event-headers-4	Opaque
+http-metadata	set-event-headers-5	Opaque
+http-metadata	set-event-headers-6	Opaque
+http-metadata	set-event-headers-7	Opaque
+http-metadata	set-event-headers-8	Opaque
+http-metadata	set-event-headers-9	Opaque
+http-metadata	set-event-headers-10	Opaque
+http-metadata	set-event-headers-11	Opaque
+http-metadata	set-event-headers-12	Opaque
+http-metadata	drop-event-omitted	Opaque
+http-metadata	set-event-omitted-0	Opaque
+http-metadata	set-event-omitted-1	Opaque
+http-metadata	set-event-omitted-2	Opaque
+http-metadata	set-event-omitted-3	Opaque
+http-metadata	set-event-omitted-4	Opaque
+http-metadata	set-event-omitted-5	Opaque
+http-metadata	set-event-omitted-6	Opaque
+http-metadata	set-event-omitted-7	Opaque
+http-metadata	set-event-omitted-8	Opaque
+http-metadata	set-event-omitted-9	Opaque
+http-metadata	set-event-omitted-10	Opaque
+http-metadata	set-event-omitted-11	Opaque
+http-metadata	set-event-omitted-12	Opaque
+http-metadata	extra-top-0	Opaque
+http-metadata	extra-event-0	Opaque
+http-metadata	extra-top-1	Opaque
+http-metadata	extra-event-1	Opaque
+http-metadata	extra-top-2	Opaque
+http-metadata	extra-event-2	Opaque
+response-head	base	Opaque
+response-head	drop-top-attempt	Opaque
+response-head	set-top-attempt-0	Opaque
+response-head	set-top-attempt-1	Opaque
+response-head	set-top-attempt-2	Opaque
+response-head	set-top-attempt-3	Opaque
+response-head	set-top-attempt-4	Opaque
+response-head	set-top-attempt-5	Opaque
+response-head	set-top-attempt-6	Opaque
+response-head	set-top-attempt-7	Opaque
+response-head	set-top-attempt-8	Opaque
+response-head	set-top-attempt-9	Opaque
+response-head	set-top-attempt-10	Opaque
+response-head	set-top-attempt-11	Opaque
+response-head	set-top-attempt-12	Opaque
+response-head	drop-top-elapsed_micros	Opaque
+response-head	set-top-elapsed_micros-0	Opaque
+response-head	set-top-elapsed_micros-1	Opaque
+response-head	set-top-elapsed_micros-2	Opaque
+response-head	set-top-elapsed_micros-3	Opaque
+response-head	set-top-elapsed_micros-4	Opaque
+response-head	set-top-elapsed_micros-5	Opaque
+response-head	set-top-elapsed_micros-6	Opaque
+response-head	set-top-elapsed_micros-7	Opaque
+response-head	set-top-elapsed_micros-8	Opaque
+response-head	set-top-elapsed_micros-9	Opaque
+response-head	set-top-elapsed_micros-10	Opaque
+response-head	set-top-elapsed_micros-11	Opaque
+response-head	set-top-elapsed_micros-12	Opaque
+response-head	drop-top-event	Opaque
+response-head	drop-top-observed_at_unix_micros	Opaque
+response-head	set-top-observed_at_unix_micros-0	Opaque
+response-head	set-top-observed_at_unix_micros-1	Opaque
+response-head	set-top-observed_at_unix_micros-2	Opaque
+response-head	set-top-observed_at_unix_micros-3	Opaque
+response-head	set-top-observed_at_unix_micros-4	Opaque
+response-head	set-top-observed_at_unix_micros-5	Opaque
+response-head	set-top-observed_at_unix_micros-6	Opaque
+response-head	set-top-observed_at_unix_micros-7	Opaque
+response-head	set-top-observed_at_unix_micros-8	Opaque
+response-head	set-top-observed_at_unix_micros-9	Opaque
+response-head	set-top-observed_at_unix_micros-10	Opaque
+response-head	set-top-observed_at_unix_micros-11	Opaque
+response-head	set-top-observed_at_unix_micros-12	Opaque
+response-head	drop-top-observer	Opaque
+response-head	set-top-observer-0	Opaque
+response-head	set-top-observer-1	Opaque
+response-head	set-top-observer-2	Opaque
+response-head	set-top-observer-3	Opaque
+response-head	set-top-observer-4	Opaque
+response-head	set-top-observer-5	Opaque
+response-head	set-top-observer-6	Opaque
+response-head	set-top-observer-7	Opaque
+response-head	set-top-observer-8	Opaque
+response-head	set-top-observer-9	Opaque
+response-head	set-top-observer-10	Opaque
+response-head	set-top-observer-11	Opaque
+response-head	set-top-observer-12	Opaque
+response-head	drop-top-ordinal	Opaque
+response-head	set-top-ordinal-0	Opaque
+response-head	set-top-ordinal-1	Opaque
+response-head	set-top-ordinal-2	Opaque
+response-head	set-top-ordinal-3	Opaque
+response-head	set-top-ordinal-4	Opaque
+response-head	set-top-ordinal-5	Opaque
+response-head	set-top-ordinal-6	Opaque
+response-head	set-top-ordinal-7	Opaque
+response-head	set-top-ordinal-8	Opaque
+response-head	set-top-ordinal-9	Opaque
+response-head	set-top-ordinal-10	Opaque
+response-head	set-top-ordinal-11	Opaque
+response-head	set-top-ordinal-12	Opaque
+response-head	drop-top-unconfirmed_before	Opaque
+response-head	set-top-unconfirmed_before-0	Opaque
+response-head	set-top-unconfirmed_before-1	Opaque
+response-head	set-top-unconfirmed_before-2	Opaque
+response-head	set-top-unconfirmed_before-3	Opaque
+response-head	set-top-unconfirmed_before-4	Opaque
+response-head	set-top-unconfirmed_before-5	Opaque
+response-head	set-top-unconfirmed_before-6	Opaque
+response-head	set-top-unconfirmed_before-7	Opaque
+response-head	set-top-unconfirmed_before-8	Opaque
+response-head	set-top-unconfirmed_before-9	Opaque
+response-head	set-top-unconfirmed_before-10	Opaque
+response-head	set-top-unconfirmed_before-11	Opaque
+response-head	set-top-unconfirmed_before-12	Opaque
+response-head	drop-top-version	Opaque
+response-head	set-top-version-0	Opaque
+response-head	set-top-version-1	Opaque
+response-head	set-top-version-2	Opaque
+response-head	set-top-version-3	Opaque
+response-head	set-top-version-4	Opaque
+response-head	set-top-version-5	Opaque
+response-head	set-top-version-6	Opaque
+response-head	set-top-version-7	Opaque
+response-head	set-top-version-8	Opaque
+response-head	set-top-version-9	Opaque
+response-head	set-top-version-10	Opaque
+response-head	set-top-version-11	Opaque
+response-head	set-top-version-12	Opaque
+response-head	drop-event-status	Opaque
+response-head	set-event-status-0	Opaque
+response-head	set-event-status-1	Opaque
+response-head	set-event-status-2	Opaque
+response-head	set-event-status-3	Opaque
+response-head	set-event-status-4	Opaque
+response-head	set-event-status-5	Opaque
+response-head	set-event-status-6	Opaque
+response-head	set-event-status-7	Opaque
+response-head	set-event-status-8	Opaque
+response-head	set-event-status-9	Opaque
+response-head	set-event-status-10	Opaque
+response-head	set-event-status-11	Opaque
+response-head	set-event-status-12	Opaque
+response-head	extra-top-0	Opaque
+response-head	extra-event-0	Opaque
+response-head	extra-top-1	Opaque
+response-head	extra-event-1	Opaque
+response-head	extra-top-2	Opaque
+response-head	extra-event-2	Opaque
+response-chunk	base	Opaque
+response-chunk	drop-top-attempt	Opaque
+response-chunk	set-top-attempt-0	Opaque
+response-chunk	set-top-attempt-1	Opaque
+response-chunk	set-top-attempt-2	Opaque
+response-chunk	set-top-attempt-3	Opaque
+response-chunk	set-top-attempt-4	Opaque
+response-chunk	set-top-attempt-5	Opaque
+response-chunk	set-top-attempt-6	Opaque
+response-chunk	set-top-attempt-7	Opaque
+response-chunk	set-top-attempt-8	Opaque
+response-chunk	set-top-attempt-9	Opaque
+response-chunk	set-top-attempt-10	Opaque
+response-chunk	set-top-attempt-11	Opaque
+response-chunk	set-top-attempt-12	Opaque
+response-chunk	drop-top-elapsed_micros	Opaque
+response-chunk	set-top-elapsed_micros-0	Opaque
+response-chunk	set-top-elapsed_micros-1	Opaque
+response-chunk	set-top-elapsed_micros-2	Opaque
+response-chunk	set-top-elapsed_micros-3	Opaque
+response-chunk	set-top-elapsed_micros-4	Opaque
+response-chunk	set-top-elapsed_micros-5	Opaque
+response-chunk	set-top-elapsed_micros-6	Opaque
+response-chunk	set-top-elapsed_micros-7	Opaque
+response-chunk	set-top-elapsed_micros-8	Opaque
+response-chunk	set-top-elapsed_micros-9	Opaque
+response-chunk	set-top-elapsed_micros-10	Opaque
+response-chunk	set-top-elapsed_micros-11	Opaque
+response-chunk	set-top-elapsed_micros-12	Opaque
+response-chunk	drop-top-event	Opaque
+response-chunk	drop-top-observed_at_unix_micros	Opaque
+response-chunk	set-top-observed_at_unix_micros-0	Opaque
+response-chunk	set-top-observed_at_unix_micros-1	Opaque
+response-chunk	set-top-observed_at_unix_micros-2	Opaque
+response-chunk	set-top-observed_at_unix_micros-3	Opaque
+response-chunk	set-top-observed_at_unix_micros-4	Opaque
+response-chunk	set-top-observed_at_unix_micros-5	Opaque
+response-chunk	set-top-observed_at_unix_micros-6	Opaque
+response-chunk	set-top-observed_at_unix_micros-7	Opaque
+response-chunk	set-top-observed_at_unix_micros-8	Opaque
+response-chunk	set-top-observed_at_unix_micros-9	Opaque
+response-chunk	set-top-observed_at_unix_micros-10	Opaque
+response-chunk	set-top-observed_at_unix_micros-11	Opaque
+response-chunk	set-top-observed_at_unix_micros-12	Opaque
+response-chunk	drop-top-observer	Opaque
+response-chunk	set-top-observer-0	Opaque
+response-chunk	set-top-observer-1	Opaque
+response-chunk	set-top-observer-2	Opaque
+response-chunk	set-top-observer-3	Opaque
+response-chunk	set-top-observer-4	Opaque
+response-chunk	set-top-observer-5	Opaque
+response-chunk	set-top-observer-6	Opaque
+response-chunk	set-top-observer-7	Opaque
+response-chunk	set-top-observer-8	Opaque
+response-chunk	set-top-observer-9	Opaque
+response-chunk	set-top-observer-10	Opaque
+response-chunk	set-top-observer-11	Opaque
+response-chunk	set-top-observer-12	Opaque
+response-chunk	drop-top-ordinal	Opaque
+response-chunk	set-top-ordinal-0	Opaque
+response-chunk	set-top-ordinal-1	Opaque
+response-chunk	set-top-ordinal-2	Opaque
+response-chunk	set-top-ordinal-3	Opaque
+response-chunk	set-top-ordinal-4	Opaque
+response-chunk	set-top-ordinal-5	Opaque
+response-chunk	set-top-ordinal-6	Opaque
+response-chunk	set-top-ordinal-7	Opaque
+response-chunk	set-top-ordinal-8	Opaque
+response-chunk	set-top-ordinal-9	Opaque
+response-chunk	set-top-ordinal-10	Opaque
+response-chunk	set-top-ordinal-11	Opaque
+response-chunk	set-top-ordinal-12	Opaque
+response-chunk	drop-top-unconfirmed_before	Opaque
+response-chunk	set-top-unconfirmed_before-0	Opaque
+response-chunk	set-top-unconfirmed_before-1	Opaque
+response-chunk	set-top-unconfirmed_before-2	Opaque
+response-chunk	set-top-unconfirmed_before-3	Opaque
+response-chunk	set-top-unconfirmed_before-4	Opaque
+response-chunk	set-top-unconfirmed_before-5	Opaque
+response-chunk	set-top-unconfirmed_before-6	Opaque
+response-chunk	set-top-unconfirmed_before-7	Opaque
+response-chunk	set-top-unconfirmed_before-8	Opaque
+response-chunk	set-top-unconfirmed_before-9	Opaque
+response-chunk	set-top-unconfirmed_before-10	Opaque
+response-chunk	set-top-unconfirmed_before-11	Opaque
+response-chunk	set-top-unconfirmed_before-12	Opaque
+response-chunk	drop-top-version	Opaque
+response-chunk	set-top-version-0	Opaque
+response-chunk	set-top-version-1	Opaque
+response-chunk	set-top-version-2	Opaque
+response-chunk	set-top-version-3	Opaque
+response-chunk	set-top-version-4	Opaque
+response-chunk	set-top-version-5	Opaque
+response-chunk	set-top-version-6	Opaque
+response-chunk	set-top-version-7	Opaque
+response-chunk	set-top-version-8	Opaque
+response-chunk	set-top-version-9	Opaque
+response-chunk	set-top-version-10	Opaque
+response-chunk	set-top-version-11	Opaque
+response-chunk	set-top-version-12	Opaque
+response-chunk	drop-event-offset	Opaque
+response-chunk	set-event-offset-0	Opaque
+response-chunk	set-event-offset-1	Opaque
+response-chunk	set-event-offset-2	Opaque
+response-chunk	set-event-offset-3	Opaque
+response-chunk	set-event-offset-4	Opaque
+response-chunk	set-event-offset-5	Opaque
+response-chunk	set-event-offset-6	Opaque
+response-chunk	set-event-offset-7	Opaque
+response-chunk	set-event-offset-8	Opaque
+response-chunk	set-event-offset-9	Opaque
+response-chunk	set-event-offset-10	Opaque
+response-chunk	set-event-offset-11	Opaque
+response-chunk	set-event-offset-12	Opaque
+response-chunk	extra-top-0	Opaque
+response-chunk	extra-event-0	Opaque
+response-chunk	extra-top-1	Opaque
+response-chunk	extra-event-1	Opaque
+response-chunk	extra-top-2	Opaque
+response-chunk	extra-event-2	Opaque
+terminal	base	Opaque
+terminal	drop-top-attempt	Opaque
+terminal	set-top-attempt-0	Opaque
+terminal	set-top-attempt-1	Opaque
+terminal	set-top-attempt-2	Opaque
+terminal	set-top-attempt-3	Opaque
+terminal	set-top-attempt-4	Opaque
+terminal	set-top-attempt-5	Opaque
+terminal	set-top-attempt-6	Opaque
+terminal	set-top-attempt-7	Opaque
+terminal	set-top-attempt-8	Opaque
+terminal	set-top-attempt-9	Opaque
+terminal	set-top-attempt-10	Opaque
+terminal	set-top-attempt-11	Opaque
+terminal	set-top-attempt-12	Opaque
+terminal	drop-top-elapsed_micros	Opaque
+terminal	set-top-elapsed_micros-0	Opaque
+terminal	set-top-elapsed_micros-1	Opaque
+terminal	set-top-elapsed_micros-2	Opaque
+terminal	set-top-elapsed_micros-3	Opaque
+terminal	set-top-elapsed_micros-4	Opaque
+terminal	set-top-elapsed_micros-5	Opaque
+terminal	set-top-elapsed_micros-6	Opaque
+terminal	set-top-elapsed_micros-7	Opaque
+terminal	set-top-elapsed_micros-8	Opaque
+terminal	set-top-elapsed_micros-9	Opaque
+terminal	set-top-elapsed_micros-10	Opaque
+terminal	set-top-elapsed_micros-11	Opaque
+terminal	set-top-elapsed_micros-12	Opaque
+terminal	drop-top-event	Opaque
+terminal	drop-top-observed_at_unix_micros	Opaque
+terminal	set-top-observed_at_unix_micros-0	Opaque
+terminal	set-top-observed_at_unix_micros-1	Opaque
+terminal	set-top-observed_at_unix_micros-2	Opaque
+terminal	set-top-observed_at_unix_micros-3	Opaque
+terminal	set-top-observed_at_unix_micros-4	Opaque
+terminal	set-top-observed_at_unix_micros-5	Opaque
+terminal	set-top-observed_at_unix_micros-6	Opaque
+terminal	set-top-observed_at_unix_micros-7	Opaque
+terminal	set-top-observed_at_unix_micros-8	Opaque
+terminal	set-top-observed_at_unix_micros-9	Opaque
+terminal	set-top-observed_at_unix_micros-10	Opaque
+terminal	set-top-observed_at_unix_micros-11	Opaque
+terminal	set-top-observed_at_unix_micros-12	Opaque
+terminal	drop-top-observer	Opaque
+terminal	set-top-observer-0	Opaque
+terminal	set-top-observer-1	Opaque
+terminal	set-top-observer-2	Opaque
+terminal	set-top-observer-3	Opaque
+terminal	set-top-observer-4	Opaque
+terminal	set-top-observer-5	Opaque
+terminal	set-top-observer-6	Opaque
+terminal	set-top-observer-7	Opaque
+terminal	set-top-observer-8	Opaque
+terminal	set-top-observer-9	Opaque
+terminal	set-top-observer-10	Opaque
+terminal	set-top-observer-11	Opaque
+terminal	set-top-observer-12	Opaque
+terminal	drop-top-ordinal	Opaque
+terminal	set-top-ordinal-0	Opaque
+terminal	set-top-ordinal-1	Opaque
+terminal	set-top-ordinal-2	Opaque
+terminal	set-top-ordinal-3	Opaque
+terminal	set-top-ordinal-4	Opaque
+terminal	set-top-ordinal-5	Opaque
+terminal	set-top-ordinal-6	Opaque
+terminal	set-top-ordinal-7	Opaque
+terminal	set-top-ordinal-8	Opaque
+terminal	set-top-ordinal-9	Opaque
+terminal	set-top-ordinal-10	Opaque
+terminal	set-top-ordinal-11	Opaque
+terminal	set-top-ordinal-12	Opaque
+terminal	drop-top-unconfirmed_before	Opaque
+terminal	set-top-unconfirmed_before-0	Opaque
+terminal	set-top-unconfirmed_before-1	Opaque
+terminal	set-top-unconfirmed_before-2	Opaque
+terminal	set-top-unconfirmed_before-3	Opaque
+terminal	set-top-unconfirmed_before-4	Opaque
+terminal	set-top-unconfirmed_before-5	Opaque
+terminal	set-top-unconfirmed_before-6	Opaque
+terminal	set-top-unconfirmed_before-7	Opaque
+terminal	set-top-unconfirmed_before-8	Opaque
+terminal	set-top-unconfirmed_before-9	Opaque
+terminal	set-top-unconfirmed_before-10	Opaque
+terminal	set-top-unconfirmed_before-11	Opaque
+terminal	set-top-unconfirmed_before-12	Opaque
+terminal	drop-top-version	Opaque
+terminal	set-top-version-0	Opaque
+terminal	set-top-version-1	Opaque
+terminal	set-top-version-2	Opaque
+terminal	set-top-version-3	Opaque
+terminal	set-top-version-4	Opaque
+terminal	set-top-version-5	Opaque
+terminal	set-top-version-6	Opaque
+terminal	set-top-version-7	Opaque
+terminal	set-top-version-8	Opaque
+terminal	set-top-version-9	Opaque
+terminal	set-top-version-10	Opaque
+terminal	set-top-version-11	Opaque
+terminal	set-top-version-12	Opaque
+terminal	drop-event-outcome	Opaque
+terminal	set-event-outcome-0	Opaque
+terminal	set-event-outcome-1	Opaque
+terminal	set-event-outcome-2	Opaque
+terminal	set-event-outcome-3	Opaque
+terminal	set-event-outcome-4	Opaque
+terminal	set-event-outcome-5	Opaque
+terminal	set-event-outcome-6	Opaque
+terminal	set-event-outcome-7	Opaque
+terminal	set-event-outcome-8	Opaque
+terminal	set-event-outcome-9	Opaque
+terminal	set-event-outcome-10	Opaque
+terminal	set-event-outcome-11	Opaque
+terminal	set-event-outcome-12	Opaque
+terminal	extra-top-0	Opaque
+terminal	extra-event-0	Opaque
+terminal	extra-top-1	Opaque
+terminal	extra-event-1	Opaque
+terminal	extra-top-2	Opaque
+terminal	extra-event-2	Opaque
+captures=0 violations=0
+
+
+thread 'review_pa1_capture_projection_is_lossless_over_mutation_corpus' (9984065) panicked at tests/evidence_reconstruction_review_regressions.rs:126:5:
+nonvacuous accepted corpus
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- review_pa2_timestamp_distinction_and_unsupported_precedence stdout ----
+
+thread 'review_pa2_timestamp_distinction_and_unsupported_precedence' (9984066) panicked at tests/evidence_reconstruction_review_regressions.rs:147:9:
+assertion `left == right` failed: null
+  left: "Opaque"
+ right: "Capture"
+
+
+failures:
+    review_pa1_capture_projection_is_lossless_over_mutation_corpus
+    review_pa2_timestamp_distinction_and_unsupported_precedence
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment)
+    Finished `test` profile [unoptimized] target(s) in 7.31s
+     Running tests/evidence_reconstruction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction-f47b82f29e147a62)
+error: test failed, to rerun pass `--test evidence_reconstruction`
+     Running tests/evidence_reconstruction_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction_review_regressions-acb5054d59b89e25)
+error: test failed, to rerun pass `--test evidence_reconstruction_review_regressions`
+error: 2 targets failed:
+    `--test evidence_reconstruction`
+    `--test evidence_reconstruction_review_regressions`
+
+exit=101 elapsed=7.8s restored_hash_ok=True

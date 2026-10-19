@@ -1,0 +1,14 @@
+pb1-differential.tsv IDENTICAL to retained original
+pb2-rust-only.tsv IDENTICAL to retained original
+review-evidence/B/probe-out/pb1-differential.tsv:D17-observer-equals-issuer	semantic-acceptance	OK	OK	OK	true
+review-evidence/B/probe-out/pb1-differential.tsv:P05-fork-alternative-seq2	semantic-acceptance	OK	OK	OK	true
+review-evidence/B/probe-out/pb1-differential.tsv:S01-observed-intent-cites-created	semantic-acceptance	OK	OK	OK	true
+review-evidence/B/probe-out/pb1-differential.tsv:S02-observed-output-differs-from-intent	semantic-acceptance	OK	OK	OK	true
+review-evidence/B/probe-out/pb1-differential.tsv:S03-observed-attempt-differs-from-intent	semantic-acceptance	OK	OK	OK	true
+review-evidence/B/probe-out/pb1-differential.tsv:S04-restored-member-differs-from-created	semantic-acceptance	OK	OK	OK	true
+review-evidence/B/probe-out/pb1-differential.tsv:S05-restored-length-not-candidate-length	semantic-acceptance	OK	OK	OK	true
+review-evidence/B/probe-out/pb1-differential.tsv:S06-unavailable-after-publication	semantic-acceptance	OK	OK	OK	true
+review-evidence/B/probe-out/pb1-differential.tsv:S07-second-intent-same-attempt	semantic-acceptance	OK	OK	OK	true
+review-evidence/B/probe-out/pb1-differential.tsv:S08-created-arbitrary-frontier	semantic-acceptance	OK	OK	OK	true
+review-evidence/B/probe-out/pb1-differential.tsv:S19-failed-after-observed	semantic-acceptance	OK	OK	OK	true
+review-evidence/B/probe-out/pb2-rust-only.tsv:sign-false-member-digest	OK	OK

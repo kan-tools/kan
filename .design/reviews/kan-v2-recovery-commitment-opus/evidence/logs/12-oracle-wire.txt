@@ -1,0 +1,1 @@
+6 chain positives, 4 shape positives and 57 re-signed/malformed wire vectors pass; full member/state validation remains separate.

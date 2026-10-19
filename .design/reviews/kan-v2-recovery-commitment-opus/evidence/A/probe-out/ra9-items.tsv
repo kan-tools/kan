@@ -1,0 +1,4 @@
+items==total	accepted=true
+items==total-1	Some(Budget)
+r1 items==count-1	Some(Budget)
+finish-after-deadline	Err(Budget)

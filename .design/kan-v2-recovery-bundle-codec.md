@@ -7,6 +7,11 @@ are reviewed. The parent bundle requirements and publication distinctions apply.
 
 ## Identities and canonical values
 
+The physical database encoding is UTF-8. Creation must set `PRAGMA encoding =
+'UTF-8'` before creating tables; opening must verify the existing encoding is
+UTF-8 and refuse UTF-16 rather than attempting conversion. This is a proposed
+format requirement; no creation/opener exists yet.
+
 The outer SQLite `application_id` is `0x4b4e4231` (KNB1), `user_version=1`.
 The logical member is explicitly profile 2 or 3; its ordinary archive/scope/issuer
 binding is preserved. An owner supplies an independently retained random 32-byte
@@ -48,7 +53,9 @@ identity from an earlier row.
 
 `SHA256` consumes the following byte stream. `F(x)` means an unsigned 64-bit
 big-endian byte length followed by x. `N(n)` is unsigned 64-bit big-endian n.
-DIDs use UTF-8; CID frames use canonical binary CID bytes; record/envelope frames
+The pure framing layer bounds issuer text to 1..80 UTF-8 bytes; it does not
+validate a DID. A full member requires a canonical static P-256 DID (56..80
+ASCII bytes), a stricter semantic check. DIDs use UTF-8; CID frames use canonical binary CID bytes; record/envelope frames
 use exact original canonical bytes. Empty sections still include their count.
 
 1. ASCII `tools.kan.recovery.member.v1` followed by one zero byte.
@@ -353,6 +360,26 @@ tests against independent Python vectors and nine compiled controls, with strict
 v2 Clippy and formatting. Evidence is in
 `.design/reviews/kan-v2-recovery-commitment-author/`. Fresh independent review
 remains pending; full member and state verification are separate prerequisites.
+
+
+### Streaming review follow-through
+
+Actual Opus 5.5 review of a8927a6 found no production defect and returned
+APPROVE WITH FOLLOW-UPS; full raw evidence is retained in
+`.design/reviews/kan-v2-recovery-commitment-opus/`. RA3/RA4 section/count/size
+probes are promoted. Test-only cancellation injection qualifies polling within
+hashing without timing sleeps; the original independent timing probe and its
+recorded limits remain preserved. These follow-through tests pass author qualification: ten integration functions,
+two deterministic polling units and thirteen compiled controls, plus strict
+Clippy/format and the independent oracle. Evidence is in
+`.design/reviews/kan-v2-recovery-commitment-followups-author/`. Fresh review with
+the member-verifier checkpoint remains required.
+
+The 1..80-byte framing issuer bound is explicit above and now shared by the
+Python oracle. UTF-8 is pinned for future physical creation and opening. An O1
+digest from the framing builder alone still authenticates no output bytes:
+full object/writer/profile verification must precede publication. None of these
+changes accepts the physical format or closes parent acceptance criteria.
 
 ## Next verifier checkpoint: logical member and initial availability
 

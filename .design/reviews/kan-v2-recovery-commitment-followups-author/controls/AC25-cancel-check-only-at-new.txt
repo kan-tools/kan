@@ -1,0 +1,35 @@
+
+running 2 tests
+test evidence_recovery_commitment::polling_tests::cancellation_interrupts_member_hash_before_the_full_payload_is_charged ... FAILED
+test evidence_recovery_commitment::polling_tests::cancellation_interrupts_candidate_verification_before_the_full_payload_is_charged ... FAILED
+
+failures:
+
+---- evidence_recovery_commitment::polling_tests::cancellation_interrupts_member_hash_before_the_full_payload_is_charged stdout ----
+
+thread 'evidence_recovery_commitment::polling_tests::cancellation_interrupts_member_hash_before_the_full_payload_is_charged' (9999269) panicked at src/evidence_recovery_commitment.rs:459:9:
+assertion `left == right` failed
+  left: Ok(())
+ right: Err(Cancelled)
+
+---- evidence_recovery_commitment::polling_tests::cancellation_interrupts_candidate_verification_before_the_full_payload_is_charged stdout ----
+
+thread 'evidence_recovery_commitment::polling_tests::cancellation_interrupts_candidate_verification_before_the_full_payload_is_charged' (9999268) panicked at src/evidence_recovery_commitment.rs:475:9:
+assertion `left == right` failed
+  left: 4194304
+ right: 65536
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_recovery_commitment::polling_tests::cancellation_interrupts_candidate_verification_before_the_full_payload_is_charged
+    evidence_recovery_commitment::polling_tests::cancellation_interrupts_member_hash_before_the_full_payload_is_charged
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 79 filtered out; finished in 0.25s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state)
+    Finished `test` profile [unoptimized] target(s) in 6.43s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-480f4f845bac8ec9)
+error: test failed, to rerun pass `--lib`
+
+exit=101

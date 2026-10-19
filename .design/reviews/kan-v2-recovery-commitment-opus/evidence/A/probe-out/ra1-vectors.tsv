@@ -1,0 +1,9 @@
+rv-records3-mixed-objects-disagreeing	M1=match	O1=match	member_work=1015	exact=ok	minus1=Budget
+rv-records3-mixed-objects-disagreeing	R1=match	r1_work=499	exact=ok	minus1=Budget
+rv-profile3-membership5-objects4	M1=match	O1=match	member_work=990	exact=ok	minus1=Budget
+rv-profile3-membership5-objects4	R1=match	r1_work=853	exact=ok	minus1=Budget
+rv-chunk-boundary-objects	M1=match	O1=match	member_work=393756	exact=ok	minus1=Budget
+rv-chunk-boundary-objects	R1=match	r1_work=786715	exact=ok	minus1=Budget
+rv-profile3-empty-membership	M1=match	O1=match	member_work=309	exact=ok	minus1=Budget
+rv-profile3-empty-membership	R1=match	r1_work=43	exact=ok	minus1=Budget
+rv-max-record-and-plan	M1=match	O1=match	member_work=151892	exact=ok	minus1=Budget

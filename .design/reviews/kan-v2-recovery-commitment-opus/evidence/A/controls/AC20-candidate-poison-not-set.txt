@@ -1,0 +1,85 @@
+CASE {"name": "AC20-candidate-poison-not-set", "file": "src/evidence_recovery_commitment.rs", "old": "self.core.failed = true;\n        shape(self.seen < self.count", "new": "shape(self.seen < self.count"}
+CMD cargo test --offline --locked --no-fail-fast --features v2-crypto --test evidence_recovery_commitment --test zz_review_commitment_probes -- --test-threads=1
+
+running 8 tests
+test failure_mid_payload_and_candidate_verification_consumes_budget_and_poisons ... FAILED
+test independent_python_member_output_and_restoration_framing_matches ... ok
+test local_limits_cancellation_and_failed_work_are_explicit ... ok
+test maximum_objects_and_metadata_bounds_do_not_change_framing ... ok
+test missing_empty_corrupt_and_restored_bytes_remain_distinct ... FAILED
+test profile_plan_and_cid_shape_cannot_be_silently_reinterpreted ... ok
+test skipped_extra_and_reordered_sections_never_finish ... ok
+test sorted_unique_cids_are_required_and_candidate_hashes_are_checked ... FAILED
+
+failures:
+
+---- failure_mid_payload_and_candidate_verification_consumes_budget_and_poisons stdout ----
+
+thread 'failure_mid_payload_and_candidate_verification_consumes_budget_and_poisons' (9964729) panicked at tests/evidence_recovery_commitment.rs:265:5:
+assertion `left == right` failed
+  left: Err(Shape("incomplete candidates"))
+ right: Err(Poisoned)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- missing_empty_corrupt_and_restored_bytes_remain_distinct stdout ----
+
+thread 'missing_empty_corrupt_and_restored_bytes_remain_distinct' (9964735) panicked at tests/evidence_recovery_commitment.rs:143:5:
+assertion `left == right` failed
+  left: Err(Shape("incomplete candidates"))
+ right: Err(Poisoned)
+
+---- sorted_unique_cids_are_required_and_candidate_hashes_are_checked stdout ----
+
+thread 'sorted_unique_cids_are_required_and_candidate_hashes_are_checked' (9964738) panicked at tests/evidence_recovery_commitment.rs:186:5:
+assertion `left == right` failed
+  left: Err(Shape("duplicate or unordered CID"))
+ right: Err(Poisoned)
+
+
+failures:
+    failure_mid_payload_and_candidate_verification_consumes_budget_and_poisons
+    missing_empty_corrupt_and_restored_bytes_remain_distinct
+    sorted_unique_cids_are_required_and_candidate_hashes_are_checked
+
+test result: FAILED. 5 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+
+
+running 10 tests
+test rv_a10_output_domain_does_not_verify_objects ... ok
+test rv_a1_vectors_and_exact_work_accounting ... ok
+test rv_a2_text_order_accepted_binary_order_refused ... ok
+test rv_a3_section_count_sequence_boundaries ... ok
+test rv_a4_local_bounds_exact_edges ... ok
+test rv_a5_non_raw_sha256_cids_refused_everywhere ... ok
+test rv_a6_any_failure_poisons_all_later_operations ... FAILED
+test rv_a7_presence_states_are_distinct ... ok
+test rv_a8_cancellation_and_deadline_are_polled_within_one_payload ... ok
+test rv_a9_item_edges_and_finish_rechecks ... ok
+
+failures:
+
+---- rv_a6_any_failure_poisons_all_later_operations stdout ----
+
+thread 'rv_a6_any_failure_poisons_all_later_operations' (9964753) panicked at tests/zz_review_commitment_probes.rs:451:5:
+assertion `left == right` failed
+  left: Err(Shape("duplicate or unordered CID"))
+ right: Err(Poisoned)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    rv_a6_any_failure_poisons_all_later_operations
+
+test result: FAILED. 9 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state/.local-state/reviews/recovery-commitment)
+    Finished `test` profile [unoptimized] target(s) in 7.26s
+     Running tests/evidence_recovery_commitment.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_commitment-5a89bc2efd1208f4)
+error: test failed, to rerun pass `--test evidence_recovery_commitment`
+     Running tests/zz_review_commitment_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_commitment_probes-50969c86e5ace5da)
+error: test failed, to rerun pass `--test zz_review_commitment_probes`
+error: 2 targets failed:
+    `--test evidence_recovery_commitment`
+    `--test zz_review_commitment_probes`
+
+exit=101 elapsed=9.2s restored_hash_ok=True
