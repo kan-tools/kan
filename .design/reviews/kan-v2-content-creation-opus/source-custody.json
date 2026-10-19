@@ -1,0 +1,13 @@
+{
+  "label": "author-independent-post-review",
+  "commit": "918318da216d8e205c42e01f3ba9528ab95a67cd",
+  "source_head": "918318da216d8e205c42e01f3ba9528ab95a67cd",
+  "source_head_matches": true,
+  "source_worktree_status_porcelain": "",
+  "identity_files": 4038,
+  "tree_entries": 4038,
+  "export_paths_present": 4115,
+  "reviewer_files_in_review_evidence": 76,
+  "problems": [],
+  "ok": true
+}
