@@ -91,7 +91,9 @@ No schema field, lifecycle side store, implicit conversion or promotion is added
 Draft regression coverage includes exact bytes, derived repair, wrong owner pins,
 legacy-profile refusal, copied-proof verification, pinned source transactions,
 process death at initialization/rebuild boundaries and real CLI output. Five
-semantic negative controls are prepared. Compilation and fresh review are pending;
+semantic negative controls fail named assertions and restored checks pass. Local
+qualification passes 81 Rust checks and strict all-target v2 Clippy; evidence is
+in `.design/reviews/kan-v2-proof-lifecycle-author/`. Fresh review is pending;
 no parent acceptance criterion is closed from this draft.
 
 ## Remaining ordered build
@@ -128,5 +130,5 @@ use a bounded in-memory active database copy and prioritize actions over polls.
 The existing 128-MiB ceiling now includes a 32-MiB image allowance plus 16-MiB
 working reserve; capacity refusal is explicit. Source copy can refuse after five
 seconds when busy. Tests target writer progress, post-read sealed changes, invalid
-unique health rows, historical worker separation and UI request races. Author qualification now passes 74 Rust checks,26 Operations Node checks,strict all-target v2 Clippy and13 semantic mutants with restored assertions. Evidence is in `.design/reviews/kan-v2-overview-correction-author/`; fresh re-review remains pending.
+unique health rows, historical worker separation and UI request races. Author qualification now passes 74 Rust checks, 26 Operations Node checks, strict all-target v2 Clippy and 13 semantic mutants with restored assertions. Evidence is in `.design/reviews/kan-v2-overview-correction-author/`; fresh re-review remains pending.
 The final cold review returned APPROVE WITH FOLLOW-UPS for the overview, with O1 a required code correction, and APPROVE for the storage corrections. The raw report and independent probes are preserved unchanged in `.design/reviews/kan-v2-overview-opus/`. Fresh review of the corrected overview remains required.

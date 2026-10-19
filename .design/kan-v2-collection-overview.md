@@ -215,7 +215,7 @@ inside the same 128-MiB ceiling. This conservative accounting means some formerl
 accepted large inputs can return capacity-limited; it does not increase the limit.
 Snapshot timestamps name the copy window, not the later parse. Copied schema and
 control rows are revalidated. Build/Cancel preempt polls; actions remain serialized
-and stale replies cannot overwrite newer action state. The corrected checkpoint passes74 Rust checks,26 Operations Node checks,strict Clippy and13 semantic mutants; fresh re-review remains required.
+and stale replies cannot overwrite newer action state. The corrected checkpoint passes 74 Rust checks, 26 Operations Node checks, strict Clippy and 13 semantic mutants; fresh re-review remains required.
 
 The follow-up distinguishes file-lock and SQLite contention from invalid history.
 The status API adds `active_generation` (null for standalone journals). The browser
