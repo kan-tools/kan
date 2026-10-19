@@ -252,6 +252,65 @@ impl capture::Sink for CoordinatedSink<'_> {
     }
 }
 
+/// The contention wrapper must pass the measured wait back to Recorder, not
+/// merely publish it on its diagnostic channel (cold-review W4).
+#[test]
+fn coordinated_sink_returns_inner_wait_to_its_caller() {
+    use capture::Sink;
+    struct MeasuredSink(usize);
+    impl Sink for MeasuredSink {
+        fn admit(&mut self, _: &[u8; 16], _: &[u8]) -> Result<(), capture::Unconfirmed> {
+            panic!("wait-aware call must use the wait-aware implementation")
+        }
+        fn admit_with_wait(
+            &mut self,
+            operation: &[u8; 16],
+            frame: &[u8],
+            wait: Duration,
+        ) -> (Result<(), capture::Unconfirmed>, Duration) {
+            assert_eq!(operation, &[17; 16]);
+            assert_eq!(frame, b"synthetic frame");
+            assert_eq!(wait, Duration::from_millis(80));
+            self.0 += 1;
+            if self.0 == 1 {
+                (Ok(()), Duration::from_millis(7))
+            } else {
+                (Err(capture::Unconfirmed), Duration::from_millis(13))
+            }
+        }
+    }
+    let (request, requested) = std::sync::mpsc::sync_channel(1);
+    let (locked, lock_ready) = std::sync::mpsc::sync_channel(1);
+    let (spent, first_spent) = std::sync::mpsc::sync_channel(1);
+    locked.send(()).unwrap();
+    let mut sink = CoordinatedSink {
+        inner: Box::new(MeasuredSink(0)),
+        first: Some(FirstCaptureWindow {
+            request,
+            locked: lock_ready,
+            spent,
+        }),
+    };
+    let first = sink.admit_with_wait(&[17; 16], b"synthetic frame", Duration::from_millis(80));
+    assert!(first.0.is_ok());
+    assert_eq!(
+        first.1,
+        Duration::from_millis(7),
+        "caller must receive measured wait"
+    );
+    assert_eq!(first_spent.try_recv().unwrap(), first.1);
+    assert!(requested.try_recv().is_ok());
+    let later = sink.admit_with_wait(&[17; 16], b"synthetic frame", Duration::from_millis(80));
+    assert!(later.0.is_err());
+    assert_eq!(
+        later.1,
+        Duration::from_millis(13),
+        "failed admission still spends wait"
+    );
+    assert!(requested.try_recv().is_err());
+    assert!(first_spent.try_recv().is_err());
+}
+
 /// One capture attempt in its own thread/runtime and connection.
 fn capture_thread(
     path: PathBuf,

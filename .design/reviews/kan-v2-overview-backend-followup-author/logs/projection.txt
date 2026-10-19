@@ -1,0 +1,10 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build)
+    Finished `test` profile [unoptimized] target(s) in 5.89s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-7f955e5e00633d5f)
+
+running 2 tests
+test evidence_operations::projection::tests::copy_revalidates_schema_and_capacity_control_after_source_open ... ok
+test evidence_operations::projection::tests::copy_deadline_applies_to_contention_after_successful_source_open ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 75 filtered out; finished in 5.34s
+
