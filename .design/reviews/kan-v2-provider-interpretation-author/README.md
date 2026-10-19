@@ -1,11 +1,16 @@
-# Provider interpretation draft
+# Provider interpretation author qualification
 
-This draft has not yet been compiled, tested or independently reviewed. The
-shared Cargo target belongs to the fresh reader/assembly Opus review. Formatting
-now passes; the initial format failure is retained. CI will compile this draft
-without overlapping heavy local jobs. Day design validation returned exit 2
-because the worktree has no kan workspace; this is unavailable validation, not
-success. No main-workspace log was modified.
+The draft passes 43 affected integration tests (13 provider, 13 assembly and 17
+decoder checks), one deterministic cancellation unit, strict all-target v2 Clippy
+and formatting. Seven selected compiled controls demonstrate coarse citation
+labelling, protocol invalidity, source-byte binding, duplicate source lineage,
+input/output budgets and cancellation. The restored 13-test provider suite passes.
 
-The source mapping, JSON and SSE tests are drafted. Provider interpretation is
-not yet accepted and no API/browser or parent frontend completion is claimed.
+Initial formatting and CI fixture type-inference failures are retained. The
+fixture type annotation was corrected; later checks pass without weakening the
+assertion. Day design validation returned exit 2 because this worktree has no kan
+workspace, not a successful validation. No main-workspace log was modified.
+
+Fresh actual Opus review remains required. The Content API/frontend design is a
+plan, not an implemented interface. No public serializer, persistence, network,
+provider authentication or capture-completeness certificate is introduced here.

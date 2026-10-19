@@ -1,0 +1,21 @@
+
+running 1 test
+test block_sequence_conflicts_and_sparse_indices_never_complete ... FAILED
+
+failures:
+
+failures:
+    block_sequence_conflicts_and_sparse_indices_never_complete
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter)
+    Finished `test` profile [unoptimized] target(s) in 7.53s
+     Running tests/evidence_interpretation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation-13fed510d614cbe3)
+
+thread 'block_sequence_conflicts_and_sparse_indices_never_complete' (10350265) panicked at tests/evidence_interpretation.rs:197:9:
+assertion failed: !d.coherent_stop_observed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_interpretation`
+
+exit=101

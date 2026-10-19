@@ -1,0 +1,21 @@
+
+running 1 test
+test mapping_refuses_gaps_overlaps_forged_source_bytes_and_ranges ... FAILED
+
+failures:
+
+failures:
+    mapping_refuses_gaps_overlaps_forged_source_bytes_and_ranges
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter)
+    Finished `test` profile [unoptimized] target(s) in 7.52s
+     Running tests/evidence_interpretation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation-13fed510d614cbe3)
+
+thread 'mapping_refuses_gaps_overlaps_forged_source_bytes_and_ranges' (10350514) panicked at tests/evidence_interpretation.rs:330:57:
+called `Result::unwrap_err()` on an `Ok` value: [SourceSpan { input: 0, bytes: 252..255 }, SourceSpan { input: 1, bytes: 252..255 }]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_interpretation`
+
+exit=101

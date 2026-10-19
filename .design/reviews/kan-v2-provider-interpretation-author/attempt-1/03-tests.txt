@@ -1,0 +1,72 @@
+$ cargo test --features v2-crypto --test evidence_interpretation --test evidence_assembly --test evidence_reconstruction --test evidence_reconstruction_review_regressions
+
+running 13 tests
+test every_non_capture_and_unavailable_input_has_a_result ... ok
+test a_chunk_after_request_end_cannot_silently_become_a_closed_request ... ok
+test empty_request_extent_and_unknown_extent_remain_distinct ... ok
+test completed_terminal_is_only_a_claim_and_does_not_fill_missing_evidence ... ok
+test observed_missing_admission_and_unexpected_start_stay_visible ... ok
+test exact_budget_edges_cancellation_and_repeat_are_deterministic ... ok
+test ordinal_conflicts_keep_both_bytes_and_prevent_synthetic_rendering ... ok
+test repeated_semantic_chunk_at_a_new_ordinal_is_an_overlap_not_deduplicated ... ok
+test holes_overlaps_and_contradictory_extents_are_not_repaired ... ok
+test sparse_u64_and_overflow_coordinates_never_allocate_by_claimed_extent ... ok
+test shuffled_selection_preserves_exact_binary_spans_and_duplicate_lineage ... ok
+test scope_writer_observer_attempt_isolation_ignores_transport_link_claims ... ok
+test terminal_at_a_conflicting_ordinal_cannot_select_a_winner ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 13 tests
+test empty_sse_and_malformed_message_delta_are_explicit ... ok
+test duplicate_keys_aliases_depth_and_truncation_are_visible ... ok
+test malformed_unknown_error_and_trailing_event_are_visible ... ok
+test exact_budgets_and_cancellation_return_no_partial_document ... ok
+test block_sequence_conflicts_and_sparse_indices_never_complete ... ok
+test mapping_refuses_foreign_group_unavailable_source_and_forged_extent ... ok
+test missing_event_and_delta_types_are_malformed_not_future_extensions ... ok
+test request_history_and_unknown_fields_remain_source_linked ... ok
+test response_json_and_provider_errors_never_claim_stream_completeness ... ok
+test newline_forms_multiline_comments_and_raw_unknown_fields_survive ... ok
+test mapping_refuses_gaps_overlaps_forged_source_bytes_and_ranges ... ok
+test tool_fragments_are_not_repaired_or_replaced_by_empty_initial_input ... ok
+test every_capture_split_preserves_sse_text_and_exact_duplicate_source_spans ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+
+running 15 tests
+test capture_family_size_limit_precedes_unknown_envelope_classification ... ok
+test all_truncated_header_prefixes_fail_without_panicking ... ok
+test duplicate_and_escaped_alias_keys_never_choose_a_winner ... ok
+test exact_spans_binary_body_and_u64_coordinates_are_not_rounded ... ok
+test current_production_recorder_event_forms_roundtrip_with_exact_bodies ... ok
+test identifiers_and_started_string_bounds_match_recorder ... ok
+test multibyte_and_escaped_header_text_preserves_original_byte_spans ... ok
+test malformed_json_encoding_trailing_data_and_nested_input_refuse ... ok
+test non_chunk_events_cannot_smuggle_body_bytes ... ok
+test opaque_and_unsupported_are_distinct_from_malformed_capture ... ok
+test recognized_header_requires_explicit_timestamp_even_when_unknown ... ok
+test bounded_header_body_and_total_before_materialization ... ok
+test recognized_shapes_reject_missing_extra_wrong_type_and_bad_integer_fields ... ok
+test every_recognized_event_rejects_extra_fields_including_unit_variants ... ok
+test mutated_bounded_inputs_never_panic_or_claim_spans_outside_input ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+
+running 2 tests
+test review_pa2_timestamp_distinction_and_unsupported_precedence ... ok
+test review_pa1_capture_projection_is_lossless_over_mutation_corpus ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-conversation-adapter)
+    Finished `test` profile [unoptimized] target(s) in 7.60s
+     Running tests/evidence_assembly.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_assembly-ab2b7afbe8d062d0)
+     Running tests/evidence_interpretation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation-13fed510d614cbe3)
+     Running tests/evidence_reconstruction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction-f47b82f29e147a62)
+     Running tests/evidence_reconstruction_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction_review_regressions-acb5054d59b89e25)
+
+exit=0

@@ -424,3 +424,17 @@ fn empty_sse_and_malformed_message_delta_are_explicit() {
     assert!(!d.coherent_stop_observed);
     assert!(d.items[4].issues.contains(&p::Issue::Shape));
 }
+
+#[test]
+fn missing_event_and_delta_types_are_malformed_not_future_extensions() {
+    for value in [
+        json!({}),
+        json!({"type":7}),
+        json!({"type":"content_block_delta","index":0,"delta":null}),
+    ] {
+        let raw = format!("data: {value}\n\n");
+        let d = parse(raw.as_bytes(), p::Format::Sse);
+        assert_eq!(d.items[0].kind, p::Kind::Malformed);
+        assert!(!d.coherent_stop_observed);
+    }
+}

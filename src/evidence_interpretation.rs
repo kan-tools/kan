@@ -82,7 +82,10 @@ pub struct Document {
 pub struct Limits {
     pub input_bytes: usize,
     pub items: usize,
+    /// Cumulative encoded JSON and copied text/data bytes, not exact RSS.
     pub output_bytes: u64,
+    /// SSE line acquisition, JSON parsing and source decode/comparison bytes.
+    /// This is accounting for those passes, not every CPU instruction.
     pub scan_bytes: u64,
     pub citations: usize,
     pub duration: Duration,
@@ -462,7 +465,16 @@ fn event(
             let text = delta.and_then(|d| d.get(key)).and_then(Value::as_str);
             i.text = text.map(|s| w.string(s)).transpose()?;
             if want == BlockKind::Unknown {
-                i.issues.push(Issue::Unknown);
+                if delta
+                    .and_then(|d| d.get("type"))
+                    .and_then(Value::as_str)
+                    .is_none()
+                {
+                    i.kind = Kind::Malformed;
+                    i.issues.push(Issue::Shape);
+                } else {
+                    i.issues.push(Issue::Unknown);
+                }
             } else if text.is_none() {
                 i.issues.push(Issue::Shape);
             }
@@ -525,8 +537,13 @@ fn event(
             state.invalid = true;
         }
         _ => {
-            i.kind = Kind::Unsupported;
-            i.issues.push(Issue::Unknown);
+            if typ.is_none() {
+                i.kind = Kind::Malformed;
+                i.issues.push(Issue::Shape);
+            } else {
+                i.kind = Kind::Unsupported;
+                i.issues.push(Issue::Unknown);
+            }
         }
     }
     if !i.issues.is_empty() {
@@ -556,12 +573,12 @@ fn sse(
         let line_start = pos;
         while pos < bytes.len() && !matches!(bytes[pos], b'\r' | b'\n') {
             pos += 1;
-            if pos % 65536 == 0 {
+            if pos.is_multiple_of(65536) {
                 w.check()?;
             }
         }
-        w.scan(pos - line_start)?;
         if pos == bytes.len() {
+            w.scan(pos - line_start)?;
             break;
         }
         let line = &bytes[line_start..pos];
@@ -570,6 +587,7 @@ fn sse(
         } else {
             pos += 1;
         }
+        w.scan(pos - line_start)?;
         if line.is_empty() {
             let mut i = if has_data {
                 if data.last() == Some(&b'\n') {
@@ -730,6 +748,7 @@ pub fn map_region(
                 group = Some(identity);
             }
             if let Some(expected) = first_raw {
+                w.scan(original.len())?;
                 if expected != original {
                     return Err(Error::Mapping);
                 }

@@ -35,3 +35,19 @@ Authorized API selection, Content/Source/Provenance frontend, session discovery,
 
 ## Recording
 Continues `.design/kan-v2-session-reconstruction.md` and the approved full frontend roadmap. Git-first recording remains necessary under day#168/kan#197; no live-log access, reconstructed excluded claims or invented witnesses. Run and retain actual day validation; a failed workspace lookup is not validation success.
+
+## Author qualification checkpoint
+
+The pure adapter passes 43 affected integration tests, one deterministic
+cancellation unit, strict all-target v2 Clippy and formatting. Seven selected
+compiled controls fail named behavior assertions, and restored tests pass.
+Evidence, including the initial formatting and CI fixture compilation failure,
+is retained in `.design/reviews/kan-v2-provider-interpretation-author/`.
+Day validation returned exit 2 (worktree lookup refusal), not validation success.
+Fresh actual Opus review is required before accepting this component.
+
+Assembly review B-N4 carries forward: a gap means no recognized capture at those
+ordinals, not proof of absent inputs. The Content consumer must show unplaced
+unsupported, malformed and unavailable observations beside the attempt groups.
+This adapter interprets one eligible byte stream and cannot itself provide that
+selection-wide view; `.design/kan-v2-content-api.md` must preserve it.
