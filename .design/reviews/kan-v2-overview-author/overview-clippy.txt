@@ -1,0 +1,2 @@
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build)
+    Finished `dev` profile [unoptimized] target(s) in 7.63s

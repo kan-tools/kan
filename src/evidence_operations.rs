@@ -1,4 +1,5 @@
 //! Private operational observations. Never an evidence-completeness certificate.
+pub(crate) mod projection;
 use crate::{
     evidence_capture::Health,
     evidence_delivery,
@@ -580,7 +581,7 @@ fn valid_health(h: &Health) -> bool {
         && !h.remote_acknowledged
 }
 // Replace with a whole observation, never independently maximize its fields.
-fn dominates(new: &Health, old: &Health) -> bool {
+pub(crate) fn dominates(new: &Health, old: &Health) -> bool {
     valid_health(new)
         && valid_health(old)
         && new.attempt == old.attempt

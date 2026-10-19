@@ -159,3 +159,36 @@ Read-only validation from the main checkout passes sections, seven requirements,
 six criteria, mappings and placeholder checks. It warns that two branch-only
 source paths are absent in the main checkout and that two claims are withheld.
 Both named source paths exist in this branch. No claim-recording write was run.
+
+## Build checkpoint
+
+Implementation is in progress in permanent worktree
+`.worktrees/kan-v2-collection-build`, branch `feat/kan-v2-collection-build`.
+`evidence_operations::projection` reads complete typed rows inside one SQLite
+read transaction; `evidence_operations_collection::overview` validates sealed
+hashes, applies chronological whole-observation dominance and publishes a bounded
+in-memory result. The active snapshot is read first and buffered within the same
+memory budget, then applied after sealed generations so intermediate regressions
+remain detectable. Existing recent-history behavior is unchanged.
+
+The owner CLI is `kan-v2 ops-overview <collection>`. Dashboard endpoints are
+`GET /api/overview`, `POST /api/overview/refresh`, and
+`POST /api/overview/cancel`, with the same header bearer token, loopback and
+origin checks as the existing operations surface. POST actions accept no body
+and cannot perform owner rotation or erasure. A standalone journal cannot supply
+a collection overview. Status reads only published memory; a previous successful
+sample retains its original job and frontier during failed/cancelled refreshes.
+
+Overview totals serialize as decimal strings, preserving every u64 digit in the
+browser. Coverage is explicitly observations-only and capture completeness is
+unknown. The source list includes sealed hashes and typed-row snapshot digests;
+historical worker details remain in per-generation history rather than being
+added or promoted to current health. The active worker sample stays with its
+original active snapshot. Hashing streams 64-KiB buffers; the 128-MiB accounting
+includes a 16-MiB allowance for SQLite, manifest and transient buffers, conservative
+per-row/container allowances, buffered active rows and retained source metadata.
+Caller-specified test limits can only reduce the production ceilings.
+
+The UI offers explicit load/build/cancel controls, keeps failed-refresh samples
+visibly old, formats exact integer strings and clears results on lock. Rust and
+real-browser qualification are complete for this checkpoint: 58 Rust checks, 54 Node checks, strict v2 Clippy and six demonstrated negative controls. The browser confirmed a deduplicated three-generation result, source disclosure, light/dark/mobile layouts and clearing on lock. Evidence is preserved in `.design/reviews/kan-v2-overview-author/`. Fresh Opus review remains pending; no parent AC is marked complete.

@@ -83,7 +83,13 @@ checkpoint scope in the governing design for its concurrency threat boundary.
 2. Owner-copy upgrade and proof-preserving backup/recovery with surface conformance;
    explicit degraded inventory server, descending RPC/cursor framing, source
    authorization and available/missing/corrupt Library rows.
-3. Bounded deduplicated collection overview from the existing collection design.
+3. Bounded deduplicated collection overview is drafted in permanent worktree
+   `.worktrees/kan-v2-collection-build`, branch `feat/kan-v2-collection-build`.
+   Complete typed source scans, bounded deduplication, asynchronous refresh/cancel,
+   CLI, authenticated dashboard routes and UI are implemented. Author qualification
+   passed 58 Rust and 54 Node checks, strict v2 Clippy, six negative controls,
+   and real light/dark/mobile browser inspection. Fresh Opus review remains pending;
+   evidence is in `.design/reviews/kan-v2-overview-author/`.
 4. Versioned human-readable conversation adapters with source lineage.
 5. Authorized search/filters, annotations, saved views, background analysis/day
    integration and owner admin workflows from the full frontend design.

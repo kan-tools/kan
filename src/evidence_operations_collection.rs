@@ -1,10 +1,12 @@
 //! Owner-triggered operations generations. No automatic expiry or deletion.
+pub mod overview;
 use crate::evidence_operations::{Journal, Snapshot};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
     fs::File,
+    io::Read,
     path::{Path, PathBuf},
 };
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -92,9 +94,19 @@ struct Manifest {
     generations: Vec<Generation>,
 }
 fn manifest(root: &Path) -> Result<Manifest> {
+    Ok(manifest_snapshot(root)?.0)
+}
+fn manifest_snapshot(root: &Path) -> Result<(Manifest, String)> {
     let path = root.join(MANIFEST);
     private(&path, false, MAX_MANIFEST)?;
-    let m: Manifest = serde_json::from_slice(&std::fs::read(path)?)?;
+    let mut bytes = Vec::new();
+    File::open(path)?
+        .take(MAX_MANIFEST + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_MANIFEST {
+        return Err(invalid());
+    }
+    let m: Manifest = serde_json::from_slice(&bytes)?;
     if m.version != 1
         || m.generations.is_empty()
         || m.generations.len() > 1024
@@ -115,7 +127,7 @@ fn manifest(root: &Path) -> Result<Manifest> {
             return Err(invalid());
         }
     }
-    Ok(m)
+    Ok((m, digest(&bytes)))
 }
 /// Prevent upgraded callers from bypassing collection lifetime locks by opening
 /// a generation path directly. Historical readers use the read-only API below.
