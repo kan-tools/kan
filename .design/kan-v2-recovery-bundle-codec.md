@@ -353,3 +353,43 @@ tests against independent Python vectors and nine compiled controls, with strict
 v2 Clippy and formatting. Evidence is in
 `.design/reviews/kan-v2-recovery-commitment-author/`. Fresh independent review
 remains pending; full member and state verification are separate prerequisites.
+
+## Next verifier checkpoint: logical member and initial availability
+
+The pure member verifier takes an owner-pinned context and borrowed, ordered
+record, membership and original-object slices. Its caller must acquire those
+bytes with bounded reads before calling; this is not a SQLite opener. The physical
+reader must reject noncanonical original CID text before constructing typed CIDs;
+parsing a spelling and silently normalizing it is not source validation. Explicit
+item/input-byte/time/cancellation limits bound this invocation. It stores only
+bounded metadata coordinates, never copies the whole payload collection. Hashing
+polls per 64 KiB; canonical decoding, request verification and signatures are
+individually bounded operations with cancellation checks around them.
+
+Independently verify the contiguous issuer chain, admitted versus retained-copy
+purpose, static service writer form, per-writer position/predecessor, unique
+operation, the service operation-to-slot commitment and consistent slot bindings. Profile 3 additionally binds its plan,
+original membership and retained-prefix metadata digest. An unfinished prefix is
+reported as incomplete; matching metadata alone does not certify missing writer
+signatures or retained bytes. No standalone publication capability is returned.
+
+Every known length must be positive, at most 4 MiB, and agree across references
+and original membership. Retain raw corrupt/empty originals in M1. Verify each
+present object's hash once and sample every occurrence separately; unreferenced
+membership/original keys receive null-occurrence loss coordinates. A hash-valid
+request that fails its writer signature or exact manifest binding is invalid
+member evidence, not a repairable missing-byte condition. Missing/corrupt requests
+remain unavailable, with writer verification still outstanding. Loss output is
+strict occurrence/CID-text order, followed by null coordinates in CID-text order.
+
+This checkpoint must be qualified before it can feed full observation replay.
+Greedy signed-loss partitioning, historical restoration/output selection, replay,
+checkpoints, physical schema and all storage mutations remain separate work.
+
+
+The logical-member draft passes author qualification: 16 Rust functions,
+independent signed Python fixtures, eight semantic controls (one additional
+cancellation control survives because framing refuses later), strict Clippy and
+formatting. Raw results are in
+`.design/reviews/kan-v2-recovery-member-author/`. Fresh independent review is
+pending; this is not full bundle acceptance.
