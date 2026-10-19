@@ -420,3 +420,44 @@ cancellation control survives because framing refuses later), strict Clippy and
 formatting. Raw results are in
 `.design/reviews/kan-v2-recovery-member-author/`. Fresh independent review is
 pending; this is not full bundle acceptance.
+
+## Next draft checkpoint: pure observation replay
+
+Replay is over immutable caller-acquired member, candidate and observation slices,
+under independent bundle/issuer/observer pins and an optional externally retained
+checkpoint. It first audits the member and fixes M1/frontier. It authenticates
+one contiguous observer chain from genesis, compares creation to that member,
+and requires the exact greedily partitioned initial loss vector before any
+restoration or publication. A late, omitted, repeated or altered loss refuses.
+The member-verifier review must be resolved before qualifying this consumer.
+
+Each physical candidate must have exactly one restored observation, target an
+existing member key/reference, match its content address and every known length.
+No unsigned candidate, duplicate restoration, hidden subset or new orphan is
+accepted. An intent commits to all candidates observed before it. Replay computes
+that historical R1 and deterministic output union, re-audits the virtual output
+(including writer signatures and complete profile-3 recipe) and only then computes
+O1. The virtual audit is not a physical standalone-schema or durability check.
+Originals and later candidates never silently replace historical selections.
+
+Track attempts by their explicit ID: one intent, failures before at most one
+observed result, no later failure or second observed for that same attempt.
+Other attempts remain independent. Pending or failed attempts do not establish
+that an output is absent; an observed claim does not activate a writer or prove
+that the output file is still present. Physical output verification/fsync and
+job reconciliation remain separate requirements.
+
+A supplied external checkpoint must match the complete context, sequence and
+statement CID in the verified chain. A missing or changed checkpoint prefix
+refuses. Return the latest verified frontier separately from the selected external
+pin; an extension is not automatically independently retained. No checkpoint
+means no rollback protection, and truncation after the latest retained checkpoint
+remains undetectable.
+
+Owner-selected item, scan-byte, time and cancellation limits cover this replay.
+Scan bytes count each audited member/virtual-output pass, each observation envelope,
+each candidate validation and each commitment pass; they are a documented work
+metric, not measured CPU cycles or RSS. Reuse a virtual-output result only while
+the selected candidate set is unchanged. All collections are bounded by charged
+input counts. This remains a pure draft until independent semantic vectors and
+fresh review qualify it; no SQLite opener/writer, job, RPC or UI is introduced.

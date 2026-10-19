@@ -6,6 +6,26 @@ It builds on the stacked evidence-availability design, preserving existing draft
 and the root checkout's unrelated edits. No production archive, key, deployment,
 installation, live migration or main merge has occurred.
 
+## Current continuation checkpoint (2026-10-19)
+
+The sections below retain the history of individual checkpoints. For the current
+dependency order, use this table; a passing component review does not close the
+full recovery or human-frontend acceptance criteria.
+
+| Layer | Current evidence | Still required |
+|---|---|---|
+| Pure KANC2 decoder (#297) | Strict decoder and promoted independent regressions; latest independent scope-C review APPROVE | Occurrence assembly, provider adapters, source spans and real session UI |
+| Observation wire codec (#298) | Authenticated bounded envelopes and independent signed vectors; review APPROVE WITH FOLLOW-UPS | Semantic replay, physical format and publication checks |
+| Streaming M1/O1/R1 (#299) | Reviewed framing; promoted boundary and deterministic cancellation tests; current CI green | Fresh review of the promoted follow-through is in progress with #300; digests alone confer no authority |
+| Logical member (#300) | Author tests and independent fixture construction; current CI green | Independent review in progress, including incomplete-copy membership, unavailable writer requests and cancellation |
+| Observation replay (this branch) | Draft pure replay, independent signed state fixtures and selected guard-removal runner | Rust qualification, resolution of member-review findings and fresh independent Opus review |
+| Physical recovery and delivery | Proposed bundle schema, existing lifecycle/inventory foundations | Bounded custody-checked opener, creator/restorer/publisher, crash/reconnect jobs, RPC, spool proof integration and Library unavailable-evidence UI |
+
+The Library's actual browser download is still unverified on the locked host.
+Full sessions, search/facets, annotations, saved views, analysis/day and owner
+administration remain build work. No release, merge, deployment or live cutover
+is implied by the green component CI results.
+
 ## Library qualification
 
 Commit 4b0ebc1 validates all scope entries before navigation, adds malformed
