@@ -374,3 +374,12 @@ pub fn insert_evidence_copy_object(
     )?;
     Ok(())
 }
+
+/// Open an existing retained bundle for a checkpointed append. Never create it.
+#[cfg(feature = "v2-storage")]
+pub fn open_sqlite_bundle_mutation(
+    _surface: SurfaceWrite,
+    path: &Path,
+) -> rusqlite::Result<rusqlite::Connection> {
+    rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
+}

@@ -92,3 +92,34 @@ Initial fixture and lint failures remain recorded. Fresh Opus review is pending;
 restoration/publication/full recovery acceptance remain open. Remote performance
 generation exposed an unresolved legacy claim-codec canonicality refusal;
 it is not represented as a passing scaling result.
+
+## Restoration candidate — qualification pending
+
+The dependent branch `feat/kan-v2-recovery-restoration` adds `bundle::restore`
+and `restore_observed`, sharing owned physical acquisition with inspection and
+candidate validation with pure replay. Read-only preflight precedes mutation;
+the complete bundle is reacquired/replayed under BEGIN IMMEDIATE. A new
+transition requires exact latest checkpoint equality. A verified same-bytes
+retry may reference an older retained checkpoint and returns its original
+observation plus the currently inspected checkpoint, without a second append.
+Candidate validation precedes signing; candidate and observation share one
+transaction. Postcommit errors carry an uncertain intended checkpoint.
+
+This first mutation writer accepts existing DELETE-journal,4096-byte-page
+bundles produced by creation. Other journal/page modes explicitly refuse before
+the read-write opener; no implicit format conversion occurs. Read-only hot
+journal refusal remains. The crash test explicitly permits SQLite rollback
+recovery of its disposable fixture before independently replaying it; that is
+not a shipped owner recovery action. Initial read-only inspection and transaction
+replay are separately bounded passes sharing an overall deadline, not a single
+aggregate scan counter or exact RSS quota. The output bound covers the main
+file, with journal and temporary memory overhead separate.
+
+Prepared checks cover atomic append, original history/bytes, exact retry after
+later restorations, stale/invalid/foreign candidate and wrong observer refusal,
+pre-sign validation, cancellation, lost completion, concurrent writers and
+abrupt death at eight phases with the independent Python history oracle.
+These have not yet been compiled or executed; parent creation/Content review
+holds the shared local build target. This candidate requires qualification,
+semantic controls, and its own fresh actual Opus5.5 review. It does not close
+publication, backup/rebuild, remote availability or human recovery job ACs.

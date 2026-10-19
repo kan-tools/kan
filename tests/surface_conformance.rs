@@ -537,6 +537,18 @@ const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
         1,
     ),
     (
+        "src/evidence_store/bundle/restore.rs",
+        "open_sqlite_bundle_mutation",
+        "EvidenceBundle",
+        1,
+    ),
+    (
+        "src/evidence_store/bundle/restore.rs",
+        "open_sqlite_recovery_source",
+        "EvidenceBundleSource",
+        1,
+    ),
+    (
         "src/evidence_store/bundle/create.rs",
         "open_sqlite_recovery_source",
         "EvidenceBundleSource",
@@ -1303,7 +1315,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "4694e82d1d30af220e0667e3755d1401fc21d5eaaa5748b7022c42051a804854",
+                "07180dc92543d5420a8aecea95de2fe558bcdbf16be2cd8bda23d053fcc95fc4",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(
