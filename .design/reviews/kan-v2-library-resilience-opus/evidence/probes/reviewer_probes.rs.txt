@@ -1,0 +1,103 @@
+
+// ---- Reviewer probes (temporarily appended to tests/evidence_reader.rs; removed after) ----
+async fn probe_serve(reader: Reader, token: &'static str) -> (std::net::SocketAddr, JoinHandle<std::io::Result<()>>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    (addr, tokio::spawn(kan::evidence_library::serve(listener, token.into(), reader)))
+}
+async fn probe_catalog(addr: std::net::SocketAddr, token: &str) -> (std::time::Duration, u16, serde_json::Value) {
+    let client = reqwest::Client::builder().no_proxy().timeout(std::time::Duration::from_secs(40)).build().unwrap();
+    let started = std::time::Instant::now();
+    let r = client.post(format!("http://{addr}/api/library")).header("content-type", "application/json")
+        .bearer_auth(token).body(r#"{"action":"catalog"}"#).send().await.unwrap();
+    let status = r.status().as_u16();
+    let v = serde_json::from_slice(&r.bytes().await.unwrap()).unwrap_or(serde_json::Value::Null);
+    (started.elapsed(), status, v)
+}
+
+#[tokio::test]
+async fn probe_p1_denial_only_catalog_is_complete() {
+    let identity = Identity::generate();
+    let ok = Fixture::new(81, &identity).await;
+    let denied = Fixture::new(82, &identity).await;
+    denied.revoke();
+    let (addr, server) = probe_serve(Reader::new(identity, vec![ok.access(), denied.access()]).unwrap(), "probe-p1-token-0123456789abcdef-reviewer").await;
+    let (_, status, v) = probe_catalog(addr, "probe-p1-token-0123456789abcdef-reviewer").await;
+    server.abort();
+    println!("P1 status={status} body={v}");
+    assert_eq!(status, 200);
+    assert_eq!(v["scopes"].as_array().unwrap().len(), 1);
+    assert_eq!(v["coverage"], "complete", "signed denial must be indistinguishable from an unconfigured scope");
+    let keys: std::collections::BTreeSet<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+    assert_eq!(keys, ["capabilities", "coverage", "scopes", "unavailable", "version"].into_iter().collect());
+}
+
+#[tokio::test]
+async fn probe_p2_sixteen_stalled_scopes_fit_budget_and_keep_order() {
+    let identity = Identity::generate();
+    let mut fixtures = Vec::new();
+    for n in 100..116u8 { fixtures.push(Fixture::new(n, &identity).await); }
+    for f in &fixtures { f.mode.store(10, Ordering::Relaxed); }
+    let reader = Reader::new(identity, fixtures.iter().map(Fixture::access).collect()).unwrap();
+    let (addr, server) = probe_serve(reader, "probe-p2-token-0123456789abcdef-reviewer").await;
+    let (elapsed, status, v) = probe_catalog(addr, "probe-p2-token-0123456789abcdef-reviewer").await;
+    println!("P2a all-16-stalled elapsed={elapsed:?} status={status} body={v}");
+    assert_eq!(status, 200);
+    assert_eq!(v["coverage"], "partial");
+    assert_eq!(v["scopes"].as_array().unwrap().len(), 0);
+    assert!(elapsed < std::time::Duration::from_secs(35));
+    // Last scope of each wave stalls; others healthy. Order must be sorted, independent of latency.
+    for (i, f) in fixtures.iter().enumerate() { f.mode.store(if i % 4 == 0 { 10 } else { 0 }, Ordering::Relaxed); }
+    let (elapsed, status, v) = probe_catalog(addr, "probe-p2-token-0123456789abcdef-reviewer").await;
+    let got: Vec<String> = v["scopes"].as_array().unwrap().iter().map(|s| s["scope"].as_str().unwrap().to_owned()).collect();
+    let want: Vec<String> = fixtures.iter().enumerate().filter(|(i, _)| i % 4 != 0).map(|(_, f)| svc::hex(&f.scope)).collect();
+    println!("P2b one-stall-per-wave elapsed={elapsed:?} status={status} coverage={} n={}", v["coverage"], got.len());
+    assert_eq!(got, want);
+    server.abort();
+}
+
+#[tokio::test]
+async fn probe_p3_latency_reveals_stalled_wave_count() {
+    let identity = Identity::generate();
+    let mut fixtures = Vec::new();
+    for n in 120..128u8 { fixtures.push(Fixture::new(n, &identity).await); }
+    let reader = Reader::new(identity, fixtures.iter().map(Fixture::access).collect()).unwrap();
+    let (addr, server) = probe_serve(reader, "probe-p3-token-0123456789abcdef-reviewer").await;
+    let mut lines = Vec::new();
+    for stalled in [vec![], vec![0], vec![0, 1], vec![0, 4]] {
+        for (i, f) in fixtures.iter().enumerate() { f.mode.store(if stalled.contains(&i) { 10 } else { 0 }, Ordering::Relaxed); }
+        let (elapsed, _, v) = probe_catalog(addr, "probe-p3-token-0123456789abcdef-reviewer").await;
+        lines.push(format!("stalled={stalled:?} elapsed={:.2}s coverage={} scopes={}", elapsed.as_secs_f64(), v["coverage"], v["scopes"].as_array().unwrap().len()));
+    }
+    server.abort();
+    for l in &lines { println!("P3 {l}"); }
+}
+
+#[tokio::test]
+async fn probe_p4_client_disconnect_releases_execution_permits() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let identity = Identity::generate();
+    let mut fixtures = Vec::new();
+    for n in 140..156u8 { fixtures.push(Fixture::new(n, &identity).await); }
+    for f in &fixtures { f.mode.store(10, Ordering::Relaxed); }
+    let reader = Reader::new(identity, fixtures.iter().map(Fixture::access).collect()).unwrap();
+    let (addr, server) = probe_serve(reader, "probe-p4-token-0123456789abcdef-reviewer").await;
+    let body = r#"{"action":"catalog"}"#;
+    let mut sockets = Vec::new();
+    for _ in 0..4 {
+        let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
+        s.write_all(format!("POST /api/library HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer probe-p4-token-0123456789abcdef-reviewer\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+        sockets.push(s);
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    drop(sockets); // client cancels all four catalog requests
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let started = std::time::Instant::now();
+    let mut s = tokio::net::TcpStream::connect(addr).await.unwrap();
+    s.write_all(format!("GET / HTTP/1.1\r\nHost: {addr}\r\n\r\n").as_bytes()).await.unwrap();
+    let mut out = Vec::new();
+    let r = tokio::time::timeout(std::time::Duration::from_secs(25), s.read_to_end(&mut out)).await;
+    let elapsed = started.elapsed();
+    server.abort();
+    println!("P4 after-disconnect GET elapsed={elapsed:?} read={:?} first_line={:?}", r.as_ref().map(|x| x.as_ref().map(|n| *n).map_err(|e| e.kind())), String::from_utf8_lossy(&out).lines().next());
+}

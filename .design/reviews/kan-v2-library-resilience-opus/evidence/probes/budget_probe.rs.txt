@@ -1,0 +1,25 @@
+
+    // ---- Reviewer probe (temporarily appended inside budget_tests; removed after) ----
+    #[tokio::test(start_paused = true)]
+    async fn probe_whole_deadline_includes_queue_time() {
+        let budget = ConnectionBudget::new();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let mut holders = Vec::new();
+        for _ in 0..4 {
+            let (b, r, p) = (budget.clone(), release.clone(), budget.admit().unwrap());
+            holders.push(tokio::spawn(async move { b.run(p, async move { r.notified().await }).await }));
+        }
+        let b = budget.clone();
+        let p = budget.admit().unwrap();
+        let queued = tokio::spawn(async move { b.run(p, std::future::pending::<()>()).await });
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(3)).await;
+        release.notify_one();
+        for _ in 0..4 { tokio::task::yield_now().await; }
+        tokio::time::advance(Duration::from_millis(31_999)).await;
+        tokio::task::yield_now().await;
+        assert!(!queued.is_finished());
+        tokio::time::advance(Duration::from_millis(2)).await;
+        tokio::task::yield_now().await;
+        assert!(queued.is_finished(), "35 s whole deadline must include queue time");
+    }

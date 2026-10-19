@@ -1,0 +1,34 @@
+file=src/evidence_library.rs
+--- old
+Err(Failure::AccessLimited) => {}
++++ new
+Err(Failure::AccessLimited) => partial = true,
+
+$ cargo test -j4 --features v2-crypto --test evidence_reader probe_p1_denial_only_catalog_is_complete -- --exact
+exit=101
+
+running 1 test
+test probe_p1_denial_only_catalog_is_complete ... FAILED
+
+failures:
+
+---- probe_p1_denial_only_catalog_is_complete stdout ----
+P1 status=200 body={"capabilities":["snapshot-inventory","source-ranges","provenance"],"coverage":"partial","scopes":[{"pin":{"reply":{"reply":{"issuer":"did:key:zDnaeYjNCPM1CFg8x4KJF1PEHBg2jWzFnoW2YSjjaXNmvEWeR","request":"4eb8a581bc39d9fa00112184428814a5cce71b1aafce5de1eddcad732e13dbc9","result":{"Ok":{"kind":"snapshot","through":0,"tip":null}},"version":1},"signature":"eadcc0b8c31b8ebe93ccc061ad983b6cf20befb543b8a618d64bec3d881c199157e48a237de284d34a71dc695b66446bbf3793110577e5e12e1edafa1aa2958f"},"request":"7b2272657175657374223a7b2276657273696f6e223a312c2273636f7065223a2235313531353135313531353135313531353135313531353135313531353135313531353135313531353135313531353135313531353135313531353135313531222c2261756469656e6365223a226469643a6b65793a7a446e6165596a4e43504d314346673878344b4a46315045484267326a577a466e6f573259536a6a61584e6d7645576552222c227072696e636970616c223a226469643a6b65793a7a446e6165624d4647383831797a527561434a4e696b7068786b6d52506539626643437a6657736671435367716b7a6a74222c2265787069726573223a313739323337373238352c22636f6d6d616e64223a7b226f7065726174696f6e223a22736e617073686f74227d7d2c227369676e6174757265223a223836306539623539326136363166623930306634316331313465306339306431373036306234653365346536636337633038623965646435326133653561653435383932326562393637653833363632343836333838313865613530643464326130343937386161363235636239303037666461326366623664316432343237227d"},"scope":"5151515151515151515151515151515151515151515151515151515151515151"}],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"],"version":1}
+
+thread 'probe_p1_denial_only_catalog_is_complete' (8980399) panicked at tests/evidence_reader.rs:1056:5:
+assertion `left == right` failed: signed denial must be indistinguishable from an unconfigured scope
+  left: String("partial")
+ right: "complete"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    probe_p1_denial_only_catalog_is_complete
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.17s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+    Finished `test` profile [unoptimized] target(s) in 6.87s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+error: test failed, to rerun pass `--test evidence_reader`
+

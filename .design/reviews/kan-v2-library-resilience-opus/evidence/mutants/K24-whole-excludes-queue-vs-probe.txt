@@ -1,0 +1,50 @@
+file=src/evidence_library.rs
+--- old
+let connection = async {
+            let Ok(Ok(_request)) = tokio::time::timeout(
+                Duration::from_secs(6),
+                self.requests.clone().acquire_owned(),
+            )
+            .await
+            else {
+                return;
+            };
+            work.await;
+        };
+        let _ = tokio::time::timeout(Duration::from_secs(35), connection).await;
++++ new
+let Ok(Ok(_request)) = tokio::time::timeout(
+                Duration::from_secs(6),
+                self.requests.clone().acquire_owned(),
+            )
+            .await
+            else {
+                return;
+            };
+        let _ = tokio::time::timeout(Duration::from_secs(35), work).await;
+
+$ cargo test -j4 --features v2-crypto --lib evidence_library::budget_tests::probe_whole_deadline_includes_queue_time -- --exact
+exit=101
+
+running 1 test
+test evidence_library::budget_tests::probe_whole_deadline_includes_queue_time ... FAILED
+
+failures:
+
+---- evidence_library::budget_tests::probe_whole_deadline_includes_queue_time stdout ----
+
+thread 'evidence_library::budget_tests::probe_whole_deadline_includes_queue_time' (8981275) panicked at src/evidence_library.rs:385:9:
+35 s whole deadline must include queue time
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_library::budget_tests::probe_whole_deadline_includes_queue_time
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 73 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+    Finished `test` profile [unoptimized] target(s) in 5.94s
+     Running unittests src/lib.rs (target/debug/deps/kan-7f955e5e00633d5f)
+error: test failed, to rerun pass `--lib`
+

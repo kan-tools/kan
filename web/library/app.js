@@ -37,7 +37,7 @@
     if (error.name === 'AbortError') return;
     const message = error.readerMessage || 'Reader unavailable. Retry, refresh the snapshot, or choose another scope.';
     if (error.accessDenied || $('library').hidden) lock(message);
-    else { clearInspector(); if (!pin) { $('capability-list').replaceChildren(); $('scope').replaceChildren(); $('catalog-status').textContent = 'Source check failed · coverage is unknown. Retry sources.'; } notice(message, true); }
+    else { clearInspector(); if (!pin) { $('capability-list').replaceChildren(); $('scope').replaceChildren(); $('catalog-status').textContent = 'Source check failed · coverage is unknown. Retry sources.'; $('catalog-status').className = ''; } notice(message, true); }
   }); }
   function tab(name) {
     $('source-panel').hidden = name !== 'source'; $('provenance').hidden = name !== 'provenance';

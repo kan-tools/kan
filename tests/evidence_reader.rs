@@ -709,6 +709,51 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
         0,
         "verified grant denial may exclude the scope"
     );
+    assert_eq!(
+        value["coverage"], "complete",
+        "verified denial is not an availability failure"
+    );
+    assert_eq!(
+        value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec![
+            "capabilities",
+            "coverage",
+            "scopes",
+            "unavailable",
+            "version"
+        ],
+        "catalog has no failure-count or failed-source field"
+    );
+    a.mode.store(10, Ordering::Relaxed);
+    let timed_out = request().send().await.unwrap();
+    assert_eq!(timed_out.status(), 200);
+    let timed_out: serde_json::Value =
+        serde_json::from_slice(&timed_out.bytes().await.unwrap()).unwrap();
+    assert_eq!(
+        timed_out["coverage"], "partial",
+        "a timeout is not an authenticated denial, even with no other errors"
+    );
+    assert_eq!(timed_out["scopes"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        timed_out
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec![
+            "capabilities",
+            "coverage",
+            "scopes",
+            "unavailable",
+            "version"
+        ]
+    );
 }
 
 #[tokio::test]
@@ -955,6 +1000,22 @@ async fn catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sou
         serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
     assert!(started.elapsed() < std::time::Duration::from_secs(7));
     assert_eq!(value["coverage"], "partial");
+    assert_eq!(
+        value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        vec![
+            "capabilities",
+            "coverage",
+            "scopes",
+            "unavailable",
+            "version"
+        ],
+        "partial coverage must not expose failure counts"
+    );
     assert_eq!(value["scopes"].as_array().unwrap().len(), 1);
     assert_eq!(value["scopes"][0]["scope"], svc::hex(&healthy.scope));
     for fixture in [&forged, &denied, &stalled, &refused] {
@@ -1023,4 +1084,43 @@ async fn library_body_read_deadline_returns_an_explicit_timeout() {
     .unwrap();
     assert!(String::from_utf8_lossy(&output).starts_with("HTTP/1.1 408"));
     assert!(started.elapsed() >= std::time::Duration::from_secs(2));
+}
+
+#[tokio::test]
+async fn library_refuses_thirteenth_socket_at_the_live_admission_boundary() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let identity = Identity::generate();
+    let a = Fixture::new(50, &identity).await;
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    struct Stop(JoinHandle<std::io::Result<()>>);
+    impl Drop for Stop {
+        fn drop(&mut self) {
+            self.0.abort();
+        }
+    }
+    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
+        listener,
+        "synthetic-socket-cap-reader-token-32".into(),
+        reader,
+    )));
+    let mut held = Vec::new();
+    for _ in 0..12 {
+        let mut socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+        socket.write_all(b"GET / HTTP/1.1\r\n").await.unwrap();
+        held.push(socket);
+        tokio::task::yield_now().await;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let mut excess = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let mut byte = [0];
+    let closed =
+        tokio::time::timeout(std::time::Duration::from_secs(2), excess.read(&mut byte)).await;
+    assert!(
+        matches!(closed, Ok(Ok(0)))
+            || matches!(closed,Ok(Err(ref e)) if matches!(e.kind(),std::io::ErrorKind::ConnectionReset|std::io::ErrorKind::ConnectionAborted)),
+        "thirteenth socket must close at admission, not join an unbounded queue: {closed:?}"
+    );
+    drop(held);
 }

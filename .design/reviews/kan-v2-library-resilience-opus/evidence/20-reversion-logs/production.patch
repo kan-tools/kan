@@ -1,0 +1,1782 @@
+diff --git a/.design/kan-v2-followup-status.md b/.design/kan-v2-followup-status.md
+index 39a0777..fcbbab3 100644
+--- a/.design/kan-v2-followup-status.md
++++ b/.design/kan-v2-followup-status.md
+@@ -20,0 +21,18 @@ for acceptance. The complete human frontend remains required by
++## Accepted delivery order
++
++The owner approved this roadmap after #286/#287:
++
++1. Library resilience: partial healthy browsing, request bounds, regression gaps
++   and real-browser export qualification. Implementation is now in
++   `.design/kan-v2-library-resilience.md`; fresh review remains pending. Actual
++   download delivery is still unverified in IAB.
++2. Missing-evidence rows with authenticated metadata surviving payload loss;
++   preserve the admission boundary described below.
++3. Implement the bounded deduplicated collection overview in #287.
++4. Human conversation browsing: messages, tools, attachments, branches and gaps,
++   with exact mapping back to retained evidence.
++5. Search/filters, annotations/saved views, analysis and integrated human admin.
++
++These are cumulative workstreams, not permission to call the frontend complete
++after step 1. Deployment placement and live cutover remain separate.
++
+diff --git a/.design/kan-v2-library-resilience.md b/.design/kan-v2-library-resilience.md
+new file mode 100644
+index 0000000..a88cef3
+--- /dev/null
++++ b/.design/kan-v2-library-resilience.md
+@@ -0,0 +1,86 @@
++# Feature: Library resilience and verified exports
++
++## Summary
++Continue the approved Library roadmap with useful partial browsing when an upstream
++source fails, bounded request scheduling and stronger regression evidence. Serve
++`telos/raw-data-and-projections`: an incomplete check must remain visible and must
++not erase accessible neighbours or promote unverified metadata to authority.
++
++## Requirements
++- REQ-1: Keep successfully authorized scopes usable when another configured scope is unreachable, malformed or unverifiable. Emit an explicit complete/partial catalog-coverage field. Verified denial remains omitted; never expose failed-scope identifiers, endpoints, failure counts, pins or source bytes.
++- REQ-2: Bound remote calls to five seconds each, catalog concurrency to four within the existing sixteen-scope configuration limit, request-body reading to three seconds, and keep four executing/twelve accepted connections with six-second queue and thirty-five-second whole-connection deadlines. Cancellation must drop unfinished reads.
++- REQ-3: Show partial catalog coverage persistently during page/source navigation; supply an explicit retry-sources action. Clear prior pins, rows and plaintext before rechecking sources. Lock must invalidate late replies and clear coverage and capability metadata.
++- REQ-4: Pin actual API capability lists and negative UI cases: 401/403 denial, Previous during loading, malformed/duplicate capabilities and all directional-control families. Preserve byte-exact explicit UTF-8 inspection.
++- REQ-5: Exercise explicit range export in a real browser and compare delivered bytes when the browser exposes a file. Keep authorization rechecks and bounded memory. If the browser cannot deliver or inspect downloads, record the exact limitation without marking delivery verified.
++- REQ-6: Preserve raw storage and current admission proofs. Commit fresh actual Opus 5.5 review, meaningful whole-production reversion and surviving coverage gaps. Keep subsequent missing-evidence, collection overview and full-frontend work visible.
++
++## Acceptance Criteria
++- [ ] AC-1: Real signed synthetic endpoints demonstrate healthy-neighbour page/source access alongside forged, refused and stalled sources, explicit partial coverage, recovery on retry, and indistinguishable omission of denied/unknown scopes. No failed identifier appears in serialized responses. Reverting partial-catalog handling fails a named assertion. (REQ-1, REQ-3, REQ-6)
++- [ ] AC-2: Production scheduling tests demonstrate four executing and twelve admitted jobs, exact queue/whole deadlines, permit release on cancellation and refusal of excess sockets. A real fifth-socket test checks both success and queued latency. Catalog scheduling reaches later healthy scopes despite stalled earlier ones. (REQ-2, REQ-6)
++- [ ] AC-3: Node tests verify persistent partial coverage through paging/inspection, retry recovery, all-failed distinct from complete-empty, and no late repaint after lock. Actual API capability arrays are asserted. (REQ-3, REQ-4)
++- [ ] AC-4: Negative tests exercise both denial statuses, Previous during an in-flight page, malformed/duplicate capabilities, and isolates/LRM/RLM/ALM as well as embedding controls. Mutation checks must fail assertions, not compilation. (REQ-4, REQ-6)
++- [ ] AC-5: Real-browser fixture checks desktop/mobile partial-state rendering and retry, plus exact exported bytes or an explicitly retained browser-delivery limitation. Captured markup stays inert and lock clears source. (REQ-3, REQ-5)
++- [ ] AC-6: Source/store surfaces remain unchanged; fresh Opus review and correction evidence are retained. The follow-up ledger distinguishes this completed checkpoint from unimplemented later roadmap items. (REQ-6)
++
++## Architecture
++The modules remain registered through `src/lib.rs`; `Cargo.toml` enables Tokio
++time control for deterministic tests without adding a persistent surface.
++
++`src/evidence_library.rs` composes catalog snapshots in groups of at most four,
++without detached tasks; dropping the query cancels its in-flight group. Only a
++verified Snapshot becomes a selectable scope. The wire response adds `coverage`
++(`complete` or `partial`) to the existing catalog. Partial coverage reports that
++some configured checks failed, without identifying or counting them. A signed
++denial remains indistinguishable from an unknown grant. This is an intentional
++privacy refinement of the requested per-scope error rows: unauthenticated scope
++identities do not become browser-visible merely because their transport failed.
++All-failed catalogs are partial with no selectable scopes, not complete-empty.
++
++`src/evidence_reader.rs` bounds each signed upstream operation to five seconds.
++Sixteen catalog checks take at most four five-second groups; a source request
++uses at most two five-second calls. Queue six + headers five + body three +
++catalog twenty leaves one second inside the overall thirty-five-second deadline;
++this is a budget composition, not a hard CPU scheduling guarantee. Timeouts are
++unavailable observations, never authenticated grant denials. Slow healthy
++services may be reported partial and can be retried.
++
++Extract the existing connection admission/deadline code out of the select macro
++into a private production helper shared by deterministic time-controlled tests.
++The live server still owns all tasks and socket permits; abort/drop releases both
++execution and admission permits. Keep read authority separate from administration.
++No request begins queued work after its deadline or leaves detached remote work.
++
++`web/library/app.js` and `web/library/index.html` retain a separate persistent
++catalog-coverage region and retry action, so normal notices cannot overwrite the
++partial warning. Rechecking clears old inventory and selected source immediately.
++Unknown/malformed capability responses fail closed. Use textContent for all labels.
++The existing source-range export remains user-triggered and reauthorized; no
++clipboard, automatic export, browser persistence or new plaintext server surface.
++
++## Resolved Questions
++- Continue in a permanent worktree, stacked on the Library and overview-design PRs.
++- Partial catalog failure is visible without exposing identifiers whose grants could not be verified. This preserves the original pre-filter authorization contract.
++- Five-second per-call limits make bounded partial results practical; they are visible availability limits, not proof that a slow source is absent.
++
++## Open Questions
++No new owner preference is needed for this checkpoint. Deployment placement is
++still unanswered and remains independent of synthetic implementation/review.
++
++## Out of Scope
++Missing historical objects still require a separate authenticated-metadata design;
++do not bypass Service::audit_suffix/read_signed. Collection overview, normalized
++conversations, search, annotations, views, analysis and admin remain required next
++roadmap steps. No live installation, migration/cutover, production keys or main merge.
++
++## Process record
++Continuation of the approved roadmap and Library design. Main `day doctor` finds
++seven atoms but cannot establish complete composition because two claims remain
++withheld. The live raw-data-and-projections telos deliberately has no witnesses;
++none are invented. Git-first records remain the agreed backfill path while the
++worktree/shared-log limitation persists. `day next design` names generative-build.
++
++Validation: the worktree-local day check refuses shared-workspace discovery
++(day#168 / kan#197), not an empty log. Read-only validation from the main checkout
++passes six requirements, six criteria, mappings and placeholders; it warns about
++four branch-only paths and two withheld claims. All four paths exist here. No
++kan/day claim writes or inferred witnesses.
+diff --git a/.design/reviews/kan-v2-library-resilience-author/README.md b/.design/reviews/kan-v2-library-resilience-author/README.md
+new file mode 100644
+index 0000000..b2a9cbc
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/README.md
+@@ -0,0 +1,15 @@
++# Library resilience author evidence
++
++Baseline 60f3d36. Private target COW-copied from the Library worktree and kan
++cleaned before compilation; four build jobs, no parallel heavy jobs. Budget
++units2, reader16+1ignored, real CLI1 and surface19 passed, then new body-deadline
++case passed separately (total reader17). Node41, Python adapter7, strict v2
++all-target Clippy and fmt passed. Initial unit/Node wrapper used zsh's read-only
++status variable after success; raw test logs show success, wrapper exit was not
++counted as passing. Subsequent commands use task_result correctly.
++
++Whole-production reversion compiled and failed three named assertions; baseline
++and restoration pass. Includes all changed production, Cargo config, adapter,
++UI and docs; tests retained. No compiler error or external runner timeout is a
++semantic kill. This proves those behaviors, not every connection/privacy branch.
++Browser evidence and file-delivery limitation are retained separately.
+diff --git a/.design/reviews/kan-v2-library-resilience-author/body-test.txt b/.design/reviews/kan-v2-library-resilience-author/body-test.txt
+new file mode 100644
+index 0000000..649484f
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/body-test.txt
+@@ -0,0 +1,9 @@
++   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience)
++    Finished `test` profile [unoptimized] target(s) in 7.00s
++     Running tests/evidence_reader.rs (.local-state/target/debug/deps/evidence_reader-3bbc78385966c01b)
++
++running 1 test
++test library_body_read_deadline_returns_an_explicit_timeout ... ok
++
++test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 3.08s
++
+diff --git a/.design/reviews/kan-v2-library-resilience-author/budget-tests.txt b/.design/reviews/kan-v2-library-resilience-author/budget-tests.txt
+new file mode 100644
+index 0000000..3e10f7d
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/budget-tests.txt
+@@ -0,0 +1,28 @@
++   Compiling tokio v1.52.4
++   Compiling tokio-util v0.7.18
++   Compiling tower v0.5.3
++   Compiling tokio-rustls v0.26.4
++   Compiling h2 v0.4.15
++   Compiling hickory-proto v0.25.2
++   Compiling tower-http v0.6.11
++   Compiling atproto-dasl v0.14.5
++   Compiling hyper v1.10.1
++   Compiling hyper-util v0.1.20
++   Compiling hyper-rustls v0.27.9
++   Compiling rmcp v2.2.0
++   Compiling reqwest v0.12.28
++   Compiling tokio-stream v0.1.18
++   Compiling fs4 v1.1.0
++   Compiling hickory-resolver v0.25.2
++   Compiling atproto-identity v0.14.5
++   Compiling atproto-repo v0.14.5
++   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience)
++    Finished `test` profile [unoptimized] target(s) in 15.35s
++     Running unittests src/lib.rs (.local-state/target/debug/deps/kan-7f955e5e00633d5f)
++
++running 2 tests
++test evidence_library::budget_tests::cancelling_connection_releases_socket_and_execution_permits ... ok
++test evidence_library::budget_tests::connection_admission_execution_and_deadlines_are_bounded ... ok
++
++test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.00s
++
+diff --git a/.design/reviews/kan-v2-library-resilience-author/clippy.txt b/.design/reviews/kan-v2-library-resilience-author/clippy.txt
+new file mode 100644
+index 0000000..e8e7e0a
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/clippy.txt
+@@ -0,0 +1,20 @@
++    Checking tokio v1.52.4
++    Checking tokio-util v0.7.18
++    Checking tokio-rustls v0.26.4
++    Checking tower v0.5.3
++    Checking hickory-proto v0.25.2
++    Checking atproto-dasl v0.14.5
++    Checking h2 v0.4.15
++    Checking tower-http v0.6.11
++    Checking rmcp v2.2.0
++    Checking tokio-stream v0.1.18
++    Checking fs4 v1.1.0
++    Checking hickory-resolver v0.25.2
++    Checking hyper v1.10.1
++    Checking hyper-util v0.1.20
++    Checking hyper-rustls v0.27.9
++    Checking reqwest v0.12.28
++    Checking atproto-identity v0.14.5
++    Checking atproto-repo v0.14.5
++    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience)
++    Finished `dev` profile [unoptimized] target(s) in 11.88s
+diff --git a/.design/reviews/kan-v2-library-resilience-author/fmt.txt b/.design/reviews/kan-v2-library-resilience-author/fmt.txt
+new file mode 100644
+index 0000000..e69de29
+diff --git a/.design/reviews/kan-v2-library-resilience-author/node.txt b/.design/reviews/kan-v2-library-resilience-author/node.txt
+new file mode 100644
+index 0000000..8a55b37
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/node.txt
+@@ -0,0 +1,49 @@
++✔ real endpoint uses header auth and untrusted source stays text (4.519125ms)
++✔ lock aborts pending source and clears every private view (0.981458ms)
++✔ page and scope navigation carry only the selected authenticated pin (1.184792ms)
++✔ download rechecks authorization and denied export clears prior plaintext (0.975042ms)
++✔ old transport errors cannot lock a newer session (0.631167ms)
++✔ range reads do not accumulate plaintext and inspector close returns focus (0.801666ms)
++✔ pagehide locks and no reader persistence or HTML execution sinks are present (0.6905ms)
++✔ source view can inspect exact bytes even when UTF-8 contains controls (0.637583ms)
++✔ export keeps exact bytes alive until navigation starts and releases on timeout or lock (2.115917ms)
++✔ scope changes remove old-scope rows before a new pin is used (0.697833ms)
++✔ unavailable or unverifiable source clears plaintext but preserves other browsing (1.465708ms)
++✔ unverifiable page removes old rows and leaves scope recovery available (0.603958ms)
++✔ directional format controls default to exact hex and permit explicit UTF-8 (0.919083ms)
++✔ capability matrix renders actual service capabilities without claiming unknown support (0.517417ms)
++✔ partial catalog coverage persists while browsing and retry clears old authority (0.677667ms)
++✔ incomplete empty catalog differs from complete empty and late retry cannot repaint after lock (0.9865ms)
++✔ both authorization denial statuses lock an already open Library (1.147083ms)
++✔ Previous is disabled immediately when leaving a later page (0.588ms)
++✔ malformed duplicate and inconsistent capabilities never open a Library (2.0345ms)
++✔ all directional control families default to exact hex with explicit text access (5.669208ms)
++✔ malformed retry clears partially rendered capabilities and keeps recovery available (0.71625ms)
++✔ auth is header-only; gap filtering and untrusted values use text (27.820041ms)
++✔ late authenticated response cannot unlock a locked view (0.979708ms)
++✔ missing/stale data and HTTP failure cannot look healthy (0.627042ms)
++✔ absent and stale capture reporters remain explicitly unknown (0.608208ms)
++✔ fresh active sessions are current while historical losses remain visible (0.620125ms)
++✔ delivery retries, unsampled unclosed sessions and future clocks cannot look current (0.999209ms)
++✔ future clock samples produce consistent badges and retain uncertain reporter history (0.80375ms)
++✔ unsampled sessions and summary loss units are explicit (0.582ms)
++✔ journal capacity is independent, sticky and never an exact coverage claim (0.708083ms)
++✔ unsupported status version retains visibly disconnected values (0.523708ms)
++✔ search is sample-bounded and inspection preserves exact untrusted identifiers (0.629459ms)
++✔ locking clears rendered private metadata and closes the inspector (0.706333ms)
++✔ reporter and attempt limits warn before exhaustion and preserve partial recording semantics (0.563333ms)
++✔ future persistence timestamps stay unknown (0.417375ms)
++✔ polling preserves the focused attempt and inspector close returns to the replacement row (0.629125ms)
++✔ unchanged notices are not announced again on every poll (0.531958ms)
++✔ first paint defaults to platform; System follows live platform changes (1.212542ms)
++✔ explicit choice persists only the theme and overrides platform until System selected (0.919375ms)
++✔ invalid preference, unavailable storage and cross-tab updates degrade safely (0.945583ms)
++✔ production and preview load the same theme controller before content (0.499ms)
++ℹ tests 41
++ℹ suites 0
++ℹ pass 41
++ℹ fail 0
++ℹ cancelled 0
++ℹ skipped 0
++ℹ todo 0
++ℹ duration_ms 68.02225
+diff --git a/.design/reviews/kan-v2-library-resilience-author/python-tests.txt b/.design/reviews/kan-v2-library-resilience-author/python-tests.txt
+new file mode 100644
+index 0000000..f0a452d
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/python-tests.txt
+@@ -0,0 +1,12 @@
++test_detached_pipe_holder_cannot_hang_timeout_cleanup (__main__.Execution) ... ok
++test_export_isolated_including_untracked_and_rejects_symlink (__main__.Execution) ... ok
++test_process_exit_status_is_preserved (__main__.Execution) ... ok
++test_timeout_stops_descendant_writes (__main__.Execution) ... ok
++test_exact_assertions (__main__.Results) ... ok
++test_ignored_duplicate_missing_or_crashed_are_not_passes (__main__.Results) ... ok
++test_python_assertions_are_distinct_from_errors_and_skips (__main__.Results) ... ok
++
++----------------------------------------------------------------------
++Ran 7 tests in 3.412s
++
++OK
+diff --git a/.design/reviews/kan-v2-library-resilience-author/reversion-logs/01-evidence_reader.txt b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/01-evidence_reader.txt
+new file mode 100644
+index 0000000..851c9f4
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/01-evidence_reader.txt
+@@ -0,0 +1,9 @@
++
++running 1 test
++test catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources ... ok
++
++test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 5.64s
++
++   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reversion/b94194f3391c41e1bd71ba68285598c9)
++    Finished `test` profile [unoptimized] target(s) in 10.46s
++     Running tests/evidence_reader.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reversion-cache/target/debug/deps/evidence_reader-3bbc78385966c01b)
+diff --git a/.design/reviews/kan-v2-library-resilience-author/reversion-logs/02-evidence_reader.txt b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/02-evidence_reader.txt
+new file mode 100644
+index 0000000..bc8ce97
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/02-evidence_reader.txt
+@@ -0,0 +1,8 @@
++
++running 1 test
++test library_body_read_deadline_returns_an_explicit_timeout ... ok
++
++test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 3.05s
++
++    Finished `test` profile [unoptimized] target(s) in 0.18s
++     Running tests/evidence_reader.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reversion-cache/target/debug/deps/evidence_reader-3bbc78385966c01b)
+diff --git a/.design/reviews/kan-v2-library-resilience-author/reversion-logs/03-node.txt b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/03-node.txt
+new file mode 100644
+index 0000000..53808f7
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/03-node.txt
+@@ -0,0 +1,16 @@
++TAP version 13
++# Subtest: partial catalog coverage persists while browsing and retry clears old authority
++ok 1 - partial catalog coverage persists while browsing and retry clears old authority
++  ---
++  duration_ms: 3.036666
++  type: 'test'
++  ...
++1..1
++# tests 1
++# suites 0
++# pass 1
++# fail 0
++# cancelled 0
++# skipped 0
++# todo 0
++# duration_ms 34.692666
+diff --git a/.design/reviews/kan-v2-library-resilience-author/reversion-logs/04-evidence_reader.txt b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/04-evidence_reader.txt
+new file mode 100644
+index 0000000..3ed64ee
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/04-evidence_reader.txt
+@@ -0,0 +1,22 @@
++
++running 1 test
++test catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources ... FAILED
++
++failures:
++
++---- catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources stdout ----
++
++thread 'catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources' (8955715) panicked at tests/evidence_reader.rs:952:10:
++stalled source must not hold whole catalog past its budget: reqwest::Error { kind: Request, url: "http://127.0.0.1:63306/api/library", source: TimedOut }
++note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
++
++
++failures:
++    catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources
++
++test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 8.46s
++
++   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reversion/b94194f3391c41e1bd71ba68285598c9)
++    Finished `test` profile [unoptimized] target(s) in 6.85s
++     Running tests/evidence_reader.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reversion-cache/target/debug/deps/evidence_reader-6b0841214b94ad1d)
++error: test failed, to rerun pass `--test evidence_reader`
+diff --git a/.design/reviews/kan-v2-library-resilience-author/reversion-logs/05-evidence_reader.txt b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/05-evidence_reader.txt
+new file mode 100644
+index 0000000..b8a1943
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/05-evidence_reader.txt
+@@ -0,0 +1,21 @@
++
++running 1 test
++test library_body_read_deadline_returns_an_explicit_timeout ... FAILED
++
++failures:
++
++---- library_body_read_deadline_returns_an_explicit_timeout stdout ----
++
++thread 'library_body_read_deadline_returns_an_explicit_timeout' (8955959) panicked at tests/evidence_reader.rs:1022:6:
++body deadline must return before whole connection timeout: Elapsed(())
++note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
++
++
++failures:
++    library_body_read_deadline_returns_an_explicit_timeout
++
++test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 5.06s
++
++    Finished `test` profile [unoptimized] target(s) in 0.11s
++     Running tests/evidence_reader.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reversion-cache/target/debug/deps/evidence_reader-6b0841214b94ad1d)
++error: test failed, to rerun pass `--test evidence_reader`
+diff --git a/.design/reviews/kan-v2-library-resilience-author/reversion-logs/06-node.txt b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/06-node.txt
+new file mode 100644
+index 0000000..427fec3
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/06-node.txt
+@@ -0,0 +1,32 @@
++TAP version 13
++# Subtest: partial catalog coverage persists while browsing and retry clears old authority
++not ok 1 - partial catalog coverage persists while browsing and retry clears old authority
++  ---
++  duration_ms: 2.998625
++  type: 'test'
++  location: '/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reversion/b94194f3391c41e1bd71ba68285598c9/tests/library_ui.test.cjs:39:1'
++  failureType: 'testCodeFailure'
++  error: |-
++    The input did not match the regular expression /Partial coverage/. Input:
++    
++    ''
++    
++  code: 'ERR_ASSERTION'
++  name: 'AssertionError'
++  expected:
++  actual: ''
++  operator: 'match'
++  stack: |-
++    TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reversion/b94194f3391c41e1bd71ba68285598c9/tests/library_ui.test.cjs:39:205)
++    async Test.run (node:internal/test_runner/test:1069:7)
++    async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3)
++  ...
++1..1
++# tests 1
++# suites 0
++# pass 0
++# fail 1
++# cancelled 0
++# skipped 0
++# todo 0
++# duration_ms 36.636
+diff --git a/.design/reviews/kan-v2-library-resilience-author/reversion-logs/07-evidence_reader.txt b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/07-evidence_reader.txt
+new file mode 100644
+index 0000000..bd09788
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/07-evidence_reader.txt
+@@ -0,0 +1,9 @@
++
++running 1 test
++test catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources ... ok
++
++test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 5.61s
++
++   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reversion/b94194f3391c41e1bd71ba68285598c9)
++    Finished `test` profile [unoptimized] target(s) in 6.92s
++     Running tests/evidence_reader.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reversion-cache/target/debug/deps/evidence_reader-3bbc78385966c01b)
+diff --git a/.design/reviews/kan-v2-library-resilience-author/reversion-logs/08-evidence_reader.txt b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/08-evidence_reader.txt
+new file mode 100644
+index 0000000..e2a73c5
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/08-evidence_reader.txt
+@@ -0,0 +1,8 @@
++
++running 1 test
++test library_body_read_deadline_returns_an_explicit_timeout ... ok
++
++test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 3.05s
++
++    Finished `test` profile [unoptimized] target(s) in 0.11s
++     Running tests/evidence_reader.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reversion-cache/target/debug/deps/evidence_reader-3bbc78385966c01b)
+diff --git a/.design/reviews/kan-v2-library-resilience-author/reversion-logs/09-node.txt b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/09-node.txt
+new file mode 100644
+index 0000000..6641964
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/09-node.txt
+@@ -0,0 +1,16 @@
++TAP version 13
++# Subtest: partial catalog coverage persists while browsing and retry clears old authority
++ok 1 - partial catalog coverage persists while browsing and retry clears old authority
++  ---
++  duration_ms: 3.212292
++  type: 'test'
++  ...
++1..1
++# tests 1
++# suites 0
++# pass 1
++# fail 0
++# cancelled 0
++# skipped 0
++# todo 0
++# duration_ms 37.62325
+diff --git a/.design/reviews/kan-v2-library-resilience-author/reversion-logs/production.patch b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/production.patch
+new file mode 100644
+index 0000000..6ca81d1
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/reversion-logs/production.patch
+@@ -0,0 +1,585 @@
++diff --git a/Cargo.toml b/Cargo.toml
++index 8827d5e..60e1fde 100644
++--- a/Cargo.toml
+++++ b/Cargo.toml
++@@ -64 +64 @@ tempfile = "3.27.0"
++-tokio = { version = "1.52.4", features = ["process"] }
+++tokio = { version = "1.52.4", features = ["process", "test-util"] }
++diff --git a/docs/V2-LIBRARY.md b/docs/V2-LIBRARY.md
++index 9cee42e..349b6f4 100644
++--- a/docs/V2-LIBRARY.md
+++++ b/docs/V2-LIBRARY.md
++@@ -71 +71 @@ request body, four executing browser connections plus eight queued connections,
++-a 6-second queue deadline, 5-second header deadline and 35-second overall
+++a 6-second queue deadline, 5-second header deadline, 3-second body deadline and 35-second overall
++@@ -103,4 +103,16 @@ The reader refuses a signing principal equal to any configured storage issuer.
++-Only a verified signed access-denial result may exclude a scope from the catalog;
++-a bad reply signature produces a verification error. If another configured scope
++-is unreachable, the current all-or-error catalog remains unavailable rather than
++-publishing a partial catalog as complete. Per-scope error rows are future work.
+++A verified signed access-denial result omits the scope without identifying it.
+++Unreachable, malformed or unverifiable sources instead produce `coverage: partial`
+++alongside any successfully authorized scope pins. Failed scope identifiers,
+++endpoints and counts are not returned. Even if no scope succeeds, partial is
+++visibly distinct from a completed check with no currently authorized scopes.
+++The persistent coverage notice survives page/source navigation. **Retry sources**
+++clears old pins, rows and plaintext before rechecking grants; lock also clears
+++coverage. A failure while retrying leaves coverage unknown and retry available.
+++
+++Each upstream signed read has a five-second deadline. Catalog checks run in
+++groups of at most four (sixteen configured scopes maximum): up to twenty seconds.
+++A source range requires two calls, up to ten seconds. Queue + header + body +
+++maximum catalog budget is thirty-four seconds inside the thirty-five-second
+++connection limit. Scheduling/CPU overhead can still exhaust the whole deadline;
+++a slow healthy service is temporarily unavailable, never declared absent.
+++Cancellation drops the in-flight checks. Excess connections remain refused.
++diff --git a/scripts/revert_v2.py b/scripts/revert_v2.py
++index 46709b5..8363a36 100644
++--- a/scripts/revert_v2.py
+++++ b/scripts/revert_v2.py
++@@ -28,0 +29 @@ NODE_TESTS = {
+++    'library_partial_catalog': ('tests/library_ui.test.cjs', 'partial catalog coverage persists while browsing and retry clears old authority'),
++diff --git a/src/evidence_library.rs b/src/evidence_library.rs
++index a205230..3068381 100644
++--- a/src/evidence_library.rs
+++++ b/src/evidence_library.rs
++@@ -11,2 +11,6 @@ use serde::Deserialize;
++-use std::{convert::Infallible, io, sync::Arc, time::Duration};
++-use tokio::{net::TcpListener, sync::Semaphore, task::JoinSet};
+++use std::{convert::Infallible, future::Future, io, sync::Arc, time::Duration};
+++use tokio::{
+++    net::TcpListener,
+++    sync::{OwnedSemaphorePermit, Semaphore},
+++    task::JoinSet,
+++};
++@@ -51,5 +55,20 @@ async fn query(reader: &Reader, query: Query) -> Result<serde_json::Value, Failu
++-            for scope in reader.configured_scopes() {
++-                match reader.snapshot(&scope).await {
++-                    Ok(pin) => scopes.push(serde_json::json!({"scope":scope,"pin":pin})),
++-                    Err(Failure::AccessLimited) => {}
++-                    Err(e) => return Err(e),
+++            let mut partial = false;
+++            let configured = reader.configured_scopes();
+++            // Borrowed futures: cancellation drops every in-flight check. Four
+++            // waves of at most four five-second reads fit the connection budget.
+++            for group in configured.chunks(4) {
+++                let results = tokio::join!(
+++                    catalog_entry(reader, group.first()),
+++                    catalog_entry(reader, group.get(1)),
+++                    catalog_entry(reader, group.get(2)),
+++                    catalog_entry(reader, group.get(3))
+++                );
+++                for (scope, result) in [results.0, results.1, results.2, results.3]
+++                    .into_iter()
+++                    .flatten()
+++                {
+++                    match result {
+++                        Ok(pin) => scopes.push(serde_json::json!({"scope":scope,"pin":pin})),
+++                        Err(Failure::AccessLimited) => {}
+++                        Err(_) => partial = true,
+++                    }
++@@ -59 +78 @@ async fn query(reader: &Reader, query: Query) -> Result<serde_json::Value, Failu
++-                serde_json::json!({"version":1,"scopes":scopes,"capabilities":["snapshot-inventory","source-ranges","provenance"],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]}),
+++                serde_json::json!({"version":1,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},"capabilities":["snapshot-inventory","source-ranges","provenance"],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]}),
++@@ -136,3 +155,9 @@ async fn handle(
++-    let body = match Limited::new(r.into_body(), 16384).collect().await {
++-        Ok(body) => body.to_bytes(),
++-        Err(_) => return Ok(denied(StatusCode::PAYLOAD_TOO_LARGE)),
+++    let body = match tokio::time::timeout(
+++        Duration::from_secs(3),
+++        Limited::new(r.into_body(), 16384).collect(),
+++    )
+++    .await
+++    {
+++        Ok(Ok(body)) => body.to_bytes(),
+++        Ok(Err(_)) => return Ok(denied(StatusCode::PAYLOAD_TOO_LARGE)),
+++        Err(_) => return Ok(denied(StatusCode::REQUEST_TIMEOUT)),
++@@ -168,4 +193 @@ pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::
++-    // Four requests execute; eight more accepted sockets may wait up to six
++-    // seconds. This absorbs browser asset bursts without unbounded tasks.
++-    let slots = Arc::new(Semaphore::new(12));
++-    let requests = Arc::new(Semaphore::new(4));
+++    let budget = ConnectionBudget::new();
++@@ -175,4 +197,5 @@ pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::
++-            accepted=listener.accept()=>{
++-                let (stream,_)=accepted?;
++-                let Ok(permit)=slots.clone().try_acquire_owned() else {continue;};
++-                let host=host.clone();let token=token.clone();let reader=reader.clone();let requests=requests.clone();
+++            accepted = listener.accept() => {
+++                let (stream, _) = accepted?;
+++                let Some(permit) = budget.admit() else { continue; };
+++                let (host, token, reader) = (host.clone(), token.clone(), reader.clone());
+++                let budget = budget.clone();
++@@ -180,9 +203 @@ pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::
++-                    let _permit=permit;
++-                    let connection = async move {
++-                        let Ok(Ok(_request)) = tokio::time::timeout(Duration::from_secs(6), requests.acquire_owned()).await else { return; };
++-                        let mut builder=hyper::server::conn::http1::Builder::new();
++-                        builder.keep_alive(false).max_buf_size(16384).timer(hyper_util::rt::TokioTimer::new()).header_read_timeout(Duration::from_secs(5));
++-                        let service=hyper::service::service_fn(move |r|handle(r,host.clone(),token.clone(),reader.clone()));
++-                        let _=builder.serve_connection(TokioIo::new(stream),service).await;
++-                    };
++-                    let _=tokio::time::timeout(Duration::from_secs(35),connection).await;
+++                    budget.run(permit, connection(stream, host, token, reader)).await;
++@@ -191 +206 @@ pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::
++-            _=tasks.join_next(),if !tasks.is_empty()=>{}
+++            _ = tasks.join_next(), if !tasks.is_empty() => {}
++@@ -194,0 +210,156 @@ pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::
+++
+++async fn catalog_entry<'a>(
+++    reader: &Reader,
+++    scope: Option<&'a String>,
+++) -> Option<(&'a String, Result<Pin, Failure>)> {
+++    let scope = scope?;
+++    Some((scope, reader.snapshot(scope).await))
+++}
+++
+++async fn connection(
+++    stream: tokio::net::TcpStream,
+++    host: String,
+++    token: Arc<String>,
+++    reader: Arc<Reader>,
+++) {
+++    let mut builder = hyper::server::conn::http1::Builder::new();
+++    builder
+++        .keep_alive(false)
+++        .max_buf_size(16384)
+++        .timer(hyper_util::rt::TokioTimer::new())
+++        .header_read_timeout(Duration::from_secs(5));
+++    let service =
+++        hyper::service::service_fn(move |r| handle(r, host.clone(), token.clone(), reader.clone()));
+++    let _ = builder
+++        .serve_connection(TokioIo::new(stream), service)
+++        .await;
+++}
+++
+++/// Socket admission and execution deadlines used by the live server. Keeping
+++/// permit lifetime here makes cancellation release both bounds together.
+++#[derive(Clone)]
+++struct ConnectionBudget {
+++    sockets: Arc<Semaphore>,
+++    requests: Arc<Semaphore>,
+++}
+++impl ConnectionBudget {
+++    fn new() -> Self {
+++        Self {
+++            sockets: Arc::new(Semaphore::new(12)),
+++            requests: Arc::new(Semaphore::new(4)),
+++        }
+++    }
+++    fn admit(&self) -> Option<OwnedSemaphorePermit> {
+++        self.sockets.clone().try_acquire_owned().ok()
+++    }
+++    async fn run(&self, permit: OwnedSemaphorePermit, work: impl Future<Output = ()>) {
+++        let _socket = permit;
+++        let connection = async {
+++            let Ok(Ok(_request)) = tokio::time::timeout(
+++                Duration::from_secs(6),
+++                self.requests.clone().acquire_owned(),
+++            )
+++            .await
+++            else {
+++                return;
+++            };
+++            work.await;
+++        };
+++        let _ = tokio::time::timeout(Duration::from_secs(35), connection).await;
+++    }
+++}
+++
+++#[cfg(test)]
+++mod budget_tests {
+++    use super::*;
+++    use std::sync::atomic::{AtomicUsize, Ordering};
+++
+++    #[tokio::test(start_paused = true)]
+++    async fn connection_admission_execution_and_deadlines_are_bounded() {
+++        let budget = ConnectionBudget::new();
+++        let entered = Arc::new(AtomicUsize::new(0));
+++        let mut jobs = Vec::new();
+++        for _ in 0..12 {
+++            let permit = budget.admit().expect("twelve accepted sockets");
+++            let (b, entered) = (budget.clone(), entered.clone());
+++            jobs.push(tokio::spawn(async move {
+++                b.run(permit, async move {
+++                    entered.fetch_add(1, Ordering::SeqCst);
+++                    std::future::pending::<()>().await;
+++                })
+++                .await;
+++            }));
+++        }
+++        assert!(
+++            budget.admit().is_none(),
+++            "thirteenth socket must be refused"
+++        );
+++        tokio::task::yield_now().await;
+++        assert_eq!(
+++            entered.load(Ordering::SeqCst),
+++            4,
+++            "exactly four jobs execute"
+++        );
+++        assert_eq!(budget.requests.available_permits(), 0);
+++        tokio::time::advance(Duration::from_millis(5999)).await;
+++        tokio::task::yield_now().await;
+++        assert_eq!(
+++            jobs.iter().filter(|j| j.is_finished()).count(),
+++            0,
+++            "queue must survive until its deadline"
+++        );
+++        tokio::time::advance(Duration::from_millis(2)).await;
+++        tokio::task::yield_now().await;
+++        assert_eq!(
+++            jobs.iter().filter(|j| j.is_finished()).count(),
+++            8,
+++            "all eight queued sockets expire at six seconds"
+++        );
+++        assert_eq!(budget.sockets.available_permits(), 8);
+++        assert_eq!(
+++            entered.load(Ordering::SeqCst),
+++            4,
+++            "expired queued work must never start"
+++        );
+++        tokio::time::advance(Duration::from_millis(28_998)).await;
+++        tokio::task::yield_now().await;
+++        assert_eq!(
+++            jobs.iter().filter(|j| j.is_finished()).count(),
+++            8,
+++            "executing requests retain whole budget"
+++        );
+++        tokio::time::advance(Duration::from_millis(2)).await;
+++        tokio::task::yield_now().await;
+++        assert!(
+++            jobs.iter().all(|j| j.is_finished()),
+++            "whole connection expires at thirty-five seconds"
+++        );
+++        for job in jobs {
+++            job.await.unwrap();
+++        }
+++        assert_eq!(budget.sockets.available_permits(), 12);
+++        assert_eq!(budget.requests.available_permits(), 4);
+++    }
+++
+++    #[tokio::test(start_paused = true)]
+++    async fn cancelling_connection_releases_socket_and_execution_permits() {
+++        let budget = ConnectionBudget::new();
+++        let (tx, rx) = tokio::sync::oneshot::channel();
+++        let b = budget.clone();
+++        let permit = budget.admit().unwrap();
+++        let job = tokio::spawn(async move {
+++            b.run(permit, async move {
+++                tx.send(()).unwrap();
+++                std::future::pending::<()>().await;
+++            })
+++            .await;
+++        });
+++        rx.await.unwrap();
+++        assert_eq!(budget.requests.available_permits(), 3);
+++        assert_eq!(budget.sockets.available_permits(), 11);
+++        job.abort();
+++        assert!(job.await.unwrap_err().is_cancelled());
+++        assert_eq!(budget.requests.available_permits(), 4);
+++        assert_eq!(budget.sockets.available_permits(), 12);
+++    }
+++}
++diff --git a/src/evidence_reader.rs b/src/evidence_reader.rs
++index 1d1c431..190d898 100644
++--- a/src/evidence_reader.rs
+++++ b/src/evidence_reader.rs
++@@ -152,6 +152,10 @@ impl Reader {
++-        let reply = evidence_http::send(&access.endpoint, &access.issuer, &request)
++-            .await
++-            .map_err(|failure| match failure {
++-                Failure::AccessLimited => Failure::Corrupt,
++-                other => other,
++-            })?;
+++        let reply = tokio::time::timeout(
+++            std::time::Duration::from_secs(5),
+++            evidence_http::send(&access.endpoint, &access.issuer, &request),
+++        )
+++        .await
+++        .map_err(|_| Failure::Unavailable)?
+++        .map_err(|failure| match failure {
+++            Failure::AccessLimited => Failure::Corrupt,
+++            other => other,
+++        })?;
++diff --git a/tests/evidence_reader.rs b/tests/evidence_reader.rs
++index 120add8..38cf8e2 100644
++--- a/tests/evidence_reader.rs
+++++ b/tests/evidence_reader.rs
++@@ -134,0 +135 @@ impl Fixture {
+++                            if mode==10 {std::future::pending::<()>().await;}
++@@ -479 +480,8 @@ async fn library_browser_fixture() {
++-    let reader = Reader::new(identity, vec![a.access(), b.access()]).unwrap();
+++    let broken = Fixture::new(23, &identity).await;
+++    let recovery = std::env::var_os("KAN_LIBRARY_FIXTURE_RECOVER").map(std::path::PathBuf::from);
+++    let mut access = vec![a.access(), b.access()];
+++    if recovery.is_some() {
+++        broken.mode.store(1, Ordering::Relaxed);
+++        access.push(broken.access());
+++    }
+++    let reader = Reader::new(identity, access).unwrap();
++@@ -489 +497,9 @@ async fn library_browser_fixture() {
++-    tokio::select! {result=kan::evidence_library::serve(listener,token.into(),reader)=>result.unwrap(),_=tokio::signal::ctrl_c()=>{}}
+++    let recover = async {
+++        loop {
+++            if recovery.as_ref().is_some_and(|p| p.exists()) {
+++                broken.mode.store(0, Ordering::Relaxed);
+++            }
+++            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+++        }
+++    };
+++    tokio::select! {result=kan::evidence_library::serve(listener,token.into(),reader)=>result.unwrap(),_=tokio::signal::ctrl_c()=>{},_=recover=>{}}
++@@ -659,0 +676,16 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
+++    assert_eq!(value["coverage"], "complete");
+++    assert_eq!(
+++        value["capabilities"],
+++        serde_json::json!(["snapshot-inventory", "source-ranges", "provenance"])
+++    );
+++    assert_eq!(
+++        value["unavailable"],
+++        serde_json::json!([
+++            "semantic-search",
+++            "normalized-sessions",
+++            "annotations",
+++            "saved-views",
+++            "analysis",
+++            "administrative-jobs"
+++        ])
+++    );
++@@ -661,0 +694,2 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
+++    assert_eq!(forged.status(), 200);
+++    let value: serde_json::Value = serde_json::from_slice(&forged.bytes().await.unwrap()).unwrap();
++@@ -663,3 +697,2 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
++-        forged.status(),
++-        503,
++-        "unverified replies must not become successful empty catalogs"
+++        value["coverage"], "partial",
+++        "unverified replies must not become complete empty catalogs"
++@@ -667 +700,2 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
++-    assert!(!String::from_utf8_lossy(&forged.bytes().await.unwrap()).contains("scopes"));
+++    assert_eq!(value["scopes"].as_array().unwrap().len(), 0);
+++    assert!(!value.to_string().contains(&svc::hex(&a.scope)));
++@@ -824,0 +859 @@ async fn library_queues_a_browser_request_behind_four_idle_connections() {
+++    let started = std::time::Instant::now();
++@@ -830,0 +866,4 @@ async fn library_queues_a_browser_request_behind_four_idle_connections() {
+++    assert!(
+++        started.elapsed() >= std::time::Duration::from_secs(4),
+++        "fifth socket must actually queue behind the execution bound"
+++    );
++@@ -854,0 +894,133 @@ async fn library_refuses_public_listeners_and_short_tokens_before_serving() {
+++
+++#[tokio::test]
+++async fn catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources() {
+++    let identity = Identity::generate();
+++    let mut healthy = Fixture::new(45, &identity).await;
+++    healthy.append(b"healthy source remains browsable");
+++    let forged = Fixture::new(41, &identity).await;
+++    let denied = Fixture::new(42, &identity).await;
+++    let stalled = Fixture::new(37, &identity).await;
+++    let mut more_stalled = Vec::new();
+++    for n in [38, 39, 40] {
+++        let f = Fixture::new(n, &identity).await;
+++        f.mode.store(10, Ordering::Relaxed);
+++        more_stalled.push(f);
+++    }
+++    let refused = Fixture::new(44, &identity).await;
+++    forged.mode.store(1, Ordering::Relaxed);
+++    denied.revoke();
+++    stalled.mode.store(10, Ordering::Relaxed);
+++    refused.server.abort();
+++    let mut access = vec![
+++        healthy.access(),
+++        forged.access(),
+++        denied.access(),
+++        stalled.access(),
+++        refused.access(),
+++    ];
+++    access.extend(more_stalled.iter().map(Fixture::access));
+++    let reader = Reader::new(identity, access).unwrap();
+++    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+++    let endpoint = format!("http://{}/api/library", listener.local_addr().unwrap());
+++    struct Stop(JoinHandle<std::io::Result<()>>);
+++    impl Drop for Stop {
+++        fn drop(&mut self) {
+++            self.0.abort();
+++        }
+++    }
+++    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
+++        listener,
+++        "synthetic-partial-catalog-token-32".into(),
+++        reader,
+++    )));
+++    let client = reqwest::Client::builder()
+++        .no_proxy()
+++        .timeout(std::time::Duration::from_secs(8))
+++        .build()
+++        .unwrap();
+++    let call = |body: serde_json::Value| {
+++        client
+++            .post(&endpoint)
+++            .header("content-type", "application/json")
+++            .bearer_auth("synthetic-partial-catalog-token-32")
+++            .body(body.to_string())
+++    };
+++    let started = std::time::Instant::now();
+++    let response = call(serde_json::json!({"action":"catalog"}))
+++        .send()
+++        .await
+++        .expect("stalled source must not hold whole catalog past its budget");
+++    assert_eq!(response.status(), 200);
+++    let value: serde_json::Value =
+++        serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
+++    assert!(started.elapsed() < std::time::Duration::from_secs(7));
+++    assert_eq!(value["coverage"], "partial");
+++    assert_eq!(value["scopes"].as_array().unwrap().len(), 1);
+++    assert_eq!(value["scopes"][0]["scope"], svc::hex(&healthy.scope));
+++    for fixture in [&forged, &denied, &stalled, &refused] {
+++        assert!(
+++            !value.to_string().contains(&svc::hex(&fixture.scope)),
+++            "unverified/denied scope identity must not be exposed"
+++        );
+++        assert!(!value.to_string().contains(&fixture.endpoint));
+++    }
+++    let pin = value["scopes"][0]["pin"].clone();
+++    let source =
+++        call(serde_json::json!({"action":"source","pin":pin,"sequence":1,"offset":0,"length":100}))
+++            .send()
+++            .await
+++            .unwrap();
+++    assert_eq!(source.status(), 200);
+++    let source: serde_json::Value = serde_json::from_slice(&source.bytes().await.unwrap()).unwrap();
+++    assert_eq!(source["utf8"], "healthy source remains browsable");
+++    forged.mode.store(0, Ordering::Relaxed);
+++    stalled.mode.store(0, Ordering::Relaxed);
+++    for f in &more_stalled {
+++        f.mode.store(0, Ordering::Relaxed);
+++    }
+++    let recovered = call(serde_json::json!({"action":"catalog"}))
+++        .send()
+++        .await
+++        .unwrap();
+++    let recovered: serde_json::Value =
+++        serde_json::from_slice(&recovered.bytes().await.unwrap()).unwrap();
+++    assert_eq!(recovered["scopes"].as_array().unwrap().len(), 6);
+++    assert_eq!(
+++        recovered["coverage"], "partial",
+++        "refused source remains visibly incomplete"
+++    );
+++}
+++
+++#[tokio::test]
+++async fn library_body_read_deadline_returns_an_explicit_timeout() {
+++    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+++    let identity = Identity::generate();
+++    let a = Fixture::new(49, &identity).await;
+++    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+++    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+++    let addr = listener.local_addr().unwrap();
+++    struct Stop(JoinHandle<std::io::Result<()>>);
+++    impl Drop for Stop {
+++        fn drop(&mut self) {
+++            self.0.abort();
+++        }
+++    }
+++    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
+++        listener,
+++        "synthetic-body-deadline-token-32".into(),
+++        reader,
+++    )));
+++    let mut socket = tokio::net::TcpStream::connect(addr).await.unwrap();
+++    socket.write_all(format!("POST /api/library HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer synthetic-body-deadline-token-32\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{{").as_bytes()).await.unwrap();
+++    let started = std::time::Instant::now();
+++    let mut output = Vec::new();
+++    tokio::time::timeout(
+++        std::time::Duration::from_secs(5),
+++        socket.read_to_end(&mut output),
+++    )
+++    .await
+++    .expect("body deadline must return before whole connection timeout")
+++    .unwrap();
+++    assert!(String::from_utf8_lossy(&output).starts_with("HTTP/1.1 408"));
+++    assert!(started.elapsed() >= std::time::Duration::from_secs(2));
+++}
++diff --git a/tests/library_ui.test.cjs b/tests/library_ui.test.cjs
++index 38a8f2d..6a21303 100644
++--- a/tests/library_ui.test.cjs
+++++ b/tests/library_ui.test.cjs
++@@ -7,0 +8 @@ function ui(){
+++ node('library').hidden=true;node('inspection').hidden=true;
++@@ -14 +15 @@ const pin={request:'synthetic-pin',reply:{}};
++-const catalog={version:1,capabilities:['snapshot-inventory','source-ranges','provenance'],unavailable:['semantic-search','normalized-sessions','annotations','saved-views','analysis','administrative-jobs'],scopes:[{scope:'allowed-A',pin},{scope:'allowed-B',pin}]};
+++const catalog={version:1,coverage:'complete',capabilities:['snapshot-inventory','source-ranges','provenance'],unavailable:['semantic-search','normalized-sessions','annotations','saved-views','analysis','administrative-jobs'],scopes:[{scope:'allowed-A',pin},{scope:'allowed-B',pin}]};
++@@ -36,0 +38,9 @@ test('capability matrix renders actual service capabilities without claiming unk
+++
+++test('partial catalog coverage persists while browsing and retry clears old authority',async()=>{const u=ui();await u.login();await u.respond({...catalog,coverage:'partial'});await u.respond(page);assert.match(u.node('catalog-status').textContent,/Partial coverage/);u.node('rows').children[0].click();await tick();await u.respond(source);assert.match(u.node('catalog-status').textContent,/Partial coverage/);u.node('retry-sources').click();await tick();assert.equal(u.node('source').textContent,'');assert.equal(u.node('rows').children.length,0);assert.equal(u.node('scope').children.length,0);assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('previous').disabled,true);assert.equal(u.node('next').disabled,true);assert.equal(JSON.parse(u.pending[0].opts.body).action,'catalog');await u.respond(catalog);await u.respond(page);assert.match(u.node('catalog-status').textContent,/Source checks complete/);});
+++test('incomplete empty catalog differs from complete empty and late retry cannot repaint after lock',async()=>{for(const coverage of ['partial','complete']){const u=ui();await u.login();await u.respond({...catalog,coverage,scopes:[]});assert.equal(u.node('library').hidden,false);assert.equal(u.node('rows').children.length,0);assert.match(u.node('notice').textContent,coverage==='partial'?/incomplete check/:/No currently authorized/);u.node('retry-sources').click();await tick();const request=u.pending[0];u.node('lock').click();assert.equal(request.opts.signal.aborted,true);await u.respond(catalog);assert.equal(u.node('library').hidden,true);assert.equal(u.node('catalog-status').textContent,'');assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('scope').children.length,0);}});
+++test('both authorization denial statuses lock an already open Library',async()=>{for(const status of [401,403]){const u=ui();await open(u);u.node('rows').children[0].click();await tick();await u.respond(source);u.node('more').click();await tick();await u.respond({},status);assert.equal(u.node('library').hidden,true);assert.equal(u.node('source').textContent,'');assert.equal(u.node('catalog-status').textContent,'');assert.equal(u.node('provenance').children.length,0);assert.equal(u.node('scope').children.length,0);assert.equal(u.active(),u.node('token'));}});
+++test('Previous is disabled immediately when leaving a later page',async()=>{const u=ui();await open(u);u.node('next').click();await tick();await u.respond({...page,next:null,records:[{...page.records[0],sequence:2}]});assert.equal(u.node('previous').disabled,false);u.node('scope').value='allowed-B';u.node('scope').events.change();await tick();assert.equal(u.node('previous').disabled,true);assert.equal(u.node('next').disabled,true);assert.equal(u.node('rows').children.length,0);assert.equal(u.node('count').textContent,'');await u.respond(page);});
+++test('malformed duplicate and inconsistent capabilities never open a Library',async()=>{for(const change of [{capabilities:null},{unavailable:{}},{capabilities:['snapshot-inventory',7]},{capabilities:['provenance','provenance']},{unavailable:['provenance']},{coverage:'invented'}]){const u=ui();await u.login();await u.respond({...catalog,...change});assert.equal(u.node('library').hidden,true);assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('rows').children.length,0);assert.equal(u.node('catalog-status').textContent,'');assert.equal(u.pending.length,0);}});
+++test('all directional control families default to exact hex with explicit text access',async()=>{for(const point of [0x061c,0x200e,0x200f,0x202a,0x202b,0x202c,0x202d,0x202e,0x2066,0x2067,0x2068,0x2069]){const u=ui();await open(u);u.node('rows').children[0].click();await tick();const utf8='a'+String.fromCodePoint(point)+'z',bytes_hex=Buffer.from(utf8).toString('hex');await u.respond({...source,utf8,bytes_hex,total_bytes:Buffer.byteLength(utf8),next:null});assert.equal(u.node('source').textContent,bytes_hex,'U+'+point.toString(16));u.node('encoding').click();assert.equal(u.node('source').textContent,utf8);}});
+++
+++test('malformed retry clears partially rendered capabilities and keeps recovery available',async()=>{const u=ui();await open(u);u.node('retry-sources').click();await tick();await u.respond({...catalog,capabilities:['provenance','provenance']});assert.equal(u.node('library').hidden,false);assert.equal(u.node('scope').children.length,0);assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('rows').children.length,0);assert.match(u.node('catalog-status').textContent,/coverage is unknown/);u.node('retry-sources').click();await tick();await u.respond(catalog);await u.respond(page);assert.equal(u.node('rows').children.length,1);});
++diff --git a/web/library/app.js b/web/library/app.js
++index 9f3059d..ed5aca9 100644
++--- a/web/library/app.js
+++++ b/web/library/app.js
++@@ -18 +18 @@
++-    $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
+++    $('catalog-status').textContent = ''; $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
++@@ -40 +40 @@
++-    else { clearInspector(); notice(message, true); }
+++    else { clearInspector(); if (!pin) { $('capability-list').replaceChildren(); $('scope').replaceChildren(); $('catalog-status').textContent = 'Source check failed · coverage is unknown. Retry sources.'; } notice(message, true); }
++@@ -105,0 +106,24 @@
+++  async function catalog() {
+++    clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
+++    scopes = []; pin = null; history = []; after = 0; next = null;
+++    $('coverage').textContent = ''; $('count').textContent = ''; $('page-position').textContent = '';
+++    $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
+++    $('capability-list').replaceChildren(); $('catalog-status').textContent = 'Checking configured sources…';
+++    notice('Checking scope access…');
+++    const value = await rpc({action:'catalog'}); if (!value) return;
+++    if (value.version !== 1 || !['complete','partial'].includes(value.coverage)) throw new Error('Unsupported reader version or coverage.');
+++    renderCapabilities(value);
+++    scopes = value.scopes;
+++    for (const scope of scopes) { const option = document.createElement('option'); option.value = scope.scope; option.textContent = scope.scope; $('scope').append(option); }
+++    $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;
+++    const partial = value.coverage === 'partial';
+++    $('catalog-status').className = partial ? 'partial' : '';
+++    $('catalog-status').textContent = partial
+++      ? 'Partial coverage · some configured sources could not be verified. Available scopes remain browsable. Retry sources to check again.'
+++      : 'Source checks complete · only currently authorized scopes are shown.';
+++    if (!scopes.length) {
+++      notice(partial ? 'No verified scope is available from this incomplete check. Retry sources.' : 'No currently authorized scopes.');
+++      return;
+++    }
+++    $('scope').value = scopes[0].scope; pin = scopes[0].pin; await page(0);
+++  }
++@@ -107,11 +131 @@
++-    event.preventDefault(); token = $('token').value; $('token').value = '';
++-    run(async () => {
++-      notice('Checking scope access…'); const value = await rpc({action:'catalog'}); if (!value) return;
++-      if (value.version !== 1) throw new Error('Unsupported reader version.');
++-      renderCapabilities(value);
++-      scopes = value.scopes; $('scope').replaceChildren();
++-      for (const scope of scopes) { const option = document.createElement('option'); option.value = scope.scope; option.textContent = scope.scope; $('scope').append(option); }
++-      $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;
++-      if (!scopes.length) { notice('No currently authorized scopes.'); return; }
++-      $('scope').value = scopes[0].scope; pin = scopes[0].pin; history = []; await page(0);
++-    });
+++    event.preventDefault(); token = $('token').value; $('token').value = ''; run(catalog);
++@@ -118,0 +133 @@
+++  $('retry-sources').addEventListener('click', () => run(catalog));
++diff --git a/web/library/index.html b/web/library/index.html
++index d2dc3f7..d56b40b 100644
++--- a/web/library/index.html
+++++ b/web/library/index.html
++@@ -1 +1 @@
++-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Kan · Evidence Library</title><script src="/theme.js"></script><link rel="stylesheet" href="/base.css"><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head><body><div class="shell"><aside><a class="brand" href="/">kan<span>•</span></a><div class="workspace">YOUR KNOWLEDGE</div><div class="nav" aria-current="page">Evidence Library</div><p class="aside-note">Retained source.<br>Inspectable provenance.</p><span class="local">Authorized reader</span></aside><main><header><div><div class="eyebrow">KAN STUDIO / LIBRARY</div><h1>Your evidence library.</h1><p class="subtitle">Explore retained occurrences and inspect the bytes behind them.</p></div><div class="header-actions"><label for="theme">Appearance</label><select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select><button id="lock" disabled>Lock</button></div></header><section id="login" class="panel login"><div><h2>Open your Library</h2><p>This reader has its own scope grants. Your access token stays in this tab’s memory.</p></div><form id="connect"><label for="token">Reader access token</label><div class="login-fields"><input id="token" type="password" autocomplete="off" required><button class="primary">Open Library</button></div></form></section><div id="notice" class="notice" role="status" aria-live="polite">Locked · connect to browse authorized evidence.</div><section id="library" hidden><div class="toolbar"><label for="scope">Authorized scope</label><select id="scope"></select><button id="resnapshot">Refresh snapshot</button><span id="coverage"></span></div><div class="browser"><section class="panel occurrences" aria-label="Retained occurrences"><div class="section-head"><h2>Occurrences</h2><span id="count" class="badge"></span></div><p>Committed entries at the selected snapshot.</p><div id="rows"></div><p id="empty" hidden>No occurrences in this scope at this snapshot.</p><div class="pagination"><button id="previous" disabled>Previous</button><span id="page-position"></span><button id="next" disabled>Next</button></div></section><section class="panel inspector" aria-label="Source inspector"><div class="section-head"><h2 id="selection">Select an occurrence</h2><button id="close-inspector" hidden>Close</button></div><p id="source-hint">Read exact retained bytes alongside their provenance.</p><div id="inspection" hidden><div class="tabs"><button id="source-tab" aria-pressed="true">Source</button><button id="provenance-tab" aria-pressed="false">Provenance</button></div><div id="source-panel"><div class="range"><span id="range"></span><button id="encoding">Show hex</button><button id="download">Download this range</button><button id="more" disabled>Next range</button></div><pre id="source" tabindex="0"></pre></div><dl id="provenance" hidden></dl></div></section></div><section class="panel coverage-matrix" aria-label="Reader capabilities"><h2>Reader capabilities</h2><p>Reported by this reader. Upcoming features remain unavailable.</p><dl id="capability-list"></dl></section></section></main></div></body></html>
+++<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Kan · Evidence Library</title><script src="/theme.js"></script><link rel="stylesheet" href="/base.css"><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head><body><div class="shell"><aside><a class="brand" href="/">kan<span>•</span></a><div class="workspace">YOUR KNOWLEDGE</div><div class="nav" aria-current="page">Evidence Library</div><p class="aside-note">Retained source.<br>Inspectable provenance.</p><span class="local">Authorized reader</span></aside><main><header><div><div class="eyebrow">KAN STUDIO / LIBRARY</div><h1>Your evidence library.</h1><p class="subtitle">Explore retained occurrences and inspect the bytes behind them.</p></div><div class="header-actions"><label for="theme">Appearance</label><select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select><button id="lock" disabled>Lock</button></div></header><section id="login" class="panel login"><div><h2>Open your Library</h2><p>This reader has its own scope grants. Your access token stays in this tab’s memory.</p></div><form id="connect"><label for="token">Reader access token</label><div class="login-fields"><input id="token" type="password" autocomplete="off" required><button class="primary">Open Library</button></div></form></section><div id="notice" class="notice" role="status" aria-live="polite">Locked · connect to browse authorized evidence.</div><section id="library" hidden><div class="catalog-health"><p id="catalog-status" role="status" aria-live="polite"></p><button id="retry-sources">Retry sources</button></div><div class="toolbar"><label for="scope">Authorized scope</label><select id="scope"></select><button id="resnapshot">Refresh snapshot</button><span id="coverage"></span></div><div class="browser"><section class="panel occurrences" aria-label="Retained occurrences"><div class="section-head"><h2>Occurrences</h2><span id="count" class="badge"></span></div><p>Committed entries at the selected snapshot.</p><div id="rows"></div><p id="empty" hidden>No occurrences in this scope at this snapshot.</p><div class="pagination"><button id="previous" disabled>Previous</button><span id="page-position"></span><button id="next" disabled>Next</button></div></section><section class="panel inspector" aria-label="Source inspector"><div class="section-head"><h2 id="selection">Select an occurrence</h2><button id="close-inspector" hidden>Close</button></div><p id="source-hint">Read exact retained bytes alongside their provenance.</p><div id="inspection" hidden><div class="tabs"><button id="source-tab" aria-pressed="true">Source</button><button id="provenance-tab" aria-pressed="false">Provenance</button></div><div id="source-panel"><div class="range"><span id="range"></span><button id="encoding">Show hex</button><button id="download">Download this range</button><button id="more" disabled>Next range</button></div><pre id="source" tabindex="0"></pre></div><dl id="provenance" hidden></dl></div></section></div><section class="panel coverage-matrix" aria-label="Reader capabilities"><h2>Reader capabilities</h2><p>Reported by this reader. Upcoming features remain unavailable.</p><dl id="capability-list"></dl></section></section></main></div></body></html>
++diff --git a/web/library/style.css b/web/library/style.css
++index 564b676..2fa5103 100644
++--- a/web/library/style.css
+++++ b/web/library/style.css
++@@ -4,0 +5,2 @@
+++
+++.catalog-health{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:24px;padding:16px 20px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}.catalog-health p{margin:0;font-size:13px;line-height:1.6}.catalog-health p.partial{color:var(--ink);font-weight:600}.catalog-health button{flex-shrink:0}@media(max-width:700px){.catalog-health{align-items:flex-start;flex-direction:column}}
+diff --git a/.design/reviews/kan-v2-library-resilience-author/reversion.txt b/.design/reviews/kan-v2-library-resilience-author/reversion.txt
+new file mode 100644
+index 0000000..361a6b0
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/reversion.txt
+@@ -0,0 +1,19 @@
++Source export and logs: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reversion/b94194f3391c41e1bd71ba68285598c9
++note: untracked and therefore NOT reverted: ['.design/kan-v2-library-resilience.md', '.design/reviews/resilience-browser/README.md', '.design/reviews/resilience-browser/desktop-partial.jpg', '.design/reviews/resilience-browser/phone-partial-dark.jpg']
++What would be reverted (worktree):
++  reverting Cargo.toml: 1/1 hunk(s)
++  reverting docs/V2-LIBRARY.md: 2/2 hunk(s)
++  reverting scripts/revert_v2.py: 1/1 hunk(s)
++  reverting src/evidence_library.rs: 9/9 hunk(s)
++  reverting src/evidence_reader.rs: 1/1 hunk(s)
++  skipped tests/evidence_reader.rs (test side; --include it to revert it)
++  skipped tests/library_ui.test.cjs (test side; --include it to revert it)
++  reverting web/library/app.js: 5/5 hunk(s)
++  reverting web/library/index.html: 1/1 hunk(s)
++  reverting web/library/style.css: 1/1 hunk(s)
++
++DEMONSTRATED — failed under revert: evidence_reader::catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources, evidence_reader::library_body_read_deadline_returns_an_explicit_timeout, node::library_partial_catalog
++
++Paste into the commit message:
++
++    Demonstrated-by: revert=HEAD tests=evidence_reader::catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources,evidence_reader::library_body_read_deadline_returns_an_explicit_timeout,node::library_partial_catalog outcome=DEMONSTRATED
+diff --git a/.design/reviews/kan-v2-library-resilience-author/rust-tests.txt b/.design/reviews/kan-v2-library-resilience-author/rust-tests.txt
+new file mode 100644
+index 0000000..ca5d646
+--- /dev/null
++++ b/.design/reviews/kan-v2-library-resilience-author/rust-tests.txt
+@@ -0,0 +1,57 @@
++   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience)
++    Finished `test` profile [unoptimized] target(s) in 7.48s
++     Running tests/evidence_library_cli.rs (.local-state/target/debug/deps/evidence_library_cli-95b26762f3467431)
++
++running 1 test
++test library_cli_browses_authenticated_retained_source_without_storage_authority ... ok
++
++test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
++
++     Running tests/evidence_reader.rs (.local-state/target/debug/deps/evidence_reader-3bbc78385966c01b)
++
++running 17 tests
++test catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources ... ok
++test catalog_verification_failure_is_not_an_empty_authorized_inventory ... ok
++test inventory_is_snapshot_pinned_and_source_ranges_are_exact_across_scopes ... ok
++test large_source_is_returned_in_exact_bounded_ranges ... ok
++test library_browser_fixture ... ignored, manual browser fixture; requires KAN_LIBRARY_FIXTURE_INFO output path
++test library_http_authority_is_separate_and_denial_does_not_reveal_scope_existence ... ok
++test library_queues_a_browser_request_behind_four_idle_connections ... ok
++test library_refuses_public_listeners_and_short_tokens_before_serving ... ok
++test pin_principal_and_audience_are_checked_even_with_valid_signatures ... ok
++test reader_cli_refuses_public_configuration_and_relative_private_key_paths ... ok
++test reader_configuration_scope_count_and_duplicates_are_bounded ... ok
++test reader_identity_scope_and_decryption_key_are_separate_checks ... ok
++test reader_refuses_reusing_the_storage_issuer_signing_key ... ok
++test reader_rejects_signed_page_completeness_and_tip_mismatches ... ok
++test revoked_grants_and_tampered_pins_cannot_read_cached_source ... ok
++test signed_reply_integrity_page_shape_and_source_membership_are_independent ... ok
++test source_refuses_a_valid_read_from_a_different_snapshot_history ... ok
++
++test result: ok. 16 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 13.76s
++
++     Running tests/surface_conformance.rs (.local-state/target/debug/deps/surface_conformance-e9fd7d9feebd78e5)
++
++running 19 tests
++test caller_selected_role_key_is_an_implemented_authoritative_surface ... ok
++test catalog_is_well_formed_and_cites_real_designs ... ok
++test compiler_resolves_filesystem_aliases_to_the_single_mutation_facade ... ok
++test every_filesystem_mutation_names_its_catalog_surface_at_the_call_site ... ok
++test every_implemented_value_has_exactly_one_catalog_row_and_no_row_is_fiction ... ok
++test every_module_that_mutates_the_filesystem_is_registered ... ok
++test every_persistence_facade_call_is_independently_inventoried ... ok
++test overlay_is_recomputed_from_authoritative_git_tree_claims ... ok
++test persistence_modules_cannot_add_an_unreviewed_path_literal ... ok
++test production_workspace_bypasses_an_unopenable_projection_path ... ok
++test production_workspace_bypasses_an_unremovable_corrupt_projection ... ok
++test production_workspace_bypasses_an_unremovable_semantically_poisoned_projection ... ok
++test production_workspace_recovers_when_a_projection_column_has_the_wrong_type ... ok
++test production_workspace_recovers_when_projection_metadata_has_the_wrong_type ... ok
++test production_workspace_recreates_a_malformed_projection_schema ... ok
++test production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json ... ok
++test sqlite_is_recomputed_from_authoritative_claims_not_from_itself ... ok
++test the_catalog_represents_authority_source_and_scope_as_independent_axes ... ok
++test workspace_routes_overlay_io_through_overlay_capabilities ... ok
++
++test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.81s
++
+diff --git a/.design/reviews/resilience-browser/README.md b/.design/reviews/resilience-browser/README.md
+new file mode 100644
+index 0000000..4dd6a9e
+--- /dev/null
++++ b/.design/reviews/resilience-browser/README.md
+@@ -0,0 +1,22 @@
++# Library resilience browser checks
++
++2026-10-18. Real production assets and real signed/encrypted synthetic service
++fixtures, in the Codex in-app browser. No production keys, archive or provider.
++
++- Partial catalog exposes two healthy scopes while a third fixture forges its
++  signature. Failed identity is absent from the picker. Source bytes remain readable.
++- Partial coverage survives inspection and pagination to occurrences 21–25.
++- Desktop 1440×1000 light/system and phone 390×844 dark: scroll width equals client
++  width, captured script/image stay text, no img/iframe/object/video nodes.
++- Restoring the fixture and clicking Retry sources shows complete coverage and
++  three scopes. This is a real service retry, not mocked browser fetch state.
++- Lock leaves zero rows/scopes/capability items, empty source/coverage and token
++  focus. Temporary theme override reset to System, viewport reset and tab closed.
++- Browser download event again timed out after 15 seconds; no console warnings
++  or errors. No delivered file was exposed for byte comparison. Available browser
++  inventory only offered IAB; native Mac surfaces were locked. File delivery is
++  still unverified and must not be inferred from Blob/API byte equality.
++- No complete browser external-request trace is available. No such trace claimed.
++
++Synthetic fixture server was stopped after checks. Screenshots show actual
++partial coverage in the desktop and mobile layouts.
+diff --git a/.design/reviews/resilience-browser/desktop-partial.jpg b/.design/reviews/resilience-browser/desktop-partial.jpg
+new file mode 100644
+index 0000000..3a806bb
+Binary files /dev/null and b/.design/reviews/resilience-browser/desktop-partial.jpg differ
+diff --git a/.design/reviews/resilience-browser/phone-partial-dark.jpg b/.design/reviews/resilience-browser/phone-partial-dark.jpg
+new file mode 100644
+index 0000000..a4a0d79
+Binary files /dev/null and b/.design/reviews/resilience-browser/phone-partial-dark.jpg differ
+diff --git a/Cargo.toml b/Cargo.toml
+index 8827d5e..60e1fde 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -64 +64 @@ tempfile = "3.27.0"
+-tokio = { version = "1.52.4", features = ["process"] }
++tokio = { version = "1.52.4", features = ["process", "test-util"] }
+diff --git a/docs/V2-LIBRARY.md b/docs/V2-LIBRARY.md
+index 9cee42e..349b6f4 100644
+--- a/docs/V2-LIBRARY.md
++++ b/docs/V2-LIBRARY.md
+@@ -71 +71 @@ request body, four executing browser connections plus eight queued connections,
+-a 6-second queue deadline, 5-second header deadline and 35-second overall
++a 6-second queue deadline, 5-second header deadline, 3-second body deadline and 35-second overall
+@@ -103,4 +103,16 @@ The reader refuses a signing principal equal to any configured storage issuer.
+-Only a verified signed access-denial result may exclude a scope from the catalog;
+-a bad reply signature produces a verification error. If another configured scope
+-is unreachable, the current all-or-error catalog remains unavailable rather than
+-publishing a partial catalog as complete. Per-scope error rows are future work.
++A verified signed access-denial result omits the scope without identifying it.
++Unreachable, malformed or unverifiable sources instead produce `coverage: partial`
++alongside any successfully authorized scope pins. Failed scope identifiers,
++endpoints and counts are not returned. Even if no scope succeeds, partial is
++visibly distinct from a completed check with no currently authorized scopes.
++The persistent coverage notice survives page/source navigation. **Retry sources**
++clears old pins, rows and plaintext before rechecking grants; lock also clears
++coverage. A failure while retrying leaves coverage unknown and retry available.
++
++Each upstream signed read has a five-second deadline. Catalog checks run in
++groups of at most four (sixteen configured scopes maximum): up to twenty seconds.
++A source range requires two calls, up to ten seconds. Queue + header + body +
++maximum catalog budget is thirty-four seconds inside the thirty-five-second
++connection limit. Scheduling/CPU overhead can still exhaust the whole deadline;
++a slow healthy service is temporarily unavailable, never declared absent.
++Cancellation drops the in-flight checks. Excess connections remain refused.
+diff --git a/scripts/revert_v2.py b/scripts/revert_v2.py
+index 46709b5..8363a36 100644
+--- a/scripts/revert_v2.py
++++ b/scripts/revert_v2.py
+@@ -28,0 +29 @@ NODE_TESTS = {
++    'library_partial_catalog': ('tests/library_ui.test.cjs', 'partial catalog coverage persists while browsing and retry clears old authority'),
+diff --git a/src/evidence_library.rs b/src/evidence_library.rs
+index a205230..3068381 100644
+--- a/src/evidence_library.rs
++++ b/src/evidence_library.rs
+@@ -11,2 +11,6 @@ use serde::Deserialize;
+-use std::{convert::Infallible, io, sync::Arc, time::Duration};
+-use tokio::{net::TcpListener, sync::Semaphore, task::JoinSet};
++use std::{convert::Infallible, future::Future, io, sync::Arc, time::Duration};
++use tokio::{
++    net::TcpListener,
++    sync::{OwnedSemaphorePermit, Semaphore},
++    task::JoinSet,
++};
+@@ -51,5 +55,20 @@ async fn query(reader: &Reader, query: Query) -> Result<serde_json::Value, Failu
+-            for scope in reader.configured_scopes() {
+-                match reader.snapshot(&scope).await {
+-                    Ok(pin) => scopes.push(serde_json::json!({"scope":scope,"pin":pin})),
+-                    Err(Failure::AccessLimited) => {}
+-                    Err(e) => return Err(e),
++            let mut partial = false;
++            let configured = reader.configured_scopes();
++            // Borrowed futures: cancellation drops every in-flight check. Four
++            // waves of at most four five-second reads fit the connection budget.
++            for group in configured.chunks(4) {
++                let results = tokio::join!(
++                    catalog_entry(reader, group.first()),
++                    catalog_entry(reader, group.get(1)),
++                    catalog_entry(reader, group.get(2)),
++                    catalog_entry(reader, group.get(3))
++                );
++                for (scope, result) in [results.0, results.1, results.2, results.3]
++                    .into_iter()
++                    .flatten()
++                {
++                    match result {
++                        Ok(pin) => scopes.push(serde_json::json!({"scope":scope,"pin":pin})),
++                        Err(Failure::AccessLimited) => {}
++                        Err(_) => partial = true,
++                    }
+@@ -59 +78 @@ async fn query(reader: &Reader, query: Query) -> Result<serde_json::Value, Failu
+-                serde_json::json!({"version":1,"scopes":scopes,"capabilities":["snapshot-inventory","source-ranges","provenance"],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]}),
++                serde_json::json!({"version":1,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},"capabilities":["snapshot-inventory","source-ranges","provenance"],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]}),
+@@ -136,3 +155,9 @@ async fn handle(
+-    let body = match Limited::new(r.into_body(), 16384).collect().await {
+-        Ok(body) => body.to_bytes(),
+-        Err(_) => return Ok(denied(StatusCode::PAYLOAD_TOO_LARGE)),
++    let body = match tokio::time::timeout(
++        Duration::from_secs(3),
++        Limited::new(r.into_body(), 16384).collect(),
++    )
++    .await
++    {
++        Ok(Ok(body)) => body.to_bytes(),
++        Ok(Err(_)) => return Ok(denied(StatusCode::PAYLOAD_TOO_LARGE)),
++        Err(_) => return Ok(denied(StatusCode::REQUEST_TIMEOUT)),
+@@ -168,4 +193 @@ pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::
+-    // Four requests execute; eight more accepted sockets may wait up to six
+-    // seconds. This absorbs browser asset bursts without unbounded tasks.
+-    let slots = Arc::new(Semaphore::new(12));
+-    let requests = Arc::new(Semaphore::new(4));
++    let budget = ConnectionBudget::new();
+@@ -175,4 +197,5 @@ pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::
+-            accepted=listener.accept()=>{
+-                let (stream,_)=accepted?;
+-                let Ok(permit)=slots.clone().try_acquire_owned() else {continue;};
+-                let host=host.clone();let token=token.clone();let reader=reader.clone();let requests=requests.clone();
++            accepted = listener.accept() => {
++                let (stream, _) = accepted?;
++                let Some(permit) = budget.admit() else { continue; };
++                let (host, token, reader) = (host.clone(), token.clone(), reader.clone());
++                let budget = budget.clone();
+@@ -180,9 +203 @@ pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::
+-                    let _permit=permit;
+-                    let connection = async move {
+-                        let Ok(Ok(_request)) = tokio::time::timeout(Duration::from_secs(6), requests.acquire_owned()).await else { return; };
+-                        let mut builder=hyper::server::conn::http1::Builder::new();
+-                        builder.keep_alive(false).max_buf_size(16384).timer(hyper_util::rt::TokioTimer::new()).header_read_timeout(Duration::from_secs(5));
+-                        let service=hyper::service::service_fn(move |r|handle(r,host.clone(),token.clone(),reader.clone()));
+-                        let _=builder.serve_connection(TokioIo::new(stream),service).await;
+-                    };
+-                    let _=tokio::time::timeout(Duration::from_secs(35),connection).await;
++                    budget.run(permit, connection(stream, host, token, reader)).await;
+@@ -191 +206 @@ pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::
+-            _=tasks.join_next(),if !tasks.is_empty()=>{}
++            _ = tasks.join_next(), if !tasks.is_empty() => {}
+@@ -194,0 +210,156 @@ pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::
++
++async fn catalog_entry<'a>(
++    reader: &Reader,
++    scope: Option<&'a String>,
++) -> Option<(&'a String, Result<Pin, Failure>)> {
++    let scope = scope?;
++    Some((scope, reader.snapshot(scope).await))
++}
++
++async fn connection(
++    stream: tokio::net::TcpStream,
++    host: String,
++    token: Arc<String>,
++    reader: Arc<Reader>,
++) {
++    let mut builder = hyper::server::conn::http1::Builder::new();
++    builder
++        .keep_alive(false)
++        .max_buf_size(16384)
++        .timer(hyper_util::rt::TokioTimer::new())
++        .header_read_timeout(Duration::from_secs(5));
++    let service =
++        hyper::service::service_fn(move |r| handle(r, host.clone(), token.clone(), reader.clone()));
++    let _ = builder
++        .serve_connection(TokioIo::new(stream), service)
++        .await;
++}
++
++/// Socket admission and execution deadlines used by the live server. Keeping
++/// permit lifetime here makes cancellation release both bounds together.
++#[derive(Clone)]
++struct ConnectionBudget {
++    sockets: Arc<Semaphore>,
++    requests: Arc<Semaphore>,
++}
++impl ConnectionBudget {
++    fn new() -> Self {
++        Self {
++            sockets: Arc::new(Semaphore::new(12)),
++            requests: Arc::new(Semaphore::new(4)),
++        }
++    }
++    fn admit(&self) -> Option<OwnedSemaphorePermit> {
++        self.sockets.clone().try_acquire_owned().ok()
++    }
++    async fn run(&self, permit: OwnedSemaphorePermit, work: impl Future<Output = ()>) {
++        let _socket = permit;
++        let connection = async {
++            let Ok(Ok(_request)) = tokio::time::timeout(
++                Duration::from_secs(6),
++                self.requests.clone().acquire_owned(),
++            )
++            .await
++            else {
++                return;
++            };
++            work.await;
++        };
++        let _ = tokio::time::timeout(Duration::from_secs(35), connection).await;
++    }
++}
++
++#[cfg(test)]
++mod budget_tests {
++    use super::*;
++    use std::sync::atomic::{AtomicUsize, Ordering};
++
++    #[tokio::test(start_paused = true)]
++    async fn connection_admission_execution_and_deadlines_are_bounded() {
++        let budget = ConnectionBudget::new();
++        let entered = Arc::new(AtomicUsize::new(0));
++        let mut jobs = Vec::new();
++        for _ in 0..12 {
++            let permit = budget.admit().expect("twelve accepted sockets");
++            let (b, entered) = (budget.clone(), entered.clone());
++            jobs.push(tokio::spawn(async move {
++                b.run(permit, async move {
++                    entered.fetch_add(1, Ordering::SeqCst);
++                    std::future::pending::<()>().await;
++                })
++                .await;
++            }));
++        }
++        assert!(
++            budget.admit().is_none(),
++            "thirteenth socket must be refused"
++        );
++        tokio::task::yield_now().await;
++        assert_eq!(
++            entered.load(Ordering::SeqCst),
++            4,
++            "exactly four jobs execute"
++        );
++        assert_eq!(budget.requests.available_permits(), 0);
++        tokio::time::advance(Duration::from_millis(5999)).await;
++        tokio::task::yield_now().await;
++        assert_eq!(
++            jobs.iter().filter(|j| j.is_finished()).count(),
++            0,
++            "queue must survive until its deadline"
++        );
++        tokio::time::advance(Duration::from_millis(2)).await;
++        tokio::task::yield_now().await;
++        assert_eq!(
++            jobs.iter().filter(|j| j.is_finished()).count(),
++            8,
++            "all eight queued sockets expire at six seconds"
++        );
++        assert_eq!(budget.sockets.available_permits(), 8);
++        assert_eq!(
++            entered.load(Ordering::SeqCst),
++            4,
++            "expired queued work must never start"
++        );
++        tokio::time::advance(Duration::from_millis(28_998)).await;
++        tokio::task::yield_now().await;
++        assert_eq!(
++            jobs.iter().filter(|j| j.is_finished()).count(),
++            8,
++            "executing requests retain whole budget"
++        );
++        tokio::time::advance(Duration::from_millis(2)).await;
++        tokio::task::yield_now().await;
++        assert!(
++            jobs.iter().all(|j| j.is_finished()),
++            "whole connection expires at thirty-five seconds"
++        );
++        for job in jobs {
++            job.await.unwrap();
++        }
++        assert_eq!(budget.sockets.available_permits(), 12);
++        assert_eq!(budget.requests.available_permits(), 4);
++    }
++
++    #[tokio::test(start_paused = true)]
++    async fn cancelling_connection_releases_socket_and_execution_permits() {
++        let budget = ConnectionBudget::new();
++        let (tx, rx) = tokio::sync::oneshot::channel();
++        let b = budget.clone();
++        let permit = budget.admit().unwrap();
++        let job = tokio::spawn(async move {
++            b.run(permit, async move {
++                tx.send(()).unwrap();
++                std::future::pending::<()>().await;
++            })
++            .await;
++        });
++        rx.await.unwrap();
++        assert_eq!(budget.requests.available_permits(), 3);
++        assert_eq!(budget.sockets.available_permits(), 11);
++        job.abort();
++        assert!(job.await.unwrap_err().is_cancelled());
++        assert_eq!(budget.requests.available_permits(), 4);
++        assert_eq!(budget.sockets.available_permits(), 12);
++    }
++}
+diff --git a/src/evidence_reader.rs b/src/evidence_reader.rs
+index 1d1c431..190d898 100644
+--- a/src/evidence_reader.rs
++++ b/src/evidence_reader.rs
+@@ -152,6 +152,10 @@ impl Reader {
+-        let reply = evidence_http::send(&access.endpoint, &access.issuer, &request)
+-            .await
+-            .map_err(|failure| match failure {
+-                Failure::AccessLimited => Failure::Corrupt,
+-                other => other,
+-            })?;
++        let reply = tokio::time::timeout(
++            std::time::Duration::from_secs(5),
++            evidence_http::send(&access.endpoint, &access.issuer, &request),
++        )
++        .await
++        .map_err(|_| Failure::Unavailable)?
++        .map_err(|failure| match failure {
++            Failure::AccessLimited => Failure::Corrupt,
++            other => other,
++        })?;
+diff --git a/tests/evidence_reader.rs b/tests/evidence_reader.rs
+index 120add8..38cf8e2 100644
+--- a/tests/evidence_reader.rs
++++ b/tests/evidence_reader.rs
+@@ -134,0 +135 @@ impl Fixture {
++                            if mode==10 {std::future::pending::<()>().await;}
+@@ -479 +480,8 @@ async fn library_browser_fixture() {
+-    let reader = Reader::new(identity, vec![a.access(), b.access()]).unwrap();
++    let broken = Fixture::new(23, &identity).await;
++    let recovery = std::env::var_os("KAN_LIBRARY_FIXTURE_RECOVER").map(std::path::PathBuf::from);
++    let mut access = vec![a.access(), b.access()];
++    if recovery.is_some() {
++        broken.mode.store(1, Ordering::Relaxed);
++        access.push(broken.access());
++    }
++    let reader = Reader::new(identity, access).unwrap();
+@@ -489 +497,9 @@ async fn library_browser_fixture() {
+-    tokio::select! {result=kan::evidence_library::serve(listener,token.into(),reader)=>result.unwrap(),_=tokio::signal::ctrl_c()=>{}}
++    let recover = async {
++        loop {
++            if recovery.as_ref().is_some_and(|p| p.exists()) {
++                broken.mode.store(0, Ordering::Relaxed);
++            }
++            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
++        }
++    };
++    tokio::select! {result=kan::evidence_library::serve(listener,token.into(),reader)=>result.unwrap(),_=tokio::signal::ctrl_c()=>{},_=recover=>{}}
+@@ -659,0 +676,16 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
++    assert_eq!(value["coverage"], "complete");
++    assert_eq!(
++        value["capabilities"],
++        serde_json::json!(["snapshot-inventory", "source-ranges", "provenance"])
++    );
++    assert_eq!(
++        value["unavailable"],
++        serde_json::json!([
++            "semantic-search",
++            "normalized-sessions",
++            "annotations",
++            "saved-views",
++            "analysis",
++            "administrative-jobs"
++        ])
++    );
+@@ -661,0 +694,2 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
++    assert_eq!(forged.status(), 200);
++    let value: serde_json::Value = serde_json::from_slice(&forged.bytes().await.unwrap()).unwrap();
+@@ -663,3 +697,2 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
+-        forged.status(),
+-        503,
+-        "unverified replies must not become successful empty catalogs"
++        value["coverage"], "partial",
++        "unverified replies must not become complete empty catalogs"
+@@ -667 +700,2 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
+-    assert!(!String::from_utf8_lossy(&forged.bytes().await.unwrap()).contains("scopes"));
++    assert_eq!(value["scopes"].as_array().unwrap().len(), 0);
++    assert!(!value.to_string().contains(&svc::hex(&a.scope)));
+@@ -824,0 +859 @@ async fn library_queues_a_browser_request_behind_four_idle_connections() {
++    let started = std::time::Instant::now();
+@@ -830,0 +866,4 @@ async fn library_queues_a_browser_request_behind_four_idle_connections() {
++    assert!(
++        started.elapsed() >= std::time::Duration::from_secs(4),
++        "fifth socket must actually queue behind the execution bound"
++    );
+@@ -854,0 +894,133 @@ async fn library_refuses_public_listeners_and_short_tokens_before_serving() {
++
++#[tokio::test]
++async fn catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources() {
++    let identity = Identity::generate();
++    let mut healthy = Fixture::new(45, &identity).await;
++    healthy.append(b"healthy source remains browsable");
++    let forged = Fixture::new(41, &identity).await;
++    let denied = Fixture::new(42, &identity).await;
++    let stalled = Fixture::new(37, &identity).await;
++    let mut more_stalled = Vec::new();
++    for n in [38, 39, 40] {
++        let f = Fixture::new(n, &identity).await;
++        f.mode.store(10, Ordering::Relaxed);
++        more_stalled.push(f);
++    }
++    let refused = Fixture::new(44, &identity).await;
++    forged.mode.store(1, Ordering::Relaxed);
++    denied.revoke();
++    stalled.mode.store(10, Ordering::Relaxed);
++    refused.server.abort();
++    let mut access = vec![
++        healthy.access(),
++        forged.access(),
++        denied.access(),
++        stalled.access(),
++        refused.access(),
++    ];
++    access.extend(more_stalled.iter().map(Fixture::access));
++    let reader = Reader::new(identity, access).unwrap();
++    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let endpoint = format!("http://{}/api/library", listener.local_addr().unwrap());
++    struct Stop(JoinHandle<std::io::Result<()>>);
++    impl Drop for Stop {
++        fn drop(&mut self) {
++            self.0.abort();
++        }
++    }
++    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
++        listener,
++        "synthetic-partial-catalog-token-32".into(),
++        reader,
++    )));
++    let client = reqwest::Client::builder()
++        .no_proxy()
++        .timeout(std::time::Duration::from_secs(8))
++        .build()
++        .unwrap();
++    let call = |body: serde_json::Value| {
++        client
++            .post(&endpoint)
++            .header("content-type", "application/json")
++            .bearer_auth("synthetic-partial-catalog-token-32")
++            .body(body.to_string())
++    };
++    let started = std::time::Instant::now();
++    let response = call(serde_json::json!({"action":"catalog"}))
++        .send()
++        .await
++        .expect("stalled source must not hold whole catalog past its budget");
++    assert_eq!(response.status(), 200);
++    let value: serde_json::Value =
++        serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
++    assert!(started.elapsed() < std::time::Duration::from_secs(7));
++    assert_eq!(value["coverage"], "partial");
++    assert_eq!(value["scopes"].as_array().unwrap().len(), 1);
++    assert_eq!(value["scopes"][0]["scope"], svc::hex(&healthy.scope));
++    for fixture in [&forged, &denied, &stalled, &refused] {
++        assert!(
++            !value.to_string().contains(&svc::hex(&fixture.scope)),
++            "unverified/denied scope identity must not be exposed"
++        );
++        assert!(!value.to_string().contains(&fixture.endpoint));
++    }
++    let pin = value["scopes"][0]["pin"].clone();
++    let source =
++        call(serde_json::json!({"action":"source","pin":pin,"sequence":1,"offset":0,"length":100}))
++            .send()
++            .await
++            .unwrap();
++    assert_eq!(source.status(), 200);
++    let source: serde_json::Value = serde_json::from_slice(&source.bytes().await.unwrap()).unwrap();
++    assert_eq!(source["utf8"], "healthy source remains browsable");
++    forged.mode.store(0, Ordering::Relaxed);
++    stalled.mode.store(0, Ordering::Relaxed);
++    for f in &more_stalled {
++        f.mode.store(0, Ordering::Relaxed);
++    }
++    let recovered = call(serde_json::json!({"action":"catalog"}))
++        .send()
++        .await
++        .unwrap();
++    let recovered: serde_json::Value =
++        serde_json::from_slice(&recovered.bytes().await.unwrap()).unwrap();
++    assert_eq!(recovered["scopes"].as_array().unwrap().len(), 6);
++    assert_eq!(
++        recovered["coverage"], "partial",
++        "refused source remains visibly incomplete"
++    );
++}
++
++#[tokio::test]
++async fn library_body_read_deadline_returns_an_explicit_timeout() {
++    use tokio::io::{AsyncReadExt, AsyncWriteExt};
++    let identity = Identity::generate();
++    let a = Fixture::new(49, &identity).await;
++    let reader = Reader::new(identity, vec![a.access()]).unwrap();
++    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr = listener.local_addr().unwrap();
++    struct Stop(JoinHandle<std::io::Result<()>>);
++    impl Drop for Stop {
++        fn drop(&mut self) {
++            self.0.abort();
++        }
++    }
++    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
++        listener,
++        "synthetic-body-deadline-token-32".into(),
++        reader,
++    )));
++    let mut socket = tokio::net::TcpStream::connect(addr).await.unwrap();
++    socket.write_all(format!("POST /api/library HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer synthetic-body-deadline-token-32\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{{").as_bytes()).await.unwrap();
++    let started = std::time::Instant::now();
++    let mut output = Vec::new();
++    tokio::time::timeout(
++        std::time::Duration::from_secs(5),
++        socket.read_to_end(&mut output),
++    )
++    .await
++    .expect("body deadline must return before whole connection timeout")
++    .unwrap();
++    assert!(String::from_utf8_lossy(&output).starts_with("HTTP/1.1 408"));
++    assert!(started.elapsed() >= std::time::Duration::from_secs(2));
++}
+diff --git a/tests/library_ui.test.cjs b/tests/library_ui.test.cjs
+index 38a8f2d..6a21303 100644
+--- a/tests/library_ui.test.cjs
++++ b/tests/library_ui.test.cjs
+@@ -7,0 +8 @@ function ui(){
++ node('library').hidden=true;node('inspection').hidden=true;
+@@ -14 +15 @@ const pin={request:'synthetic-pin',reply:{}};
+-const catalog={version:1,capabilities:['snapshot-inventory','source-ranges','provenance'],unavailable:['semantic-search','normalized-sessions','annotations','saved-views','analysis','administrative-jobs'],scopes:[{scope:'allowed-A',pin},{scope:'allowed-B',pin}]};
++const catalog={version:1,coverage:'complete',capabilities:['snapshot-inventory','source-ranges','provenance'],unavailable:['semantic-search','normalized-sessions','annotations','saved-views','analysis','administrative-jobs'],scopes:[{scope:'allowed-A',pin},{scope:'allowed-B',pin}]};
+@@ -36,0 +38,9 @@ test('capability matrix renders actual service capabilities without claiming unk
++
++test('partial catalog coverage persists while browsing and retry clears old authority',async()=>{const u=ui();await u.login();await u.respond({...catalog,coverage:'partial'});await u.respond(page);assert.match(u.node('catalog-status').textContent,/Partial coverage/);u.node('rows').children[0].click();await tick();await u.respond(source);assert.match(u.node('catalog-status').textContent,/Partial coverage/);u.node('retry-sources').click();await tick();assert.equal(u.node('source').textContent,'');assert.equal(u.node('rows').children.length,0);assert.equal(u.node('scope').children.length,0);assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('previous').disabled,true);assert.equal(u.node('next').disabled,true);assert.equal(JSON.parse(u.pending[0].opts.body).action,'catalog');await u.respond(catalog);await u.respond(page);assert.match(u.node('catalog-status').textContent,/Source checks complete/);});
++test('incomplete empty catalog differs from complete empty and late retry cannot repaint after lock',async()=>{for(const coverage of ['partial','complete']){const u=ui();await u.login();await u.respond({...catalog,coverage,scopes:[]});assert.equal(u.node('library').hidden,false);assert.equal(u.node('rows').children.length,0);assert.match(u.node('notice').textContent,coverage==='partial'?/incomplete check/:/No currently authorized/);u.node('retry-sources').click();await tick();const request=u.pending[0];u.node('lock').click();assert.equal(request.opts.signal.aborted,true);await u.respond(catalog);assert.equal(u.node('library').hidden,true);assert.equal(u.node('catalog-status').textContent,'');assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('scope').children.length,0);}});
++test('both authorization denial statuses lock an already open Library',async()=>{for(const status of [401,403]){const u=ui();await open(u);u.node('rows').children[0].click();await tick();await u.respond(source);u.node('more').click();await tick();await u.respond({},status);assert.equal(u.node('library').hidden,true);assert.equal(u.node('source').textContent,'');assert.equal(u.node('catalog-status').textContent,'');assert.equal(u.node('provenance').children.length,0);assert.equal(u.node('scope').children.length,0);assert.equal(u.active(),u.node('token'));}});
++test('Previous is disabled immediately when leaving a later page',async()=>{const u=ui();await open(u);u.node('next').click();await tick();await u.respond({...page,next:null,records:[{...page.records[0],sequence:2}]});assert.equal(u.node('previous').disabled,false);u.node('scope').value='allowed-B';u.node('scope').events.change();await tick();assert.equal(u.node('previous').disabled,true);assert.equal(u.node('next').disabled,true);assert.equal(u.node('rows').children.length,0);assert.equal(u.node('count').textContent,'');await u.respond(page);});
++test('malformed duplicate and inconsistent capabilities never open a Library',async()=>{for(const change of [{capabilities:null},{unavailable:{}},{capabilities:['snapshot-inventory',7]},{capabilities:['provenance','provenance']},{unavailable:['provenance']},{coverage:'invented'}]){const u=ui();await u.login();await u.respond({...catalog,...change});assert.equal(u.node('library').hidden,true);assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('rows').children.length,0);assert.equal(u.node('catalog-status').textContent,'');assert.equal(u.pending.length,0);}});
++test('all directional control families default to exact hex with explicit text access',async()=>{for(const point of [0x061c,0x200e,0x200f,0x202a,0x202b,0x202c,0x202d,0x202e,0x2066,0x2067,0x2068,0x2069]){const u=ui();await open(u);u.node('rows').children[0].click();await tick();const utf8='a'+String.fromCodePoint(point)+'z',bytes_hex=Buffer.from(utf8).toString('hex');await u.respond({...source,utf8,bytes_hex,total_bytes:Buffer.byteLength(utf8),next:null});assert.equal(u.node('source').textContent,bytes_hex,'U+'+point.toString(16));u.node('encoding').click();assert.equal(u.node('source').textContent,utf8);}});
++
++test('malformed retry clears partially rendered capabilities and keeps recovery available',async()=>{const u=ui();await open(u);u.node('retry-sources').click();await tick();await u.respond({...catalog,capabilities:['provenance','provenance']});assert.equal(u.node('library').hidden,false);assert.equal(u.node('scope').children.length,0);assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('rows').children.length,0);assert.match(u.node('catalog-status').textContent,/coverage is unknown/);u.node('retry-sources').click();await tick();await u.respond(catalog);await u.respond(page);assert.equal(u.node('rows').children.length,1);});
+diff --git a/web/library/app.js b/web/library/app.js
+index 9f3059d..ed5aca9 100644
+--- a/web/library/app.js
++++ b/web/library/app.js
+@@ -18 +18 @@
+-    $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
++    $('catalog-status').textContent = ''; $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
+@@ -40 +40 @@
+-    else { clearInspector(); notice(message, true); }
++    else { clearInspector(); if (!pin) { $('capability-list').replaceChildren(); $('scope').replaceChildren(); $('catalog-status').textContent = 'Source check failed · coverage is unknown. Retry sources.'; } notice(message, true); }
+@@ -105,0 +106,24 @@
++  async function catalog() {
++    clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
++    scopes = []; pin = null; history = []; after = 0; next = null;
++    $('coverage').textContent = ''; $('count').textContent = ''; $('page-position').textContent = '';
++    $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
++    $('capability-list').replaceChildren(); $('catalog-status').textContent = 'Checking configured sources…';
++    notice('Checking scope access…');
++    const value = await rpc({action:'catalog'}); if (!value) return;
++    if (value.version !== 1 || !['complete','partial'].includes(value.coverage)) throw new Error('Unsupported reader version or coverage.');
++    renderCapabilities(value);
++    scopes = value.scopes;
++    for (const scope of scopes) { const option = document.createElement('option'); option.value = scope.scope; option.textContent = scope.scope; $('scope').append(option); }
++    $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;
++    const partial = value.coverage === 'partial';
++    $('catalog-status').className = partial ? 'partial' : '';
++    $('catalog-status').textContent = partial
++      ? 'Partial coverage · some configured sources could not be verified. Available scopes remain browsable. Retry sources to check again.'
++      : 'Source checks complete · only currently authorized scopes are shown.';
++    if (!scopes.length) {
++      notice(partial ? 'No verified scope is available from this incomplete check. Retry sources.' : 'No currently authorized scopes.');
++      return;
++    }
++    $('scope').value = scopes[0].scope; pin = scopes[0].pin; await page(0);
++  }
+@@ -107,11 +131 @@
+-    event.preventDefault(); token = $('token').value; $('token').value = '';
+-    run(async () => {
+-      notice('Checking scope access…'); const value = await rpc({action:'catalog'}); if (!value) return;
+-      if (value.version !== 1) throw new Error('Unsupported reader version.');
+-      renderCapabilities(value);
+-      scopes = value.scopes; $('scope').replaceChildren();
+-      for (const scope of scopes) { const option = document.createElement('option'); option.value = scope.scope; option.textContent = scope.scope; $('scope').append(option); }
+-      $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;
+-      if (!scopes.length) { notice('No currently authorized scopes.'); return; }
+-      $('scope').value = scopes[0].scope; pin = scopes[0].pin; history = []; await page(0);
+-    });
++    event.preventDefault(); token = $('token').value; $('token').value = ''; run(catalog);
+@@ -118,0 +133 @@
++  $('retry-sources').addEventListener('click', () => run(catalog));
+diff --git a/web/library/index.html b/web/library/index.html
+index d2dc3f7..d56b40b 100644
+--- a/web/library/index.html
++++ b/web/library/index.html
+@@ -1 +1 @@
+-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Kan · Evidence Library</title><script src="/theme.js"></script><link rel="stylesheet" href="/base.css"><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head><body><div class="shell"><aside><a class="brand" href="/">kan<span>•</span></a><div class="workspace">YOUR KNOWLEDGE</div><div class="nav" aria-current="page">Evidence Library</div><p class="aside-note">Retained source.<br>Inspectable provenance.</p><span class="local">Authorized reader</span></aside><main><header><div><div class="eyebrow">KAN STUDIO / LIBRARY</div><h1>Your evidence library.</h1><p class="subtitle">Explore retained occurrences and inspect the bytes behind them.</p></div><div class="header-actions"><label for="theme">Appearance</label><select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select><button id="lock" disabled>Lock</button></div></header><section id="login" class="panel login"><div><h2>Open your Library</h2><p>This reader has its own scope grants. Your access token stays in this tab’s memory.</p></div><form id="connect"><label for="token">Reader access token</label><div class="login-fields"><input id="token" type="password" autocomplete="off" required><button class="primary">Open Library</button></div></form></section><div id="notice" class="notice" role="status" aria-live="polite">Locked · connect to browse authorized evidence.</div><section id="library" hidden><div class="toolbar"><label for="scope">Authorized scope</label><select id="scope"></select><button id="resnapshot">Refresh snapshot</button><span id="coverage"></span></div><div class="browser"><section class="panel occurrences" aria-label="Retained occurrences"><div class="section-head"><h2>Occurrences</h2><span id="count" class="badge"></span></div><p>Committed entries at the selected snapshot.</p><div id="rows"></div><p id="empty" hidden>No occurrences in this scope at this snapshot.</p><div class="pagination"><button id="previous" disabled>Previous</button><span id="page-position"></span><button id="next" disabled>Next</button></div></section><section class="panel inspector" aria-label="Source inspector"><div class="section-head"><h2 id="selection">Select an occurrence</h2><button id="close-inspector" hidden>Close</button></div><p id="source-hint">Read exact retained bytes alongside their provenance.</p><div id="inspection" hidden><div class="tabs"><button id="source-tab" aria-pressed="true">Source</button><button id="provenance-tab" aria-pressed="false">Provenance</button></div><div id="source-panel"><div class="range"><span id="range"></span><button id="encoding">Show hex</button><button id="download">Download this range</button><button id="more" disabled>Next range</button></div><pre id="source" tabindex="0"></pre></div><dl id="provenance" hidden></dl></div></section></div><section class="panel coverage-matrix" aria-label="Reader capabilities"><h2>Reader capabilities</h2><p>Reported by this reader. Upcoming features remain unavailable.</p><dl id="capability-list"></dl></section></section></main></div></body></html>
++<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Kan · Evidence Library</title><script src="/theme.js"></script><link rel="stylesheet" href="/base.css"><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head><body><div class="shell"><aside><a class="brand" href="/">kan<span>•</span></a><div class="workspace">YOUR KNOWLEDGE</div><div class="nav" aria-current="page">Evidence Library</div><p class="aside-note">Retained source.<br>Inspectable provenance.</p><span class="local">Authorized reader</span></aside><main><header><div><div class="eyebrow">KAN STUDIO / LIBRARY</div><h1>Your evidence library.</h1><p class="subtitle">Explore retained occurrences and inspect the bytes behind them.</p></div><div class="header-actions"><label for="theme">Appearance</label><select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select><button id="lock" disabled>Lock</button></div></header><section id="login" class="panel login"><div><h2>Open your Library</h2><p>This reader has its own scope grants. Your access token stays in this tab’s memory.</p></div><form id="connect"><label for="token">Reader access token</label><div class="login-fields"><input id="token" type="password" autocomplete="off" required><button class="primary">Open Library</button></div></form></section><div id="notice" class="notice" role="status" aria-live="polite">Locked · connect to browse authorized evidence.</div><section id="library" hidden><div class="catalog-health"><p id="catalog-status" role="status" aria-live="polite"></p><button id="retry-sources">Retry sources</button></div><div class="toolbar"><label for="scope">Authorized scope</label><select id="scope"></select><button id="resnapshot">Refresh snapshot</button><span id="coverage"></span></div><div class="browser"><section class="panel occurrences" aria-label="Retained occurrences"><div class="section-head"><h2>Occurrences</h2><span id="count" class="badge"></span></div><p>Committed entries at the selected snapshot.</p><div id="rows"></div><p id="empty" hidden>No occurrences in this scope at this snapshot.</p><div class="pagination"><button id="previous" disabled>Previous</button><span id="page-position"></span><button id="next" disabled>Next</button></div></section><section class="panel inspector" aria-label="Source inspector"><div class="section-head"><h2 id="selection">Select an occurrence</h2><button id="close-inspector" hidden>Close</button></div><p id="source-hint">Read exact retained bytes alongside their provenance.</p><div id="inspection" hidden><div class="tabs"><button id="source-tab" aria-pressed="true">Source</button><button id="provenance-tab" aria-pressed="false">Provenance</button></div><div id="source-panel"><div class="range"><span id="range"></span><button id="encoding">Show hex</button><button id="download">Download this range</button><button id="more" disabled>Next range</button></div><pre id="source" tabindex="0"></pre></div><dl id="provenance" hidden></dl></div></section></div><section class="panel coverage-matrix" aria-label="Reader capabilities"><h2>Reader capabilities</h2><p>Reported by this reader. Upcoming features remain unavailable.</p><dl id="capability-list"></dl></section></section></main></div></body></html>
+diff --git a/web/library/style.css b/web/library/style.css
+index 564b676..2fa5103 100644
+--- a/web/library/style.css
++++ b/web/library/style.css
+@@ -4,0 +5,2 @@
++
++.catalog-health{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:24px;padding:16px 20px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}.catalog-health p{margin:0;font-size:13px;line-height:1.6}.catalog-health p.partial{color:var(--ink);font-weight:600}.catalog-health button{flex-shrink:0}@media(max-width:700px){.catalog-health{align-items:flex-start;flex-direction:column}}

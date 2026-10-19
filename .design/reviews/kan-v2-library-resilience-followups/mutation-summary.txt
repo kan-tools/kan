@@ -1,0 +1,5 @@
+R03 compiled named failure; inspect panic in raw log
+R08 compiled named failure; inspect panic in raw log
+R12 compiled named failure; inspect panic in raw log
+R24 compiled named failure; inspect panic in raw log
+R31 compiled named failure; inspect panic in raw log

@@ -342,6 +342,41 @@ mod budget_tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn whole_connection_deadline_includes_time_spent_queued() {
+        let budget = ConnectionBudget::new();
+        let held = budget.requests.clone().acquire_many_owned(4).await.unwrap();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let b = budget.clone();
+        let socket = budget.admit().unwrap();
+        let job = tokio::spawn(async move {
+            b.run(socket, async move {
+                started_tx.send(()).unwrap();
+                std::future::pending::<()>().await;
+            })
+            .await;
+        });
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(5)).await;
+        drop(held);
+        started_rx.await.unwrap();
+        tokio::time::advance(Duration::from_millis(29_999)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            !job.is_finished(),
+            "whole budget lasts until 35s since admission"
+        );
+        tokio::time::advance(Duration::from_millis(2)).await;
+        tokio::task::yield_now().await;
+        assert!(
+            job.is_finished(),
+            "queued time must not extend the 35s whole-connection budget"
+        );
+        job.await.unwrap();
+        assert_eq!(budget.sockets.available_permits(), 12);
+        assert_eq!(budget.requests.available_permits(), 4);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn cancelling_connection_releases_socket_and_execution_permits() {
         let budget = ConnectionBudget::new();
         let (tx, rx) = tokio::sync::oneshot::channel();

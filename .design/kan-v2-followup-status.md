@@ -24,10 +24,14 @@ The owner approved this roadmap after #286/#287:
 
 1. Library resilience: partial healthy browsing, request bounds, regression gaps
    and real-browser export qualification. Implementation is now in
-   `.design/kan-v2-library-resilience.md`; fresh review remains pending. Actual
-   download delivery is still unverified in IAB.
+   `.design/kan-v2-library-resilience.md`; e71cdf8 has independent Opus approval
+   with follow-ups, retained under `reviews/kan-v2-library-resilience-opus/`.
+   Author test/style corrections are awaiting fresh review. Actual download
+   delivery is still unverified in IAB.
 2. Missing-evidence rows with authenticated metadata surviving payload loss;
-   preserve the admission boundary described below.
+   preserve the admission boundary described below. Draft #289 specifies the new
+   proof/profile and owner-copy upgrade in `kan-v2-evidence-availability.md`;
+   that draft is not an implemented storage format.
 3. Implement the bounded deduplicated collection overview in #287.
 4. Human conversation browsing: messages, tools, attachments, branches and gaps,
    with exact mapping back to retained evidence.

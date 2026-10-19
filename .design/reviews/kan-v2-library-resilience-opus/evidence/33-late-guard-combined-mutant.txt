@@ -1,0 +1,42 @@
+U28-all-three-epoch-guards-removed (scratch copy /tmp/opus-u05.rCL8, debug line added to test):
+--- /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience/web/library/app.js	2026-10-18 19:27:28
++++ web/library/app.js	2026-10-18 19:27:42
+@@ -22,7 +22,6 @@
+     const current = ++epoch; if (controller) controller.abort(); controller = new AbortController();
+     try {
+     const response = await fetch('/api/library', {method:'POST', headers:{'Authorization':`Bearer ${token}`, 'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'omit', cache:'no-store', signal:controller.signal});
+-    if (current !== epoch) return null;
+     if (!response.ok) {
+       const denied = response.status === 401 || response.status === 403;
+       const message = denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
+@@ -30,8 +29,8 @@
+         : 'This response could not be verified. Retry, refresh the snapshot, or choose another scope.';
+       const error = new Error(message); error.accessDenied = denied; error.readerMessage = message; throw error;
+     }
+-    const value = await response.json(); if (current !== epoch) return null; return value;
+-    } catch (error) { if (current !== epoch) return null; throw error; }
++    const value = await response.json(); return value;
++    } catch (error) { throw error; }
+   }
+   function run(fn) { Promise.resolve().then(fn).catch(error => {
+     if (error.name === 'AbortError') return;
+TAP version 13
+# DBG partial false 1 2 "Source checks complete · only currently authorized scopes are shown."
+# Subtest: incomplete empty catalog differs from complete empty and late retry cannot repaint after lock
+not ok 1 - incomplete empty catalog differs from complete empty and late retry cannot repaint after lock
+  ---
+  duration_ms: 3.295458
+  type: 'test'
+  location: '/private/tmp/opus-u05.rCL8/tests/library_ui.test.cjs:40:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    false !== true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: 'strictEqual'
+  stack: |-

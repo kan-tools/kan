@@ -103,7 +103,9 @@ The reader refuses a signing principal equal to any configured storage issuer.
 A verified signed access-denial result omits the scope without identifying it.
 Unreachable, malformed or unverifiable sources instead produce `coverage: partial`
 alongside any successfully authorized scope pins. Failed scope identifiers,
-endpoints and counts are not returned. Even if no scope succeeds, partial is
+endpoints and counts are not returned in the response body. Response timing can
+reveal how many groups contain stalled checks; this profile does not hide timing.
+Even if no scope succeeds, partial is
 visibly distinct from a completed check with no currently authorized scopes.
 The persistent coverage notice survives page/source navigation. **Retry sources**
 clears old pins, rows and plaintext before rechecking grants; lock also clears

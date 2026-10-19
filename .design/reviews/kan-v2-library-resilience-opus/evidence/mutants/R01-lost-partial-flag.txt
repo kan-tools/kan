@@ -1,0 +1,81 @@
+file=src/evidence_library.rs
+--- old
+Err(_) => partial = true,
++++ new
+Err(_) => {}
+
+$ cargo test -j4 --features v2-crypto --test evidence_reader catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources -- --exact
+exit=101
+
+running 1 test
+test catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources ... FAILED
+
+failures:
+
+---- catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources stdout ----
+
+thread 'catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources' (8968580) panicked at tests/evidence_reader.rs:957:5:
+assertion `left == right` failed
+  left: String("complete")
+ right: "partial"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 5.49s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+warning: variable does not need to be mutable
+  --> src/evidence_library.rs:55:17
+   |
+55 |             let mut partial = false;
+   |                 ----^^^^^^^
+   |                 |
+   |                 help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning (run `cargo fix --lib -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 6.65s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+error: test failed, to rerun pass `--test evidence_reader`
+
+$ cargo test -j4 --features v2-crypto --test evidence_reader catalog_verification_failure_is_not_an_empty_authorized_inventory -- --exact
+exit=101
+
+running 1 test
+test catalog_verification_failure_is_not_an_empty_authorized_inventory ... FAILED
+
+failures:
+
+---- catalog_verification_failure_is_not_an_empty_authorized_inventory stdout ----
+
+thread 'catalog_verification_failure_is_not_an_empty_authorized_inventory' (8968706) panicked at tests/evidence_reader.rs:696:5:
+assertion `left == right` failed: unverified replies must not become complete empty catalogs
+  left: String("complete")
+ right: "partial"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    catalog_verification_failure_is_not_an_empty_authorized_inventory
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.07s
+
+warning: variable does not need to be mutable
+  --> src/evidence_library.rs:55:17
+   |
+55 |             let mut partial = false;
+   |                 ----^^^^^^^
+   |                 |
+   |                 help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `kan` (lib) generated 1 warning (run `cargo fix --lib -p kan` to apply 1 suggestion)
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+error: test failed, to rerun pass `--test evidence_reader`
+

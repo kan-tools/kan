@@ -1,0 +1,30 @@
+     Removed 0 files
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+    Finished `test` profile [unoptimized] target(s) in 13.66s
+     Running unittests src/lib.rs (target/debug/deps/kan-7f955e5e00633d5f)
+
+running 2 tests
+test evidence_library::budget_tests::cancelling_connection_releases_socket_and_execution_permits ... ok
+test evidence_library::budget_tests::connection_admission_execution_and_deadlines_are_bounded ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 71 filtered out; finished in 0.00s
+
+     Running tests/evidence_library_cli.rs (target/debug/deps/evidence_library_cli-95b26762f3467431)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+
+     Running tests/surface_conformance.rs (target/debug/deps/surface_conformance-e9fd7d9feebd78e5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.00s
+
+exit=0

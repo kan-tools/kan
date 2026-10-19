@@ -30,7 +30,8 @@ time control for deterministic tests without adding a persistent surface.
 without detached tasks; dropping the query cancels its in-flight group. Only a
 verified Snapshot becomes a selectable scope. The wire response adds `coverage`
 (`complete` or `partial`) to the existing catalog. Partial coverage reports that
-some configured checks failed, without identifying or counting them. A signed
+some configured checks failed, without identifying or counting them in the response body. Response latency can
+reveal how many groups contain stalled checks; this profile does not hide timing. A signed
 denial remains indistinguishable from an unknown grant. This is an intentional
 privacy refinement of the requested per-scope error rows: unauthenticated scope
 identities do not become browser-visible merely because their transport failed.

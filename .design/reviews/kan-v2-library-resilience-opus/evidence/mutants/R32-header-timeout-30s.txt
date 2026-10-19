@@ -1,0 +1,31 @@
+file=src/evidence_library.rs
+--- old
+.header_read_timeout(Duration::from_secs(5));
++++ new
+.header_read_timeout(Duration::from_secs(30));
+
+$ cargo test -j4 --features v2-crypto --test evidence_reader library_queues_a_browser_request_behind_four_idle_connections -- --exact
+exit=101
+
+running 1 test
+test library_queues_a_browser_request_behind_four_idle_connections ... FAILED
+
+failures:
+
+---- library_queues_a_browser_request_behind_four_idle_connections stdout ----
+
+thread 'library_queues_a_browser_request_behind_four_idle_connections' (8976874) panicked at tests/evidence_reader.rs:861:5:
+the fifth connection must wait rather than be dropped: Err(reqwest::Error { kind: Request, url: "http://127.0.0.1:64277/", source: hyper_util::client::legacy::Error(SendRequest, hyper::Error(Io, Os { code: 54, kind: ConnectionReset, message: "Connection reset by peer" })) })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    library_queues_a_browser_request_behind_four_idle_connections
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 6.19s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-resilience)
+    Finished `test` profile [unoptimized] target(s) in 6.76s
+     Running tests/evidence_reader.rs (target/debug/deps/evidence_reader-3bbc78385966c01b)
+error: test failed, to rerun pass `--test evidence_reader`
+

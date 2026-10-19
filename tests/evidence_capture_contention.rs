@@ -305,10 +305,26 @@ async fn p4_capture_beside_brief_periodic_writer() {
     let (p, s) = (path.clone(), stop.clone());
     let drainer = std::thread::spawn(move || {
         let c = rusqlite::Connection::open(&p).unwrap();
+        // This synthetic writer must not assume it wins SQLite's lock race.
+        // A missed window creates no contention; retry the next window. Keep
+        // unexpected errors fatal and require real held windows below.
+        c.busy_timeout(Duration::ZERO).unwrap();
         let mut held = 0;
         while !s.load(std::sync::atomic::Ordering::SeqCst) {
             std::thread::sleep(Duration::from_millis(50));
-            c.execute_batch("BEGIN IMMEDIATE").unwrap();
+            if s.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+            match c.execute_batch("BEGIN IMMEDIATE") {
+                Ok(()) => {}
+                Err(rusqlite::Error::SqliteFailure(error, _))
+                    if error.code == rusqlite::ErrorCode::DatabaseBusy
+                        || error.code == rusqlite::ErrorCode::DatabaseLocked =>
+                {
+                    continue;
+                }
+                Err(error) => panic!("synthetic writer failed: {error}"),
+            }
             std::thread::sleep(Duration::from_millis(5));
             c.execute_batch("ROLLBACK").unwrap();
             held += 1;

@@ -1,0 +1,726 @@
+commit e71cdf842a19b4a3f0fee810ea11c16b5310d7fa
+Author: Maxine Levesque <170461181+maxinelevesque@users.noreply.github.com>
+Date:   Sun Oct 18 19:20:34 2026 -0700
+
+    feat(v2): keep verified Library scopes usable during source failures
+    
+    Bound upstream and connection waits, retain partial-coverage notices, and strengthen negative UI and scheduler tests.
+    
+    Demonstrated-by: revert=HEAD tests=evidence_reader::catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources,evidence_reader::library_body_read_deadline_returns_an_explicit_timeout,node::library_partial_catalog outcome=DEMONSTRATED
+
+diff --git a/Cargo.toml b/Cargo.toml
+index 8827d5e..60e1fde 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -61,7 +61,7 @@ x25519-dalek = { version = "2", features = ["static_secrets"] }
+ [dev-dependencies]
+ rusqlite = { version = "0.40.1", features = ["bundled", "trace"] }
+ tempfile = "3.27.0"
+-tokio = { version = "1.52.4", features = ["process"] }
++tokio = { version = "1.52.4", features = ["process", "test-util"] }
+ 
+ # Test fixtures deliberately corrupt/remove files. Production library code
+ # raises this lint to deny in src/lib.rs; integration-test crates inherit this
+diff --git a/docs/V2-LIBRARY.md b/docs/V2-LIBRARY.md
+index 9cee42e..349b6f4 100644
+--- a/docs/V2-LIBRARY.md
++++ b/docs/V2-LIBRARY.md
+@@ -68,7 +68,7 @@ remains governed by that service's own restart/configuration contract.
+ 
+ Bounds: 40 inventory records per API page, 256 KiB per API source range, 16 KiB
+ request body, four executing browser connections plus eight queued connections,
+-a 6-second queue deadline, 5-second header deadline and 35-second overall
++a 6-second queue deadline, 5-second header deadline, 3-second body deadline and 35-second overall
+ connection deadline including queue time. Additional connections are refused;
+ this is bounded burst handling, not immunity to a hostile local process. A range currently decrypts one bounded
+ service object in memory. It is not streaming decryption. The current service can fail an entire inventory
+@@ -100,9 +100,21 @@ UTF-8 toggle shows the exact original text; it does not sanitize or rewrite the
+ source. Byte ranges remain the unambiguous comparison/export representation.
+ 
+ The reader refuses a signing principal equal to any configured storage issuer.
+-Only a verified signed access-denial result may exclude a scope from the catalog;
+-a bad reply signature produces a verification error. If another configured scope
+-is unreachable, the current all-or-error catalog remains unavailable rather than
+-publishing a partial catalog as complete. Per-scope error rows are future work.
++A verified signed access-denial result omits the scope without identifying it.
++Unreachable, malformed or unverifiable sources instead produce `coverage: partial`
++alongside any successfully authorized scope pins. Failed scope identifiers,
++endpoints and counts are not returned. Even if no scope succeeds, partial is
++visibly distinct from a completed check with no currently authorized scopes.
++The persistent coverage notice survives page/source navigation. **Retry sources**
++clears old pins, rows and plaintext before rechecking grants; lock also clears
++coverage. A failure while retrying leaves coverage unknown and retry available.
++
++Each upstream signed read has a five-second deadline. Catalog checks run in
++groups of at most four (sixteen configured scopes maximum): up to twenty seconds.
++A source range requires two calls, up to ten seconds. Queue + header + body +
++maximum catalog budget is thirty-four seconds inside the thirty-five-second
++connection limit. Scheduling/CPU overhead can still exhaust the whole deadline;
++a slow healthy service is temporarily unavailable, never declared absent.
++Cancellation drops the in-flight checks. Excess connections remain refused.
+ The visible capability matrix is populated from the authenticated API; unknown
+ capabilities are labeled client-unsupported, never presented as working controls.
+diff --git a/scripts/revert_v2.py b/scripts/revert_v2.py
+index 46709b5..8363a36 100644
+--- a/scripts/revert_v2.py
++++ b/scripts/revert_v2.py
+@@ -26,6 +26,7 @@ import tarfile
+ import uuid
+ 
+ NODE_TESTS = {
++    'library_partial_catalog': ('tests/library_ui.test.cjs', 'partial catalog coverage persists while browsing and retry clears old authority'),
+     'library_capabilities': ('tests/library_ui.test.cjs', 'capability matrix renders actual service capabilities without claiming unknown support'),
+     'library_unavailable': ('tests/library_ui.test.cjs', 'unavailable or unverifiable source clears plaintext but preserves other browsing'),
+     'library_directional': ('tests/library_ui.test.cjs', 'directional format controls default to exact hex and permit explicit UTF-8'),
+diff --git a/src/evidence_library.rs b/src/evidence_library.rs
+index a205230..3068381 100644
+--- a/src/evidence_library.rs
++++ b/src/evidence_library.rs
+@@ -8,8 +8,12 @@ use hyper::{
+ };
+ use hyper_util::rt::TokioIo;
+ use serde::Deserialize;
+-use std::{convert::Infallible, io, sync::Arc, time::Duration};
+-use tokio::{net::TcpListener, sync::Semaphore, task::JoinSet};
++use std::{convert::Infallible, future::Future, io, sync::Arc, time::Duration};
++use tokio::{
++    net::TcpListener,
++    sync::{OwnedSemaphorePermit, Semaphore},
++    task::JoinSet,
++};
+ #[derive(Deserialize)]
+ #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
+ enum Query {
+@@ -48,15 +52,30 @@ async fn query(reader: &Reader, query: Query) -> Result<serde_json::Value, Failu
+     match query {
+         Query::Catalog => {
+             let mut scopes = Vec::new();
+-            for scope in reader.configured_scopes() {
+-                match reader.snapshot(&scope).await {
+-                    Ok(pin) => scopes.push(serde_json::json!({"scope":scope,"pin":pin})),
+-                    Err(Failure::AccessLimited) => {}
+-                    Err(e) => return Err(e),
++            let mut partial = false;
++            let configured = reader.configured_scopes();
++            // Borrowed futures: cancellation drops every in-flight check. Four
++            // waves of at most four five-second reads fit the connection budget.
++            for group in configured.chunks(4) {
++                let results = tokio::join!(
++                    catalog_entry(reader, group.first()),
++                    catalog_entry(reader, group.get(1)),
++                    catalog_entry(reader, group.get(2)),
++                    catalog_entry(reader, group.get(3))
++                );
++                for (scope, result) in [results.0, results.1, results.2, results.3]
++                    .into_iter()
++                    .flatten()
++                {
++                    match result {
++                        Ok(pin) => scopes.push(serde_json::json!({"scope":scope,"pin":pin})),
++                        Err(Failure::AccessLimited) => {}
++                        Err(_) => partial = true,
++                    }
+                 }
+             }
+             Ok(
+-                serde_json::json!({"version":1,"scopes":scopes,"capabilities":["snapshot-inventory","source-ranges","provenance"],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]}),
++                serde_json::json!({"version":1,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},"capabilities":["snapshot-inventory","source-ranges","provenance"],"unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]}),
+             )
+         }
+         Query::Snapshot { scope } => Ok(serde_json::json!({"pin":reader.snapshot(&scope).await?})),
+@@ -133,9 +152,15 @@ async fn handle(
+     {
+         return Ok(denied(StatusCode::BAD_REQUEST));
+     }
+-    let body = match Limited::new(r.into_body(), 16384).collect().await {
+-        Ok(body) => body.to_bytes(),
+-        Err(_) => return Ok(denied(StatusCode::PAYLOAD_TOO_LARGE)),
++    let body = match tokio::time::timeout(
++        Duration::from_secs(3),
++        Limited::new(r.into_body(), 16384).collect(),
++    )
++    .await
++    {
++        Ok(Ok(body)) => body.to_bytes(),
++        Ok(Err(_)) => return Ok(denied(StatusCode::PAYLOAD_TOO_LARGE)),
++        Err(_) => return Ok(denied(StatusCode::REQUEST_TIMEOUT)),
+     };
+     let request = match serde_json::from_slice(&body) {
+         Ok(request) => request,
+@@ -165,30 +190,176 @@ pub async fn serve(listener: TcpListener, token: String, reader: Reader) -> io::
+     let host = addr.to_string();
+     let token = Arc::new(token);
+     let reader = Arc::new(reader);
+-    // Four requests execute; eight more accepted sockets may wait up to six
+-    // seconds. This absorbs browser asset bursts without unbounded tasks.
+-    let slots = Arc::new(Semaphore::new(12));
+-    let requests = Arc::new(Semaphore::new(4));
++    let budget = ConnectionBudget::new();
+     let mut tasks = JoinSet::new();
+     loop {
+         tokio::select! {
+-            accepted=listener.accept()=>{
+-                let (stream,_)=accepted?;
+-                let Ok(permit)=slots.clone().try_acquire_owned() else {continue;};
+-                let host=host.clone();let token=token.clone();let reader=reader.clone();let requests=requests.clone();
++            accepted = listener.accept() => {
++                let (stream, _) = accepted?;
++                let Some(permit) = budget.admit() else { continue; };
++                let (host, token, reader) = (host.clone(), token.clone(), reader.clone());
++                let budget = budget.clone();
+                 tasks.spawn(async move {
+-                    let _permit=permit;
+-                    let connection = async move {
+-                        let Ok(Ok(_request)) = tokio::time::timeout(Duration::from_secs(6), requests.acquire_owned()).await else { return; };
+-                        let mut builder=hyper::server::conn::http1::Builder::new();
+-                        builder.keep_alive(false).max_buf_size(16384).timer(hyper_util::rt::TokioTimer::new()).header_read_timeout(Duration::from_secs(5));
+-                        let service=hyper::service::service_fn(move |r|handle(r,host.clone(),token.clone(),reader.clone()));
+-                        let _=builder.serve_connection(TokioIo::new(stream),service).await;
+-                    };
+-                    let _=tokio::time::timeout(Duration::from_secs(35),connection).await;
++                    budget.run(permit, connection(stream, host, token, reader)).await;
+                 });
+             },
+-            _=tasks.join_next(),if !tasks.is_empty()=>{}
++            _ = tasks.join_next(), if !tasks.is_empty() => {}
+         }
+     }
+ }
++
++async fn catalog_entry<'a>(
++    reader: &Reader,
++    scope: Option<&'a String>,
++) -> Option<(&'a String, Result<Pin, Failure>)> {
++    let scope = scope?;
++    Some((scope, reader.snapshot(scope).await))
++}
++
++async fn connection(
++    stream: tokio::net::TcpStream,
++    host: String,
++    token: Arc<String>,
++    reader: Arc<Reader>,
++) {
++    let mut builder = hyper::server::conn::http1::Builder::new();
++    builder
++        .keep_alive(false)
++        .max_buf_size(16384)
++        .timer(hyper_util::rt::TokioTimer::new())
++        .header_read_timeout(Duration::from_secs(5));
++    let service =
++        hyper::service::service_fn(move |r| handle(r, host.clone(), token.clone(), reader.clone()));
++    let _ = builder
++        .serve_connection(TokioIo::new(stream), service)
++        .await;
++}
++
++/// Socket admission and execution deadlines used by the live server. Keeping
++/// permit lifetime here makes cancellation release both bounds together.
++#[derive(Clone)]
++struct ConnectionBudget {
++    sockets: Arc<Semaphore>,
++    requests: Arc<Semaphore>,
++}
++impl ConnectionBudget {
++    fn new() -> Self {
++        Self {
++            sockets: Arc::new(Semaphore::new(12)),
++            requests: Arc::new(Semaphore::new(4)),
++        }
++    }
++    fn admit(&self) -> Option<OwnedSemaphorePermit> {
++        self.sockets.clone().try_acquire_owned().ok()
++    }
++    async fn run(&self, permit: OwnedSemaphorePermit, work: impl Future<Output = ()>) {
++        let _socket = permit;
++        let connection = async {
++            let Ok(Ok(_request)) = tokio::time::timeout(
++                Duration::from_secs(6),
++                self.requests.clone().acquire_owned(),
++            )
++            .await
++            else {
++                return;
++            };
++            work.await;
++        };
++        let _ = tokio::time::timeout(Duration::from_secs(35), connection).await;
++    }
++}
++
++#[cfg(test)]
++mod budget_tests {
++    use super::*;
++    use std::sync::atomic::{AtomicUsize, Ordering};
++
++    #[tokio::test(start_paused = true)]
++    async fn connection_admission_execution_and_deadlines_are_bounded() {
++        let budget = ConnectionBudget::new();
++        let entered = Arc::new(AtomicUsize::new(0));
++        let mut jobs = Vec::new();
++        for _ in 0..12 {
++            let permit = budget.admit().expect("twelve accepted sockets");
++            let (b, entered) = (budget.clone(), entered.clone());
++            jobs.push(tokio::spawn(async move {
++                b.run(permit, async move {
++                    entered.fetch_add(1, Ordering::SeqCst);
++                    std::future::pending::<()>().await;
++                })
++                .await;
++            }));
++        }
++        assert!(
++            budget.admit().is_none(),
++            "thirteenth socket must be refused"
++        );
++        tokio::task::yield_now().await;
++        assert_eq!(
++            entered.load(Ordering::SeqCst),
++            4,
++            "exactly four jobs execute"
++        );
++        assert_eq!(budget.requests.available_permits(), 0);
++        tokio::time::advance(Duration::from_millis(5999)).await;
++        tokio::task::yield_now().await;
++        assert_eq!(
++            jobs.iter().filter(|j| j.is_finished()).count(),
++            0,
++            "queue must survive until its deadline"
++        );
++        tokio::time::advance(Duration::from_millis(2)).await;
++        tokio::task::yield_now().await;
++        assert_eq!(
++            jobs.iter().filter(|j| j.is_finished()).count(),
++            8,
++            "all eight queued sockets expire at six seconds"
++        );
++        assert_eq!(budget.sockets.available_permits(), 8);
++        assert_eq!(
++            entered.load(Ordering::SeqCst),
++            4,
++            "expired queued work must never start"
++        );
++        tokio::time::advance(Duration::from_millis(28_998)).await;
++        tokio::task::yield_now().await;
++        assert_eq!(
++            jobs.iter().filter(|j| j.is_finished()).count(),
++            8,
++            "executing requests retain whole budget"
++        );
++        tokio::time::advance(Duration::from_millis(2)).await;
++        tokio::task::yield_now().await;
++        assert!(
++            jobs.iter().all(|j| j.is_finished()),
++            "whole connection expires at thirty-five seconds"
++        );
++        for job in jobs {
++            job.await.unwrap();
++        }
++        assert_eq!(budget.sockets.available_permits(), 12);
++        assert_eq!(budget.requests.available_permits(), 4);
++    }
++
++    #[tokio::test(start_paused = true)]
++    async fn cancelling_connection_releases_socket_and_execution_permits() {
++        let budget = ConnectionBudget::new();
++        let (tx, rx) = tokio::sync::oneshot::channel();
++        let b = budget.clone();
++        let permit = budget.admit().unwrap();
++        let job = tokio::spawn(async move {
++            b.run(permit, async move {
++                tx.send(()).unwrap();
++                std::future::pending::<()>().await;
++            })
++            .await;
++        });
++        rx.await.unwrap();
++        assert_eq!(budget.requests.available_permits(), 3);
++        assert_eq!(budget.sockets.available_permits(), 11);
++        job.abort();
++        assert!(job.await.unwrap_err().is_cancelled());
++        assert_eq!(budget.requests.available_permits(), 4);
++        assert_eq!(budget.sockets.available_permits(), 12);
++    }
++}
+diff --git a/src/evidence_reader.rs b/src/evidence_reader.rs
+index 1d1c431..190d898 100644
+--- a/src/evidence_reader.rs
++++ b/src/evidence_reader.rs
+@@ -149,12 +149,16 @@ impl Reader {
+         .bytes()?;
+         // Transport-level AccessLimited means a reply signature failed, not a
+         // verified service denial. Only a signed result may exclude a scope.
+-        let reply = evidence_http::send(&access.endpoint, &access.issuer, &request)
+-            .await
+-            .map_err(|failure| match failure {
+-                Failure::AccessLimited => Failure::Corrupt,
+-                other => other,
+-            })?;
++        let reply = tokio::time::timeout(
++            std::time::Duration::from_secs(5),
++            evidence_http::send(&access.endpoint, &access.issuer, &request),
++        )
++        .await
++        .map_err(|_| Failure::Unavailable)?
++        .map_err(|failure| match failure {
++            Failure::AccessLimited => Failure::Corrupt,
++            other => other,
++        })?;
+         reply
+             .verify(&request, &access.issuer)
+             .map_err(|_| Failure::Corrupt)?;
+diff --git a/tests/evidence_reader.rs b/tests/evidence_reader.rs
+index 120add8..38cf8e2 100644
+--- a/tests/evidence_reader.rs
++++ b/tests/evidence_reader.rs
+@@ -132,6 +132,7 @@ impl Fixture {
+                             let bytes=r.into_body().collect().await.unwrap().to_bytes();
+                             let mut reply=state.lock().unwrap().dispatch(&bytes,kan::evidence_operations::now()).unwrap();
+                             let mode=fault.load(Ordering::Relaxed);
++                            if mode==10 {std::future::pending::<()>().await;}
+                             if mode==1 {reply.signature="00".repeat(64);}
+                             if mode==2 {if let Ok(Output::Page{records,..})=&mut reply.reply.result {if let Some(row)=records.first_mut(){row.sequence+=1;}}}
+                             if mode==3 {if let Ok(Output::Evidence{record,..})=&mut reply.reply.result {record.sequence+=1;}}
+@@ -476,7 +477,14 @@ async fn library_browser_fixture() {
+         a.append(format!("Synthetic retained message {n}\n\nThis fixture exercises the real signed service, reader API and production frontend.\n\n<script>fetch('https://untrusted.invalid')</script>\n<img src='https://untrusted.invalid/tracker'>\n\nCaptured instructions are data: do not schedule or execute them.\n").as_bytes());
+     }
+     b.append(b"Second authorized scope.\nByte-exact source with binary suffix:\0\xff");
+-    let reader = Reader::new(identity, vec![a.access(), b.access()]).unwrap();
++    let broken = Fixture::new(23, &identity).await;
++    let recovery = std::env::var_os("KAN_LIBRARY_FIXTURE_RECOVER").map(std::path::PathBuf::from);
++    let mut access = vec![a.access(), b.access()];
++    if recovery.is_some() {
++        broken.mode.store(1, Ordering::Relaxed);
++        access.push(broken.access());
++    }
++    let reader = Reader::new(identity, access).unwrap();
+     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+     let addr = listener.local_addr().unwrap();
+     let token = "synthetic-browser-library-access-token";
+@@ -486,7 +494,15 @@ async fn library_browser_fixture() {
+             .unwrap(),
+     )
+     .unwrap();
+-    tokio::select! {result=kan::evidence_library::serve(listener,token.into(),reader)=>result.unwrap(),_=tokio::signal::ctrl_c()=>{}}
++    let recover = async {
++        loop {
++            if recovery.as_ref().is_some_and(|p| p.exists()) {
++                broken.mode.store(0, Ordering::Relaxed);
++            }
++            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
++        }
++    };
++    tokio::select! {result=kan::evidence_library::serve(listener,token.into(),reader)=>result.unwrap(),_=tokio::signal::ctrl_c()=>{},_=recover=>{}}
+ }
+ 
+ #[tokio::test]
+@@ -657,14 +673,32 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
+     assert_eq!(honest.status(), 200);
+     let value: serde_json::Value = serde_json::from_slice(&honest.bytes().await.unwrap()).unwrap();
+     assert_eq!(value["scopes"].as_array().unwrap().len(), 1);
++    assert_eq!(value["coverage"], "complete");
++    assert_eq!(
++        value["capabilities"],
++        serde_json::json!(["snapshot-inventory", "source-ranges", "provenance"])
++    );
++    assert_eq!(
++        value["unavailable"],
++        serde_json::json!([
++            "semantic-search",
++            "normalized-sessions",
++            "annotations",
++            "saved-views",
++            "analysis",
++            "administrative-jobs"
++        ])
++    );
+     a.mode.store(1, Ordering::Relaxed);
+     let forged = request().send().await.unwrap();
++    assert_eq!(forged.status(), 200);
++    let value: serde_json::Value = serde_json::from_slice(&forged.bytes().await.unwrap()).unwrap();
+     assert_eq!(
+-        forged.status(),
+-        503,
+-        "unverified replies must not become successful empty catalogs"
++        value["coverage"], "partial",
++        "unverified replies must not become complete empty catalogs"
+     );
+-    assert!(!String::from_utf8_lossy(&forged.bytes().await.unwrap()).contains("scopes"));
++    assert_eq!(value["scopes"].as_array().unwrap().len(), 0);
++    assert!(!value.to_string().contains(&svc::hex(&a.scope)));
+     a.mode.store(0, Ordering::Relaxed);
+     a.revoke();
+     let denied = request().send().await.unwrap();
+@@ -822,12 +856,17 @@ async fn library_queues_a_browser_request_behind_four_idle_connections() {
+         .timeout(std::time::Duration::from_secs(8))
+         .build()
+         .unwrap();
++    let started = std::time::Instant::now();
+     let result = client.get(format!("http://{addr}/")).send().await;
+     assert!(
+         result.is_ok(),
+         "the fifth connection must wait rather than be dropped: {result:?}"
+     );
+     assert_eq!(result.unwrap().status(), 200);
++    assert!(
++        started.elapsed() >= std::time::Duration::from_secs(4),
++        "fifth socket must actually queue behind the execution bound"
++    );
+     drop(idle);
+ }
+ 
+@@ -852,3 +891,136 @@ async fn library_refuses_public_listeners_and_short_tokens_before_serving() {
+         );
+     }
+ }
++
++#[tokio::test]
++async fn catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources() {
++    let identity = Identity::generate();
++    let mut healthy = Fixture::new(45, &identity).await;
++    healthy.append(b"healthy source remains browsable");
++    let forged = Fixture::new(41, &identity).await;
++    let denied = Fixture::new(42, &identity).await;
++    let stalled = Fixture::new(37, &identity).await;
++    let mut more_stalled = Vec::new();
++    for n in [38, 39, 40] {
++        let f = Fixture::new(n, &identity).await;
++        f.mode.store(10, Ordering::Relaxed);
++        more_stalled.push(f);
++    }
++    let refused = Fixture::new(44, &identity).await;
++    forged.mode.store(1, Ordering::Relaxed);
++    denied.revoke();
++    stalled.mode.store(10, Ordering::Relaxed);
++    refused.server.abort();
++    let mut access = vec![
++        healthy.access(),
++        forged.access(),
++        denied.access(),
++        stalled.access(),
++        refused.access(),
++    ];
++    access.extend(more_stalled.iter().map(Fixture::access));
++    let reader = Reader::new(identity, access).unwrap();
++    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let endpoint = format!("http://{}/api/library", listener.local_addr().unwrap());
++    struct Stop(JoinHandle<std::io::Result<()>>);
++    impl Drop for Stop {
++        fn drop(&mut self) {
++            self.0.abort();
++        }
++    }
++    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
++        listener,
++        "synthetic-partial-catalog-token-32".into(),
++        reader,
++    )));
++    let client = reqwest::Client::builder()
++        .no_proxy()
++        .timeout(std::time::Duration::from_secs(8))
++        .build()
++        .unwrap();
++    let call = |body: serde_json::Value| {
++        client
++            .post(&endpoint)
++            .header("content-type", "application/json")
++            .bearer_auth("synthetic-partial-catalog-token-32")
++            .body(body.to_string())
++    };
++    let started = std::time::Instant::now();
++    let response = call(serde_json::json!({"action":"catalog"}))
++        .send()
++        .await
++        .expect("stalled source must not hold whole catalog past its budget");
++    assert_eq!(response.status(), 200);
++    let value: serde_json::Value =
++        serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
++    assert!(started.elapsed() < std::time::Duration::from_secs(7));
++    assert_eq!(value["coverage"], "partial");
++    assert_eq!(value["scopes"].as_array().unwrap().len(), 1);
++    assert_eq!(value["scopes"][0]["scope"], svc::hex(&healthy.scope));
++    for fixture in [&forged, &denied, &stalled, &refused] {
++        assert!(
++            !value.to_string().contains(&svc::hex(&fixture.scope)),
++            "unverified/denied scope identity must not be exposed"
++        );
++        assert!(!value.to_string().contains(&fixture.endpoint));
++    }
++    let pin = value["scopes"][0]["pin"].clone();
++    let source =
++        call(serde_json::json!({"action":"source","pin":pin,"sequence":1,"offset":0,"length":100}))
++            .send()
++            .await
++            .unwrap();
++    assert_eq!(source.status(), 200);
++    let source: serde_json::Value = serde_json::from_slice(&source.bytes().await.unwrap()).unwrap();
++    assert_eq!(source["utf8"], "healthy source remains browsable");
++    forged.mode.store(0, Ordering::Relaxed);
++    stalled.mode.store(0, Ordering::Relaxed);
++    for f in &more_stalled {
++        f.mode.store(0, Ordering::Relaxed);
++    }
++    let recovered = call(serde_json::json!({"action":"catalog"}))
++        .send()
++        .await
++        .unwrap();
++    let recovered: serde_json::Value =
++        serde_json::from_slice(&recovered.bytes().await.unwrap()).unwrap();
++    assert_eq!(recovered["scopes"].as_array().unwrap().len(), 6);
++    assert_eq!(
++        recovered["coverage"], "partial",
++        "refused source remains visibly incomplete"
++    );
++}
++
++#[tokio::test]
++async fn library_body_read_deadline_returns_an_explicit_timeout() {
++    use tokio::io::{AsyncReadExt, AsyncWriteExt};
++    let identity = Identity::generate();
++    let a = Fixture::new(49, &identity).await;
++    let reader = Reader::new(identity, vec![a.access()]).unwrap();
++    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let addr = listener.local_addr().unwrap();
++    struct Stop(JoinHandle<std::io::Result<()>>);
++    impl Drop for Stop {
++        fn drop(&mut self) {
++            self.0.abort();
++        }
++    }
++    let _stop = Stop(tokio::spawn(kan::evidence_library::serve(
++        listener,
++        "synthetic-body-deadline-token-32".into(),
++        reader,
++    )));
++    let mut socket = tokio::net::TcpStream::connect(addr).await.unwrap();
++    socket.write_all(format!("POST /api/library HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer synthetic-body-deadline-token-32\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{{").as_bytes()).await.unwrap();
++    let started = std::time::Instant::now();
++    let mut output = Vec::new();
++    tokio::time::timeout(
++        std::time::Duration::from_secs(5),
++        socket.read_to_end(&mut output),
++    )
++    .await
++    .expect("body deadline must return before whole connection timeout")
++    .unwrap();
++    assert!(String::from_utf8_lossy(&output).starts_with("HTTP/1.1 408"));
++    assert!(started.elapsed() >= std::time::Duration::from_secs(2));
++}
+diff --git a/tests/library_ui.test.cjs b/tests/library_ui.test.cjs
+index 38a8f2d..6a21303 100644
+--- a/tests/library_ui.test.cjs
++++ b/tests/library_ui.test.cjs
+@@ -5,13 +5,14 @@ function ui(){
+  class Element{constructor(){this.value='';this.hidden=false;this.disabled=false;this.children=[];this.events={};this.attrs={};this.textContent='';}setAttribute(k,v){this.attrs[k]=v;}addEventListener(k,f){this.events[k]=f;}append(v){this.children.push(v);}replaceChildren(){this.children=[];}remove(){this.removed=true;}focus(){active=this;}click(){downloads.push(this);if(this.events.click)this.events.click();}}
+  const node=id=>{if(!nodes.has(id))nodes.set(id,new Element());return nodes.get(id);};const window={events:{},addEventListener(k,f){this.events[k]=f;}};
+  const context={document:{getElementById:node,createElement:()=>new Element(),body:node("body")},window,AbortController,Blob,Uint8Array,setTimeout:(fn)=>{const id={};timers.set(id,fn);return id;},clearTimeout:id=>timers.delete(id),URL:{createObjectURL:blob=>{blobs.push(blob);return 'blob:synthetic';},revokeObjectURL:url=>revoked.push(url)},fetch:(url,opts)=>new Promise((resolve,reject)=>pending.push({url,opts,resolve,reject})),console};
++ node('library').hidden=true;node('inspection').hidden=true;
+  vm.createContext(context);vm.runInContext(fs.readFileSync('web/library/app.js','utf8'),context);
+  const respond=async(value,status=200)=>{const request=pending.shift();assert.ok(request,'expected request');request.resolve({ok:status===200,status,json:async()=>value});await tick();await tick();};
+  const login=async()=>{node('token').value='synthetic-library-token';node('connect').events.submit({preventDefault(){}});await tick();};
+  return{node,pending,respond,login,downloads,revoked,timers,blobs,window,active:()=>active};
+ }
+ const pin={request:'synthetic-pin',reply:{}};
+-const catalog={version:1,capabilities:['snapshot-inventory','source-ranges','provenance'],unavailable:['semantic-search','normalized-sessions','annotations','saved-views','analysis','administrative-jobs'],scopes:[{scope:'allowed-A',pin},{scope:'allowed-B',pin}]};
++const catalog={version:1,coverage:'complete',capabilities:['snapshot-inventory','source-ranges','provenance'],unavailable:['semantic-search','normalized-sessions','annotations','saved-views','analysis','administrative-jobs'],scopes:[{scope:'allowed-A',pin},{scope:'allowed-B',pin}]};
+ const page={through:2,next:1,records:[{sequence:1,manifest:'<img src=https://untrusted.invalid onerror=alert(1)>',receipt:'receipt-A'}],coverage:'selected scope at snapshot'};
+ const source={record:{sequence:1,manifest:'manifest-A',receipt:'receipt-A'},scope:'allowed-A',writer:'writer-A',service_issuer:'service-A',signature:'verified',admission:'signed service',content_trust:'untrusted bytes',total_bytes:8,offset:0,next:4,bytes_hex:'3c623e78',utf8:'<b>x'};
+ async function open(u){await u.login();await u.respond(catalog);await u.respond(page);}
+@@ -34,3 +35,12 @@ test('unverifiable page removes old rows and leaves scope recovery available',as
+ test('directional format controls default to exact hex and permit explicit UTF-8',async()=>{const u=ui();await open(u);u.node('rows').children[0].click();await tick();await u.respond({...source,utf8:'abc\u202etxt',bytes_hex:'616263e280ae747874',total_bytes:9,next:null});assert.equal(u.node('source').textContent,'616263e280ae747874');u.node('encoding').click();assert.equal(u.node('source').textContent,'abc\u202etxt');});
+ 
+ test('capability matrix renders actual service capabilities without claiming unknown support',async()=>{const u=ui();await u.login();await u.respond({...catalog,capabilities:[...catalog.capabilities,'future-mode']});await u.respond(page);const rows=u.node('capability-list').children.map(r=>r.children.map(x=>x.textContent));assert.deepEqual(rows.find(r=>r[0]==='Snapshot inventory'),['Snapshot inventory','Available']);assert.deepEqual(rows.find(r=>r[0]==='Sessions'),['Sessions','Upcoming']);assert.deepEqual(rows.find(r=>r[0]==='future-mode'),['future-mode','Client unsupported']);u.node('lock').click();assert.equal(u.node('capability-list').children.length,0);});
++
++test('partial catalog coverage persists while browsing and retry clears old authority',async()=>{const u=ui();await u.login();await u.respond({...catalog,coverage:'partial'});await u.respond(page);assert.match(u.node('catalog-status').textContent,/Partial coverage/);u.node('rows').children[0].click();await tick();await u.respond(source);assert.match(u.node('catalog-status').textContent,/Partial coverage/);u.node('retry-sources').click();await tick();assert.equal(u.node('source').textContent,'');assert.equal(u.node('rows').children.length,0);assert.equal(u.node('scope').children.length,0);assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('previous').disabled,true);assert.equal(u.node('next').disabled,true);assert.equal(JSON.parse(u.pending[0].opts.body).action,'catalog');await u.respond(catalog);await u.respond(page);assert.match(u.node('catalog-status').textContent,/Source checks complete/);});
++test('incomplete empty catalog differs from complete empty and late retry cannot repaint after lock',async()=>{for(const coverage of ['partial','complete']){const u=ui();await u.login();await u.respond({...catalog,coverage,scopes:[]});assert.equal(u.node('library').hidden,false);assert.equal(u.node('rows').children.length,0);assert.match(u.node('notice').textContent,coverage==='partial'?/incomplete check/:/No currently authorized/);u.node('retry-sources').click();await tick();const request=u.pending[0];u.node('lock').click();assert.equal(request.opts.signal.aborted,true);await u.respond(catalog);assert.equal(u.node('library').hidden,true);assert.equal(u.node('catalog-status').textContent,'');assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('scope').children.length,0);}});
++test('both authorization denial statuses lock an already open Library',async()=>{for(const status of [401,403]){const u=ui();await open(u);u.node('rows').children[0].click();await tick();await u.respond(source);u.node('more').click();await tick();await u.respond({},status);assert.equal(u.node('library').hidden,true);assert.equal(u.node('source').textContent,'');assert.equal(u.node('catalog-status').textContent,'');assert.equal(u.node('provenance').children.length,0);assert.equal(u.node('scope').children.length,0);assert.equal(u.active(),u.node('token'));}});
++test('Previous is disabled immediately when leaving a later page',async()=>{const u=ui();await open(u);u.node('next').click();await tick();await u.respond({...page,next:null,records:[{...page.records[0],sequence:2}]});assert.equal(u.node('previous').disabled,false);u.node('scope').value='allowed-B';u.node('scope').events.change();await tick();assert.equal(u.node('previous').disabled,true);assert.equal(u.node('next').disabled,true);assert.equal(u.node('rows').children.length,0);assert.equal(u.node('count').textContent,'');await u.respond(page);});
++test('malformed duplicate and inconsistent capabilities never open a Library',async()=>{for(const change of [{capabilities:null},{unavailable:{}},{capabilities:['snapshot-inventory',7]},{capabilities:['provenance','provenance']},{unavailable:['provenance']},{coverage:'invented'}]){const u=ui();await u.login();await u.respond({...catalog,...change});assert.equal(u.node('library').hidden,true);assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('rows').children.length,0);assert.equal(u.node('catalog-status').textContent,'');assert.equal(u.pending.length,0);}});
++test('all directional control families default to exact hex with explicit text access',async()=>{for(const point of [0x061c,0x200e,0x200f,0x202a,0x202b,0x202c,0x202d,0x202e,0x2066,0x2067,0x2068,0x2069]){const u=ui();await open(u);u.node('rows').children[0].click();await tick();const utf8='a'+String.fromCodePoint(point)+'z',bytes_hex=Buffer.from(utf8).toString('hex');await u.respond({...source,utf8,bytes_hex,total_bytes:Buffer.byteLength(utf8),next:null});assert.equal(u.node('source').textContent,bytes_hex,'U+'+point.toString(16));u.node('encoding').click();assert.equal(u.node('source').textContent,utf8);}});
++
++test('malformed retry clears partially rendered capabilities and keeps recovery available',async()=>{const u=ui();await open(u);u.node('retry-sources').click();await tick();await u.respond({...catalog,capabilities:['provenance','provenance']});assert.equal(u.node('library').hidden,false);assert.equal(u.node('scope').children.length,0);assert.equal(u.node('capability-list').children.length,0);assert.equal(u.node('rows').children.length,0);assert.match(u.node('catalog-status').textContent,/coverage is unknown/);u.node('retry-sources').click();await tick();await u.respond(catalog);await u.respond(page);assert.equal(u.node('rows').children.length,1);});
+diff --git a/web/library/app.js b/web/library/app.js
+index 9f3059d..ed5aca9 100644
+--- a/web/library/app.js
++++ b/web/library/app.js
+@@ -15,7 +15,7 @@
+     for (const url of exports.keys()) releaseExport(url);
+     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
+     clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
+-    $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
++    $('catalog-status').textContent = ''; $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
+     $('lock').disabled = true; $('token').value = ''; notice(message); $('token').focus();
+   }
+   async function rpc(body) {
+@@ -37,7 +37,7 @@
+     if (error.name === 'AbortError') return;
+     const message = error.readerMessage || 'Reader unavailable. Retry, refresh the snapshot, or choose another scope.';
+     if (error.accessDenied || $('library').hidden) lock(message);
+-    else { clearInspector(); notice(message, true); }
++    else { clearInspector(); if (!pin) { $('capability-list').replaceChildren(); $('scope').replaceChildren(); $('catalog-status').textContent = 'Source check failed · coverage is unknown. Retry sources.'; } notice(message, true); }
+   }); }
+   function tab(name) {
+     $('source-panel').hidden = name !== 'source'; $('provenance').hidden = name !== 'provenance';
+@@ -103,19 +103,34 @@
+       }
+     }
+   }
++  async function catalog() {
++    clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
++    scopes = []; pin = null; history = []; after = 0; next = null;
++    $('coverage').textContent = ''; $('count').textContent = ''; $('page-position').textContent = '';
++    $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
++    $('capability-list').replaceChildren(); $('catalog-status').textContent = 'Checking configured sources…';
++    notice('Checking scope access…');
++    const value = await rpc({action:'catalog'}); if (!value) return;
++    if (value.version !== 1 || !['complete','partial'].includes(value.coverage)) throw new Error('Unsupported reader version or coverage.');
++    renderCapabilities(value);
++    scopes = value.scopes;
++    for (const scope of scopes) { const option = document.createElement('option'); option.value = scope.scope; option.textContent = scope.scope; $('scope').append(option); }
++    $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;
++    const partial = value.coverage === 'partial';
++    $('catalog-status').className = partial ? 'partial' : '';
++    $('catalog-status').textContent = partial
++      ? 'Partial coverage · some configured sources could not be verified. Available scopes remain browsable. Retry sources to check again.'
++      : 'Source checks complete · only currently authorized scopes are shown.';
++    if (!scopes.length) {
++      notice(partial ? 'No verified scope is available from this incomplete check. Retry sources.' : 'No currently authorized scopes.');
++      return;
++    }
++    $('scope').value = scopes[0].scope; pin = scopes[0].pin; await page(0);
++  }
+   $('connect').addEventListener('submit', event => {
+-    event.preventDefault(); token = $('token').value; $('token').value = '';
+-    run(async () => {
+-      notice('Checking scope access…'); const value = await rpc({action:'catalog'}); if (!value) return;
+-      if (value.version !== 1) throw new Error('Unsupported reader version.');
+-      renderCapabilities(value);
+-      scopes = value.scopes; $('scope').replaceChildren();
+-      for (const scope of scopes) { const option = document.createElement('option'); option.value = scope.scope; option.textContent = scope.scope; $('scope').append(option); }
+-      $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;
+-      if (!scopes.length) { notice('No currently authorized scopes.'); return; }
+-      $('scope').value = scopes[0].scope; pin = scopes[0].pin; history = []; await page(0);
+-    });
++    event.preventDefault(); token = $('token').value; $('token').value = ''; run(catalog);
+   });
++  $('retry-sources').addEventListener('click', () => run(catalog));
+   $('scope').addEventListener('change', () => run(async () => { const chosen = scopes.find(s => s.scope === $('scope').value); if (!chosen) return; pin = chosen.pin; history = []; await page(0); }));
+   $('resnapshot').addEventListener('click', () => run(async () => { if (!pin) return; clearInspector(); const value = await rpc({action:'snapshot',scope:$('scope').value}); if (!value) return; pin = value.pin; const chosen = scopes.find(s => s.scope === $('scope').value); chosen.pin = pin; history = []; await page(0); }));
+   $('next').addEventListener('click', () => run(async () => { if (next === null) return; history.push(after); await page(next); }));
+diff --git a/web/library/index.html b/web/library/index.html
+index d2dc3f7..d56b40b 100644
+--- a/web/library/index.html
++++ b/web/library/index.html
+@@ -1 +1 @@
+-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Kan · Evidence Library</title><script src="/theme.js"></script><link rel="stylesheet" href="/base.css"><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head><body><div class="shell"><aside><a class="brand" href="/">kan<span>•</span></a><div class="workspace">YOUR KNOWLEDGE</div><div class="nav" aria-current="page">Evidence Library</div><p class="aside-note">Retained source.<br>Inspectable provenance.</p><span class="local">Authorized reader</span></aside><main><header><div><div class="eyebrow">KAN STUDIO / LIBRARY</div><h1>Your evidence library.</h1><p class="subtitle">Explore retained occurrences and inspect the bytes behind them.</p></div><div class="header-actions"><label for="theme">Appearance</label><select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select><button id="lock" disabled>Lock</button></div></header><section id="login" class="panel login"><div><h2>Open your Library</h2><p>This reader has its own scope grants. Your access token stays in this tab’s memory.</p></div><form id="connect"><label for="token">Reader access token</label><div class="login-fields"><input id="token" type="password" autocomplete="off" required><button class="primary">Open Library</button></div></form></section><div id="notice" class="notice" role="status" aria-live="polite">Locked · connect to browse authorized evidence.</div><section id="library" hidden><div class="toolbar"><label for="scope">Authorized scope</label><select id="scope"></select><button id="resnapshot">Refresh snapshot</button><span id="coverage"></span></div><div class="browser"><section class="panel occurrences" aria-label="Retained occurrences"><div class="section-head"><h2>Occurrences</h2><span id="count" class="badge"></span></div><p>Committed entries at the selected snapshot.</p><div id="rows"></div><p id="empty" hidden>No occurrences in this scope at this snapshot.</p><div class="pagination"><button id="previous" disabled>Previous</button><span id="page-position"></span><button id="next" disabled>Next</button></div></section><section class="panel inspector" aria-label="Source inspector"><div class="section-head"><h2 id="selection">Select an occurrence</h2><button id="close-inspector" hidden>Close</button></div><p id="source-hint">Read exact retained bytes alongside their provenance.</p><div id="inspection" hidden><div class="tabs"><button id="source-tab" aria-pressed="true">Source</button><button id="provenance-tab" aria-pressed="false">Provenance</button></div><div id="source-panel"><div class="range"><span id="range"></span><button id="encoding">Show hex</button><button id="download">Download this range</button><button id="more" disabled>Next range</button></div><pre id="source" tabindex="0"></pre></div><dl id="provenance" hidden></dl></div></section></div><section class="panel coverage-matrix" aria-label="Reader capabilities"><h2>Reader capabilities</h2><p>Reported by this reader. Upcoming features remain unavailable.</p><dl id="capability-list"></dl></section></section></main></div></body></html>
++<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Kan · Evidence Library</title><script src="/theme.js"></script><link rel="stylesheet" href="/base.css"><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head><body><div class="shell"><aside><a class="brand" href="/">kan<span>•</span></a><div class="workspace">YOUR KNOWLEDGE</div><div class="nav" aria-current="page">Evidence Library</div><p class="aside-note">Retained source.<br>Inspectable provenance.</p><span class="local">Authorized reader</span></aside><main><header><div><div class="eyebrow">KAN STUDIO / LIBRARY</div><h1>Your evidence library.</h1><p class="subtitle">Explore retained occurrences and inspect the bytes behind them.</p></div><div class="header-actions"><label for="theme">Appearance</label><select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select><button id="lock" disabled>Lock</button></div></header><section id="login" class="panel login"><div><h2>Open your Library</h2><p>This reader has its own scope grants. Your access token stays in this tab’s memory.</p></div><form id="connect"><label for="token">Reader access token</label><div class="login-fields"><input id="token" type="password" autocomplete="off" required><button class="primary">Open Library</button></div></form></section><div id="notice" class="notice" role="status" aria-live="polite">Locked · connect to browse authorized evidence.</div><section id="library" hidden><div class="catalog-health"><p id="catalog-status" role="status" aria-live="polite"></p><button id="retry-sources">Retry sources</button></div><div class="toolbar"><label for="scope">Authorized scope</label><select id="scope"></select><button id="resnapshot">Refresh snapshot</button><span id="coverage"></span></div><div class="browser"><section class="panel occurrences" aria-label="Retained occurrences"><div class="section-head"><h2>Occurrences</h2><span id="count" class="badge"></span></div><p>Committed entries at the selected snapshot.</p><div id="rows"></div><p id="empty" hidden>No occurrences in this scope at this snapshot.</p><div class="pagination"><button id="previous" disabled>Previous</button><span id="page-position"></span><button id="next" disabled>Next</button></div></section><section class="panel inspector" aria-label="Source inspector"><div class="section-head"><h2 id="selection">Select an occurrence</h2><button id="close-inspector" hidden>Close</button></div><p id="source-hint">Read exact retained bytes alongside their provenance.</p><div id="inspection" hidden><div class="tabs"><button id="source-tab" aria-pressed="true">Source</button><button id="provenance-tab" aria-pressed="false">Provenance</button></div><div id="source-panel"><div class="range"><span id="range"></span><button id="encoding">Show hex</button><button id="download">Download this range</button><button id="more" disabled>Next range</button></div><pre id="source" tabindex="0"></pre></div><dl id="provenance" hidden></dl></div></section></div><section class="panel coverage-matrix" aria-label="Reader capabilities"><h2>Reader capabilities</h2><p>Reported by this reader. Upcoming features remain unavailable.</p><dl id="capability-list"></dl></section></section></main></div></body></html>
+diff --git a/web/library/style.css b/web/library/style.css
+index 564b676..2fa5103 100644
+--- a/web/library/style.css
++++ b/web/library/style.css
+@@ -2,3 +2,5 @@
+ #rows{max-height:62vh;overflow-y:auto;overscroll-behavior:contain}.inspector{position:sticky;top:24px}@media(max-width:1050px){.inspector{position:static}#rows{max-height:45vh}}
+ 
+ .coverage-matrix{margin-top:24px;padding:24px}.coverage-matrix p{font-size:12px;color:var(--muted)}#capability-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px 24px;margin:18px 0 0}#capability-list div{display:flex;justify-content:space-between;gap:12px;padding-top:10px;border-top:1px solid var(--line);font-size:12px}#capability-list dd{margin:0;color:var(--muted);text-align:right}#capability-list dd.available{color:var(--green)}
++
++.catalog-health{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:24px;padding:16px 20px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}.catalog-health p{margin:0;font-size:13px;line-height:1.6}.catalog-health p.partial{color:var(--ink);font-weight:600}.catalog-health button{flex-shrink:0}@media(max-width:700px){.catalog-health{align-items:flex-start;flex-direction:column}}
