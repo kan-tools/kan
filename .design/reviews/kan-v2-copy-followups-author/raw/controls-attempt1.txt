@@ -1,0 +1,8 @@
+DEMONSTRATED: remove-plan-custody-guards
+DEMONSTRATED: skip-cli-copy-path-checks
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/scripts/copy_destination_followup_controls.py", line 50, in <module>
+    if __name__=='__main__':main()
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/scripts/copy_destination_followup_controls.py", line 37, in main
+    p=ROOT/filename;before=originals[p];assert before.count(old)==1,(name,'pattern count',before.count(old))
+AssertionError: ('omit-profile3-full-audit-schema', 'pattern count', 2)

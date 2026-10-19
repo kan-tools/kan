@@ -33,6 +33,9 @@ struct ProxyCapture {
 /// Optional explicit proof profile. All three owner pins are required together.
 #[derive(clap::Args)]
 struct ProofOptions {
+    /// Explicit recipe-bound profile 3; never inferred from database contents.
+    #[arg(long, requires_all = ["proof_archive", "proof_scope", "proof_issuer"])]
+    copy_profile: bool,
     #[arg(long, requires_all = ["proof_scope", "proof_issuer"])]
     proof_archive: Option<String>,
     #[arg(long, requires_all = ["proof_archive", "proof_issuer"])]
@@ -63,6 +66,40 @@ impl ProofOptions {
 }
 #[derive(Subcommand)]
 enum Command {
+    /// Pin a fully verified legacy source in a NEW private recipe artifact.
+    CopyPlan {
+        database: PathBuf,
+        plan: PathBuf,
+        #[arg(long)]
+        scope: String,
+        #[arg(long)]
+        issuer: String,
+        #[arg(long)]
+        historical_issuer: String,
+        /// Fresh owner-generated 32-byte nonce for this destination.
+        #[arg(long)]
+        nonce: String,
+    },
+    /// Copy one bounded batch of an exact pinned recipe; never activates a service.
+    CopyBatch {
+        database: PathBuf,
+        archive: PathBuf,
+        #[arg(long)]
+        plan: PathBuf,
+        #[arg(long)]
+        key: PathBuf,
+        /// Required for existing output, including interrupted initialization.
+        #[arg(long)]
+        resume: bool,
+        #[command(flatten)]
+        proof: ProofOptions,
+        #[arg(long, default_value_t = 128)]
+        objects: usize,
+        #[arg(long, default_value_t = 128)]
+        records: usize,
+        #[arg(long, default_value_t = 16777216)]
+        bytes: usize,
+    },
     /// Initialize a separate private operations journal bound to an existing spool.
     #[cfg(feature = "v2-crypto")]
     OpsInit {
@@ -838,11 +875,94 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "{}",
             serde_json::to_string_pretty(&migration_preflight::preview_identity(&config_root)?)?
         ),
+        Command::CopyPlan {
+            database,
+            plan,
+            scope,
+            issuer,
+            historical_issuer,
+            nonce,
+        } => {
+            kan::evidence_store::copy_upgrade::validate_plan_destination(&database, &plan)?;
+            let source = kan::evidence_store::copy_upgrade::PlannedCopy::open(
+                &database,
+                kan::evidence_copy_plan::Target {
+                    scope: fixed_hex(&scope)?,
+                    issuer,
+                },
+                historical_issuer,
+                fixed_hex(&nonce)?,
+            )?;
+            let path = plan.to_str().ok_or("plan JSON requires a UTF-8 path")?;
+            kan::evidence_store::copy_upgrade::retain_plan(&plan, &source)?;
+            print_json(
+                &serde_json::json!({"plan":path,"archive":hex(&source.plan().archive_id()),"source_through":source.plan().source().through,"profile":3,"promoted":false}),
+            )?;
+        }
+        Command::CopyBatch {
+            database,
+            archive,
+            plan,
+            key,
+            resume,
+            proof,
+            objects,
+            records,
+            bytes,
+        } => {
+            if !proof.copy_profile {
+                return Err("copy-batch requires --copy-profile and all owner pins".into());
+            }
+            let binding = proof.binding()?.ok_or("copy requires owner pins")?;
+            let recipe = kan::evidence_store::copy_upgrade::read_plan_for_copy(
+                &plan,
+                &database,
+                &archive,
+                &binding.archive,
+            )?;
+            let source = kan::evidence_store::copy_upgrade::PlannedCopy::confirm(
+                &database,
+                &recipe,
+                &binding.archive,
+            )?;
+            let signer = kan::sign::Identity::load_existing(&key)?;
+            if signer.did().as_str() != binding.issuer {
+                return Err("copy signer differs from owner issuer".into());
+            }
+            let budget = kan::evidence_store::copied::Budget {
+                objects,
+                records,
+                bytes,
+            };
+            budget.validate()?;
+            let mut destination = if resume {
+                kan::evidence_store::copied::Archive::resume_initialization(
+                    &archive, &source, binding,
+                )?
+            } else {
+                kan::evidence_store::copied::Archive::create(&archive, &source, binding)?
+            };
+            let now = u64::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)?
+                    .as_millis(),
+            )?;
+            let batch = destination.copy_batch(&source, &signer, now, budget)?;
+            print_json(
+                &serde_json::json!({"profile":3,"copy":batch.status,"objects_written":batch.objects_written,"records_written":batch.records_written,"bytes_written":batch.bytes_written,"promoted":false,"activated":false}),
+            )?;
+        }
         Command::Init {
             archive,
             resume,
             proof,
         } => {
+            if proof.copy_profile {
+                return Err(
+                    "profile 3 initialization requires copy-batch with a pinned source and recipe"
+                        .into(),
+                );
+            }
             let binding = proof.binding()?;
             let archive_text = archive
                 .to_str()
@@ -870,16 +990,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         Command::Verify { database, proof } => {
+            let copy_profile = proof.copy_profile;
             let binding = proof.binding()?;
             let attested = binding.is_some();
+            let mut copy = None;
             let report = if let Some(binding) = binding {
-                kan::evidence_store::attested::Archive::verify_file(&database, binding)?
+                if copy_profile {
+                    let report =
+                        kan::evidence_store::copied::Archive::verify_file(&database, binding)?;
+                    copy = Some(report.copy);
+                    report.contents
+                } else {
+                    kan::evidence_store::attested::Archive::verify_file(&database, binding)?
+                }
             } else {
                 Ledger::verify_file(&database)?
             };
             println!(
                 "{}",
-                serde_json::json!({"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"through":report.snapshot.through,"tip":report.snapshot.tip.map(|c|c.to_string()),"verification":if attested {"payloads-writer-requests-and-issuer-proofs"} else {"structural-closure"},"writable_admission":"not-checked","cryptographic_admission":if attested {"proof-purpose-dependent"} else {"not-verified"},"historical_completeness":"not-verified"})
+                serde_json::json!({"copy":copy,"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"through":report.snapshot.through,"tip":report.snapshot.tip.map(|c|c.to_string()),"verification":if attested {"payloads-writer-requests-and-issuer-proofs"} else {"structural-closure"},"writable_admission":"not-checked","cryptographic_admission":if attested {"proof-purpose-dependent"} else {"not-verified"},"historical_completeness":"not-verified"})
             );
         }
         Command::Backup {
@@ -887,14 +1016,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             destination,
             proof,
         } => {
+            let copy_profile = proof.copy_profile;
             let binding = proof.binding()?;
             let attested = binding.is_some();
             let destination_text = destination
                 .to_str()
                 .ok_or("backup JSON requires a UTF-8 destination path")?;
+            let mut copy = None;
             let result = if let Some(binding) = binding {
-                kan::evidence_store::attested::Archive::open(&archive, binding)?
-                    .backup(&destination)
+                if copy_profile {
+                    kan::evidence_store::copied::Archive::open(&archive, binding)?
+                        .backup(&destination)
+                        .map(|report| {
+                            copy = Some(report.copy);
+                            report.contents
+                        })
+                } else {
+                    kan::evidence_store::attested::Archive::open(&archive, binding)?
+                        .backup(&destination)
+                }
             } else {
                 Ledger::open(&archive)?.backup(&destination)
             };
@@ -906,7 +1046,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             })?;
             println!(
                 "{}",
-                serde_json::json!({"backup":destination_text,"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"independent_backup":false,"issuer_proofs":if attested {"verified-preserved"} else {"not-present"}})
+                serde_json::json!({"copy":copy,"backup":destination_text,"objects":report.objects,"commits":report.commits,"bytes":report.bytes,"independent_backup":false,"issuer_proofs":if attested {"verified-preserved"} else {"not-present"}})
             );
         }
         Command::ReadRecord { database, sequence } => {
@@ -952,6 +1092,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             destination,
             proof,
         } => {
+            let copy_profile = proof.copy_profile;
             let binding = proof.binding()?;
             let attested = binding.is_some();
             // JSON paths must be representable BEFORE creating any output file.
@@ -961,12 +1102,25 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let destination_text = destination
                 .to_str()
                 .ok_or("recovery JSON requires a UTF-8 destination path")?;
+            let mut copy = None;
             let result = if let Some(binding) = binding {
-                kan::evidence_store::attested::Recovery::open(&database, binding)
-                    .map_err(|e| {
-                        format!("cannot read recovery source {}: {e}", database.display())
-                    })?
-                    .rebuild(&destination)
+                if copy_profile {
+                    kan::evidence_store::copied::Recovery::open(&database, binding)
+                        .map_err(|e| {
+                            format!("cannot read recovery source {}: {e}", database.display())
+                        })?
+                        .rebuild(&destination)
+                        .map(|report| {
+                            copy = Some(report.copy);
+                            report.contents
+                        })
+                } else {
+                    kan::evidence_store::attested::Recovery::open(&database, binding)
+                        .map_err(|e| {
+                            format!("cannot read recovery source {}: {e}", database.display())
+                        })?
+                        .rebuild(&destination)
+                }
             } else {
                 RecoveryReader::open(&database)
                     .map_err(|e| {
@@ -979,7 +1133,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 destination.display()))?;
             println!(
                 "{}",
-                serde_json::json!({
+                serde_json::json!({"copy":copy,
                     "source":source_text, "recovered":destination_text, "objects":report.objects,
                     "commits":report.commits, "bytes":report.bytes, "through":report.snapshot.through,
                     "tip":report.snapshot.tip.map(|c|c.to_string()), "verification":if attested {"payloads-writer-requests-and-issuer-proofs"} else {"structural-closure"},
@@ -1000,7 +1154,6 @@ fn print_json(value: &serde_json::Value) -> std::io::Result<()> {
     out.flush()
 }
 
-#[cfg(feature = "v2-crypto")]
 fn fixed_hex<const N: usize>(value: &str) -> Result<[u8; N], Box<dyn std::error::Error>> {
     kan::evidence_service::unhex(value, N)?
         .try_into()

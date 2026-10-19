@@ -1,0 +1,37 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+error[E0603]: type alias `Result` is private
+   --> tests/zz_review_purpose.rs:113:38
+    |
+113 | fn reason<T>(r: kan::evidence_store::Result<T>) -> String {
+    |                                      ^^^^^^ private type alias
+    |
+note: the type alias `Result` is defined here
+   --> src/evidence_store.rs:63:1
+    |
+ 63 | type Result<T> = std::result::Result<T, Error>;
+    | ^^^^^^^^^^^^^^
+
+error[E0716]: temporary value dropped while borrowed
+   --> tests/zz_review_purpose.rs:236:68
+    |
+236 |         ("recover-unpinned", vec!["recover", db.to_str().unwrap(), out.path().join("u.sqlite").to_str().unwrap()]),
+    |                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^ creates a temporary value which is freed while still in use
+237 |     ];
+    |      - temporary value is freed at the end of this statement
+238 |     for (name, args) in cases {
+    |                         ----- borrow later used here
+    |
+help: consider using a `let` binding to create a longer lived value
+    |
+231 ~     let binding = out.path().join("u.sqlite");
+232 ~     let cases: Vec<(&str, Vec<&str>)> = vec![
+233 |         ("verify", [vec!["verify", db.to_str().unwrap()], pins.to_vec()].concat()),
+...
+236 |         ("verify-unpinned", vec!["verify", db.to_str().unwrap()]),
+237 ~         ("recover-unpinned", vec!["recover", db.to_str().unwrap(), binding.to_str().unwrap()]),
+    |
+
+Some errors have detailed explanations: E0603, E0716.
+For more information about an error, try `rustc --explain E0603`.
+error: could not compile `kan` (test "zz_review_purpose") due to 2 previous errors
+exit=101

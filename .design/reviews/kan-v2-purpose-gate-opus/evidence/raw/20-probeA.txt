@@ -1,0 +1,25 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+    Finished `test` profile [unoptimized] target(s) in 0.37s
+     Running tests/zz_review_purpose.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_purpose-32ed6401ff119ba0)
+
+running 4 tests
+test pa1_every_entry_point_refuses_with_exact_reason_and_preserves_bytes ... open=corrupt evidence: retained-verified prefix requires copy profile
+resume=corrupt evidence: retained-verified prefix requires copy profile
+verify_file=corrupt evidence: retained-verified prefix requires copy profile
+rebuild=corrupt evidence: retained-verified prefix requires copy profile
+rebuilt len=0 user_version=0 schema_objects=0
+ok
+test pa2_existing_handle_admission_and_backup_refuse_without_writes ... admit after RV swap: Some(Corrupt)
+backup=corrupt evidence: retained-verified prefix requires copy profile output_exists=true
+ok
+test pa3_admitted_only_history_still_valid_everywhere ... ok
+test pa4_cli_entry_points_refuse_plan_less_prefix ... verify: status=Some(1) stdout_len=0 stderr=error: corrupt evidence: retained-verified prefix requires copy profile
+backup: status=Some(1) stdout_len=0 stderr=error: corrupt evidence: retained-verified prefix requires copy profile
+recover: status=Some(1) stdout_len=0 stderr=error: recovery into /var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpVpUavH/rebuilt.sqlite failed: corrupt evidence: retained-verified prefix requires copy profile; destination must be a new file; any output is retained
+verify-unpinned: status=Some(1) stdout_len=0 stderr=error: invalid input: unknown database profile
+recover-unpinned: status=Some(1) stdout_len=0 stderr=error: cannot read recovery source /var/folders/dr/fk0t7xz16x9b3980ch9qcdr40000gp/T/.tmpKxRLEj/archive.sqlite: invalid input: unknown database profile
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.48s
+
+exit=0

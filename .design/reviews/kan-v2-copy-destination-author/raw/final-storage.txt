@@ -1,0 +1,90 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination)
+    Finished `test` profile [unoptimized] target(s) in 0.65s
+     Running tests/evidence_copy_destination.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_destination-e9770359e29db79f)
+
+running 22 tests
+test copy_death_child ... ok
+test initialization_death_child ... ok
+test independent_sqlite_inventory_matches_the_copy_surface_catalog ... ok
+test admission_rechecks_original_membership_after_staging_under_writer_transaction ... ok
+test later_admission_can_share_an_original_staged_object_without_changing_membership ... ok
+test incomplete_copy_backup_remains_incomplete_and_resume_checks_the_exact_prefix ... ok
+test empty_record_history_is_incomplete_until_all_staged_objects_are_copied ... ok
+test concurrent_owner_batches_revalidate_under_the_writer_transaction ... ok
+test owner_recipe_signer_and_profile_are_required_before_mutation ... ok
+test rebuild_death_child ... ok
+test owner_recipe_refusals_happen_before_destination_creation ... ok
+test pinned_wal_source_copies_its_original_snapshot_and_later_confirmation_refuses ... ok
+test bounded_copy_preserves_original_bytes_and_acknowledged_proofs_before_new_admission ... ok
+test profile3_rejects_mixed_historical_issuers_with_a_specific_reason ... ok
+test profile3_rejects_retained_after_admission_and_admission_inside_original_prefix ... ok
+test owner_cli_pins_private_recipe_and_explicit_profile_through_lifecycle ... ok
+test interrupted_initialization_requires_explicit_resume_with_retained_recipe ... ok
+test rebuild_repairs_derived_columns_and_keeps_authoritative_copy_bytes ... ok
+test rebuild_refuses_lost_or_replaced_authoritative_evidence_without_publishing_profile ... ok
+test rebuild_process_death_publishes_all_copy_authority_or_no_profile ... ok
+test byte_budget_never_splits_objects_or_admits_before_complete_source ... ok
+test every_copy_transaction_boundary_resumes_without_replacing_acknowledged_bytes ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.51s
+
+     Running tests/evidence_service.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_service-76af982227318cd6)
+
+running 11 tests
+test high_s_signature_cannot_change_retry_identity ... ok
+test missing_committed_object_is_corrupt_on_read_and_startup ... ok
+test competing_service_scopes_cannot_mix_or_disclose_records ... ok
+test signatures_canonical_bounds_expiry_and_reply_binding ... ok
+test independent_capabilities_deny_other_scopes_and_unadmitted_writers ... ok
+test startup_rejects_wrong_scope_and_foreign_payload_preserves_source ... ok
+test invalid_raw_suffix_cannot_hide_behind_valid_tip_or_exact_retry ... ok
+test audit_pin_guards_detect_retreat_replacement_and_sequence_holes ... ok
+test retained_signed_bytes_retry_conflict_restart_and_revoked_writer ... ok
+test retained_signature_and_receipt_issuer_are_verified_independently_of_structure ... ok
+test multiple_instances_audit_paginated_suffixes_and_preserve_retries ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.41s
+
+     Running tests/evidence_store.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_store-c9974c98d962e200)
+
+running 34 tests
+test concurrent_retry_has_one_commit_and_identical_receipts ... ok
+test crash_worker ... ok
+test audited_partition_frontier_fences_new_writes_and_exact_retries ... ok
+test bare_relative_create_and_backup_succeed_without_overwrite ... ok
+test initialization_crash_worker ... ok
+{"bytes": 16, "commits": 0, "objects": 1}
+test cid_shaped_tokens_survive_storage_and_independent_backup_verification ... ok
+test backup_normalizes_and_catalogs_transient_sidecars ... ok
+test database_columns_match_independent_surface_catalog ... ok
+test initialization_rejects_foreign_media_without_replacing_it ... ok
+test open_rejects_corrupt_content_before_journal_conversion ... ok
+test backup_restore_and_independent_oracle ... ok
+test recovery_crash_worker ... ok
+test recovery_large_row_worker ... ok
+{"bytes": 11, "commits": 2, "objects": 2}
+test lifecycle_destinations_preserve_existing_sqlite_namespaces ... ok
+test first_manifest_must_name_earliest_slot_use ... ok
+test partition_scope_range_guard_rejects_both_foreign_directions ... ok
+{"bytes": 11, "commits": 2, "objects": 2}
+test corruption_is_not_an_empty_archive ... ok
+test canonical_backup_and_rebuild_pass_writer_schema_admission ... ok
+test initialization_resumes_each_publication_boundary_without_resetting_evidence ... ok
+test abrupt_exit_matrix_recovers_atomic_commits_and_exact_retries ... ok
+test recovery_rejects_overlapping_sqlite_namespaces_and_existing_sidecars ... ok
+test relative_path_worker ... ok
+test retry_conflicts_and_atomic_validation ... ok
+test recovery_rejects_structurally_valid_but_inconsistent_raw_history ... ok
+test snapshot_pages_survive_appends_and_reject_unknown_frontiers ... ok
+test recovery_snapshot_is_pinned_before_concurrent_appends ... ok
+test writer_admission_rejects_foreign_schema_without_mutating_evidence ... ok
+test recovery_scan_reports_unrelated_raw_key_damage_without_hiding_record_access ... ok
+test recovery_length_limit_preserves_maximum_valid_chunks ... ok
+test recovery_ignores_derived_damage_and_preserves_exact_evidence ... ok
+test recovery_rejects_raw_damage_without_hiding_intact_records ... ok
+test recovery_large_rows_hit_sqlite_limit_before_materialization ... ok
+test recovery_process_crashes_never_publish_a_partial_archive ... ok
+test chunks_and_total_archive_exceed_legacy_cap ... ok
+
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.70s
+

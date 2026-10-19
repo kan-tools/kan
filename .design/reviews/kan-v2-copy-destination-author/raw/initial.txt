@@ -1,0 +1,48 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination)
+    Finished `test` profile [unoptimized] target(s) in 7.56s
+     Running tests/evidence_attested_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_followups-a0c68bfd07b1cb59)
+
+running 9 tests
+test p7_non_p256_issuer_binding_is_refused_at_create ... ok
+test p1_profile1_archive_is_refused_by_attested_open_without_writes ... ok
+test p2_signature_only_mutation_refuses_open_with_named_audit_error ... ok
+test p3_retry_of_earlier_row_detects_proof_replacement_under_lock ... ok
+test p6_concurrent_proven_append_from_second_handle_conflicts ... ok
+test p5b_mixed_historical_issuers_in_prefix_are_refused ... ok
+test p5a_single_historical_issuer_prefix_requires_copy_profile ... ok
+test p4_retry_of_earlier_row_detects_receipt_replacement_under_lock ... ok
+test p5c_planless_historical_proofs_refuse_verification_and_rebuild_without_rewriting ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+
+     Running tests/evidence_attested_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_lifecycle-02231a6624d7c1e3)
+
+running 11 tests
+test lifecycle_crash_child ... ok
+test corrupt_source_proofs_are_rejected_before_output_profile_is_committed ... ok
+test backup_success_requires_verifying_the_copied_proof_chain ... ok
+test recovery_pins_source_before_later_admission ... ok
+test owner_binding_profile_and_destination_are_explicit ... ok
+test proof_bytes_survive_backup_rebuild_and_derived_repair ... ok
+test standalone_proof_verification_and_backup_refuse_undeclared_schema ... ok
+test owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle ... FAILED
+test interrupted_initialization_resumes_only_by_explicit_owner_action ... ok
+test rebuild_process_death_never_publishes_partial_profile ... ok
+test recovery_refuses_missing_or_corrupt_proofs_and_payloads ... ok
+
+failures:
+
+---- owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle stdout ----
+
+thread 'owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle' (9681462) panicked at tests/evidence_attested_lifecycle.rs:523:9:
+error: No such file or directory (os error 2)
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle
+
+test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.64s
+
+error: test failed, to rerun pass `--test evidence_attested_lifecycle`

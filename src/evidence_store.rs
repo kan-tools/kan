@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use crate::evidence::{self, Decoded, Kind, Record};
 
 pub mod attested;
+pub mod copied;
 pub mod copy_upgrade;
 
 type CommitProofHook<'a> =
@@ -267,8 +268,20 @@ impl RecoveryReader {
         observe: &mut dyn FnMut(RecoveryBoundary),
         binding: Option<&attested::Binding>,
     ) -> Result<Verification> {
+        self.rebuild_with_plan(destination, observe, binding, None)
+    }
+    fn rebuild_with_plan(
+        &self,
+        destination: &Path,
+        observe: &mut dyn FnMut(RecoveryBoundary),
+        binding: Option<&attested::Binding>,
+        plan: Option<&crate::evidence_copy_plan::Plan>,
+    ) -> Result<Verification> {
         if let Some(binding) = binding {
             attested::check_copy_source(&self.ledger.conn, binding, self.snapshot()?.through)?;
+            if let Some(plan) = plan {
+                copied::check_plan(&self.ledger.conn, binding, plan)?;
+            }
         }
         let destination = sqlite_destination(&self.source, destination)?;
         // surface-write: evidence-recovery:archive.sqlite
@@ -285,6 +298,10 @@ impl RecoveryReader {
         tx.execute_batch(SCHEMA)?;
         if let Some(binding) = binding {
             attested::initialize(&tx, binding)?;
+            if let Some(plan) = plan {
+                copied::initialize(&tx, binding, plan)?;
+                copied::copy_inventory(&self.ledger.conn, &tx)?;
+            }
         }
         {
             let mut stmt = self.ledger.conn.prepare(
@@ -348,7 +365,11 @@ impl RecoveryReader {
         // raw histories with missing predecessors or conflicting slot reuse.
         let expected = target.verify_contents()?;
         if let Some(binding) = binding {
-            attested::verify_contents(&target, binding, &expected)?;
+            if let Some(plan) = plan {
+                copied::full_audit(&target, binding, plan)?;
+            } else {
+                attested::verify_contents(&target, binding, &expected)?;
+            }
         }
         observe(RecoveryBoundary::Verified);
         tx.commit()?;
@@ -357,7 +378,11 @@ impl RecoveryReader {
         std::fs::File::open(&destination)?.sync_all()?;
         std::fs::File::open(parent_directory(&destination))?.sync_all()?;
         let actual = if let Some(binding) = binding {
-            attested::Archive::verify_file(&destination, binding.clone())?
+            if plan.is_some() {
+                copied::Archive::verify_file(&destination, binding.clone())?.contents
+            } else {
+                attested::Archive::verify_file(&destination, binding.clone())?
+            }
         } else {
             Ledger::verify_file(&destination)?
         };
@@ -390,6 +415,28 @@ fn same_existing_file(a: &Path, b: &Path) -> bool {
     }
 }
 
+// Conservative Unicode casing also rejects aliases such as long-s in `-ſhm`
+// before a file exists. This is not an emulation of every filesystem's collation;
+// existing-file identity below supplies the actual filesystem alias check.
+// Qualified on case-insensitive APFS; other filesystem collations (including
+// HFS+, NTFS/SMB and ext4 casefold) and arbitrary multi-codepoint aliases are
+// not qualified. This helper does not fence concurrent hostile path replacement.
+fn sqlite_name_eq(a: &std::ffi::OsStr, b: &std::ffi::OsStr) -> bool {
+    match (a.to_str(), b.to_str()) {
+        (Some(a), Some(b)) => a
+            .chars()
+            .flat_map(char::to_uppercase)
+            .flat_map(char::to_lowercase)
+            .eq(b
+                .chars()
+                .flat_map(char::to_uppercase)
+                .flat_map(char::to_lowercase)),
+        _ => a
+            .as_encoded_bytes()
+            .eq_ignore_ascii_case(b.as_encoded_bytes()),
+    }
+}
+
 fn sqlite_destination(source: &Path, destination: &Path) -> Result<PathBuf> {
     let parent = std::fs::canonicalize(parent_directory(destination))?;
     let name = destination
@@ -398,31 +445,22 @@ fn sqlite_destination(source: &Path, destination: &Path) -> Result<PathBuf> {
     let destination = parent.join(name);
     let target_paths = sqlite_paths(&destination);
     let source_paths = sqlite_paths(source);
-    // Conservative ASCII case comparison also protects case-insensitive volumes.
     if target_paths.iter().any(|target| {
         source_paths.iter().any(|source| {
-            target
-                .as_os_str()
-                .as_encoded_bytes()
-                .eq_ignore_ascii_case(source.as_os_str().as_encoded_bytes())
+            sqlite_name_eq(target.as_os_str(), source.as_os_str())
+                || same_existing_file(target, source)
         })
     }) {
         return Err(Error::Invalid("destination overlaps source SQLite files"));
     }
-    // Resolve an existing base through filesystem aliases (including Unicode
-    // spelling/case aliases on macOS and hard links on Unix), before a sidecar
-    // that does not exist yet can be created under that base's name.
-    if let Some(name) = name.to_str() {
-        for suffix in ["-journal", "-wal", "-shm"] {
-            if name.len() >= suffix.len()
-                && name.as_bytes()[name.len() - suffix.len()..]
-                    .eq_ignore_ascii_case(suffix.as_bytes())
-            {
-                let base = parent.join(&name[..name.len() - suffix.len()]);
-                if same_existing_file(&base, source) {
-                    return Err(Error::Invalid("destination aliases source SQLite sidecar"));
-                }
-            }
+    // Resolve the existing base before a currently absent sidecar can be
+    // created through an alternate basename (including Unicode and hard links).
+    if let Some((base, suffix)) = name.to_str().and_then(|name| name.rsplit_once('-')) {
+        if ["journal", "wal", "shm"].iter().any(|reserved| {
+            sqlite_name_eq(std::ffi::OsStr::new(suffix), std::ffi::OsStr::new(reserved))
+        }) && same_existing_file(&parent.join(base), source)
+        {
+            return Err(Error::Invalid("destination aliases source SQLite sidecar"));
         }
     }
     unused_sqlite_sidecars(&destination)?;
@@ -545,6 +583,14 @@ impl Ledger {
         observe: &mut dyn FnMut(InitializationBoundary),
         binding: Option<&attested::Binding>,
     ) -> Result<Self> {
+        Self::create_with_plan(root, observe, binding, None)
+    }
+    fn create_with_plan(
+        root: &Path,
+        observe: &mut dyn FnMut(InitializationBoundary),
+        binding: Option<&attested::Binding>,
+        plan: Option<&crate::evidence_copy_plan::Plan>,
+    ) -> Result<Self> {
         if !root.exists() {
             if !parent_directory(root).is_dir() {
                 return Err(Error::Invalid("archive parent must already exist"));
@@ -578,7 +624,7 @@ impl Ledger {
             &[],
         )?;
         observe(InitializationBoundary::FileCreated);
-        Self::initialize_empty(root, &path, observe, binding)
+        Self::initialize_with_plan(root, &path, observe, binding, plan)
     }
 
     /// Explicitly adopt an empty interrupted SQLite initialization, or reopen a
@@ -608,6 +654,15 @@ impl Ledger {
         observe: &mut dyn FnMut(InitializationBoundary),
         binding: Option<&attested::Binding>,
     ) -> Result<Self> {
+        Self::initialize_with_plan(root, path, observe, binding, None)
+    }
+    fn initialize_with_plan(
+        root: &Path,
+        path: &Path,
+        observe: &mut dyn FnMut(InitializationBoundary),
+        binding: Option<&attested::Binding>,
+        plan: Option<&crate::evidence_copy_plan::Plan>,
+    ) -> Result<Self> {
         let mut conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA fullfsync=ON;")?;
@@ -628,6 +683,13 @@ impl Ledger {
         if let Some(binding) = binding {
             attested::initialize(&tx, binding)?;
         }
+        if let Some(plan) = plan {
+            copied::initialize(
+                &tx,
+                binding.ok_or(Error::Invalid("copy binding required"))?,
+                plan,
+            )?;
+        }
         observe(InitializationBoundary::SchemaWritten);
         tx.commit()?;
         observe(InitializationBoundary::SchemaCommitted);
@@ -635,7 +697,13 @@ impl Ledger {
         std::fs::File::open(root)?.sync_all()?;
         std::fs::File::open(parent_directory(root))?.sync_all()?;
         let ledger = Self { conn };
-        ledger.check_profile(if binding.is_some() { 2 } else { 1 })?;
+        ledger.check_profile(if plan.is_some() {
+            3
+        } else if binding.is_some() {
+            2
+        } else {
+            1
+        })?;
         observe(InitializationBoundary::Ready);
         Ok(ledger)
     }
@@ -683,6 +751,16 @@ impl Ledger {
         if attested {
             expected.execute_batch(attested::SCHEMA)?;
         }
+        self.check_schema_against(&expected)
+    }
+    fn check_copy_schema(&self) -> Result<()> {
+        let expected = Connection::open_in_memory()?;
+        expected.execute_batch(SCHEMA)?;
+        expected.execute_batch(attested::SCHEMA)?;
+        expected.execute_batch(copied::SCHEMA)?;
+        self.check_schema_against(&expected)
+    }
+    fn check_schema_against(&self, expected: &Connection) -> Result<()> {
         let query = "SELECT type,name,tbl_name,sql FROM main.sqlite_schema ORDER BY type,name";
         let mut expected_stmt = expected.prepare(query)?;
         let mut actual_stmt = self.conn.prepare(query)?;

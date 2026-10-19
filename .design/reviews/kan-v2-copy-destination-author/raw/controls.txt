@@ -1,0 +1,10 @@
+DEMONSTRATED: complete-without-source-digest
+DEMONSTRATED: skip-preflight-completeness
+DEMONSTRATED: skip-writer-membership-check
+DEMONSTRATED: ignore-external-archive
+DEMONSTRATED: ignore-historical-issuer
+DEMONSTRATED: ignore-retained-position
+DEMONSTRATED: oracle-omits-independent-sort
+DEMONSTRATED: wrong-inventory-capability
+DEMONSTRATED: unregistered-plan-file-write
+9 compiled controls; restored suites passed.

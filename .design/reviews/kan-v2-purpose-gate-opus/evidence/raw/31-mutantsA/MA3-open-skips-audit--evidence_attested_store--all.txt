@@ -1,0 +1,38 @@
+cargo test --features v2-crypto --test evidence_attested_store -- --test-threads=1
+
+running 10 tests
+test atomic_admission_retry_and_legacy_refusal ... ok
+test authorization_precedes_storage_and_retries ... ok
+test database_columns_match_independent_surface_catalog ... ok
+test owner_binding_is_not_selected_by_database ... FAILED
+test process_death_keeps_both_metadata_and_proof_or_neither ... ok
+test proof_crash_worker ... ok
+test proof_mutations_and_payload_loss_refuse_writable_open ... FAILED
+test purpose_order_is_a_store_invariant_not_just_a_signature_check ... ok
+test same_height_proof_fork_between_audit_and_commit_is_rejected ... ok
+test unproven_raw_append_between_audit_and_commit_conflicts ... ok
+
+failures:
+
+---- owner_binding_is_not_selected_by_database stdout ----
+
+thread 'owner_binding_is_not_selected_by_database' (9664554) panicked at tests/evidence_attested_store.rs:224:9:
+assertion failed: Archive::open(temp.path(), b).is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- proof_mutations_and_payload_loss_refuse_writable_open stdout ----
+
+thread 'proof_mutations_and_payload_loss_refuse_writable_open' (9664574) panicked at tests/evidence_attested_store.rs:199:9:
+accepted missing
+
+
+failures:
+    owner_binding_is_not_selected_by_database
+    proof_mutations_and_payload_loss_refuse_writable_open
+
+test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.77s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+    Finished `test` profile [unoptimized] target(s) in 0.40s
+     Running tests/evidence_attested_store.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_store-a792e1b4f0d5a339)
+error: test failed, to rerun pass `--test evidence_attested_store`

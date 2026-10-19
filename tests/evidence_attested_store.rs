@@ -454,12 +454,14 @@ fn purpose_order_is_a_store_invariant_not_just_a_signature_check() {
             [invalid_order.bytes()],
         )
         .unwrap();
-    assert!(
-        archive.verify().is_err(),
-        "retained-verified after admitted must fail"
+    // Profile 2 now refuses any retained row; this is the admitted-only gate,
+    // not a specific test of historical-purpose ordering under profile 3.
+    assert_eq!(
+        archive.verify().unwrap_err().to_string(),
+        "corrupt evidence: retained-verified prefix requires copy profile"
     );
-    // A retained-verified prefix followed by new admitted rows is the allowed
-    // upgrade shape; neither issue time nor writer position establishes purpose.
+    // Even a correctly signed retained prefix followed by admitted rows cannot
+    // establish copy completeness without the profile-3 recipe.
     let prefix = proof::issue(
         &identity(7),
         &ctx,
@@ -491,13 +493,23 @@ fn purpose_order_is_a_store_invariant_not_just_a_signature_check() {
         [tail.bytes()],
     )
     .unwrap();
-    assert_eq!(archive.verify().unwrap(), *tail.frontier());
+    assert_eq!(
+        archive.verify().unwrap_err().to_string(),
+        "corrupt evidence: retained-verified prefix requires copy profile"
+    );
+    assert_eq!(
+        archive
+            .backup(&temp.path().join("refused-backup.sqlite"))
+            .unwrap_err()
+            .to_string(),
+        "corrupt evidence: retained-verified prefix requires copy profile"
+    );
     assert_eq!(
         archive
             .admit(&request(0, None), &identity(7), &grant(), 300)
             .unwrap_err(),
-        Failure::Conflict,
-        "ordinary Append must not confirm an imported record"
+        Failure::Corrupt,
+        "ordinary Append must refuse a plan-less imported prefix"
     );
 }
 

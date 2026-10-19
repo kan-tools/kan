@@ -1,0 +1,20 @@
+## purpose-change.diff
+13:+with follow-ups; the unmodified report is preserved in
+30:+in upgrade_objects permanently even if a later current-issuer admission uses the
+32:+and later occurrence lineage. Audits allow shared CIDs; they never subtract or
+47:+outputs remain unpromoted. The later service/admin integration must expose the
+51:+**Bundle boundary remains a separate required checkpoint (C-F2).** Before any
+60:+Physical encoding, atomic publication and activation tests remain open for the
+## planner-followup-change.diff
+276:+with follow-ups; the unmodified report is preserved in
+293:+in upgrade_objects permanently even if a later current-issuer admission uses the
+295:+and later occurrence lineage. Audits allow shared CIDs; they never subtract or
+310:+outputs remain unpromoted. The later service/admin integration must expose the
+314:+**Bundle boundary remains a separate required checkpoint (C-F2).** Before any
+323:+Physical encoding, atomic publication and activation tests remain open for the
+## backend-followup-change.diff
+48:+         'evidence_operations_collection::overview::tests::active_snapshot_reports_the_copy_window_not_later_parsing'),
+196:+    fn active_snapshot_reports_the_copy_window_not_later_parsing() {
+296:+    let later = sink.admit_with_wait(&[17; 16], b"synthetic frame", Duration::from_millis(80));
+297:+    assert!(later.0.is_err());
+299:+        later.1,

@@ -160,10 +160,15 @@ fn source_planning_refuses_extra_schema_and_wrong_profiles_without_rewriting() {
         c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").unwrap();
         drop(c);
         let before = std::fs::read(&db).unwrap();
-        assert!(
-            PlannedCopy::open(&db, target(), issuer, [9; 32]).is_err(),
-            "{sql}"
-        );
+        let error = PlannedCopy::open(&db, target(), issuer, [9; 32])
+            .err()
+            .expect("foreign schema/profile accepted");
+        let expected = if sql.starts_with("PRAGMA") {
+            "invalid input: unknown database profile"
+        } else {
+            "invalid input: unsupported writable archive schema"
+        };
+        assert_eq!(error.to_string(), expected, "{sql}");
         assert_eq!(std::fs::read(&db).unwrap(), before, "source changed: {sql}");
     }
 }

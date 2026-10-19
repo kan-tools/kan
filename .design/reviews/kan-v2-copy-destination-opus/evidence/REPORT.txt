@@ -1,0 +1,382 @@
+FRESH INDEPENDENT ADVERSARIAL REVIEW: profile-3 owner copy destination at frozen export d9b2110
+Commit: d9b2110643dfa12ab50e871dbdd593db15878673 ("copy legacy service archives into recipe-bound
+profile 3"), parent 17cae3c.
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5). Fresh session, cold, in-session. No delegation and
+no subagents.
+Independence: I wrote none of this code. Every claim below comes from code I read or commands I ran
+in this export. Author claims are labeled AUTHOR. Nothing labeled AUTHOR is counted as verified unless
+I reproduced it.
+Recording: no kan/day reads or writes (day#168/kan#197), so adversarial-review Step 7 was skipped.
+This report is the Git-first record. Date 2026-10-19.
+
+VERDICT: APPROVE WITH FOLLOW-UPS
+  - Scope: the profile-3 owner storage API/runtime/CLI checkpoint and the A/B follow-ups from the prior
+    review.
+  - Not a roadmap, AC or migration acceptance. Section 8 lists the limits.
+
+==================================================================================================
+0. NORTH STAR (Step 1)
+north-star.json -> telos/raw-data-and-projections:
+  - Decision bafyreied3rk...: "Raw attested data is retained in full and never collapsed in the
+    store. Every simplification ... is a determined projection computed on demand ... A field holding
+    a computed value is the failure mode."
+  - Observation bafyreicakl3...: "THIS TELOS DECLARES NO WITNESSES, DELIBERATELY."
+  - InTensionWith telos/performance-at-scale.
+I added no witness and did not reconstruct the 2 trust-excluded claims.
+
+How this work serves the telos:
+  - Copied history keeps the original manifest, receipt and request bytes.
+  - Present-time verification is a separate retained-verified proof. It is never relabeled as
+    admitted.
+  - Copy completeness is NOT stored as a flag. copied::audit_state (copied.rs:140-210) recomputes it
+    on every audit from the exact framed source digest. This is the telos applied correctly.
+
+Tension with performance-at-scale:
+  - Copy writes are budget-bounded. Each batch still runs full source and destination audits.
+  - RecoveryReader::read_object is a NOT INDEXED scan, called per object in copy_batch, so a batch is
+    quadratic.
+  - This is disclosed (design 853-857, 899; author Limits). No throughput claim is made.
+
+==================================================================================================
+1. IDENTITY AND HYGIENE (raw/verify-before.txt, raw/90-verify-after.txt)
+- Before AND after, all 2223 manifest files match their sha256. Every blob in
+  `git ls-tree -r --full-tree d9b2110` matches too.
+  - Extras: only the supplied north-star.json and my review-evidence/.
+  - HEAD is unchanged and git status is clean.
+- The supplied destination-change.diff equals
+  `git diff --no-color d9b2110^ d9b2110 -- . ':(exclude).design/reviews'` byte for byte. I read the
+  author evidence from the export.
+- `cargo clean -p kan` removed 910 files. Shared target, 4 jobs, one heavy job at a time.
+- Temporary tests/zz_review_destination{,2}.rs were removed. Copies are in probes/.
+- I did not run the author's control script. It writes into <export>/.local-state. I reproduced its
+  9 cases with my own runner (scripts/mutate.py), which restores and sha-checks every file.
+- After: no tests/zz_*, no <export>/.local-state, no cargo/rustc/kan-v2 processes.
+  - Only the pre-existing `day mcp` and `kan mcp` (pids 2937 and 2943) remain. I killed nothing.
+- Synthetic fixtures only. No keys, archives, installs, provider traffic, deploy, merge or git write.
+- Retained failed attempts (none counted as evidence):
+  - 01 attempt1: zsh word-split
+  - 10 attempt1: probe-E helper bug in my code
+  - 20 attempt1: runner pattern-count stop
+
+==================================================================================================
+2. INDEPENDENT EXECUTION RESULTS
+02/40 targeted (run twice, before mutation and on the restored tree): 136 passed, 0 failed.
+  - Per target: destination 22, followups 10, lifecycle 11, attested_store 10, copy_plan 3,
+    copy_source 10, recovery_cli 6, surface 19, evidence_store 34, evidence_service 11.
+  - This matches AUTHOR's "136 across 10 targets" exactly. As the author says, it includes the
+    subprocess child "tests".
+30 strict `cargo clippy --features v2-crypto --all-targets -- -D warnings`: exit 0, 0 warnings.
+  - 136 fresh check artifacts were written, so this is not a stale cache.
+31 `cargo fmt --all -- --check`: exit 0.
+32 `cargo check --features v2-storage --bin kan-v2`: exit 0 with exactly 3 dead-code warnings.
+  - Locations: evidence_spool.rs:278, 707 and 712 (with_capture_wait, CaptureWait, capture_busy).
+  - All 3 symbols exist at d9b2110^, and evidence_spool.rs is not in the diff. The AUTHOR claim
+    "preexisting" is confirmed. This is not a clean strict-clippy result for that feature set.
+Not run: the full CI test list, default-feature workspace clippy, Linux/MSRV, Node, browser,
+power-loss.
+
+==================================================================================================
+3. CONTROLS AND MUTANTS (raw/20-*, raw/21-*, raw/mutants/)
+Author controls, reproduced independently: 9 of 9 DEMONSTRATED. Each is killed by its NAMED test,
+not by a compile error.
+  complete-without-source-digest    -> empty_record_history_is_incomplete_until_all_staged_objects_are_copied
+  skip-preflight-completeness       -> bounded_copy_preserves_..._before_new_admission
+  skip-writer-membership-check      -> admission_rechecks_original_membership_after_staging_...
+  ignore-external-archive           -> owner_recipe_signer_and_profile_are_required_before_mutation
+  ignore-historical-issuer          -> profile3_rejects_mixed_historical_issuers_with_a_specific_reason
+  ignore-retained-position          -> profile3_rejects_retained_after_admission_and_admission_inside_...
+  oracle-omits-independent-sort     -> source_fingerprint_matches_an_independent_python_byte_oracle
+  wrong-inventory-capability        -> every_persistence_facade_call_is_independently_inventoried
+  unregistered-plan-file-write      -> every_persistence_facade_call_is_independently_inventoried
+  - The author pattern for wrong-inventory-capability occurs 3 times. Like the author's script,
+    only the first occurrence is replaced.
+
+Reviewer mutants (each run against 4 suites: destination, followups, attested_store, lifecycle):
+  R1 drop "admission inside planned retained prefix"         KILLED (profile3_rejects_...)
+  R6 rebuild skips its pre-commit copy::full_audit           KILLED (rebuild_refuses_..._without_publishing_profile)
+  R7 object byte budget ignored                              KILLED (byte_budget_never_splits_...)
+  R2 full_audit skips check_copy_schema                      SURVIVED  -> F2
+  R3 copy_batch skips inventory-vs-source prefix compare     SURVIVED  -> F3
+  R4 copy_batch skips record-vs-source prefix compare        SURVIVED  -> F3
+  R5 drop the incomplete-copy "untracked objects" guard      SURVIVED  -> F3 (INFO)
+  R8 drop the "records precede complete inventory" guard     SURVIVED  -> F3 (INFO)
+  R9 CLI copy-batch no longer requires --copy-profile        SURVIVED  -> F4
+In every surviving case my probes show the shipped behavior is correct, or that a later mechanism
+(the completion digest) prevents admission. These survivors are coverage gaps, not defects.
+
+==================================================================================================
+4. REQUIREMENT COVERAGE (Step 2)
+Against the governing "Profile-3 destination qualification contract" (design 829-857), the "Owner
+copy storage checkpoint" (859-918) and decisions C1/C-F1/C-F3/C-F4 (699-827).
+
+Q1 Complete single-H RV prefix -> ordinary admission under C, continuing the frontier; clock
+   regression is allowed: MET
+   - Test bounded_copy_...: copy issued_at 1000+n ms, then admit at now=300 s, giving sequence 3.
+     open/verify then audits the chain.
+   - Code: attested.rs:190-211. copied.rs:200 completion gates admission.
+   - Probe E: the post-completion admit has purpose Admitted.
+
+Q2 Backup/rebuild preserve every proof byte and purpose; derived lookups rebuild: MET
+   - rebuild_repairs_derived_columns_...: rows (manifest, receipt, envelope) are byte-equal after
+     rebuild, for both complete and incomplete copies.
+   - Probe C: rebuild drops schema drift and preserves incomplete status.
+   - Code: evidence_store.rs:299-305 and 367-373. copy_proof copies envelope bytes.
+
+Q3 Mixed-H refuses for issuer; RV after prefix refuses for position; admitted inside prefix refuses:
+   MET
+   - Exact reason strings are pinned in tests.
+   - H=C isolates the admitted-in-prefix case (the AUTHOR fourth.txt explanation is consistent with
+     the codec requiring receipt issuer C for Admitted).
+   - Killed by the author's controls and my R1.
+
+Q4 Interrupted init and every copy transaction boundary resume only with the same recipe and pin;
+   existing proof bytes stay fixed after a lost ack: MET (in contract)
+   - Process exit at 4 init and 7 copy boundaries (tests).
+   - Wrong-pin resume refuses. A sibling recipe refuses.
+   - The AfterCommit boundary covers the lost ack.
+   - LIMIT: probe K shows that a privileged deletion of the last record/proof makes a valid
+     "incomplete" copy, and resume then signs a NEW proof for that sequence. This is outside the
+     stated fence (design 408-413 threat model). It is not a defect, but "never re-signs" holds
+     only for untampered files.
+
+Q5 Immutable original inventory includes staged objects; later admission can share an original
+   CID; partial copies cannot admit; admission rechecks after staging: MET
+   - Tests empty_record_history_... and later_admission_can_share_....
+   - admission_rechecks_... deletes membership after ObjectDurable.
+   - Probe E: 5 distinct incomplete states, including all objects copied with records 1/2, each give
+     Conflict with zero staging.
+   - Code: copied.rs:612-630 runs under the hook at attested.rs:391-393, plus a preflight at
+     attested.rs:324-329.
+
+Q6 Private exact plan before output; explicit profile-3 CLI keeps incomplete status, never
+   activates; invalid pins, lost plans, changed sources, unsupported schemas and bad budgets refuse
+   before useful mutation: MET with gaps F1, F2, F4
+   - CLI order (kan-v2.rs:912-931): flag, pins, read_plan with pin, confirm (full source re-audit and
+     exact bytes), signer DID, budget. All of this happens before create/resume.
+   - Probe I covers 10 additional refusals, each with no output created: no --copy-profile, no pins,
+     wrong key, 0644 plan, bytes < MAX_CHUNK, --resume without output, init --copy-profile, existing
+     plan, plan = source DB, destination = source directory (probe B).
+   - Probe H: verify/backup/recover of an incomplete copy all report source_copy_complete=false.
+     The backup and rebuild outputs refuse admission with Conflict. JSON reports promoted=false and
+     activated=false, plus independent_backup=false.
+   - Unsupported schemas (probe C): index, trigger, view and table are refused by open, verify_file
+     and resume with "unsupported writable archive schema". Correct, but uncommitted (F2).
+
+Canonical profile selection / C-F4: MET
+   - Probe D, profile-3 file:
+     - refused by Ledger::{open, resume, verify_file}, RecoveryReader::open,
+       attested::{Archive::open, resume, verify_file, Recovery::open} and PlannedCopy::open
+     - refused by CLI verify without pins, verify with pins but no --copy-profile, and read-record
+     - file bytes unchanged
+   - Profile-2 and profile-1 files are refused by every copied:: entry point and by CLI
+     verify --copy-profile.
+   - No user_version auto-selection exists. The stored plan is only checked against the external
+     pin (copied.rs:73-95).
+
+Source WAL pinning / invariance: MET
+   - Probe G drives the real CLI against a source whose 4152-byte WAL is held open by a live legacy
+     writer, through plan, 5 batches and verify.
+   - Main DB and WAL bytes are identical afterwards.
+   - A later staged payload makes copy-batch --resume refuse with "copy source differs from pinned
+     plan".
+   - The test pinned_wal_... covers the API.
+
+No purpose laundering: MET
+   - Normal admit never mints RV: attested.rs:409-433 always issues Admitted.
+   - Probe F, with H=C: exact retries of copied requests return Conflict ("imported retry requires
+     explicit confirmation"), both before and after completion. They are never relabeled Admitted.
+   - Profile-2 and profile-1 paths refuse profile 3 (probe D), so a copy cannot be laundered through
+     them.
+
+Byte preservation: MET
+   - The test compares destination manifests and receipts to the source.
+   - The independent Python oracle reproduces the plan digest from the copied artifact (including
+     staged objects) before admission.
+   - Probe G: source bytes are unchanged.
+
+Current grant checks: MET (owner API)
+   - Probe E: no-append, wrong principal and historical audience each give AccessLimited, with counts
+     unchanged.
+   - The grant is caller-supplied by design. There is no remote selector at this checkpoint.
+
+Budgets: MET
+   - validate() bounds objects and records to 4096, rejects (0,0), and requires bytes in
+     [MAX_CHUNK, 64 MiB]. Tested.
+   - A budget that cannot advance the current phase returns 0 written plus explicit status.
+     Probe H confirms the documented semantics.
+
+Parent REQ-5/REQ-6 and AC-3/AC-5: PARTIAL, as stated. No parent AC is closed by this checkpoint, and
+none is claimed.
+
+==================================================================================================
+5. PRIOR-REVIEW FOLLOW-UPS (A/B) AND SCOPE NARROWING (Step 4)
+A-F1 CLOSED. Qualification contract 829-851 names (a) through (c) plus admitted-inside-prefix. The
+     tests exist and are killed by controls.
+A-F2 CLOSED. Annotations at evidence_attested_followups.rs:315 and evidence_attested_store.rs:457.
+A-F3 CLOSED. Exact reasons are pinned. New CLI test
+     profile2_cli_refuses_planless_retained_history_with_named_reason: verify/backup/recover exit
+     non-zero, have empty stdout, carry the reason, and backup creates no output.
+A-F4 CLOSED. Inline supersession notes at design 367-368, 417-419 and 500-503.
+B-F1 CLOSED. The oracle reads ORDER BY length DESC, cid DESC before its Python sort. The
+     omit-sort control is now killed (it survived as MB6 in the prior review).
+B-F2 CLOSED. Per-case reasons are pinned in source_planning_refuses_extra_schema_and_wrong_profiles.
+A-F5 / B-F3 remain INFO, unchanged.
+
+Deferrals:
+- These were predeclared, verified with git show at d9b2110^ (and at 2c7c6cb and 7e956e8):
+  - C-F2 bundle encoding/publication
+  - takeover / fencing (C-F4)
+  - RetryImported ("targets profile 3 only")
+  - degraded inventory
+  - RPC exposure (design 455-457)
+- New text in d9b2110 restates them:
+  - qualification 855-857
+  - checkpoint 862-865 ("does not add profile 3 to the HTTP service, delivery spool or Library")
+- Legitimate: named before implementation and separable. None defers the hard part of THIS slice.
+- The qualification contract itself was added in the same commit as the code. It mirrors A-F1
+  without narrowing it, so it is not suspicious.
+
+Code does not accidentally promote incomplete copies:
+- Admission requires completion both in the preflight and inside the writer transaction.
+- No CLI admission path exists.
+- Backup and rebuild preserve incompleteness (probe H, plus tests).
+- No command activates anything (JSON reports false).
+
+==================================================================================================
+6. FINDINGS
+F1 [LOW-MEDIUM, demonstrated] The private plan artifact is not protected from source SQLite sidecar
+   names.
+   - Code: kan-v2.rs:896 -> copy_upgrade.rs:139 retain_plan. It uses create_new with an fsync and a
+     read-back, but performs no overlap check.
+   - Compare backup/recovery: they use sqlite_destination (evidence_store.rs:418), which refuses
+     "destination overlaps source SQLite files".
+   - Probe A0 (raw/10-probes.txt):
+     - `copy-plan SRC/archive.sqlite SRC/archive.sqlite-journal ...` exits 0 and reports a retained
+       plan and pin.
+     - copy-batch with that plan then fails with "attempt to write a readonly database". The
+       read-only source reader sees a hot journal.
+     - The next ordinary legacy Ledger::open(source) succeeds and DELETES the plan artifact
+       (it treats it as a hot journal).
+     - Source main bytes are unchanged.
+     - Re-planning with the same nonce reproduces the same pin. Recovery is therefore possible only
+       if the owner kept the nonce and the source is unchanged.
+     - The -wal and -shm names were refused here only because the source reader had already created
+       those files (EEXIST).
+   - Effect: the CLI's "durably retains and verifies a private plan" guarantee (C1, design 705-714)
+     can be silently voided by a path choice that the codebase's other outputs refuse. No evidence
+     byte is altered.
+   - Not tested: the effect on a LIVE legacy service that opens new connections while the file
+     exists.
+   - Follow-up: apply the sqlite_destination overlap/alias check for the source path (and refuse the
+     destination root's archive.sqlite family) in retain_plan or the CLI, and add a regression test.
+     Probe L shows that a plan at DEST/archive.sqlite is already refused safely ("File exists" /
+     "file is not a database") with the plan bytes unchanged.
+
+F2 [LOW, coverage] No committed test pins profile-3 unsupported-schema refusal.
+   - The contract names it (Q6). The behavior is correct (probe C).
+   - R2 (remove check_copy_schema from full_audit) survives the whole suite. That would silently
+     weaken verify_file, CLI verify and backup-output verification. Archive::open keeps its own
+     check.
+   - Follow-up: commit probe C's four cases with the exact reason.
+
+F3 [LOW, coverage/attribution] Resume prefix comparisons are unpinned.
+   - Design 666-668 requires "before advancing, compare all existing original inventory/payload
+     bytes against the source's exact prefix", and records likewise (copied.rs:403-429). R3 and R4
+     survive.
+   - incomplete_copy_backup_remains_incomplete_and_resume_checks_the_exact_prefix is actually caught
+     earlier, by audit_state's payload-length check (copied.rs:185-195). Its name overclaims.
+   - Admission stays safe because the completion digest never matches. Without the compares, though,
+     a self-consistent foreign prefix would let resume sign fresh RV proofs into a copy that can
+     never complete. The required early refusal is untested.
+   - Follow-up: add a valid-but-foreign object/inventory row (correct hash and length, absent from
+     the source) and assert the "differs from source prefix" reason.
+   - R5 and R8 are structural guards unreachable through the API (INFO).
+
+F4 [LOW, CLI coverage] The copy-batch `--copy-profile` requirement (kan-v2.rs:912) is not pinned
+   (R9 survives).
+   - Probe I0 shows it refuses correctly.
+   - Committed CLI refusals cover only missing plan, wrong pin, (0,0) budget and changed source.
+   - Follow-up: commit probe I's cases. They are cheap and attribute the user-facing preconditions
+     the contract claims.
+
+F5 [INFO] API Archive::create (copied.rs:239-251) creates output before any signer check.
+   - Design 659 says the executor verifies "current signing key before creating output". The CLI
+     does (probe I2: no output). The API only documents plan custody.
+   - With a wrong signer, the API leaves an initialized, unadmittable, empty copy.
+   - Document this or take the signer at create.
+
+F6 [INFO] copy_batch issued_at is milliseconds, while admit `now` is seconds (×1000 at
+   attested.rs:442). Document the asymmetry.
+
+F7 [INFO] Error wording.
+   - A non-private plan reports "database must be owner-only".
+   - A poisoned plan location reports "attempt to write a readonly database" (F1).
+
+==================================================================================================
+7. FORBIDDEN-PATTERN CHECK (Step 5, from CLAUDE.md)
+- No subject or evidence destruction.
+  - All refusals leave source and destination bytes intact (probes B, C, D, G, I, L).
+  - The F1 deletion is of the owner's plan artifact by SQLite, not of evidence.
+- No fabricated provenance.
+  - RV proofs are minted only by copy_batch, inside the planned prefix, over source-identical
+    records.
+  - Exact retries never relabel a proof (probe F).
+  - Rebuild copies envelopes.
+- No persisted projection. Completion is computed on every audit.
+- A surface change is accompanied by the TSV, typed SurfaceWrite::{EvidenceCopy, EvidenceCopyPlan},
+  an independent column inventory and facade-call counts.
+  - Two facade controls reproduce.
+  - Raw SQL INSERTs into objects/commits/bindings in copy_batch remain outside the facade guard. This
+    is disclosed and pre-existing practice in rebuild. I claim no SQL enforcement.
+- No new UI or surface. CLI subcommands are added to the existing kan-v2 owner CLI.
+
+==================================================================================================
+8. PRECISE LIMITS OF THIS VERDICT
+- This is a storage checkpoint only. Still required and unimplemented here:
+  - profile-3 HTTP/spool/Library
+  - RetryImported
+  - degraded inventory
+  - recovery-bundle encoding/publication (C-F2)
+  - explicit takeover/fencing
+  - the full session frontend
+- No live migration, activation or cutover is performed or claimed. Cross-host one-writer fencing
+  remains owner responsibility. Same-ID forks from resuming a copy and its backup are possible, as
+  documented.
+- Batch writes are bounded. Source and destination audits are full scans, and copy_batch does
+  per-object NOT INDEXED reads (quadratic). There is no latency or large-archive qualification.
+- Filesystem trust is the governing contract's. There is no protection against privileged arbitrary
+  rewrites (probe K). SQL helpers are conventions, not compiler enforcement.
+- Process-exit boundaries prove SQLite transaction recovery on this host only, not power loss.
+- Probes and mutants are bounded and hand-chosen. No fuzzing.
+- Debug builds on one Apple-silicon host. Python 3 from PATH for the oracle.
+- I did not rerun the unchanged compatibility or performance matrices.
+
+==================================================================================================
+9. VERDICT RATIONALE
+**APPROVE WITH FOLLOW-UPS**
+
+The profile-3 destination implements what the governing contract asks of this slice:
+  - an externally pinned canonical recipe
+  - immutable original membership, including staged objects
+  - objects-first, budgeted, single-transaction batches that revalidate under the writer lock
+  - retained-verified proofs only within the planned single-H prefix
+  - admission gated on a completion that is recomputed from the exact source digest, both before
+    and after staging
+  - byte-preserving backup and rebuild that keep incomplete copies incomplete
+  - explicit, non-inferred profile selection at every entry point I could find
+
+I verified this by execution, not by reading the author's summary:
+  - 136/136 tests, twice
+  - 9/9 author controls with named failures
+  - 3 of my mutants killed
+  - 11 probe families (A-I, K, L) covering cross-profile entry points, the incomplete-admission matrix, H=C
+    retries, CLI WAL source invariance, CLI incomplete lifecycle, preconditions and collisions
+
+There is no invariant violation and no purpose laundering. Incomplete copies are not promoted.
+
+The follow-ups are specific and do not undermine the north star:
+  - F1: guard the plan artifact against source-sidecar names. This is a demonstrated custody loss
+    with no evidence damage.
+  - F2-F4: commit tests for behavior that is correct today but unpinned (schema drift, resume prefix
+    comparisons, CLI flag/precondition refusals).
+  - F5-F7: documentation and wording.

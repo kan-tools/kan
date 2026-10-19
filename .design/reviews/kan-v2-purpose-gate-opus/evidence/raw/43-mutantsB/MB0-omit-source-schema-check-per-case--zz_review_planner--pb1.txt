@@ -1,0 +1,31 @@
+cargo test --features v2-crypto --test zz_review_planner pb1 -- --test-threads=1
+
+running 1 test
+test pb1_schema_cases_print_exact_reasons ... FAILED
+
+failures:
+
+---- pb1_schema_cases_print_exact_reasons stdout ----
+PB1 CREATE INDEX extra ON commits(writer)                                  -> ACCEPTED
+PB1 CREATE TRIGGER extra AFTER INSERT ON objects BEGIN SELECT 1; END       -> ACCEPTED
+PB1 CREATE VIEW extra AS SELECT 1                                          -> ACCEPTED
+PB1 CREATE TABLE extra(x)                                                  -> ACCEPTED
+PB1 PRAGMA user_version=2                                                  -> invalid input: unknown database profile
+PB1 PRAGMA user_version=3                                                  -> invalid input: unknown database profile
+PB1 PRAGMA application_id=7                                                -> invalid input: unknown database profile
+PB1 accepted=["CREATE INDEX extra ON commits(writer)", "CREATE TRIGGER extra AFTER INSERT ON objects BEGIN SELECT 1; END", "CREATE VIEW extra AS SELECT 1", "CREATE TABLE extra(x)"]
+
+thread 'pb1_schema_cases_print_exact_reasons' (9673163) panicked at tests/zz_review_planner.rs:98:5:
+assertion failed: accepted.is_empty()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    pb1_schema_cases_print_exact_reasons
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.55s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+    Finished `test` profile [unoptimized] target(s) in 6.83s
+     Running tests/zz_review_planner.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_planner-ff40b81cd077d22f)
+error: test failed, to rerun pass `--test zz_review_planner`

@@ -1,0 +1,24 @@
+cargo test --features v2-crypto --test evidence_copy_source source_fingerprint_matches_an_independent_python_byte_oracle -- --test-threads=1
+
+running 1 test
+test source_fingerprint_matches_an_independent_python_byte_oracle ... FAILED
+
+failures:
+
+---- source_fingerprint_matches_an_independent_python_byte_oracle stdout ----
+
+thread 'source_fingerprint_matches_an_independent_python_byte_oracle' (9674661) panicked at tests/evidence_copy_source.rs:292:5:
+assertion `left == right` failed
+  left: "20cd67d711c2ecb5964a401859a2d4b1ece0643a12c681ceb045c6783b418132"
+ right: "26193ee1f3b1bdae19fb91adaba71b077fafd3627658bf484ddfc998d392ea0d"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    source_fingerprint_matches_an_independent_python_byte_oracle
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.22s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_copy_source.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_source-b92f66d790c08427)
+error: test failed, to rerun pass `--test evidence_copy_source`

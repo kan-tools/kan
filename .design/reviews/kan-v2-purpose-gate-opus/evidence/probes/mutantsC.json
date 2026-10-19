@@ -1,0 +1,14 @@
+[
+ {"name":"MC1-revalidation-error-labelled-busy","file":"src/evidence_operations/projection.rs",
+  "old":"        self.schema = Self::validate_connection(&memory)?;","new":"        self.schema = Self::validate_connection(&memory).map_err(|_| Box::new(SourceBusy) as Box<dyn std::error::Error + Send + Sync>)?;",
+  "tests":[["lib","evidence_operations::projection::tests::copy_revalidates_schema_and_capacity_control_after_source_open"]]},
+ {"name":"MC2-wrapper-reports-zero-on-diagnostic-channel","file":"tests/evidence_capture_contention.rs",
+  "old":"            spent.send(result.1).unwrap();","new":"            spent.send(Duration::ZERO).unwrap();",
+  "tests":[["evidence_capture_contention","coordinated_sink_returns_inner_wait_to_its_caller"]]},
+ {"name":"MC3-wrapper-uses-non-wait-admit","file":"tests/evidence_capture_contention.rs",
+  "old":"        let result = self.inner.admit_with_wait(operation, frame, wait);","new":"        let result = (self.inner.admit(operation, frame), wait);",
+  "tests":[["evidence_capture_contention","coordinated_sink_returns_inner_wait_to_its_caller"]]},
+ {"name":"MC4-deadline-30s","file":"src/evidence_operations/projection.rs",
+  "old":"let deadline = std::time::Instant::now() + Duration::from_secs(5);","new":"let deadline = std::time::Instant::now() + Duration::from_secs(30);",
+  "tests":[["lib","evidence_operations::projection::tests::copy_deadline_applies_to_contention_after_successful_source_open"]], "timeout":120}
+]

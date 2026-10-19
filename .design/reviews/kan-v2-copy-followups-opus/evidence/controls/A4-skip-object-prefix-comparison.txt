@@ -1,0 +1,27 @@
++ cargo test --features v2-crypto --test evidence_copy_destination resume_refuses_self_consistent_foreign_object_prefix_before_advancing -- --exact
+
+running 1 test
+test resume_refuses_self_consistent_foreign_object_prefix_before_advancing ... FAILED
+
+failures:
+
+---- resume_refuses_self_consistent_foreign_object_prefix_before_advancing stdout ----
+
+thread 'resume_refuses_self_consistent_foreign_object_prefix_before_advancing' (9781743) panicked at tests/evidence_copy_destination.rs:1166:5:
+assertion `left == right` failed
+  left: "missing object: bafkreicaazwnaonyrnsbp5y67sjxcnuv36tnj2odlvc7krr4y6kfgnagce"
+ right: "corrupt evidence: original object inventory differs from source prefix"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    resume_refuses_self_consistent_foreign_object_prefix_before_advancing
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.19s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/copy-followups)
+    Finished `test` profile [unoptimized] target(s) in 7.02s
+     Running tests/evidence_copy_destination.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_destination-e9770359e29db79f)
+error: test failed, to rerun pass `--test evidence_copy_destination`
+
+exit=101

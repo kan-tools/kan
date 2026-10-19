@@ -1,0 +1,28 @@
+Reviewer commands (cwd = export root .local-state/reviews/purpose-gate unless stated).
+Env inherited from run-purpose-gate.sh: CARGO_TARGET_DIR=<kan-v2-library-resilience>/.local-state/target,
+CARGO_BUILD_JOBS=4, CARGO_INCREMENTAL=0, debug=0. One cargo job at a time throughout.
+
+00  python3 -I review-evidence/scripts/verify_identity.py . ../purpose-gate-identity.json   -> raw/identity-before.txt
+    (sha256 of all 2077 identity files + git blob SHA-1 vs `git ls-tree -r --full-tree 2c7c6cb`; extra-file scan)
+00b git diff <range> -- ':(top)' ':(top,exclude).design/reviews' | cmp - ../<x>.diff  (run from worktree root)
+      purpose 77eaac7..648c8d7 SAME; planner 77eaac7..b0f93bf SAME; backend 1c72b50..2c8ba2a SAME
+    .stat files: purpose/planner equal git --stat for same range; backend .stat equals 1c72b50..d94359c (includes docs commits)
+    merges: git diff 648c8d7 2c7c6cb -- src tests scripts web .github == union of planner+backend code diffs (no merge-introduced code)
+01  review-evidence/scripts/baseline.sh -> raw/01..05 (cargo clean -p kan; targeted tests; lib tests; contention; clippy; fmt)
+10  python3 -I review-evidence/scripts/fixture_compare.py -> raw/10-fixture-compare.txt
+11  python3 -I review-evidence/scripts/noncanonical_check.py .design/fixtures/copy-plan-v1.json -> raw/11 (own lenient CBOR decoder)
+20  probes/zz_review_purpose.rs copied to tests/, cargo test --test zz_review_purpose -- --nocapture, removed -> raw/20-probeA.txt
+    (attempt 1 FAILED: my compile errors - private Result alias, temporary lifetime; kept as raw/20-probeA-attempt1-FAILED-*.txt)
+30  mkdir -p .local-state/reviews/profile2-purpose-author; python3 -B .design/reviews/kan-v2-profile2-purpose-author/revert.py
+    -> raw/30-author-revert.txt; outputs moved to raw/30-author-revert-output/; .local-state removed; attested.rs sha re-verified
+31  python3 -I review-evidence/scripts/mutate.py probes/mutantsA.json raw/31-mutantsA  (restore + sha check per mutant)
+40  python3 -B scripts/copy_plan_negative_controls.py -> raw/40-copy-plan-controls.txt (outputs -> raw/40-author-control-outputs)
+41  python3 -B scripts/attested_lifecycle_negative_controls.py -> raw/41-lifecycle-controls.txt; sources sha re-verified
+42  probes/zz_review_planner.rs (temporary in tests/) -> raw/42-probeB.txt
+43  python3 -I review-evidence/scripts/mutate.py probes/mutantsB.json raw/43-mutantsB (MB0 used zz_review_planner; then removed)
+50  python3 -B scripts/overview_review_negative_controls.py -> raw/50-overview-controls.txt (outputs -> raw/50-author-control-outputs)
+51  python3 -I review-evidence/scripts/mutate.py probes/mutantsC.json raw/51-mutantsC
+52  node --test <5 CI UI files> (Node v24.1.0) -> raw/52-node-ci.txt
+60  grep added diff lines for scope-narrowing language -> raw/60-scope-narrowing.txt
+90  verify_identity.py again -> raw/90-identity-after.txt ; 92 process list -> raw/92-processes-after.txt
+Not run: full 94/310 compatibility lists, Linux CI/MSRV, default-feature clippy, real browser, release builds, power-loss.

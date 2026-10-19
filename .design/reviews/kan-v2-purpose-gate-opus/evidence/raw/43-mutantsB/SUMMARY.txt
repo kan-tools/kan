@@ -1,0 +1,16 @@
+MB0-omit-source-schema-check-per-case: KILLED
+  zz_review_planner/pb1: rc=101 compile_error=False failed=['pb1_schema_cases_print_exact_reasons'] test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.55s (7.8s)
+MB1-parser-accepts-nonminimal-header: KILLED
+  evidence_copy_plan/None: rc=101 compile_error=False failed=['malformed_or_unsupported_plans_refuse'] test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s (7.2s)
+MB2-parser-accepts-unordered-keys: KILLED
+  evidence_copy_plan/None: rc=101 compile_error=False failed=['malformed_or_unsupported_plans_refuse'] test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s (7.3s)
+MB3-drop-final-canonical-byte-compare: SURVIVED
+  evidence_copy_plan/None: rc=0 compile_error=False failed=[] test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s (7.2s)
+MB4-planner-objects-desc: KILLED
+  evidence_copy_source/source_fingerprint_matches_an_independent_python_byte_oracle: rc=101 compile_error=False failed=['source_fingerprint_matches_an_independent_python_byte_oracle'] test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.30s (7.5s)
+MB5-planner-objects-no-order-by: SURVIVED
+  evidence_copy_source/source_fingerprint_matches_an_independent_python_byte_oracle: rc=0 compile_error=False failed=[] test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.29s (7.4s)
+MB6-oracle-drops-python-sort: SURVIVED
+  evidence_copy_source/source_fingerprint_matches_an_independent_python_byte_oracle: rc=0 compile_error=False failed=[] test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.29s (7.4s)
+MB7-oracle-reverse-sort: KILLED
+  evidence_copy_source/source_fingerprint_matches_an_independent_python_byte_oracle: rc=101 compile_error=False failed=['source_fingerprint_matches_an_independent_python_byte_oracle'] test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.22s (0.4s)

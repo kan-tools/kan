@@ -1,0 +1,8 @@
+commit d9b2110643dfa12ab50e871dbdd593db15878673
+manifest files 2223; tree blobs 2223
+extra paths outside manifest (top-level grouping): ['north-star.json', 'review-evidence/']
+extra non-evidence files: ['north-star.json']
+problems 0
+d9b2110643dfa12ab50e871dbdd593db15878673
+d9b2110643dfa12ab50e871dbdd593db15878673
+supplied diff == git diff --no-color d9b2110^ d9b2110 -- . ':(exclude).design/reviews' (author evidence read from export); stat covers all 42 files

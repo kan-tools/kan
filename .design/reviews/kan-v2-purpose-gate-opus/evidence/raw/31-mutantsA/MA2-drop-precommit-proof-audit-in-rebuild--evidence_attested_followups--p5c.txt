@@ -1,0 +1,25 @@
+cargo test --features v2-crypto --test evidence_attested_followups p5c -- --test-threads=1
+
+running 1 test
+test p5c_planless_historical_proofs_refuse_verification_and_rebuild_without_rewriting ... FAILED
+
+failures:
+
+---- p5c_planless_historical_proofs_refuse_verification_and_rebuild_without_rewriting stdout ----
+
+thread 'p5c_planless_historical_proofs_refuse_verification_and_rebuild_without_rewriting' (9663825) panicked at tests/evidence_attested_followups.rs:347:5:
+assertion `left == right` failed
+  left: 2
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    p5c_planless_historical_proofs_refuse_verification_and_rebuild_without_rewriting
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.25s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-destination/.local-state/reviews/purpose-gate)
+    Finished `test` profile [unoptimized] target(s) in 6.84s
+     Running tests/evidence_attested_followups.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_followups-a0c68bfd07b1cb59)
+error: test failed, to rerun pass `--test evidence_attested_followups`
