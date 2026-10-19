@@ -79,6 +79,8 @@ pub mod evidence_reader;
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_assembly;
 #[cfg(feature = "v2-crypto")]
+pub mod evidence_interpretation;
+#[cfg(feature = "v2-crypto")]
 pub mod evidence_reconstruction;
 
 #[cfg(feature = "v2-crypto")]
