@@ -1,0 +1,40 @@
+Raw command record, fresh independent review of the UI restart correction (262cad3..7126848).
+cwd = export root (.local-state/reviews/ui-restart) unless stated. Outputs are in results/.
+
+Read-only orientation
+  git rev-parse --show-toplevel ; git check-ignore -v .     -> export is a gitignored plain copy inside the parent worktree
+  cat CLAUDE.md north-star.json ../ui-restart-prompt.txt ../ui-restart.diff
+  cat <skill>/adversarial-review/SKILL.md
+  Read .design/kan-v2-collection-overview.md, .design/reviews/kan-v2-overview-restart-author/REPORT.md
+  Read web/operations/app.js, tests/operations_ui.test.cjs, tests/operations_review_ui.test.cjs
+  Read src/evidence_operations_collection/overview.rs (structs, status(), publish), src/evidence_operations.rs (WorkerStatus),
+       src/evidence_operations/projection.rs (Scan), scripts/overview_negative_controls.py      [read only; nothing compiled]
+
+Identity
+  python3 -I review-evidence/probes/verify_identity.py "$PWD" ../ui-restart-identity.json baseline   -> results/identity-before.txt
+  python3 -I review-evidence/probes/verify_identity.py "$PWD" ../ui-restart-identity.json after      -> results/identity-after.txt
+
+Range fidelity (read-only git in parent worktree)
+  git log --oneline 262cad3..7126848 ; git diff --stat 262cad3 7126848       -> results/range-stat.txt
+  git diff 262cad3 7126848                                                   -> results/range-full.diff
+  diff <(git diff 262cad3 7126848 -- . ':!.design') ../ui-restart.diff       -> results/supplied-diff-vs-range.txt
+
+Node checks
+  node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs tests/theme_ui.test.cjs  -> results/baseline-ci-node.txt
+  node --test tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs                                                   -> results/baseline-ops-node.txt
+  node --test review-evidence/probes/restart_review_probes.test.cjs   -> results/probes-baseline-run1-harness-bug.txt (my harness bug), results/probes-baseline.txt
+  python3 -I review-evidence/probes/mutate.py "$PWD" ../ui-restart-identity.json           -> results/mutation-run.txt (stopped at A12 anchor guard; restored)
+  python3 -I review-evidence/probes/mutate.py "$PWD" ../ui-restart-identity.json A12 A13   -> results/mutation-run-A12-A13.txt (A13 hang, 120 s timeout; restored)
+  python3 -I review-evidence/probes/mutate.py "$PWD" ../ui-restart-identity.json A13       -> results/mutation-run-A13.txt (hang handled, 30 s)
+  per-mutant raw logs: results/mutants/*.txt ; summaries: results/mutants/summary*.json
+  kill 48138 48952   (orphaned A13-mutant node children, PPID 1, cwd=export)               -> results/orphan-cleanup.txt
+  node --test tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs review-evidence/probes/restart_review_probes.test.cjs -> results/restored-final.txt
+
+Provenance
+  python3 -I review-evidence/probes/extract_original_probe.py ../overview.jsonl tests/operations_review_ui.test.cjs review-evidence/results
+  diff ../overview/review-evidence/probes/zz_review_operations_ui.test.cjs tests/operations_review_ui.test.cjs -> results/imported-vs-original.txt
+  -> results/imported-probe-provenance.txt
+
+Not run (by instruction): cargo/rustc/builds/installs/downloads/servers/browsers, kan/day writes, git writes,
+scripts/operations_review_negative_controls.py and scripts/overview_negative_controls.py (both write outside
+review-evidence; the latter runs cargo). Their three JS mutants were reproduced with identical anchors by mutate.py.

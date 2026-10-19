@@ -1,0 +1,172 @@
+FRESH INDEPENDENT REVIEW - Operations UI restart correction + abort-aware regressions
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), fresh session, no delegation, did not author this code.
+Range: 262cad3..7126848f4d55a0cd1b95debc12cb686ff2741ff1 (5667fc9, 94763e5, 7126848)
+Scope: web/operations/app.js restart key, its regressions, the imported abort-aware probes, the
+JS negative-control driver, CI line. NOT the Rust overview/lifecycle, NOT the roadmap, NOT browser
+qualification, NOT downloaded-file delivery.
+Date: 2026-10-19. Raw commands: review-evidence/COMMANDS.txt; raw outputs: review-evidence/results/.
+
+== 0. Independence and limits ==
+I wrote none of this code. Every claim below comes from source I read or Node/Python I ran in this
+export. Node DOM stubs (vm + fake Element/fetch) are NOT real-browser qualification. No browser,
+cargo, rustc, server, install, download, kan/day write or git write was run. Only Node and Python ran.
+
+== 1. North star ==
+Selected telos (north-star.json, live Decision bafyreied3rk...): "Every simplification ... is a
+determined projection computed on demand over that raw data ... A field holding a computed value is
+the failure mode: it asserts an output of the fold as if it were input". The telos is deliberately
+unwitnessed (Observation bafyreicakl3...). I add no witnesses and reconstruct no omitted claims.
+Relevance: UPb is exactly that failure in the display layer. A rendered body kept from sample N was
+shown under sample N+1's label, so a stale projection was presented as current. The fix serves the
+telos. There is a tension with telos/performance-at-scale (an InTensionWith relation is on record):
+the fix pays a full serialize+compare on each 5 s poll. That cost is measured in section 4 and is
+small.
+
+== 2. Inputs read / process findings ==
+P1 The supplied ../ui-restart.diff is NOT the full range. `git diff 262cad3 7126848` also changes
+   scripts/overview_negative_controls.py (+1 case 'restart-render-collision', a node-run JS mutant
+   with the same anchor) and adds 10 lines to .design/kan-v2-collection-overview.md plus the
+   author evidence files (results/supplied-diff-vs-range.txt, results/range-stat.txt). I read
+   these; none changes my verdict. A review prompt that names a partial diff is a process gap.
+P2 "Reviewer probes imported without change" is UNVERIFIABLE from my inputs. The only on-disk
+   reviewer UI probe (../overview/review-evidence/probes/zz_review_operations_ui.test.cjs) is the
+   earlier UP1-UP6 set for 67c1263, not UPa-UPi. ../overview.jsonl mentions UPb only inside a
+   thinking block and no tool call carries the file text (results/imported-probe-provenance.txt,
+   results/imported-vs-original.txt). I therefore reviewed tests/operations_review_ui.test.cjs
+   as-is, on its merits.
+P3 Author evidence files under .design/reviews/kan-v2-overview-restart-author/ agree with what I
+   reproduced: reverted 1 fail; restored/ui 27 pass; incorporated 36 pass; three abort-controls
+   each fail one named test.
+
+== 3. The fix (web/operations/app.js:125-126) ==
+  before: key=s.last_job+':'+v.manifest_sha256
+  after:  key=s.last_job+':'+JSON.stringify(v)
+Correctness argument, checked against source:
+ - The body renders only fields inside v: totals (8 counters, :127-128), sources.length, built_at
+   and active (:129), and each source's generation/sealed_sha256/snapshot.digest (:130). Every one is
+   inside JSON.stringify(v), so two samples that would render differently cannot share a key.
+   Over-sensitivity (unrendered fields such as accounted_bytes, scan window, worker, or key order)
+   only causes a harmless repaint with identical content (RP11 shows 1 rewrite, same text).
+ - The label is recomputed on every accepted reply, before the early return (:123), so age and
+   superseded state never depend on the key.
+ - Stability: the server assigns `last` once per completed job and clones it on every status()
+   (src/evidence_operations_collection/overview.rs:456-458, :500-502). serde emits fields in
+   declaration order (Overview :72-84, Source :41-46, Scan projection.rs:24-30). Identical replies
+   within one process therefore produce identical keys, and RP10 confirms no rewrites of summary,
+   coverage or sources.
+ - Reset paths: the key is cleared on last:null (:124) and on lock (clearOverview :99). A
+   validation failure throws before overviewData/overviewKey change (:123), so the prior body stays
+   and the label says "Invalid ... Prior sample retained." (RP9). Nothing after `overviewKey=key`
+   can throw on validated input, so the key cannot be set over a half-rendered body.
+ - Injection: still textContent only; no new sink.
+Bounds (RP12, server-shaped fixture with every Rust field): validation caps sources at 1024
+(:105, a 1025-source reply is rejected and the prior 1024-row body kept). The key at 1024 sources is
+485,784 bytes, held in one string. Ten distinct 1024-source renders took 22.7 ms in Node. Unknown
+extra fields are not rejected, so key size tracks reply size. r.json() has already materialized
+that reply, so this adds no new exposure, only roughly 2x transient memory.
+Restart premise: UPb needs the UI to miss the last:null reply between restart and rebuild (5 s poll
+or a paused tab). If the UI does see last:null, the key was already reset before this fix. This
+narrows when the bug occurs but does not make it unreal.
+
+== 4. Verification run ==
+ - CI Node line (4 files): 70/70 pass, Node v24.1.0 (results/baseline-ci-node.txt).
+ - Operations UI: 36/36 pass = 27 author + 9 imported (results/baseline-ops-node.txt). Author's
+   "36 checks" claim reproduced.
+ - My 12 probes (review-evidence/probes/restart_review_probes.test.cjs). The harness honours
+   AbortSignal for fetch AND for the body json(), and has a controllable timer for the 8 s timeout.
+   12/12 pass on unmodified source. The first run failed on my own harness bug (missing export),
+   kept as results/probes-baseline-run1-harness-bug.txt.
+ - Restored final: 48/48 (27+9+12), app.js sha256 650596...5f56 = manifest (results/restored-final.txt).
+ - Not run: cargo build/test/clippy/fmt (forbidden here); no JS lint is configured in CI for these files.
+
+== 5. Mutation results (23 JS mutants; per-suite attribution; results/mutation-run*.txt, mutants/) ==
+ mutant                          author  imported  mine
+ K0 revert to manifest key       KILL    KILL      KILL   <- author control #1 reproduced
+ K1 key = last_job+built_at      surv    surv      KILL (RP1,RP2,RP3,RP9)
+ K2 key = totals only            KILL    surv      KILL
+ K3 key = built_at+totals        surv    surv      KILL (RP1,RP3)
+ K4 key = all but sources        surv    surv      KILL (RP1,RP3)
+ K5 key drops last_job           surv    surv      surv   equivalent (same rendered output)
+ K6 no early return              KILL    surv      KILL
+ K7 last:null keeps key          surv    surv      KILL (RP5)
+ K8 lock keeps key               surv    surv      KILL (RP4)
+ A0 finally drops serial guard   surv    KILL(UPi) surv   <- author control #2 reproduced
+ A1 catch drops serial guard     surv    KILL(UPa) KILL   <- author control #3 reproduced
+ A2 timeout label lost           surv    surv      KILL (RP6)
+ A3 preempt does not abort       surv    KILL      surv
+ A4 lock does not abort          surv    KILL      KILL
+ A5 lock keeps queued action     surv    surv      KILL (RP7)
+ A6 no preemption                KILL    KILL      KILL
+ A7/A8/A9 drop `generation` from catch/finally/success guards
+                                 surv    surv      surv   equivalent in reachable states:
+     every generation++ that can race an overview request is lock, and clearOverview also does
+     serial++. The connect form is hidden while unlocked. Defence in depth only.
+ A10 success drops serial guard  KILL    surv      surv
+ A11 queued never dispatched     KILL    KILL      surv
+ A12 no clearTimeout (overview)  surv    surv      surv   equivalent (abort after completion is a no-op)
+ A13 finally keeps queued        surv    HANG      surv   killed only by an infinite re-dispatch hang, no named assertion
+Every non-equivalent mutant is killed by at least one suite. Committed suites alone leave K1, K3,
+K4, K7, K8, A2 and A5 alive. All restores were hash-verified against the manifest.
+Hygiene: the A13 hang left two orphaned node children (PPID 1, cwd=export). `node --test` isolates
+each file in a child, and the subprocess timeout killed only the parent. I stopped both (PIDs 48138,
+48952), and none remain (results/orphan-cleanup.txt). scripts/operations_review_negative_controls.py
+has no subprocess timeout, so a hanging mutant there would block forever.
+
+== 6. Abort-aware regressions (UPa-UPi) assessed on their merits ==
+They do execute the real catch/finally races. The aborted promise's handlers run as microtasks after
+the synchronous `++overviewSerial` (:137-139), the same ordering as a browser. UPa/UPi/A3 show the
+guards matter. The harness simplifications are as follows. Abort does not reject an in-progress
+json() (my RP8 covers that, and current code passes). Responses carry no headers or stream. Timers
+are real, so the 8 s timeout path is never exercised (RP6 covers it). UPb's age assertion
+/0s|1s|2s old/ depends on wall-clock time and could flake on a runner stalled for more than 2 s.
+UPd records observed queue semantics (last action wins), not a requirement.
+
+== 7. Scope narrowing / house rules ==
+The grep (results/scope-narrowing-grep.txt) finds only "Fresh review of this correction remains
+required" and "do not constitute a fresh review verdict". Both are legitimate and named in advance.
+House rules: the fix adds no persisted surface (an in-memory string), no authority, no enforcement,
+and no second workflow surface beyond the owner-authorized v2 operator UI. No violation.
+
+== 8. REQ/AC (this correction only) ==
+ AC-3 "never silently relabeled current" (UI half): met in Node scope. K0 is killed by 3 suites,
+      and partial keys are killed by RP1-RP3.
+ AC-5 real authenticated browser flows: UNVERIFIABLE here. The browser matrix predates this fix;
+      no browser was run.
+ AC-6 fresh review + meaningful revert/restore: this review. The three author controls were
+      reproduced; whole-suite restore passes.
+ REQ-5 no new persisted surface: met (read app.js; the key lives only in memory).
+
+== 9. Follow-ups (required before calling the regression set complete) ==
+ F1 Make the committed tests pin the claim that the key covers the entire sample. Add restart cases
+    where built_at is unchanged and only totals change, and where only a source digest/set changes
+    (equivalent to RP1-RP3). Today K1/K3/K4 survive every committed suite.
+ F2 Guard lock -> relogin -> Load returning the SAME cached sample (RP4/K8). A blank body under a
+    "Cached sample" label is the likeliest real-world variant of this bug class, because the
+    server's published sample outlives the UI session. Also guard the last:null reset (RP5/K7).
+ F3 Guard the cross-session queued-action leak (RP7/A5) and the 8 s timeout label/slot release
+    (RP6/A2) in committed tests.
+ F4 Give scripts/operations_review_negative_controls.py a per-run timeout and process-group kill,
+    and add A13 (a non-clearing queue) with a named assertion rather than relying on a hang.
+ F5 Record provenance for the imported UPa-UPi file (the original path/hash) once the prior review
+    finishes. Supply complete range diffs to reviewers.
+Residuals (not follow-ups for this verdict): no real-browser evidence for this fix; Node stubs only;
+over-sensitive key on server key-order or field changes (harmless repaint); unknown fields are not
+bounded beyond the already-parsed reply.
+
+== 10. Verdict (restart correction + abort-aware regressions only; no roadmap approval) ==
+**APPROVE WITH FOLLOW-UPS**
+The production change is correct and minimal. Keying on last_job plus the full serialized sample
+covers every rendered field, so UPb's fresh-label/stale-totals pairing cannot recur. The key stays
+stable because the server's published sample is immutable and serialized deterministically. It is
+bounded by the 1024-source validation (about 0.5 MB key, about 2 ms per render in Node), and lock,
+null and invalid replies reset or retain it correctly. I found no correctness, safety or invariant
+violation. The imported abort-aware probes do exercise real catch/finally races and kill the guard
+mutants the author named. The gap is in the evidence, not the code: the committed suites do not
+pin the "entire sample" claim (three partial-key mutants survive), nor the lock/relogin same-sample
+repaint, the timeout path, or the cross-session queue reset. My probes show all of these behave
+correctly today, but nothing committed would catch a regression. F1-F3 should land as committed
+regressions. No browser qualification is claimed or implied.
+
+Export identity: before and after, 1617/1617 tracked files match ../ui-restart-identity.json (only
+north-star.json is extra and untracked, supplied context). All mutations were restored; no owned
+processes remain.

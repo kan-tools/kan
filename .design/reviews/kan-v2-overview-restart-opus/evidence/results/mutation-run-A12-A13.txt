@@ -1,0 +1,19 @@
+$ python3 -I review-evidence/probes/mutate.py "$PWD" ../ui-restart-identity.json A12 A13
+A12-no-clearTimeout[equiv?]              author=survived imported=survived review=survived
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/review-evidence/probes/mutate.py", line 93, in <module>
+    main()
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/review-evidence/probes/mutate.py", line 72, in main
+    code, out = run(suite)
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/.local-state/reviews/ui-restart/review-evidence/probes/mutate.py", line 52, in run
+    r = subprocess.run(['node', '--test', SUITES[suite]], cwd=root, capture_output=True, text=True, timeout=120)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 507, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1134, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1980, in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/subprocess.py", line 1178, in _check_timeout
+    raise TimeoutExpired(
+subprocess.TimeoutExpired: Command '['node', '--test', 'tests/operations_review_ui.test.cjs']' timed out after 120 seconds
+exit=1

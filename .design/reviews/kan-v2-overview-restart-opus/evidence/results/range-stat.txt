@@ -1,0 +1,22 @@
+$ git log --oneline 262cad3..7126848
+7126848 Demonstrate abort-aware UI regression sensitivity
+94763e5 Run independent abort-aware operations UI probes in CI
+5667fc9 fix(v2): repaint overview samples after service restart
+$ git diff --stat 262cad3 7126848
+ .design/kan-v2-collection-overview.md              |  10 ++
+ .../kan-v2-overview-restart-author/REPORT.md       |  26 +++++
+ .../abort-controls/aborted-poll-clears-action.txt  |  27 ++++++
+ .../abort-controls/aborted-poll-repaints-error.txt |  24 +++++
+ .../abort-controls/restart-cache-collision.txt     |  24 +++++
+ .../abort-controls/restored.txt                    |  45 +++++++++
+ .../incorporated-probes.txt                        |  45 +++++++++
+ .../kan-v2-overview-restart-author/restored.txt    |  35 +++++++
+ .../kan-v2-overview-restart-author/reverted.txt    |  24 +++++
+ .../reviews/kan-v2-overview-restart-author/ui.txt  |  35 +++++++
+ .github/workflows/ci.yml                           |   2 +-
+ scripts/operations_review_negative_controls.py     |  52 ++++++++++
+ scripts/overview_negative_controls.py              |   1 +
+ tests/operations_review_ui.test.cjs                | 105 +++++++++++++++++++++
+ tests/operations_ui.test.cjs                       |  15 +++
+ web/operations/app.js                              |   3 +-
+ 16 files changed, 471 insertions(+), 2 deletions(-)
