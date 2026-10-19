@@ -199,16 +199,17 @@
         if(stream.state!=='interpreted')section.append(textNode('p',`No readable stream: ${stream.issues.map(i=>i.kind+(i.bytes?' '+i.bytes.join('–'):'')).join(', ')||'absent, incomplete or contradictory selected bytes'}.`,'content-warning'));
         else {
           if(stream.coherent_stop_observed)section.append(textNode('p','Coherent protocol stop observed · capture completeness is unknown.','content-coverage'));
-          for(const item of stream.items){const entry=document.createElement('article');entry.className='content-item';entry.append(textNode('h5',`${item.role?item.role+' · ':''}${item.kind}${item.index!==null?' · block '+item.index:''}`));
+          for(const item of stream.items){const entry=document.createElement('article');entry.className='content-item';entry.append(textNode('h5',`${direction==='request'?'Supplied history · ':''}${item.role?item.role+' · ':''}${item.kind}${item.index!==null?' · block '+item.index:''}`));
             if(item.text!==null)entry.append(textNode('pre',item.text,'content-text'));
             if(item.issues.length)entry.append(textNode('p',item.issues.join(' · '),'content-warning'));
             if(item.pointer!==null)entry.append(textNode('p',`Parsed JSON location ${item.pointer||'/'}`,'content-pointer'));
-            if(item.event_json!==null)details(entry,'Observed event JSON (parsed)',item.event_json);
+            if(item.event_json!==null)details(entry,'Parsed event · numbers may be rounded; Source preserves exact bytes',item.event_json);
+            if(item.tool){details(entry,'Accumulated tool input (derived)',item.tool.json);const refs=document.createElement('div');refs.className='content-citations';refs.append(textNode('span',`Enclosing tool block ${item.tool.region.join('–')} · coarse attribution · end exclusive`));for(const c of item.tool.citations)sourceLink(refs,value,c.input,`Tool input source ${value.occurrences[Number(c.input)].record.sequence} · ${c.bytes.join('–')}`,c.bytes[0]);entry.append(refs);}
             const sources=document.createElement('div');sources.className='content-citations';sources.append(textNode('span',`Enclosing bytes ${item.region.join('–')} · ${item.coarse?'coarse attribution':'attribution'} · end exclusive`));
             for(const citation of item.citations)sourceLink(sources,value,citation.input,`Source ${value.occurrences[Number(citation.input)].record.sequence} · ${citation.bytes.join('–')}`,citation.bytes[0]);
             entry.append(sources);section.append(entry);
           }
-          if(stream.parsed_json!==null)details(section,'Complete parsed body · inspect Source for exact bytes',stream.parsed_json);
+          if(stream.parsed_json!==null)details(section,'Parsed body · numbers may be rounded; Source preserves exact bytes',stream.parsed_json);
         }
         card.append(section);
       }

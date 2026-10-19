@@ -132,3 +132,16 @@ test('Content refuses wrong snapshot and missing exact pins before exposing item
  assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('content-tab').disabled,true);
  const bad=ui();await bad.login();await bad.respond({...contentCatalog,scopes:catalog.scopes});assert.equal(bad.pending.length,0);assert.equal(bad.node('library').hidden,true);
 });
+
+test('Content labels supplied history and derived numbers, with separate tool block citations',async()=>{
+ const u=ui();await openContent(u);u.node('interpret').click();await tick();
+ const value=JSON.parse(JSON.stringify(contentResult));
+ value.groups[0].request.items[0].tool={json:'{"x":1}',region:['0','80'],citations:[{input:'0',bytes:['40','80']}]};
+ await u.respond(value);
+ const nodes=walk(u.node('content-panel'));
+ assert.ok(nodes.some(n=>n.textContent==='Supplied history · user · text'));
+ assert.ok(nodes.some(n=>/Parsed body.*numbers may be rounded/.test(n.textContent)));
+ assert.ok(nodes.some(n=>n.textContent==='Accumulated tool input (derived)'));
+ const tool=nodes.find(n=>n.textContent==='Tool input source 9007199254740993 · 40–80');assert.ok(tool);
+ tool.click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'source-exact',pin_wire:exactPin,sequence:'9007199254740993',offset:'40',length:'65536'});
+});

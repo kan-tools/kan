@@ -1558,3 +1558,116 @@ async fn content_rechecks_current_grant_after_successful_acquisition() {
         Failure::AccessLimited
     );
 }
+
+#[tokio::test]
+async fn content_has_an_independent_item_limit_with_no_partial_success() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut a = Fixture::new(37, &identity).await;
+    a.append(&content_frame(
+        '8',
+        0,
+        serde_json::json!({"type":"response-chunk","offset":0}),
+        &vec![b'\n'; 1024],
+    ));
+    a.append(&content_frame(
+        '9',
+        0,
+        serde_json::json!({"type":"response-chunk","offset":0}),
+        &vec![b'\n'; 1025],
+    ));
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    let bytes = reader
+        .content(&pin, &["1".into()], Format::AnthropicMessagesSse)
+        .await
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        value["groups"][0]["response"]["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1024
+    );
+    assert_eq!(
+        reader
+            .content(&pin, &["2".into()], Format::AnthropicMessagesSse)
+            .await
+            .unwrap_err(),
+        Failure::Unavailable
+    );
+}
+#[tokio::test]
+async fn content_accumulated_tool_input_cites_all_fragments_instead_of_only_the_stop() {
+    use kan::evidence_content::Format;
+    let identity = Identity::generate();
+    let mut a = Fixture::new(38, &identity).await;
+    let events = [
+        serde_json::json!({"type":"message_start","message":{"type":"message","role":"assistant","content":[]}}),
+        serde_json::json!({"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"f","input":{}}}),
+        serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"x\":"}}),
+        serde_json::json!({"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"1}"}}),
+        serde_json::json!({"type":"content_block_stop","index":0}),
+    ];
+    let raw = events
+        .iter()
+        .map(|v| format!("data: {v}\n\n"))
+        .collect::<String>();
+    let split = raw.len() / 2;
+    a.append(&content_frame(
+        'a',
+        0,
+        serde_json::json!({"type":"response-chunk","offset":0}),
+        &raw.as_bytes()[..split],
+    ));
+    a.append(&content_frame(
+        'a',
+        1,
+        serde_json::json!({"type":"response-chunk","offset":split}),
+        &raw.as_bytes()[split..],
+    ));
+    let reader = Reader::new(identity, vec![a.access()]).unwrap();
+    let pin = reader.snapshot(&svc::hex(&a.scope)).await.unwrap();
+    let result = reader
+        .content(
+            &pin,
+            &["1".into(), "2".into()],
+            Format::AnthropicMessagesSse,
+        )
+        .await
+        .unwrap();
+    let value: serde_json::Value = serde_json::from_slice(&result).unwrap();
+    let items = value["groups"][0]["response"]["items"].as_array().unwrap();
+    let item = items.iter().find(|i| i["tool"].is_object()).unwrap();
+    let tool = &item["tool"];
+    assert_eq!(tool["json"], "{\"x\":1}");
+    let start: usize = tool["region"][0].as_str().unwrap().parse().unwrap();
+    let end: usize = tool["region"][1].as_str().unwrap().parse().unwrap();
+    assert!(
+        start
+            < item["region"][0]
+                .as_str()
+                .unwrap()
+                .parse::<usize>()
+                .unwrap()
+    );
+    let mut retained = Vec::new();
+    for c in tool["citations"].as_array().unwrap() {
+        let input: usize = c["input"].as_str().unwrap().parse().unwrap();
+        let seq = value["occurrences"][input]["record"]["sequence"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let begin = c["bytes"][0].as_str().unwrap().parse().unwrap();
+        let finish: usize = c["bytes"][1].as_str().unwrap().parse().unwrap();
+        let source = reader
+            .source(&pin, seq, begin, finish - begin)
+            .await
+            .unwrap();
+        retained.extend(svc::unhex(&source.bytes_hex, 65536).unwrap());
+    }
+    assert_eq!(retained, &raw.as_bytes()[start..end]);
+    assert!(String::from_utf8_lossy(&retained).contains("partial_json"));
+}
