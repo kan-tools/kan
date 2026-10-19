@@ -517,3 +517,18 @@ metric, not measured CPU cycles or RSS. Reuse a virtual-output result only while
 the selected candidate set is unchanged. All collections are bounded by charged
 input counts. This remains a pure draft until independent semantic vectors and
 fresh review qualify it; no SQLite opener/writer, job, RPC or UI is introduced.
+
+### Replay review follow-through
+
+A-F1 decision: choose immediate refusal. A candidate for an issuer-referenced
+service request must verify its writer signature and exact request/manifest/receipt
+binding before replay accepts any restoration history. A content-address match
+alone cannot report a repair for evidence that the member verifier would refuse.
+Unreferenced original-only or membership-only keys have no invented writer check;
+their derived basis remains explicit. This tightens the draft before format
+acceptance and adds no wire field. Publication still re-audits the entire output.
+
+Scan-byte work additionally charges each restored request's manifest, receipt
+and request bytes for that verification pass. This remains a bounded input-work
+metric, not exact CPU or RSS. A-F2 single-fault regressions and A-F3 envelope-size
+bounds require qualification and fresh review of this correction.

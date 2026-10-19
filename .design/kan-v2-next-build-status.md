@@ -17,9 +17,9 @@ full recovery or human-frontend acceptance criteria.
 | Pure KANC2 decoder (#297) | Strict decoder and promoted independent regressions; latest independent scope-C review APPROVE | Occurrence assembly, provider adapters, source spans and real session UI |
 | Observation wire codec (#298) | Authenticated bounded envelopes and independent signed vectors; review APPROVE WITH FOLLOW-UPS | Semantic replay, physical format and publication checks |
 | Streaming M1/O1/R1 (#299) | Reviewed framing; promoted boundary and deterministic cancellation tests; current CI green | Fresh review returned APPROVE WITH FOLLOW-UPS; UTF-8 test follow-through is in #300; digests alone confer no authority |
-| Logical member (#300) | Author tests and independent fixture construction; current CI green | b11cbf4 correction review APPROVE WITH FOLLOW-UPS; 5edb505 closes the consumer contract and test gaps with 43 affected checks and whole-guard reversion evidence; fresh combined replay review remains required |
-| Observation replay (this branch) | 68 affected integration checks plus two deterministic polling checks; 45 independent state cases; 11 compiled semantic controls; strict Clippy/fmt | Fresh combined Opus review of replay and the final member follow-through; physical recovery remains separate |
-| Physical recovery and delivery | Proposed bundle schema, existing lifecycle/inventory foundations | Bounded custody-checked opener, creator/restorer/publisher, crash/reconnect jobs, RPC, spool proof integration and Library unavailable-evidence UI |
+| Logical member (#300) | Fresh combined Opus scope-B review APPROVE for 5edb505; controls and whole-guard reversion reproduced | Physical consumers remain separate; replay constraint coverage is tracked in #301 |
+| Observation replay (#301) | Frozen b52aa48 review APPROVE WITH FOLLOW-UPS; correction immediately verifies restored request signatures/bindings and adds 23 design-derived cases | Correction reversion is demonstrated; fresh combined reader/replay review remains required; no physical publication authority |
+| Physical recovery and delivery | Read-only opener drafted in permanent kan-v2-recovery-opening; 117 affected integration tests, two snapshot units and strict lint pass | Merge replay follow-through and obtain fresh review; creator/restorer/publisher, crash/reconnect jobs, RPC, spool proof integration and Library unavailable-evidence UI |
 
 The Library's actual browser download is still unverified on the locked host.
 Full sessions, search/facets, annotations, saved views, analysis/day and owner

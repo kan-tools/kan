@@ -1,0 +1,130 @@
+diff --git a/.design/fixtures/recovery-replay-v1.json b/.design/fixtures/recovery-replay-v1.json
+index 6193729..a922c92 100644
+--- a/.design/fixtures/recovery-replay-v1.json
++++ b/.design/fixtures/recovery-replay-v1.json
+@@ -4114 +4114 @@
+-      "error": "output member validation"
++      "error": "candidate writer request"
+diff --git a/.design/kan-v2-recovery-bundle-codec.md b/.design/kan-v2-recovery-bundle-codec.md
+index 92711f0..701ea2a 100644
+--- a/.design/kan-v2-recovery-bundle-codec.md
++++ b/.design/kan-v2-recovery-bundle-codec.md
+@@ -519,0 +520,15 @@ fresh review qualify it; no SQLite opener/writer, job, RPC or UI is introduced.
++
++### Replay review follow-through
++
++A-F1 decision: choose immediate refusal. A candidate for an issuer-referenced
++service request must verify its writer signature and exact request/manifest/receipt
++binding before replay accepts any restoration history. A content-address match
++alone cannot report a repair for evidence that the member verifier would refuse.
++Unreferenced original-only or membership-only keys have no invented writer check;
++their derived basis remains explicit. This tightens the draft before format
++acceptance and adds no wire field. Publication still re-audits the entire output.
++
++Scan-byte work additionally charges each restored request's manifest, receipt
++and request bytes for that verification pass. This remains a bounded input-work
++metric, not exact CPU or RSS. A-F2 single-fault regressions and A-F3 envelope-size
++bounds require qualification and fresh review of this correction.
+diff --git a/.design/tools/recovery_replay_vectors.py b/.design/tools/recovery_replay_vectors.py
+index 86f6710..1263c60 100644
+--- a/.design/tools/recovery_replay_vectors.py
++++ b/.design/tools/recovery_replay_vectors.py
+@@ -40 +40 @@ def basis(m,cid):
+-def check_writer(m,objects):
++def check_writer(m,objects,selected_only=False):
+@@ -42 +42,3 @@ def check_writer(m,objects):
+-  manifest=codec.decode(mb);receipt=codec.decode(rb);entry=manifest['body']['entries'][0];raw=objects[text(entry['ciphertext'])]
++  manifest=codec.decode(mb);receipt=codec.decode(rb);entry=manifest['body']['entries'][0]
++  if selected_only and text(entry['ciphertext']) not in objects:continue
++  raw=objects[text(entry['ciphertext'])]
+@@ -93,0 +96,2 @@ def replay(h,envelopes):
++ try:check_writer(m,physical,True)
++ except (ValueError,wire.crypto.InvalidSignature,KeyError,TypeError):raise ValueError('candidate writer request')
+@@ -202 +206 @@ def vectors():
+- h=History(m,o);h.initial();h.restore(cid,bad);h.add('publication-intent',{'attempt':b'\x09'*16,'member':frame.member_digest(m),'restorations':frame.restoration_digest(h.candidates),'output':frame.member_digest({**m,'objects':[[cid,bad]]},True),'frontier':frontier(m)});add('restored-content-address-does-not-certify-writer',h,'output member validation')
++ h=History(m,o);h.initial();h.restore(cid,bad);h.add('publication-intent',{'attempt':b'\x09'*16,'member':frame.member_digest(m),'restorations':frame.restoration_digest(h.candidates),'output':frame.member_digest({**m,'objects':[[cid,bad]]},True),'frontier':frontier(m)});add('restored-content-address-does-not-certify-writer',h,'candidate writer request')
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 825ab06..708b1c8 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -39,0 +40 @@ jobs:
++      - run: python3 .design/tools/recovery_replay_review_vectors.py --check
+@@ -42 +43 @@ jobs:
+-      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_attestation --test evidence_copy_plan --test evidence_copy_source --test evidence_copy_destination --test evidence_inventory --test evidence_attested_store --test evidence_attested_followups --test evidence_attested_lifecycle --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_reconstruction --test evidence_reconstruction_review_regressions --test evidence_recovery_observation --test evidence_recovery_commitment --test evidence_recovery_commitment_review_regressions --test evidence_recovery_member --test evidence_recovery_member_review_regressions --test evidence_recovery_member_corrections --test evidence_recovery_replay --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_operations_collection --test evidence_operations_overview --test evidence_overview_review_regressions --test evidence_reader --test evidence_library_cli --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
++      - run: cargo test --features v2-crypto --test evidence_contract --test evidence_attestation --test evidence_copy_plan --test evidence_copy_source --test evidence_copy_destination --test evidence_inventory --test evidence_attested_store --test evidence_attested_followups --test evidence_attested_lifecycle --test evidence_store --test evidence_service --test evidence_spool --test evidence_http --test evidence_crypto --test evidence_reconstruction --test evidence_reconstruction_review_regressions --test evidence_recovery_observation --test evidence_recovery_commitment --test evidence_recovery_commitment_review_regressions --test evidence_recovery_member --test evidence_recovery_member_review_regressions --test evidence_recovery_member_corrections --test evidence_recovery_replay --test evidence_recovery_replay_review_regressions --test evidence_capture --test evidence_capture_adversarial --test evidence_capture_deadlines --test evidence_capture_contention --test evidence_gateway --test evidence_operations --test evidence_operations_collection --test evidence_operations_overview --test evidence_overview_review_regressions --test evidence_reader --test evidence_library_cli --test evidence_delivery --test evidence_import --test evidence_restore --test evidence_restore_adversarial --test migration_preflight --test recovery_cli --test migration_harness --test surface_conformance
+diff --git a/scripts/recovery_replay_negative_controls.py b/scripts/recovery_replay_negative_controls.py
+index c5507f1..1b2b69d 100644
+--- a/scripts/recovery_replay_negative_controls.py
++++ b/scripts/recovery_replay_negative_controls.py
+@@ -30 +30 @@ CASES = [
+-def run(test):
++def run(test, target="evidence_recovery_replay"):
+@@ -33 +33 @@ def run(test):
+-         'evidence_recovery_replay', test, '--', '--exact', '--nocapture'],
++         target, test, '--', '--exact', '--nocapture'],
+@@ -64 +64 @@ def main():
+-        result = run(VECTOR)
++        result = run("reviewer_probe_corpus", "evidence_recovery_replay_review_regressions")
+@@ -66 +66 @@ def main():
+-        (OUT / 'virtual-output-writer.txt').write_text(log + '\nexit=' + str(result.returncode) + '\n')
++        (OUT / 'original-writer.txt').write_text(log + '\nexit=' + str(result.returncode) + '\n')
+@@ -68,2 +68,2 @@ def main():
+-        assert 'hostile history must refuse' in log, 'writer check control was diagnostic-only'
+-        print('DEMONSTRATED: virtual-output-writer', flush=True)
++        assert 'P02-writer-invalid-bytes-as-original-refuse-member class=ACCEPTED_HOSTILE' in log, 'writer check control was diagnostic-only'
++        print('DEMONSTRATED: original-writer', flush=True)
+diff --git a/src/evidence_recovery_replay.rs b/src/evidence_recovery_replay.rs
+index f5dec81..cd811f8 100644
+--- a/src/evidence_recovery_replay.rs
++++ b/src/evidence_recovery_replay.rs
+@@ -69,0 +70,2 @@ pub struct Attempt {
++/// Issuer-referenced requests also verify their writer signature and exact
++/// manifest binding before any restoration is accepted; this is not publication.
+@@ -296,0 +299 @@ struct Key<'a> {
++    request: Option<usize>,
+@@ -311,0 +315 @@ fn keys<'a>(
++                request: None,
+@@ -320 +324 @@ fn keys<'a>(
+-    for row in input.records {
++    for (index, row) in input.records.iter().enumerate() {
+@@ -336,0 +341 @@ fn keys<'a>(
++                key.request = Some(index);
+@@ -342,0 +348 @@ fn keys<'a>(
++                request: Some(index),
+@@ -352,0 +359 @@ fn keys<'a>(
++                request: None,
+@@ -532,0 +540,26 @@ pub fn verify<'a>(
++        if let Some(index) = target.request {
++            let row = &input.records[index];
++            work.charge(
++                0,
++                (row.manifest.len() + row.receipt.len() + c.bytes.len()) as u64,
++            )?;
++            let Decoded::Known(manifest) =
++                evidence::decode(row.manifest).map_err(|_| Error::Invalid("member changed"))?
++            else {
++                return Err(Error::Invalid("member changed"));
++            };
++            let Decoded::Known(receipt) =
++                evidence::decode(row.receipt).map_err(|_| Error::Invalid("member changed"))?
++            else {
++                return Err(Error::Invalid("member changed"));
++            };
++            let committed = crate::evidence_store::Committed {
++                sequence: row.sequence,
++                manifest,
++                receipt,
++                duplicate: false,
++            };
++            crate::evidence_service::verify_retained_request(&committed, c.bytes)
++                .map_err(|_| Error::Invalid("candidate writer request"))?;
++            work.check()?;
++        }
+diff --git a/tests/evidence_recovery_replay.rs b/tests/evidence_recovery_replay.rs
+index f244adc..60f6d6b 100644
+--- a/tests/evidence_recovery_replay.rs
++++ b/tests/evidence_recovery_replay.rs
+@@ -234,0 +235,3 @@ fn rollback_before_external_checkpoint_and_foreign_checkpoint_refuse() {
++    // Isolate foreign context from the separate truncation fault above.
++    c = Case::named("profile2-restored-failure-observed");
++    c.checkpoint = Some(r.latest().clone());

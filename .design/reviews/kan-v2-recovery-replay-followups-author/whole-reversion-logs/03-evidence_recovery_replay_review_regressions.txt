@@ -1,0 +1,24 @@
+
+running 1 test
+test writer_invalid_candidate_refuses_without_publication_intent ... FAILED
+
+failures:
+
+---- writer_invalid_candidate_refuses_without_publication_intent stdout ----
+
+thread 'writer_invalid_candidate_refuses_without_publication_intent' (10217577) panicked at tests/evidence_recovery_replay_review_regressions.rs:382:5:
+assertion `left == right` failed
+  left: None
+ right: Some(Invalid("candidate writer request"))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    writer_invalid_candidate_refuses_without_publication_intent
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.03s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-replay/.local-state/reversion/347f596826ba49159562d3ffaf5378f9)
+    Finished `test` profile [unoptimized] target(s) in 7.40s
+     Running tests/evidence_recovery_replay_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_replay_review_regressions-80b46206524a2950)
+error: test failed, to rerun pass `--test evidence_recovery_replay_review_regressions`

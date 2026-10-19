@@ -1,0 +1,9 @@
+DEMONSTRATED: candidate-hash
+DEMONSTRATED: candidate-length
+DEMONSTRATED: output-losses
+DEMONSTRATED: checkpoint-context
+DEMONSTRATED: candidate-writer
+REDUNDANT DEFENSE: record-length-alone still refuses P20 via exact writer binding; diagnostic-only failure.
+DEMONSTRATED: record-length-and-writer (combined removal; not a single-guard kill)
+DEMONSTRATED: original-writer (member validation, not a virtual-output-only control)
+Six single-guard semantic controls, one diagnostic-only redundant defense and one combined semantic control; restored suites pass.
