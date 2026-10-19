@@ -1,0 +1,12 @@
+Diff in /Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/src/evidence_recovery_observation.rs:339:
+     context: &Context,
+     previous: Option<&Authenticated>,
+ ) -> Result<Authenticated> {
+-    require(
+-        identity.did() == context.observer,
+-        "signer-context",
+-    )?;
++    require(identity.did() == context.observer, "signer-context")?;
+     let value = evidence::canonical_value(statement, MAX_ENVELOPE)
+         .map_err(|_| invalid("statement-canonical"))?;
+     let cid = crate::cid::content_cid(&value).map_err(|_| invalid("statement-cid"))?;

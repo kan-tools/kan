@@ -1,0 +1,8 @@
+DEMONSTRATED: bundle-pin
+DEMONSTRATED: predecessor-context
+DEMONSTRATED: chain-link
+DEMONSTRATED: signature
+DEMONSTRATED: candidate-cid
+DEMONSTRATED: loss-order
+DEMONSTRATED: body-fields
+7 compiled controls; restored suite passed.

@@ -273,3 +273,31 @@ cells are a named recovery gap; unrecoverable staged/orphan keys explicitly bloc
 publication. None changes the byte recipes or adds a silently unsigned field to
 the closed observation schema. Draft SQL and wire fixtures still require their
 own independent review before acceptance or any storage writer.
+
+## First implementation checkpoint: observation authentication
+
+`src/evidence_recovery_observation.rs` implements only bounded canonical wire
+validation, static P-256 owner pins, observer signature attribution and contiguous
+observation predecessor links. `Authenticated` has private construction and
+carries no bundle-completeness, member-truth or publication-state authority.
+`sign_claim` is a pure signer and round-trip validator; its caller must establish
+the permitted operation and semantic truth before using it. There is no storage
+consumer, mutation, file routing, checkpoint acceptance or browser API here.
+
+Independent Python fixtures exercise the six event forms, exact statement/CID/
+signature bytes, maximum wire shapes and re-signed hostile cases. Their member,
+restoration and output digest values deliberately do not establish a valid full
+bundle. A wire-valid claim may still be false; complete bundle verification must
+reject those false claims. The Rust API does not provide JSON serialization or
+accept a caller-constructed predecessor as authenticated history.
+
+The accompanying SQL fixture is a **draft** local-constraint schema, exercised
+in memory with no publication markers. The M1/O1/R1 Python oracle is a **draft**
+framing oracle, not a signed-record or complete-member verifier; synthetic record
+bytes in its framing cases do not qualify any archive. Neither draft is accepted
+as a storage compatibility promise by this checkpoint. Before a bundle writer:
+implement and independently qualify streaming commitment computation, complete
+member/proof validation, exact loss partitioning, candidate/history consistency,
+publication replay and external-checkpoint validation; then freeze their complete
+cross-implementation vectors and DDL. All recovery writer/job/RPC/UI criteria stay
+open until their real operations and crash outcomes are tested and reviewed.

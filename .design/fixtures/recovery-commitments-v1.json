@@ -1,0 +1,237 @@
+{
+  "status": "proposal-framing-only-not-logical-member-validation",
+  "member": [
+    {
+      "name": "empty",
+      "member": {
+        "profile": 2,
+        "archive": {
+          "$bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        "scope": {
+          "$bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+        },
+        "issuer": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+        "plan": null,
+        "membership": [],
+        "records": [],
+        "objects": []
+      },
+      "M1": "31b6023ad497df914517374c5b28d865e687827fcf6417401854544e13e6ed58",
+      "O1": "2988fa05a923c938d16cccdea2114243026796758931ffde0b053a2017a890a6"
+    },
+    {
+      "name": "staged",
+      "member": {
+        "profile": 2,
+        "archive": {
+          "$bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        "scope": {
+          "$bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+        },
+        "issuer": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+        "plan": null,
+        "membership": [],
+        "records": [],
+        "objects": [
+          [
+            "bafkreihw3bsy4a66zjydqfrxac7ip5p36qwyfrquriwaybv4soy4ivlv3m",
+            {
+              "$bytes": "7075626c69632073796e7468657469632063697068657274657874"
+            }
+          ],
+          [
+            "bafkreidxcz6jkh2ccjm3tlx2dapy4kib2qgkf6frleidiievty6rfk5poa",
+            {
+              "$bytes": "7365636f6e642073796e746865746963206f626a656374"
+            }
+          ]
+        ]
+      },
+      "M1": "6e8edce17402639db9a7a918156cd36e23b3979534e3715bfe9fa7bb45854f20",
+      "O1": "90cbe03616b3065f1b96d6c5b672e18eb6a58e0bb5ea75885aa3c870a8eb78c9"
+    },
+    {
+      "name": "missing-payload-framing",
+      "member": {
+        "profile": 2,
+        "archive": {
+          "$bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        "scope": {
+          "$bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+        },
+        "issuer": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+        "plan": null,
+        "membership": [],
+        "records": [
+          [
+            1,
+            {
+              "$bytes": "a0"
+            },
+            {
+              "$bytes": "a10101"
+            },
+            {
+              "$bytes": "a10202"
+            }
+          ]
+        ],
+        "objects": []
+      },
+      "M1": "934bd7ece5c14096bae232f76aaf182e8a579f1cc45e4cd054371ee38a164b46",
+      "O1": "a4c862a5de5339e830cfea1a3e72ee13b4f73eda569eae77157ff6db1747f7d7"
+    },
+    {
+      "name": "corrupt",
+      "member": {
+        "profile": 2,
+        "archive": {
+          "$bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        "scope": {
+          "$bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+        },
+        "issuer": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+        "plan": null,
+        "membership": [],
+        "records": [],
+        "objects": [
+          [
+            "bafkreihw3bsy4a66zjydqfrxac7ip5p36qwyfrquriwaybv4soy4ivlv3m",
+            {
+              "$bytes": "636f7272757074206f726967696e616c206279746573"
+            }
+          ]
+        ]
+      },
+      "M1": "f72f3884aceabc64448077251143b74ec157d05cd0823e5d51e7ca7020b2e44d",
+      "O1": "3b9260c94ca3a466dc6e3a8408e657b9455cd5caabc99e5af3b3ebcb6b6a92be"
+    },
+    {
+      "name": "zero-length-corrupt",
+      "member": {
+        "profile": 2,
+        "archive": {
+          "$bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        "scope": {
+          "$bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+        },
+        "issuer": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+        "plan": null,
+        "membership": [],
+        "records": [],
+        "objects": [
+          [
+            "bafkreihw3bsy4a66zjydqfrxac7ip5p36qwyfrquriwaybv4soy4ivlv3m",
+            {
+              "$bytes": ""
+            }
+          ]
+        ]
+      },
+      "M1": "3e888edfbb3fddbf66b8a35e7c3deb659be4cb8d689a873effb95c995d4ffdc8",
+      "O1": "25182d36e35d1f0a44a28fbcba6a709ee4d7f7f813fa5ea426146d2e501a040f"
+    },
+    {
+      "name": "restored-output-framing",
+      "member": {
+        "profile": 2,
+        "archive": {
+          "$bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        "scope": {
+          "$bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+        },
+        "issuer": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+        "plan": null,
+        "membership": [],
+        "records": [],
+        "objects": [
+          [
+            "bafkreihw3bsy4a66zjydqfrxac7ip5p36qwyfrquriwaybv4soy4ivlv3m",
+            {
+              "$bytes": "7075626c69632073796e7468657469632063697068657274657874"
+            }
+          ]
+        ]
+      },
+      "M1": "0ced6dc40d6cb30076cd355530f009fc1494d97d5753ddbd255771a08218ed63",
+      "O1": "edba8627826392ada072b4f63b45a09f473003a187c428ecac4d0d3d7576286d"
+    },
+    {
+      "name": "partial-copy-framing",
+      "member": {
+        "profile": 3,
+        "archive": {
+          "$bytes": "2d7e1d8428a1e8ad148c65db710c47a8f23fc2bdf84825baf702c87fe9104197"
+        },
+        "scope": {
+          "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+        },
+        "issuer": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+        "plan": {
+          "$bytes": "aa656e6f6e6365582007070707070707070707070707070707070707070707070707070707070707076669737375657278396469643a6b65793a7a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a667265636970650169736f75726365546970d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a6a73636f7065546f6b656e582003030303030303030303030303030303030303030303030303030303030303036c736f757263654469676573745820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f6d736f7572636550726f66696c65016d736f757263655468726f756768016d74617267657450726f66696c650370686973746f726963616c49737375657278396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663"
+        },
+        "membership": [
+          [
+            "bafkreihw3bsy4a66zjydqfrxac7ip5p36qwyfrquriwaybv4soy4ivlv3m",
+            27
+          ],
+          [
+            "bafkreidxcz6jkh2ccjm3tlx2dapy4kib2qgkf6frleidiievty6rfk5poa",
+            23
+          ]
+        ],
+        "records": [],
+        "objects": [
+          [
+            "bafkreihw3bsy4a66zjydqfrxac7ip5p36qwyfrquriwaybv4soy4ivlv3m",
+            {
+              "$bytes": "7075626c69632073796e7468657469632063697068657274657874"
+            }
+          ]
+        ]
+      },
+      "M1": "19309d2b71fe83dd8e60df16796c137a5cf913abdfe9e6818a3d8d39625a742f",
+      "O1": "f892f4ac3c8f8c14c5e8f999d65abc421dd68ec9707538a83c6c44b608336439"
+    }
+  ],
+  "restorations": [
+    {
+      "candidates": [],
+      "R1": "0a5e83be384d5ea3496cd3e9d6b79ae8744521e3990597485f62c7f4789bf7ce"
+    },
+    {
+      "candidates": [
+        [
+          "bafkreihw3bsy4a66zjydqfrxac7ip5p36qwyfrquriwaybv4soy4ivlv3m",
+          {
+            "$bytes": "7075626c69632073796e7468657469632063697068657274657874"
+          }
+        ]
+      ],
+      "R1": "3b749252d3b27b6d946d19e77ba1e9906d7b6c70924e8163565366d2b5ae308c"
+    },
+    {
+      "candidates": [
+        [
+          "bafkreihw3bsy4a66zjydqfrxac7ip5p36qwyfrquriwaybv4soy4ivlv3m",
+          {
+            "$bytes": "7075626c69632073796e7468657469632063697068657274657874"
+          }
+        ],
+        [
+          "bafkreidxcz6jkh2ccjm3tlx2dapy4kib2qgkf6frleidiievty6rfk5poa",
+          {
+            "$bytes": "7365636f6e642073796e746865746963206f626a656374"
+          }
+        ]
+      ],
+      "R1": "1b0958e3dc2f865b06cbea63e92876e27b665154eb6baafc03e4cb6f17bc7913"
+    }
+  ]
+}

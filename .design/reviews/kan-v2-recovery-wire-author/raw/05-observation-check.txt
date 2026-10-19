@@ -1,0 +1,1 @@
+6 positive and 26 re-signed/malformed wire vectors pass; full member/state validation remains separate.
