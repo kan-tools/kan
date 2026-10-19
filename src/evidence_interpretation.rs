@@ -387,9 +387,8 @@ fn event(
                 i.issues.push(Issue::Sequence);
             }
             if let Some(index) = index {
-                if state.blocks.contains_key(&index) {
-                    i.issues.push(Issue::BlockIndex);
-                } else {
+                if let std::collections::btree_map::Entry::Vacant(entry) = state.blocks.entry(index)
+                {
                     let b = value.get("content_block");
                     let kind = match b.and_then(|b| b.get("type")).and_then(Value::as_str) {
                         Some("text") => {
@@ -433,15 +432,14 @@ fn event(
                         .open_blocks
                         .checked_add(1)
                         .ok_or(Error::Limit("items"))?;
-                    state.blocks.insert(
-                        index,
-                        ActiveBlock {
-                            kind,
-                            stopped: false,
-                            fragments: String::new(),
-                            fragmented: false,
-                        },
-                    );
+                    entry.insert(ActiveBlock {
+                        kind,
+                        stopped: false,
+                        fragments: String::new(),
+                        fragmented: false,
+                    });
+                } else {
+                    i.issues.push(Issue::BlockIndex);
                 }
             } else {
                 i.issues.push(Issue::BlockIndex);
