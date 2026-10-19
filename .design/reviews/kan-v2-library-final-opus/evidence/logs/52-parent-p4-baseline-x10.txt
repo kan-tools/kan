@@ -1,0 +1,21 @@
+--- run 1 exit=0
+P4 writer windows=5 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+--- run 2 exit=0
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+--- run 3 exit=0
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+--- run 4 exit=0
+P4 writer windows=3 (5 ms each, ~9% duty): observed=87 queued=87 unconfirmed=0
+--- run 5 exit=0
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+--- run 6 exit=101
+thread 'p4_capture_beside_brief_periodic_writer' (9055510) panicked at tests/zz_review_parent_contention.rs:341:5:
+assertion failed: held > 0
+--- run 7 exit=0
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+--- run 8 exit=0
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+--- run 9 exit=0
+P4 writer windows=1 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0
+--- run 10 exit=0
+P4 writer windows=2 (5 ms each, ~9% duty): observed=88 queued=88 unconfirmed=0

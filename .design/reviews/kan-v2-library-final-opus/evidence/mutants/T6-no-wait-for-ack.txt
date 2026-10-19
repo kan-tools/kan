@@ -1,0 +1,86 @@
+T6-no-wait-for-ack
+tests/evidence_capture_contention.rs
+sha256-before=1b7517e8a2e6ab4f9f84d8786a24e845f049cf06548d7aac356618cfa19de548
+OLD:
+            first
+                .locked
+                .recv_timeout(Duration::from_secs(5))
+                .expect("synthetic writer must establish first contention window");
+NEW:
+            drop(first.locked);
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 1/3]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.35s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final)
+    Finished `test` profile [unoptimized] target(s) in 0.52s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread '<unnamed>' (9059026) panicked at tests/evidence_capture_contention.rs:363:44:
+called `Result::unwrap()` on an `Err` value: SqliteFailure(Error { code: DatabaseBusy, extended_code: 5 }, Some("database is locked"))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'p4_capture_beside_brief_periodic_writer' (9059023) panicked at tests/evidence_capture_contention.rs:409:72:
+called `Result::unwrap()` on an `Err` value: Any { .. }
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 2/3]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.27s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread '<unnamed>' (9059088) panicked at tests/evidence_capture_contention.rs:363:44:
+called `Result::unwrap()` on an `Err` value: SqliteFailure(Error { code: DatabaseBusy, extended_code: 5 }, Some("database is locked"))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'p4_capture_beside_brief_periodic_writer' (9059085) panicked at tests/evidence_capture_contention.rs:409:72:
+called `Result::unwrap()` on an `Err` value: Any { .. }
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+$ /Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/reviews/opus-fixture-final/review-evidence/cargo.sh test --features v2-crypto --test evidence_capture_contention p4_capture_beside_brief_periodic_writer -- --exact --nocapture  [run 3/3]
+exit=101
+
+running 1 test
+test p4_capture_beside_brief_periodic_writer ... FAILED
+
+failures:
+
+failures:
+    p4_capture_beside_brief_periodic_writer
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.27s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture_contention.rs (target/debug/deps/evidence_capture_contention-cd3d36ed54c693da)
+
+thread '<unnamed>' (9059125) panicked at tests/evidence_capture_contention.rs:363:44:
+called `Result::unwrap()` on an `Err` value: SqliteFailure(Error { code: DatabaseBusy, extended_code: 5 }, Some("database is locked"))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'p4_capture_beside_brief_periodic_writer' (9059122) panicked at tests/evidence_capture_contention.rs:409:72:
+called `Result::unwrap()` on an `Err` value: Any { .. }
+error: test failed, to rerun pass `--test evidence_capture_contention`
+
+sha256-after-restore=1b7517e8a2e6ab4f9f84d8786a24e845f049cf06548d7aac356618cfa19de548
+T6-no-wait-for-ack [kill] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: KILLED: tests/evidence_capture_contention.rs:363:44: called `Result::unwrap()` on an `Err` value: SqliteFailure(Error { code: DatabaseBusy, extended_code: 5 }, Some("database is locked")) | tests/evidence_capture_contention.rs:409:72: called `Result::unwrap()` on an `Err` value: Any { .. } x3

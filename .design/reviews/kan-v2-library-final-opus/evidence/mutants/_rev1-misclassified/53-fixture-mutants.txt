@@ -1,0 +1,14 @@
+T1-window-not-installed [kill] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: COMPILE-ERROR x3
+T2-admit_with_wait-skips-window [kill] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: COMPILE-ERROR x3
+T3-both-methods-skip-window [kill] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: COMPILE-ERROR x3
+T4-ack-before-lock [probe] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: COMPILE-ERROR x5
+T5-first-window-holds-no-lock [probe] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: SURVIVED(passed) x3
+T6-no-wait-for-ack [kill] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: COMPILE-ERROR x3
+T7-wrapper-discards-spent [probe] restored=True
+  evidence_capture_contention::p4_capture_beside_brief_periodic_writer: SURVIVED(passed) x3

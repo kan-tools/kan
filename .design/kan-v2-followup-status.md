@@ -9,7 +9,8 @@ for acceptance. The complete human frontend remains required by
 | Health admission/reporter reliability | #283, a04f288; fresh Opus approval with follow-ups; all CI green | Qualification under wider production load; no universal zero-loss claim |
 | Capacity and owner rotation | #284, 771341e; fresh Opus approval with follow-ups; all CI green | Merge only with #285 corrections; whole-device/power-loss qualification remains distinct |
 | Session-cap continuation, WAL refusal, runner cleanup | #285, 9d300b4; fresh Opus approval with follow-ups; all CI green | Commit the surviving focused test improvements listed below |
-| Real Library reader and source/provenance UI | #286, df74506 and corrections through a8cbf21 independently approved with follow-ups; record 21c883d | Per-record unavailable evidence, partial catalog recovery, stronger boundary tests and browser file delivery remain open |
+| Real Library reader and source/provenance UI | #286, df74506 and corrections through a8cbf21 independently approved with follow-ups; record 21c883d | Per-record unavailable evidence and browser file delivery remain open; #288 implements partial catalogs and stronger boundaries |
+| Library resilience | #288, source 8124878; final fresh Opus approval with follow-ups; both source CI runs and migration pass | Performance repeat pending after a near-bound context ratio; spent-wait assertion, deadline tolerance, client entry shape and real download verification remain open |
 | Deduplicated collection overview | `kan-v2-collection-overview.md` | Implement and qualify the bounded projection, typed status, refresh/cancel and human states |
 | Normalized sessions and navigation | Parent human-frontend design | Versioned adapters and exact source mapping for messages, tools, branches, attachments and gaps |
 | Search and views | Parent human-frontend design | Authorized encrypted projections, filters, frontiers, saved trust-aware views and stable URI extensions |
@@ -24,10 +25,11 @@ The owner approved this roadmap after #286/#287:
 
 1. Library resilience: partial healthy browsing, request bounds, regression gaps
    and real-browser export qualification. Implementation is now in
-   `.design/kan-v2-library-resilience.md`; e71cdf8 has independent Opus approval
-   with follow-ups, retained under `reviews/kan-v2-library-resilience-opus/`.
-   Author test/style corrections are awaiting fresh review. Actual download
-   delivery is still unverified in IAB.
+   `.design/kan-v2-library-resilience.md`; source 8124878 has fresh actual Opus
+   approval with follow-ups, retained under `reviews/kan-v2-library-final-opus/`.
+   The intervening test-fixture BLOCK and its correction remain recorded. Source
+   CI and migration pass; a performance repeat is pending after a near-bound
+   legacy context ratio. Actual download delivery is still unverified in IAB.
 2. Missing-evidence rows with authenticated metadata surviving payload loss;
    preserve the admission boundary described below. Draft #289 specifies the new
    proof/profile and owner-copy upgrade in `kan-v2-evidence-availability.md`;
@@ -118,3 +120,19 @@ installation, production archive read, key placement or cutover is implied by a
 passing development checkpoint. Permanent worktrees live beneath `.worktrees/`.
 All temporary fixture servers are stopped after use. Active review exports remain
 immutable; author corrections receive their own review afterward.
+
+## Final Library checkpoint follow-ups
+
+The authoritative final report is `reviews/kan-v2-library-final-opus/result.txt`.
+Fresh actual Opus 5.5 session 9f7d88b1-03df-462a-b017-d91b22364ff7 approved 8124878
+with follow-ups. Remaining test refinements are the first admission's actual
+spent wait (rather than window timestamps alone), optional wait-value forwarding
+assertions, repeated Linux contention qualification, one-second upstream/body
+bounds and client scope-entry shape checks. Actual browser file delivery is
+still unverified. The initial performance failure and single rerun request are
+retained with the review record; no threshold was relaxed.
+
+The missing-evidence proposal in #289 now includes statement-CID chain/snapshot
+commitments, low-S P-256 encoding, two independent exact byte fixtures and twenty
+negative checks, with its oracle wired into CI. This is protocol preparation,
+not an implemented proof-bearing archive or completed missing-row UI.

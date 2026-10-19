@@ -1,0 +1,54 @@
+# Review of 8124878 against a95f28f: **APPROVE WITH FOLLOW-UPS**
+
+The flake that caused the BLOCK is gone: P4 passed 41 of 41 times on macOS, against 9 of 10 for the parent's P4, which reproduced its `held > 0` failure. The fix does not hide capture defects. It does leave one way to delete the contention while the test keeps passing, which is a follow-up rather than a blocker.
+
+I'm an independent reviewer and wrote none of this code. I ran no kan or day commands and skipped the skill's "record the verdict" step because of the no-writes rule.
+
+## Does the P4 fix close the flake?
+- **It passes reliably.** P4 passed 30/30 alone, 10/10 in full-suite runs and once more after a clean rebuild. Observed equalled queued in every run (87 or 88 events, 0 unconfirmed).
+- **The failure cause is removed.** In 7 runs, none of the periodic lock attempts succeeded, so the coordinated window was the only one. The parent counted from zero, so each of those would have failed `held > 0`. The first window lasted 5.1–7.6 ms and always fell inside the capture interval.
+- **Active window versus actual SQLite wait.** P4 only checks that the writer's self-reported window sits inside capture's run time. To see whether capture really waited, I ran a temporary instrumented copy that records what production returns. In 35 of 35 runs, the first admission started about 5 µs into the window. Production's busy handler then reported 8.1–9.1 ms of real waiting, and the admission succeeded. So capture really does wait, but only my probe shows it; P4 doesn't assert it. Later periodic windows remain sparse (0–4 per run).
+- **It exposes capture defects instead of hiding them.** I broke production so capture never waits, and separately capped its wait at 1 ms. The new P4 failed 10/10 on each, both times on the named check `brief contention must not disable capture`. The parent's P4 also failed every mutated run, but 3 of 20 were on its own `held > 0`, so the capture assertion wasn't what fired. The separate Q2 test also catches both.
+- **Can the coordination be removed silently?** Mostly no:
+  - Not installing the window, or skipping it in either Sink method, fails with `capture must reach its first admission`.
+  - Reordering the writer's acknowledgement, or not waiting for it, makes the writer's own lock fail with `DatabaseBusy`.
+  - **One gap:** keeping the handshake but deleting the lock inside the first window still passes. `held` now starts at 1, so `assert!(held > 0)` can never fail. My probe showed the fix: asserting that the first admission waited (`spent > 0`) passed 10/10 normally and failed 5/5 with the lock deleted.
+  - Throwing away the returned wait value also passes, so the claim that it is preserved isn't checked. It's harmless here.
+- **Cleanup works.** If capture panics before its first admission, the test fails in 46 ms and reports capture's panic. If it panics after forwarding, the writer is stopped and joined and the test fails in 1.35 s. Nothing hung or leaked.
+
+## Other changes
+- **13th-socket test:** a server budget of 5 now fails at `admitted socket 5 closed or responded early`, 11 at `admitted socket 11 …`, and 4096 at `thirteenth socket must close at admission`. The test passed 25/25.
+- **Suites:** everything you listed passes, with Clippy, fmt and the citation checks all exit 0:
+
+  | Suite | Result |
+  |---|---|
+  | contention | 6/6 |
+  | reader | 18/18 |
+  | budget units | 3/3 |
+  | real CLI | 1/1 |
+  | Node | 41/41 |
+  | Python | 7/7 |
+
+  The ignored loopback fixture served a `complete` catalog and was stopped cleanly with SIGINT.
+- **Report rename:** the `.txt` has the same git blob as the old `.md`. The only files still naming `REPORT.md` are retained historical records, which is correct.
+- **No production change:** `src/`, `web/`, `Cargo.*` and `tests/fixtures/` are untouched. The range adds no reversion trailer, and a95f28f's original one is still there. I did not replay it again.
+
+## Requirement impacts
+- **REQ-1 / AC-1:** wording only, no behaviour change. It now limits the no-failure-counts promise to the response body and says plainly that timing is not hidden. That matches the owner's choice of rich metadata by default and the Architecture section. It doesn't claim any obfuscation, but I can't trace the owner decision to a record here.
+- **REQ-2 / AC-2:** stronger. Both the upper and lower live socket limits are now pinned.
+- **REQ-6 / AC-6:** met. CI now runs the reader, real CLI, budget-unit and Library Node tests. Every mutant here failed a named assertion, not compilation.
+
+## Follow-ups
+1. In P4, assert that the first admission waited (`spent > 0`) and drop the vacuous `held > 0`. My probe shows this closes the gap.
+2. Optionally check that the wrapper passes wait values through unchanged.
+3. Measure P4 repeatedly on Linux CI. All my runs were on macOS; P4 would fail only if the writer stalled about 95 ms inside its 5 ms window.
+4. Still open from before: R11/R13 deadline tolerance, client scope-entry shape checks, real browser download delivery (no browser run, no claim from screenshots), and the full roadmap and missing-evidence work.
+
+## Restoration
+All 1170 tracked files are byte-identical before and after, checked twice. I removed my two temporary test files after confirming they matched the saved copies. I then ran `cargo clean -p kan`, rebuilt, and the focused tests passed again. No processes or listeners remain.
+
+I didn't delete `target/`. It holds my probe binaries `zz_review_p4_probe-37cf…` (which overwrote the earlier reviewer's binary of the same name) and `zz_review_parent_contention-527d…`. `zz_review_probe-165f…` was already there.
+
+One mistake of my own: my mutation script first misread cargo's "test failed" line as a compile error. I fixed it and reran. The wrong first output is kept in `mutants/_rev1-misclassified/`.
+
+Everything is in `review-evidence/`; open `REPORT.txt` first.
