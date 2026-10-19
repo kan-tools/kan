@@ -1,0 +1,39 @@
+Independent review commands (cwd = export root
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory/.local-state/reviews/inventory).
+Env inherited: CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target,
+CARGO_BUILD_JOBS=4, CARGO_INCREMENTAL=0, CARGO_PROFILE_{DEV,TEST}_DEBUG=0. One heavy cargo job at a time.
+cargo 1.96.1 / rustc 1.96.1 (existing toolchain; nothing installed).
+
+Integrity
+  python3 -I review-evidence/verify_identity.py <export> ../inventory-identity.json <repo> before|after
+     -> raw/00-identity-before.txt, raw/99-identity-after.txt   (SHA-256 of export vs manifest; manifest vs
+        `git -C <repo> ls-tree -r --full-tree --name-only 2f6a309`; extra/missing file sets)
+  git hash-object over absolute export paths vs 2f6a309 ls-tree blobs -> raw/99d (0 mismatches)
+  raw/00b + raw/99b used relative paths and actually measured the PARENT worktree: FAILED METHOD, see raw/99c.
+  Supplied diffs re-derived: alias-change.diff == git diff 1d2ddfe f656994 -- .design/kan-v2-evidence-availability.md src tests
+                             inventory-change.diff == git diff caf3d95 2f6a309 -- ':!.design/reviews'   (sha256 equal)
+
+Build/test (raw/)
+  01 cargo clean -p kan
+  02 cargo test --features v2-crypto --no-fail-fast --test evidence_inventory --test evidence_copy_destination
+       --test evidence_copy_source --test evidence_store --test evidence_attested_lifecycle --test recovery_cli
+       --test surface_conformance
+  03 cargo test --features v2-crypto --lib evidence_store::inventory::tests
+  04 cargo test --features v2-crypto --test evidence_inventory inventory_large_rows_stay_below_the_materialization_memory_ceiling -- --exact --nocapture
+  05 cargo clippy --features v2-crypto --all-targets -- -D warnings
+  06 cargo fmt --all -- --check
+  07 cargo check --no-default-features --features v2-storage --all-targets
+  08 scope-narrowing grep over both diffs
+  09 restored-tree rerun: --test evidence_inventory --test evidence_copy_destination
+
+Probes (probes/)
+  fs_alias_bruteforce.py  (python3 -I; scratch dir under $TMPDIR, removed)      -> fs_alias_bruteforce.out.json
+  zz_review_probe.rs copied temporarily to tests/zz_review_probe.rs (removed; cmp-verified identical first)
+     cargo test --features v2-crypto --test zz_review_probe -- --nocapture --test-threads=1   -> run1.txt
+     cargo test ... probe_b5 ...                                                              -> run2-b5.txt
+     failed attempts retained: run2-b5-FAILED-attempt1-cid-varint.txt, run2-b5-FAILED-attempt2-wrong-offset.txt
+
+Mutations (mutations/)
+  python3 -I review-evidence/mutation_runner.py   (reviewer's own runner; logs only under review-evidence)
+     alias-production.patch = git diff 1d2ddfe f656994 -- src/evidence_store.rs (reverse-applied with patch -R)
+     per-case logs *.txt, runner-stdout.txt, summary-*.json, SUMMARY.txt

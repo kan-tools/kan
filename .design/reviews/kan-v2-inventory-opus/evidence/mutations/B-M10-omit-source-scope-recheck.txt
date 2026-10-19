@@ -1,0 +1,26 @@
+$ cargo test --features v2-crypto --test evidence_inventory --no-fail-fast
+
+running 15 tests
+test inventory_large_row_worker ... ok
+test issuer_attested_available_metadata_does_not_replace_original_writer_verification ... ok
+test descending_pages_and_budgets_preserve_exact_frontiers ... ok
+test empty_admitted_and_incomplete_retained_snapshots_do_not_claim_copy_readiness ... ok
+test byte_limited_pages_and_wrong_context_cursors_never_report_false_coverage ... ok
+test read_only_inventory_preserves_main_and_retained_wal_bytes ... ok
+test complete_retained_metadata_requires_exact_original_inventory_and_recipe ... ok
+test selected_valid_same_height_proof_replacement_is_rejected ... ok
+test oversized_payload_is_classified_by_length_without_full_materialization ... ok
+test maximum_service_request_is_available_under_the_metadata_allocation_limit ... ok
+test source_rechecks_current_payload_and_selected_metadata_in_a_fresh_transaction ... ok
+test inventory_purpose_checks_pin_specific_refusals_before_recipe_digest_checks ... ok
+test missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours ... ok
+test inventory_large_rows_stay_below_the_materialization_memory_ceiling ... ok
+test owner_schema_and_metadata_failures_are_never_unavailable_badges ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.47s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory/.local-state/reviews/inventory)
+    Finished `test` profile [unoptimized] target(s) in 7.16s
+     Running tests/evidence_inventory.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_inventory-c64c1fa4419bff69)
+
+exit=0 elapsed=13.0s

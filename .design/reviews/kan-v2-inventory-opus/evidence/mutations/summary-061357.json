@@ -1,0 +1,248 @@
+[
+ {
+  "case": "A-REVERSION-full-f656994-production",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "sidecar_hardlink_identity_is_rejected_even_with_an_unrelated_plan_name",
+   "unicode_reserved_plan_suffix_is_refused_even_before_any_sidecar_exists",
+   "unicode_sidecar_aliases_refuse_before_copy_resume_and_preserve_the_plan",
+   "unicode_source_sidecar_plan_is_refused_before_a_fresh_sqlite_reader_can_consume_it"
+  ],
+  "passed": 28,
+  "all_four_named_failed": true
+ },
+ {
+  "case": "A-REVERSION-restored",
+  "exit": 0,
+  "compile_error": false,
+  "failed": [],
+  "passed": 32
+ },
+ {
+  "case": "A-M1-drop-existing-identity",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "sidecar_hardlink_identity_is_rejected_even_with_an_unrelated_plan_name"
+  ],
+  "passed": 39,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "A-M2-ascii-only-name-eq",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "unicode_reserved_plan_suffix_is_refused_even_before_any_sidecar_exists"
+  ],
+  "passed": 39,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "A-M3-drop-basename-suffix-check",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "plan_custody_refuses_sqlite_families_before_opening_or_writing"
+  ],
+  "passed": 39,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-author-indexed-large-row-materialization",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "inventory_large_rows_stay_below_the_materialization_memory_ceiling"
+  ],
+  "passed": 14,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-author-omit-sqlite-vm-callback",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "evidence_store::inventory::tests::sqlite_vm_deadline_and_cancel_interrupt_unyielding_queries"
+  ],
+  "passed": 0,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-author-require-payloads-at-startup",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "inventory_large_rows_stay_below_the_materialization_memory_ceiling",
+   "issuer_attested_available_metadata_does_not_replace_original_writer_verification",
+   "maximum_service_request_is_available_under_the_metadata_allocation_limit",
+   "missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours",
+   "oversized_payload_is_classified_by_length_without_full_materialization",
+   "read_only_inventory_preserves_main_and_retained_wal_bytes"
+  ],
+  "passed": 9,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-author-omit-payload-hash",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours"
+  ],
+  "passed": 14,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-author-omit-retained-position",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "inventory_purpose_checks_pin_specific_refusals_before_recipe_digest_checks"
+  ],
+  "passed": 14,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-author-omit-admitted-prefix-guard",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "inventory_purpose_checks_pin_specific_refusals_before_recipe_digest_checks"
+  ],
+  "passed": 14,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-author-omit-historical-issuer",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "inventory_purpose_checks_pin_specific_refusals_before_recipe_digest_checks"
+  ],
+  "passed": 14,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-author-omit-metadata-digest-refusal",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "complete_retained_metadata_requires_exact_original_inventory_and_recipe"
+  ],
+  "passed": 14,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-author-ignore-page-row-limit",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "byte_limited_pages_and_wrong_context_cursors_never_report_false_coverage",
+   "descending_pages_and_budgets_preserve_exact_frontiers"
+  ],
+  "passed": 13,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-author-omit-writer-verification",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "issuer_attested_available_metadata_does_not_replace_original_writer_verification"
+  ],
+  "passed": 14,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-M1-omit-proof-cardinality",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "owner_schema_and_metadata_failures_are_never_unavailable_badges"
+  ],
+  "passed": 14,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-M2-omit-schema-check",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "owner_schema_and_metadata_failures_are_never_unavailable_badges"
+  ],
+  "passed": 14,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-M3-omit-cursor-context-check",
+  "exit": 0,
+  "compile_error": false,
+  "failed": [],
+  "passed": 15,
+  "verdict": "SURVIVED"
+ },
+ {
+  "case": "B-M4-omit-source-selection-binding-check",
+  "exit": 0,
+  "compile_error": false,
+  "failed": [],
+  "passed": 15,
+  "verdict": "SURVIVED"
+ },
+ {
+  "case": "B-M5-missing-reported-as-corrupt",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours",
+   "source_rechecks_current_payload_and_selected_metadata_in_a_fresh_transaction"
+  ],
+  "passed": 13,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-M6-omit-page-vm-configuration",
+  "exit": 0,
+  "compile_error": false,
+  "failed": [],
+  "passed": 15,
+  "verdict": "SURVIVED"
+ },
+ {
+  "case": "B-M7-recipe-match-ignores-completeness",
+  "exit": 101,
+  "compile_error": false,
+  "failed": [
+   "complete_retained_metadata_requires_exact_original_inventory_and_recipe",
+   "empty_admitted_and_incomplete_retained_snapshots_do_not_claim_copy_readiness"
+  ],
+  "passed": 13,
+  "verdict": "KILLED"
+ },
+ {
+  "case": "B-M8-omit-startup-item-budget",
+  "exit": 0,
+  "compile_error": false,
+  "failed": [],
+  "passed": 15,
+  "verdict": "SURVIVED"
+ },
+ {
+  "case": "B-M9-omit-source-purpose-recheck",
+  "exit": 0,
+  "compile_error": false,
+  "failed": [],
+  "passed": 15,
+  "verdict": "SURVIVED"
+ },
+ {
+  "case": "B-M10-omit-source-scope-recheck",
+  "exit": 0,
+  "compile_error": false,
+  "failed": [],
+  "passed": 15,
+  "verdict": "SURVIVED"
+ }
+]

@@ -1,0 +1,22 @@
+
+running 1 test
+test wrong_sql_payload_types_are_corrupt_without_failing_healthy_neighbours ... FAILED
+
+failures:
+
+---- wrong_sql_payload_types_are_corrupt_without_failing_healthy_neighbours stdout ----
+
+thread 'wrong_sql_payload_types_are_corrupt_without_failing_healthy_neighbours' (9845967) panicked at tests/evidence_inventory.rs:1024:22:
+called `Result::unwrap()` on an `Err` value: Sql(InvalidColumnType(0, "substr(bytes,1,?2)", Text))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    wrong_sql_payload_types_are_corrupt_without_failing_healthy_neighbours
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.23s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory/.local-state/reversion/d4df8cde08eb488c89d229ead06c2a5f)
+    Finished `test` profile [unoptimized] target(s) in 7.05s
+     Running tests/evidence_inventory.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_inventory-c64c1fa4419bff69)
+error: test failed, to rerun pass `--test evidence_inventory`

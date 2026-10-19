@@ -1,0 +1,11 @@
+DEMONSTRATED: indexed-large-row-materialization
+DEMONSTRATED: omit-sqlite-vm-callback
+DEMONSTRATED: require-payloads-at-startup
+DEMONSTRATED: omit-payload-hash
+DEMONSTRATED: omit-retained-position
+DEMONSTRATED: omit-admitted-prefix-guard
+DEMONSTRATED: omit-historical-issuer
+DEMONSTRATED: omit-metadata-digest-refusal
+DEMONSTRATED: ignore-page-row-limit
+DEMONSTRATED: omit-writer-verification
+10 controls; restored suite passed.

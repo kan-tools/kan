@@ -1,0 +1,26 @@
+
+running 1 test
+test inventory_large_rows_stay_below_the_materialization_memory_ceiling ... FAILED
+
+failures:
+
+---- inventory_large_rows_stay_below_the_materialization_memory_ceiling stdout ----
+object: {"exit": 0, "peak_bytes": 111280128, "stdout": "\nrunning 1 test\ntest inventory_large_row_worker ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.04s\n\n", "stderr": ""}
+
+
+thread 'inventory_large_rows_stay_below_the_materialization_memory_ceiling' (9800394) panicked at tests/evidence_inventory.rs:647:9:
+{"exit": 0, "peak_bytes": 111280128, "stdout": "\nrunning 1 test\ntest inventory_large_row_worker ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.04s\n\n", "stderr": ""}
+
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    inventory_large_rows_stay_below_the_materialization_memory_ceiling
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.58s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory)
+    Finished `test` profile [unoptimized] target(s) in 6.97s
+     Running tests/evidence_inventory.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_inventory-c64c1fa4419bff69)
+error: test failed, to rerun pass `--test evidence_inventory`

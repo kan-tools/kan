@@ -1,0 +1,61 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory)
+    Finished `test` profile [unoptimized] target(s) in 0.41s
+     Running tests/evidence_inventory.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_inventory-c64c1fa4419bff69)
+
+running 14 tests
+test inventory_large_row_worker ... ok
+test missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours ... FAILED
+test issuer_attested_available_metadata_does_not_replace_original_writer_verification ... FAILED
+test descending_pages_and_budgets_preserve_exact_frontiers ... ok
+test read_only_inventory_preserves_main_and_retained_wal_bytes ... ok
+test selected_valid_same_height_proof_replacement_is_rejected ... ok
+test source_rechecks_current_payload_and_selected_metadata_in_a_fresh_transaction ... FAILED
+test byte_limited_pages_and_wrong_context_cursors_never_report_false_coverage ... ok
+test complete_retained_metadata_requires_exact_original_inventory_and_recipe ... ok
+test owner_schema_and_metadata_failures_are_never_unavailable_badges ... FAILED
+test oversized_payload_is_classified_by_length_without_full_materialization ... ok
+test maximum_service_request_is_available_under_the_metadata_allocation_limit ... ok
+test inventory_large_rows_stay_below_the_materialization_memory_ceiling ... FAILED
+test inventory_purpose_checks_pin_specific_refusals_before_recipe_digest_checks ... ok
+
+failures:
+
+---- missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours stdout ----
+
+thread 'missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours' (9797305) panicked at tests/evidence_inventory.rs:171:14:
+called `Result::unwrap()` on an `Err` value: SqliteFailure(Error { code: ConstraintViolation, extended_code: 787 }, Some("FOREIGN KEY constraint failed"))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- issuer_attested_available_metadata_does_not_replace_original_writer_verification stdout ----
+
+thread 'issuer_attested_available_metadata_does_not_replace_original_writer_verification' (9797303) panicked at tests/evidence_inventory.rs:468:6:
+called `Result::unwrap()` on an `Err` value: SqliteFailure(Error { code: ConstraintViolation, extended_code: 787 }, Some("FOREIGN KEY constraint failed"))
+
+---- source_rechecks_current_payload_and_selected_metadata_in_a_fresh_transaction stdout ----
+
+thread 'source_rechecks_current_payload_and_selected_metadata_in_a_fresh_transaction' (9797317) panicked at tests/evidence_inventory.rs:171:14:
+called `Result::unwrap()` on an `Err` value: SqliteFailure(Error { code: ConstraintViolation, extended_code: 787 }, Some("FOREIGN KEY constraint failed"))
+
+---- owner_schema_and_metadata_failures_are_never_unavailable_badges stdout ----
+
+thread 'owner_schema_and_metadata_failures_are_never_unavailable_badges' (9797307) panicked at tests/evidence_inventory.rs:163:30:
+called `Result::unwrap()` on an `Err` value: SqliteFailure(Error { code: ConstraintViolation, extended_code: 787 }, Some("FOREIGN KEY constraint failed"))
+
+---- inventory_large_rows_stay_below_the_materialization_memory_ceiling stdout ----
+
+thread 'inventory_large_rows_stay_below_the_materialization_memory_ceiling' (9797301) panicked at tests/evidence_inventory.rs:643:9:
+{"exit": 0, "peak_bytes": 111312896, "stdout": "\nrunning 1 test\ntest inventory_large_row_worker ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.06s\n\n", "stderr": ""}
+
+
+
+
+failures:
+    inventory_large_rows_stay_below_the_materialization_memory_ceiling
+    issuer_attested_available_metadata_does_not_replace_original_writer_verification
+    missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours
+    owner_schema_and_metadata_failures_are_never_unavailable_badges
+    source_rechecks_current_payload_and_selected_metadata_in_a_fresh_transaction
+
+test result: FAILED. 9 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.05s
+
+error: test failed, to rerun pass `--test evidence_inventory`

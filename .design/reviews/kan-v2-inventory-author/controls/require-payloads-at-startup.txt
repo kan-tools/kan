@@ -1,0 +1,22 @@
+
+running 1 test
+test missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours ... FAILED
+
+failures:
+
+---- missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours stdout ----
+
+thread 'missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours' (9800796) panicked at tests/evidence_inventory.rs:159:83:
+called `Result::unwrap()` on an `Err` value: Corrupt("foreign keys")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.22s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory)
+    Finished `test` profile [unoptimized] target(s) in 6.96s
+     Running tests/evidence_inventory.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_inventory-c64c1fa4419bff69)
+error: test failed, to rerun pass `--test evidence_inventory`

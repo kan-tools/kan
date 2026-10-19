@@ -1,0 +1,24 @@
+
+running 1 test
+test inventory_purpose_checks_pin_specific_refusals_before_recipe_digest_checks ... FAILED
+
+failures:
+
+---- inventory_purpose_checks_pin_specific_refusals_before_recipe_digest_checks stdout ----
+
+thread 'inventory_purpose_checks_pin_specific_refusals_before_recipe_digest_checks' (9801467) panicked at tests/evidence_inventory.rs:737:9:
+assertion `left == right` failed
+  left: "corrupt evidence: complete retained prefix does not match recipe metadata"
+ right: "corrupt evidence: admission inside planned retained prefix"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    inventory_purpose_checks_pin_specific_refusals_before_recipe_digest_checks
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.47s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory)
+    Finished `test` profile [unoptimized] target(s) in 6.97s
+     Running tests/evidence_inventory.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_inventory-c64c1fa4419bff69)
+error: test failed, to rerun pass `--test evidence_inventory`
