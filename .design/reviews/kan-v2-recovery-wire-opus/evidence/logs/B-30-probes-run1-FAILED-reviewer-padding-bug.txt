@@ -1,0 +1,26 @@
+$ cargo test --offline --locked --features v2-crypto --test zz_review_observation_probes
+# start 2026-10-19T14:08:05Z CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target JOBS=4
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.local-state/reviews/recovery-wire)
+    Finished `test` profile [unoptimized] target(s) in 6.83s
+     Running tests/zz_review_observation_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_observation_probes-158fd7ac9eaa250b)
+
+running 2 tests
+test review_pb2_predecessor_context_and_private_signer_bounds ... FAILED
+test review_pb1_python_generated_probes_match_named_rust_outcomes ... ok
+
+failures:
+
+---- review_pb2_predecessor_context_and_private_signer_bounds stdout ----
+
+thread 'review_pb2_predecessor_context_and_private_signer_bounds' (9911203) panicked at tests/zz_review_observation_probes.rs:143:5:
+assertion failed: pbytes.len() <= observation::MAX_ENVELOPE
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    review_pb2_predecessor_context_and_private_signer_bounds
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+error: test failed, to rerun pass `--test zz_review_observation_probes`
+# end 2026-10-19T14:08:12Z exit=101

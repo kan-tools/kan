@@ -1,0 +1,6 @@
+test_identifier_byte_bounds_ascii_and_embedded_nul (__main__.DraftSchema) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.001s
+
+OK

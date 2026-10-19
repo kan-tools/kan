@@ -1,0 +1,32 @@
+2026-10-19T13:59:27Z python3 -I review-evidence/scripts/verify_tree.py -> OK (00-verify-tree-before.txt)
+2026-10-19T14:00:20Z review-evidence/logs/10-clean.txt exit=0 :: cargo clean -p kan --offline
+2026-10-19T14:00:31Z review-evidence/logs/11-baseline-tests.txt exit=0 :: cargo test --offline --locked --features v2-crypto --test evidence_recovery_observation --test evidence_reconstruction --test evidence_attestation --test evidence_copy_plan
+2026-10-19T14:02:40Z git -C R diff c04ee13^ c04ee13 -- src/evidence_reconstruction.rs > review-evidence/A/c04ee13-production.patch
+2026-10-19T14:02:53Z patch -p1 -R review-evidence/A/c04ee13-production.patch (file sha == c04ee13^ blob)
+2026-10-19T14:03:00Z review-evidence/logs/A-21-reverted-tests.txt exit=101 :: cargo test --offline --locked --features v2-crypto --test evidence_reconstruction
+2026-10-19T14:03:05Z patch -p1 restore production fix
+2026-10-19T14:04:24Z cp review-evidence/A/probes/zz_review_decoder_probes.rs tests/ (temporary)
+2026-10-19T14:04:30Z review-evidence/logs/A-30-probes-run1.txt exit=101 :: cargo test --offline --locked --features v2-crypto --test zz_review_decoder_probes
+2026-10-19T14:04:39Z review-evidence/logs/A-31-probes-run2.txt exit=0 :: cargo test --offline --locked --features v2-crypto --test zz_review_decoder_probes
+2026-10-19T14:04:59Z python3 -I review-evidence/scripts/controls.py review-evidence/A/controls/cases.json review-evidence/A/controls
+2026-10-19T14:05:44Z python3 -I review-evidence/C/order_probe.py
+2026-10-19T14:07:26Z $KAN_CRYPTO_ORACLE_PYTHON -I review-evidence/B/gen_probes.py . review-evidence/B/probes.json
+2026-10-19T14:08:05Z cp review-evidence/B/zz_review_observation_probes.rs tests/ (temporary)
+2026-10-19T14:08:12Z review-evidence/logs/B-30-probes-run1.txt exit=101 :: cargo test --offline --locked --features v2-crypto --test zz_review_observation_probes
+2026-10-19T14:08:18Z review-evidence/logs/B-31-probes-run2.txt exit=0 :: cargo test --offline --locked --features v2-crypto --test zz_review_observation_probes
+2026-10-19T14:08:26Z review-evidence/logs/B-32-private-ctor-compile.txt exit=101 :: cargo test --offline --locked --features v2-crypto --test zz_review_private_ctor --no-run
+2026-10-19T14:08:26Z removed tests/zz_review_private_ctor.rs
+2026-10-19T14:08:47Z REVIEW_PROBES=review-evidence/B/probes.json python3 -I review-evidence/scripts/controls.py review-evidence/B/controls/cases.json review-evidence/B/controls
+2026-10-19T14:09:04Z python3 -I review-evidence/C/schema_probe.py
+2026-10-19T14:09:20Z review-evidence/logs/C-10-observation-oracle-check.txt exit=0 :: /Users/m/code/kan-tools/kan/.worktrees/kan-v2-encryption/.local-state/crypto-oracle-env/bin/python .design/tools/recovery_observation_vectors.py --check
+2026-10-19T14:09:20Z review-evidence/logs/C-11-commitments-check.txt exit=0 :: python3 .design/tools/recovery_commitments.py --check
+2026-10-19T14:09:20Z review-evidence/logs/C-12-schema-check.txt exit=0 :: python3 .design/tools/recovery_bundle_schema.py
+2026-10-19T14:09:40Z python3 -I review-evidence/C/independent_commitments.py
+2026-10-19T14:10:36Z REVIEW_PROBES=... python3 -I review-evidence/scripts/controls.py review-evidence/B/controls/cases-cb1b.json review-evidence/B/controls (CB1 retry: original CB1 mutation was precedence-misshaped)
+2026-10-19T14:10:51Z rm tests/zz_review_decoder_probes.rs tests/zz_review_observation_probes.rs
+2026-10-19T14:11:00Z review-evidence/logs/51-clippy.txt exit=0 :: cargo clippy --offline --locked --features v2-crypto --all-targets -- -D warnings
+2026-10-19T14:11:05Z review-evidence/logs/52-fmt.txt exit=0 :: cargo fmt --all -- --check
+2026-10-19T14:11:14Z review-evidence/logs/53-final-tests.txt exit=0 :: cargo test --offline --locked --features v2-crypto --test evidence_recovery_observation --test evidence_reconstruction --test evidence_attestation --test evidence_copy_plan
+2026-10-19T14:11:20Z git show c04ee13/1833ee5 | grep scope-narrowing -> logs/60
+2026-10-19T14:11:31Z python3 -I review-evidence/scripts/verify_tree.py -> RESULT OK (90-verify-tree-after.txt)
+2026-10-19T14:13:20Z wrote review-evidence/REPORT.txt

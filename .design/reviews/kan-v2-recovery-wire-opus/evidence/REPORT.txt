@@ -1,0 +1,327 @@
+INDEPENDENT ADVERSARIAL REVIEW — recovery-wire export (pinned 1833ee5c2b78e7b786854dc0f41b07f27b8e4ad9)
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), cold session, no subagents/delegation. 2026-10-19.
+Independence: I did not author any code under review. No conflict of interest to declare.
+Recording: git-first only (day#168/kan#197). No `kan`/`day` command was run: no telos read via kan,
+no verdict claim recorded, no kan index touched. Step 7 of the skill is NOT executed; this file is the record.
+All raw commands: review-evidence/COMMANDS.txt; raw logs: review-evidence/logs/, A/, B/, C/.
+
+=====================================================================================================
+0. CUSTODY / IDENTITY
+- Manifest ../recovery-wire-identity.json: commit 1833ee5…, 2702 files.
+- review-evidence/scripts/verify_tree.py compares: manifest == `git ls-tree -r --full-tree 1833ee5` path set,
+  manifest sha256 == sha256 of every git blob, and export bytes == manifest.
+  - Before (logs/00-verify-tree-before.txt): RESULT OK; only extra = north-star.json.
+  - Mid, after probe removal (logs/50): OK.  After everything (logs/90): OK; extra = north-star.json only.
+- Git root from the export resolves to the parent worktree (logs/01-context.txt). All git reads used
+  `git -C <repo>` with explicit commits. No git writes. Parent `git status --short` is empty at the end.
+- `git diff --stat main...1833ee5` = 2517 files: main is far behind, so that range is NOT the review unit.
+  The review units are c04ee13 (A) and 1833ee5 (B, C), plus the governing docs as of 1833ee5.
+- Heavy jobs ran one at a time: CARGO_TARGET_DIR=…/kan-v2-library-resilience/.local-state/target,
+  CARGO_BUILD_JOBS=4, `cargo clean -p kan` first (logs/10), `--offline --locked` throughout. No installs.
+- Temporary files outside review-evidence: tests/zz_review_decoder_probes.rs,
+  tests/zz_review_observation_probes.rs, tests/zz_review_private_ctor.rs, plus in-place source mutations
+  during reversion/controls. All are removed or restored; restoration is hash-checked per control and by logs/90.
+
+NORTH STAR (from supplied north-star.json; kan not queried)
+- telos/raw-data-and-projections (Decision bafyreied3rk…): "Raw attested data is retained in full and never
+  collapsed in the store… A field holding a computed value is the failure mode."
+- It deliberately declares no witnesses (Observation bafyreicakl3r…). I invented none.
+- Recorded tension: InTensionWith telos/performance-at-scale. It is not engaged by these changes.
+- excluded_by_trust: 2. Those claims are not reconstructed.
+- Fit:
+  - Scope A closes a projection-narrowing gap; raw bytes and spans were always kept.
+  - Scope B deliberately refuses to let a signature turn into computed truth: `Authenticated` has no
+    member/publication authority.
+  - Both serve the telos. No drift toward a stored computed value was found.
+
+BASELINE (logs/11-baseline-tests.txt, final logs/53-final-tests.txt)
+- cargo test --features v2-crypto with the targets observation, reconstruction, attestation and copy_plan:
+  6 + 15 + 7 + 3 = 31 pass, both before and after all work.
+- Strict clippy, `cargo clippy --features v2-crypto --all-targets -- -D warnings` (logs/51): exit 0.
+- `cargo fmt --all -- --check` (logs/52): exit 0.
+- Python oracles:
+  - recovery_observation_vectors.py --check via KAN_CRYPTO_ORACLE_PYTHON (logs/C-10): 6/3/56 pass.
+  - recovery_commitments.py --check (logs/C-11): 7 member/output + 3 restoration framing vectors pass.
+  - recovery_bundle_schema.py (logs/C-12): 5 tests OK.
+
+=====================================================================================================
+A. DECODER CORRECTION c04ee13 (src/evidence_reconstruction.rs)
+
+Code read: src/evidence_reconstruction.rs:61-166; src/evidence_capture.rs:26-73 (Event/Header serde).
+- :133-136: a missing `observed_at_unix_micros` gives Error::Header. It runs after every Unsupported
+  classification.
+- :140-142: forwarding-intent with event.len() != 1 gives Error::Header.
+- :62-67: the KANC prefix check, then `len > MAX_FRAME`, both before reading the version byte. This
+  ordering predates c04ee13 and the commit adds no production change for it. Only the test is new.
+
+Reversion reproduction (A/c04ee13-production.patch = `git diff c04ee13^ c04ee13 -- src/evidence_reconstruction.rs`)
+- Note: the author's file reversion-logs/production.patch is mislabelled. It is the whole commit
+  (design + tests) in -U0. Their revert_v2.py run limited the reversion to src/ (raw/06-reversion.txt),
+  which is consistent with mine.
+- `patch -p1 -R`: the file hash equals the c04ee13^ blob, 6d7e8407… (A/20-revert-apply.txt).
+- Tests retained, reverted run (logs/A-21-reverted-tests.txt): 13 pass, 2 FAIL.
+  - every_recognized_event_rejects_extra_fields_including_unit_variants: Ok(Capture(ForwardingIntent)).
+  - recognized_header_requires_explicit_timestamp_even_when_unknown: Ok(Capture) with the clock absent.
+  - capture_family_size_limit_precedes_unknown_envelope_classification PASSES under reversion. This is
+    expected because the precedence was already implemented; the test pins it rather than fixing it.
+- Restored with `patch -p1`: fbe93e92…, which matches the manifest (A/22-restore.txt).
+- Outcome: DEMONSTRATED, matching the author's claim.
+
+Independent probes (A/probes/zz_review_decoder_probes.rs; outputs in A/probe-out/)
+- Failed first attempt retained: logs/A-30-probes-run1-FAILED-compile.txt (E0716 borrow bug in my probe).
+- PA1, lossless projection: for every accepted Capture, serde_json::to_value(&header) must equal the
+  parsed JSON value. This is the general guard the prior review suggested.
+  - Corpus: 1,257 mutations across all 10 events. Each top-level and event field was dropped, or
+    replaced with null, 0, -1, 1.0, 1e0, "x", true, [], {}, u64::MAX, 3-tuples, 1-tuples or maps.
+    Extra fields were added at the top level and in the event.
+  - Result: 117 Captures, 0 projection violations (pa1-corpus.tsv).
+- PA2, timestamp:
+  - null, 0 and u64::MAX give Capture. -1, 1.5, "0" and 2^64 give Header.
+  - Absent on each of the 10 recognized events gives Header.
+  - Absent on unknown version/observer/event/outcome stays Unsupported(…).
+- PA3, forwarding-intent aliases:
+  - An escaped "type" key and an escaped value are Capture, which is equivalent JSON.
+  - An escaped extra key, a duplicate escaped type, an "" key, or a body are all refused.
+- PA4, size boundaries:
+  - Exact MAX_FRAME (MAX_HEADER whitespace-padded header + CHUNK body) is Capture; +1 is Limit.
+  - Header MAX_HEADER+1 is Limit.
+  - A declared u32::MAX length is Limit, whether the input is small, at max or over.
+  - A declared length past the end is Envelope. "KANC" alone is Envelope. KANC\0 oversize is Limit.
+  - "KAN…" oversize, "kanc2" oversize and empty input are all Opaque.
+
+Reviewer compiled controls (A/controls/, logs/A-40-controls.txt; my runner restores and re-hashes)
+- CA1, unit-extra check off by one (`> 2`): KILLED by the author's extra-field test, PA1 and PA3.
+- CA2, explicit null also refused: KILLED by 6 author tests and 3 probes.
+- CA3, total family bound removed (the author's control, reproduced): KILLED by the author's
+  size-precedence test and PA4.
+- CA4, clock requirement moved BEFORE unknown-version classification: SURVIVES all 15 author tests.
+  It is KILLED only by reviewer PA2.
+
+Findings A
+- A-F1 [LOW, test gap]: no author test pins that frames of unknown version, observer, event or outcome
+  with no clock field stay Unsupported.
+  - The design (session-reconstruction.md, "Decoder review decisions") says unknown variants "accept no
+    semantic interpretation". CA4 breaks that and survives.
+  - Add a regression equivalent to PA2's "absent-ts-unknown-*" rows.
+- A-F2 [LOW, robustness follow-up]: the fix is targeted rather than general.
+  - PA1 found no remaining narrowing over the current types.
+  - A future Option field or unit variant would reopen the class silently.
+  - Recommend keeping a to_value round-trip property test (like PA1) in the suite, before any consumer.
+- Prior items F-D1, P3 and size precedence are resolved as the design text decides.
+  - Recognizing escapes and whitespace in non-canonical JSON is explicitly accepted by design.
+- No consumer exists (grep of src: only lib.rs:74 `pub mod`). All AC-1..AC-8 are still unchecked.
+SCOPE A VERDICT: APPROVE WITH FOLLOW-UPS (A-F1, A-F2; neither blocks, since no consumer exists).
+
+=====================================================================================================
+B. RECOVERY OBSERVATION AUTHENTICATION CODEC (1833ee5)
+
+Code read
+- src/evidence_recovery_observation.rs:1-354 (all of it).
+- Shared canonical parser: src/evidence.rs:143-380.
+- atrium-crypto 0.1.3: did.rs:55-90, encoding.rs:10-25, verify.rs:36-60.
+- Python oracle: .design/tools/recovery_observation_vectors.py, attestation_vectors.py,
+  scripts/evidence_reference.py.
+
+Requirements vs code (codec doc sections "Identities…", "Event bodies", "First implementation checkpoint")
+- Closed canonical envelope/statement, 13 fields, version 1, domain literal: MET.
+  - Code: :240-270. Probes C01-C31 refuse with the named class.
+- Owner pins never learned from the envelope: MET.
+  - Code: :271-287, Context::validate :69-73.
+  - Probes: 4 foreign-context genesis records → context-binding; D01/D02 context DIDs → did-key.
+- Static canonical P-256 did:key: MET.
+  - The 56..=80 window is load-bearing: CB8 removing it panics inside atrium did.rs:85.
+  - The re-format compare is redundant under that window: CB2 survives, and the uncompressed form is
+    101 chars.
+- Low-S / range / domain: MET.
+  - A local named check (:303-318) sits in front of atrium's default low-S verifier.
+  - CB1b removing the block changes only the error class: 4 probes and the author's high-s vector go
+    from signature-range to signature-invalid.
+  - Domain, codec and preimage substitutions (D12-D16) → signature-invalid.
+- Contiguous predecessor:
+  - Genesis requires sequence 1 and a null previous.
+  - previous.context == context, seq+1, and a link equal to previous.cid: MET (:290-296).
+  - P01-P04 and the Rust-only replay/skip/foreign predecessor cases refuse by name.
+- Event shapes (:134-228):
+  - Closed bodies, recipe 1, entries 1..32, occurrence/length rule, missing|corrupt state, sort order
+    (non-null by occurrence then CID text, null last) with no duplicates, restored cid == candidate with
+    length 1..4 MiB, 16-byte attempts, link codecs, closed reason enum, created iff seq 1: MET (S09-S18).
+- Private construction:
+  - tests/zz_review_private_ctor.rs fails to compile with E0451, "fields … of struct Authenticated are
+    private" (logs/B-32).
+  - No Deserialize/From impls. No JSON serializer.
+- sign_claim:
+  - Bounded canonical input before signing: oversize → statement-canonical, trailing byte →
+    statement-canonical.
+  - Identity must equal the pinned observer → signer-context. CB7 shows this is an error-class layer:
+    authenticate would still refuse.
+  - Returns only through authenticate. A padded statement within the 16 KiB statement bound whose
+    envelope exceeds the bound → envelope-bound.
+- Not claimed and not met (correctly declared open): M1/O1/R1 computation in Rust, a full member
+  verifier, state replay, checkpoint validation and any writer/storage consumer.
+
+Independent differential probes
+- Generator: B/gen_probes.py, run with the oracle Python, public scalars 2/3/4/5 only.
+  - It first asserts that the stored fixture equals the regenerated oracle output.
+  - 73 probes, built byte by byte. Non-canonical statements are re-signed over their exact raw bytes, so a
+    refusal is attributable to the named check.
+- Python verdict == reviewer expectation: 73/73 (B/gen_probes-run2.txt). Run1 failed on my padding search
+  range; retained in B/gen_probes-run1.txt.
+- Rust (B/zz_review_observation_probes.rs, logs/B-31; table B/probe-out/pb1-differential.tsv):
+  Rust == Python == expectation for 73/73, 0 disagreements.
+- Rust-only (pb2-rust-only.tsv): 17/17 as expected. A failed first run from a reviewer padding bug is
+  retained as logs/B-30-…-FAILED-reviewer-padding-bug.txt.
+- Semantic acceptance, explicitly demonstrated. These are wire-valid and authenticate OK although the
+  claims are false or the state is impossible:
+  - S01: an observed record cites `created` as its intent.
+  - S02: observed output ≠ intent output.
+  - S03: attempt mismatch.
+  - S04: restored member ≠ created member.
+  - S05: restored length ≠ candidate length.
+  - S06: unavailable after publication.
+  - S07: second intent for the same attempt.
+  - S08: arbitrary frontier.
+  - S19: failed after observed.
+  - P05: a fork, meaning a second distinct seq-2 record on the same predecessor.
+  - D17: observer DID == issuer DID.
+  - Also the Rust-only "sign-false-member-digest" case: sign_claim signs a false member digest.
+  These are consistent with the documented non-authority ("Authentication is not claim truth"; codec doc
+  :277-292). Each MUST be refused by the future full replay verifier. That verifier does not exist, and
+  none of this may be described as met.
+
+Reviewer compiled controls (B/controls/, logs/B-40, B-41)
+- CB1, my control was mis-shaped. `if false && A || B || C || D` disabled only the r==0 clause. It is
+  KILLED but error-class-only (D06). Retained as a reviewer error. Superseded by CB1b.
+- CB1b, whole signature-range block removed: KILLED, error-class-only.
+  - The author's high-s-signature and D06/D07/D09/D10 become signature-invalid. No acceptance.
+- CB2, DID canonical re-format compare removed: SURVIVED all author tests and probes. Equivalent under
+  the length window. Defence in depth only.
+- CB3, envelope bound `<` instead of `<=`: KILLED by reviewer C31 only, error-class-only
+  (16384 → envelope-bound instead of statement-fields).
+- CB4, entry order by binary CID instead of CID text: SURVIVES all 6 author tests.
+  - KILLED by reviewer S10/S11, SEMANTIC: binary order is accepted and canonical text order refused.
+- CB5, occurrence-requires-length removed: KILLED, SEMANTIC (author vector accepted).
+- CB6, created-position removed: KILLED, SEMANTIC (author vector accepted).
+- CB7, sign_claim signer check removed: KILLED by reviewer pb2 only, error-class-only
+  (signer-context → signature-invalid).
+- CB8, DID length/ASCII window removed: KILLED by a panic in atrium-crypto did.rs:85, in 2 author tests.
+- CB9, genesis previous==null removed: KILLED, SEMANTIC (author genesis-previous vector accepted).
+- Author controls (7) were not repeated. Their pattern for the candidate/loss-order/chain cases is
+  consistent with mine.
+
+Findings B
+- B-F1 [LOW-MEDIUM, cross-implementation vector gap]: no observation fixture distinguishes canonical
+  CID-text order from binary CID order.
+  - Every unavailable vector uses one CID (C/order_probe.txt).
+  - A binary-order Rust implementation (CB4) passes every author test.
+  - The order is a frozen recipe rule (codec doc :161-162), and both implementations happen to agree.
+  - Add disagreeing pairs to the fixture. For example, raw CIDs of b"probe-19"/b"probe-20":
+    bafkreig5… vs bafkreigp…; text and binary orders differ.
+- B-F2 [LOW, design decision]: observer == issuer is accepted (D17).
+  - Parent REQ-1 requires "observer authority, separate from the logical archive/profile/issuer".
+  - Either refuse equality in Context::validate (with an oracle vector), or state explicitly that
+    distinctness is owner configuration the codec does not enforce.
+- B-F3 [INFO, read only, not executed]: Rust and Python apply checks in different orders.
+  - Rust validates the body before created-position (:299-300); Python checks created-position first.
+  - Multi-fault inputs may therefore get different error labels. All 129 single-fault vectors (56 author
+    + 73 reviewer) agree.
+  - Either pin the precedence or document that labels are defined only for single-fault vectors.
+- B-F4 [INFO]: some guards are not security boundaries.
+  - The local range check and the signer-context check are named-error layers in front of atrium/verify.
+  - The DID re-format compare is redundant given the length window.
+  - Do not cite their kills as acceptance-preventing controls.
+SCOPE B VERDICT: APPROVE WITH FOLLOW-UPS, as a pure wire-authentication checkpoint only.
+- B-F1 should land before the format is frozen. B-F2 needs a recorded decision.
+- Full replay/member verification remains an unmet prerequisite.
+
+=====================================================================================================
+C. RECOVERY DESIGN FOLLOW-THROUGH + DRAFT DDL / COMMITMENT FIXTURES (draft; NOT format/writer acceptance)
+
+Prior Scope-C residuals: present in the text. This is design text only, with no behaviour to execute.
+- Custody before any SQLite open, for every proposed output and every participating DB + sidecars, rechecked
+  at creation/retention: recovery-bundles.md:222-227; codec doc :270-271.
+- Partial-copy restart provenance lives ONLY in external owner job records; there is no KNB1/copy-plan
+  field or event: recovery-bundles.md:229-235; codec doc :272.
+- Named `forensic-recovery-required` for non-BLOB/malformed-key/unreadable/oversized cells, with source and
+  failed output retained: recovery-bundles.md:239-243, :130; codec doc :68-74.
+- `publication-blocked-unavailable-object`: an unrecoverable staged/orphan key blocks publication, with no
+  discard escape: recovery-bundles.md:244-249; codec doc :137-140.
+- Status: all four are UNVERIFIABLE as behaviour (no writer/job exists). They are labelled as proposed, not
+  implemented, RPC values (:251).
+
+Commitment framing (draft)
+- I re-implemented M1/O1/R1 from the codec-doc prose alone (C/independent_commitments.py), without reading
+  the author tool's code paths for this. 7/7 M1, 7/7 O1 and 3/3 R1 match: ALL-MATCH.
+- The framing is length-prefixed with counts per section. As specified, it is injective.
+- Limit (C-F1, same root as B-F1): the only multi-key vectors use a CID pair whose text and binary orders
+  agree (C/order_probe.txt). The "canonical order" self-check only reverses lists.
+  - A binary-order implementation would match every M1/O1/R1 vector. Add a disagreeing pair to the
+    membership, objects and R1 cases.
+- Synthetic records, explicitly labelled framing-only ("missing-payload-framing", status string): correct
+  labelling. I did not upgrade it.
+
+Draft DDL (C/schema_probe.txt, in-memory sqlite 3.51.0)
+- C-F2 [LOW, necessary draft change]: TEXT bounds use length(), which counts characters.
+  - A 56..80-char non-ASCII "DID" (112-160 bytes) and a 128-char non-ASCII "cid" are accepted.
+  - The intended bound is ASCII bytes. Use a byte/ASCII constraint, for example
+    length(CAST(x AS BLOB)) or an ASCII GLOB, or state that it is verifier-only.
+- C-F3 [INFO]: SQLite affinity losslessly coerces text '2', real 2.0 and numeric cids before CHECK.
+  - Stored types are then correct, so integrity is not lost.
+  - My hypothesis that STRICT tables would refuse these was WRONG: STRICT also coerces lossless values
+    (retained). The writer must bind typed values, and readers must recheck typeof.
+- Verifier-only rules are correctly not in the DDL: observation gaps, plan row for profile 2.
+- The markers are absent (application_id/user_version 0), as the draft claims.
+- C-F4 [LOW, clarify]: the codec's 4 MiB expectedLength cap is not mirrored by the generic manifest
+  ciphertext-length check.
+  - src/evidence.rs:492 checks only `uint` and != 0. The standalone store caps objects at 4 MiB
+    (evidence_store.rs:24,30).
+  - Name the creation refusal for an authenticated expected length > 4 MiB, presumably
+    forensic-recovery-required.
+SCOPE C VERDICT: APPROVE WITH FOLLOW-UPS, as draft direction only. The changes needed now are C-F1
+(discriminating order vectors) and C-F2 (byte/ASCII bounds).
+- Full cross-implementation state/member vectors, Rust commitment computation, loss partitioning,
+  checkpoint and publication replay remain prerequisites to any storage mutation.
+
+=====================================================================================================
+SCOPE-NARROWING (logs/60-scope-narrowing-grep.txt)
+- The only narrowing statements are pre-declared checkpoint limits: "later verifier", "full member/state
+  validation remains separate", and the design's "stay open".
+- They were named in the governing docs before or with the implementation. LEGITIMATE. None defers the
+  hard part of what is claimed.
+
+FORBIDDEN PATTERNS (CLAUDE.md house rules)
+- No mutation or destruction of subjects, no blocking hooks, no new UI surface and no cites edges.
+- The CI change only adds the three oracles and the test target.
+- No raw-data collapse: the decoder keeps borrowed bytes and spans; the codec stores exact envelope and
+  statement bytes.
+
+UNTESTED / LIMITS (explicit)
+- No full compatibility/performance/Node matrix was rerun; there was no concrete concern.
+- The author's control scripts were not run. Mine are adapted equivalents under review-evidence/scripts.
+- Multi-fault label precedence (B-F3) was not executed.
+- Filesystems other than local APFS were not tested. No storage, writer, job, RPC or UI exists to test.
+- I did not prove CB2 equivalent; I explained it by the 101-char uncompressed form exceeding the window.
+- kan/day were not invoked (git-first recording), so telos liveness was not cross-checked against the log.
+  north-star.json was taken as supplied.
+
+=====================================================================================================
+OVERALL VERDICT: **APPROVE WITH FOLLOW-UPS**
+- The c04ee13 correction is real. Its reversion reproducibly fails the two named tests, and a 1,257-case
+  lossless-projection corpus finds no remaining narrowing.
+- The observation codec authenticates exactly what it claims.
+  - 129 single-fault vectors agree across Rust, independent Python and my expectations. Construction is
+    private. It claims no member, publication or replay truth.
+  - I demonstrated 12 semantic-acceptance cases the future verifier must refuse.
+- The draft framing matches an independent prose implementation.
+- No invariant violation or overclaim was found. Nothing is wired to a consumer.
+- Concrete follow-ups:
+  - A-F1: pin Unsupported precedence for an absent clock.
+  - A-F2: keep a round-trip projection property test.
+  - B-F1/C-F1: add CID text-vs-binary order-discriminating vectors to the observation and commitment
+    fixtures, since a binary-order implementation currently passes everything.
+  - B-F2: decide whether observer may equal issuer.
+  - B-F3: pin or document multi-fault label precedence.
+  - C-F2: byte/ASCII bounds in the DDL.
+  - C-F4: name the >4 MiB expected-length refusal.
+- These do not reach REDIRECT or BLOCK, because every one is a test, vector or draft gap in front of
+  components with no consumer.
+- None of this accepts the KNB1 format, DDL, writer or any parent AC.

@@ -1,0 +1,4 @@
+$ python3 .design/tools/recovery_commitments.py --check
+# start 2026-10-19T14:09:20Z CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target JOBS=4
+7 member/output and 3 restoration framing vectors; local negative checks pass. No logical-member acceptance claimed.
+# end 2026-10-19T14:09:20Z exit=0

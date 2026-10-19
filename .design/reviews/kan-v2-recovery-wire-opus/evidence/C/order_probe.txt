@@ -1,0 +1,4 @@
+commitments pair: text_order False binary_order False discriminates False
+observation unavailable entries 1 distinct cids 1
+observation maximum-loss-count-and-lengths entries 32 distinct cids 1
+disagreeing pair found at 19 bafkreig5oy7ysh7jztklygxpbivxnzy4xv4ywouvsraumrkfrev2ypl22u bafkreigprr4i76bl33bs4jdlqoq3ptpcmkcstytwpzuyt5iljyvzp2xqpe

@@ -1,0 +1,9 @@
+python sqlite3 library 3.51.0
+ACCEPTED	identity-profile-text-2	stored=[('int', 1), ('bytes', 'bytes32'), ('str', 'str56'), ('int', 2), ('bytes', 'bytes32'), ('bytes', 'bytes32'), ('str', 'str56')]	INTEGER affinity coerces text before CHECK
+ACCEPTED	identity-profile-real-2.0	stored=[('int', 1), ('bytes', 'bytes32'), ('str', 'str56'), ('int', 2), ('bytes', 'bytes32'), ('bytes', 'bytes32'), ('str', 'str56')]	INTEGER affinity coerces exact real
+Traceback (most recent call last):
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.local-state/reviews/recovery-wire/review-evidence/C/schema_probe.py", line 21, in <module>
+    attempt('identity-observer-integer', Q, idrow(2, 10**55), 'TEXT affinity converts number to text (56 digits)')
+  File "/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.local-state/reviews/recovery-wire/review-evidence/C/schema_probe.py", line 11, in attempt
+    db.execute(q, params)
+OverflowError: Python int too large to convert to SQLite INTEGER

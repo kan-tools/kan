@@ -1,0 +1,16 @@
+$ cargo test --offline --locked --features v2-crypto --test zz_review_decoder_probes
+# start 2026-10-19T14:04:38Z CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target JOBS=4
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.local-state/reviews/recovery-wire)
+    Finished `test` profile [unoptimized] target(s) in 0.38s
+     Running tests/zz_review_decoder_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_decoder_probes-42f0a6323aa334d2)
+
+running 5 tests
+test review_pa5_unsupported_is_not_shape_validation ... ok
+test review_pa3_forwarding_intent_aliases ... ok
+test review_pa2_timestamp_distinction_and_unsupported_precedence ... ok
+test review_pa4_size_precedence_and_exact_boundaries ... ok
+test review_pa1_capture_projection_is_lossless_over_mutation_corpus ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+# end 2026-10-19T14:04:39Z exit=0

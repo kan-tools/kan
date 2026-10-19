@@ -26,6 +26,8 @@ pub mod evidence_delivery;
 pub mod evidence_http;
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_import;
+#[cfg(feature = "v2-storage")]
+pub mod evidence_recovery_observation;
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_restore;
 #[cfg(feature = "v2-storage")]

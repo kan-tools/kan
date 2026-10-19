@@ -1,0 +1,4 @@
+$ cargo clean -p kan --offline
+# start 2026-10-19T14:00:20Z CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target JOBS=4
+     Removed 879 files, 213.2MiB total
+# end 2026-10-19T14:00:20Z exit=0

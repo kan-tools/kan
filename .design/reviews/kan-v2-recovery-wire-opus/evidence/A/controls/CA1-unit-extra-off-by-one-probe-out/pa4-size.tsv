@@ -1,0 +1,12 @@
+max-recognized	len=196617	Capture
+max-recognized+1	len=196618	Err(Limit)
+header+1	len=131082	Err(Limit)
+oversize-declared-huge	len=196618	Err(Limit)
+maxsize-declared-huge	len=196617	Err(Limit)
+small-declared-huge	len=20	Err(Limit)
+small-declared-past-end	len=11	Err(Envelope)
+family-prefix-only	len=4	Err(Envelope)
+family-nul-version-oversize	len=196627	Err(Limit)
+near-prefix-oversize	len=196627	Opaque
+lowercase-oversize	len=196627	Opaque
+empty	len=0	Opaque

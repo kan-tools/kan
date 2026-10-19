@@ -1,0 +1,25 @@
+
+running 1 test
+test signed_cross_context_chain_and_profile_confusion_refuse ... FAILED
+
+failures:
+
+---- signed_cross_context_chain_and_profile_confusion_refuse stdout ----
+
+thread 'signed_cross_context_chain_and_profile_confusion_refuse' (9896361) panicked at tests/evidence_recovery_observation.rs:187:5:
+assertion failed: observation::sign_claim(&atproto_dasl::to_vec(&next).unwrap(), &signer, &ctx,
+        Some(&foreign)).is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    signed_cross_context_chain_and_profile_confusion_refuse
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.05s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec)
+    Finished `test` profile [unoptimized] target(s) in 6.97s
+     Running tests/evidence_recovery_observation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_observation-d6de5ba9a7670a9d)
+error: test failed, to rerun pass `--test evidence_recovery_observation`
+
+exit=101

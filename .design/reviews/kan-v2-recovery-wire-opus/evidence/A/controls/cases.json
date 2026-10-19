@@ -1,0 +1,6 @@
+[
+ {"name":"CA1-unit-extra-off-by-one","file":"src/evidence_reconstruction.rs","old":"if kind == \"forwarding-intent\" && event.len() != 1","new":"if kind == \"forwarding-intent\" && event.len() > 2","tests":["evidence_reconstruction","zz_review_decoder_probes"]},
+ {"name":"CA2-clock-null-also-refused","file":"src/evidence_reconstruction.rs","old":"if !object.contains_key(\"observed_at_unix_micros\")","new":"if object.get(\"observed_at_unix_micros\").is_none_or(Value::is_null)","tests":["evidence_reconstruction","zz_review_decoder_probes"]},
+ {"name":"CA3-total-family-bound-removed","file":"src/evidence_reconstruction.rs","old":"if bytes.len() > MAX_FRAME","new":"if false && bytes.len() > MAX_FRAME","tests":["evidence_reconstruction","zz_review_decoder_probes"]},
+ {"name":"CA4-clock-check-after-unsupported-moved-before-version","file":"src/evidence_reconstruction.rs","old":"    if version != 2 {\n        return Ok(Decoded::Unsupported(Unsupported::Version));","new":"    if !object.contains_key(\"observed_at_unix_micros\") {\n        return Err(Error::Header);\n    }\n    if version != 2 {\n        return Ok(Decoded::Unsupported(Unsupported::Version));","tests":["evidence_reconstruction","zz_review_decoder_probes"]}
+]
