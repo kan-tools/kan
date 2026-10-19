@@ -598,7 +598,8 @@ fully verifies a source and compares the exact resulting recipe bytes. Matching
 through/tip alone is insufficient: a structurally valid changed unsigned receipt
 at the same frontier must refuse. Holding the planner pins the original snapshot
 while later WAL admissions occur. Full source auditing retains the existing
-offline integrity-check/materialization and unoptimized scan limitations; this
+offline integrity-check/materialization limitations; request lookups use the
+indexed path only after the full size/hash audit in the same pinned transaction; this
 is not the future bounded degraded-inventory reader.
 
 Runtime draft tests target pinned-source/later-append refusal, same-frontier

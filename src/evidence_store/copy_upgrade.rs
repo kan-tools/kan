@@ -56,7 +56,10 @@ impl PlannedCopy {
             let object: Cid = cid(&es[0]["ciphertext"])
                 .parse()
                 .map_err(|_| Error::Invalid("copy request CID"))?;
-            let request_bytes = reader.read_object(&object)?;
+            // The full audit above has already checked every object size/hash
+            // in this same pinned transaction. Indexed reads cannot now reveal
+            // an unaudited oversized row; avoid a full object scan per request.
+            let request_bytes = reader.ledger.read_object(&object)?;
             let signed = service::verify_retained_request(&record, &request_bytes)
                 .map_err(|_| Error::Corrupt("copy retained request".into()))?;
             if signed.request.scope != service::hex(&target.scope)
