@@ -94,3 +94,40 @@ lint, and a 45-function combined run after replay correction. Raw failures and
 classified survivors are retained in the author review directories. Fresh
 independent review remains required. No writer or public UI is
 introduced by this draft, and no parent acceptance criterion closes.
+
+## Independent review and correction qualification
+
+Fresh actual Opus 5.5 reviewed frozen 01bc49b: scope A **BLOCK** because
+SQLite projects an empty original BLOB as NULL, while the physical reader
+rejected that projection. Scope B (the replay correction) is **APPROVE WITH
+FOLLOW-UPS**. The full unmodified report and every probe/control are retained
+in `.design/reviews/kan-v2-recovery-opening-opus/`. The earlier claim that empty
+originals were qualified was incorrect; none of the 45 initial physical vectors
+contained one. No parent acceptance criterion closed.
+
+The correction admits that projection only after proving original storage class
+BLOB and byte length zero. Source NULL/TEXT and empty candidates still refuse.
+Five signed physical vectors cover initial loss/restoration and partial profile 3;
+the original three reviewer cases are retained unchanged. Review follow-through
+adds parser-accepted noncanonical spellings in all three key tables, timed SQLite
+VM cancellation, explicit SQL refusal-code checks and pinned replay writer-pass
+scan costs. The maximal-envelope Rust assertion is labelled as a Python-fixture
+echo, not a second encoder.
+
+`Error::Sql` preserves SQLite refusal codes: TooBig and DatabaseCorrupt identify
+physical-format failures, and READONLY_ROLLBACK (776) identifies a hot source
+journal. None is missing evidence. Owner-job presentation remains separate;
+this API does not yet expose the later forensic capability enum. Root-based
+standalone openers and namespace/hard-link limits are explicitly carried into
+`.design/kan-v2-recovery-mutations.md`.
+
+Author qualification passes 49 affected integration tests, three snapshot/cell
+units, strict all-target v2 Clippy and formatting. The first new test run failed
+because mutations targeted empty original-object tables; its logs are preserved,
+and corrected fixtures assert that each targeted mutation changes a row.
+Three selected semantic controls now fail when canonical spelling, SQLite VM
+interruption or writer-pass accounting is removed; the restored 20-test subset
+passes. Whole production fix reversion reproduces the empty-original failure and
+restoring it passes. Raw qualification, failures, controls and reversion evidence
+are retained in `.design/reviews/kan-v2-recovery-opening-correction-author/`.
+Fresh review remains required; no production bundle writer has been introduced.

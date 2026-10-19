@@ -1,0 +1,23 @@
+
+running 1 test
+test reviewer_budget_monotonicity_and_bounds ... FAILED
+
+failures:
+
+failures:
+    reviewer_budget_monotonicity_and_bounds
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.62s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening)
+    Finished `test` profile [unoptimized] target(s) in 7.28s
+     Running tests/evidence_recovery_replay_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_replay_review_regressions-80b46206524a2950)
+
+thread 'reviewer_budget_monotonicity_and_bounds' (10277762) panicked at tests/evidence_recovery_replay_review_regressions.rs:347:9:
+assertion `left == right` failed: scan-charge accounting: profile2-restored-failure-observed
+  left: 28904
+ right: 31919
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_replay_review_regressions`
+
+exit=101

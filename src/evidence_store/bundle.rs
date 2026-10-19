@@ -28,6 +28,10 @@ type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     #[error(transparent)]
     Store(#[from] super::Error),
+    /// Preserve SQLite's refusal code. TooBig and DatabaseCorrupt are physical
+    /// format refusals; READONLY_ROLLBACK (776) refuses a hot source journal.
+    /// None is missing evidence. Busy/I/O failures remain distinct SQLite codes
+    /// for a later owner-job capability/error mapping.
     #[error(transparent)]
     Sql(#[from] rusqlite::Error),
     #[error(transparent)]
@@ -143,6 +147,10 @@ fn cell(
     let len = integer(row, col + 1, min as i64, max as i64)? as usize;
     let bytes = match (text, row.get_ref(col + 2)?) {
         (true, ValueRef::Text(b)) | (false, ValueRef::Blob(b)) => b,
+        // SQLite substr() can return NULL for an empty BLOB. The original
+        // storage class and full byte length were checked above: this does not
+        // reinterpret a source NULL, TEXT, or a nonempty failed projection.
+        (false, ValueRef::Null) if len == 0 => &[],
         _ => return Err(Error::Invalid("projected cell storage class")),
     };
     require(bytes.len() == len, "cell truncated")?;
@@ -459,6 +467,47 @@ fn inspect_snapshot(
 #[cfg(test)]
 mod snapshot_tests {
     use super::*;
+    #[test]
+    fn empty_blob_projection_does_not_admit_source_null_text_or_empty_candidates() {
+        let conn = Connection::open_in_memory().unwrap();
+        let mut work = Work {
+            budget: Budget {
+                items: 10,
+                acquired_bytes: 10,
+                source_bytes: 1000,
+                replay_items: 10,
+                replay_scan_bytes: 1000,
+                duration: Duration::from_secs(10),
+                cancelled: Arc::new(AtomicBool::new(false)),
+            },
+            deadline: Instant::now() + Duration::from_secs(10),
+            items: 0,
+            bytes: 0,
+        };
+        for (value, min, accept) in [
+            (rusqlite::types::Value::Blob(vec![]), 0, true),
+            (rusqlite::types::Value::Null, 0, false),
+            (rusqlite::types::Value::Text(String::new()), 0, false),
+            (rusqlite::types::Value::Blob(vec![]), 1, false),
+        ] {
+            let mut stmt = conn
+                .prepare("SELECT typeof(?1),length(CAST(?1 AS BLOB)),substr(?1,1,4194304)")
+                .unwrap();
+            let mut rows = stmt.query([value]).unwrap();
+            let result = cell(
+                rows.next().unwrap().unwrap(),
+                0,
+                min,
+                MAX_OBJECT,
+                false,
+                &mut work,
+            );
+            assert_eq!(result.is_ok(), accept);
+            if accept {
+                assert_eq!(result.unwrap(), Vec::<u8>::new());
+            }
+        }
+    }
     fn fixture() -> (tempfile::TempDir, PathBuf, Context, Budget) {
         let dir = tempfile::tempdir().unwrap();
         let name = "profile2-restored-failure-observed";

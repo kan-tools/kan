@@ -1,0 +1,42 @@
+MUTATION B-M06-writer-pass-uncharged
+[["src/evidence_recovery_replay.rs", "(row.manifest.len() + row.receipt.len() + c.bytes.len()) as u64,", "0,"]]
+$ cargo test --features v2-crypto --test evidence_recovery_replay_review_regressions reviewer_budget_monotonicity_and_bounds -- --exact --nocapture --test-threads=1
+
+running 1 test
+test reviewer_budget_monotonicity_and_bounds ... BUDGET profile2-restored-failure-observed: min_items=21 below=Some(Budget) min_bytes=28904 below=Some(Budget) same_projection_at_min=true member_input_bytes=3216 observation_bytes=4798 candidate_bytes=1175 observations=7 candidates=2
+BUDGET later-candidate-keeps-earlier-intent-history: min_items=28 below=Some(Budget) min_bytes=42309 below=Some(Budget) same_projection_at_min=true member_input_bytes=4391 observation_bytes=4357 candidate_bytes=616 observations=6 candidates=1
+BUDGET greedy-32-plus-2-loss-partition: min_items=37 below=Some(Budget) min_bytes=135343 below=Some(Budget) same_projection_at_min=true member_input_bytes=56643 observation_bytes=4815 candidate_bytes=0 observations=3 candidates=0
+BUDGET profile3-restored-failure-observed: min_items=27 below=Some(Budget) min_bytes=31329 below=Some(Budget) same_projection_at_min=true member_input_bytes=3701 observation_bytes=4798 candidate_bytes=1175 observations=7 candidates=2
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 9.09s
+
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening/.local-state/reviews/recovery-opening)
+    Finished `test` profile [unoptimized] target(s) in 7.58s
+     Running tests/evidence_recovery_replay_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_replay_review_regressions-80b46206524a2950)
+
+exit=0
+$ cargo test --features v2-crypto --test evidence_recovery_replay -- --nocapture --test-threads=1
+
+running 10 tests
+test historical_intents_keep_distinct_candidate_sets_and_independent_attempts ... ok
+test independent_state_vectors_match_acceptance_commitments_attempts_and_checkpoints ... ok
+test item_scan_byte_time_and_cancel_limits_refuse_without_partial_acceptance ... ok
+test matching_external_checkpoint_does_not_skip_verification_of_the_suffix ... ok
+test partial_membership_restoration_keeps_the_original_unverified_basis ... ok
+test physical_candidate_duplicates_and_oversized_envelopes_refuse ... ok
+test restoration_does_not_rewrite_original_loss_or_assert_current_output_exists ... ok
+test retained_checkpoint_cannot_detect_removal_of_a_later_unpinned_suffix ... ok
+test rollback_before_external_checkpoint_and_foreign_checkpoint_refuse ... ok
+test wrong_bundle_or_observer_never_selects_unsigned_history ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.58s
+
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening/.local-state/reviews/recovery-opening)
+    Finished `test` profile [unoptimized] target(s) in 0.42s
+     Running tests/evidence_recovery_replay.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_replay-4eb126a2c0172bbe)
+
+exit=0
+RESTORED exact=True {'src/evidence_recovery_replay.rs': 'b5cbabc6659d46db0734e9144c77b379e6d4cac04562c9d0323e312ebbc56c08'}

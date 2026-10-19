@@ -1,0 +1,11 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening/.local-state/reviews/recovery-opening)
+    Finished `test` profile [unoptimized] target(s) in 6.51s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-480f4f845bac8ec9)
+
+running 2 tests
+test evidence_store::bundle::snapshot_tests::cancellation_after_identity_stops_before_replay ... ok
+test evidence_store::bundle::snapshot_tests::later_wal_changes_cannot_mix_into_the_pinned_snapshot ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 81 filtered out; finished in 0.15s
+
+exit=0

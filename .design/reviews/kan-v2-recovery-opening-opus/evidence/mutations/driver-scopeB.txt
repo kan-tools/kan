@@ -1,0 +1,7 @@
+B-M01-candidate-writer restored True
+B-M02-candidate-hash restored True
+B-M03-candidate-length restored True
+B-M04-record-length-alone restored True
+B-M05-record-length-and-writer restored True
+B-M06-writer-pass-uncharged restored True
+exit=0

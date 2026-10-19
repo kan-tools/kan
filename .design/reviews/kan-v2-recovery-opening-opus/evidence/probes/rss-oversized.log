@@ -1,0 +1,10 @@
+PROBE RSS => ACCEPT latest=6 restored=1 items=12 bytes=9831 elapsed_ms=47
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.05s
+            14516224  maximum resident set size
+PROBE RSS => REFUSE Budget("source bytes") elapsed_ms=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+            11091968  maximum resident set size
+PROBE RSS => ACCEPT latest=6 restored=1 items=12 bytes=9831 elapsed_ms=59
+            14680064  maximum resident set size
+PROBE RSS => REFUSE Sql(SqliteFailure(Error { code: TooBig, extended_code: 18 }, Some("string or blob too big"))) elapsed_ms=1
+            13123584  maximum resident set size

@@ -1,0 +1,314 @@
+diff --git a/.design/kan-v2-recovery-bundle-opening.md b/.design/kan-v2-recovery-bundle-opening.md
+index f911e68..19eb73c 100644
+--- a/.design/kan-v2-recovery-bundle-opening.md
++++ b/.design/kan-v2-recovery-bundle-opening.md
+@@ -96,0 +97,33 @@ introduced by this draft, and no parent acceptance criterion closes.
++
++## Independent review and correction qualification
++
++Fresh actual Opus 5.5 reviewed frozen 01bc49b: scope A **BLOCK** because
++SQLite projects an empty original BLOB as NULL, while the physical reader
++rejected that projection. Scope B (the replay correction) is **APPROVE WITH
++FOLLOW-UPS**. The full unmodified report and every probe/control are retained
++in `.design/reviews/kan-v2-recovery-opening-opus/`. The earlier claim that empty
++originals were qualified was incorrect; none of the 45 initial physical vectors
++contained one. No parent acceptance criterion closed.
++
++The correction admits that projection only after proving original storage class
++BLOB and byte length zero. Source NULL/TEXT and empty candidates still refuse.
++Five signed physical vectors cover initial loss/restoration and partial profile 3;
++the original three reviewer cases are retained unchanged. Review follow-through
++adds parser-accepted noncanonical spellings in all three key tables, timed SQLite
++VM cancellation, explicit SQL refusal-code checks and pinned replay writer-pass
++scan costs. The maximal-envelope Rust assertion is labelled as a Python-fixture
++echo, not a second encoder.
++
++`Error::Sql` preserves SQLite refusal codes: TooBig and DatabaseCorrupt identify
++physical-format failures, and READONLY_ROLLBACK (776) identifies a hot source
++journal. None is missing evidence. Owner-job presentation remains separate;
++this API does not yet expose the later forensic capability enum. Root-based
++standalone openers and namespace/hard-link limits are explicitly carried into
++`.design/kan-v2-recovery-mutations.md`.
++
++Author qualification passes 49 affected integration tests, three snapshot/cell
++units, strict all-target v2 Clippy and formatting. The first new test run failed
++because mutations targeted empty original-object tables; its logs are preserved,
++and corrected fixtures assert that each targeted mutation changes a row.
++Selected controls, whole-fix reversion and fresh review remain required before
++accepting this correction; no production bundle writer has been introduced.
+diff --git a/.design/tools/recovery_bundle_files.py b/.design/tools/recovery_bundle_files.py
+index 675a0dc..7a73d42 100644
+--- a/.design/tools/recovery_bundle_files.py
++++ b/.design/tools/recovery_bundle_files.py
+@@ -35,2 +35,2 @@ def main():
+-    p=argparse.ArgumentParser();p.add_argument('out',type=Path);p.add_argument('--case');p.add_argument('--encoding',default='UTF-8',choices=['UTF-8','UTF-16le']);a=p.parse_args()
+-    cases=json.loads((ROOT/'.design/fixtures/recovery-replay-v1.json').read_text())['cases']
++    p=argparse.ArgumentParser();p.add_argument('out',type=Path);p.add_argument('--case');p.add_argument('--vectors',type=Path,default=ROOT/'.design/fixtures/recovery-replay-v1.json');p.add_argument('--encoding',default='UTF-8',choices=['UTF-8','UTF-16le']);a=p.parse_args()
++    cases=json.loads(a.vectors.read_text())['cases']
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 616de95..f8cc552 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -40,0 +41 @@ jobs:
++      - run: python3 .design/tools/recovery_bundle_review_vectors.py --check
+diff --git a/src/evidence_store/bundle.rs b/src/evidence_store/bundle.rs
+index bc1fb7f..8d6e441 100644
+--- a/src/evidence_store/bundle.rs
++++ b/src/evidence_store/bundle.rs
+@@ -30,0 +31,4 @@ pub enum Error {
++    /// Preserve SQLite's refusal code. TooBig and DatabaseCorrupt are physical
++    /// format refusals; READONLY_ROLLBACK (776) refuses a hot source journal.
++    /// None is missing evidence. Busy/I/O failures remain distinct SQLite codes
++    /// for a later owner-job capability/error mapping.
+@@ -145,0 +150,4 @@ fn cell(
++        // SQLite substr() can return NULL for an empty BLOB. The original
++        // storage class and full byte length were checked above: this does not
++        // reinterpret a source NULL, TEXT, or a nonempty failed projection.
++        (false, ValueRef::Null) if len == 0 => &[],
+@@ -461,0 +470,41 @@ mod snapshot_tests {
++    #[test]
++    fn empty_blob_projection_does_not_admit_source_null_text_or_empty_candidates() {
++        let conn = Connection::open_in_memory().unwrap();
++        let mut work = Work {
++            budget: Budget {
++                items: 10,
++                acquired_bytes: 10,
++                source_bytes: 1000,
++                replay_items: 10,
++                replay_scan_bytes: 1000,
++                duration: Duration::from_secs(10),
++                cancelled: Arc::new(AtomicBool::new(false)),
++            },
++            deadline: Instant::now() + Duration::from_secs(10),
++            items: 0,
++            bytes: 0,
++        };
++        for (value, min, accept) in [
++            (rusqlite::types::Value::Blob(vec![]), 0, true),
++            (rusqlite::types::Value::Null, 0, false),
++            (rusqlite::types::Value::Text(String::new()), 0, false),
++            (rusqlite::types::Value::Blob(vec![]), 1, false),
++        ] {
++            let mut stmt = conn
++                .prepare("SELECT typeof(?1),length(CAST(?1 AS BLOB)),substr(?1,1,4194304)")
++                .unwrap();
++            let mut rows = stmt.query([value]).unwrap();
++            let result = cell(
++                rows.next().unwrap().unwrap(),
++                0,
++                min,
++                MAX_OBJECT,
++                false,
++                &mut work,
++            );
++            assert_eq!(result.is_ok(), accept);
++            if accept {
++                assert_eq!(result.unwrap(), Vec::<u8>::new());
++            }
++        }
++    }
+diff --git a/tests/evidence_recovery_bundle.rs b/tests/evidence_recovery_bundle.rs
+index 874cc4c..425d8ef 100644
+--- a/tests/evidence_recovery_bundle.rs
++++ b/tests/evidence_recovery_bundle.rs
+@@ -78,0 +79,3 @@ fn fixture() -> (tempfile::TempDir, PathBuf, Value) {
++    fixture_named("profile2-restored-failure-observed")
++}
++fn fixture_named(name: &str) -> (tempfile::TempDir, PathBuf, Value) {
+@@ -80 +82,0 @@ fn fixture() -> (tempfile::TempDir, PathBuf, Value) {
+-    let name = "profile2-restored-failure-observed";
+@@ -148,0 +151 @@ fn schema_marker_history_identity_and_physical_cell_damage_refuse() {
++ "UPDATE restored_objects SET cid='b'||upper(substr(cid,2));",
+@@ -322 +325,3 @@ fn hot_rollback_journal_refuses_without_recovering_source_media() {
+-    assert!(bundle::inspect(&path, pins(&v), None, budget()).is_err());
++    assert!(matches!(bundle::inspect(&path, pins(&v), None, budget()),
++        Err(Error::Sql(rusqlite::Error::SqliteFailure(code,_)))
++        if code.code == rusqlite::ErrorCode::ReadOnly && code.extended_code == 776));
+@@ -325,0 +331,164 @@ fn hot_rollback_journal_refuses_without_recovering_source_media() {
++
++#[test]
++fn empty_originals_remain_exact_evidence_before_and_after_restoration() {
++    let dir = tempfile::tempdir().unwrap();
++    let python = std::env::var_os("KAN_TLS_ORACLE_PYTHON").unwrap_or_else(|| "python3".into());
++    let output = Command::new(python)
++        .args([
++            ".design/tools/recovery_bundle_files.py",
++            dir.path().to_str().unwrap(),
++            "--vectors",
++            ".design/fixtures/recovery-bundle-review-v1.json",
++        ])
++        .output()
++        .unwrap();
++    assert!(
++        output.status.success(),
++        "{}",
++        String::from_utf8_lossy(&output.stderr)
++    );
++    let vectors: Value = serde_json::from_str(include_str!(
++        "../.design/fixtures/recovery-bundle-review-v1.json"
++    ))
++    .unwrap();
++    for v in vectors["cases"].as_array().unwrap() {
++        let name = v["name"].as_str().unwrap();
++        let path = dir.path().join(format!("{name}.sqlite"));
++        let before = std::fs::read(&path).unwrap();
++        let got = bundle::inspect(&path, pins(v), None, budget())
++            .unwrap_or_else(|e| panic!("{name}: {e}"));
++        assert_eq!(
++            got.replay().restored(),
++            v["candidates"].as_array().unwrap().len() as u64
++        );
++        assert_eq!(
++            got.replay().latest().sequence,
++            v["observations"].as_array().unwrap().len() as u64
++        );
++        assert_eq!(got.replay().member().losses().len(), 1);
++        assert_eq!(
++            got.replay().member().recipe_metadata_complete(),
++            v["member"]["expected"]["recipeMetadataComplete"]
++                .as_bool()
++                .unwrap()
++        );
++        assert_eq!(
++            kan::evidence_service::hex(got.replay().member().commitment()),
++            v["member"]["expected"]["member"]
++        );
++        assert_eq!(
++            got.replay().member().losses()[0].state,
++            kan::evidence_recovery_member::Availability::Corrupt
++        );
++        let db = Connection::open(&path).unwrap();
++        let (kind, original): (String, Vec<u8>) = db
++            .query_row(
++                "SELECT typeof(bytes),bytes FROM member_objects WHERE cid=?",
++                [v["member"]["objects"][0][0].as_str().unwrap()],
++                |r| Ok((r.get(0)?, r.get(1)?)),
++            )
++            .unwrap();
++        assert_eq!(kind, "blob");
++        assert_eq!(
++            original,
++            unhex(v["member"]["objects"][0][1].as_str().unwrap(), 4194304).unwrap()
++        );
++        drop(db);
++        assert_eq!(
++            std::fs::read(&path).unwrap(),
++            before,
++            "source changed: {name}"
++        );
++    }
++}
++
++#[test]
++fn sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation() {
++    // Promoted from independent review A12. Direct schema insertion avoids
++    // quadratic fixture construction; inspection must still load the schema.
++    // This is a local SQLite execution bound, not arbitrary filesystem latency.
++    let (_dir, path, v) = fixture();
++    let db = Connection::open(&path).unwrap();
++    db.set_db_config(rusqlite::config::DbConfig::SQLITE_DBCONFIG_DEFENSIVE, false)
++        .unwrap();
++    db.execute_batch("PRAGMA writable_schema=ON; WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<400000) INSERT INTO sqlite_schema SELECT 'view','v'||i,'v'||i,0,'CREATE VIEW v'||i||' AS SELECT '||i||' AS n' FROM n; PRAGMA writable_schema=OFF;").unwrap();
++    drop(db);
++    let before = std::fs::read(&path).unwrap();
++    let mut b = budget();
++    b.duration = Duration::from_millis(150);
++    let started = Instant::now();
++    assert!(matches!(
++        bundle::inspect(&path, pins(&v), None, b),
++        Err(Error::Budget("duration"))
++    ));
++    assert!(
++        started.elapsed() < Duration::from_secs(3),
++        "deadline did not interrupt SQLite schema loading"
++    );
++    let b = budget();
++    let flag = b.cancelled.clone();
++    let cancelling = std::thread::spawn(move || {
++        std::thread::sleep(Duration::from_millis(100));
++        flag.store(true, std::sync::atomic::Ordering::Relaxed);
++    });
++    let started = Instant::now();
++    let result = bundle::inspect(&path, pins(&v), None, b);
++    cancelling.join().unwrap();
++    assert!(matches!(result, Err(Error::Cancelled)));
++    assert!(
++        started.elapsed() < Duration::from_secs(3),
++        "cancellation did not interrupt SQLite schema loading"
++    );
++    assert_eq!(std::fs::read(&path).unwrap(), before);
++}
++
++#[test]
++fn parser_accepted_noncanonical_spellings_refuse_in_every_key_table() {
++    for (table, name) in [
++        (
++            "member_objects",
++            "original-object-basis-survives-restoration",
++        ),
++        ("restored_objects", "profile2-restored-failure-observed"),
++        ("member_membership", "profile3-restored-failure-observed"),
++    ] {
++        let (_dir, path, v) = fixture_named(name);
++        let db = Connection::open(&path).unwrap();
++        assert!(
++            db.execute(
++                &format!("UPDATE {table} SET cid='b'||upper(substr(cid,2));"),
++                []
++            )
++            .unwrap()
++                > 0
++        );
++        drop(db);
++        let result = bundle::inspect(&path, pins(&v), None, budget());
++        assert!(
++            result.is_err(),
++            "accepted mutation: parser-accepted noncanonical {table} key"
++        );
++        assert!(matches!(
++            result,
++            Err(Error::Invalid("canonical CID spelling"))
++        ));
++    }
++}
++
++#[test]
++fn oversized_and_malformed_physical_media_retain_sqlite_refusal_codes() {
++    for sql in [
++        "UPDATE member_objects SET bytes=zeroblob(6291456);",
++        "PRAGMA writable_schema=ON; INSERT INTO sqlite_schema VALUES('table','bad','bad',0,'CREATE TABLE bad('); PRAGMA writable_schema=OFF;",
++    ] {
++        let (_dir,path,v)=fixture_named("original-object-basis-survives-restoration");
++        let db=Connection::open(&path).unwrap();
++        db.set_db_config(rusqlite::config::DbConfig::SQLITE_DBCONFIG_DEFENSIVE,false).unwrap();
++        db.execute_batch("PRAGMA ignore_check_constraints=ON;").unwrap();db.execute_batch(sql).unwrap();assert!(db.changes()>0,"fixture mutation must change a row");drop(db);
++        let before=std::fs::read(&path).unwrap();
++        let expected=if sql.starts_with("UPDATE") {rusqlite::ErrorCode::TooBig} else {rusqlite::ErrorCode::DatabaseCorrupt};
++        assert!(matches!(bundle::inspect(&path,pins(&v),None,budget()),
++            Err(Error::Sql(rusqlite::Error::SqliteFailure(code,_))) if code.code==expected));
++        assert_eq!(std::fs::read(&path).unwrap(),before);
++    }
++}
+diff --git a/tests/evidence_recovery_replay_review_regressions.rs b/tests/evidence_recovery_replay_review_regressions.rs
+index 7ea0cd2..2f3d25a 100644
+--- a/tests/evidence_recovery_replay_review_regressions.rs
++++ b/tests/evidence_recovery_replay_review_regressions.rs
+@@ -336,0 +337,14 @@ fn reviewer_budget_monotonicity_and_bounds() {
++        // Independently measured in opening review B-F1, including the extra
++        // request-writer verification pass (3015/1556/0/3015 bytes respectively).
++        // A monotonicity-only assertion cannot detect an omitted work charge.
++        let expected_min_bytes = match name {
++            "profile2-restored-failure-observed" => 31919,
++            "later-candidate-keeps-earlier-intent-history" => 43865,
++            "greedy-32-plus-2-loss-partition" => 135343,
++            "profile3-restored-failure-observed" => 34344,
++            _ => unreachable!(),
++        };
++        assert_eq!(
++            min_bytes, expected_min_bytes,
++            "scan-charge accounting: {name}"
++        );
+@@ -396,0 +411,3 @@ fn unavailable_partition_has_a_pinned_conservative_envelope_bound() {
++    // This echoes the independent Python fixture's arithmetic; it does not
++    // encode a maximal statement in Rust. The generator's --check verifies the
++    // maximal signed shape, and Rust separately verifies the signed corpus.
