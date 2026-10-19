@@ -55,12 +55,11 @@ The namespace contains:
 
 | Table | Authority and role |
 | --- | --- |
-| `bundle_identity` | singleton: bundle ID, observer DID, member logical profile, original archive/scope/issuer pins, initial member commitment and source frontier |
+| `bundle_identity` | singleton: bundle ID, observer DID, member logical profile and original archive/scope/issuer pins; commitment/frontier live in the signed created event |
 | `member_objects` | exact original object keys and bounded bytes, including corrupt bytes; absent rows remain absent |
-| `member_commits` | exact manifest/receipt bytes with reconstructed disposable lookup coordinates |
-| `member_attestations` | exact stored proof envelopes; never newly issued |
-| `member_upgrade_plan` | exact canonical profile-3 plan, absent for profile 2 |
-| `member_upgrade_objects` | exact original membership and lengths, absent for profile 2 |
+| `member_records` | exact manifest/receipt/proof bytes together by occurrence sequence; never newly issued |
+| `member_plan` | exact canonical profile-3 plan, absent for profile 2 |
+| `member_membership` | exact original membership and lengths, absent for profile 2 |
 | `observations` | contiguous observer-signed canonical envelopes; append only |
 | `restored_objects` | append-only verified candidates by expected content address, with no updates to member_objects |
 
@@ -81,13 +80,16 @@ but are not exposed as authorized browser occurrences without metadata membershi
 
 ### Canonical observation protocol proposal
 
-Use canonical DAG-CBOR `{v:1,kind:"recovery-observation",body}` and a closed
+The codec appendix is the single proposed wire definition. Use its flat canonical
+DAG-CBOR statement with `version`, `domain`, full pinned context, sequence,
+previous, `sampledAt`, `event` and event-specific `body`, inside the closed
 `{statement:<exact bytes>,signature:<64 low-S P-256 bytes>}` envelope, max 16 KiB.
+There is no alternative `v/kind/body` statement wrapper.
 Signature preimage is canonical `{domain:"tools.kan.recovery.observation.v1",
 statement:<statement CID>}`. Require canonical static observer DID/method and
 safe-integer sequence/time. No reuse of service admission signature domains.
 
-Every body commits to bundle ID, logical archive ID/profile/scope/issuer, observer,
+Every statement commits to bundle ID, logical archive ID/profile/scope/issuer, observer,
 positive sequence, previous statement CID (null only at sequence 1), sampled-at
 milliseconds, event kind and a closed event-specific payload. Event variants:
 
@@ -125,7 +127,8 @@ owner job copies and verifies member metadata, retains bounded original objects,
 and inserts creation/loss observations. Publish the bundle marker only in the
 same successful transaction as the complete initial member and initial history;
 fsync the file and parent before reporting success. A failed/oversized job retains
-an unrecognized output and source. Work budgets are explicit instance/owner
+an unrecognized output and source. Non-BLOB source object cells refuse creation rather than being cast to bytes.
+Work budgets are explicit instance/owner
 resource limits, not a new fixed repository-size ceiling disguised as a protocol
 limit. A resumable multi-transaction creator needs a separate pinned-plan design;
 it must not label a partially copied bundle complete.
@@ -141,9 +144,21 @@ original missing/corrupt state; it never silently substitutes history.
 
 The owner selects a new output path and exact bundle/history frontier. Verify all
 chosen payloads, current writer signatures, issuer proofs, original plan/membership
-and structural constraints. Partial profile-3 copies must first be completed by
-the reviewed source-copy workflow; restored blobs alone do not invent missing
-metadata or satisfy an incomplete source recipe.
+and structural constraints. A partial profile-3 member is retained and inspectable but is ineligible for
+standalone publication in KNB1. Its immutable member cannot gain missing metadata
+through blob restoration. The owner can use the existing source-copy workflow
+on a separately retained complete original source, first confirming that source
+against the old pinned plan/digest, to create a different verified output using a new nonce and hence a new archive ID; retain the old bundle and
+its entire observation history, with the owner job recording the original bundle
+ID/checkpoint as a provenance reference. That is not publication from this partial
+bundle and must not be reported
+as such. Completing a partial member inside its bundle would require a separately
+reviewed append-only metadata-extension protocol, which KNB1 does not provide.
+This limitation is visible in the job/UI capability result, not a repair guess.
+
+Publication deterministically selects the candidate set recorded before its
+intent, as specified by R1 in the codec appendix. Later restorations require a
+new attempt and cannot silently alter an old selection.
 
 Append `publication-intent` before creating an output. Build a new standalone
 file using exact original metadata/proofs/plan and verified selected payloads,

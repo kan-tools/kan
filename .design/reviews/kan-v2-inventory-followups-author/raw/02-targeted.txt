@@ -1,0 +1,90 @@
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-degraded-inventory)
+    Finished `test` profile [unoptimized] target(s) in 7.05s
+     Running tests/evidence_copy_destination.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_destination-3ab9695f6c2b8977)
+
+running 33 tests
+test copy_death_child ... ok
+test initialization_death_child ... ok
+test independent_sqlite_inventory_matches_the_copy_surface_catalog ... ok
+test admission_rechecks_original_membership_after_staging_under_writer_transaction ... ok
+test empty_record_history_is_incomplete_until_all_staged_objects_are_copied ... ok
+test incomplete_copy_backup_remains_incomplete_and_resume_rejects_wrong_object_length ... ok
+test concurrent_owner_batches_revalidate_under_the_writer_transaction ... ok
+test later_admission_can_share_an_original_staged_object_without_changing_membership ... ok
+test owner_cli_copy_preconditions_refuse_without_creating_output ... ok
+test owner_cli_plan_paths_cannot_be_sqlite_files_or_sidecars ... ok
+test owner_recipe_refusals_happen_before_destination_creation ... ok
+test bounded_copy_preserves_original_bytes_and_acknowledged_proofs_before_new_admission ... ok
+test owner_recipe_signer_and_profile_are_required_before_mutation ... ok
+test plan_custody_refuses_sqlite_families_before_opening_or_writing ... ok
+test rebuild_death_child ... ok
+test pinned_wal_source_copies_its_original_snapshot_and_later_confirmation_refuses ... ok
+test profile3_rejects_mixed_historical_issuers_with_a_specific_reason ... ok
+test owner_cli_pins_private_recipe_and_explicit_profile_through_lifecycle ... ok
+test profile3_rejects_retained_after_admission_and_admission_inside_original_prefix ... ok
+test copy_plan_cli_refuses_preexisting_sidecar_outputs_before_opening_source ... ok
+test sidecar_hardlink_identity_is_rejected_even_with_an_unrelated_plan_name ... ok
+test resume_refuses_self_consistent_foreign_object_prefix_before_advancing ... ok
+test interrupted_initialization_requires_explicit_resume_with_retained_recipe ... ok
+test unicode_reserved_plan_suffix_is_refused_even_before_any_sidecar_exists ... ok
+test unicode_source_sidecar_plan_is_refused_before_a_fresh_sqlite_reader_can_consume_it ... ok
+test resume_refuses_valid_foreign_receipt_prefix_before_signing_more_proofs ... ok
+test unicode_sidecar_aliases_refuse_before_copy_resume_and_preserve_the_plan ... ok
+test profile3_schema_drift_refuses_open_verify_resume_and_stale_handle_backup ... ok
+test rebuild_repairs_derived_columns_and_keeps_authoritative_copy_bytes ... ok
+test byte_budget_never_splits_objects_or_admits_before_complete_source ... ok
+test rebuild_process_death_publishes_all_copy_authority_or_no_profile ... ok
+test rebuild_refuses_lost_or_replaced_authoritative_evidence_without_publishing_profile ... ok
+test every_copy_transaction_boundary_resumes_without_replacing_acknowledged_bytes ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.72s
+
+     Running tests/evidence_inventory.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_inventory-c64c1fa4419bff69)
+
+running 18 tests
+test inventory_large_row_worker ... ok
+test issuer_attested_available_metadata_does_not_replace_original_writer_verification ... ok
+test descending_pages_and_budgets_preserve_exact_frontiers ... ok
+test empty_admitted_and_incomplete_retained_snapshots_do_not_claim_copy_readiness ... ok
+test byte_limited_pages_and_wrong_context_cursors_never_report_false_coverage ... ok
+test read_only_inventory_preserves_main_and_retained_wal_bytes ... ok
+test complete_retained_metadata_requires_exact_original_inventory_and_recipe ... ok
+test selected_valid_same_height_proof_replacement_is_rejected ... ok
+test maximum_service_request_is_available_under_the_metadata_allocation_limit ... ok
+test oversized_payload_is_classified_by_length_without_full_materialization ... ok
+test startup_item_budget_counts_each_metadata_record_before_accepting_a_snapshot ... ok
+test single_bit_blob_to_text_serial_type_damage_remains_browsable ... ok
+test source_rechecks_current_payload_and_selected_metadata_in_a_fresh_transaction ... ok
+test inventory_purpose_checks_pin_specific_refusals_before_recipe_digest_checks ... ok
+test missing_and_corrupt_tip_or_middle_remain_visible_after_restart_with_healthy_neighbours ... ok
+test owner_schema_and_metadata_failures_are_never_unavailable_badges ... ok
+test wrong_sql_payload_types_are_corrupt_without_failing_healthy_neighbours ... ok
+test inventory_large_rows_stay_below_the_materialization_memory_ceiling ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.84s
+
+     Running tests/surface_conformance.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/surface_conformance-34974efe399960ee)
+
+running 19 tests
+test compiler_resolves_filesystem_aliases_to_the_single_mutation_facade ... ok
+test catalog_is_well_formed_and_cites_real_designs ... ok
+test persistence_modules_cannot_add_an_unreviewed_path_literal ... ok
+test every_implemented_value_has_exactly_one_catalog_row_and_no_row_is_fiction ... ok
+test every_filesystem_mutation_names_its_catalog_surface_at_the_call_site ... ok
+test every_module_that_mutates_the_filesystem_is_registered ... ok
+test every_persistence_facade_call_is_independently_inventoried ... ok
+test sqlite_is_recomputed_from_authoritative_claims_not_from_itself ... ok
+test the_catalog_represents_authority_source_and_scope_as_independent_axes ... ok
+test workspace_routes_overlay_io_through_overlay_capabilities ... ok
+test overlay_is_recomputed_from_authoritative_git_tree_claims ... ok
+test production_workspace_recovers_when_projection_metadata_has_the_wrong_type ... ok
+test production_workspace_bypasses_an_unremovable_semantically_poisoned_projection ... ok
+test production_workspace_bypasses_an_unremovable_corrupt_projection ... ok
+test production_workspace_recovers_when_a_projection_column_has_the_wrong_type ... ok
+test caller_selected_role_key_is_an_implemented_authoritative_surface ... ok
+test production_workspace_bypasses_an_unopenable_projection_path ... ok
+test production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json ... ok
+test production_workspace_recreates_a_malformed_projection_schema ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.21s
+

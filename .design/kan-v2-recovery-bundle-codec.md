@@ -67,6 +67,7 @@ Missing objects are absent, not fabricated empty rows. A present zero-length
 corrupt object is a present row with length zero and an empty frame. Staged/orphan
 objects are included. A valid identifier with corrupted bytes is representable;
 a malformed key, duplicate logical key, unreadable SQL cell, unknown schema or
+non-BLOB object cell (including TEXT with identical encoded bytes), or
 raw object larger than 4 MiB refuses initial creation and retains the source and
 failed output. This is a bounded capture format, not arbitrary SQLite forensics.
 A later format for oversized forensic fragments needs a separate explicit recipe;
@@ -80,7 +81,10 @@ not just a high-water sequence. For empty history both are null.
 
 ## Event bodies
 
-All digests below are 32-byte M1 values. All attempt IDs are owner-generated
+All digests below are 32 bytes; `member` uses M1, `output` uses O1, and
+`restorations` uses R1. O1 has exactly M1 framing with the initial domain replaced
+by ASCII `tools.kan.recovery.output.v1` followed by a zero byte. It commits to the
+fully verified selected output rather than the original damaged member. All attempt IDs are owner-generated
 16-byte values. A `frontier` is a closed map `{through, manifest, attestation}`
 with both links null iff `through=0`. Nonempty links have DAG-CBOR/SHA256 codec.
 
@@ -89,20 +93,21 @@ with both links null iff `through=0`. Nonempty links have DAG-CBOR/SHA256 codec.
 - `unavailable`: `{member: digest, entries: [...]}`. One to 32 entries, each
   `{occurrence, cid, expectedLength, state}`. `occurrence` is a positive member
   sequence or null for a staged/orphan object; `expectedLength` is an expected
-  length from authenticated metadata/membership or null only for a profile-2
-  staged/orphan object without an authenticated length. `state` is `missing` or
+  length from authenticated metadata/membership or null only for an unreferenced
+  staged/orphan object without an authenticated length, in either profile. `state` is `missing` or
   `corrupt`. No metadata-corruption state pretends a broken proof is trustworthy.
-- `restored`: `{cid, length, candidate}`. `candidate` is the raw/SHA256 CID of the
+- `restored`: `{member: digest, cid, length, candidate}`. `candidate` is the raw/SHA256 CID of the
   verified candidate and equals `cid`; length is 1..4 MiB. The target must exist
   in member metadata, original membership or original object keys. Any known
   expected lengths must agree; conflicting references refuse. Unknown orphan
   length is established by this verified candidate, not invented historical data.
 - `publication-intent`: `{attempt, member: digest, restorations: digest,
-  frontier}`. The second digest is R1 below. Exactly one unresolved intent per
-  attempt ID. No path/command is trusted as signed executable routing data.
+  output: digest, frontier}`. `output` is the expected O1 of the deterministic
+  selected standalone output, checked before signing intent. Exactly one intent
+  per attempt ID. No path/command is trusted as signed executable routing data.
 - `publication-observed`: `{attempt, intent, output: digest, frontier}`. `intent`
-  cites the exact prior intent statement. `output` is M1 of the fully verified
-  standalone output, using selected valid objects and unchanged original metadata.
+  cites the exact prior intent statement. `output` is O1 of the fully verified
+  standalone output, must equal the cited intent output commitment, using selected valid objects and unchanged original metadata.
   It reports an observed durable output; it never records service activation.
 - `publication-failed`: `{attempt, intent, reason}`. Closed reason enum:
   `source-changed`, `invalid-candidate`, `destination-conflict`, `budget`, `io`,
@@ -118,9 +123,57 @@ must reference the member fixed at creation, not a silently revised member.
 R1 is `SHA256(domain || N(count) || items)`, where domain is ASCII
 `tools.kan.recovery.restorations.v1` plus zero byte, and items in canonical CID
 text lexical order are `F(binary CID) || N(length) || F(candidate bytes)`.
-Only candidates selected for the publication attempt enter R1. Each must verify
-against its content address and all known expected lengths. No unsigned selection
-list can substitute a different candidate after the intent is committed.
+R1 includes every candidate with a matching restored observation strictly before
+that intent's sequence. There is no optional unsigned selection list. Each must
+verify against its content address and all known expected lengths. A verifier
+replays the chain to reconstruct this exact historical set; candidates appended
+after the intent never enter its R1. A different candidate set requires a new
+attempt and intent. This makes restart verification independent of a lost job
+process or an externally remembered subset.
+
+The virtual standalone output contains exactly the union of original object
+keys, authenticated record object references and original membership keys.
+Every key needs verified bytes of all known expected lengths: use its verified
+restoration candidate from this R1 set when present, otherwise its valid original
+bytes. A still-missing/corrupt key refuses publication, including staged/orphan
+keys. Never drop a corrupt orphan to make verification pass, add an unreferenced
+new object, or use a candidate recorded after the intent. Recompute expected
+output O1 from this deterministic union and unchanged records/plan/membership; both intent and
+publication-observed must equal it and the original metadata frontier. The normal
+standalone verifier still independently validates all signatures and profile
+completion. A partial profile-3 member has no KNB1 publication operation; it stays
+a retained recovery artifact until a separate metadata-extension design exists.
+
+## Exact initial loss coverage
+
+Derive one expected coordinate for each `(occurrence sequence, object CID)` in
+member metadata. A shared CID used by two occurrences yields two distinct
+coordinates, not a collapsed history. Add a null-occurrence coordinate for each
+original membership key or original object key that has no occurrence reference;
+never add a second null entry for a CID already represented by occurrences.
+All authenticated lengths for a CID must agree or creation refuses. The expected
+length is that agreed value, or null only for an unreferenced original object
+without an authenticated length.
+
+Sample each coordinate against the original member objects. Missing rows produce
+missing entries; wrong length/hash produces corrupt entries; available entries
+produce no unavailable event. Non-BLOB cells refuse creation under the M1 rule.
+Sort occurrence entries first by ascending numeric sequence then canonical CID
+text; sort null entries last by canonical CID text. No duplicate coordinate is
+allowed. The concatenation of creation's unavailable events must equal this exact
+ordered loss vector: omissions, extra entries, duplicate entries, conflicting
+states or altered expected lengths refuse verification.
+
+These events occur immediately after created, before restoration/publication.
+Partition greedily into the largest consecutive prefix of at most 32 entries
+whose canonical signed envelope fits 16 KiB; signatures have fixed 64-byte width.
+No empty event is permitted. Empty loss coverage means created alone. Verifiers
+recompute the same vector and partition; an unavailable event after that initial
+coverage is invalid. Damage to the physical bundle after creation is an integrity
+failure against its fixed M1, not permission to rewrite member bytes or insert a
+new claim that retrospectively changes the initial sample. Preserve such media
+and recover the bundle from verified backups; arbitrary forensic repair remains
+outside KNB1.
 
 ## Physical tables
 
@@ -178,8 +231,9 @@ validate these relationships from the complete observation chain, not a mutable
 status column.
 
 Creation's single publication transaction includes a created event plus enough
-unavailable events to cover every unavailable expected occurrence and every
-corrupt retained staged/orphan row. Missing orphans with no surviving expected
+unavailable events to cover every unavailable expected occurrence, every
+missing/corrupt original-membership key (including unreferenced staged objects),
+and every corrupt retained orphan row. Missing orphans with no surviving expected
 coordinate cannot be invented. Exact repeated restoration is idempotent: return
 the prior candidate/observation, without a new row or signature. A candidate
 insert without its observation, or observation without its candidate, refuses.
@@ -190,3 +244,22 @@ must prove that checkpoint belongs to the observed chain and distinguish it from
 any later verified extension. A file cannot supply its own rollback-detection
 checkpoint. No cross-copy anti-equivocation beyond the explicitly pinned chain
 is claimed.
+
+### Checkpoints and multiple completed outputs
+
+Several attempt IDs may each reach publication-observed. Each creates a separate
+physical standalone output with the member's logical archive identity; none
+activates a service. The owner must select exactly one live writer and fence the
+others through the separately authorized activation workflow. The bundle cannot
+promise that privileged manual configuration obeyed that workflow.
+
+Every successful mutation/job result returns the verified observation frontier
+(sequence plus statement CID and full binding), including a committed failure
+observation. The owner verifies and durably retains it outside the bundle before
+advancing the recovery UI's independently checkpointed status. On restart the
+owner supplies the latest retained checkpoint; valid extensions are reported
+separately until retained. A tail truncated after the latest external checkpoint
+is not detectable. The online observer key can attribute new statements but does
+not itself provide an independent tamper-evidence or non-equivocation witness.
+An uncertain response may require explicit inspection and checkpoint advancement;
+do not derive the external pin from the bundle being verified.
