@@ -63,6 +63,9 @@ struct Fixture {
     profile: Profile,
 }
 fn fixture(parent: &Path, profile: Profile) -> Fixture {
+    fixture_with_staged(parent, profile, false)
+}
+fn fixture_with_staged(parent: &Path, profile: Profile, staged: bool) -> Fixture {
     let root = parent.join("archive");
     let mut requests = Vec::new();
     let mut previous = None;
@@ -103,6 +106,17 @@ fn fixture(parent: &Path, profile: Profile) -> Fixture {
             requests.push(bytes);
         }
         drop(a);
+        if staged {
+            let db = rusqlite::Connection::open(legacy.join("archive.sqlite")).unwrap();
+            db.execute(
+                "INSERT INTO objects VALUES(?1,?2)",
+                rusqlite::params![
+                    store::ciphertext_cid(b"staged original").to_string(),
+                    b"staged original".as_slice()
+                ],
+            )
+            .unwrap();
+        }
         let source = PlannedCopy::open(
             &legacy.join("archive.sqlite"),
             Target {
@@ -202,13 +216,14 @@ fn edit(path: &Path, sql: &str) {
 fn creation_preserves_physical_originals_and_metadata_for_admitted_complete_and_partial_copies() {
     for kind in 0..3 {
         let dir = tempfile::tempdir().unwrap();
-        let f = fixture(
+        let f = fixture_with_staged(
             dir.path(),
             if kind == 0 {
                 Profile::Admitted
             } else {
                 Profile::Copied
             },
+            true,
         );
         let src = f.root.join("archive.sqlite");
         let dst = dir.path().join("bundle.sqlite");
@@ -229,12 +244,14 @@ fn creation_preserves_physical_originals_and_metadata_for_admitted_complete_and_
         let id1 = store::ciphertext_cid(&f.requests[1]).to_string();
         c.execute("UPDATE objects SET bytes=x'' WHERE cid=?", [&id1])
             .unwrap();
-        let staged = store::ciphertext_cid(b"staged original").to_string();
-        c.execute(
-            "INSERT INTO objects VALUES(?1,?2)",
-            rusqlite::params![staged, b"staged original".as_slice()],
-        )
-        .unwrap();
+        if kind == 0 {
+            let staged = store::ciphertext_cid(b"staged original").to_string();
+            c.execute(
+                "INSERT INTO objects VALUES(?1,?2)",
+                rusqlite::params![staged, b"staged original".as_slice()],
+            )
+            .unwrap();
+        }
         drop(c);
         let before = std::fs::read(&src).unwrap();
         let result = bundle::create(Creation {
@@ -421,7 +438,16 @@ fn creation_rejects_all_participant_aliases_before_sqlite_opens() {
         match mode {
             1 => std::fs::hard_link(&src, &dst).unwrap(),
             2 => std::os::unix::fs::symlink(&src, &dst).unwrap(),
-            3 => std::fs::hard_link(&src, f.root.join("archive.sqlite-wal")).unwrap(),
+            3 => {
+                let wal = f.root.join("archive.sqlite-wal");
+                // Read-only inventory may leave an empty WAL participant on
+                // Linux. Replace only that verified-empty synthetic fixture.
+                if wal.exists() {
+                    assert_eq!(std::fs::metadata(&wal).unwrap().len(), 0);
+                    std::fs::remove_file(&wal).unwrap();
+                }
+                std::fs::hard_link(&src, &wal).unwrap();
+            }
             _ => {}
         }
         let before = std::fs::read(&src).unwrap();
