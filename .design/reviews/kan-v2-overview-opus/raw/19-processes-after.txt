@@ -1,0 +1,15 @@
+== processes (kan-v2/cargo/rustc/test binaries/node --test)
+ 2937  2601 /Users/m/.cargo/bin/day mcp
+ 2943  2601 /Users/m/.cargo/bin/kan mcp
+== TCP listeners
+COMMAND     PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+rapportd    622    m   15u  IPv4 0x7f761c7e6b6e8616      0t0  TCP *:49386 (LISTEN)
+rapportd    622    m   16u  IPv6 0x6b28a7b02c298212      0t0  TCP *:49386 (LISTEN)
+ControlCe   649    m   10u  IPv4 0x2902e22ca78c2393      0t0  TCP *:7000 (LISTEN)
+ControlCe   649    m   11u  IPv6 0xb1770d3f5a4d85e0      0t0  TCP *:7000 (LISTEN)
+ControlCe   649    m   12u  IPv4 0xb90132e57673f408      0t0  TCP *:5000 (LISTEN)
+ControlCe   649    m   13u  IPv6 0x7aa48ae5c01fd170      0t0  TCP *:5000 (LISTEN)
+OrbStack   5895    m   87u  IPv4 0xe066b3446b97fc98      0t0  TCP 127.0.0.1:32222 (LISTEN)
+OrbStack   5895    m   88u  IPv6 0x53571f93e4cf145d      0t0  TCP [::1]:32222 (LISTEN)
+OrbStack   5895    m   89u  IPv4 0x1fdaa1f417c5f46f      0t0  TCP 127.0.0.1:56742 (LISTEN)
+t3        52686    m   17u  IPv4 0x7d596b469508c230      0t0  TCP 100.96.192.66:7337 (LISTEN)

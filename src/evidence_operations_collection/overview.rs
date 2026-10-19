@@ -398,6 +398,18 @@ pub fn build_observed(
     })
 }
 
+fn source_busy(error: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
+    error.is::<operations::projection::SourceBusy>()
+        || matches!(
+            error.downcast_ref::<fs4::TryLockError>(),
+            Some(fs4::TryLockError::WouldBlock)
+        )
+        || error
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|e| e.kind() == std::io::ErrorKind::WouldBlock)
+        || matches!(error.downcast_ref::<rusqlite::Error>(),Some(rusqlite::Error::SqliteFailure(e,_)) if matches!(e.code,rusqlite::ErrorCode::DatabaseBusy|rusqlite::ErrorCode::DatabaseLocked))
+}
+
 /// Published memory only. A prior result stays explicitly associated with its
 /// original job/snapshot while a new refresh runs, fails or is cancelled.
 #[derive(Debug, Clone, Serialize)]
@@ -505,6 +517,9 @@ impl Manager {
                                     "conflicting cumulative observations".into()
                                 }
                                 Some(Failure::Overflow) => "counter overflow".into(),
+                                _ if source_busy(error.as_ref()) => {
+                                    "source busy or in use; retry refresh".into()
+                                }
                                 _ => "source invalid or unavailable".into(),
                             });
                         }

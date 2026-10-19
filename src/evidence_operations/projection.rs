@@ -2,6 +2,10 @@
 use super::*;
 use sha2::{Digest, Sha256};
 
+#[derive(Debug, thiserror::Error)]
+#[error("active snapshot source stayed busy")]
+pub(crate) struct SourceBusy;
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub(crate) enum Observation {
@@ -51,7 +55,7 @@ impl Journal {
             loop {
                 check()?;
                 if std::time::Instant::now() >= deadline {
-                    return Err("active snapshot copy timed out; source may be busy".into());
+                    return Err(Box::new(SourceBusy));
                 }
                 let step = backup.step(64)?;
                 if !(0..=8192).contains(&backup.progress().pagecount) {

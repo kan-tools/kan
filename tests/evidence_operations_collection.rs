@@ -88,6 +88,10 @@ fn adoption_rotation_and_history_preserve_bytes_scope_and_worker_history() {
     active.check_binding(&f.spool, None).unwrap();
     let snapshot = active.snapshot().unwrap();
     assert_eq!(snapshot.observed, 0);
+    assert_eq!(
+        snapshot.active_generation.as_deref(),
+        Some(first.active.as_str())
+    );
     assert_eq!(snapshot.worker.unwrap().telemetry_failures, 7);
     assert_eq!(snapshot.journal.reserve_bytes, 262144);
     active.record(&health(2)).unwrap();

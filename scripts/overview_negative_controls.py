@@ -6,14 +6,16 @@ ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/'src/evidence_operations_collection/overview.rs'
 JS=ROOT/'web/operations/app.js'
 PROJECTION=ROOT/'src/evidence_operations/projection.rs'
+DASHBOARD=ROOT/'src/evidence_dashboard.rs'
 OUT=ROOT/'.local-state/reviews/overview-controls'
 def main():
     if not __debug__: raise RuntimeError('assertions required')
     OUT.mkdir(parents=True,exist_ok=True)
-    originals={SOURCE:SOURCE.read_text(),JS:JS.read_text(),PROJECTION:PROJECTION.read_text()}
+    originals={SOURCE:SOURCE.read_text(),JS:JS.read_text(),PROJECTION:PROJECTION.read_text(),DASHBOARD:DASHBOARD.read_text()}
     for path,value in originals.items(): (OUT/(path.name+'.original')).write_text(value)
     s=originals[SOURCE]
     cases=[
+      ('remove-connection-bound',DASHBOARD,originals[DASHBOARD].replace('Semaphore::new(8)', 'Semaphore::new(16)'),'overview_http_connection_limit_releases_slots_after_requests'),
       ('no-deduplication',SOURCE,s.replace('        if let Some(old) = map.get(&key) {','        let key = format!("{key}:{}",map.len());\n        if let Some(old) = map.get(&key) {'),'cumulative_rows_are_deduplicated_without_rewriting_sources'),
       ('no-dominance',SOURCE,s.replace('if !dominates {','if false && !dominates {'),'intermediate_regressions_conflicting_observers_and_terminals_refuse_publication'),
       ('no-sealed-hash',SOURCE,s.replace('if &sealed_hash(&path, flag)? != expected {','if false && &sealed_hash(&path, flag)? != expected {'),'changed_missing_sources_binding_and_membership_fail_visibly'),
@@ -47,5 +49,5 @@ def main():
       result=subprocess.run(command,cwd=ROOT,capture_output=True,text=True)
       (OUT/('restored-'+name+'.txt')).write_text(result.stdout+result.stderr)
       assert result.returncode==0,f'restored {name} failed'
-    print('Five compiled Rust mutants and one UI mutant fail; restored checks pass.',flush=True)
+    print(f'{len(cases)} mutants fail with named assertions; restored checks pass.',flush=True)
 if __name__=='__main__': main()

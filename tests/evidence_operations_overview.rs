@@ -332,6 +332,35 @@ fn historical_worker_is_hashed_but_not_promoted_to_current_health() {
         "omitted historical worker still belongs to its snapshot digest"
     );
 }
+
+#[test]
+fn busy_sources_are_distinguished_from_invalid_history() {
+    let f = Fixture::new();
+    let manager = Manager::new();
+    manager.refresh(f.root.clone()).unwrap();
+    let first = finish(&manager);
+    assert_eq!(first.state, "completed");
+    let lock = std::fs::File::open(f.root.join("LOCK")).unwrap();
+    fs4::FileExt::try_lock(&lock).unwrap();
+    manager.refresh(f.root.clone()).unwrap();
+    let busy = finish(&manager);
+    assert_eq!(busy.state, "failed");
+    assert!(busy.reason.unwrap().contains("busy or in use"));
+    assert_eq!(busy.last_job, first.last_job);
+    drop(lock);
+    let conn = sql(&f.active());
+    conn.execute_batch(
+        "PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE; SELECT count(*) FROM attempts;",
+    )
+    .unwrap();
+    manager.refresh(f.root.clone()).unwrap();
+    let busy = finish(&manager);
+    assert_eq!(busy.state, "failed");
+    assert!(busy.reason.unwrap().contains("busy or in use"));
+    drop(conn);
+    manager.refresh(f.root.clone()).unwrap();
+    assert_eq!(finish(&manager).state, "completed");
+}
 #[test]
 fn intermediate_regressions_conflicting_observers_and_terminals_refuse_publication() {
     for defect in [
@@ -701,6 +730,60 @@ async fn dashboard_overview_requires_auth_and_cannot_mutate_owner_history() {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     assert_eq!(before, f.hashes());
+    server.abort();
+    let _ = server.await;
+}
+
+#[tokio::test]
+async fn overview_http_connection_limit_releases_slots_after_requests() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let f = Fixture::new();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let root = f.root.clone();
+    let token = "synthetic-overview-token-more-than-32";
+    let server =
+        tokio::spawn(
+            async move { kan::evidence_dashboard::serve(listener, token.into(), root).await },
+        );
+    let prefix =
+        format!("GET /api/overview HTTP/1.1\r\nHost: {addr}\r\nAuthorization: Bearer {token}\r\n");
+    let mut held = Vec::new();
+    for _ in 0..8 {
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        stream.write_all(prefix.as_bytes()).await.unwrap();
+        held.push(stream);
+    }
+    // Accept order is FIFO; the first eight incomplete requests retain permits.
+    let mut extra = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let mut byte = [0u8];
+    let refusal = tokio::time::timeout(Duration::from_secs(2), extra.read(&mut byte)).await;
+    assert!(
+        matches!(refusal, Ok(Ok(0)) | Ok(Err(_))),
+        "ninth connection must be closed before header timeout: {refusal:?}"
+    );
+    drop(extra);
+    for mut stream in held {
+        stream.write_all(b"\r\n").await.unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(2), stream.read_to_end(&mut response))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(response.starts_with(b"HTTP/1.1 200"));
+    }
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let response = client
+        .get(format!("http://{addr}/api/overview"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        200,
+        "completed requests release connection permits"
+    );
     server.abort();
     let _ = server.await;
 }

@@ -85,6 +85,7 @@ pub struct Journal {
     _file_lock: std::fs::File,
     pub(crate) collection_lock: Option<std::fs::File>,
     pub(crate) scope: String,
+    pub(crate) active_generation: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerStatus {
@@ -103,6 +104,7 @@ pub struct WorkerStatus {
 pub struct Snapshot {
     pub version: u8,
     pub read_at: u64,
+    pub active_generation: Option<String>,
     pub coverage: String,
     pub worker: Option<WorkerStatus>,
     pub attempts: u64,
@@ -227,9 +229,9 @@ impl Journal {
         }
         let file_lock = std::fs::File::open(lock_path)?;
         if exclusive {
-            fs4::FileExt::try_lock(&file_lock).map_err(|_| invalid())?;
+            fs4::FileExt::try_lock(&file_lock)?;
         } else {
-            fs4::FileExt::try_lock_shared(&file_lock).map_err(|_| invalid())?;
+            fs4::FileExt::try_lock_shared(&file_lock)?;
         }
         let conn = Connection::open_with_flags(
             path,
@@ -254,6 +256,7 @@ impl Journal {
             _file_lock: file_lock,
             collection_lock: None,
             scope: "selected standalone journal only".into(),
+            active_generation: None,
         })
     }
     fn validate_connection(conn: &Connection) -> Result<u8> {
@@ -562,6 +565,7 @@ impl Journal {
         Ok(Snapshot {
             version: 2,
             read_at: now(),
+            active_generation: self.active_generation.clone(),
             coverage: "observations-only; silence does not prove capture completeness".into(),
             worker: body.map(|s| serde_json::from_str(&s)).transpose()?,
             attempts,

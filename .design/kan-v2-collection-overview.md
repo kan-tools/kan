@@ -104,14 +104,21 @@ inspectable in their generation and must not be promoted to current liveness.
 
 Use one background builder per Operations service, the existing maximum of
 1,024 manifest generations and 32 MiB per source file, plus explicit ceilings of
-250,000 distinct attempts, 65,536 distinct sessions and 128 MiB retained row/key
-payload. Account payload lengths before retaining a new row; container overhead
+250,000 distinct attempts, 65,536 distinct sessions and 128 MiB of accounted
+working storage. Account payload lengths before retaining a new row; container overhead
 also needs a conservative allowance. A build reaching any ceiling returns
 `capacity-limited` and publishes no new whole-collection total. It names the
 bound and processed frontier; it does not silently omit older history. These are
 first-profile limits, not a guarantee that every legal 1,024-generation collection
 fits. Larger collections still have paginated generation/history access; an
 external-memory projection is a required later capacity extension if needed.
+
+The 48-MiB working reserve leaves less than 80 MiB for rows, keys and source
+metadata. A row is charged its serialized length plus 1,024 bytes. For
+example, a 1,300-byte charge fits fewer than 64,528 simultaneously retained rows
+before other charges; buffered active rows and deduplication entries can overlap.
+The 250,000 identity ceiling is therefore not a promised practical capacity.
+Actual capacity depends on row lengths, repeats and active/sealed overlap.
 
 The result names included generations, sealed hashes, active snapshot digest,
 build time, sampled window, deduplicated counts, and `observations-only` coverage.
@@ -194,13 +201,13 @@ Caller-specified test limits can only reduce the production ceilings.
 
 The UI offers explicit load/build/cancel controls, keeps failed-refresh samples
 visibly old, formats exact integer strings and clears results on lock. Rust and
-real-browser qualification are complete for this checkpoint: 58 Rust checks, 54 Node checks, strict v2 Clippy and six demonstrated negative controls. The browser confirmed a deduplicated three-generation result, source disclosure, light/dark/mobile layouts and clearing on lock. Evidence is preserved in `.design/reviews/kan-v2-overview-author/`. Fresh Opus review remains pending; no parent AC is marked complete.
+browser checks for the initial checkpoint passed 58 Rust checks, 54 Node checks, strict v2 Clippy and six demonstrated negative controls. This was not the full AC-5 state matrix. The browser confirmed a deduplicated three-generation result, source disclosure, light/dark/mobile layouts and clearing on lock. Evidence is preserved in `.design/reviews/kan-v2-overview-author/`. The subsequent review and corrections are recorded below; no parent AC is marked complete.
 
 ### Review correction in progress
 
 The cold review of 67c1263 reproduced health-writer failures during a large
 active row scan and found Build/Cancel clicks discarded during in-flight polling.
-The original checkpoint is not approved. The correction copies active SQLite
+The reviewer returned APPROVE WITH FOLLOW-UPS for the overview, with O1 a required code correction; the checkpoint is not merge-qualified. The separate a1007a6 storage correction round received APPROVE. Raw reports are retained unchanged under `.design/reviews/kan-v2-overview-opus/`. The correction copies active SQLite
 pages into memory using short backup steps, releases live-source locks before
 parsing, and preserves a five-second/cancellable refusal path for a busy source.
 A fixed 32-MiB image allowance is added to the previous 16-MiB working reserve
@@ -208,5 +215,20 @@ inside the same 128-MiB ceiling. This conservative accounting means some formerl
 accepted large inputs can return capacity-limited; it does not increase the limit.
 Snapshot timestamps name the copy window, not the later parse. Copied schema and
 control rows are revalidated. Build/Cancel preempt polls; actions remain serialized
-and stale replies cannot overwrite newer action state. Tests and fresh re-review
-of the corrected checkpoint remain required.
+and stale replies cannot overwrite newer action state. The corrected checkpoint passes74 Rust checks,26 Operations Node checks,strict Clippy and13 semantic mutants; fresh re-review remains required.
+
+The follow-up distinguishes file-lock and SQLite contention from invalid history.
+The status API adds `active_generation` (null for standalone journals). The browser
+compares that value with the cached sample and derives a superseded label; this is
+not a new server publication state. It shows sample age and keeps prior-result
+labels on failed requests. Age uses the browser clock and explicitly handles a
+sample ahead of that clock. Restart responses clear stale displayed totals.
+
+Coverage is deliberately split: the original real browser exercise covers completed
+results and lock clearing in light/dark/mobile layouts. Node tests cover unavailable,
+building, failed, capacity-limited, cancelled, cached/superseded and request races;
+those tests do not close the full authenticated browser acceptance matrix. The
+new HTTP socket regression checks eight held header requests, refusal of a ninth,
+and permit reuse after completion. The 40,000-row active-source regression runs
+100 real health writes during refresh. Qualification and fresh review of these
+corrections must be recorded before closing their acceptance criteria.

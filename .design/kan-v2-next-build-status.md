@@ -75,7 +75,7 @@ approved 9f1dffa with follow-ups (106 core + 58 lifecycle/service checks). The
 original report is retained in `.design/reviews/kan-v2-proof-storage-opus/`. Its
 non-tip retry, historical-issuer and canonical-key regressions are incorporated;
 small error-class/limit-propagation corrections pass 37 storage/surface checks and
-strict all-target v2 Clippy. Fresh review of those corrections remains pending.
+strict all-target v2 Clippy. Fresh Opus review of those corrections at a1007a6 returned APPROVE; the raw combined review is preserved under `.design/reviews/kan-v2-overview-opus/`.
 The complete pre-admission audit is deliberately unoptimized; see the storage
 checkpoint scope in the governing design for its concurrency threat boundary.
 
@@ -92,7 +92,7 @@ checkpoint scope in the governing design for its concurrency threat boundary.
    Complete typed source scans, bounded deduplication, asynchronous refresh/cancel,
    CLI, authenticated dashboard routes and UI are implemented. Author qualification
    passed 58 Rust and 54 Node checks, strict v2 Clippy, six negative controls,
-   and real light/dark/mobile browser inspection. Fresh Opus review remains pending;
+   and real completed/lock light/dark/mobile browser inspection. The initial Opus verdict was APPROVE WITH FOLLOW-UPS; correction qualification is recorded below;
    evidence is in `.design/reviews/kan-v2-overview-author/`.
 4. Versioned human-readable conversation adapters with source lineage.
 5. Authorized search/filters, annotations, saved views, background analysis/day
@@ -113,6 +113,5 @@ use a bounded in-memory active database copy and prioritize actions over polls.
 The existing 128-MiB ceiling now includes a 32-MiB image allowance plus 16-MiB
 working reserve; capacity refusal is explicit. Source copy can refuse after five
 seconds when busy. Tests target writer progress, post-read sealed changes, invalid
-unique health rows, historical worker separation and UI request races. All 23
-Operations Node checks pass; Rust qualification and fresh re-review remain pending.
-The original checkpoint review has not yet returned its final verdict.
+unique health rows, historical worker separation and UI request races. Author qualification now passes 74 Rust checks,26 Operations Node checks,strict all-target v2 Clippy and13 semantic mutants with restored assertions. Evidence is in `.design/reviews/kan-v2-overview-correction-author/`; fresh re-review remains pending.
+The final cold review returned APPROVE WITH FOLLOW-UPS for the overview, with O1 a required code correction, and APPROVE for the storage corrections. The raw report and independent probes are preserved unchanged in `.design/reviews/kan-v2-overview-opus/`. Fresh review of the corrected overview remains required.
