@@ -1,0 +1,98 @@
+$ cargo test --features v2-crypto --test evidence_reader --test evidence_interpretation --test evidence_assembly --test evidence_assembly_review_regressions --test surface_conformance
+
+running 13 tests
+test every_non_capture_and_unavailable_input_has_a_result ... ok
+test a_chunk_after_request_end_cannot_silently_become_a_closed_request ... ok
+test empty_request_extent_and_unknown_extent_remain_distinct ... ok
+test completed_terminal_is_only_a_claim_and_does_not_fill_missing_evidence ... ok
+test observed_missing_admission_and_unexpected_start_stay_visible ... ok
+test exact_budget_edges_cancellation_and_repeat_are_deterministic ... ok
+test ordinal_conflicts_keep_both_bytes_and_prevent_synthetic_rendering ... ok
+test repeated_semantic_chunk_at_a_new_ordinal_is_an_overlap_not_deduplicated ... ok
+test scope_writer_observer_attempt_isolation_ignores_transport_link_claims ... ok
+test holes_overlaps_and_contradictory_extents_are_not_repaired ... ok
+test sparse_u64_and_overflow_coordinates_never_allocate_by_claimed_extent ... ok
+test shuffled_selection_preserves_exact_binary_spans_and_duplicate_lineage ... ok
+test terminal_at_a_conflicting_ordinal_cannot_select_a_winner ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+test stream_offset_order_can_differ_from_observer_ordinal_order ... ok
+test duplicate_request_end_retains_every_extent_source ... ok
+test ordinal_gaps_do_not_mean_unplaced_inputs_are_absent ... ok
+test scan_accounting_pins_decode_duplicate_comparison_and_copy ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 13 tests
+test empty_sse_and_malformed_message_delta_are_explicit ... ok
+test duplicate_keys_aliases_depth_and_truncation_are_visible ... ok
+test malformed_unknown_error_and_trailing_event_are_visible ... ok
+test exact_budgets_and_cancellation_return_no_partial_document ... ok
+test block_sequence_conflicts_and_sparse_indices_never_complete ... ok
+test missing_event_and_delta_types_are_malformed_not_future_extensions ... ok
+test mapping_refuses_foreign_group_unavailable_source_and_forged_extent ... ok
+test request_history_and_unknown_fields_remain_source_linked ... ok
+test response_json_and_provider_errors_never_claim_stream_completeness ... ok
+test newline_forms_multiline_comments_and_raw_unknown_fields_survive ... ok
+test mapping_refuses_gaps_overlaps_forged_source_bytes_and_ranges ... ok
+test tool_fragments_are_not_repaired_or_replaced_by_empty_initial_input ... ok
+test every_capture_split_preserves_sse_text_and_exact_duplicate_source_spans ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+
+running 25 tests
+test content_browser_fixture ... ignored, manual Content browser fixture; requires KAN_LIBRARY_FIXTURE_INFO
+test catalog_verification_failure_is_not_an_empty_authorized_inventory ... FAILED
+test content_cancelling_acquisition_releases_admission_and_does_not_cache_a_grant ... ok
+test content_http_routes_share_authority_and_return_exact_coordinates ... ok
+test content_rechecks_current_grant_after_successful_acquisition ... ok
+test content_preserves_authorized_occurrences_duplicates_unplaced_inputs_and_exact_spans ... ok
+test inventory_is_snapshot_pinned_and_source_ranges_are_exact_across_scopes ... ok
+test content_refuses_invalid_selections_tampering_and_revocation_without_partial_success ... ok
+test library_browser_fixture ... ignored, manual browser fixture; requires KAN_LIBRARY_FIXTURE_INFO output path
+test library_http_authority_is_separate_and_denial_does_not_reveal_scope_existence ... ok
+test large_source_is_returned_in_exact_bounded_ranges ... ok
+test library_refuses_public_listeners_and_short_tokens_before_serving ... ok
+test library_refuses_thirteenth_socket_at_the_live_admission_boundary ... ok
+test pin_principal_and_audience_are_checked_even_with_valid_signatures ... ok
+test reader_cli_refuses_public_configuration_and_relative_private_key_paths ... ok
+test reader_configuration_scope_count_and_duplicates_are_bounded ... ok
+test reader_identity_scope_and_decryption_key_are_separate_checks ... ok
+test reader_refuses_reusing_the_storage_issuer_signing_key ... ok
+test reader_rejects_signed_page_completeness_and_tip_mismatches ... ok
+test library_body_read_deadline_returns_an_explicit_timeout ... ok
+test revoked_grants_and_tampered_pins_cannot_read_cached_source ... ok
+test signed_reply_integrity_page_shape_and_source_membership_are_independent ... ok
+test source_refuses_a_valid_read_from_a_different_snapshot_history ... ok
+test catalog_keeps_healthy_scopes_and_recovers_without_disclosing_failed_sources ... ok
+test library_queues_a_browser_request_behind_four_idle_connections ... ok
+
+failures:
+
+---- catalog_verification_failure_is_not_an_empty_authorized_inventory stdout ----
+
+thread 'catalog_verification_failure_is_not_an_empty_authorized_inventory' (10416588) panicked at tests/evidence_reader.rs:683:5:
+assertion `left == right` failed
+  left: Array [String("snapshot-inventory"), String("source-ranges"), String("provenance"), String("content-inspection")]
+ right: Array [String("snapshot-inventory"), String("source-ranges"), String("provenance")]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    catalog_verification_failure_is_not_an_empty_authorized_inventory
+
+test result: FAILED. 22 passed; 1 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.13s
+
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_assembly.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_assembly-ab2b7afbe8d062d0)
+     Running tests/evidence_assembly_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_assembly_review_regressions-bfce74943978b5ce)
+     Running tests/evidence_interpretation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_interpretation-13fed510d614cbe3)
+     Running tests/evidence_reader.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reader-391eae18af80c190)
+error: test failed, to rerun pass `--test evidence_reader`
+
+exit=101

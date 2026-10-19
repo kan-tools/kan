@@ -682,7 +682,12 @@ async fn catalog_verification_failure_is_not_an_empty_authorized_inventory() {
     assert_eq!(value["coverage"], "complete");
     assert_eq!(
         value["capabilities"],
-        serde_json::json!(["snapshot-inventory", "source-ranges", "provenance"])
+        serde_json::json!([
+            "snapshot-inventory",
+            "source-ranges",
+            "provenance",
+            "content-inspection"
+        ])
     );
     assert_eq!(
         value["unavailable"],
