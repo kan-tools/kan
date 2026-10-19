@@ -270,3 +270,17 @@ test('malformed shared citation references fail closed without partial Content',
  }
  const u=ui();await openContent(u);u.node('interpret').click();await tick();const v=clone(contentResult);v.groups[0].request.citation_sets=null;await u.respond(v);assert.equal(u.node('content-panel').children.length,0);
 });
+
+// Promoted from cold Opus review bf3c44e: A-F1 and cross-stream partial rendering.
+
+test('non-canonical aliases of a VALID citation index fail closed',async()=>{
+ for(const ref of ['','00','+0','0x0',' 0','0 ','0.0',' 0']){
+  const u=ui();await openContent(u);u.node('interpret').click();await tick();const v=clone(contentResult);v.groups[0].request.items[0].citation_set=ref;await u.respond(v);
+  assert.equal(u.node('content-panel').children.length,0,'accepted alias '+JSON.stringify(ref));assert.equal(u.node('content-tab').disabled,true,JSON.stringify(ref));
+ }
+});
+test('malformed ref in the RESPONSE stream after a valid request stream leaves no partial Content',async()=>{
+ const u=ui();await openContent(u);u.node('interpret').click();await tick();const v=clone(contentResult);
+ v.groups[0].response={...clone(v.groups[0].request),citation_sets:[[{input:'0',bytes:['1','2']}]]};v.groups[0].response.items[0].citation_set='1';await u.respond(v);
+ assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('content-tab').disabled,true);
+});

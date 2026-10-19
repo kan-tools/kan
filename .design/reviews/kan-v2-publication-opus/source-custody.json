@@ -1,0 +1,18 @@
+{
+  "reviewed_commit": "ddb4e238755bb347770b9d460bb389173027fc16",
+  "tracked_paths": 4076,
+  "model": "claude-opus-5-5",
+  "session_id": "e1bb1de5-c5cf-42a4-9567-d8324c686b04",
+  "review_exit": 0,
+  "report_sha256": "ed40a51d6b0ad37dcf53aefb86a776affa7ad7a2eaae5399c6ae474d6efb02e4",
+  "identity_sha256": "2cc4a4968be51c3b2e1b450c1656e39de259f66a5205fd00ad054b27030519ca",
+  "author_verification": "Exact export path set, every file SHA256, actual pinned Git blob bytes and executable modes verified; source HEAD and status clean before recording.",
+  "source_check_sha256": "c8bae4c7455b6c510e11ea88543a883352dcdf476a8a84114bc9dc04c47a9879",
+  "ci": {
+    "39333172113": "success",
+    "39333167614": "success",
+    "39333172121": "success",
+    "39333172146": "success"
+  },
+  "publication": "Only inspected human report, this summary and README; raw session, prompts, stderr and probe archives retained in ignored local state."
+}

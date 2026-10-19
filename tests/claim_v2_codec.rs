@@ -508,3 +508,40 @@ fn cid_shaped_signature_is_not_confused_with_a_canonicality_failure_or_accepted(
         Err(codec::DecodeError::Claim(_))
     ));
 }
+
+// Promoted from cold Opus review bf3c44e: C-F1.
+#[test]
+fn cid_shaped_git_digest_round_trips_through_typed_claim_codec() {
+    let mut d32 = [7u8; 32];
+    d32[..5].copy_from_slice(&[0x00, 0x01, 0x55, 0x00, 0x1b]);
+    let identity = Identity::generate();
+    let artifacts = UniqueSequence::new(vec![ArtifactRef::GitCommit {
+        commit: GitObjectId::Sha256 {
+            digest: Sha256Digest::new(d32),
+        },
+    }])
+    .unwrap();
+    let content = ClaimContent::new(
+        author(&identity),
+        scope(),
+        None,
+        SubjectPath::new("identity/codec".to_string()).unwrap(),
+        CanonicalSet::new(vec![]).unwrap(),
+        ClaimBody::Observation {
+            text: NarrativeText::new("digest happens to look like a CID".to_string()).unwrap(),
+        },
+        CanonicalSet::new(vec![]).unwrap(),
+        artifacts,
+        RecordedAt::new(1).unwrap(),
+    )
+    .unwrap();
+    let claim = Claim::sign_static(content, &identity).unwrap();
+    let bytes = codec::encode_claim(&claim, REV).unwrap();
+    // A raw byte search for a tag header is invalid: the signature may contain
+    // that byte pair. Decode + exact round-trip checks the actual typed value.
+    let decoded = codec::decode(&bytes, VerificationContext::StaticDidKey);
+    let DecodedClaim::Supported(SupportedClaim::Claim(decoded)) = decoded.unwrap() else {
+        panic!("wrong arm")
+    };
+    assert_eq!(decoded, claim);
+}

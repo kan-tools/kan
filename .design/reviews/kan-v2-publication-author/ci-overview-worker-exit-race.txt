@@ -1,0 +1,18 @@
+CI39328130214 at6df024b. Full local log SHA256=36a13e883c5c33f7c459749cc1fd0aa528af7f0c0b394d341559d19cc6492b1f
+
+2026-10-19T21:42:32.1960041Z ---- po8_cancel_then_refresh_does_not_start_concurrent_build stdout ----
+2026-10-19T21:42:32.1960322Z 
+2026-10-19T21:42:32.1965886Z thread 'po8_cancel_then_refresh_does_not_start_concurrent_build' (36481) panicked at tests/evidence_overview_review_regressions.rs:406:5:
+2026-10-19T21:42:32.1966816Z assertion `left == right` failed
+2026-10-19T21:42:32.1967523Z   left: 1
+2026-10-19T21:42:32.1967789Z  right: 2
+2026-10-19T21:42:32.1968669Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-10-19T21:42:32.1969063Z 
+2026-10-19T21:42:32.1969068Z 
+2026-10-19T21:42:32.1969216Z failures:
+2026-10-19T21:42:32.1969529Z     po8_cancel_then_refresh_does_not_start_concurrent_build
+2026-10-19T21:42:32.1969844Z 
+2026-10-19T21:42:32.1970160Z test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.93s
+2026-10-19T21:42:32.1970748Z 
+2026-10-19T21:42:32.1974450Z ^[[1m^[[91merror^[[0m: test failed, to rerun pass `--test evidence_overview_review_regressions`
+2026-10-19T21:42:32.2079097Z ##[error]Process completed with exit code 101.

@@ -1,0 +1,23 @@
+CI39330364567 at c4928af (initial publication candidate)
+2026-10-19T21:57:44.0694568Z failures:
+2026-10-19T21:57:44.0697590Z 
+2026-10-19T21:57:44.0702609Z ---- publication_holds_verified_output_snapshot_through_observed_commit stdout ----
+2026-10-19T21:57:44.0708777Z 
+2026-10-19T21:57:44.0712215Z thread 'publication_holds_verified_output_snapshot_through_observed_commit' (35333) panicked at tests/evidence_bundle_creation.rs:1734:162:
+2026-10-19T21:57:44.0726328Z assertion failed: matches!(error,rusqlite::Error::SqliteFailure(ref e,_) if
+2026-10-19T21:57:44.0734178Z     e.code==rusqlite::ErrorCode::DatabaseBusy)
+2026-10-19T21:57:44.0742638Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-10-19T21:57:44.0747675Z 
+2026-10-19T21:57:44.0750299Z ---- publication_refuses_unavailable_originals_and_incomplete_copies_before_intent stdout ----
+2026-10-19T21:57:44.0755332Z 
+2026-10-19T21:57:44.0760665Z thread 'publication_refuses_unavailable_originals_and_incomplete_copies_before_intent' (35341) panicked at tests/evidence_bundle_creation.rs:1523:10:
+2026-10-19T21:57:44.0769651Z called `Result::unwrap()` on an `Err` value: SqliteFailure(Error { code: ConstraintViolation, extended_code: 787 }, Some("FOREIGN KEY constraint failed"))
+2026-10-19T21:57:44.0776390Z 
+2026-10-19T21:57:44.0776403Z 
+2026-10-19T21:57:44.0780417Z failures:
+2026-10-19T21:57:44.0783211Z     publication_holds_verified_output_snapshot_through_observed_commit
+2026-10-19T21:57:44.0787527Z     publication_refuses_unavailable_originals_and_incomplete_copies_before_intent
+2026-10-19T21:57:44.0791344Z 
+2026-10-19T21:57:44.0791735Z test result: FAILED. 31 passed; 2 failed; 3 ignored; 0 measured; 0 filtered out; finished in 30.08s
+2026-10-19T21:57:44.0795314Z 
+2026-10-19T21:57:44.1229040Z ##[error]Process completed with exit code 101.

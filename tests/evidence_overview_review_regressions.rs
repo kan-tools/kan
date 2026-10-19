@@ -402,7 +402,17 @@ fn po8_cancel_then_refresh_does_not_start_concurrent_build() {
     }
     assert_eq!(m.status().state, "cancelled");
     assert!(m.status().last.is_none());
-    let next = m.refresh(f.root.clone()).unwrap();
+    // Published cancellation precedes the worker's return by a small window.
+    // Admission correctly follows JoinHandle::is_finished, not that status.
+    let next = loop {
+        let next = m.refresh(f.root.clone()).unwrap();
+        if next.job != started.job {
+            break next;
+        }
+        assert_eq!(next.state, "cancelled");
+        assert!(Instant::now() < deadline);
+        std::thread::yield_now();
+    };
     assert_eq!(next.job, started.job + 1);
 }
 
