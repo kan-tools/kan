@@ -578,13 +578,20 @@ planner refuses damaged derived indexes; the existing separate recovery workflow
 can rebuild those into a new file before planning. It adds no destination writes.
 
 The source digest is SHA-256 of ASCII `tools.kan.archive.copy-source.v1`, one NUL,
-then each record in ascending sequence order: sequence as unsigned64-bit big endian,
-followed by manifest bytes, receipt bytes and canonical raw retained-request CID
-bytes, each framed by its unsigned64-bit big-endian byte length. The digest binds
-the committed record stream; independently staged objects outside that stream are
-not named by this digest. The full source audit still validates those objects;
-no source file is erased. Copy behavior for staged-but-uncommitted objects must be
-resolved explicitly before implementing destination writes.
+then two framed sections. A frame is unsigned 64-bit big-endian byte length plus
+those exact bytes. First frame ASCII `commits`, then unsigned 64-bit big-endian
+through. Each record in ascending sequence order contributes its unsigned 64-bit
+big-endian sequence and framed manifest bytes, receipt bytes and canonical raw
+retained-request CID bytes. Next frame ASCII `objects`, then unsigned 64-bit
+big-endian object count. Every retained object in lexical CID-string order
+contributes framed canonical raw CID bytes and unsigned 64-bit big-endian length.
+The full audit already verifies each CID against its exact object bytes.
+
+This explicitly binds staged-but-uncommitted blobs too. Destination copying must
+preserve all of them without inventing commit/admission attestations for objects
+outside the committed stream. A new staged object changes the plan even when
+through and tip are unchanged. No source file or blob is erased. This refines the
+earlier committed-stream-only fingerprint before any destination implementation.
 
 Reconfirmation compares the externally pinned archive ID first, then reopens and
 fully verifies a source and compares the exact resulting recipe bytes. Matching

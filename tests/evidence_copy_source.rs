@@ -184,3 +184,58 @@ fn plans_require_explicit_scope_historical_issuer_and_all_source_payloads() {
     drop(c);
     assert!(PlannedCopy::open(&db, target(), issuer, [9; 32]).is_err());
 }
+
+#[test]
+fn staged_but_uncommitted_objects_are_part_of_the_source_commitment() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("archive");
+    let s = service(&root);
+    let issuer = s.issuer();
+    drop(s);
+    let db = root.join("archive.sqlite");
+    let planned = PlannedCopy::open(&db, target(), issuer.clone(), [9; 32]).unwrap();
+    let empty = planned.plan().clone();
+    drop(planned);
+    let mut ledger = Ledger::open(&root).unwrap();
+    ledger.stage(b"retained staged ground truth").unwrap();
+    drop(ledger);
+    let staged = PlannedCopy::open(&db, target(), issuer, [9; 32]).unwrap();
+    assert_eq!(staged.snapshot().unwrap().through, 0);
+    assert_ne!(staged.plan().source().digest, empty.source().digest);
+    assert!(PlannedCopy::confirm(&db, &empty, &empty.archive_id()).is_err());
+}
+
+#[test]
+fn source_fingerprint_matches_an_independent_python_byte_oracle() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("archive");
+    let mut s = service(&root);
+    append(&mut s, 1);
+    let issuer = s.issuer();
+    drop(s);
+    let mut ledger = Ledger::open(&root).unwrap();
+    ledger
+        .stage(b"uncommitted object preserved separately")
+        .unwrap();
+    drop(ledger);
+    let db = root.join("archive.sqlite");
+    let source = PlannedCopy::open(&db, target(), issuer, [9; 32]).unwrap();
+    let output = std::process::Command::new("python3")
+        .arg("-B")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/.design/tools/copy_source_digest.py"
+        ))
+        .arg(&db)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(output.stdout).unwrap().trim(),
+        hex(&source.plan().source().digest)
+    );
+}

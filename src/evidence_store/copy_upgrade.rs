@@ -43,6 +43,8 @@ impl PlannedCopy {
         let snapshot = &verification.snapshot;
         let mut hash = Sha256::new();
         hash.update(SOURCE_DOMAIN);
+        frame(&mut hash, b"commits");
+        hash.update(snapshot.through.to_be_bytes());
         for sequence in 1..=snapshot.through {
             let record = reader.record(sequence)?;
             let es: Vec<_> = entries(&record.manifest).collect();
@@ -68,6 +70,28 @@ impl PlannedCopy {
             frame(&mut hash, record.manifest.bytes());
             frame(&mut hash, record.receipt.bytes());
             frame(&mut hash, &object.to_bytes());
+        }
+        // Bind staged-but-uncommitted objects as well as the committed stream.
+        // verify_contents already checked every object's CID against its bytes.
+        frame(&mut hash, b"objects");
+        hash.update(verification.objects.to_be_bytes());
+        {
+            let mut query = reader
+                .ledger
+                .conn
+                .prepare("SELECT cid,length(bytes) FROM objects ORDER BY cid")?;
+            let mut rows = query.query([])?;
+            while let Some(row) = rows.next()? {
+                let id: String = row.get(0)?;
+                let object: Cid = id.parse().map_err(|_| Error::Invalid("copy object CID"))?;
+                let length: i64 = row.get(1)?;
+                frame(&mut hash, &object.to_bytes());
+                hash.update(
+                    u64::try_from(length)
+                        .map_err(|_| Error::Invalid("copy object length"))?
+                        .to_be_bytes(),
+                );
+            }
         }
         let plan = Plan::new(
             Source {
