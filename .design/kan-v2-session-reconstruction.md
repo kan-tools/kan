@@ -236,3 +236,13 @@ large sparse coordinates, non-ASCII/binary source spans, unavailable input,
 determinism and cancellation/budget boundaries. This checkpoint does not implement
 provider adapters, source authorization, the Content API or the session UI and
 closes no full-session acceptance criterion.
+
+### Assembly author qualification
+
+The pure assembly checkpoint passes 30 affected integration checks and one
+deterministic cancellation unit, strict all-target v2 Clippy and formatting.
+Eight selected semantic mutants compile and fail named behavioral assertions;
+the restored assembly suite passes. Raw runs, the control-harness correction
+and initial CI performance failure are retained in
+`.design/reviews/kan-v2-session-assembly-author/`. Fresh independent review is
+still required; API, provider interpretation and browser acceptance stay open.

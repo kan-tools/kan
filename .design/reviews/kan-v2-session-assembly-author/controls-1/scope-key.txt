@@ -1,0 +1,23 @@
+
+running 1 test
+test scope_writer_observer_attempt_isolation_ignores_transport_link_claims ... FAILED
+
+failures:
+
+failures:
+    scope_writer_observer_attempt_isolation_ignores_transport_link_claims
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-session-assembly)
+    Finished `test` profile [unoptimized] target(s) in 7.36s
+     Running tests/evidence_assembly.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_assembly-ab2b7afbe8d062d0)
+
+thread 'scope_writer_observer_attempt_isolation_ignores_transport_link_claims' (10281421) panicked at tests/evidence_assembly.rs:117:5:
+assertion `left == right` failed
+  left: 4
+ right: 5
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_assembly`
+
+exit=101

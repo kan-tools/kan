@@ -1,0 +1,34 @@
+perf	Scaling gate	﻿2026-10-19T17:37:16.0455606Z ##[group]Run rc=0
+perf	Scaling gate	2026-10-19T17:37:16.0455886Z ^[[36;1mrc=0^[[0m
+perf	Scaling gate	2026-10-19T17:37:16.0456336Z ^[[36;1mscripts/run-perf-grid.sh gate perf-results.tsv tests/fixtures/perf-bounds.tsv > gate.txt || rc=$?^[[0m
+perf	Scaling gate	2026-10-19T17:37:16.0456839Z ^[[36;1mcat gate.txt^[[0m
+perf	Scaling gate	2026-10-19T17:37:16.0457371Z ^[[36;1m{^[[0m
+perf	Scaling gate	2026-10-19T17:37:16.0457567Z ^[[36;1m  echo "## Scaling gate"^[[0m
+perf	Scaling gate	2026-10-19T17:37:16.0457819Z ^[[36;1m  echo '```'^[[0m
+perf	Scaling gate	2026-10-19T17:37:16.0458025Z ^[[36;1m  cat gate.txt^[[0m
+perf	Scaling gate	2026-10-19T17:37:16.0458241Z ^[[36;1m  echo '```'^[[0m
+perf	Scaling gate	2026-10-19T17:37:16.0458456Z ^[[36;1m} >> "$GITHUB_STEP_SUMMARY"^[[0m
+perf	Scaling gate	2026-10-19T17:37:16.0458860Z ^[[36;1mexit "$rc"^[[0m
+perf	Scaling gate	2026-10-19T17:37:16.0523553Z shell: /usr/bin/bash -e {0}
+perf	Scaling gate	2026-10-19T17:37:16.0523815Z env:
+perf	Scaling gate	2026-10-19T17:37:16.0524018Z   CARGO_HOME: /home/runner/.cargo
+perf	Scaling gate	2026-10-19T17:37:16.0524291Z   CARGO_INCREMENTAL: 0
+perf	Scaling gate	2026-10-19T17:37:16.0524524Z   CARGO_TERM_COLOR: always
+perf	Scaling gate	2026-10-19T17:37:16.0524763Z   CACHE_ON_FAILURE: false
+perf	Scaling gate	2026-10-19T17:37:16.0524989Z ##[endgroup]
+perf	Scaling gate	2026-10-19T17:37:16.0834288Z op            axis      small ms  large ms  ratio  bound  verdict 
+perf	Scaling gate	2026-10-19T17:37:16.0834850Z append        claims    83.6      1432.3    17.1   20     ok      
+perf	Scaling gate	2026-10-19T17:37:16.0835245Z append        subjects  1432.3    1127.0    0.8    8      ok      
+perf	Scaling gate	2026-10-19T17:37:16.0835651Z context       claims    82.5      694.6     8.4    8      EXCEEDED
+perf	Scaling gate	2026-10-19T17:37:16.0836028Z context       subjects  694.6     525.4     0.8    6      ok      
+perf	Scaling gate	2026-10-19T17:37:16.0836403Z issues        claims    32.1      631.0     19.7   32     ok      
+perf	Scaling gate	2026-10-19T17:37:16.0836764Z issues        subjects  631.0     475.9     0.8    8      ok      
+perf	Scaling gate	2026-10-19T17:37:16.0837634Z show-all      claims    32.0      630.2     19.7   32     ok      
+perf	Scaling gate	2026-10-19T17:37:16.0838277Z show-all      subjects  630.2     482.1     0.8    6      ok      
+perf	Scaling gate	2026-10-19T17:37:16.0838667Z show-subject  claims    31.7      634.8     20.0   32     ok      
+perf	Scaling gate	2026-10-19T17:37:16.0839052Z show-subject  subjects  634.8     496.1     0.8    4      ok      
+perf	Scaling gate	2026-10-19T17:37:16.0839457Z status-all    claims    31.7      631.4     19.9   32     ok      
+perf	Scaling gate	2026-10-19T17:37:16.0839832Z status-all    subjects  631.4     477.0     0.8    10     ok      
+perf	Scaling gate	2026-10-19T17:37:16.0840070Z 
+perf	Scaling gate	2026-10-19T17:37:16.0840757Z FAIL (context, claims): ratio 8.4 exceeds bound 8. Committed reason: MEASURED 2.3 in run 31447798510: the budget bounds the assembly's cost in practice, not only its output. If ranking ever becomes a full-log scan this trips.
+perf	Scaling gate	2026-10-19T17:37:16.0859022Z ##[error]Process completed with exit code 1.

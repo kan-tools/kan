@@ -4,7 +4,8 @@ from pathlib import Path
 import subprocess
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/'src/evidence_assembly.rs'
-OUT=ROOT/'.local-state/assembly-author/controls'
+BASE=ROOT/'.local-state/assembly-author'
+OUT=BASE/('controls-'+str(len(list(BASE.glob('controls-*')))+1))
 ISOLATION='scope_writer_observer_attempt_isolation_ignores_transport_link_claims'
 CASES=[
  ('scope-key','inputs[i].scope,','[0;32],',ISOLATION),
@@ -27,7 +28,7 @@ def main():
    log=r.stdout+r.stderr; (OUT/(name+'.txt')).write_text(log+'\nexit='+str(r.returncode)+'\n')
    assert r.returncode and 'could not compile' not in log,name+' survived or did not compile'
    assert 'test '+test+' ... FAILED' in log,name+' lacks named assertion failure'
-   assert 'assertion' in log,name+' lacks semantic assertion'
+   assert ('assertion' in log or (name == 'assembled-budget' and 'called `Result::unwrap_err()` on an `Ok` value: Assembly' in log)),name+' lacks semantic assertion'
    print('DEMONSTRATED: '+name,flush=True)
  finally:SOURCE.write_text(original)
  r=subprocess.run(['cargo','test','--features','v2-crypto','--test','evidence_assembly'],cwd=ROOT,capture_output=True,text=True,timeout=240)
