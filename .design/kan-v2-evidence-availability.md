@@ -1010,3 +1010,78 @@ and retains that bundle and all its history. In-bundle metadata continuation is
 an additional protocol requirement before that capability can be exposed; blob
 restoration never invents missing records. Track this capability in the full
 recovery roadmap rather than claiming it from the initial bundle writer.
+
+## Next build: remote proof-aware Library integration
+
+The reviewed local `src/evidence_store/inventory.rs` already supports admitted
+and copied profiles, descending predecessor-linked pages, Available/Missing/
+Corrupt sampling and a fresh source read. Its private Selection and Cursor are
+not wire authority. `src/evidence_service.rs`, `src/evidence_http.rs`,
+`src/evidence_reader.rs` and `src/evidence_library.rs` still expose the legacy
+version-1, ascending manifest-tip contract. Wiring those primitives together is
+required to close AC-1, AC-4 and AC-6; a local inventory CLI alone does not do so.
+
+Continue the existing approved design with an explicit proof-reader protocol,
+using the same authenticated service/reader boundary and Library shell. Keep the
+legacy request/reply shapes compatible and select protocol/profile explicitly.
+A signed capability response must name the supported version and operation set;
+malformed replies, an unsupported server or an unverified denial never cause a
+silent downgrade. The new read service requires owner-configured profile,
+archive/scope/issuer binding and current principal grants. It can start after
+payload loss by validating the metadata chain. It receives no append or owner-job
+authority merely because metadata inspection succeeded. Existing full admission
+checks remain mandatory on writer paths; remote proof-profile admission remains
+a separately tested integration requirement before declaring service convergence.
+
+A proof snapshot retains the original signed request/reply and binds profile,
+archive, scope, issuer and the exact attestation statement frontier. A page is
+bounded and descends from that frontier. Every returned occurrence carries its
+exact canonical manifest, receipt and issuer proof, plus a sampled availability
+state. The client verifies the chain from its expected frontier through every
+row to the returned next predecessor; an empty page with remaining history or a
+next cursor not implied by those proofs is corrupt. Numeric browser coordinates
+use canonical decimal strings. The server additionally bounds serialized wire
+bytes, including hex expansion, rather than treating local record-byte limits as
+an RPC size bound.
+
+Human pagination must not hold a SQLite read transaction between HTTP requests.
+Add an explicitly pinned inventory opening path: validate the current metadata
+chain under one bounded transaction, prove the selected older frontier belongs
+to that prefix, and page only within that frontier. A later append is excluded;
+rollback, same-height substitution, missing selected metadata or invalid proof
+fails. A caller-supplied next frontier must be checked against that same verified
+prefix before constructing a private cursor. No public unchecked conversion from
+JSON into Selection or Cursor is permitted. A fresh source request reconstructs
+its occurrence selection from verified pin/metadata, rechecks current grants,
+and checks current payload hash, retained writer signature and scope decryption.
+The old availability label never authorizes source access.
+
+The Library renders missing/corrupt occurrences in place with healthy neighbours,
+exact provenance and a typed unavailable source state. It distinguishes
+issuer-attested admission from present-time retained verification, and shows a
+writer-verification label only when available source bytes support it. Content
+interpretation must preserve unavailable-input coverage and exact references;
+it may not silently drop unavailable selections or replace them with generated
+text. Lock, revocation, no-store responses, bounded worker admission and safe
+text rendering apply equally to the new protocol. Server paths and observer or
+issuer signing keys never enter browser state.
+
+Qualification must exercise both profiles, unavailable tip/middle/staged data
+across restart, concurrent append between pages, altered proof/cursor/pin,
+unknown and revoked principals, loss after an Available sample, unsupported
+capabilities and legacy clients. Real browser checks must navigate available,
+missing and corrupt occurrences, return to the same pinned list, retain theme
+and keyboard behavior, and verify actual source delivery when available.
+Compiled controls and a fresh actual Opus5.5 review remain acceptance conditions.
+No remote implementation or browser acceptance is claimed by this continuation.
+
+This continuation serves the recorded raw-data-and-projections north star and
+the already approved full human frontend scope. It uses Git-first recording
+under day#168/kan#197; no live log, excluded claim reconstruction, invented
+witness or main-workspace redirect is involved. All parent ACs remain open until
+the integrated contracts and evidence above exist.
+
+`day design check` was attempted for this continuation and refused the worktree
+without its own kan workspace. The exact diagnostic is retained locally in
+`.local-state/proof-reader-design-check.txt`. Validation and kan/bridge recording
+are unavailable here; they are not reported as passing or as an empty log.

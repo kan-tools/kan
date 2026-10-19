@@ -100,3 +100,7 @@ fixture key and a different valid low-S ECDSA signature. The statement checkpoin
 and replay remain valid, but envelope bytes differ. Exact destination comparison
 must reject this: matching a statement-chain head alone does not preserve the
 retained signature bytes. This fixture never accepts a non-test observer key.
+
+The branch-specific `day design check` was also attempted and refused the missing
+worktree kan workspace; `.local-state/copy-design-check.txt` retains the exact
+diagnostic. This is unavailable validation, not a passing check or an empty log.
