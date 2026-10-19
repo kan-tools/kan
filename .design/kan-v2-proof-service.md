@@ -62,8 +62,11 @@ wire/service layer; HTTP, Reader and Library acceptance must follow before
 claiming a complete human browsing path. Archive discovery, annotations,
 background processing and owner jobs remain in the overall v2 roadmap.
 
-The service/wire candidate and seven focused integration tests are now on disk.
-Formatting and whitespace checks pass; compilation and review are pending.
+The service/wire, shared HTTP adapter and verified Reader candidates are now on
+disk. Seven service tests, a real loopback transport test and four Reader tests
+cover both profiles, exact encrypted source decryption, faulty signed replies,
+tokens, revocation and later payload loss. Formatting and whitespace checks pass;
+compilation and review are pending. The human Library integration is still open.
 `day design check` refused this worktree because it has no separate kan workspace;
 the exact diagnostic is retained in `.local-state/design-check.txt`. Validation
 and kan/bridge recording remain unavailable, not passing or an empty log.

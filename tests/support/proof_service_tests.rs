@@ -1,5 +1,8 @@
 use super::*;
 use kan::evidence_proof_service as wire;
+#[cfg(feature = "v2-crypto")]
+#[path = "proof_reader_tests.rs"]
+mod reader_tests;
 
 fn binding(f: &Fixture) -> wire::Binding {
     wire::Binding {
