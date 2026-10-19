@@ -12,3 +12,12 @@ budget/alias checks, the separately prepared claim byte decoder, and the parent
 Content clock-test correction. Local qualification, semantic controls and fresh
 actual Claude Code Opus5.5 review remain required. Shared target ownership is
 currently reserved for the independent frozen parent review.
+
+
+CI39320463688 at6a09d6e passed17 of18 creation/restoration tests, including
+all eight abrupt-death phases. The new direct writer/binding test stopped at
+its fixture identity assertion: it used scalar3 from the wire-only fixture,
+while the replay corpus is signed by public fixture scalar6. The test now loads
+scalar6, still asserting the exact expected DID before invoking restoration.
+The failed excerpt/hash are retained. No production identity verification or
+candidate assertion was relaxed; rerun remains required.

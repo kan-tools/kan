@@ -1114,7 +1114,8 @@ fn restoration_checks_writer_signature_and_manifest_binding_before_signing() {
             .clone();
         let mut key = tempfile::NamedTempFile::new().unwrap();
         let mut scalar = [0; 32];
-        scalar[31] = 3;
+        // recovery_replay_vectors::History::encoded uses public fixture scalar 6.
+        scalar[31] = 6;
         key.write_all(&scalar).unwrap();
         let observer = Identity::load_existing(key.path()).unwrap();
         assert_eq!(observer.did(), ctx.observer);
