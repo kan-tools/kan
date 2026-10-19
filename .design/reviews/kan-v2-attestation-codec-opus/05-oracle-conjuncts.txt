@@ -1,0 +1,77 @@
+SURVIVED  line 54 [issuer-encoding] drop: isinstance(did, str)
+SURVIVED  line 54 [issuer-encoding] drop: 56 <= len(did) and len(did) <= 80
+SURVIVED  line 54 [issuer-encoding] drop: 56 <= len(did)
+SURVIVED  line 54 [issuer-encoding] drop: len(did) <= 80
+SURVIVED  line 54 [issuer-encoding] drop: did.startswith('did:key:z')
+SURVIVED  line 61 [issuer-algorithm] drop: len(raw) == 35
+killed    line 61 [issuer-algorithm] drop: raw[:2] == b'\x80$' | other-algorithm: expected issuer-algorithm, got issuer-point
+SURVIVED  line 70 [label] drop: isinstance(value, dict)
+killed    line 70 [label] drop: set(value) == set(names) | accepted negative unknown-body
+killed    line 73 [safe-integer] drop: type(v) is int | accepted negative boolean-sequence
+SURVIVED  line 73 [safe-integer] drop: 0 <= v and v <= SAFE
+SURVIVED  line 73 [safe-integer] drop: 0 <= v
+SURVIVED  line 73 [safe-integer] drop: v <= SAFE
+killed    line 76 [record-cid] drop: isinstance(v, codec.Link) | null-previousManifest: expected record-cid, got unexpected AttributeError
+SURVIVED  line 76 [record-cid] drop: len(v.raw) == 36
+SURVIVED  line 76 [record-cid] drop: v.raw[:4] == b'\x01q\x12 '
+SURVIVED  line 99 [receipt-canonical] drop: isinstance(a['principal'], str)
+SURVIVED  line 99 [receipt-canonical] drop: isinstance(a['verificationMethod'], str)
+SURVIVED  line 99 [receipt-canonical] drop: a['verificationMethod'].startswith(a['principal'] + '#')
+killed    line 104 [receipt-canonical] drop: r['durability'] == 'remote-durable' | accepted negative invalid-receipt-durability
+SURVIVED  line 104 [receipt-canonical] drop: isinstance(r['scopeToken'], bytes)
+SURVIVED  line 104 [receipt-canonical] drop: len(r['scopeToken']) == 32
+SURVIVED  line 104 [receipt-canonical] drop: isinstance(r['operation'], bytes)
+SURVIVED  line 104 [receipt-canonical] drop: len(r['operation']) == 16
+SURVIVED  line 105 [receipt-canonical] drop: type(r['position']) is int
+SURVIVED  line 105 [receipt-canonical] drop: 0 <= r['position'] and r['position'] <= SAFE
+SURVIVED  line 105 [receipt-canonical] drop: 0 <= r['position']
+SURVIVED  line 105 [receipt-canonical] drop: r['position'] <= SAFE
+SURVIVED  line 105 [receipt-canonical] drop: type(r['issuedAt']) is int
+SURVIVED  line 105 [receipt-canonical] drop: 0 <= r['issuedAt'] and r['issuedAt'] <= SAFE
+SURVIVED  line 105 [receipt-canonical] drop: 0 <= r['issuedAt']
+SURVIVED  line 105 [receipt-canonical] drop: r['issuedAt'] <= SAFE
+SURVIVED  line 115 [profile] drop: type(statement['v']) is int
+killed    line 115 [profile] drop: statement['v'] == 1 | accepted negative unsupported-v
+killed    line 115 [profile] drop: statement['kind'] == 'service-attestation' | accepted negative unsupported-kind
+SURVIVED  line 120 [archive-length] drop: isinstance(b['archiveId'], bytes)
+killed    line 120 [archive-length] drop: len(b['archiveId']) == 32 | short-archive: expected archive-length, got configured-archive
+SURVIVED  line 121 [scope-length] drop: isinstance(b['scopeToken'], bytes)
+killed    line 121 [scope-length] drop: len(b['scopeToken']) == 32 | short-scope: expected scope-length, got configured-scope
+SURVIVED  line 125 [sequence] drop: b['sequence'] > 0
+killed    line 125 [sequence] drop: b['previousSequence'] == b['sequence'] - 1 | bad-previous-sequence: expected sequence, got chain-position
+SURVIVED  line 135 [manifest-profile] drop: isinstance(manifest, dict)
+SURVIVED  line 135 [manifest-profile] drop: manifest.get('kind') == 'manifest'
+killed    line 135 [manifest-profile] drop: manifest.get('v') == 1 | unsupported-manifest: expected manifest-profile, got receipt-binding
+SURVIVED  line 136 [receipt-profile] drop: isinstance(receipt, dict)
+SURVIVED  line 136 [receipt-profile] drop: receipt.get('kind') == 'receipt'
+killed    line 136 [receipt-profile] drop: receipt.get('v') == 1 | accepted negative unsupported-receipt
+killed    line 137 [record-binding] drop: b['manifest'].raw == codec.cid_bytes(codec.cid(manifest_raw)) | wrong-manifest: expected record-binding, got receipt-binding
+killed    line 137 [record-binding] drop: b['receipt'].raw == codec.cid_bytes(codec.cid(receipt_raw)) | accepted negative wrong-receipt
+killed    line 140 [receipt-binding] drop: r['manifest'] == b['manifest'] | accepted negative receipt-for-other-manifest
+killed    line 140 [receipt-binding] drop: all((r[f] == m[f] for f in ['scopeToken', 'operation', 'position'])) | accepted negative receipt-mismatched-operation
+killed    line 140 [receipt-binding] drop: all(...) element 'scopeToken' | accepted negative receipt-mismatched-scopeToken
+killed    line 140 [receipt-binding] drop: all(...) element 'operation' | accepted negative receipt-mismatched-operation
+killed    line 140 [receipt-binding] drop: all(...) element 'position' | accepted negative receipt-mismatched-position
+killed    line 140 [receipt-binding] drop: m['scopeToken'] == scope | accepted negative foreign-scope-metadata
+crashed   line 141 [admitted-issuer] drop: b['purpose'] != 'admitted' | Rejected admitted-issuer
+crashed   line 141 [admitted-issuer] drop: r['issuer'] == b['issuer'] | Rejected admitted-issuer
+SURVIVED  line 143 [signature-encoding] drop: isinstance(sig, bytes)
+killed    line 143 [signature-encoding] drop: len(sig) == 64 | DER: expected signature-encoding, got signature-range
+killed    line 145 [signature-range] drop: 0 < r and r < ORDER | r-at-order: expected signature-range, got signature-invalid
+killed    line 145 [signature-range] drop: 0 < r | zero-r: expected signature-range, got signature-invalid
+killed    line 145 [signature-range] drop: r < ORDER | r-at-order: expected signature-range, got signature-invalid
+killed    line 145 [signature-range] drop: 0 < s and s <= ORDER // 2 | zero-s: expected signature-range, got signature-invalid
+killed    line 145 [signature-range] drop: 0 < s | zero-s: expected signature-range, got signature-invalid
+killed    line 145 [signature-range] drop: s <= ORDER // 2 | accepted negative high-s
+killed    line 101 [receipt-canonical] drop: a['verificationMethod'] == a['principal'] + '#' + a['principal'][8:] | admitted-issuer-method: expected receipt-canonical, got admitted-issuer
+SURVIVED  line 101 [receipt-canonical] drop: a['identityVersion'] == {'kind': 'static', 'value': None}
+killed    line 129 [genesis] drop: b['sequence'] == 1 | accepted negative nonfirst-genesis
+killed    line 129 [genesis] drop: b['previousManifest'] is None | accepted negative genesis-previousManifest
+killed    line 129 [genesis] drop: b['previousAttestation'] is None | accepted negative genesis-previousAttestation
+killed    line 132 [chain-position] drop: b['previousSequence'] == previous['sequence'] | accepted negative skipped-sequence
+killed    line 132 [chain-position] drop: b['scopeToken'] == previous['scopeToken'] | mid-chain-scope: expected chain-position, got receipt-binding
+killed    line 132 [chain-position] drop: b['archiveId'] == previous['archiveId'] | accepted negative mid-chain-archive
+killed    line 132 [chain-position] drop: b['issuer'] == previous['issuer'] | accepted negative changed-chain-issuer
+killed    line 133 [chain-commitments] drop: b['previousManifest'] == previous['manifest'] | accepted negative wrong-previousManifest
+killed    line 133 [chain-commitments] drop: b['previousAttestation'] == previous['statementCid'] | accepted negative wrong-previousAttestation
+76 conjunct mutants; 37 survived

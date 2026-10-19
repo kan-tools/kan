@@ -42,7 +42,13 @@ Author validation: 95 integration checks across attestation, canonical codec,
 store, service, reader, real CLI and surface conformance; all-target v2 Clippy;
 14 compiled semantic mutations fail named assertions, exact source restored;
 27 whole-check oracle mutations fail. These bounded mutation sets do not prove
-all possible weakenings are detected. Fresh implementation review is still required.
+all possible weakenings are detected. Fresh actual Claude Code Opus 5.5 reviewed
+2e96685: APPROVE WITH FOLLOW-UPS for the codec only. Its unmodified report and
+probes are preserved in `.design/reviews/kan-v2-attestation-codec-opus/`. It independently
+passed the 95 integration checks, 50 Node checks, Clippy/fmt and 13,420 hostile
+byte variants. Short-issuer and descending error-label regressions are required
+before storage integration; detached proof authority, fuller independent source
+schemas and independent page vectors remain follow-ups for the consuming slices.
 
 No profile-2 table, admission transaction, copy upgrade, backup/restore extension,
 Inventory RPC, cursor MAC, proof-aware spool release or unavailable-evidence UI is
@@ -50,7 +56,8 @@ implemented by the codec. All six storage-design acceptance criteria remain open
 
 ## Remaining ordered build
 
-1. Fresh codec implementation review; then profile-2 authoritative proof storage,
+1. Profile-2 authoritative proof storage in permanent worktree
+   `.worktrees/kan-v2-proof-storage`, branch `feat/kan-v2-proof-storage`;
    atomic admission/retry and process-death/hostile-append qualification.
 2. Owner-copy upgrade and proof-preserving backup/recovery with surface conformance;
    explicit degraded inventory server, descending RPC/cursor framing, source

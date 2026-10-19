@@ -1,0 +1,40 @@
+mutant RM2-did-roundtrip
+file src/evidence_attestation.rs
+--- old
+    if atrium_crypto::did::format_did_key(algorithm, &key).map_err(|_| invalid("issuer-point"))?
+        != did
+    {
+        return Err(invalid("issuer-encoding"));
+    }
+
+--- new
+    let _ = &key;
+
+--- restored sha 6cd4a7ddb8b6b958c1c56c8f5eeb3e9604cd4398ee4f25d3807b0a9c24f9b7a3
+
+
+running 5 tests
+test valid_same_manifest_alternate_statement_does_not_replace_pinned_predecessor ... ok
+test issuance_cannot_sign_mismatched_records_or_overflow_frontiers ... ok
+test independent_bytes_signatures_and_chain_match ... ok
+test descending_pages_link_to_the_exact_pin_and_terminate_at_genesis ... ok
+test independent_resigned_negative_vectors_fail_at_named_check ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+
+running 7 tests
+test review_rust_rejects_schema_invalid_sources_oracle_accepts ... ok
+test review_predecessor_is_caller_authority ... ok
+test review_differential_against_python_oracle ... ok
+test review_codec_permits_store_level_invariants ... ok
+test review_short_did_never_reaches_dependency_panic ... ok
+test review_verify_at_labels_fork_height_and_genesis ... ok
+test review_hostile_bytes_never_accept_or_panic ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.44s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-build-next/.local-state/reviews/codec)
+    Finished `test` profile [unoptimized] target(s) in 6.79s
+     Running tests/evidence_attestation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attestation-cba5a126dc479c9c)
+     Running tests/zz_review_attestation_probe.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_attestation_probe-da9858e49482ccea)

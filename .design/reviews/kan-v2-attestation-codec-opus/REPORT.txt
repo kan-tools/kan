@@ -1,0 +1,144 @@
+Independent implementation review: RFC 4 service-attestation codec
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), in-session, no delegation, no subagents.
+Subject: 2e96685 (feat/kan-v2-build-next) against design b81eb4f.
+Export: .local-state/reviews/codec. Verified against `git archive 2e96685` (only extra file is
+north-star.json, supplied by the harness); change.diff == git diff b81eb4f..2e96685 restricted to
+code paths. Independence: I wrote none of this code. No kan/day reads or writes; north star taken
+from the supplied north-star.json (telos/raw-data-and-projections, live, deliberately unwitnessed).
+
+VERDICT: APPROVE WITH FOLLOW-UPS (codec checkpoint only; no storage/runtime approval)
+
+SCOPE CONFIRMED
+- In the diff: src/evidence_attestation.rs (new), src/evidence.rs (parser extraction +
+  pub(crate) visibility), src/lib.rs (module under v2-storage), tests/evidence_attestation.rs,
+  fixture +14 negatives, oracle helpers, CI adds --test evidence_attestation, Library test-only
+  probes. No web/ or evidence_library production change since approved 4b0ebc1.
+- No profile-2 table, admission, migration, inventory RPC, cursor or UI. AC-1..AC-6 all remain
+  UNMET/open; none may be checked off on this evidence. The status ledger says the same.
+- The brief's "tests/fixtures/oracle" does not exist. The oracle is
+  .design/tools/attestation_vectors.py + .design/fixtures/service-attestation-v1.json.
+
+COMMANDS RUN (shared CARGO_TARGET_DIR, -j4, sequential, after `cargo clean -p kan`)
+03 cargo test --features v2-crypto: evidence_attestation 5, evidence_contract 7, evidence_store 34,
+   evidence_service 11, evidence_reader 18 (+1 ignored manual browser fixture),
+   evidence_library_cli 1, surface_conformance 19 = 95 passed, exit 0. Compiled from this export.
+04 oracle --check: "2 exact signed vectors; 60 labelled negatives" exit 0;
+   attestation_mutations.py 27/27 killed, exit 0 (cryptography 46.0.3 venv, python -I).
+09 node --test library_ui/operations_ui/theme_ui: 50/50 pass, including PB1-PB7.
+10 cargo clippy --features v2-crypto --all-targets -D warnings: exit 0.
+11 cargo fmt --all --check: exit 0.
+13 restored-source rerun: evidence_attestation 5/5, evidence_contract 7/7.
+15 1377 file hashes before == after (empty diff). 16 no owned processes/listeners.
+Not run: default-feature clippy, the full CI test list, MSRV job, macOS canary.
+
+VERIFIED PROPERTIES (code read + executed)
+- Exact independent parity: Rust issue() reproduces oracle envelope bytes for both rows
+  (RFC 6979 deterministic P-256; atrium sign normalises low-S; oracle uses deterministic_signing
+  + min(s, n-s)). Statement bytes, statement CID and signing preimage are asserted equal.
+- Binding: pinned issuer (full canonical Author), archiveId and scopeToken against Context;
+  previous archive/scope/issuer against Context; manifest/receipt CIDs; evidence::binds
+  (kind + manifest link + scopeToken/operation/position); manifest scope == statement scope;
+  admitted => receipt.issuer == statement.issuer (full Author equality).
+- Signature: 64-byte only; 0<r<n, 0<s<=floor(n/2) explicitly; atrium Verifier default also refuses
+  high-S and DER. ORDER/HALF constants match the oracle (s-at-half-order -> signature-invalid,
+  half+1 -> signature-range).
+- DID: base58btc 'z' prefix, ASCII, 56..=80 bytes BEFORE atrium parse; P-256 only; roundtrip
+  canonical; method == did#fingerprint; identityVersion exactly {static,null}.
+- Parser: no negative ints, floats, non-42 tags, indefinite lengths, non-text or unordered or
+  duplicate keys, nonminimal heads, CID without 0x00 prefix or with trailing bytes; safe-integer
+  ceiling; depth 32; re-encode equality. Refactor is behaviour-preserving for schema 1
+  (only error text changed; nothing matches on it; RM10 shows evidence_contract guards the bound).
+- Descending: verify_at requires the row's statement CID/manifest/height/archive/scope/issuer to
+  equal the trusted expected frontier, then exposes the signed predecessor. Fork, splice, wrong
+  height, past-genesis and foreign-archive expected frontiers are all rejected (probe 08).
+- Robustness: 13,420 truncations/bit-flips of envelope, manifest, receipt for both rows (and
+  verify_at for envelopes): every one rejected, none panicked (probe 08).
+
+INDEPENDENT DIFFERENTIAL (07 Python oracle labels vs 08 Rust, identical bytes, 36 cases)
+- Rust never accepted anything the oracle rejected (asserted).
+- Same label in 27 cases: v=true, text archive/scope, raw-codec links in all four link fields,
+  purpose case, kind swap, capture as receipt/manifest, noncanonical record bytes, text/65-byte/link
+  signature, link statement, envelope 16384 vs 16385 boundary, short/long/leading-1/ed25519/
+  uncompressed DIDs, did:key receipt issuer with versionId, issuedAt 0 and MAX_SAFE (accept).
+- DIFF, Rust stricter, oracle ACCEPTS: retained-verified receipt issuer did:web with bogus or
+  versionId identityVersion or empty fragment; manifest with entries=[]; manifest writer not an
+  Author. DIFF on precedence: 15-byte operation (oracle receipt-canonical, Rust manifest-canonical).
+- DIFF label only: invalid base58 char (oracle issuer-encoding, Rust issuer-algorithm);
+  off-curve point (oracle issuer-point, Rust issuer-algorithm; Rust's "issuer-point" is
+  unreachable); outer-trailing + bad manifest (oracle envelope-canonical, Rust manifest-canonical,
+  because verify_encoded decodes records before the envelope).
+
+ORACLE CONJUNCT MUTATIONS (05, my own; author's harness removes whole require calls only)
+76 conjunct mutants, 37 survive. Classified:
+- Equivalent/unreachable (decoder already enforces it): safe-integer bounds, sequence>0, DID
+  prefix/length (roundtrip masks), raw length 35.
+- Masked by a later check, label-only: record-cid len/prefix, archive/scope isinstance,
+  manifest/receipt kind, signature isinstance, v type (bool).
+- Real oracle-schema gaps: receipt_schema conjuncts for scopeToken/operation lengths,
+  position/issuedAt type, principal/method types, did:key identityVersion; and no manifest
+  schema at all. The correction review's F-new-2 is only partly closed.
+
+RUST COMPILED MUTANTS (10, my own set; all compiled, kills are named assertion failures)
+  RM1  drop DID 56..=80 bound          committed SURVIVES; probe kills: atrium panics
+                                       "range end index 2 out of range" on did:key:z / z2
+  RM2  drop DID format roundtrip       survives all: redundant under length bound
+  RM3  drop row-after-genesis          committed SURVIVES (is_err only); probe kills (label)
+  RM4  disable pinned-frontier         committed kills (same-height fork assertion)
+  RM5  low-S > to >=                   committed kills (s-at-half-order)
+  RM6  drop previous.issuer conjunct   committed kills (changed-chain-issuer)
+  RM7  drop record kind match          survives all: binds() still rejects, label changes
+  RM8  pin by height+manifest only     committed kills (fork test): statement-CID pin is guarded
+  RM9  drop Frontier issuer conjunct   survives all: equivalent at verify level
+  RM10 shared decoder bound +1         evidence_contract kills (schema-1 boundary)
+
+API AUTHORITY
+- Context is caller-supplied trust, never read from the envelope. Correct.
+- verify() treats `previous` as authority. Probe: a predecessor derived from row 2's OWN body
+  yields Verified for row 2 with row 1 never seen. Frontier has pub fields + Default, and
+  Verified::frontier() returns the same type used as trusted input. The doc comment on Verified
+  ("exact record/chain verification") overstates; the chain is only relative to the caller's input.
+  The proof-aware spool release in the design needs a detached single-proof check, and today the
+  only way to get one is to fabricate a predecessor. Add an explicit unchained API or type
+  before that slice.
+- issue() is a pure signer that refuses to return anything it cannot verify (pinned-issuer,
+  admitted-issuer probes). It is not an admission authority; the store must keep it off raw paths.
+- The codec accepts the same manifest at two heights, retained-verified before admitted, and an
+  issuedAt regression (probe). Purpose ordering is documented as a store invariant. Duplicate
+  manifest across heights is not named in the design as a store audit check.
+
+DESIGN-TEXT CONTRADICTIONS CHECKED
+- "verify_retained_request already requires request.audience == receipt.issuer": true
+  (src/evidence_service.rs:339-340). The legacy reader still requires audience == configured
+  issuer (src/evidence_reader.rs:287), unchanged. RetryImported is prose only: not implemented,
+  and nothing in the codec contradicts it.
+- RFC 4 section header still says "(not implemented)" although the codec now is (storage is not).
+- Design line 326 (alternate statements vs pinned successor) is met only by Rust-generated
+  alternates with unlabelled asserts. No independent page/snapshot vectors (F-new-1 still open).
+
+FOLLOW-UPS (none blocks the codec; F1-F3 before storage/reader integration)
+F1 Commit a test asserting short DIDs (did:key:z, did:key:z2) return issuer-encoding without a
+   panic. Today removing the guard reaches a dependency panic and only this review detects it.
+F2 Label verify_at/fork/issuance assertions (pinned-frontier, row-after-genesis, chain-commitments)
+   and wrap verify_at framing errors with the same labels as verify. Currently verify_at returns raw
+   "invalid canonical evidence: trailing bytes" where verify returns envelope-canonical.
+F3 Separate a detached proof check from chain verification, or mark predecessor provenance in
+   the type, before the spool-release and inventory slices consume this API. Fix the Verified doc.
+F4 Make the oracle's source schema independent: manifest body and full receipt Author shape. Add
+   vectors for manifest-canonical, issuer-point (and decide the Rust label), invalid base58,
+   record kind swap and v=true. Align Rust check precedence or document it.
+F5 Independent descending/snapshot vectors in the oracle (F-new-1), including alternate receipt.
+F6 Store audit to refuse duplicate manifest/operation across heights and purpose-order
+   violations; RFC 4 header wording.
+
+LIMITS
+- Mutation sets (author 14 + 27; mine 10 Rust + 76 oracle conjuncts) are bounded samples.
+- Byte-flip probing is single-edit, not structured fuzzing. No timing/side-channel review.
+- I did not re-audit atrium-crypto/p256 beyond reading the parse/verify/sign paths.
+- No runtime/storage/AC claims; Library production code was not re-reviewed (approved at 4b0ebc1).
+
+EVIDENCE FILES
+00/14/15 hashes before/after/diff; 01 env; 02 clean; 03 tests; 04 oracle check + mutations;
+05 oracle conjunct mutants; 06 fixture label counts; 07 differential (Python); 08 Rust probes;
+09 node; 10 clippy; 11 fmt; 12-rs-mutants/ (per-mutant logs + SUMMARY); 13 restored rerun;
+16 processes. probes/: oracle_conjuncts.py, differential_gen.py, differential.json,
+zz_review_attestation_probe.rs, mutate_rs.py. Tracked sources restored byte-for-byte.

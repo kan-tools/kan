@@ -1,0 +1,30 @@
+RM1-did-length-bound           KILLED        
+      failing: review_short_did_never_reaches_dependency_panic, review_differential_against_python_oracle
+      assert: range end index 2 out of range for slice of length 0
+      assert: assertion `left == right` failed: did:key:z
+      assert: range end index 2 out of range for slice of length 1
+      assert: assertion `left != right` failed: "did-z2"
+RM2-did-roundtrip              SURVIVED      
+RM3-row-after-genesis          KILLED        
+      failing: review_verify_at_labels_fork_height_and_genesis
+      assert: assertion `left == right` failed
+RM4-pinned-frontier            KILLED        
+      failing: descending_pages_link_to_the_exact_pin_and_terminate_at_genesis, review_verify_at_labels_fork_height_and_genesis
+      assert: same-height fork must fail at pinned frontier
+      assert: assertion `left == right` failed
+RM5-low-s-off-by-one           KILLED        
+      failing: independent_resigned_negative_vectors_fail_at_named_check
+      assert: assertion `left == right` failed: negative "s-at-half-order" must trip its intended check
+RM6-chain-issuer               KILLED        
+      failing: independent_resigned_negative_vectors_fail_at_named_check
+      assert: changed-chain-issuer: Verified { bytes: [162, 105, 115, 105, 103, 110, 97, 116, 117, 114, 101, 88, 64, 178, 206, 118, 4, 115, 225, 70, 110, 9, 211, 15
+RM7-record-kind                SURVIVED      
+RM8-manifest-only-pin          KILLED        
+      failing: descending_pages_link_to_the_exact_pin_and_terminate_at_genesis, review_verify_at_labels_fork_height_and_genesis
+      assert: same-height fork must fail at pinned frontier
+      assert: assertion `left == right` failed
+RM9-frontier-issuer-conjunct   SURVIVED      
+RM10-record-bound-shared       KILLED        
+      failing: exact_encoded_size_boundary
+      assert: assertion `left == right` failed
+runner exit=0
