@@ -43,6 +43,17 @@ no append command. Source bytes remain encrypted on this service boundary;
 scope decryption stays in the authorized local Reader. Present-time writer
 verification and issuer-attested purpose remain separate fields in the UI.
 
+The local Reader must not accept arbitrary browser frontier JSON as verified
+continuation or selected membership. It verifies pages from the authenticated
+snapshot, then issues signed continuation/selection tokens binding the exact
+snapshot hash, explicit archive binding, reader principal, purpose and next or
+selected frontier. Each later call verifies that token before contacting the
+service. Page and source token purposes are distinct. These tokens attest only
+to prior local verification; they are not grants, so every call still performs
+current remote authorization and every source read freshly checks its bytes.
+This avoids holding transactions between clicks or repeatedly embedding the
+whole prior page chain in browser requests. The Reader signing key stays local.
+
 ## Status and integration boundary
 This is a continuation of the approved design, recorded Git-first under
 day#168/kan#197. No live log/keys or excluded claims are read or reconstructed.

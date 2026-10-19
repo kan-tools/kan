@@ -443,3 +443,96 @@ fn proof_wire_owner_configuration_and_work_limits_fail_closed() {
         assert!(wire::SignedRequest::sign(req, &identity(6)).is_err());
     }
 }
+
+#[cfg(feature = "v2-service")]
+#[tokio::test]
+async fn proof_http_roundtrip_preserves_signed_loss_states_and_no_store() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture(dir.path(), profile);
+        f.remove(2);
+        let listener = kan::evidence_http::bind("127.0.0.1:0".parse().unwrap())
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let endpoint = format!("http://{address}/v2/read");
+        let task = tokio::spawn(kan::evidence_http::serve_proof(listener, reader(&f)));
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let encode = |command| {
+            let mut request = signed(&f, command).request;
+            request.expires = now + 60;
+            wire::SignedRequest::sign(request, &identity(6))
+                .unwrap()
+                .bytes()
+                .unwrap()
+        };
+        let bytes = encode(wire::Command::Snapshot);
+        let reply = kan::evidence_http::send_proof(&endpoint, &f.binding.issuer, &bytes)
+            .await
+            .unwrap();
+        let wire::Output::Snapshot { frontier, .. } = reply.reply.result.unwrap() else {
+            panic!("snapshot")
+        };
+        let bytes = encode(wire::Command::Read {
+            pin: frontier.clone(),
+            selected: frontier,
+        });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let response = client
+            .post(&endpoint)
+            .body(bytes.clone())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        let reply =
+            wire::SignedReply::decode(&response.bytes().await.unwrap(), &bytes, &f.binding.issuer)
+                .unwrap();
+        assert!(matches!(
+            reply.reply.result,
+            Ok(wire::Output::Evidence {
+                source: wire::Source::Missing,
+                ..
+            })
+        ));
+        let response = client
+            .post(format!("http://{address}/v1/rpc"))
+            .body(bytes.clone())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        let response = client
+            .post(&endpoint)
+            .body(vec![0; wire::MAX_REQUEST + 1])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        assert!(
+            kan::evidence_http::send_proof(&endpoint, identity(7).did().as_str(), &bytes)
+                .await
+                .is_err()
+        );
+        assert!(kan::evidence_http::send_proof(
+            &format!("http://{address}/v1/rpc"),
+            &f.binding.issuer,
+            &bytes
+        )
+        .await
+        .is_err());
+        assert!(
+            kan::evidence_http::send(&endpoint, &f.binding.issuer, &bytes)
+                .await
+                .is_err()
+        );
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+    }
+}
