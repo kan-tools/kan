@@ -878,7 +878,7 @@ fn creation_reports_an_actual_commit_error_as_uncertain() {
     });
     match result {
         Err(CreationError::Uncertain { path, cause, .. }) => {
-            assert_eq!(path, dst);
+            assert_eq!(path, dst.canonicalize().unwrap());
             assert!(
                 matches!(*cause,bundle::Error::Sql(rusqlite::Error::SqliteFailure(ref e,_)) if e.code==rusqlite::ErrorCode::DatabaseBusy)
             );
