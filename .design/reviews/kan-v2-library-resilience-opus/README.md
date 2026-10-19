@@ -3,7 +3,7 @@
 Actual Claude Code `claude-opus-5-5`, session
 `8a79286d-effa-4dff-b736-e30cfa1b3b11`, reviewed e71cdf8 against 60f3d36.
 The init identity is in `identity.json`; the exact returned text is `result.txt`
-and the reviewer's longer report is `evidence/REPORT.md`. Verdict:
+and the reviewer's longer report is `evidence/REPORT.txt`. Verdict:
 **APPROVE WITH FOLLOW-UPS**. This is not approval of later author corrections.
 
 All 278 frozen source hashes match after the review. The reviewer restored and
@@ -36,3 +36,7 @@ catalog branch; the reviewer's targeted mutations supply separate evidence.
 Missing payload rows, collection overview, normalized conversations, search,
 annotations/views, analysis and admin remain open roadmap work. No live keys,
 archives, deployment, migration, main merge or cutover occurred.
+
+The verbatim reviewer report uses .txt because its shorthand source references
+are raw review output, not repository-relative Markdown links. This preserves
+the report byte-for-byte while the repository citation checker validates docs.
