@@ -51,18 +51,18 @@ The primary navigation separates exploration, interpretation and administration,
 
 ### What exists and what needs building
 
-The current `src/evidence_dashboard.rs` serves only an operations journal snapshot. It cannot supply transcript text, semantic search, full claim views or management actions. Expanding its CSS alone cannot deliver this product.
+The operations service in `src/evidence_dashboard.rs` remains separate from the new authorized Library in `src/evidence_library.rs`. The Library composes real snapshot/page/read service operations and exact source/provenance inspection. Neither service yet supplies normalized transcripts, semantic search, full claim views or administrative execution. The full application still requires those integrations.
 
 | Capability | Existing foundation | Missing integration/contract |
 |---|---|---|
-| Raw inventory/retrieval | `src/evidence_service.rs` signed snapshot/page/record/object operations; `src/evidence_store.rs` bounded ledger reads | Authorized browser-facing reader, semantic envelope/normalization, resource links and paging UI |
-| Decryption | `src/evidence_crypto.rs`; explicit CLI `DecryptRequest`; imported-source restore | Reader grant/epoch custody, bounded in-memory plaintext handling, browser session boundary |
+| Raw inventory/retrieval | `src/evidence_service.rs` signed Snapshot/Page/Read operations; `src/evidence_reader.rs` authorized pins/ranges; `web/library/` real paging and source/provenance UI in #286 | Per-record unavailable evidence, semantic normalization, stable resource links, merged cross-scope results and complete browser/export qualification |
+| Decryption | `src/evidence_crypto.rs`; explicit CLI `DecryptRequest`; imported-source restore; separate reader signing principal, explicit scope keys and bounded in-memory Library reads | Key/grant epoch lifecycle, encrypted search projections and deployment/custody qualification |
 | Session reconstruction | Capture observations in `src/evidence_capture.rs` and `src/evidence_gateway.rs` | Versioned provider/harness adapters, branching/compaction/attachment coverage and source maps |
 | Search/facets | v1 query/fold references; parent architecture's reader-bound index design | Incremental authorized encrypted index, pinned frontiers, coverage diagnostics, ACL-aware search and invalidation |
 | Claims/annotations | `src/claim/view.rs`, `src/fold/`, identity and CLI/MCP semantics | v2 read adapter and separately authorized annotation signer; no semantic writes through blind storage |
 | Views/relations | `src/fold/identity.rs`, `src/fold/state.rs`, `src/fold/relations.rs`, `src/uri.rs` | Explicit view recipes, input/trust frames, saved-view authority and browser rendering |
 | Analysis/day | Architectural run/assessment model in `.design/kan-v2-server-first.md` | Scheduler/worker APIs, immutable run records and assessment integration; not present in current dashboard |
-| Operations | `src/evidence_operations.rs`, `src/evidence_dashboard.rs`, `web/operations/` | Six follow-ups plus integration into full app shell; shared typed status |
+| Operations | `src/evidence_operations.rs`, `src/evidence_dashboard.rs`, `web/operations/`; capacity and preserved-history collection in #283–#285 | Concrete surviving review tests, deduplicated collection overview (#287), shared app integration and separate admin plan/job execution |
 | Migration/restore | `src/evidence_import.rs`, `src/evidence_restore.rs`, `src/migration_preflight.rs`, `src/bin/kan-v2.rs` | Capability-scoped job adapters and plan/status UI; local filesystem picker belongs to the selected agent host |
 | Backup/access/retention | Ledger backup/verify and service grants; reviewed design boundaries | Administrative plans/jobs, recovery key/grant lifecycle, revocation/erasure protocol and readable audit |
 
@@ -152,3 +152,15 @@ signed snapshot inventory, authorized bounded source/provenance inspection, and
 no persistent plaintext index. It is a build plan, not a capability claim. The
 existing reader-placement question remains open; portable code and synthetic
 fixtures do not select production key placement.
+
+
+### Current build checkpoint
+
+The real Library is stacked in #286 through a8cbf21; its initial fresh Opus review
+approved with follow-ups, and the corrections have their own review pending.
+System/Light/Dark follows platform settings by default. Inventory, byte ranges,
+source/provenance, lock clearing and a visible API-driven capability matrix are
+implemented. These do not close this document's composite acceptance criteria.
+The next operations projection contract is #287. See
+`.design/kan-v2-followup-status.md` for concrete remaining work and preserved
+review gaps; this table must not turn “foundation exists” into “workflow complete”.
