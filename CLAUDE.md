@@ -111,6 +111,15 @@ writing through kan's CLI, making kan's write-verb ergonomics a dependency
 of a program rather than only of agents. Send a process/workflow feature
 request there, not here.
 
+## Current owner-approved SOP
+
+Read [AGENTS.md](AGENTS.md) and the active flow in
+[.design/kan-v2-next-build-status.md](.design/kan-v2-next-build-status.md).
+The owner adopted feature-complete implementation followed by thorough integrated
+review as the SOP on 2026-10-19. It supersedes older per-checkpoint review rules.
+This pointer is the Git-first exception while day#168 / kan#197 block safe process
+recording; the linked document is the single current policy.
+
 ## Process lives in `day`, not here
 **This file describes kan the artifact. It does not describe how work
 proceeds.** Process — designing, building, reviewing, opening a PR, cutting a
