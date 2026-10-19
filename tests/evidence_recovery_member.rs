@@ -301,7 +301,8 @@ fn missing_corrupt_empty_and_orphan_bytes_have_exact_distinct_loss_and_commitmen
                 occurrence: None,
                 cid: orphan,
                 expected_length: None,
-                state: Availability::Corrupt
+                state: Availability::Corrupt,
+                basis: member::Basis::OriginalObject,
             }
         );
     }
@@ -448,7 +449,7 @@ fn hash_valid_but_unsigned_bytes_are_not_treated_as_recoverable_loss() {
     assert_eq!(m.losses()[0].state, Availability::Missing);
 }
 #[test]
-fn shared_missing_cid_keeps_each_occurrence_and_no_extra_null_coordinate() {
+fn shared_missing_service_request_cid_refuses_before_restoration() {
     let mut f = Fixture::new(2, 2);
     let Decoded::Known(first) = evidence::decode(&f.records[0].0).unwrap() else {
         panic!()
@@ -468,11 +469,10 @@ fn shared_missing_cid_keeps_each_occurrence_and_no_extra_null_coordinate() {
         e.insert("length".into(), len);
     });
     f.objects.clear();
-    let m = f.check(budget()).unwrap();
-    assert_eq!(m.losses().len(), 2);
-    assert_eq!(m.losses()[0].cid, m.losses()[1].cid);
-    assert_eq!(m.losses()[0].occurrence, Some(1));
-    assert_eq!(m.losses()[1].occurrence, Some(2));
+    assert_eq!(
+        f.check(budget()).err(),
+        Some(member::Error::Invalid("reused service request CID"))
+    );
 }
 #[test]
 fn expected_oversized_length_refuses_without_a_physical_object() {
@@ -608,7 +608,7 @@ fn independently_constructed_python_members_match_commitments_losses_and_refusal
             result.recipe_metadata_complete(),
             expected["recipeMetadataComplete"].as_bool().unwrap()
         );
-        let losses:Vec<_>=result.losses().iter().map(|l|serde_json::json!({"occurrence":l.occurrence,"cid":l.cid.to_string(),"expectedLength":l.expected_length,"state":match l.state {Availability::Missing=>"missing",Availability::Corrupt=>"corrupt",Availability::Available=>panic!("loss cannot be available")}})).collect();
+        let losses:Vec<_>=result.losses().iter().map(|l|serde_json::json!({"occurrence":l.occurrence,"cid":l.cid.to_string(),"expectedLength":l.expected_length,"basis":format!("{:?}",l.basis),"state":match l.state {Availability::Missing=>"missing",Availability::Corrupt=>"corrupt",Availability::Available=>panic!("loss cannot be available")}})).collect();
         assert_eq!(
             serde_json::json!(losses),
             expected["losses"],
@@ -620,6 +620,32 @@ fn independently_constructed_python_members_match_commitments_losses_and_refusal
 
 #[test]
 fn shared_cid_lengths_and_duplicate_operations_refuse_even_when_all_bytes_missing() {
+    // In a partial copy the source digest cannot mask a missing length check.
+    let mut partial = Fixture::new(3, 2);
+    partial.records.truncate(1);
+    let Decoded::Known(first) = evidence::decode(&partial.records[0].0).unwrap() else {
+        panic!()
+    };
+    let Ipld::List(entries) = &first.body()["entries"] else {
+        panic!()
+    };
+    let Ipld::Map(entry) = &entries[0] else {
+        panic!()
+    };
+    let Ipld::Link(cid) = &entry["ciphertext"] else {
+        panic!()
+    };
+    partial
+        .membership
+        .iter_mut()
+        .find(|(c, _)| c == cid)
+        .unwrap()
+        .1 += 1;
+    partial.objects.clear();
+    assert_eq!(
+        partial.check(budget()).err(),
+        Some(member::Error::Invalid("conflicting expected lengths"))
+    );
     let mut f = Fixture::new(2, 2);
     let Decoded::Known(first) = evidence::decode(&f.records[0].0).unwrap() else {
         panic!()

@@ -1,0 +1,23 @@
+
+running 1 test
+test orphan_hash_mismatch_is_reported_without_rewriting_its_bytes ... FAILED
+
+failures:
+
+failures:
+    orphan_hash_mismatch_is_reported_without_rewriting_its_bytes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 19 filtered out; finished in 0.02s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member)
+    Finished `test` profile [unoptimized] target(s) in 7.51s
+     Running tests/evidence_recovery_member_review_regressions.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_review_regressions-9f02720da46a1f05)
+
+thread 'orphan_hash_mismatch_is_reported_without_rewriting_its_bytes' (10079612) panicked at tests/evidence_recovery_member_review_regressions.rs:1136:5:
+assertion `left == right` failed
+  left: []
+ right: [Loss { occurrence: None, cid: Cid(bafkreica7jeuzlppy5xtedfkgtodkb6cnidklpn3sahumb5ydxqp7f7ttm), expected_length: None, state: Corrupt, basis: OriginalObject }]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test evidence_recovery_member_review_regressions`
+
+exit=101

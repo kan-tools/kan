@@ -1,0 +1,2 @@
+22 independently constructed member cases; all constructed issuer chains independently verified; no full verifier claim
+9 member/output and 4 restoration framing vectors; local negative checks pass. No logical-member acceptance claimed.

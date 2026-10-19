@@ -1,0 +1,28 @@
+    Checking kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member)
+error: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> tests/evidence_recovery_member_review_regressions.rs:828:9
+    |
+828 | /         match replace_manifest(&mut f, 0, &issuer, |b| {
+829 | |             b.insert("writer".into(), w);
+830 | |         }) {
+831 | |             Err(e) => {
+...   |
+835 | |             Ok(()) => {}
+836 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.96.0/index.html#single_match
+    = note: `-D clippy::single-match` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::single_match)]`
+help: try
+    |
+828 ~         if let Err(e) = replace_manifest(&mut f, 0, &issuer, |b| {
+829 +             b.insert("writer".into(), w);
+830 +         }) {
+831 +             eprintln!("RP rp09-{name}: schema-refused {e}");
+832 +             continue;
+833 +         }
+    |
+
+error: could not compile `kan` (test "evidence_recovery_member_review_regressions") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

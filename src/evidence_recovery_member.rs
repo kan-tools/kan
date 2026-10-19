@@ -1,5 +1,7 @@
 //! Pure logical-member audit over caller-acquired bounded bytes.
 //! No file, publication, observation-history or durability authority is conferred.
+//! Callers must acquire immutable bounded slices and reject noncanonical physical
+//! CID spellings before constructing typed CIDs; this API cannot inspect spelling.
 use crate::{
     evidence::{self, Decoded, Kind, Record},
     evidence_attestation::{self as proof, Frontier, Purpose},
@@ -86,12 +88,22 @@ pub enum Availability {
     Missing,
     Corrupt,
 }
+/// Why a loss coordinate exists. This is recomputed from the immutable member,
+/// never supplied by the observer as an independent claim of authority.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Basis {
+    IssuerMetadata,
+    VerifiedCopyRecipe,
+    UnverifiedMembership,
+    OriginalObject,
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Loss {
     pub occurrence: Option<u64>,
     pub cid: Cid,
     pub expected_length: Option<u64>,
     pub state: Availability,
+    pub basis: Basis,
 }
 /// Verified issuer metadata and sampled originals. Unavailable writer requests
 /// remain unverified. This result is NOT an authenticated recovery history.
@@ -379,6 +391,8 @@ pub fn verify(input: Input<'_>, budget: Budget) -> Result<Member> {
         let k = key(cid)?;
         let c = keys.entry(k.clone()).or_insert_with(|| coordinate(cid));
         length(c, n)?;
+        require(n <= service::MAX_REQUEST as u64, "service request length")?;
+        require(!c.referenced, "reused service request CID")?;
         c.referenced = true;
         if retained {
             require(c.member, "retained reference absent from membership")?
@@ -427,6 +441,16 @@ pub fn verify(input: Input<'_>, budget: Budget) -> Result<Member> {
     } else {
         true
     };
+    if !recipe_metadata_complete {
+        for c in keys.values_mut() {
+            work.check()?;
+            if !c.referenced {
+                // Preserve the claimed length in M1, but do not let an
+                // unauthenticated membership row classify or constrain bytes.
+                c.length = None;
+            }
+        }
+    }
     last = None;
     for (index, object) in input.objects.iter().enumerate() {
         require(
@@ -444,9 +468,12 @@ pub fn verify(input: Input<'_>, budget: Budget) -> Result<Member> {
         let mut hash = Sha256::new();
         work.hash(&mut hash, object.bytes)?;
         let actual: [u8; 32] = hash.finalize().into();
-        let valid = !object.bytes.is_empty()
-            && c.length.is_none_or(|n| n == object.bytes.len() as u64)
-            && actual == object.cid.to_bytes()[4..];
+        let hash_valid = actual == object.cid.to_bytes()[4..];
+        require(
+            !hash_valid || c.length.is_none_or(|n| n == object.bytes.len() as u64),
+            "hash-valid bytes contradict authenticated length",
+        )?;
+        let valid = !object.bytes.is_empty() && hash_valid;
         c.state = if valid {
             Availability::Available
         } else {
@@ -477,6 +504,7 @@ pub fn verify(input: Input<'_>, budget: Budget) -> Result<Member> {
                 cid: c.cid.clone(),
                 expected_length: c.length,
                 state: c.state,
+                basis: Basis::IssuerMetadata,
             })
         }
     }
@@ -488,6 +516,13 @@ pub fn verify(input: Input<'_>, budget: Budget) -> Result<Member> {
                 cid: c.cid.clone(),
                 expected_length: c.length,
                 state: c.state,
+                basis: if !c.member {
+                    Basis::OriginalObject
+                } else if recipe_metadata_complete {
+                    Basis::VerifiedCopyRecipe
+                } else {
+                    Basis::UnverifiedMembership
+                },
             })
         }
     }

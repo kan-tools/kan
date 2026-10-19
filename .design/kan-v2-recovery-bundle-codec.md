@@ -100,8 +100,12 @@ with both links null iff `through=0`. Nonempty links have DAG-CBOR/SHA256 codec.
 - `unavailable`: `{member: digest, entries: [...]}`. One to 32 entries, each
   `{occurrence, cid, expectedLength, state}`. `occurrence` is a positive member
   sequence or null for a staged/orphan object; `expectedLength` is an expected
-  length from authenticated metadata/membership or null only for an unreferenced
-  staged/orphan object without an authenticated length, in either profile. `state` is `missing` or
+  length from authenticated metadata or a completely verified copy recipe. It is null
+  for an unreferenced object without an authenticated length, including membership-only
+  coordinates in an incomplete copy. Their basis is derived from the fixed member
+  (issuer metadata, verified copy recipe, unverified retained membership, or original
+  object key); readers must expose that basis alongside each loss. The signed wire
+  does not add a second, independently editable basis field. `state` is `missing` or
   `corrupt`. No metadata-corruption state pretends a broken proof is trustworthy.
 - `restored`: `{member: digest, cid, length, candidate}`. `candidate` is the raw/SHA256 CID of the
   verified candidate and equals `cid`; length is 1..4 MiB. The target must exist
@@ -154,17 +158,27 @@ a retained recovery artifact until a separate metadata-extension design exists.
 ## Exact initial loss coverage
 
 Derive one expected coordinate for each `(occurrence sequence, object CID)` in
-member metadata. A shared CID used by two occurrences yields two distinct
-coordinates, not a collapsed history. Add a null-occurrence coordinate for each
+member metadata. The coordinate algorithm preserves occurrences; it does not
+collapse history by CID. The current service-request profile additionally refuses
+a request CID referenced by two distinct occurrences: exact request bytes fix one
+writer, operation and position, so such metadata cannot be satisfied. A future
+payload profile permitting shared bytes needs its own reviewed binding rules. Add a null-occurrence coordinate for each
 original membership key or original object key that has no occurrence reference;
 never add a second null entry for a CID already represented by occurrences.
 All authenticated lengths for a CID must agree or creation refuses. The expected
-length is that agreed value, or null only for an unreferenced original object
-without an authenticated length.
+length is that agreed authenticated value. For membership-only keys in an
+incomplete profile-3 copy, no source digest authenticates the membership yet:
+retain the exact rows in M1, mark the coordinate basis UnverifiedMembership, and
+report expectedLength null. A raw original key without authenticated length also
+has expectedLength null. These are observed rows, not proof of source membership;
+missing or substituted rows cannot be detected until the complete recipe verifies.
 
 Sample each coordinate against the original member objects. Missing rows produce
-missing entries; wrong length/hash produces corrupt entries; available entries
-produce no unavailable event. Non-BLOB cells refuse creation under the M1 rule.
+missing entries; a wrong hash (or an empty unreferenced original) produces a
+corrupt entry. Hash-valid bytes with a disagreeing authenticated length refuse as
+invalid member metadata; they must not be mislabeled corrupt or repairable. An
+unverified membership length neither classifies original bytes nor constrains a
+restoration candidate. Available entries produce no unavailable event. Non-BLOB cells refuse creation under the M1 rule.
 Sort occurrence entries first by ascending numeric sequence then canonical CID
 text; sort null entries last by canonical CID text. No duplicate coordinate is
 allowed. The concatenation of creation's unavailable events must equal this exact
@@ -372,8 +386,10 @@ hashing without timing sleeps; the original independent timing probe and its
 recorded limits remain preserved. These follow-through tests pass author qualification: ten integration functions,
 two deterministic polling units and thirteen compiled controls, plus strict
 Clippy/format and the independent oracle. Evidence is in
-`.design/reviews/kan-v2-recovery-commitment-followups-author/`. Fresh review with
-the member-verifier checkpoint remains required.
+`.design/reviews/kan-v2-recovery-commitment-followups-author/`. Fresh scope-B
+review with the member checkpoint returned APPROVE WITH FOLLOW-UPS; its raw
+record is in `.design/reviews/kan-v2-recovery-member-opus/`. The Rust multibyte
+issuer edge and stale test-provenance text are corrected below.
 
 The 1..80-byte framing issuer bound is explicit above and now shared by the
 Python oracle. UTF-8 is pinned for future physical creation and opening. An O1
@@ -400,8 +416,10 @@ original membership and retained-prefix metadata digest. An unfinished prefix is
 reported as incomplete; matching metadata alone does not certify missing writer
 signatures or retained bytes. No standalone publication capability is returned.
 
-Every known length must be positive, at most 4 MiB, and agree across references
-and original membership. Retain raw corrupt/empty originals in M1. Verify each
+Every retained length must be positive, at most 4 MiB, and agree across references
+and original membership; referenced service requests additionally cannot exceed
+the service MAX_REQUEST bound. Contradictory shared service-request CIDs refuse
+even with no payloads present. Retain raw corrupt/empty originals in M1. Verify each
 present object's hash once and sample every occurrence separately; unreferenced
 membership/original keys receive null-occurrence loss coordinates. A hash-valid
 request that fails its writer signature or exact manifest binding is invalid
@@ -414,9 +432,27 @@ Greedy signed-loss partitioning, historical restoration/output selection, replay
 checkpoints, physical schema and all storage mutations remain separate work.
 
 
-The logical-member draft passes author qualification: 16 Rust functions,
+At 3169a0a the logical-member draft passed author qualification: 16 Rust functions,
 independent signed Python fixtures, eight semantic controls (one additional
 cancellation control survives because framing refuses later), strict Clippy and
 formatting. Raw results are in
-`.design/reviews/kan-v2-recovery-member-author/`. Fresh independent review is
-pending; this is not full bundle acceptance.
+`.design/reviews/kan-v2-recovery-member-author/`. Its completed independent review
+and correction requirements follow; this is not full bundle acceptance.
+
+### Member review corrections: evidence basis and contradictory metadata
+
+Fresh actual Opus 5.5 review of 5e54513 returned APPROVE WITH FOLLOW-UPS; raw
+evidence is retained in `.design/reviews/kan-v2-recovery-member-opus/`. Before
+replay consumes this component, A-F1 governs in favor of refusing hash-valid
+bytes with false authenticated lengths. A-F2 is resolved by a typed per-loss
+basis: incomplete-copy membership-only coordinates remain visible as unverified
+observations with no authenticated expected length. M1 retains the exact claimed
+rows/lengths. No external copy-job authority is invented. Complete recipes and
+issuer references retain their stronger, independently checked basis.
+
+A-F3 adopts early refusal of reused service-request CIDs. A-F4 deterministic
+reviewer probes are promoted; timing evidence remains a separate recorded limit.
+The wire's expectedLength is derived under these rules; basis is recomputed from
+the same fixed member, not trusted from an extra signed field. Any consuming
+API/UI must preserve the distinction, including when no external rollback
+checkpoint exists. These corrections still confer no publication authority.

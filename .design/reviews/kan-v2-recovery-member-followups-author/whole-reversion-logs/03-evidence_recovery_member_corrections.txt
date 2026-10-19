@@ -1,0 +1,22 @@
+
+running 1 test
+test authentic_bytes_with_false_metadata_are_not_repairable_loss ... FAILED
+
+failures:
+
+---- authentic_bytes_with_false_metadata_are_not_repairable_loss stdout ----
+
+thread 'authentic_bytes_with_false_metadata_are_not_repairable_loss' (10083485) panicked at tests/evidence_recovery_member_corrections.rs:112:9:
+hash-valid-false-authenticated-length: contradictory metadata accepted as repairable loss
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    authentic_bytes_with_false_metadata_are_not_repairable_loss
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.04s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-member/.local-state/reversion/3e60e155d93b45e9874772202ab4f043)
+    Finished `test` profile [unoptimized] target(s) in 7.31s
+     Running tests/evidence_recovery_member_corrections.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_member_corrections-139989e045e17eb4)
+error: test failed, to rerun pass `--test evidence_recovery_member_corrections`
