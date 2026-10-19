@@ -1,0 +1,65 @@
+{
+  "files": {
+    "src/evidence_content.rs": "919a1057ad7e7c5504662e906394c4992d2de1b60ba44b88da22e56c6ee8d657",
+    "src/evidence_interpretation.rs": "2970d97227252c74659b7e5457ea0623aee88bdf5957ccea544e906ac9382f64",
+    "tests/evidence_reader.rs": "fc577efcf263c69be34f2a947b6b31874a6cb4163be1668b663923ac0b64a5aa",
+    "tests/evidence_interpretation_followups.rs": "f3fbcabc239e2262f5fc38c2acebbb9685c548553dde1bdaee007d71c082773b",
+    "tests/library_ui.test.cjs": "e49b333474e06529677f4d94edaecafd187593043d3a87c001a8fcb5a976fa01",
+    "web/library/app.js": "a77c894f41e3b29c303a5c5e4313f746aa46dfae3036f6fb72f3573d6dcc97d2",
+    "tests/support/content_worker_unit.rs": "4b3f4e4c46def146991e4d2d22a676e505a25bd41e22d74165838b9e041bdacf"
+  },
+  "local_logs": {
+    ".local-state/citation-controls/retry-selection-cleared.txt": {
+      "sha256": "0b3208a36feb4b4f8e336c59fc4b406f0b758de368b70d91dbf9e72bec5b10c4",
+      "exit": "1"
+    },
+    ".local-state/citation-controls/citation-budget-reset.txt": {
+      "sha256": "278ac2e5e3ae10f56f5a814430cb99b78fd34b30f728771cb894cf229d2dd7a6",
+      "exit": "101"
+    },
+    ".local-state/citation-controls/cache-disabled.txt": {
+      "sha256": "c7ba7a9b44b148262f6c01d9591b1fe0a8cc2ca881a126f9dbed55cab401359e",
+      "exit": "101"
+    },
+    ".local-state/citation-controls/absent-result-overflagged.txt": {
+      "sha256": "9c31c249cbf0bb3b0da26299a0a126944d0ccae5ceaf69897d7d68682c1358f0",
+      "exit": "101"
+    },
+    ".local-state/citation-controls/serialized-cap-unwired.txt": {
+      "sha256": "d9437bb9cced94a28fdc1700fd6e0dfb479526d83693bee3bdd9224d6174c501",
+      "exit": "101"
+    },
+    ".local-state/citation-controls/regions-collapsed.txt": {
+      "sha256": "3a0003fb10306bf080bda59188dee3ea1a1cae48ca0086ec0dca337eb9b304d0",
+      "exit": "101"
+    },
+    ".local-state/citation-controls-2/retry-selection-cleared.txt": {
+      "sha256": "440eb9aa8aff247d3a5320b34b9cafbfc435569b0e1ebfc1a6830516c229c69e",
+      "exit": "1"
+    },
+    ".local-state/citation-controls-2/restored-evidence_interpretation_followups.txt": {
+      "sha256": "d87dd645953fd8dd8c3bb0d7864d0457f76f3fcc066cc89c8b2ba4da11b37a17",
+      "exit": "0"
+    },
+    ".local-state/citation-controls-2/restored-lib.txt": {
+      "sha256": "b30687ec4b7db0198d565a36cdb4c0c61f59fb1d782a46ba7a81dc725796bdd9",
+      "exit": "0"
+    },
+    ".local-state/citation-controls-2/restored-node.txt": {
+      "sha256": "8df2f33e7457051b28ca887aa32334c3fae8579d7c914ef4b1bf0b0b8d4bac74",
+      "exit": "0"
+    },
+    ".local-state/citation-controls-2/restored-evidence_reader.txt": {
+      "sha256": "6e07f3ce4d79718c314a971ae5f77ecf50a48c9383da0c31bf0a19b3e51215b1",
+      "exit": "0"
+    },
+    ".local-state/citation-controls-2/numeric-reference-accepted.txt": {
+      "sha256": "f748ab6c1dba0524fcd2b6c8642e9c53552633cbeefbc9abe361ec801c19f716",
+      "exit": "1"
+    },
+    ".local-state/citation-controls-2/shared-ranges-expanded.txt": {
+      "sha256": "efd78e74c0b1b920ed0053ca95387be6cd5564a0eacbcd20b22d61af6951f894",
+      "exit": "1"
+    }
+  }
+}

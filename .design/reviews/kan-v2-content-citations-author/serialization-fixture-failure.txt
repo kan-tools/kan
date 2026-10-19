@@ -1,0 +1,33 @@
+$ cargo test --features v2-crypto --lib evidence_content
+
+running 9 tests
+test evidence_content::tests::dropping_request_guard_signals_the_worker ... ok
+test evidence_content::tests::canonical_decimal_and_new_source_coordinates_preserve_full_width ... ok
+test evidence_content::tests::serialized_byte_limit_and_cancellation_refuse_without_partial_output ... ok
+test evidence_content::tests::aggregate_work_is_charged_across_interpretation_and_all_item_mappings ... ok
+test evidence_content::tests::serialized_content_cap_is_independent_of_normalized_output ... FAILED
+test evidence_content::worker_tests::overall_content_deadline_covers_acquisition_work_after_a_verified_read ... ok
+test evidence_content::worker_tests::busy_content_http_response_is_distinct_and_retry_succeeds_after_capacity_returns ... ok
+test evidence_content::worker_tests::cancelling_real_content_keeps_worker_admission_until_exit_and_stops_after_first_item ... ok
+test evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record ... ok
+
+failures:
+
+---- evidence_content::tests::serialized_content_cap_is_independent_of_normalized_output stdout ----
+
+thread 'evidence_content::tests::serialized_content_cap_is_independent_of_normalized_output' (10667055) panicked at src/evidence_content.rs:689:88:
+called `Result::unwrap()` on an `Err` value: Limit("output bytes")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_content::tests::serialized_content_cap_is_independent_of_normalized_output
+
+test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 87 filtered out; finished in 21.70s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-followups)
+    Finished `test` profile [unoptimized] target(s) in 7.18s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-480f4f845bac8ec9)
+error: test failed, to rerun pass `--lib`
+
+exit=101
