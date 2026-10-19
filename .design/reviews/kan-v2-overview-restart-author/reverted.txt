@@ -1,0 +1,24 @@
+✖ a reused job number after restart cannot retain old overview totals (14.002042ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 44.432333
+
+✖ failing tests:
+
+test at tests/operations_ui.test.cjs:45:1
+✖ a reused job number after restart cannot retain old overview totals (14.002042ms)
+  AssertionError [ERR_ASSERTION]: new sample must replace pre-restart totals
+      at TestContext.<anonymous> (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-collection-build/tests/operations_ui.test.cjs:49:9)
+      at async Test.run (node:internal/test_runner/test:1069:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: '1 distinct attempts · 18,446,744,073,709,551,614 observed · 2 locally queued · 1 unconfirmed · 1 attempts with gaps · 1 reporter sessions · at least 8 dropped telemetry observations · 0 unclosed sessions',
+    expected: /^5 distinct attempts/,
+    operator: 'match'
+  }

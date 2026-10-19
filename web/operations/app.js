@@ -122,7 +122,8 @@ function labelOverview(){
 }
 function renderOverview(s){validateOverview(s);overviewData=s;overviewError='';const building=s.state==='building'||s.state==='cancelling';$('overview-cancel').disabled=!building;$('overview-build').disabled=building;labelOverview();
  if(!s.last){overviewKey='';for(const id of ['overview-summary','overview-coverage'])$(id).textContent='';$('overview-sources').replaceChildren();return;}
- const v=s.last,key=s.last_job+':'+v.manifest_sha256;if(key===overviewKey)return;overviewKey=key;
+ // Job counters restart with the service; identify the entire immutable sample.
+ const v=s.last,key=s.last_job+':'+JSON.stringify(v);if(key===overviewKey)return;overviewKey=key;
  const t=v.totals,n=k=>BigInt(t[k]).toLocaleString();
  $('overview-summary').textContent=n('attempts')+' distinct attempts · '+n('observed')+' observed · '+n('locally_queued')+' locally queued · '+n('unconfirmed')+' unconfirmed · '+n('attempts_with_gaps')+' attempts with gaps · '+n('sessions')+' reporter sessions · at least '+n('telemetry_dropped_lower_bound')+' dropped telemetry observations · '+n('unclosed_sessions')+' unclosed sessions';
  $('overview-coverage').textContent='Complete for '+v.sources.length+' selected observation snapshots, built '+time(v.built_at)+'. Raw capture completeness remains unknown. Active generation: '+v.active+'.';

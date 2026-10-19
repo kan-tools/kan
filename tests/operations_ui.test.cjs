@@ -40,3 +40,18 @@ test('a second action is queued behind an unfinished action, then dispatched',as
 test('cached overview shows its age and becomes visibly superseded after rotation',async()=>{const u=ui();u.login();const status=snapshot();status.active_generation='a'.repeat(32);await u.respond(status);u.node('overview-load').events.click();await u.respond(overview());assert.match(u.node('overview-state').textContent,/Cached sample.*old/);assert.doesNotMatch(u.node('overview-state').textContent,/Superseded/);status.active_generation='d'.repeat(32);u.node('refresh').events.click();await u.respond(status);assert.match(u.node('overview-state').textContent,/Superseded by active generation d+/);});
 test('invalid overview replies label retained totals and restart clears them',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('overview-load').events.click();await u.respond(overview());u.node('overview-load').events.click();const bad=overview();bad.last.sources=[];await u.respond(bad);assert.match(u.node('overview-state').textContent,/Invalid.*Prior sample retained/);assert.match(u.node('overview-summary').textContent,/1 distinct attempts/);u.node('overview-load').events.click();await u.respond({version:1,state:'unavailable',job:0,reason:null,last_job:null,last:null});assert.equal(u.node('overview-summary').textContent,'');assert.equal(u.node('overview-sources').children.length,0);assert.match(u.node('overview-state').textContent,/unavailable/);});
 test('late overview transport errors cannot repaint after lock',async()=>{const u=ui();u.login();await u.respond(snapshot());u.node('overview-load').events.click();u.node('lock').events.click();await u.respond({},503);assert.equal(u.node('overview-state').textContent,'No overview loaded.');});
+
+// Incorporated from the cold Opus correction review's restart probe UPb.
+test('a reused job number after restart cannot retain old overview totals',async()=>{
+ const u=ui();u.login();await u.respond(snapshot());u.node('overview-load').events.click();await u.respond(overview());
+ const fresh=overview();fresh.last.built_at=200;fresh.last.totals.attempts='5';fresh.last.sources[0].snapshot.digest='e'.repeat(64);
+ u.node('overview-load').events.click();await u.respond(fresh);
+ assert.match(u.node('overview-summary').textContent,/^5 distinct attempts/,'new sample must replace pre-restart totals');
+ assert.match(u.node('overview-sources').children[0].textContent,/e{64}/);
+ const priorCoverage=u.node('overview-coverage').textContent;fresh.last.built_at=300;
+ u.node('overview-load').events.click();await u.respond(fresh);
+ assert.notEqual(u.node('overview-coverage').textContent,priorCoverage,'new sample time must replace prior coverage time even with identical rows');
+ const writes=u.node('overview-summary').textWrites;
+ u.node('overview-load').events.click();await u.respond(fresh);
+ assert.equal(u.node('overview-summary').textWrites,writes,'identical cached sample should not rewrite totals');
+});
