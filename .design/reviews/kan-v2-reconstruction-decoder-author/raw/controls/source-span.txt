@@ -1,0 +1,26 @@
+
+running 1 test
+test exact_spans_binary_body_and_u64_coordinates_are_not_rounded ... FAILED
+
+failures:
+
+---- exact_spans_binary_body_and_u64_coordinates_are_not_rounded stdout ----
+
+thread 'exact_spans_binary_body_and_u64_coordinates_are_not_rounded' (9853088) panicked at tests/evidence_reconstruction.rs:29:5:
+assertion `left == right` failed
+  left: [255, 195, 169]
+ right: [0, 255, 195, 169]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    exact_spans_binary_body_and_u64_coordinates_are_not_rounded
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction)
+    Finished `test` profile [unoptimized] target(s) in 7.09s
+     Running tests/evidence_reconstruction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction-f47b82f29e147a62)
+error: test failed, to rerun pass `--test evidence_reconstruction`
+
+exit=101

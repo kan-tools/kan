@@ -1,0 +1,42 @@
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/evidence_capture.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_capture-54a9cad3536a7b47)
+
+running 18 tests
+test empty_body_still_requires_successful_output_flush ... ok
+test disconnect_is_unknown_and_retains_observed_prefix ... ok
+test full_and_unavailable_capture_continue_with_visible_gap ... ok
+test io_budget_is_cumulative_across_output_writes ... ok
+test deadline_and_dropped_future_record_unknown_without_retry ... ok
+test maximum_request_is_chunked_and_sent_once ... ok
+test encrypted_sink_recovers_after_contention_without_rewriting_evidence ... ok
+test resumed_capture_carries_gap_and_observers_attempts_have_distinct_ids ... ok
+test route_and_request_limits_refuse_before_provider ... ok
+test output_failure_and_backpressure_stop_reading ... ok
+test redirect_is_observed_but_never_followed ... ok
+test cli_missing_spool_reports_gap_separately_from_binary_stdout ... ok
+test encrypted_spool_reopens_drains_only_evidence_and_contains_no_plaintext ... ok
+test binary_stream_above_ten_mib_has_exact_bodies_and_independent_frames ... ok
+test killed_cli_retains_intent_without_fabricating_terminal_completion ... ok
+test capture_latency_does_not_consume_provider_io_budget ... ok
+test capture_wait_allowance_exhaustion_does_not_disable_recovery ... ok
+test cli_deadline_exits_even_when_stdout_pipe_is_not_consumed ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.70s
+
+     Running tests/evidence_reconstruction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction-f47b82f29e147a62)
+
+running 11 tests
+test opaque_and_unsupported_are_distinct_from_malformed_capture ... ok
+test all_truncated_header_prefixes_fail_without_panicking ... ok
+test duplicate_and_escaped_alias_keys_never_choose_a_winner ... ok
+test non_chunk_events_cannot_smuggle_body_bytes ... ok
+test identifiers_and_started_string_bounds_match_recorder ... ok
+test malformed_json_encoding_trailing_data_and_nested_input_refuse ... ok
+test exact_spans_binary_body_and_u64_coordinates_are_not_rounded ... ok
+test current_production_recorder_event_forms_roundtrip_with_exact_bodies ... ok
+test recognized_shapes_reject_missing_extra_wrong_type_and_bad_integer_fields ... ok
+test bounded_header_body_and_total_before_materialization ... ok
+test mutated_bounded_inputs_never_panic_or_claim_spans_outside_input ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

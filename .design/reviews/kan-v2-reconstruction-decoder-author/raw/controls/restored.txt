@@ -1,0 +1,21 @@
+
+running 11 tests
+test all_truncated_header_prefixes_fail_without_panicking ... ok
+test opaque_and_unsupported_are_distinct_from_malformed_capture ... ok
+test duplicate_and_escaped_alias_keys_never_choose_a_winner ... ok
+test exact_spans_binary_body_and_u64_coordinates_are_not_rounded ... ok
+test malformed_json_encoding_trailing_data_and_nested_input_refuse ... ok
+test non_chunk_events_cannot_smuggle_body_bytes ... ok
+test identifiers_and_started_string_bounds_match_recorder ... ok
+test recognized_shapes_reject_missing_extra_wrong_type_and_bad_integer_fields ... ok
+test current_production_recorder_event_forms_roundtrip_with_exact_bodies ... ok
+test bounded_header_body_and_total_before_materialization ... ok
+test mutated_bounded_inputs_never_panic_or_claim_spans_outside_input ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-reconstruction)
+    Finished `test` profile [unoptimized] target(s) in 7.18s
+     Running tests/evidence_reconstruction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction-f47b82f29e147a62)
+
+exit=0
