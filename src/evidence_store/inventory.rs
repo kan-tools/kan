@@ -389,6 +389,10 @@ impl Inventory {
     pub fn recipe_metadata_match(&self) -> Option<bool> {
         self.recipe_metadata_match
     }
+    /// The canonical copy recipe, not evidence of payload availability or a grant.
+    pub fn copy_plan(&self) -> Option<&Plan> {
+        self.plan.as_ref()
+    }
     /// Stateless descending continuation. Only this method constructs a cursor
     /// from caller coordinates; page() verifies its first proof against `next`
     /// before returning any occurrence. The current opening already audited the

@@ -16,6 +16,8 @@ use std::{
     sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
+#[path = "support/proof_service_tests.rs"]
+mod proof_service_tests;
 fn identity(n: u8) -> Identity {
     let mut f = tempfile::NamedTempFile::new().unwrap();
     f.write_all(&[n; 32]).unwrap();
