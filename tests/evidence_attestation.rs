@@ -175,14 +175,16 @@ fn valid_same_manifest_alternate_statement_does_not_replace_pinned_predecessor()
         alternate.frontier().manifest,
         verified[0].frontier().manifest
     );
-    assert!(proof::verify(
-        &raw(&next["envelopeHex"]),
-        &ctx,
-        &record(&next["manifest"]),
-        &record(&next["receipt"]),
-        alternate.frontier()
-    )
-    .is_err());
+    assert_eq!(
+        error_label(proof::verify(
+            &raw(&next["envelopeHex"]),
+            &ctx,
+            &record(&next["manifest"]),
+            &record(&next["receipt"]),
+            alternate.frontier()
+        )),
+        "chain-commitments"
+    );
 }
 #[test]
 fn issuance_cannot_sign_mismatched_records_or_overflow_frontiers() {
@@ -293,5 +295,93 @@ fn descending_pages_link_to_the_exact_pin_and_terminate_at_genesis() {
         )
         .is_err(),
         "wrong page height must fail"
+    );
+}
+
+fn error_label(result: Result<proof::Verified, evidence::Error>) -> String {
+    match result {
+        Err(evidence::Error::Schema(label)) => label,
+        other => panic!("expected labelled schema error, got {other:?}"),
+    }
+}
+#[test]
+fn short_issuer_never_reaches_dependency_panic() {
+    let f = fixture();
+    let row = &f["positive"][0];
+    for did in ["did:key:z", "did:key:z2", "did:key:z1", "did:key:zz"] {
+        let mut statement = row["statement"].clone();
+        statement["body"]["issuer"]["principal"] = Value::String(did.into());
+        statement["body"]["issuer"]["verificationMethod"] =
+            Value::String(format!("{did}#{}", &did[8..]));
+        let bytes = atproto_dasl::to_vec(&Ipld::Map(
+            [
+                (
+                    "statement".into(),
+                    Ipld::Bytes(atproto_dasl::to_vec(&ipld(&statement)).unwrap()),
+                ),
+                ("signature".into(), Ipld::Bytes(vec![1; 64])),
+            ]
+            .into(),
+        ))
+        .unwrap();
+        let outcome = std::panic::catch_unwind(|| {
+            proof::verify(
+                &bytes,
+                &context(did),
+                &record(&row["manifest"]),
+                &record(&row["receipt"]),
+                &Frontier::default(),
+            )
+        });
+        assert_eq!(
+            error_label(outcome.expect("short issuer must not panic")),
+            "issuer-encoding",
+            "{did}"
+        );
+    }
+}
+#[test]
+fn descending_framing_uses_canonical_error_labels() {
+    let f = fixture();
+    let row = &f["positive"][0];
+    let v = verified_rows(&f);
+    let ctx = context(f["pinnedIssuer"].as_str().unwrap());
+    let m = record(&row["manifest"]);
+    let r = record(&row["receipt"]);
+    let mut bytes = raw(&row["envelopeHex"]);
+    bytes.push(0);
+    assert_eq!(
+        error_label(proof::verify_at(&bytes, &ctx, &m, &r, v[0].frontier())),
+        "envelope-canonical"
+    );
+    assert_eq!(
+        error_label(proof::verify_at(
+            &vec![0; proof::MAX_ENVELOPE_BYTES + 1],
+            &ctx,
+            &m,
+            &r,
+            v[0].frontier()
+        )),
+        "envelope-bound"
+    );
+    assert_eq!(
+        error_label(proof::verify_at(
+            v[0].bytes(),
+            &ctx,
+            &m,
+            &r,
+            &Frontier::default()
+        )),
+        "row-after-genesis"
+    );
+    assert_eq!(
+        error_label(proof::verify_at(
+            v[0].bytes(),
+            &ctx,
+            &m,
+            &r,
+            v[1].frontier()
+        )),
+        "pinned-frontier"
     );
 }

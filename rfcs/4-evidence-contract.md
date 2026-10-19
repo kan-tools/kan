@@ -84,7 +84,7 @@ The local snapshot coordinate is `(through, tip)`: the global journal sequence a
 
 Backups use the [SQLite online backup API](https://www.sqlite.org/backup.html), finish into a self-contained owner-only destination, and verify hashes, closure, chain, receipt bindings and indexed coordinates. Copying an active main database without its WAL is not backup. A failed or interrupted backup is incomplete, never overwritten or certified by file existence. A local verified backup is not evidence of independent off-machine recovery.
 
-### Proposed payload-independent admission attestation (not implemented)
+### Payload-independent admission attestation (codec implemented; runtime integration pending)
 
 This extension is a proposal for `.design/kan-v2-evidence-availability.md`.
 Schema-1 receipts and manifests remain byte-identical and unsigned as defined
@@ -141,9 +141,10 @@ verify metadata chain linkage before exposing rows. Legacy Snapshot/Page/Read
 remain unchanged. A reader explicitly configured for `proof-inventory-v1` must
 refuse unknown/unsupported profile responses; it must never fall back silently.
 
-The new SQLite profile and atomic proof insertion, upgrade plan, proof-preserving
-backup/recovery, RPC framing and reader wiring remain to be implemented and
-qualified together. In particular, these vectors do not authorize removing
+The owner-side SQLite profile and atomic proof insertion have a separately
+reviewed experimental checkpoint. Upgrade planning, proof-preserving backup/recovery,
+RPC framing and reader wiring remain to be implemented and qualified before real
+evidence is stored in that profile. In particular, these vectors do not authorize removing
 legacy payload/admission checks. Initial damaged-archive browsing is explicitly
 read-only; strict writable store verification remains unchanged. Read-only here
 means no authoritative evidence/schema/index mutation. As with RecoveryReader,

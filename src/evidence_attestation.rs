@@ -77,7 +77,9 @@ impl Frontier {
         Ok(())
     }
 }
-/// Constructed only by issuer-pinned signature and exact record/chain verification.
+/// An issuer-pinned signature over exact records and relative chain coordinates.
+/// Chain membership depends on the caller supplying a trusted predecessor or pin;
+/// this value alone is not evidence of a complete chain or durable admission.
 #[derive(Debug, Clone)]
 pub struct Verified {
     bytes: Vec<u8>,
@@ -360,13 +362,20 @@ pub fn verify_at(
     if expected.through == 0 {
         return Err(invalid("row-after-genesis"));
     }
-    let value = evidence::canonical_value(bytes, MAX_ENVELOPE_BYTES)?;
-    let envelope = evidence::closed(&value, &["statement", "signature"])?;
+    if bytes.len() > MAX_ENVELOPE_BYTES {
+        return Err(invalid("envelope-bound"));
+    }
+    let value = evidence::canonical_value(bytes, MAX_ENVELOPE_BYTES)
+        .map_err(|_| invalid("envelope-canonical"))?;
+    let envelope = evidence::closed(&value, &["statement", "signature"])
+        .map_err(|_| invalid("envelope-fields"))?;
     let Ipld::Bytes(statement) = &envelope["statement"] else {
         return Err(invalid("statement-bytes"));
     };
-    let value = evidence::canonical_value(statement, MAX_ENVELOPE_BYTES)?;
-    let outer = evidence::closed(&value, &["v", "kind", "body"])?;
+    let value = evidence::canonical_value(statement, MAX_ENVELOPE_BYTES)
+        .map_err(|_| invalid("statement-canonical"))?;
+    let outer = evidence::closed(&value, &["v", "kind", "body"])
+        .map_err(|_| invalid("statement-fields"))?;
     let Ipld::Map(body) = &outer["body"] else {
         return Err(invalid("body-fields"));
     };

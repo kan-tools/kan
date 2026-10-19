@@ -13,6 +13,11 @@ use sha2::{Digest, Sha256};
 
 use crate::evidence::{self, Decoded, Kind, Record};
 
+pub mod attested;
+
+type CommitProofHook<'a> =
+    dyn FnMut(&rusqlite::Transaction<'_>, &Committed, &mut dyn FnMut(Boundary)) -> Result<()> + 'a;
+
 pub const MAX_CHUNK: usize = 4 * 1024 * 1024;
 const APPLICATION_ID: i64 = 0x4b563201;
 // Two range probes use the existing scope-leading indexes, including when every
@@ -76,6 +81,8 @@ pub enum Boundary {
     ObjectDurable,
     ManifestInserted,
     BindingsInserted,
+    AttestationSigned,
+    AttestationInserted,
     BeforeCommit,
     AfterCommit,
 }
@@ -503,6 +510,13 @@ impl Ledger {
         root: &Path,
         observe: &mut dyn FnMut(InitializationBoundary),
     ) -> Result<Self> {
+        Self::create_profile(root, observe, None)
+    }
+    fn create_profile(
+        root: &Path,
+        observe: &mut dyn FnMut(InitializationBoundary),
+        binding: Option<&attested::Binding>,
+    ) -> Result<Self> {
         if !root.exists() {
             if !parent_directory(root).is_dir() {
                 return Err(Error::Invalid("archive parent must already exist"));
@@ -536,7 +550,7 @@ impl Ledger {
             &[],
         )?;
         observe(InitializationBoundary::FileCreated);
-        Self::initialize_empty(root, &path, observe)
+        Self::initialize_empty(root, &path, observe, binding)
     }
 
     /// Explicitly adopt an empty interrupted SQLite initialization, or reopen a
@@ -557,13 +571,14 @@ impl Ledger {
             std::fs::File::open(parent_directory(root))?.sync_all()?;
             return Ok(ledger);
         }
-        Self::initialize_empty(root, &path, &mut |_| {})
+        Self::initialize_empty(root, &path, &mut |_| {}, None)
     }
 
     fn initialize_empty(
         root: &Path,
         path: &Path,
         observe: &mut dyn FnMut(InitializationBoundary),
+        binding: Option<&attested::Binding>,
     ) -> Result<Self> {
         let mut conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         conn.busy_timeout(Duration::from_secs(5))?;
@@ -582,6 +597,9 @@ impl Ledger {
             return Err(Error::Corrupt(integrity));
         }
         tx.execute_batch(SCHEMA)?;
+        if let Some(binding) = binding {
+            attested::initialize(&tx, binding)?;
+        }
         observe(InitializationBoundary::SchemaWritten);
         tx.commit()?;
         observe(InitializationBoundary::SchemaCommitted);
@@ -589,7 +607,7 @@ impl Ledger {
         std::fs::File::open(root)?.sync_all()?;
         std::fs::File::open(parent_directory(root))?.sync_all()?;
         let ledger = Self { conn };
-        ledger.check_schema()?;
+        ledger.check_profile(if binding.is_some() { 2 } else { 1 })?;
         observe(InitializationBoundary::Ready);
         Ok(ledger)
     }
@@ -611,13 +629,16 @@ impl Ledger {
     }
 
     fn check_schema(&self) -> Result<()> {
+        self.check_profile(1)
+    }
+    fn check_profile(&self, expected_version: i64) -> Result<()> {
         let app: i64 = self
             .conn
             .query_row("PRAGMA application_id", [], |r| r.get(0))?;
         let version: i64 = self
             .conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if app != APPLICATION_ID || version != 1 {
+        if app != APPLICATION_ID || version != expected_version {
             return Err(Error::Invalid("unknown database profile"));
         }
         Ok(())
@@ -626,8 +647,14 @@ impl Ledger {
     /// Writable admission is stricter than raw recovery: even an empty archive
     /// must have exactly the constraints/indexes we rely on and no extra triggers.
     fn check_write_schema(&self) -> Result<()> {
+        self.check_write_profile(false)
+    }
+    fn check_write_profile(&self, attested: bool) -> Result<()> {
         let expected = Connection::open_in_memory()?;
         expected.execute_batch(SCHEMA)?;
+        if attested {
+            expected.execute_batch(attested::SCHEMA)?;
+        }
         let query = "SELECT type,name,tbl_name,sql FROM main.sqlite_schema ORDER BY type,name";
         let mut expected_stmt = expected.prepare(query)?;
         let mut actual_stmt = self.conn.prepare(query)?;
@@ -716,13 +743,13 @@ impl Ledger {
         receipt: &[u8],
         observe: &mut dyn FnMut(Boundary),
     ) -> Result<Committed> {
-        self.commit_inner(manifest, receipt, observe, false, None)
+        self.commit_inner(manifest, receipt, observe, false, None, None)
     }
 
     /// Service partition admission: serialized with all other writers. The first
     /// commit binds an empty partition; later service commits cannot mix scopes.
     pub fn commit_partition(&mut self, manifest: &[u8], receipt: &[u8]) -> Result<Committed> {
-        self.commit_inner(manifest, receipt, &mut |_| {}, true, None)
+        self.commit_inner(manifest, receipt, &mut |_| {}, true, None, None)
     }
 
     /// Admit only if no commit has arrived since the caller audited `expected`.
@@ -734,7 +761,7 @@ impl Ledger {
         receipt: &[u8],
         expected: &Snapshot,
     ) -> Result<Committed> {
-        self.commit_inner(manifest, receipt, &mut |_| {}, true, Some(expected))
+        self.commit_inner(manifest, receipt, &mut |_| {}, true, Some(expected), None)
     }
 
     fn commit_inner(
@@ -744,6 +771,7 @@ impl Ledger {
         observe: &mut dyn FnMut(Boundary),
         single_scope: bool,
         expected_snapshot: Option<&Snapshot>,
+        mut proof_hook: Option<&mut CommitProofHook<'_>>,
     ) -> Result<Committed> {
         let manifest = known(manifest, Kind::Manifest)?;
         let receipt = known(receipt, Kind::Receipt)?;
@@ -794,12 +822,16 @@ impl Ledger {
             if stored.cid() != manifest.cid() || !evidence::binds(&acknowledgment, &stored) {
                 return Err(Error::Corrupt(id));
             }
-            return Ok(Committed {
+            let record = Committed {
                 sequence: u64::try_from(sequence).map_err(|_| Error::Corrupt("sequence".into()))?,
                 manifest: stored,
                 receipt: acknowledgment,
                 duplicate: true,
-            });
+            };
+            if let Some(hook) = &mut proof_hook {
+                hook(&tx, &record, observe)?;
+            }
+            return Ok(record);
         }
         let head: Option<(i64, String)> = tx.query_row(
             "SELECT position,cid FROM commits WHERE scope=? AND writer=? ORDER BY position DESC LIMIT 1",
@@ -850,15 +882,19 @@ impl Ledger {
             )?;
         }
         observe(Boundary::BindingsInserted);
-        observe(Boundary::BeforeCommit);
-        tx.commit()?;
-        observe(Boundary::AfterCommit);
-        Ok(Committed {
+        let record = Committed {
             sequence,
             manifest,
             receipt,
             duplicate: false,
-        })
+        };
+        if let Some(hook) = &mut proof_hook {
+            hook(&tx, &record, observe)?;
+        }
+        observe(Boundary::BeforeCommit);
+        tx.commit()?;
+        observe(Boundary::AfterCommit);
+        Ok(record)
     }
 
     pub fn snapshot(&self) -> Result<Snapshot> {

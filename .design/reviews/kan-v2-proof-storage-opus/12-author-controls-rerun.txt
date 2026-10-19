@@ -1,0 +1,8 @@
+DEMONSTRATED: omit-proof-insert
+DEMONSTRATED: retry-mints-proof
+DEMONSTRATED: omit-proof-frontier-fence
+DEMONSTRATED: omit-purpose-order
+DEMONSTRATED: wrong-proof-capability
+DEMONSTRATED: omit-short-did-guard
+Six compiled mutants fail; restored storage, codec and surface checks pass.
+exit 0
