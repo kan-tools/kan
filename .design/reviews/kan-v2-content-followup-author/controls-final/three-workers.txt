@@ -1,0 +1,27 @@
+$ cargo test --features v2-crypto --test evidence_reader content_cancelling_acquisition_releases_admission_and_does_not_cache_a_grant -- --exact
+
+running 1 test
+test content_cancelling_acquisition_releases_admission_and_does_not_cache_a_grant ... FAILED
+
+failures:
+
+---- content_cancelling_acquisition_releases_admission_and_does_not_cache_a_grant stdout ----
+
+thread 'content_cancelling_acquisition_releases_admission_and_does_not_cache_a_grant' (10560341) panicked at tests/evidence_reader.rs:1093:5:
+assertion `left == right` failed
+  left: Pending
+ right: Ready(Err(Unavailable))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    content_cancelling_acquisition_releases_admission_and_does_not_cache_a_grant
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.24s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-followups)
+    Finished `test` profile [unoptimized] target(s) in 8.23s
+     Running tests/evidence_reader.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reader-391eae18af80c190)
+error: test failed, to rerun pass `--test evidence_reader`
+
+exit=101

@@ -1,0 +1,27 @@
+$ cargo test --features v2-crypto --lib evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record -- --exact
+
+running 1 test
+test evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record ... FAILED
+
+failures:
+
+---- evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record stdout ----
+
+thread 'evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record' (10557902) panicked at src/../tests/support/content_worker_unit.rs:197:5:
+assertion `left == right` failed: never fetch the tenth selected record after exceeding8MiB
+  left: 10
+ right: 9
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    evidence_content::worker_tests::acquisition_cap_stops_before_fetching_the_next_selected_record
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 23.31s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-followups)
+    Finished `test` profile [unoptimized] target(s) in 7.04s
+     Running unittests src/lib.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/kan-480f4f845bac8ec9)
+error: test failed, to rerun pass `--lib`
+
+exit=101

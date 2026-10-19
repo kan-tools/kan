@@ -1,0 +1,19 @@
+
+running 9 tests
+test content_browser_fixture ... ignored, manual Content browser fixture; requires KAN_LIBRARY_FIXTURE_INFO
+test content_cancelling_acquisition_releases_admission_and_does_not_cache_a_grant ... ok
+test content_has_an_independent_item_limit_with_no_partial_success ... ok
+test content_accumulated_tool_input_cites_all_fragments_instead_of_only_the_stop ... ok
+test content_rechecks_current_grant_after_successful_acquisition ... ok
+test content_http_routes_share_authority_and_return_exact_coordinates ... ok
+test content_preserves_authorized_occurrences_duplicates_unplaced_inputs_and_exact_spans ... ok
+test content_handles_realistic_multiturn_history_and_streams_without_repeated_source_scans ... ok
+test content_refuses_invalid_selections_tampering_and_revocation_without_partial_success ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 19 filtered out; finished in 1.16s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-followups)
+    Finished `test` profile [unoptimized] target(s) in 8.31s
+     Running tests/evidence_reader.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reader-391eae18af80c190)
+
+exit=0

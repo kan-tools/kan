@@ -1,0 +1,25 @@
+$ cargo test --features v2-crypto --test evidence_reader content_handles_realistic_multiturn_history_and_streams_without_repeated_source_scans -- --exact
+
+running 1 test
+test content_handles_realistic_multiturn_history_and_streams_without_repeated_source_scans ... FAILED
+
+failures:
+
+---- content_handles_realistic_multiturn_history_and_streams_without_repeated_source_scans stdout ----
+
+thread 'content_handles_realistic_multiturn_history_and_streams_without_repeated_source_scans' (10561727) panicked at tests/evidence_reader.rs:1550:68:
+called `Result::unwrap()` on an `Err` value: Unavailable
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    content_handles_realistic_multiturn_history_and_streams_without_repeated_source_scans
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.71s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-content-followups)
+    Finished `test` profile [unoptimized] target(s) in 7.99s
+     Running tests/evidence_reader.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reader-391eae18af80c190)
+error: test failed, to rerun pass `--test evidence_reader`
+
+exit=101

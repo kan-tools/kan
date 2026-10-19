@@ -20,3 +20,11 @@ Failed methods are retained: attempt 1 encoded the large test payload in one cap
 Semantic controls on this final source and a fresh cold review remain pending.
 
 The final candidate additionally exercises the acquisition cap and overall deadline through a private acquisition observation seam. A 10-record real encrypted fixture stops after its ninth acquired record crosses8MiB and never fetches the tenth; an eight-record selection succeeds. The deadline test first completes real source verification, then pauses acquisition work and advances virtual time, so no per-RPC timeout can masquerade as the overall deadline. Current qualification:103 integrations,9 Content units,3 Library units,47 Node checks, strict all-target v2 Clippy/fmt. The initial15-control pass caught every selected mutation and restored suites passed; its20MiB serialized-response failure payload remains local and will be represented by an explicitly bounded excerpt. The final17-control pass is pending.
+
+## Final source checkpoint bb661b4
+
+All17 compiled assertion-based mutation controls demonstrated the intended
+failures; restored suites passed. Exact source hashes, driver and logs are under
+`controls-final/`. Retained browser DOM/screenshots are under`browser-final/`;
+actual browser download delivery remains unverified. Fresh correction review
+is still required.
