@@ -1,0 +1,4 @@
+whole production fix reversion fails: purpose_order_is_a_store_invariant_not_just_a_signature_check
+whole production fix reversion fails: p5a_single_historical_issuer_prefix_requires_copy_profile
+whole production fix reversion fails: p5c_planless_historical_proofs_refuse_verification_and_rebuild_without_rewriting
+restored proof-store/followup/lifecycle tests pass
