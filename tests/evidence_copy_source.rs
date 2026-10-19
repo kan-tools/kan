@@ -150,8 +150,11 @@ fn same_frontier_with_a_changed_unsigned_receipt_fails_exact_plan_confirmation()
     let Decoded::Known(changed_receipt) = evidence::encode(&value).unwrap() else {
         panic!()
     };
-    c.execute("UPDATE commits SET receipt=? WHERE sequence=1", [raw])
-        .unwrap();
+    c.execute(
+        "UPDATE commits SET receipt=? WHERE sequence=1",
+        [changed_receipt.bytes()],
+    )
+    .unwrap();
     drop(c);
     let changed = PlannedCopy::open(&db, target(), issuer, [9; 32]).unwrap();
     assert_eq!(changed.snapshot().unwrap().through, plan.source().through);
