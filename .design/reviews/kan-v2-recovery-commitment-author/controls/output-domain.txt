@@ -1,0 +1,26 @@
+
+running 1 test
+test independent_python_member_output_and_restoration_framing_matches ... FAILED
+
+failures:
+
+---- independent_python_member_output_and_restoration_framing_matches stdout ----
+
+thread 'independent_python_member_output_and_restoration_framing_matches' (9919870) panicked at tests/evidence_recovery_commitment.rs:112:9:
+assertion `left == right` failed: "empty"
+  left: "31b6023ad497df914517374c5b28d865e687827fcf6417401854544e13e6ed58"
+ right: String("2988fa05a923c938d16cccdea2114243026796758931ffde0b053a2017a890a6")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    independent_python_member_output_and_restoration_framing_matches
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-state)
+    Finished `test` profile [unoptimized] target(s) in 7.22s
+     Running tests/evidence_recovery_commitment.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_commitment-5a89bc2efd1208f4)
+error: test failed, to rerun pass `--test evidence_recovery_commitment`
+
+exit=101

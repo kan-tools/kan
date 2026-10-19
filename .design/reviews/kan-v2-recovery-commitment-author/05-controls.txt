@@ -1,0 +1,9 @@
+DEMONSTRATED: poisoned-builder
+DEMONSTRATED: record-order
+DEMONSTRATED: output-domain
+DEMONSTRATED: original-key
+DEMONSTRATED: candidate-hash
+DEMONSTRATED: duplicate-cid
+DEMONSTRATED: byte-budget
+DEMONSTRATED: cancellation
+8 compiled controls; restored suite passed.

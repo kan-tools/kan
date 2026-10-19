@@ -331,3 +331,25 @@ as `forensic-recovery-required`, even when no oversized physical row survives.
 Do not truncate the expected length or drop that reference to fit the format.
 Retain source and failed output; the generic manifest schema's larger integer
 range does not widen this proposed recovery format's representable object size.
+
+## Next checkpoint draft: bounded streaming framing
+
+The draft `evidence_recovery_commitment` module computes M1/O1/R1 incrementally.
+Its caller supplies section counts and strictly increasing canonical CID-text
+order; it does not allocate an archive-sized sort or payload buffer. Separate
+membership/record/object stages enforce counts and contiguous record positions.
+Any rejected builder operation poisons the builder, so ignoring an error cannot
+produce a digest over fewer records. Empty corrupt originals remain representable;
+restoration candidates must be nonempty and match their raw CID.
+
+Owner-selected item, work-byte, time and cancellation limits bound computation;
+hashing polls at most every 64 KiB. Work-byte accounting includes framing and,
+for restoration, both candidate verification and commitment hashing. It does not
+bound prior caller acquisition or arbitrary filesystem stalls. The caller remains
+responsible for authorized bounded source reads and complete member semantics.
+DID/record/plan truth, candidate membership and full state replay are not supplied
+by these framing digests. This draft has no storage consumer. Author qualification passes eight commitment
+tests against independent Python vectors and nine compiled controls, with strict
+v2 Clippy and formatting. Evidence is in
+`.design/reviews/kan-v2-recovery-commitment-author/`. Fresh independent review
+remains pending; full member and state verification are separate prerequisites.
