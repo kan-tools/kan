@@ -485,6 +485,83 @@ fn output_commitments<'a>(
     Ok((r1, o1))
 }
 
+// One validator for replay and owner-side pre-signing validation. Membership is
+// established by the independently verified original member before this call.
+fn check_candidate(
+    input: Input<'_>,
+    c: Object<'_>,
+    target: &Key<'_>,
+    work: &mut Work,
+) -> Result<()> {
+    require(
+        target.length.is_none_or(|n| n == c.bytes.len() as u64),
+        "candidate expected length",
+    )?;
+    require(
+        work.hash(c.bytes)? == c.cid.to_bytes()[4..],
+        "candidate hash",
+    )?;
+    if let Some(index) = target.request {
+        let row = &input.records[index];
+        work.charge(
+            0,
+            (row.manifest.len() + row.receipt.len() + c.bytes.len()) as u64,
+        )?;
+        let Decoded::Known(manifest) =
+            evidence::decode(row.manifest).map_err(|_| Error::Invalid("member changed"))?
+        else {
+            return Err(Error::Invalid("member changed"));
+        };
+        let Decoded::Known(receipt) =
+            evidence::decode(row.receipt).map_err(|_| Error::Invalid("member changed"))?
+        else {
+            return Err(Error::Invalid("member changed"));
+        };
+        let committed = crate::evidence_store::Committed {
+            sequence: row.sequence,
+            manifest,
+            receipt,
+            duplicate: false,
+        };
+        crate::evidence_service::verify_retained_request(&committed, c.bytes)
+            .map_err(|_| Error::Invalid("candidate writer request"))?;
+        work.check()?;
+    }
+    Ok(())
+}
+
+/// Verify a proposed candidate before an owner can sign a restoration claim.
+/// This neither changes the bundle nor proves a restoration was committed.
+pub(crate) fn verify_candidate(
+    input: Input<'_>,
+    c: Object<'_>,
+    limits: Limits,
+) -> Result<Restoration> {
+    let mut work = Work::new(limits)?;
+    let original = audit(input, &mut work)?;
+    let keys = keys(input, original.recipe_metadata_complete(), &mut work)?;
+    work.charge(1, c.bytes.len() as u64)?;
+    require(
+        !c.bytes.is_empty() && c.bytes.len() <= 4 * 1024 * 1024,
+        "candidate bounds",
+    )?;
+    let raw = c.cid.to_bytes();
+    require(
+        raw.len() == 36 && raw[..4] == [1, 0x55, 0x12, 0x20],
+        "candidate CID",
+    )?;
+    let key = keys
+        .get(&c.cid.to_string())
+        .ok_or(Error::Invalid("candidate outside member"))?;
+    check_candidate(input, c, key, &mut work)?;
+    work.check()?;
+    Ok(Restoration {
+        cid: c.cid.clone(),
+        length: c.bytes.len() as u64,
+        basis: key.basis,
+    })
+}
+
 /// Verify all supplied history, not just through the owner's selected checkpoint.
 /// bytes counts encoded-input scan passes as documented in the codec design.
 pub fn verify<'a>(
@@ -532,37 +609,7 @@ pub fn verify<'a>(
         let target = keys
             .get(&name)
             .ok_or(Error::Invalid("candidate outside member"))?;
-        require(
-            target.length.is_none_or(|n| n == c.bytes.len() as u64),
-            "candidate expected length",
-        )?;
-        require(work.hash(c.bytes)? == raw[4..], "candidate hash")?;
-        if let Some(index) = target.request {
-            let row = &input.records[index];
-            work.charge(
-                0,
-                (row.manifest.len() + row.receipt.len() + c.bytes.len()) as u64,
-            )?;
-            let Decoded::Known(manifest) =
-                evidence::decode(row.manifest).map_err(|_| Error::Invalid("member changed"))?
-            else {
-                return Err(Error::Invalid("member changed"));
-            };
-            let Decoded::Known(receipt) =
-                evidence::decode(row.receipt).map_err(|_| Error::Invalid("member changed"))?
-            else {
-                return Err(Error::Invalid("member changed"));
-            };
-            let committed = crate::evidence_store::Committed {
-                sequence: row.sequence,
-                manifest,
-                receipt,
-                duplicate: false,
-            };
-            crate::evidence_service::verify_retained_request(&committed, c.bytes)
-                .map_err(|_| Error::Invalid("candidate writer request"))?;
-            work.check()?;
-        }
+        check_candidate(input, *c, target, &mut work)?;
         physical.insert(name, c.bytes);
     }
     let mut previous: Option<Authenticated> = None;

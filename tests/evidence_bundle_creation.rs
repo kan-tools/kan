@@ -908,3 +908,487 @@ fn creation_keeps_the_selected_snapshot_when_source_appends_during_output_work()
     assert_eq!(result.replay().member().frontier(), &selected);
     assert_eq!(frontier(&f).through, 4);
 }
+
+fn restoration<'a>(
+    path: &'a Path,
+    expected: &'a kan::evidence_recovery_replay::Checkpoint,
+    observer: &'a Identity,
+    cid: &'a atproto_dasl::Cid,
+    bytes: &'a [u8],
+) -> bundle::Restoration<'a> {
+    bundle::Restoration {
+        path,
+        expected,
+        observer,
+        candidate: kan::evidence_recovery_member::Object { cid, bytes },
+        sampled_at: 501,
+        budget: budget(),
+        output_bytes: 16 * 1024 * 1024,
+    }
+}
+fn lost_bundle(dir: &Path) -> (Fixture, PathBuf, kan::evidence_recovery_replay::Checkpoint) {
+    let f = fixture(dir, Profile::Admitted);
+    let src = f.root.join("archive.sqlite");
+    let dst = dir.join("bundle.sqlite");
+    let observer = identity(10);
+    let req = create(&f, &src, &dst, &observer);
+    edit(&src, "DELETE FROM objects");
+    let result = bundle::create(req).unwrap();
+    (f, dst, result.replay().latest().clone())
+}
+#[test]
+fn restoration_appends_atomic_candidate_and_history_and_retries_original_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let (f, dst, initial) = lost_bundle(dir.path());
+    let observer = identity(10);
+    let original = std::fs::read(f.root.join("archive.sqlite")).unwrap();
+    let id0 = store::ciphertext_cid(&f.requests[0]);
+    let id1 = store::ciphertext_cid(&f.requests[1]);
+    let first =
+        bundle::restore(restoration(&dst, &initial, &observer, &id0, &f.requests[0])).unwrap();
+    assert!(!first.duplicate);
+    assert_eq!(first.inspection.replay().restored(), 1);
+    let second = bundle::restore(restoration(
+        &dst,
+        first.inspection.replay().latest(),
+        &observer,
+        &id1,
+        &f.requests[1],
+    ))
+    .unwrap();
+    assert_eq!(second.inspection.replay().restored(), 2);
+    let retry =
+        bundle::restore(restoration(&dst, &initial, &observer, &id0, &f.requests[0])).unwrap();
+    let mut unknown_checkpoint = initial.clone();
+    unknown_checkpoint.statement = first.observation.statement_cid().clone();
+    assert!(bundle::restore(restoration(
+        &dst,
+        &unknown_checkpoint,
+        &observer,
+        &id0,
+        &f.requests[0]
+    ))
+    .is_err());
+    assert!(retry.duplicate);
+    assert_eq!(retry.observation.bytes(), first.observation.bytes());
+    assert_eq!(
+        retry.inspection.replay().latest(),
+        second.inspection.replay().latest()
+    );
+    let c = rusqlite::Connection::open(&dst).unwrap();
+    assert_eq!(
+        c.query_row("SELECT count(*) FROM restored_objects", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        c.query_row("SELECT count(*) FROM observations", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        initial.sequence as i64 + 2
+    );
+    assert_eq!(
+        c.query_row("SELECT count(*) FROM member_objects", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        std::fs::read(f.root.join("archive.sqlite")).unwrap(),
+        original
+    );
+}
+#[test]
+fn restoration_refuses_stale_new_transitions_invalid_candidate_and_wrong_observer() {
+    let dir = tempfile::tempdir().unwrap();
+    let (f, dst, initial) = lost_bundle(dir.path());
+    let observer = identity(10);
+    let id0 = store::ciphertext_cid(&f.requests[0]);
+    let id1 = store::ciphertext_cid(&f.requests[1]);
+    let first =
+        bundle::restore(restoration(&dst, &initial, &observer, &id0, &f.requests[0])).unwrap();
+    assert!(bundle::restore(restoration(&dst, &initial, &observer, &id1, &f.requests[1])).is_err());
+    let latest = first.inspection.replay().latest();
+    assert!(bundle::restore(restoration(
+        &dst,
+        latest,
+        &identity(11),
+        &id1,
+        &f.requests[1]
+    ))
+    .is_err());
+    assert!(bundle::restore(restoration(&dst, latest, &observer, &id1, b"corrupt")).is_err());
+    let foreign = store::ciphertext_cid(b"foreign");
+    assert!(bundle::restore(restoration(&dst, latest, &observer, &foreign, b"foreign")).is_err());
+    let now = bundle::inspect(&dst, initial.context.clone(), Some(latest), budget()).unwrap();
+    assert_eq!(now.replay().latest(), latest);
+    assert_eq!(now.replay().restored(), 1);
+}
+#[test]
+fn restoration_cancel_rolls_back_both_rows_and_lost_completion_is_resolved_by_retry() {
+    for phase in [
+        bundle::RestorationBoundary::CandidateInserted,
+        bundle::RestorationBoundary::ObservationInserted,
+        bundle::RestorationBoundary::AfterCommit,
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let (f, dst, initial) = lost_bundle(dir.path());
+        let observer = identity(10);
+        let cid = store::ciphertext_cid(&f.requests[0]);
+        let req = restoration(&dst, &initial, &observer, &cid, &f.requests[0]);
+        let cancel = req.budget.cancelled.clone();
+        let result = bundle::restore_observed(req, |p| {
+            if p == phase {
+                cancel.store(true, Ordering::Relaxed)
+            }
+        });
+        if phase == bundle::RestorationBoundary::AfterCommit {
+            assert!(matches!(
+                result,
+                Err(bundle::RestorationError::Uncertain { .. })
+            ));
+        } else {
+            assert!(matches!(result, Err(bundle::RestorationError::Refused(_))));
+        }
+        let now = bundle::inspect(&dst, initial.context.clone(), Some(&initial), budget()).unwrap();
+        assert_eq!(
+            now.replay().restored(),
+            u64::from(phase == bundle::RestorationBoundary::AfterCommit)
+        );
+        let retry =
+            bundle::restore(restoration(&dst, &initial, &observer, &cid, &f.requests[0])).unwrap();
+        assert_eq!(
+            retry.duplicate,
+            phase == bundle::RestorationBoundary::AfterCommit
+        );
+        assert_eq!(retry.inspection.replay().restored(), 1);
+    }
+}
+#[test]
+fn restoration_concurrent_new_transitions_cannot_share_a_checkpoint() {
+    let dir = tempfile::tempdir().unwrap();
+    let (f, dst, initial) = lost_bundle(dir.path());
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+    let results = std::thread::scope(|scope| {
+        let a = scope.spawn(|| {
+            barrier.wait();
+            bundle::restore(restoration(
+                &dst,
+                &initial,
+                &identity(10),
+                &store::ciphertext_cid(&f.requests[0]),
+                &f.requests[0],
+            ))
+            .is_ok()
+        });
+        let b = scope.spawn(|| {
+            barrier.wait();
+            bundle::restore(restoration(
+                &dst,
+                &initial,
+                &identity(10),
+                &store::ciphertext_cid(&f.requests[1]),
+                &f.requests[1],
+            ))
+            .is_ok()
+        });
+        (a.join().unwrap(), b.join().unwrap())
+    });
+    assert_ne!(
+        results.0, results.1,
+        "exactly one transition can commit from the selected checkpoint"
+    );
+    assert_eq!(
+        bundle::inspect(&dst, initial.context.clone(), Some(&initial), budget())
+            .unwrap()
+            .replay()
+            .restored(),
+        1
+    );
+}
+
+#[test]
+fn restoration_invalid_candidate_is_rejected_before_signing_phase() {
+    let dir = tempfile::tempdir().unwrap();
+    let (f, dst, initial) = lost_bundle(dir.path());
+    let observer = identity(10);
+    let cid = store::ciphertext_cid(&f.requests[0]);
+    let mut bytes = f.requests[0].clone();
+    bytes[0] ^= 1;
+    let mut phases = Vec::new();
+    assert!(
+        bundle::restore_observed(restoration(&dst, &initial, &observer, &cid, &bytes), |p| {
+            phases.push(p)
+        })
+        .is_err()
+    );
+    assert!(phases.contains(&bundle::RestorationBoundary::Acquired));
+    assert!(!phases.contains(&bundle::RestorationBoundary::CandidateVerified));
+}
+#[test]
+#[ignore = "explicit synthetic restoration crash child; requires fixture path and boundary"]
+fn restoration_crash_child() {
+    let root = PathBuf::from(std::env::var_os("KAN_RESTORATION_CRASH_ROOT").expect("fixture path"));
+    let wanted = std::env::var("KAN_RESTORATION_CRASH_POINT").expect("boundary");
+    let (f, dst, initial) = lost_bundle(&root);
+    let observer = identity(10);
+    let cid = store::ciphertext_cid(&f.requests[0]);
+    let _ = bundle::restore_observed(
+        restoration(&dst, &initial, &observer, &cid, &f.requests[0]),
+        |point| {
+            if format!("{point:?}") == wanted {
+                std::fs::write(root.join("at-restoration-boundary"), wanted.as_bytes()).unwrap();
+                loop {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            }
+        },
+    );
+    panic!("boundary not reached")
+}
+#[test]
+fn restoration_abrupt_death_never_exposes_half_a_candidate_observation_pair() {
+    use bundle::RestorationBoundary::*;
+    for phase in [
+        Acquired,
+        CandidateVerified,
+        CandidateInserted,
+        ObservationInserted,
+        BeforeCommit,
+        AfterCommit,
+        Synced,
+        Reopened,
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "restoration_crash_child",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env("KAN_RESTORATION_CRASH_ROOT", dir.path())
+            .env("KAN_RESTORATION_CRASH_POINT", format!("{phase:?}"))
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let end = std::time::Instant::now() + Duration::from_secs(15);
+        while !dir.path().join("at-restoration-boundary").exists() {
+            if child.try_wait().unwrap().is_some() {
+                let out = child.wait_with_output().unwrap();
+                panic!(
+                    "child failed before {phase:?}: {} {}",
+                    String::from_utf8_lossy(&out.stdout),
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            }
+            if std::time::Instant::now() >= end {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("boundary timeout {phase:?}");
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        child.kill().unwrap();
+        assert!(!child.wait().unwrap().success());
+        let dst = dir.path().join("bundle.sqlite");
+        // Explicit recovery of this disposable synthetic SQLite fixture permits
+        // its hot rollback journal to restore the previous committed snapshot.
+        // Production read-only inspection still refuses a hot journal.
+        let db = rusqlite::Connection::open(&dst).unwrap();
+        let expected = i64::from(matches!(phase, AfterCommit | Synced | Reopened));
+        let restored = db
+            .query_row("SELECT count(*) FROM restored_objects", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .unwrap();
+        assert_eq!(restored, expected, "{phase:?}");
+        assert_eq!(
+            db.query_row("SELECT count(*) FROM observations", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            2 + expected,
+            "{phase:?}"
+        );
+        drop(db);
+        let ctx = Context {
+            bundle: [31; 32],
+            profile: 2,
+            archive: [2; 32],
+            scope: [1; 32],
+            issuer: identity(8).did(),
+            observer: identity(10).did(),
+        };
+        let checked = bundle::inspect(&dst, ctx, None, budget()).unwrap();
+        assert_eq!(checked.replay().restored(), expected as u64);
+        let oracle = std::process::Command::new(
+            std::env::var_os("KAN_CRYPTO_ORACLE_PYTHON").unwrap_or_else(|| "python3".into()),
+        )
+        .args(["-B", ".design/tools/recovery_creation_oracle.py"])
+        .arg(&dst)
+        .output()
+        .unwrap();
+        assert!(
+            oracle.status.success(),
+            "{phase:?}: {}",
+            String::from_utf8_lossy(&oracle.stderr)
+        );
+    }
+}
+
+#[test]
+fn restoration_checks_writer_signature_and_manifest_binding_before_signing() {
+    let all: serde_json::Value = serde_json::from_str(include_str!(
+        "../.design/fixtures/recovery-replay-review-v1.json"
+    ))
+    .unwrap();
+    for name in [
+        "P01-writer-invalid-restoration-without-intent",
+        "P21-valid-writer-signature-wrong-manifest-binding",
+    ] {
+        let case = all["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["name"] == name)
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let out = std::process::Command::new(
+            std::env::var_os("KAN_TLS_ORACLE_PYTHON").unwrap_or_else(|| "python3".into()),
+        )
+        .arg(".design/tools/recovery_bundle_files.py")
+        .arg(dir.path())
+        .args([
+            "--vectors",
+            ".design/fixtures/recovery-replay-review-v1.json",
+            "--case",
+            name,
+        ])
+        .output()
+        .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let dst = dir.path().join(format!("{name}.sqlite"));
+        let c = &case["member"]["context"];
+        let bytes = |s: &str| {
+            service::unhex(c[s].as_str().unwrap(), 32)
+                .unwrap()
+                .try_into()
+                .unwrap()
+        };
+        let ctx = Context {
+            bundle: bytes("bundle"),
+            profile: c["profile"].as_u64().unwrap() as u8,
+            archive: bytes("archive"),
+            scope: bytes("scope"),
+            issuer: c["issuer"].as_str().unwrap().into(),
+            observer: c["observer"].as_str().unwrap().into(),
+        };
+        // Retain only the independently signed initial created/loss history.
+        let mut prior = None;
+        let mut first_restoration = None;
+        for raw in case["observations"].as_array().unwrap() {
+            let auth = kan::evidence_recovery_observation::authenticate(
+                &service::unhex(raw.as_str().unwrap(), 16384).unwrap(),
+                &ctx,
+                prior.as_ref(),
+            )
+            .unwrap();
+            if let atproto_dasl::Ipld::Map(st) = auth.statement() {
+                if st["event"] == atproto_dasl::Ipld::String("restored".into()) {
+                    first_restoration = Some(auth.sequence());
+                    break;
+                }
+            }
+            prior = Some(auth);
+        }
+        let db = rusqlite::Connection::open(&dst).unwrap();
+        db.execute(
+            "DELETE FROM observations WHERE sequence>=?",
+            [first_restoration.unwrap() as i64],
+        )
+        .unwrap();
+        db.execute("DELETE FROM restored_objects", []).unwrap();
+        drop(db);
+        let checkpoint = bundle::inspect(&dst, ctx.clone(), None, budget())
+            .unwrap()
+            .replay()
+            .latest()
+            .clone();
+        let mut key = tempfile::NamedTempFile::new().unwrap();
+        let mut scalar = [0; 32];
+        // recovery_replay_vectors::History::encoded uses public fixture scalar 6.
+        scalar[31] = 6;
+        key.write_all(&scalar).unwrap();
+        let observer = Identity::load_existing(key.path()).unwrap();
+        assert_eq!(observer.did(), ctx.observer);
+        let cid: atproto_dasl::Cid = case["candidates"][0][0].as_str().unwrap().parse().unwrap();
+        let candidate =
+            service::unhex(case["candidates"][0][1].as_str().unwrap(), 4 * 1024 * 1024).unwrap();
+        let mut phases = Vec::new();
+        let result = bundle::restore_observed(
+            restoration(&dst, &checkpoint, &observer, &cid, &candidate),
+            |p| phases.push(p),
+        );
+        assert!(
+            matches!(
+                result,
+                Err(bundle::RestorationError::Refused(bundle::Error::Replay(
+                    kan::evidence_recovery_replay::Error::Invalid("candidate writer request")
+                )))
+            ),
+            "{name}"
+        );
+        assert!(phases.contains(&bundle::RestorationBoundary::Acquired));
+        assert!(!phases.contains(&bundle::RestorationBoundary::CandidateVerified));
+        assert_eq!(
+            bundle::inspect(&dst, ctx, Some(&checkpoint), budget())
+                .unwrap()
+                .replay()
+                .latest(),
+            &checkpoint
+        );
+    }
+}
+#[test]
+fn restoration_budgets_and_participant_aliases_refuse_without_appending() {
+    for mode in 0..4 {
+        let dir = tempfile::tempdir().unwrap();
+        let (f, dst, initial) = lost_bundle(dir.path());
+        let observer = identity(10);
+        let cid = store::ciphertext_cid(&f.requests[0]);
+        let mut req = restoration(&dst, &initial, &observer, &cid, &f.requests[0]);
+        match mode {
+            0 => req.budget.cancelled.store(true, Ordering::Relaxed),
+            1 => req.budget.source_bytes = 1,
+            2 => req.output_bytes = 8 * 4096,
+            _ => req.budget.items = 1,
+        }
+        assert!(bundle::restore(req).is_err());
+        assert_eq!(
+            bundle::inspect(&dst, initial.context.clone(), Some(&initial), budget())
+                .unwrap()
+                .replay()
+                .latest(),
+            &initial
+        );
+    }
+    #[cfg(unix)]
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let (f, dst, initial) = lost_bundle(dir.path());
+        let observer = identity(10);
+        let cid = store::ciphertext_cid(&f.requests[0]);
+        std::fs::hard_link(&dst, dir.path().join("bundle.sqlite-journal")).unwrap();
+        let before = std::fs::read(&dst).unwrap();
+        assert!(
+            bundle::restore(restoration(&dst, &initial, &observer, &cid, &f.requests[0])).is_err()
+        );
+        assert_eq!(std::fs::read(&dst).unwrap(), before);
+    }
+}

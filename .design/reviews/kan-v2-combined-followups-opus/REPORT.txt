@@ -1,0 +1,396 @@
+ADVERSARIAL REVIEW — combined follow-ups (Content citations, creation follow-ups, claim byte boundary, bundle restoration)
+=====================================================================================================================
+Reviewer: Claude Code, Opus 5.5 (claude-opus-5-5), fresh cold session, no subagents (as instructed).
+Date: 2026-10-19. Frozen source: bf3c44e7edac834ab2c48432d63ae2c88c171aa2 (feat/kan-v2-recovery-restoration).
+Diff reviewed: 918318d..bf3c44e (26 commits, 47 files, +3532/-184).
+Review tree: .local-state/reviews/combined-followups (exported tree + north-star.json).
+
+Independence statement. I did not write any of this code, and this session holds none of the author's reasoning.
+I worked in context (the operator asked for no subagents), so I re-derived every claim by executing it: probes,
+compiled mutations and assertion failures. I did not rely on the author's test counts or READMEs.
+
+VERDICTS
+  Scope A (Content citations/provider/clock) ........ APPROVE WITH FOLLOW-UPS
+  Scope B (creation review follow-ups) .............. APPROVE
+  Scope C (claim CBOR byte boundary + collector) .... APPROVE WITH FOLLOW-UPS
+  Scope D (physical bundle restoration) ............. APPROVE WITH FOLLOW-UPS
+  OVERALL ........................................... **APPROVE WITH FOLLOW-UPS**
+  Parent acceptance (UI/full frontend, publication, backup/rebuild, jobs) remains OPEN. This review does not close it.
+
+Overall rationale. I found no correctness, safety or invariant violation in production code. Restoration is
+append-only. The original rows were byte-identical after two appends and an exact retry (PD5). Pre-sign
+validation, the full proposed replay before writing, and "attempted COMMIT => Uncertain" all behave correctly
+under hostile and actual-failure conditions (PD1, MD4b/MD4c). The new CBOR decoder agrees with the upstream
+strict decoder on every hostile input I tried, except the one intended case (PC1). All six prior creation
+survivors are now killed by author tests. The follow-ups are test gaps where production behaves correctly but
+no author test pins the behavior. One of them, restoration's real COMMIT failure, repeats the exact class of
+gap the previous review found in creation.
+
+-------------------------------------------------------------------------------------------------------------------
+1. CUSTODY (before and after)
+-------------------------------------------------------------------------------------------------------------------
+review-evidence/scripts/verify_identity.py compares, for all 4064 tracked paths:
+  - the review tree's path set against `git ls-tree -r bf3c44e` and against identity JSON files/git_blobs,
+  - SHA-256 of each file against the identity entry,
+  - the git blob id recomputed from the bytes against the identity entry and against the ls-tree oid,
+  - the actual bytes from `git cat-file --batch` at the pinned oids against the file bytes, plus mode/exec bits.
+  The only allowed extras are north-star.json and review-evidence/**.
+  logs/00-identity-before.txt ........ PASS, extras=['north-star.json'] (identity JSON sha256 7a4d0587…1723)
+  logs/21, 90, 92-identity-*.txt ..... PASS after every probe/mutation; final run is logs/92.
+  Source worktree after the review: HEAD bf3c44e, `git status --porcelain` empty (logs/91, 92).
+  Every temporary probe or mutation was restored from the pinned blob, and its SHA-256 was re-verified.
+  The RESTORED lines in controls/*.txt are all sha256_match=True.
+  I made no Git writes, no live kan/day reads or writes, used no keys, generated no network traffic,
+  edited no parent files, and killed no unrelated processes.
+
+-------------------------------------------------------------------------------------------------------------------
+2. NORTH STAR (quoted from the supplied north-star.json; no live log read under day#168/kan#197)
+-------------------------------------------------------------------------------------------------------------------
+telos/raw-data-and-projections (Decision bafyreied3rklhs57…):
+  "Raw attested data is retained in full and never collapsed in the store. Every simplification -- identity,
+   status, confidence, tension, ordering -- is a determined projection computed on demand over that raw data,
+   parameterised by a base the viewer chooses, and therefore swappable … A field holding a computed value is the
+   failure mode: it asserts an output of the fold as if it were input, and it forecloses every other projection."
+Recorded tension: Relation InTensionWith telos/performance-at-scale (bafyreia5ewl4…).
+The file reports excluded_by_trust: 2. I did not reconstruct those excluded claims and did not invent witnesses.
+CLAUDE.md lines relied on: "No operation destroys a subject"; "Provenance is sacred: never fabricate or drop
+`cites` edges"; "A persistence change is also a surface-contract change"; and the owner-authorized v2 operator
+front end, which the operator's instruction extends to the full human frontend and eventual day merger.
+
+Purpose served by this work: all four scopes serve raw-data retention against projection.
+  A: Citation sets are a serialization projection over exact source ranges. Source bytes stay authoritative,
+     and the UI labels derived parse output as derived.
+  B/D: Bundles retain original/corrupt evidence and only append restorations. Nothing is overwritten.
+  C: The CBOR decoder stops a decoder *guess* (link vs bytes) from being stored in place of raw input.
+Tension with performance-at-scale: A2-F1 (citation cost items×occurrences) is now paid once per distinct region.
+That serves both teloi. The 1024-item and 4 MiB output ceilings remain, so very large requests still refuse
+honestly (design text is explicit about this).
+
+-------------------------------------------------------------------------------------------------------------------
+3. COMMANDS RUN (raw logs in review-evidence/logs, controls in review-evidence/controls)
+-------------------------------------------------------------------------------------------------------------------
+Environment: shared CARGO_TARGET_DIR (kan-v2-library-resilience/.local-state/target), CARGO_BUILD_JOBS=4, offline,
+features v2-crypto, one heavy job at a time. Free disk: 15.44 GiB at start, 15.67 after `cargo clean -p kan`,
+never below 15.33. Builds wrote only the kan crate (~0.3 GiB).
+  01 cargo clean -p kan --offline ................................ removed 993 files, 296.7 MiB
+  02 targets --no-run (lib + 13 named integration targets) ....... exit 0. My first attempt failed: zsh did not
+     word-split my variable. That failure is retained in the log header; the retry used scripts/targets.sh.
+  03 baseline, once, --no-fail-fast .............................. exit 0. lib 99; claim_v2_codec 13; assembly 13;
+     assembly_rr 4; bundle_creation 24 (+2 ignored subprocess children); interpretation 13; followups 10;
+     interpretation_rr 19; reader 27 (+2 ignored manual browser fixtures); recovery_bundle 15; member 16;
+     replay 10; replay_rr 6; surface_conformance 19.
+     (The --lib run executes the whole v2 lib, a superset of the claim::ipld_decode, evidence_content and
+     evidence_library::budget_tests filters.)
+  04 node --test tests/library_ui.test.cjs ....................... 50/50
+  05 python3 -I scripts/test_perf_failure_evidence.py ............ 3/3 OK
+  06 cargo fmt --all -- --check .................................. exit 0
+  07 cargo clippy --features v2-crypto --all-targets -D warnings .. exit 0
+  22-28 restored positive checks after all controls .............. identical results; exit 0 everywhere
+I ran no perf grid (per instruction). I did not verify the CI runs or perf results cited by the author.
+
+-------------------------------------------------------------------------------------------------------------------
+4. INDEPENDENT PROBES (production; all retained in review-evidence/probes, results in logs)
+-------------------------------------------------------------------------------------------------------------------
+PD1 Restoration with a real SQLite reader holding a shared lock across COMMIT. Result: Uncertain{path canonical,
+    checkpoint seq=initial+1, cause Sql(DatabaseBusy)}. The transaction rolled back (counts unchanged), and the
+    exact retry appended once. PASS (logs/12).
+PD2 Retry of an already restored CID with different bytes. Result: Refused(Invalid("retry candidate differs")).
+    All rows unchanged. PASS.
+PD3 Bundle converted to WAL, or VACUUMed to 8192-byte pages. Both refused with "restoration journal/page mode";
+    all rows unchanged. PASS. (A TRUNCATE case I first wrote was my own error: SQLite does not persist a
+    TRUNCATE journal mode in the file, so the bundle reopens as DELETE. I dropped it; the record is in
+    logs/11a-*, which is a harness error log, and logs/12.)
+PD4 Expected checkpoint carrying another bundle identity, same observer: Refused(Invalid("bundle pin")). PASS.
+PD5 Full row dump of all 7 tables before and after two restorations and an exact retry. Every pre-existing row is
+    byte-identical, each append adds exactly 2 rows, and the retry adds 0 rows. PASS.
+PD6 Construction-defect oracle (refused => untouched and not Uncertain), used with MD4b/MD4c below.
+PD7 A fully restored bundle (3/3 candidates) is still refused by Ledger::open, resume_initialization,
+    RecoveryReader, attested/copied Archive and Inventory, and its bytes are unchanged. PASS (logs/27).
+PC1 Differential of the new claim decoder vs upstream strict atproto_dasl::from_reader over 37 hostile inputs:
+    NaN/Inf, f16/f32, undefined/simple/break, foreign tags, tag42 over text/non-CID/no-prefix/non-minimal header,
+    map keys int/bytes/dup/unsorted, non-minimal lengths, indefinite text/bytes, invalid UTF-8, trailing data,
+    u64::MAX, -2^64, i64::MIN, short inputs declaring 1 MiB / u32 counts, depth 256/257.
+    The only accept/reject divergence is untagged CID-shaped bytes (new: Bytes; upstream: Link). PASS (logs/15).
+PC2 Depth bound with an EMPTY innermost container (257 containers): refused. A declared 1 MiB byte string in a
+    5-byte input fails with AllocationExceeded{max:5}, not by allocating 1 MiB first. Also: upstream parses
+    20- and 32-byte values beginning 00 01 55 00 xx as CIDs. PASS (logs/19).
+PC3 A v2 claim whose Git SHA-256 artifact digest is CID-shaped: encode_claim emits no tag42, the envelope decodes
+    and verifies, and it round-trips equal. PASS (logs/20).
+PA1 UI: non-canonical aliases of a VALID citation index ('', '00', '+0', '0x0', ' 0', '0 ', '0.0', NBSP+'0')
+    fail closed. PASS.
+PA2 UI: a malformed reference in the response stream after a valid request stream leaves no partial Content. PASS.
+    (logs/14; out-of-tree copy review-evidence/probes/library_ui_probe.test.cjs)
+
+-------------------------------------------------------------------------------------------------------------------
+5. SEMANTIC CONTROLS (compiled mutations; each ran only its relevant filter; every file restored and hash-verified)
+-------------------------------------------------------------------------------------------------------------------
+KILLED BY AUTHOR TESTS (an actual assertion failure, not a compile error or timeout):
+  MD3 drop stale-checkpoint check ........ restoration_refuses_stale… :1011 and concurrent… :1098
+  MD5 skip pre-sign verify_candidate ..... restoration_invalid_candidate… :1127 and restoration_checks_writer… :1348
+  MB1 drop snapshot BEGIN (prior RB01) .. creation_pins_one_snapshot… :820
+  MB3 skip reservation recheck (RB04) ... creation_rechecks_sidecars… :848
+  MB4 attempted flag after COMMIT (RB06)  creation_reports_an_actual_commit_error… :886
+  MB5 skip source schema compare (RB03) . promoted_b3… :763
+  MB6 skip destination sidecar helper (RB07) promoted_b2… :722
+  MB7 skip proof coordinate (RB09) ....... promoted_b5… :791
+  MA2 drop 422/429 selection retention ... "retryable Content limits keep selection…"
+  MA3 always render shared group ......... "Content labels supplied history … tool block citations"
+  MA4 keep plaintext on 422/429 .......... "retryable Content limits keep selection…"
+  MA5 no per-stream citation-set cache ... aggregate_work_is_charged… (lib) and content_shares_coarse_citations… (reader)
+  MA6 acquisition cap +1.1 MB ............ acquisition_cap_stops_before_fetching… (count != 9)
+  MA7 provider4 reverted (absent content flagged) absent_tool_result_content_is_valid…
+  MA8 provider4 accepts explicit null .... malformed_error_and_tool_result_shapes… (followups)
+  MC1 revert claim decode caller ......... future_envelope_preserves_cid_shaped… and cid_shaped_signature…
+  MC2 drop tag42 canonical round trip ... nesting_and_tagged_cid_boundaries… (lib)
+  MC5 drop map key order/dup check ...... canonical_scalars_and_invalid_encodings… (lib)
+  MP1 collector follows symlinks ......... test_symlink_refusal
+  MP2 collector unbounded ................ test_exact_bounded_log_only_and_no_overwrite
+  MP3 generator skips helper ............. test_generation_failure_stays_failed…
+SURVIVED THE AUTHOR SUITE, KILLED BY A REVIEWER PROBE (these are the follow-ups):
+  MD1 restoration `attempted` set after `tx.commit()?` ... all 8 author restoration tests pass; PD1 fails
+      (controls/MD1-*.txt). The author's "uncertain-outcome" control is killed only through cancellation AFTER
+      COMMIT, so a COMMIT that itself errors would be reported as Refused. Same class as prior RB06.
+  MD2 drop "retry candidate differs" ... author suite passes; PD2 fails. The design rule "A different candidate
+      for the same CID refuses" (kan-v2-recovery-bundles.md, restoration transactions) is pinned by no author test.
+  MC6 typed_content encoder caller reverted to the generic visitor ... claim_v2_codec 13/13 pass. PC3 fails: the
+      envelope gains a tag42, and the signed claim encodes but cannot be decoded ("decoded domain content did not
+      reproduce its canonical bytes"). REQ-3's typed-content half is unpinned by author tests.
+  MC4 container depth check `==` -> `>` ... lib tests pass (the author test's null leaf trips the leaf's own depth
+      check); PC2 fails (an empty 257th container is accepted).
+  MC3 default 64 MiB max_alloc instead of input length ... all tests pass; PC2 fails (UnexpectedEof after
+      allocating, instead of AllocationExceeded). Low impact because records are size-capped.
+  MA1 UI drops canonical decimal regex ... Node 50/50 pass; PA1 fails ('' or '00' resolve to set 0).
+EQUIVALENT OR DEFENSE-IN-DEPTH (judged, with evidence):
+  MB2 keep cursors alive at SourceRecordsRead: equivalent while BEGIN holds the snapshot (MB1 shows BEGIN is
+      operative).
+  MD4 drop the pre-write proposed replay: author suite passes, as expected for correct construction. The compound
+      controls show it is operative. MD4b (restored length+1) gives Refused("restoration length") with every row
+      untouched. MD4c (length+1 plus the replay removed) commits an invalid bundle and then reports Uncertain;
+      PD6 fails. Logs controls/MD4b, MD4c.
+  MD6 drop RO preflight mode check: the second in-writer journal/page check still refuses (PD3 passes). Not
+      verified: whether the RW opener would create WAL/SHM files first. Earlier RO inspection may create them anyway.
+  MD7 locked replay without an external pin: equivalent under append-only history, because the RO preflight
+      already requires the pin to be present. It would matter only if the file were swapped between preflight
+      and lock.
+
+-------------------------------------------------------------------------------------------------------------------
+6. SCOPE A — Content citations, provider4, signer label, cutoff clock    VERDICT: APPROVE WITH FOLLOW-UPS
+-------------------------------------------------------------------------------------------------------------------
+Code read: src/evidence_content.rs:283-307 (CitationSets keyed by exact (start,end) within one stream()),
+:349-374 (items/tool refs are canonical decimal strings; table emitted per stream), :261-280 (charges the shared
+request Budget once per new set), :390 (one Budget per request, so accounting is request-wide).
+src/evidence_interpretation.rs:248-253 (only an explicit non-string, non-array content value gets Shape).
+web/library/app.js:179-205 (citationRenderer validates the whole table and every reference before rendering,
+uses the regex plus a range check, renders a shared group once, and the reference button opens the group and
+focuses the first exact Source); :43 and :52 (422/429 set keepContentSelection; clearContent(false) still clears
+the panel and inspector); :219 "Retained request signer".
+tests/support/content_worker_unit.rs:181-222: tokio pause plus a yield-loop task; asserts Limited, fetch count 9
+and no virtual time spent; the second 8-record render was removed.
+
+REQ/AC (kan-v2-content-api.md; the follow-up section's commitments plus affected parent rows):
+  shared sets per immutable stream, decimal refs ...... met. Code above; MA5 killed; reader 340/341/500 test passes.
+  unique-citation accounting request-wide ............. met. Budget shared across streams; lib unit test pinned (MA5).
+  no reference crosses streams ......................... met by construction (CitationSets::default() inside stream()).
+                                                        I ran no cross-stream mutation.
+  every index resolves / table validated before render  met. PA1/PA2 pass. The canonical regex is unpinned by author
+                                                        tests (MA1 survivor, follow-up A-F1).
+  render once, keyboard reference, exact Source/focus .. met (Node "shared citation ranges…" 500 items, 1 Source; MA3)
+  422/429 keep selection, clear plaintext, real retry .. met (MA2, MA4 killed)
+  provider4 absent content valid; null/object/number Shape  met (MA7, MA8 killed; followups test)
+  Retained request signer label ......................... met (app.js:219; Node assertion)
+  340/341/500 real encrypted fixtures, >1 MiB, exact source  met (evidence_reader content_shares_coarse_citations…
+                                                        passes; 500x2200 > 1 MiB asserted; bytes reconstructed exactly)
+  cutoff test isolates the byte cap from the deadline ... met (MA6 killed; virtual-time assertion)
+  REQ-2 bounds unchanged (1024 items, 4 MiB, deadline) .. met for the parts I read; unchanged constants
+  AC-4 real browser light/dark/mobile/focus .............. unverifiable here: I ran no browser. Author synthetic
+                                                        browser evidence is retained; actual download is unverified
+                                                        (author-declared).
+  AC-5 fresh actual Opus review .......................... this review
+Findings:
+  A-F1 [LOW, test gap] MA1 survives: no author test feeds a non-canonical alias of a VALID index. Production is
+       correct (PA1). Add PA1-style cases.
+  A-I1 [INFO] Citation entries' byte offsets are not re-validated as decimal strings in the UI. That is
+       pre-existing behavior; values are only rendered as text and sent back for server-side verification.
+
+-------------------------------------------------------------------------------------------------------------------
+7. SCOPE B — creation review follow-ups                                   VERDICT: APPROVE
+-------------------------------------------------------------------------------------------------------------------
+Code read: create.rs:227-231 (finishes rows, proof_rows and statements, then signals SourceRecordsRead, then reads
+objects under the same BEGIN from :512); :528-529 (Prepared); :538-548 (reservation-time source_path +
+destination_path recheck before write_new_owner_only); :625-626 (commit_attempted set before tx.commit()).
+create_observed doc: callback is owner-side, synchronous and non-preemptive. No production or remote caller
+exists (grep: bundle::create/create_observed are referenced only by tests). The only env read in the bundle
+module is inside a #[cfg(test)] module (bundle.rs:563).
+Prior evidence closure (fresh controls against author tests): RB01 killed (MB1), RB03 killed (MB5), RB04 killed
+(MB3), RB06 killed (MB4), RB07 killed (MB6), RB09 killed (MB7). RB02 stays equivalent (full pre-commit replay);
+I did not re-run it. The real WAL writer append between metadata and object scans is excluded (test :797; MB1
+proves BEGIN is what excludes it). The Prepared-time sidecar survives untouched (:834). The actual DELETE-mode
+COMMIT error with a shared reader gives Uncertain with DatabaseBusy and a canonical path (:857; MB4).
+Abrupt death covers 10 phases (:481-492; SourceRecordsRead/Prepared leave no destination). The /var vs
+/private/var correction is test-only: the expected path is canonicalized, and the production path was already
+canonical (PD1 independently sees /private/var…).
+REQ/AC rows (kan-v2-recovery-mutations.md, creation half): REQ-1/AC-2 sidecars and recheck: met (MB3, MB6).
+REQ-2/AC-1 one snapshot, schema, proof coordinates: met (MB1, MB5, MB7). REQ-5 uncertain-after-COMMIT: met (MB4).
+AC-4 abrupt death: met (10 phases plus independent Python oracle; see D for oracle independence).
+Real authority: the callback adds no authority and has no remote reachability; it cannot preempt stalls.
+That is declared, and I accept it.
+
+-------------------------------------------------------------------------------------------------------------------
+8. SCOPE C — claim CBOR byte boundary + failure collector                VERDICT: APPROVE WITH FOLLOW-UPS
+-------------------------------------------------------------------------------------------------------------------
+Code read: src/claim/ipld_decode.rs:10-101; codec.rs:130 and :273 (both callers); the upstream
+drisl/cbor/decode.rs (scalar strictness, NaN/Inf, simple values, non-tag42 refusal in strict mode, minimal
+encodings) and de/deserializer.rs (upstream map-key ordering, Ipld visitor guessing at value.rs:523-546).
+REQ/AC (kan-v2-claim-byte-boundary.md):
+  REQ-1/AC-1 tag42-only links, bytes preserved at every depth; future envelope byte-exact ... met (MC1 kills the
+       author's future_envelope test; PC1 differential)
+  REQ-2/AC-2 CID-shaped signature reaches signature rejection, not canonicality/acceptance ... met (MC1 kills
+       cid_shaped_signature…)
+  REQ-2/AC-3 canonical scalars/maps/tags/trailing/depth/allocation enforced ... met in production (PC1, PC2).
+       Author pinning is partial: MC2/MC5 killed, MC3/MC4 survive (follow-up C-F2).
+  REQ-3 typed-content encoding does not insert tags into opaque bytes ... met in production (PC3). Unpinned by
+       author tests (MC6 survivor, follow-up C-F1).
+  REQ-4/AC-4 reproduce old failure, revert demonstration, qualification, fresh review ... revert demo met (MC1).
+       The CI perf-run claim-723 root cause remains explicitly OPEN and unproven, as declared. I did not rerun
+       the perf grid.
+Domain/signature rules unchanged: codec.rs decode_record still re-encodes and compares (`to_vec(&raw) != bytes
+=> NonCanonical`), and the V2 domain path is unchanged (diff limited to the two caller lines).
+Collector (scripts/perf_failure_evidence.py): FILES=("repo.car","HEAD") only; O_NOFOLLOW on the final component;
+S_ISREG; a 64 MiB cumulative bound with a bounded read and changed-during-read refusal; output dir
+mkdir(0o700) without exist_ok plus "xb" writes (no overwrite). The workflow uploads perf-failure/ under
+`if: always()`, and the generator stays failed. All 3 Python tests are pinned by MP1-MP3.
+Findings:
+  C-F1 [LOW-MEDIUM, test gap] MC6 survives. Reverting codec.rs:273 makes encode_claim produce a signed envelope
+       with a tag42 inside opaque digest bytes, and that envelope can never be decoded. Upstream parses
+       00 01 55 00 1b‖27 bytes as a CID (PC2). Add PC3 as a permanent test.
+  C-F2 [LOW, test gap] MC4 (an empty 257th container is accepted) and MC3 (allocation not input-bounded) survive
+       the author tests. Add PC2's cases.
+  C-I1 [INFO] Refusal error classes changed and are still refused: duplicate key is now MapKeysNotSorted
+       (=> claim NonCanonical; previously DuplicateMapKey); a non-text key is now a Deserialization error; tag42
+       non-bytes and non-CID cases now get InvalidCid/Deserialization. No accept/reject change (PC1).
+  C-I2 [INFO, declared scope] Other generic Ipld consumers remain: claim/mod.rs TaggedFields :311 and take :326,
+       v1.rs Unknown body :432/:462. The design names this as a separate inventory and does not claim a
+       repository-wide fix. PC3 shows the artifact-digest path round-trips in production anyway.
+
+-------------------------------------------------------------------------------------------------------------------
+9. SCOPE D — physical bundle restoration                                  VERDICT: APPROVE WITH FOLLOW-UPS
+-------------------------------------------------------------------------------------------------------------------
+Code read: src/evidence_store/bundle/restore.rs:44-297 in full; bundle.rs acquire/with_input/replay_limits
+(:282-412); evidence_recovery_replay.rs check_candidate/verify_candidate (:488-563) and verify (:567-750);
+persistence.rs:378-385 (RW open without CREATE).
+Mutation authority (real, not just tests):
+  - The observer key must equal the externally supplied checkpoint's context observer (:55). The context is pinned
+    against bundle_identity by the RO preflight inspect (:81) and again under the lock (:139-140). PD4 refuses a
+    foreign bundle.
+  - Under BEGIN IMMEDIATE the whole bundle is reacquired and replayed with the external pin (:138-151). A new
+    transition requires latest == expected (:183-186; MD3 killed). The concurrent writers test passes; busy
+    waits are bounded to 250 ms.
+  - Pre-sign: verify_candidate checks bounds, CID shape, membership, expected length, hash, and writer
+    signature/manifest binding (:187-192; MD5 killed). Signing comes after that. Then the full proposed replay
+    runs before any INSERT (:231-241; MD4b/MD4c show it is operative). Candidate and observation share one
+    transaction.
+  - attempted is set before COMMIT (:270-271), so an actual SQLITE_BUSY COMMIT is reported Uncertain and SQLite
+    rolls back (PD1). After COMMIT: file and parent fsync, then an independent RO reinspection with the intended
+    pin (:273-281).
+  - DELETE + 4096 only, checked read-only before the RW opener and again in the writer (:92-101, :123-129; PD3).
+    max_page_count must equal the request, otherwise refuse (:130-136). LENGTH limit, deadline/cancel progress
+    handler and cache/mmap pragmas are set.
+  - Original rows are untouched (PD5 full-table dump). Standalone openers still refuse a fully restored
+    bundle (PD7).
+Idempotence beyond the happy path: an exact retry with an older retained pin returns the original observation
+bytes plus the current head without appending (author :960-977; PD5 retry adds 0 rows). Different bytes for a
+restored CID are refused (PD2). An unknown/forged pin is refused (:962-971). A lost completion after COMMIT is
+resolved by retry as a duplicate (:1029-1066). A BUSY COMMIT followed by a retry appends exactly once (PD1).
+The Python oracle (.design/tools/recovery_creation_oracle.py with recovery_replay_vectors.py) is a separate
+implementation. It reads the SQLite file read-only and never invokes kan; I checked its imports.
+REQ/AC (kan-v2-recovery-mutations.md, restoration half; recovery-bundles restoration paragraph):
+  REQ-4 pinned observer + exact latest under write tx; pre-sign checks; atomic append; originals untouched
+        ... met (MD3, MD5, PD1, PD5)
+  REQ-5 limits, preserve, distinguish pre-commit vs uncertain ... met in production. Partly pinned: cancel,
+        source_bytes, output pages and items are tested; deadline is not; real COMMIT error only by PD1.
+  REQ-6 capabilities/catalog, abrupt death, stale/concurrent, invalid candidates ... met (surface_conformance
+        19/19; author capability controls exist and their log hashes match, logs/18; 8 death phases + oracle)
+  AC-3 valid appends one+one; invalid signature, wrong binding, foreign CID, stale refuse; exact retries
+        ... met. "Different candidate for the same CID refuses" is unpinned by author tests (D-F2).
+  AC-4 kill at candidate insertion, observation insertion, commit ... met (8 phases; hot-journal recovery of the
+        disposable fixture is explicitly permitted and documented)
+  AC-5 independent SQL/replay, standalone refusal of fully restored bundle ... met (oracle; PD7)
+  Publication/backup/jobs/full frontend ... not implemented, not claimed. Parent stays OPEN.
+Findings:
+  D-F1 [MEDIUM-LOW, test gap; recurrence of prior RB06 class] MD1 survives all author restoration tests.
+       Promote PD1 (a real shared-lock reader across restoration COMMIT expecting Uncertain/DatabaseBusy,
+       rollback, single append on retry).
+  D-F2 [LOW, test gap] MD2 survives. Promote PD2.
+  D-I1 [INFO] The deadline budget (duration) is not exercised by a restoration test. RSS and filesystem stalls
+       are not bounded, as declared.
+  D-I2 [INFO] MD6/MD7 are redundant guards (see §5). Whether WAL/SHM files are created for a WAL-mode input
+       before refusal is unverified.
+  D-I3 [INFO] The author's 8 restoration controls are genuine (log hashes match the committed evidence JSON),
+       but the "uncertain-outcome" control is coarser than MD1 and does not cover a failing COMMIT.
+
+-------------------------------------------------------------------------------------------------------------------
+10. SCOPE-NARROWING CHECK (logs/17-scope-narrowing-grep.txt)
+-------------------------------------------------------------------------------------------------------------------
+  claim-byte-boundary "relationship to that run is a hypothesis … does not claim its root cause" — LEGITIMATE:
+      named before implementation, and the collector makes a recurrence diagnosable.
+  claim-byte-boundary "Other generic Ipld consumers … require a separate inventory" — LEGITIMATE: named in the
+      Architecture section and separable (C-I2).
+  content-api "candidates until that qualification completes; parent ACs remain open" — LEGITIMATE.
+  content-api "This correction is not unlimited interpretation … A single request can still exceed presentation
+      limits" — LEGITIMATE and honest (the 422 copy was changed accordingly).
+  recovery-mutations "accepts existing DELETE-journal, 4096-byte-page bundles … Other modes explicitly refuse"
+      — LEGITIMATE: refusal is enforced (PD3), with no silent conversion.
+  recovery-mutations "not a single aggregate scan counter or exact RSS quota" — LEGITIMATE, declared.
+  recovery-mutations "does not close publication, backup/rebuild, remote availability or human recovery job ACs"
+      — LEGITIMATE. The publication design (.design/kan-v2-recovery-publication.md) is a plan only.
+  recovery-mutations "not a promise to preempt arbitrary callback or filesystem stalls" — LEGITIMATE (owner-side).
+  STALE TEXT [INFO, doc]: kan-v2-recovery-mutations.md "These have not yet been compiled or executed" and
+      kan-v2-claim-byte-boundary.md "Current tests and code … have not yet been compiled". Both are now false;
+      later author sections record qualification. Update the text so a later reader does not under-trust it.
+None of the narrowings defers the hard part of its scope.
+
+-------------------------------------------------------------------------------------------------------------------
+11. FORBIDDEN-PATTERN CHECK (derived from CLAUDE.md)
+-------------------------------------------------------------------------------------------------------------------
+  No operation destroys data: restoration is insert-only (PD5). Creation never overwrites output or sidecars
+      (MB3, MB6). OK.
+  Derived media never become authority: citation sets are a serialization of exact ranges, and Source remains
+      byte-authoritative. Parsed bodies are labeled derived. OK.
+  Persistence change == surface-contract change: open_sqlite_bundle_mutation carries a SurfaceWrite capability
+      and surface-write annotations, and surface_conformance passes 19/19. OK.
+  Provenance/cites: no claim-graph cites are touched. Signed provenance of restored candidates retains the
+      member-derived basis (replay). OK.
+  One surface: UI changes stay inside the owner-authorized web/library frontend, and no new workflow authority
+      was added. OK.
+  Affordance not enforcement: no new blocking hooks. OK.
+
+-------------------------------------------------------------------------------------------------------------------
+12. LIMITATIONS (what this review did NOT establish)
+-------------------------------------------------------------------------------------------------------------------
+  - No real browser session, screenshots, theme/mobile or actual download verification. Node DOM simulation only.
+  - No perf grid rerun (instructed). I verified neither the CI runs 39315201306/39320430131/39322496892 nor the
+    perf results.
+  - macOS APFS only. No Linux/Windows, power-loss or real disk-full testing. RSS was not measured.
+  - No concurrent-race mutation targeting the RO-preflight/lock window (MD7 is judged equivalent under
+    append-only, not proven).
+  - Live kan/day logs were neither read nor written. Per day#168/kan#197 I did not run `kan show --all --json`;
+    the north star is the operator-supplied north-star.json.
+  - Scopes A/D UI acceptance and the full human frontend (owner-authorized) remain OPEN parent work.
+
+-------------------------------------------------------------------------------------------------------------------
+13. FOLLOW-UPS (concrete; none blocks)
+-------------------------------------------------------------------------------------------------------------------
+  1 D-F1 Promote PD1: real COMMIT failure during restoration must be Uncertain (kills MD1).
+  2 C-F1 Promote PC3: a CID-shaped typed digest round-trips through encode_claim/decode (kills MC6).
+  3 D-F2 Promote PD2: a different candidate for a restored CID refuses (kills MD2).
+  4 C-F2 Promote PC2: an empty 257th container is refused and allocation is input-bounded (kills MC4, MC3).
+  5 A-F1 Promote PA1: non-canonical aliases of a valid citation index fail closed (kills MA1).
+  6 Doc: remove the stale "not yet compiled" sentences (§10).
+  7 Keep C-I2 (other generic Ipld consumers inventory) and the perf claim-723 cause explicitly OPEN.
+
+Recording. I made no live day/kan write. The verdict would be recorded later, Git-first, as:
+  verdict APPROVE-WITH-FOLLOW-UPS; rationale "no invariant violation; 6 unpinned-but-correct behaviors
+  (D-F1, D-F2, C-F1, C-F2, A-F1) to promote as tests"; findings D-F1, D-F2, C-F1, C-F2, A-F1 as separate
+  observations.
+A fix round for these follow-ups is a new implementation and gets its own fresh review (ADR-52).
+Raw session, prompt, stderr and probe archives stay local and were not exported.

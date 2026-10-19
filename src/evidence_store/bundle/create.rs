@@ -44,7 +44,7 @@ pub enum CreationError {
     },
 }
 
-fn sql_integer(value: u64) -> Result<i64> {
+pub(super) fn sql_integer(value: u64) -> Result<i64> {
     i64::try_from(value).map_err(|_| Error::Invalid("SQLite integer range"))
 }
 
@@ -236,7 +236,7 @@ fn acquire(
 fn map<const N: usize>(pairs: [(&str, Ipld); N]) -> Ipld {
     Ipld::Map(pairs.into_iter().map(|(k, v)| (k.into(), v)).collect())
 }
-fn statement(
+pub(super) fn statement(
     context: &Context,
     previous: Option<&observation::Authenticated>,
     sampled_at: u64,
@@ -267,7 +267,7 @@ fn statement(
         ("body", body),
     ])
 }
-fn encode(value: &Ipld) -> Result<Vec<u8>> {
+pub(super) fn encode(value: &Ipld) -> Result<Vec<u8>> {
     atproto_dasl::to_vec(value).map_err(|_| Error::Invalid("observation encoding"))
 }
 fn loss(value: &member::Loss) -> Ipld {
@@ -418,7 +418,7 @@ fn initial_history(
     work.check()?;
     Ok(history)
 }
-fn source_path(path: &Path, work: &Work) -> Result<PathBuf> {
+pub(super) fn source_path(path: &Path, work: &Work) -> Result<PathBuf> {
     private_file(path)?;
     let source = std::fs::canonicalize(path)?;
     let mut existing: Vec<PathBuf> = vec![];

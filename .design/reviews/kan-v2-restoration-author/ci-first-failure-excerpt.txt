@@ -1,0 +1,83 @@
+Bounded excerpt with repetitive GitHub step-name prefixes removed. Full log remains at ignored.local-state/ci-restoration-first.txt.
+SHA256=6e05bf6f8b91634a54bdd2204a43c89ff5fbd6efd8ff0712ecd28abf54a94184
+
+2026-10-19T20:31:48.8978934Z test owner_binding_profile_and_destination_are_explicit ... ok
+2026-10-19T20:31:49.0419698Z test owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle ... ok
+2026-10-19T20:31:49.0599018Z test interrupted_initialization_resumes_only_by_explicit_owner_action ... ok
+2026-10-19T20:31:49.0943064Z test proof_bytes_survive_backup_rebuild_and_derived_repair ... ok
+2026-10-19T20:31:49.2768596Z test recovery_pins_source_before_later_admission ... ok
+2026-10-19T20:31:49.3098159Z test standalone_proof_verification_and_backup_refuse_undeclared_schema ... ok
+2026-10-19T20:31:49.4801012Z test rebuild_process_death_never_publishes_partial_profile ... ok
+2026-10-19T20:31:49.5479032Z test recovery_refuses_missing_or_corrupt_proofs_and_payloads ... ok
+2026-10-19T20:31:49.5479402Z 
+2026-10-19T20:31:49.5479631Z test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.78s
+2026-10-19T20:31:49.5479978Z 
+2026-10-19T20:31:49.5482510Z ^[[1m^[[92m     Running^[[0m tests/evidence_attested_store.rs (target/debug/deps/evidence_attested_store-7c29cd19cdbc70f5)
+2026-10-19T20:31:49.5494317Z 
+2026-10-19T20:31:49.5494857Z running 10 tests
+2026-10-19T20:31:49.5614767Z test database_columns_match_independent_surface_catalog ... ok
+2026-10-19T20:31:49.5789336Z test owner_binding_is_not_selected_by_database ... ok
+2026-10-19T20:31:49.5789946Z test proof_crash_worker ... ok
+2026-10-19T20:31:49.6848358Z test authorization_precedes_storage_and_retries ... ok
+2026-10-19T20:31:49.7413622Z test atomic_admission_retry_and_legacy_refusal ... ok
+2026-10-19T20:31:49.8339397Z test same_height_proof_fork_between_audit_and_commit_is_rejected ... ok
+2026-10-19T20:31:49.8878875Z test purpose_order_is_a_store_invariant_not_just_a_signature_check ... ok
+2026-10-19T20:31:49.9214357Z test proof_mutations_and_payload_loss_refuse_writable_open ... ok
+2026-10-19T20:31:49.9633454Z test unproven_raw_append_between_audit_and_commit_conflicts ... ok
+2026-10-19T20:31:50.1394252Z test process_death_keeps_both_metadata_and_proof_or_neither ... ok
+2026-10-19T20:31:50.1394583Z 
+2026-10-19T20:31:50.1394752Z test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s
+2026-10-19T20:31:50.1394992Z 
+2026-10-19T20:31:50.1396779Z ^[[1m^[[92m     Running^[[0m tests/evidence_bundle_creation.rs (target/debug/deps/evidence_bundle_creation-011b809d18616acf)
+2026-10-19T20:31:50.1409153Z 
+2026-10-19T20:31:50.1409521Z running 18 tests
+2026-10-19T20:31:50.1438763Z test creation_crash_child ... ignored, subprocess-only abrupt-death fixture
+2026-10-19T20:31:50.4358894Z test complete_bundle_remains_refused_by_standalone_openers_and_inventory ... ok
+2026-10-19T20:31:50.5785325Z test creation_keeps_the_selected_snapshot_when_source_appends_during_output_work ... ok
+2026-10-19T20:31:51.6893812Z test creation_preserves_physical_originals_and_metadata_for_admitted_complete_and_partial_copies ... ok
+2026-10-19T20:31:52.0828936Z test creation_refuses_stale_pins_invalid_physical_types_extra_proofs_and_existing_outputs ... ok
+2026-10-19T20:31:52.4089093Z test output_page_limit_retains_failure_without_truncating_source ... ok
+2026-10-19T20:31:52.4842096Z test creation_rejects_all_participant_aliases_before_sqlite_opens ... ok
+2026-10-19T20:31:52.5220211Z test abrupt_death_never_publishes_a_partial_created_bundle ... ok
+2026-10-19T20:31:53.0279393Z test precommit_cancellation_retains_unrecognized_artifact_and_postcommit_cancellation_is_uncertain ... ok
+2026-10-19T20:31:53.4659069Z test restoration_appends_atomic_candidate_and_history_and_retries_original_identity ... ok
+2026-10-19T20:31:53.5129368Z test restoration_abrupt_death_never_exposes_half_a_candidate_observation_pair ... FAILED
+2026-10-19T20:31:53.5148910Z test restoration_crash_child ... ignored, explicit synthetic restoration crash child; requires fixture path and boundary
+2026-10-19T20:31:53.8906868Z test restoration_invalid_candidate_is_rejected_before_signing_phase ... ok
+2026-10-19T20:31:54.3075799Z test restoration_concurrent_new_transitions_cannot_share_a_checkpoint ... ok
+2026-10-19T20:31:55.9050696Z test source_derived_columns_do_not_replace_authoritative_bytes ... ok
+2026-10-19T20:31:56.1406982Z test restoration_refuses_stale_new_transitions_invalid_candidate_and_wrong_observer ... ok
+2026-10-19T20:31:56.2143201Z test restoration_cancel_rolls_back_both_rows_and_lost_completion_is_resolved_by_retry ... ok
+2026-10-19T20:31:57.9951246Z test created_loss_history_uses_exact_maximal_partitions ... ok
+2026-10-19T20:31:57.9951522Z 
+2026-10-19T20:31:57.9951596Z failures:
+2026-10-19T20:31:57.9951676Z 
+2026-10-19T20:31:57.9951864Z ---- restoration_abrupt_death_never_exposes_half_a_candidate_observation_pair stdout ----
+2026-10-19T20:31:57.9952112Z 
+2026-10-19T20:31:57.9953944Z thread 'restoration_abrupt_death_never_exposes_half_a_candidate_observation_pair' (39472) panicked at tests/evidence_bundle_creation.rs:963:17:
+2026-10-19T20:31:57.9954435Z child failed before CandidateVerified: 
+2026-10-19T20:31:57.9954692Z running 1 test
+2026-10-19T20:31:57.9954869Z test restoration_crash_child ... FAILED
+2026-10-19T20:31:57.9955021Z 
+2026-10-19T20:31:57.9955095Z failures:
+2026-10-19T20:31:57.9955179Z 
+2026-10-19T20:31:57.9955254Z failures:
+2026-10-19T20:31:57.9955414Z     restoration_crash_child
+2026-10-19T20:31:57.9955833Z 
+2026-10-19T20:31:57.9956071Z test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.52s
+2026-10-19T20:31:57.9956382Z 
+2026-10-19T20:31:57.9956450Z  
+2026-10-19T20:31:57.9956746Z thread 'restoration_crash_child' (39478) panicked at tests/evidence_bundle_creation.rs:930:5:
+2026-10-19T20:31:57.9957091Z boundary not reached
+2026-10-19T20:31:57.9957391Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-10-19T20:31:57.9957636Z 
+2026-10-19T20:31:57.9958007Z note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-10-19T20:31:57.9958237Z 
+2026-10-19T20:31:57.9958275Z 
+2026-10-19T20:31:57.9958345Z failures:
+2026-10-19T20:31:57.9958629Z     restoration_abrupt_death_never_exposes_half_a_candidate_observation_pair
+2026-10-19T20:31:57.9958887Z 
+2026-10-19T20:31:57.9959119Z test result: FAILED. 15 passed; 1 failed; 2 ignored; 0 measured; 0 filtered out; finished in 7.85s
+2026-10-19T20:31:57.9959439Z 
+2026-10-19T20:31:57.9968613Z ^[[1m^[[91merror^[[0m: test failed, to rerun pass `--test evidence_bundle_creation`
+2026-10-19T20:31:58.0431240Z ##[error]Process completed with exit code 101.
