@@ -20,6 +20,7 @@ pub(crate) enum Observation {
         clean: bool,
     },
 }
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Scan {
     pub started_at: u64,
@@ -183,5 +184,77 @@ impl Journal {
             worker,
             exhausted_observed,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    fn fixture() -> (tempfile::TempDir, std::path::PathBuf, Journal) {
+        let dir = tempfile::tempdir().unwrap();
+        let spool = dir.path().join("spool");
+        let path = dir.path().join("health");
+        let identity = crate::sign::Identity::generate();
+        crate::evidence_spool::Spool::create(
+            &spool,
+            &"01".repeat(32),
+            identity.did().as_str(),
+            identity.did().as_str(),
+            1 << 20,
+        )
+        .unwrap();
+        drop(Journal::create(&path, &spool).unwrap());
+        let journal = Journal::open_file(&path, false, true).unwrap();
+        (dir, path, journal)
+    }
+
+    #[test]
+    fn copy_deadline_applies_to_contention_after_successful_source_open() {
+        let (_dir, path, journal) = fixture();
+        let holder = Connection::open(path).unwrap();
+        holder.busy_timeout(Duration::ZERO).unwrap();
+        let started = Instant::now();
+        let mut checks = 0;
+        let result = journal.projection_copy(&mut || {
+            checks += 1;
+            if checks == 1 {
+                // Source validation already succeeded. Force Backup::step to
+                // retry, rather than testing open_file's shorter busy timeout.
+                holder.execute_batch("BEGIN EXCLUSIVE")?;
+            }
+            if started.elapsed() > Duration::from_secs(12) {
+                return Err("test watchdog: copy deadline did not fire".into());
+            }
+            Ok(())
+        });
+        holder.execute_batch("ROLLBACK").unwrap();
+        let error = result.err().expect("busy copy unexpectedly succeeded");
+        assert!(error.is::<SourceBusy>(), "wrong refusal: {error}");
+        assert!(checks > 1, "fixture must exercise the backup retry loop");
+        assert!(
+            started.elapsed() >= Duration::from_millis(4500),
+            "refusal came from the open path, not the five-second copy budget"
+        );
+    }
+
+    #[test]
+    fn copy_revalidates_schema_and_capacity_control_after_source_open() {
+        for mutation in ["PRAGMA user_version=0", "DELETE FROM reserve WHERE id=0"] {
+            let (_dir, path, journal) = fixture();
+            let writer = Connection::open(path).unwrap();
+            let mut changed = false;
+            let result = journal.projection_copy(&mut || {
+                if !changed {
+                    writer.execute_batch(mutation)?;
+                    changed = true;
+                }
+                Ok(())
+            });
+            assert!(changed, "fixture did not reach the copy loop");
+            let error = result.err().expect("copied invalid source accepted");
+            assert!(!error.is::<SourceBusy>(), "invalid source mislabeled busy");
+        }
     }
 }

@@ -1,0 +1,87 @@
+
+running 11 tests
+test lifecycle_crash_child ... ok
+test corrupt_source_proofs_are_rejected_before_output_profile_is_committed ... ok
+test backup_success_requires_verifying_the_copied_proof_chain ... ok
+test recovery_pins_source_before_later_admission ... ok
+test owner_binding_profile_and_destination_are_explicit ... ok
+test proof_bytes_survive_backup_rebuild_and_derived_repair ... ok
+test standalone_proof_verification_and_backup_refuse_undeclared_schema ... ok
+test owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle ... ok
+test interrupted_initialization_resumes_only_by_explicit_owner_action ... ok
+test rebuild_process_death_never_publishes_partial_profile ... ok
+test recovery_refuses_missing_or_corrupt_proofs_and_payloads ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.67s
+
+
+running 34 tests
+test concurrent_retry_has_one_commit_and_identical_receipts ... ok
+test crash_worker ... ok
+test audited_partition_frontier_fences_new_writes_and_exact_retries ... ok
+test bare_relative_create_and_backup_succeed_without_overwrite ... ok
+test initialization_crash_worker ... ok
+{"bytes": 16, "commits": 0, "objects": 1}
+test backup_normalizes_and_catalogs_transient_sidecars ... ok
+test database_columns_match_independent_surface_catalog ... ok
+test cid_shaped_tokens_survive_storage_and_independent_backup_verification ... ok
+test initialization_rejects_foreign_media_without_replacing_it ... ok
+test open_rejects_corrupt_content_before_journal_conversion ... ok
+test recovery_crash_worker ... ok
+{"bytes": 11, "commits": 2, "objects": 2}
+test lifecycle_destinations_preserve_existing_sqlite_namespaces ... ok
+test recovery_large_row_worker ... ok
+test backup_restore_and_independent_oracle ... ok
+test first_manifest_must_name_earliest_slot_use ... ok
+test partition_scope_range_guard_rejects_both_foreign_directions ... ok
+{"bytes": 11, "commits": 2, "objects": 2}
+test corruption_is_not_an_empty_archive ... ok
+test canonical_backup_and_rebuild_pass_writer_schema_admission ... ok
+test initialization_resumes_each_publication_boundary_without_resetting_evidence ... ok
+test recovery_rejects_overlapping_sqlite_namespaces_and_existing_sidecars ... ok
+test abrupt_exit_matrix_recovers_atomic_commits_and_exact_retries ... ok
+test relative_path_worker ... ok
+test retry_conflicts_and_atomic_validation ... ok
+test recovery_rejects_structurally_valid_but_inconsistent_raw_history ... ok
+test recovery_snapshot_is_pinned_before_concurrent_appends ... ok
+test snapshot_pages_survive_appends_and_reject_unknown_frontiers ... ok
+test writer_admission_rejects_foreign_schema_without_mutating_evidence ... ok
+test recovery_scan_reports_unrelated_raw_key_damage_without_hiding_record_access ... ok
+test recovery_ignores_derived_damage_and_preserves_exact_evidence ... ok
+test recovery_length_limit_preserves_maximum_valid_chunks ... ok
+test recovery_rejects_raw_damage_without_hiding_intact_records ... ok
+test recovery_large_rows_hit_sqlite_limit_before_materialization ... ok
+test recovery_process_crashes_never_publish_a_partial_archive ... ok
+test chunks_and_total_archive_exceed_legacy_cap ... ok
+
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.82s
+
+
+running 19 tests
+test catalog_is_well_formed_and_cites_real_designs ... ok
+test compiler_resolves_filesystem_aliases_to_the_single_mutation_facade ... ok
+test persistence_modules_cannot_add_an_unreviewed_path_literal ... ok
+test every_implemented_value_has_exactly_one_catalog_row_and_no_row_is_fiction ... ok
+test every_filesystem_mutation_names_its_catalog_surface_at_the_call_site ... ok
+test every_module_that_mutates_the_filesystem_is_registered ... ok
+test every_persistence_facade_call_is_independently_inventoried ... ok
+test sqlite_is_recomputed_from_authoritative_claims_not_from_itself ... ok
+test the_catalog_represents_authority_source_and_scope_as_independent_axes ... ok
+test workspace_routes_overlay_io_through_overlay_capabilities ... ok
+test overlay_is_recomputed_from_authoritative_git_tree_claims ... ok
+test production_workspace_bypasses_an_unremovable_corrupt_projection ... ok
+test production_workspace_recovers_when_a_projection_column_has_the_wrong_type ... ok
+test production_workspace_recovers_when_projection_metadata_has_the_wrong_type ... ok
+test production_workspace_bypasses_an_unremovable_semantically_poisoned_projection ... ok
+test caller_selected_role_key_is_an_implemented_authoritative_surface ... ok
+test production_workspace_bypasses_an_unopenable_projection_path ... ok
+test production_workspace_rejects_a_poisoned_fresh_index_and_recomputes_json ... ok
+test production_workspace_recreates_a_malformed_projection_schema ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.04s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade)
+    Finished `test` profile [unoptimized] target(s) in 7.16s
+     Running tests/evidence_attested_lifecycle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_attested_lifecycle-02231a6624d7c1e3)
+     Running tests/evidence_store.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_store-c9974c98d962e200)
+     Running tests/surface_conformance.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/surface_conformance-e9fd7d9feebd78e5)

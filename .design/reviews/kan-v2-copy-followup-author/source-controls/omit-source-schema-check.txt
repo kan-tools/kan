@@ -1,0 +1,22 @@
+
+running 1 test
+test source_planning_refuses_extra_schema_and_wrong_profiles_without_rewriting ... FAILED
+
+failures:
+
+---- source_planning_refuses_extra_schema_and_wrong_profiles_without_rewriting stdout ----
+
+thread 'source_planning_refuses_extra_schema_and_wrong_profiles_without_rewriting' (9642538) panicked at tests/evidence_copy_source.rs:163:9:
+CREATE INDEX extra ON commits(writer)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    source_planning_refuses_extra_schema_and_wrong_profiles_without_rewriting
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.12s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-copy-upgrade)
+    Finished `test` profile [unoptimized] target(s) in 7.05s
+     Running tests/evidence_copy_source.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_copy_source-b92f66d790c08427)
+error: test failed, to rerun pass `--test evidence_copy_source`

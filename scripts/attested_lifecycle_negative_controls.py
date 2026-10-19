@@ -15,6 +15,8 @@ def main():
     for p,s in originals.items(): (OUT/(p.name+'.original')).write_text(s)
     store=originals[STORE]; proof=originals[PROOF]; binary=originals[BIN]
     cases=[
+        ('inflate-legacy-verify-proof-label',BIN,binary.replace('"verification":if attested {"payloads-writer-requests-and-issuer-proofs"} else {"structural-closure"}', '"verification":if attested {"payloads-writer-requests-and-issuer-proofs"} else {"payloads-writer-requests-and-issuer-proofs"}',1),'owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle'),
+        ('inflate-legacy-verify-admission-label',BIN,binary.replace('"cryptographic_admission":if attested {"proof-purpose-dependent"} else {"not-verified"}', '"cryptographic_admission":if attested {"proof-purpose-dependent"} else {"proof-purpose-dependent"}',1),'owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle'),
         ('inflate-verify-admission-label',BIN,binary.replace('"cryptographic_admission":if attested {"proof-purpose-dependent"} else {"not-verified"}', '"cryptographic_admission":if attested {"admitted-verified"} else {"not-verified"}',1),'owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle'),
         ('inflate-recover-history-label',BIN,binary.replace('"historical_completeness":"not-verified",\n                    "independent_backup"', '"historical_completeness":"complete",\n                    "independent_backup"'),'owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle'),
         ('drop-source-error-context',BIN,binary.replace('format!("cannot read recovery source {}: {e}", database.display())','format!("{e}")'),'owner_cli_requires_all_pins_and_reports_exact_proof_lifecycle'),

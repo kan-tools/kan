@@ -41,6 +41,51 @@ fn sql(path: &Path) -> rusqlite::Connection {
 fn sha(path: &Path) -> String {
     kan::evidence_service::hex(&Sha256::digest(std::fs::read(path).unwrap()))
 }
+
+/// Incorporated from the fresh independent review's RA4d: a damaged SQLite
+/// b-tree must never be reported as retryable source contention.
+#[test]
+fn corrupt_active_btree_is_invalid_not_busy_and_is_not_rewritten() {
+    let f = Fx::new();
+    let active = f.active();
+    let root_page: i64 = sql(&active)
+        .query_row(
+            "SELECT rootpage FROM sqlite_schema WHERE name='attempts'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let mut bytes = std::fs::read(&active).unwrap();
+    let offset = (root_page as usize - 1) * 4096;
+    bytes[offset..offset + 12].fill(0xff);
+    std::fs::write(&active, &bytes).unwrap();
+    let before = sha(&active);
+    let manager = Manager::new();
+    manager.refresh(f.root.clone()).unwrap();
+    let started = Instant::now();
+    loop {
+        let state = manager.status();
+        if state.state != "building" {
+            assert_eq!(state.state, "failed");
+            assert_eq!(
+                state.reason.as_deref(),
+                Some("source invalid or unavailable")
+            );
+            assert!(state.last.is_none());
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "worker did not finish"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(
+        sha(&active),
+        before,
+        "overview must not repair source bytes"
+    );
+}
 struct Fx {
     _dir: tempfile::TempDir,
     root: PathBuf,

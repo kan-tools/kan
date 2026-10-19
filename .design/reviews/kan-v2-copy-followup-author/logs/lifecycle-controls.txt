@@ -1,0 +1,13 @@
+DEMONSTRATED: inflate-legacy-verify-proof-label
+DEMONSTRATED: inflate-legacy-verify-admission-label
+DEMONSTRATED: inflate-verify-admission-label
+DEMONSTRATED: inflate-recover-history-label
+DEMONSTRATED: drop-source-error-context
+DEMONSTRATED: drop-exact-standalone-schema
+DEMONSTRATED: drop-precommit-proof-audit
+DEMONSTRATED: drop-proof-copy
+DEMONSTRATED: drop-extra-proof-check
+DEMONSTRATED: resume-as-legacy
+DEMONSTRATED: drop-backup-proof-audit
+DEMONSTRATED: drop-pinned-read
+12 compiled mutants fail; restored lifecycle/store/surface pass.
