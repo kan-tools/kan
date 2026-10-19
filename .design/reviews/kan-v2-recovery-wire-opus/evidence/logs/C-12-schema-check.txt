@@ -1,0 +1,13 @@
+$ python3 .design/tools/recovery_bundle_schema.py
+# start 2026-10-19T14:09:20Z CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target JOBS=4
+test_blob_storage_classes_and_bounds (__main__.DraftSchema) ... ok
+test_identity_and_membership_local_shapes (__main__.DraftSchema) ... ok
+test_original_empty_corruption_is_preserved_but_restoration_cannot_be_empty (__main__.DraftSchema) ... ok
+test_outer_tables_are_exact_and_unpublished (__main__.DraftSchema) ... ok
+test_record_coordinates_and_each_blob_field (__main__.DraftSchema) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.006s
+
+OK
+# end 2026-10-19T14:09:20Z exit=0

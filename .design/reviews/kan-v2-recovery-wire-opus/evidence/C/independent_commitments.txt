@@ -1,0 +1,11 @@
+empty M1 True O1 True
+staged M1 True O1 True
+missing-payload-framing M1 True O1 True
+corrupt M1 True O1 True
+zero-length-corrupt M1 True O1 True
+restored-output-framing M1 True O1 True
+partial-copy-framing M1 True O1 True
+R1 0 True
+R1 1 True
+R1 2 True
+ALL-MATCH

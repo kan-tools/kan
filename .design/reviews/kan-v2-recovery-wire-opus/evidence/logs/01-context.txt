@@ -1,0 +1,275 @@
+$ git rev-parse --show-toplevel (from export cwd)
+/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec
+$ git -C $R branch --show-current
+feat/kan-v2-recovery-bundle-codec
+$ git -C $R log --oneline -8 1833ee5
+1833ee5 feat(v2): authenticate signed recovery observation records
+6c9e2ab Merge commit '8b5fab9' into feat/kan-v2-reconstruction
+c04ee13 fix(v2): enforce recognized capture frame fields
+8b5fab9 docs(v2): make recovery custody and unsupported states explicit
+7b44429 feat(v2): decode capture frames with exact source spans
+08da1b6 Merge qualified inventory follow-ups before reconstruction build
+de7f0f7 fix(v2): keep SQL payload corruption local to its occurrence
+c3d3088 Merge pre-open plan custody correction into inventory build
+$ git -C $R diff --stat main...1833ee5
+ tests/index_and_fold.rs                            |    2 +-
+ tests/index_schema_coexistence.rs                  |    2 +-
+ tests/json_contract.rs                             |  242 +-
+ tests/keychain_identity.rs                         |   83 +-
+ tests/library_ui.test.cjs                          |   92 +
+ tests/local_trust_base.rs                          |    9 +-
+ tests/local_uri_resolution.rs                      |  540 ++
+ tests/log_concurrency.rs                           |    2 +-
+ tests/log_cross_process_stress.rs                  |    2 +-
+ tests/log_recovery.rs                              |    7 +-
+ tests/log_stress.rs                                |    2 +-
+ tests/mcp_server.rs                                |  177 +
+ tests/migration_harness.rs                         |   79 +
+ tests/migration_preflight.rs                       |  397 +
+ tests/mixed_claim_log.rs                           |  161 +
+ tests/multi_role.rs                                |    5 +
+ tests/operations_restart_review.test.cjs           |  128 +
+ tests/operations_review_ui.test.cjs                |  105 +
+ tests/operations_ui.test.cjs                       |   57 +
+ tests/overlay_recovery.rs                          |    6 +-
+ tests/read_surfaces.rs                             |    8 +-
+ tests/reader.rs                                    |   24 +-
+ tests/recorded_at.rs                               |    6 +-
+ tests/recovery_cli.rs                              |  310 +
+ tests/repository_transport_identity.rs             |   88 +
+ tests/review_fixes.rs                              |   13 +-
+ tests/role_declaration_lifecycle.rs                |    5 +
+ tests/role_declarations.rs                         |    5 +
+ tests/role_registry_invariants.rs                  |   33 +
+ tests/role_resolution_rules.rs                     |    4 +-
+ tests/role_review_fixes.rs                         |    5 +
+ tests/schema_evolution.rs                          |   24 +-
+ tests/scope_identity_store.rs                      |   88 +
+ tests/scope_inception.rs                           |  314 +
+ tests/scope_init_cli.rs                            |  204 +
+ tests/seed_identity.rs                             |    1 +
+ tests/show_status_edges_perf.rs                    |   30 +-
+ tests/state_fold.rs                                |   53 +-
+ tests/status_ancestry_demand.rs                    |  221 +
+ tests/structured_output.rs                         |   13 +-
+ tests/surface_conformance.rs                       | 2150 ++++++
+ tests/system_claim_log.rs                          |  157 +
+ tests/system_identity.rs                           |  317 +
+ tests/system_identity_cli.rs                       |  165 +
+ tests/test_revert_v2.py                            |   97 +
+ tests/theme_ui.test.cjs                            |   15 +
+ tests/transport.rs                                 |    2 +-
+ tests/uri_v1.rs                                    |  311 +
+ tests/workspace_claim_mode.rs                      |  669 ++
+ tests/workspace_staleness.rs                       |   38 +-
+ tests/write_guards.rs                              |   17 +-
+ tests/write_surface.rs                             |    4 +-
+ web/library/app.js                                 |  168 +
+ web/library/index.html                             |    1 +
+ web/library/style.css                              |    6 +
+ web/operations/app.js                              |  144 +
+ web/operations/index.html                          |   13 +
+ web/operations/style.css                           |   10 +
+ web/theme.js                                       |   32 +
+ 2517 files changed, 264373 insertions(+), 1034 deletions(-)
+$ git -C R show --stat c04ee13
+c04ee13f0cc02379a3c1c909215dfc4ea121b7c7 Maxine Levesque fix(v2): enforce recognized capture frame fields
+
+ .design/kan-v2-session-reconstruction.md           |   17 +
+ .../kan-v2-decoder-followups-author/REPORT.md      |   23 +
+ .../controls/required-clock-field.txt              |   24 +
+ .../controls/restored.txt                          |   25 +
+ .../controls/total-family-bound.txt                |   24 +
+ .../controls/unit-extra-fields.txt                 |   24 +
+ .../raw/01-clean.txt                               |    1 +
+ .../raw/02-tests.txt                               |   23 +
+ .../raw/03-clippy.txt                              |    2 +
+ .../kan-v2-decoder-followups-author/raw/04-fmt.txt |    0
+ .../raw/05-reversion-clean.txt                     |    1 +
+ .../raw/06-reversion.txt                           |   11 +
+ .../raw/07-controls-clean.txt                      |    1 +
+ .../raw/08-controls.txt                            |    4 +
+ .../raw/09-final-fmt.txt                           |    0
+ .../raw/controls.sh                                |    8 +
+ .../kan-v2-decoder-followups-author/raw/qualify.sh |   13 +
+ .../reversion-logs/01-evidence_reconstruction.txt  |    9 +
+ .../reversion-logs/02-evidence_reconstruction.txt  |    8 +
+ .../reversion-logs/03-evidence_reconstruction.txt  |   22 +
+ .../reversion-logs/04-evidence_reconstruction.txt  |   21 +
+ .../reversion-logs/05-evidence_reconstruction.txt  |    9 +
+ .../reversion-logs/06-evidence_reconstruction.txt  |    8 +
+ .../reversion-logs/production.patch                |  109 +
+ .../kan-v2-reconstruction-opus/RETENTION.md        |   22 +
+ .../author-custody-check.txt                       |    1 +
+ .../kan-v2-reconstruction-opus/decoder.diff        |  656 +++++
+ .../kan-v2-reconstruction-opus/evidence/REPORT.txt |  434 ++++
+ .../evidence/probes/zz_review_copy_plan_probes.rs  |  160 ++
+ .../evidence/probes/zz_review_decoder_probes.rs    |  173 ++
+ .../evidence/raw/00-clean.txt                      |    2 +
+ .../evidence/raw/01-build-tests.txt                |    8 +
+ .../evidence/raw/01.done                           |    0
+ .../evidence/raw/baseline/DONE                     |    0
+ .../evidence/raw/baseline/capture.txt              |   26 +
+ .../evidence/raw/baseline/clippy.txt               |    3 +
+ .../evidence/raw/baseline/copy_destination.txt     |   41 +
+ .../evidence/raw/baseline/fmt.txt                  |    1 +
+ .../evidence/raw/baseline/inventory-vm.txt         |   10 +
+ .../evidence/raw/baseline/inventory.txt            |   26 +
+ .../evidence/raw/baseline/reconstruction.txt       |   20 +
+ .../evidence/raw/final-restored/DONE               |    0
+ .../evidence/raw/final-restored/capture.txt        |   27 +
+ .../evidence/raw/final-restored/clippy.txt         |    3 +
+ .../raw/final-restored/copy_destination.txt        |   42 +
+ .../evidence/raw/final-restored/fmt.txt            |    1 +
+ .../evidence/raw/final-restored/inventory-vm.txt   |   11 +
+ .../evidence/raw/final-restored/inventory.txt      |   27 +
+ .../evidence/raw/final-restored/reconstruction.txt |   21 +
+ .../evidence/raw/identity-after.txt                |    6 +
+ .../evidence/raw/identity-before.txt               |    6 +
+ .../evidence/raw/identity-final.txt                |    6 +
+ .../evidence/raw/mutations-progress.txt            |   17 +
+ .../evidence/raw/mutations.done                    |    0
+ .../mutations/A-M1-noncanonical-source/SUMMARY.txt |    4 +
+ .../A-M1-noncanonical-source/copy_destination.txt  |   44 +
+ ...ation-src__evidence_store__copy_upgrade.rs.diff |   11 +
+ .../A-M1-noncanonical-source/reviewer-probes.txt   |   26 +
+ .../raw/mutations/A-M2-name-only-guard/SUMMARY.txt |    4 +
+ .../A-M2-name-only-guard/copy_destination.txt      |   57 +
+ .../mutation-src__evidence_store.rs.diff           |   10 +
+ .../A-M2-name-only-guard/reviewer-probes.txt       |   26 +
+ .../raw/mutations/A-REVERT-production/SUMMARY.txt  |    4 +
+ .../raw/mutations/A-REVERT-production/apply.txt    |    5 +
+ .../A-REVERT-production/copy_destination.txt       |   59 +
+ .../mutation-src__bin__kan-v2.rs.diff              |   10 +
+ .../mutation-src__evidence_store.rs.diff           |   12 +
+ ...ation-src__evidence_store__copy_upgrade.rs.diff |   17 +
+ .../A-REVERT-production/reviewer-probes.txt        |   26 +
+ .../SUMMARY.txt                                    |    3 +
+ .../inventory.txt                                  |   26 +
+ ...mutation-src__evidence_store__inventory.rs.diff |   11 +
+ .../SUMMARY.txt                                    |    3 +
+ .../inventory.txt                                  |   42 +
+ ...mutation-src__evidence_store__inventory.rs.diff |   10 +
+ .../raw/mutations/B-REVERT-production/SUMMARY.txt  |    4 +
+ .../raw/mutations/B-REVERT-production/apply.txt    |    3 +
+ .../mutations/B-REVERT-production/inventory-vm.txt |   13 +
+ .../mutations/B-REVERT-production/inventory.txt    |   60 +
+ ...mutation-src__evidence_store__inventory.rs.diff |   16 +
+ .../B-X1-text-treated-as-blob/SUMMARY.txt          |    3 +
+ .../B-X1-text-treated-as-blob/inventory.txt        |   60 +
+ ...mutation-src__evidence_store__inventory.rs.diff |   11 +
+ .../mutations/B-X2-cast-materializes/SUMMARY.txt   |    3 +
+ .../mutations/B-X2-cast-materializes/inventory.txt |   48 +
+ ...mutation-src__evidence_store__inventory.rs.diff |   11 +
+ .../B-X3-deadline-ignored-by-vm/SUMMARY.txt        |    4 +
+ .../B-X3-deadline-ignored-by-vm/inventory-vm.txt   |   32 +
+ .../B-X3-deadline-ignored-by-vm/inventory.txt      |   29 +
+ ...mutation-src__evidence_store__inventory.rs.diff |   11 +
+ .../SUMMARY.txt                                    |    4 +
+ .../inventory-vm.txt                               |   26 +
+ .../inventory.txt                                  |   29 +
+ ...mutation-src__evidence_store__inventory.rs.diff |   22 +
+ .../mutations/B-X5-budget-off-by-one/SUMMARY.txt   |    3 +
+ .../mutations/B-X5-budget-off-by-one/inventory.txt |   42 +
+ ...mutation-src__evidence_store__inventory.rs.diff |   11 +
+ .../mutations/D-M1-exchange-unchecked/SUMMARY.txt  |    3 +
+ .../mutation-src__evidence_reconstruction.rs.diff  |   11 +
+ .../D-M1-exchange-unchecked/reconstruction.txt     |   36 +
+ .../D-M2-route-chars-not-bytes/SUMMARY.txt         |    3 +
+ .../mutation-src__evidence_reconstruction.rs.diff  |   11 +
+ .../D-M2-route-chars-not-bytes/reconstruction.txt  |   36 +
+ .../D-M3-arrays-not-recursive-unique/SUMMARY.txt   |    3 +
+ .../mutation-src__evidence_reconstruction.rs.diff  |   11 +
+ .../reconstruction.txt                             |   36 +
+ .../D-M4-identifier-accepts-uppercase/SUMMARY.txt  |    3 +
+ .../mutation-src__evidence_reconstruction.rs.diff  |   11 +
+ .../reconstruction.txt                             |   36 +
+ .../D-M5-outcome-precheck-removed/SUMMARY.txt      |    3 +
+ .../mutation-src__evidence_reconstruction.rs.diff  |   11 +
+ .../reconstruction.txt                             |   36 +
+ .../D-M6-header-span-off-by-one/SUMMARY.txt        |    3 +
+ .../mutation-src__evidence_reconstruction.rs.diff  |   11 +
+ .../D-M6-header-span-off-by-one/reconstruction.txt |   46 +
+ .../D-M7-total-frame-check-removed/SUMMARY.txt     |    4 +
+ .../mutation-src__evidence_reconstruction.rs.diff  |   12 +
+ .../reconstruction.txt                             |   23 +
+ .../reviewer-probes.txt                            |   68 +
+ .../SUMMARY.txt                                    |    3 +
+ .../mutation-src__evidence_reconstruction.rs.diff  |   11 +
+ .../reconstruction.txt                             |   36 +
+ .../evidence/raw/parent-worktree-observation.txt   |   63 +
+ .../evidence/raw/probe-copyplan-run1.txt           |   24 +
+ .../evidence/raw/probe-decoder-run1.txt            |   20 +
+ .../evidence/raw/probe-decoder-run2.txt            |   66 +
+ .../evidence/raw/scope-narrowing-grep.txt          |   13 +
+ .../evidence/scripts/A-production.diff             |   45 +
+ .../evidence/scripts/B-production.diff             |   18 +
+ .../evidence/scripts/baseline.sh                   |   15 +
+ .../evidence/scripts/cases.json                    |  509 ++++
+ .../evidence/scripts/final.sh                      |   15 +
+ .../evidence/scripts/identity.py                   |   41 +
+ .../evidence/scripts/mutate.py                     |   75 +
+ .../inventory-corrections.diff                     |  419 ++++
+ .../kan-v2-reconstruction-opus/north-star.json     |   92 +
+ .../kan-v2-reconstruction-opus/plan-preopen.diff   |  119 +
+ .../reconstruction-identity.json                   | 2525 ++++++++++++++++++++
+ .../reconstruction-prompt.txt                      |   15 +
+ .../kan-v2-reconstruction-opus/reconstruction.exit |    1 +
+ .../reconstruction.jsonl                           |  693 ++++++
+ .../reconstruction.stderr                          |    0
+ .../recovery-design.diff                           |  285 +++
+ scripts/reconstruction_negative_controls.py        |   15 +-
+ src/evidence_reconstruction.rs                     |   10 +
+ tests/evidence_reconstruction.rs                   |   67 +
+ 146 files changed, 8602 insertions(+), 2 deletions(-)
+$ git -C R show --stat 1833ee5
+1833ee5c2b78e7b786854dc0f41b07f27b8e4ad9 Maxine Levesque feat(v2): authenticate signed recovery observation records
+
+
+ .design/fixtures/recovery-bundle-v1-schema.sql     |  38 +
+ .design/fixtures/recovery-commitments-v1.json      | 237 +++++
+ .design/fixtures/recovery-observation-v1.json      | 992 +++++++++++++++++++++
+ .design/kan-v2-recovery-bundle-codec.md            |  28 +
+ .../reviews/kan-v2-recovery-wire-author/REPORT.md  |  32 +
+ .../raw/01-draft-schema.txt                        |  10 +
+ .../raw/02-framing-write.txt                       |   1 +
+ .../raw/03-framing-check.txt                       |   1 +
+ .../raw/04-observation-write.txt                   |   1 +
+ .../raw/05-observation-check.txt                   |   1 +
+ .../kan-v2-recovery-wire-author/raw/06-clean.txt   |   1 +
+ .../raw/07-wire-tests.txt                          |  12 +
+ .../raw/08-expanded-vectors.txt                    |  10 +
+ .../raw/09-expanded-vectors-corrected.txt          |   1 +
+ .../raw/10-expanded-wire-tests.txt                 |  14 +
+ .../kan-v2-recovery-wire-author/raw/11-clippy.txt  |  14 +
+ .../kan-v2-recovery-wire-author/raw/12-fmt.txt     |   0
+ .../raw/13-controls.txt                            |   8 +
+ .../raw/14-final-tests.txt                         |  57 ++
+ .../raw/15-final-clippy.txt                        |   2 +
+ .../raw/16-final-fmt.txt                           |  12 +
+ .../raw/20-fmt-corrected.txt                       |   0
+ .../raw/21-wire-oracle-check.txt                   |   1 +
+ .../raw/22-commitments-check.txt                   |   1 +
+ .../raw/23-schema-check.txt                        |  10 +
+ .../raw/controls/body-fields.txt                   |  33 +
+ .../raw/controls/bundle-pin.txt                    |  24 +
+ .../raw/controls/candidate-cid.txt                 |  24 +
+ .../raw/controls/chain-link.txt                    |  24 +
+ .../raw/controls/loss-order.txt                    |  24 +
+ .../raw/controls/predecessor-context.txt           |  25 +
+ .../raw/controls/restored.txt                      |  16 +
+ .../raw/controls/signature.txt                     |  24 +
+ .../kan-v2-recovery-wire-author/raw/final.sh       |  13 +
+ .../kan-v2-recovery-wire-author/raw/lib.patch      |  13 +
+ .design/tools/recovery_bundle_schema.py            |  80 ++
+ .design/tools/recovery_commitments.py              | 175 ++++
+ .design/tools/recovery_observation_vectors.py      | 280 ++++++
+ .github/workflows/ci.yml                           |   5 +-
+ scripts/recovery_observation_negative_controls.py  |  40 +
+ src/evidence_recovery_observation.rs               | 354 ++++++++
+ src/lib.rs                                         |   2 +
+ tests/evidence_recovery_observation.rs             | 195 ++++
+ 43 files changed, 2834 insertions(+), 1 deletion(-)
+$ command -v kan day
+/Users/m/.cargo/bin/kan
+/Users/m/.cargo/bin/day

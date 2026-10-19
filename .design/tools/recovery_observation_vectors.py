@@ -245,7 +245,15 @@ def vectors():
     shape('maximum-loss-count-and-lengths',1,[(['body','entries'],[{'occurrence':n,'cid':obj,'expectedLength':4194304,'state':'missing'} for n in range(1,32)]+[{'occurrence':None,'cid':obj,'expectedLength':None,'state':'corrupt'}])])
     shape('nonempty-metadata-frontier',0,[(['body','frontier'],{'through':SAFE,'manifest':codec.link(codec.cid(b'm')),'attestation':codec.link(codec.cid(b'p'))}),(['sampledAt'],SAFE)])
     shape('maximum-restoration-length',2,[(['body','length'],4194304)])
-    return {'status':'proposal-wire-layer-only-not-complete-bundle-validation','publicObserverScalar':3,'context':ctx,'positive':rows,'shapePositive':shapes,'negative':negative}
+    texts=sorted([codec.cid(b'probe-19',0x55),codec.cid(b'probe-20',0x55)])
+    require(texts!=sorted(texts,key=codec.cid_bytes),'discriminating CID order')
+    entries=[{'occurrence':1,'cid':codec.link(text),'expectedLength':8,'state':'missing'} for text in texts]
+    shape('canonical-cid-text-order',1,[(['body','entries'],entries)])
+    change('binary-cid-order','entry-order-unique',['body','entries'],list(reversed(entries)),1)
+    same_context=copy.deepcopy(ctx);same_context['issuer']=same_context['observer']
+    same_statement=copy.deepcopy(rows[0]['statement']);same_statement['issuer']=same_context['issuer']
+    same_key={'context':same_context,'envelopeHex':sign(same_statement).hex()}
+    return {'status':'proposal-wire-layer-only-not-complete-bundle-validation','publicObserverScalar':3,'context':ctx,'positive':rows,'shapePositive':shapes,'sameKeyRoles':same_key,'negative':negative}
 
 
 def checks(value):
@@ -261,6 +269,7 @@ def checks(value):
         index=row['base']; raw=bytes.fromhex(row['envelopeHex'])
         result=verify(raw,ctx,None if index==0 else verified[index-1])
         require(sign(row['statement'])==raw and result['statementCid']==codec.Link(codec.cid_bytes(row['statementCid'])),'shape vector')
+    same=value['sameKeyRoles'];verify(bytes.fromhex(same['envelopeHex']),codec.from_fixture(same['context']))
     for row in value['negative']:
         index=row['base']
         try:verify(bytes.fromhex(row['envelopeHex']),ctx,None if index==0 else verified[index-1])

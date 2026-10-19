@@ -7,6 +7,7 @@ FILE=ROOT/'src/evidence_recovery_observation.rs'
 OUT=ROOT/'.local-state/bundle-codec-author/controls'
 NEGATIVE='independently_resigned_hostile_vectors_refuse_with_named_error'
 CASES=[
+ ('binary-cid-order','cid.to_string(),','format!("{:02x?}", cid.to_bytes()),',NEGATIVE),
  ('bundle-pin','st["bundle"] == Ipld::Bytes(context.bundle.to_vec())','true',NEGATIVE),
  ('predecessor-context','require(&previous.context == context, "previous-context")?;','require(true, "previous-context")?;','signed_cross_context_chain_and_profile_confusion_refuse'),
  ('chain-link','require(link(&st["previous"], 0x71)? == &previous.cid, "predecessor")?;','require(true, "predecessor")?;',NEGATIVE),

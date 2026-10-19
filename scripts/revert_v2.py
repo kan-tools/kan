@@ -37,6 +37,7 @@ NODE_TESTS = {
     'summary_loss_units': ('tests/operations_ui.test.cjs', 'unsampled sessions and summary loss units are explicit'),
 }
 PYTHON_TESTS = {
+    'recovery_identifier_bytes': ('.design/tools/recovery_bundle_schema.py', 'DraftSchema.test_identifier_byte_bounds_ascii_and_embedded_nul'),
     'bounded_pipe_cleanup': ('tests/test_revert_v2.py', 'Execution.test_detached_pipe_holder_cannot_hang_timeout_cleanup'),
 }
 

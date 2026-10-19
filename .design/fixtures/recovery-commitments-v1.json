@@ -198,6 +198,75 @@
       },
       "M1": "19309d2b71fe83dd8e60df16796c137a5cf913abdfe9e6818a3d8d39625a742f",
       "O1": "f892f4ac3c8f8c14c5e8f999d65abc421dd68ec9707538a83c6c44b608336439"
+    },
+    {
+      "name": "cid-text-order-framing",
+      "member": {
+        "profile": 2,
+        "archive": {
+          "$bytes": "0101010101010101010101010101010101010101010101010101010101010101"
+        },
+        "scope": {
+          "$bytes": "0202020202020202020202020202020202020202020202020202020202020202"
+        },
+        "issuer": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+        "plan": null,
+        "membership": [],
+        "records": [],
+        "objects": [
+          [
+            "bafkreifizdovbxsipae44rlvvljxnv62vegilakc5z5ucrivhq32aami6i",
+            {
+              "$bytes": "7075626c6963206f72646572696e6720666978747572652030"
+            }
+          ],
+          [
+            "bafkreif6oude3yypepnbnpim5agetkoaxsiekffyk7alehpo32ww6yur4u",
+            {
+              "$bytes": "7075626c6963206f72646572696e6720666978747572652033"
+            }
+          ]
+        ]
+      },
+      "M1": "8d695125ea5fd9f72da3172312c017490a32820061148dc39f565899df90b284",
+      "O1": "5f540680f21433b153fe64a9f221a6596c7fbb5c16395382e540cf900f291d52"
+    },
+    {
+      "name": "membership-cid-text-order-framing",
+      "member": {
+        "profile": 3,
+        "archive": {
+          "$bytes": "2d7e1d8428a1e8ad148c65db710c47a8f23fc2bdf84825baf702c87fe9104197"
+        },
+        "scope": {
+          "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
+        },
+        "issuer": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
+        "plan": {
+          "$bytes": "aa656e6f6e6365582007070707070707070707070707070707070707070707070707070707070707076669737375657278396469643a6b65793a7a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a667265636970650169736f75726365546970d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a6a73636f7065546f6b656e582003030303030303030303030303030303030303030303030303030303030303036c736f757263654469676573745820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f6d736f7572636550726f66696c65016d736f757263655468726f756768016d74617267657450726f66696c650370686973746f726963616c49737375657278396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663"
+        },
+        "membership": [
+          [
+            "bafkreifizdovbxsipae44rlvvljxnv62vegilakc5z5ucrivhq32aami6i",
+            25
+          ],
+          [
+            "bafkreif6oude3yypepnbnpim5agetkoaxsiekffyk7alehpo32ww6yur4u",
+            25
+          ]
+        ],
+        "records": [],
+        "objects": [
+          [
+            "bafkreihw3bsy4a66zjydqfrxac7ip5p36qwyfrquriwaybv4soy4ivlv3m",
+            {
+              "$bytes": "7075626c69632073796e7468657469632063697068657274657874"
+            }
+          ]
+        ]
+      },
+      "M1": "4509db589e1f9f06854f470fe2b9c72b160e30b222b9eb1b2a840a751f3d3f98",
+      "O1": "5c8cfe6317605ebc1396268120bf857e948791c0fa0a0bb4ec72520cd4303753"
     }
   ],
   "restorations": [
@@ -232,6 +301,23 @@
         ]
       ],
       "R1": "1b0958e3dc2f865b06cbea63e92876e27b665154eb6baafc03e4cb6f17bc7913"
+    },
+    {
+      "candidates": [
+        [
+          "bafkreifizdovbxsipae44rlvvljxnv62vegilakc5z5ucrivhq32aami6i",
+          {
+            "$bytes": "7075626c6963206f72646572696e6720666978747572652030"
+          }
+        ],
+        [
+          "bafkreif6oude3yypepnbnpim5agetkoaxsiekffyk7alehpo32ww6yur4u",
+          {
+            "$bytes": "7075626c6963206f72646572696e6720666978747572652033"
+          }
+        ]
+      ],
+      "R1": "802481964ebba1bf232fa1b33fc2d0750b7bfe7f7f1dd3b9ca6717a5dbb92cae"
     }
   ]
 }

@@ -1,0 +1,325 @@
+diff --git a/.design/fixtures/recovery-bundle-v1-schema.sql b/.design/fixtures/recovery-bundle-v1-schema.sql
+index ad30769..b714c19 100644
+--- a/.design/fixtures/recovery-bundle-v1-schema.sql
++++ b/.design/fixtures/recovery-bundle-v1-schema.sql
+@@ -7 +7 @@ CREATE TABLE bundle_identity (
+-    observer TEXT NOT NULL CHECK(typeof(observer)='text' AND length(observer) BETWEEN 56 AND 80),
++    observer TEXT NOT NULL CHECK(typeof(observer)='text' AND length(CAST(observer AS BLOB)) BETWEEN 56 AND 80 AND length(observer)=length(CAST(observer AS BLOB)) AND observer NOT GLOB '*[^!-~]*'),
+@@ -11 +11 @@ CREATE TABLE bundle_identity (
+-    issuer TEXT NOT NULL CHECK(typeof(issuer)='text' AND length(issuer) BETWEEN 56 AND 80)
++    issuer TEXT NOT NULL CHECK(typeof(issuer)='text' AND length(CAST(issuer AS BLOB)) BETWEEN 56 AND 80 AND length(issuer)=length(CAST(issuer AS BLOB)) AND issuer NOT GLOB '*[^!-~]*')
+@@ -20 +20 @@ CREATE TABLE member_objects (
+-    cid TEXT PRIMARY KEY CHECK(typeof(cid)='text' AND length(cid) BETWEEN 1 AND 128),
++    cid TEXT PRIMARY KEY CHECK(typeof(cid)='text' AND length(CAST(cid AS BLOB)) BETWEEN 1 AND 128 AND length(cid)=length(CAST(cid AS BLOB)) AND cid NOT GLOB '*[^!-~]*'),
+@@ -28 +28 @@ CREATE TABLE member_membership (
+-    cid TEXT PRIMARY KEY CHECK(typeof(cid)='text' AND length(cid) BETWEEN 1 AND 128),
++    cid TEXT PRIMARY KEY CHECK(typeof(cid)='text' AND length(CAST(cid AS BLOB)) BETWEEN 1 AND 128 AND length(cid)=length(CAST(cid AS BLOB)) AND cid NOT GLOB '*[^!-~]*'),
+@@ -36 +36 @@ CREATE TABLE restored_objects (
+-    cid TEXT PRIMARY KEY CHECK(typeof(cid)='text' AND length(cid) BETWEEN 1 AND 128),
++    cid TEXT PRIMARY KEY CHECK(typeof(cid)='text' AND length(CAST(cid AS BLOB)) BETWEEN 1 AND 128 AND length(cid)=length(CAST(cid AS BLOB)) AND cid NOT GLOB '*[^!-~]*'),
+diff --git a/.design/fixtures/recovery-commitments-v1.json b/.design/fixtures/recovery-commitments-v1.json
+index 1e70fdd..a77d382 100644
+--- a/.design/fixtures/recovery-commitments-v1.json
++++ b/.design/fixtures/recovery-commitments-v1.json
+@@ -200,0 +201,69 @@
++    },
++    {
++      "name": "cid-text-order-framing",
++      "member": {
++        "profile": 2,
++        "archive": {
++          "$bytes": "0101010101010101010101010101010101010101010101010101010101010101"
++        },
++        "scope": {
++          "$bytes": "0202020202020202020202020202020202020202020202020202020202020202"
++        },
++        "issuer": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
++        "plan": null,
++        "membership": [],
++        "records": [],
++        "objects": [
++          [
++            "bafkreifizdovbxsipae44rlvvljxnv62vegilakc5z5ucrivhq32aami6i",
++            {
++              "$bytes": "7075626c6963206f72646572696e6720666978747572652030"
++            }
++          ],
++          [
++            "bafkreif6oude3yypepnbnpim5agetkoaxsiekffyk7alehpo32ww6yur4u",
++            {
++              "$bytes": "7075626c6963206f72646572696e6720666978747572652033"
++            }
++          ]
++        ]
++      },
++      "M1": "8d695125ea5fd9f72da3172312c017490a32820061148dc39f565899df90b284",
++      "O1": "5f540680f21433b153fe64a9f221a6596c7fbb5c16395382e540cf900f291d52"
++    },
++    {
++      "name": "membership-cid-text-order-framing",
++      "member": {
++        "profile": 3,
++        "archive": {
++          "$bytes": "2d7e1d8428a1e8ad148c65db710c47a8f23fc2bdf84825baf702c87fe9104197"
++        },
++        "scope": {
++          "$bytes": "0303030303030303030303030303030303030303030303030303030303030303"
++        },
++        "issuer": "did:key:zDnaepsL7AXenJkVYdkh5KuKsSU7Ykh7kyXaLLU7auN9FWSiZ",
++        "plan": {
++          "$bytes": "aa656e6f6e6365582007070707070707070707070707070707070707070707070707070707070707076669737375657278396469643a6b65793a7a446e616570734c374158656e4a6b5659646b68354b754b73535537596b68376b7958614c4c553761754e39465753695a667265636970650169736f75726365546970d82a582500017112202f4108ee99e4864feb429ee85788af2e0eae5ba2ffa0d3cd4a6a10024645bb8a6a73636f7065546f6b656e582003030303030303030303030303030303030303030303030303030303030303036c736f757263654469676573745820000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f6d736f7572636550726f66696c65016d736f757263655468726f756768016d74617267657450726f66696c650370686973746f726963616c49737375657278396469643a6b65793a7a446e616562565269694b747334486b5953586b6e5964545a676d5767775268477544384c4658696d567161654a5a4663"
++        },
++        "membership": [
++          [
++            "bafkreifizdovbxsipae44rlvvljxnv62vegilakc5z5ucrivhq32aami6i",
++            25
++          ],
++          [
++            "bafkreif6oude3yypepnbnpim5agetkoaxsiekffyk7alehpo32ww6yur4u",
++            25
++          ]
++        ],
++        "records": [],
++        "objects": [
++          [
++            "bafkreihw3bsy4a66zjydqfrxac7ip5p36qwyfrquriwaybv4soy4ivlv3m",
++            {
++              "$bytes": "7075626c69632073796e7468657469632063697068657274657874"
++            }
++          ]
++        ]
++      },
++      "M1": "4509db589e1f9f06854f470fe2b9c72b160e30b222b9eb1b2a840a751f3d3f98",
++      "O1": "5c8cfe6317605ebc1396268120bf857e948791c0fa0a0bb4ec72520cd4303753"
+@@ -234,0 +304,17 @@
++    },
++    {
++      "candidates": [
++        [
++          "bafkreifizdovbxsipae44rlvvljxnv62vegilakc5z5ucrivhq32aami6i",
++          {
++            "$bytes": "7075626c6963206f72646572696e6720666978747572652030"
++          }
++        ],
++        [
++          "bafkreif6oude3yypepnbnpim5agetkoaxsiekffyk7alehpo32ww6yur4u",
++          {
++            "$bytes": "7075626c6963206f72646572696e6720666978747572652033"
++          }
++        ]
++      ],
++      "R1": "802481964ebba1bf232fa1b33fc2d0750b7bfe7f7f1dd3b9ca6717a5dbb92cae"
+diff --git a/.design/fixtures/recovery-observation-v1.json b/.design/fixtures/recovery-observation-v1.json
+index 1a0160c..161ed03 100644
+--- a/.design/fixtures/recovery-observation-v1.json
++++ b/.design/fixtures/recovery-observation-v1.json
+@@ -651,0 +652,53 @@
++    },
++    {
++      "name": "canonical-cid-text-order",
++      "base": 1,
++      "statement": {
++        "version": 1,
++        "domain": "tools.kan.recovery.observation.v1",
++        "bundle": {
++          "$bytes": "0404040404040404040404040404040404040404040404040404040404040404"
++        },
++        "profile": 2,
++        "archive": {
++          "$bytes": "0101010101010101010101010101010101010101010101010101010101010101"
++        },
++        "scope": {
++          "$bytes": "0202020202020202020202020202020202020202020202020202020202020202"
++        },
++        "issuer": "did:key:zDnaer52RTwabaBeMkKYYwZmEFqPabLW78cRK62iovMUQhFif",
++        "observer": "did:key:zDnaeWp1hEZZ97SCZmeqok6kPDWfzHWcvaE5zredZ6Qj1mzzX",
++        "sequence": 2,
++        "previous": {
++          "$link": "bafyreigsvl6nphb4my7l3gxns7oscvyffg3mkbnuz437g5kwuag637casu"
++        },
++        "sampledAt": 1792400000002,
++        "event": "unavailable",
++        "body": {
++          "member": {
++            "$bytes": "0505050505050505050505050505050505050505050505050505050505050505"
++          },
++          "entries": [
++            {
++              "occurrence": 1,
++              "cid": {
++                "$link": "bafkreig5oy7ysh7jztklygxpbivxnzy4xv4ywouvsraumrkfrev2ypl22u"
++              },
++              "expectedLength": 8,
++              "state": "missing"
++            },
++            {
++              "occurrence": 1,
++              "cid": {
++                "$link": "bafkreigprr4i76bl33bs4jdlqoq3ptpcmkcstytwpzuyt5iljyvzp2xqpe"
++              },
++              "expectedLength": 8,
++              "state": "missing"
++            }
++          ]
++        }
++      },
++      "statementHex": "ad64626f6479a2666d656d6265725820050505050505050505050505050505050505050505050505050505050505050567656e747269657382a463636964d82a58250001551220dd763f891fe9ccd4bc1aef0a2b76e71cbd798b3a959441464545892bac3d7ad5657374617465676d697373696e676a6f6363757272656e6365016e65787065637465644c656e67746808a463636964d82a58250001551220cf8c788ff82bdec32e246b83a1b7cde2628529e2767e6989f50b4e2b97eaf079657374617465676d697373696e676a6f6363757272656e6365016e65787065637465644c656e67746808656576656e746b756e617661696c61626c656573636f7065582002020202020202020202020202020202020202020202020202020202020202026662756e646c655820040404040404040404040404040404040404040404040404040404040404040466646f6d61696e7821746f6f6c732e6b616e2e7265636f766572792e6f62736572766174696f6e2e76316669737375657278396469643a6b65793a7a446e616572353252547761626142654d6b4b5959775a6d4546715061624c57373863524b3632696f764d5551684669666761726368697665582001010101010101010101010101010101010101010101010101010101010101016770726f66696c65026776657273696f6e01686f6273657276657278396469643a6b65793a7a446e616557703168455a5a393753435a6d65716f6b366b504457667a485763766145357a7265645a36516a316d7a7a586870726576696f7573d82a58250001711220d2aafcd79c3c663ebd9aed97dd21570529b6c505b4cf37f37556a00dedfc40956873657175656e6365026973616d706c656441741b000001a1535d8402",
++      "statementCid": "bafyreifa6a7faofrjm2xnwqn3ivylqdez6fugsnzf3rqcxq3h2vqzclwm4",
++      "signingHex": "a266646f6d61696e7821746f6f6c732e6b616e2e7265636f766572792e6f62736572766174696f6e2e76316973746174656d656e74d82a58250001711220a0f03e5038b14b3576da0dda2b85c064cf8b4349b92ee3015e1b3eab0c897667",
++      "envelopeHex": "a2697369676e617475726558407474e3d9b4cbfe094974bbccd0de7103c29b68b0cde4c719d4402054614c4e30446d0fff94feaa8c4ab91a690cda8e9698ce4cf8d7c5c1008017a0efac1d314e6973746174656d656e74590287ad64626f6479a2666d656d6265725820050505050505050505050505050505050505050505050505050505050505050567656e747269657382a463636964d82a58250001551220dd763f891fe9ccd4bc1aef0a2b76e71cbd798b3a959441464545892bac3d7ad5657374617465676d697373696e676a6f6363757272656e6365016e65787065637465644c656e67746808a463636964d82a58250001551220cf8c788ff82bdec32e246b83a1b7cde2628529e2767e6989f50b4e2b97eaf079657374617465676d697373696e676a6f6363757272656e6365016e65787065637465644c656e67746808656576656e746b756e617661696c61626c656573636f7065582002020202020202020202020202020202020202020202020202020202020202026662756e646c655820040404040404040404040404040404040404040404040404040404040404040466646f6d61696e7821746f6f6c732e6b616e2e7265636f766572792e6f62736572766174696f6e2e76316669737375657278396469643a6b65793a7a446e616572353252547761626142654d6b4b5959775a6d4546715061624c57373863524b3632696f764d5551684669666761726368697665582001010101010101010101010101010101010101010101010101010101010101016770726f66696c65026776657273696f6e01686f6273657276657278396469643a6b65793a7a446e616557703168455a5a393753435a6d65716f6b366b504457667a485763766145357a7265645a36516a316d7a7a586870726576696f7573d82a58250001711220d2aafcd79c3c663ebd9aed97dd21570529b6c505b4cf37f37556a00dedfc40956873657175656e6365026973616d706c656441741b000001a1535d8402"
+@@ -653,0 +707,17 @@
++  "sameKeyRoles": {
++    "context": {
++      "bundle": {
++        "$bytes": "0404040404040404040404040404040404040404040404040404040404040404"
++      },
++      "profile": 2,
++      "archive": {
++        "$bytes": "0101010101010101010101010101010101010101010101010101010101010101"
++      },
++      "scope": {
++        "$bytes": "0202020202020202020202020202020202020202020202020202020202020202"
++      },
++      "issuer": "did:key:zDnaeWp1hEZZ97SCZmeqok6kPDWfzHWcvaE5zredZ6Qj1mzzX",
++      "observer": "did:key:zDnaeWp1hEZZ97SCZmeqok6kPDWfzHWcvaE5zredZ6Qj1mzzX"
++    },
++    "envelopeHex": "a2697369676e61747572655840e5705cdf744aae24f543abf0da540a4237aa23d6f91eeb07f0b71ec1a221bc0522bb9f149d5baa5df7eeaf903638832a3b243118e99ee75cc50c7dbb1128fdb56973746174656d656e745901d4ad64626f6479a3666d656d6265725820050505050505050505050505050505050505050505050505050505050505050566726563697065016866726f6e74696572a3677468726f75676800686d616e6966657374f66b6174746573746174696f6ef6656576656e7467637265617465646573636f7065582002020202020202020202020202020202020202020202020202020202020202026662756e646c655820040404040404040404040404040404040404040404040404040404040404040466646f6d61696e7821746f6f6c732e6b616e2e7265636f766572792e6f62736572766174696f6e2e76316669737375657278396469643a6b65793a7a446e616557703168455a5a393753435a6d65716f6b366b504457667a485763766145357a7265645a36516a316d7a7a586761726368697665582001010101010101010101010101010101010101010101010101010101010101016770726f66696c65026776657273696f6e01686f6273657276657278396469643a6b65793a7a446e616557703168455a5a393753435a6d65716f6b366b504457667a485763766145357a7265645a36516a316d7a7a586870726576696f7573f66873657175656e6365016973616d706c656441741b000001a1535d8401"
++  },
+@@ -989,0 +1060,6 @@
++    },
++    {
++      "name": "binary-cid-order",
++      "expected": "entry-order-unique",
++      "base": 1,
++      "envelopeHex": "a2697369676e617475726558403c0e1d9f2f850c3ce7c589822f8a4379e90ad8d7b22d00d2fb226d50591fd04e25c3110ec5c95bc68aab072c4aa105b42ee9fbeb4ede4d785a7d2a4cfd69537e6973746174656d656e74590287ad64626f6479a2666d656d6265725820050505050505050505050505050505050505050505050505050505050505050567656e747269657382a463636964d82a58250001551220cf8c788ff82bdec32e246b83a1b7cde2628529e2767e6989f50b4e2b97eaf079657374617465676d697373696e676a6f6363757272656e6365016e65787065637465644c656e67746808a463636964d82a58250001551220dd763f891fe9ccd4bc1aef0a2b76e71cbd798b3a959441464545892bac3d7ad5657374617465676d697373696e676a6f6363757272656e6365016e65787065637465644c656e67746808656576656e746b756e617661696c61626c656573636f7065582002020202020202020202020202020202020202020202020202020202020202026662756e646c655820040404040404040404040404040404040404040404040404040404040404040466646f6d61696e7821746f6f6c732e6b616e2e7265636f766572792e6f62736572766174696f6e2e76316669737375657278396469643a6b65793a7a446e616572353252547761626142654d6b4b5959775a6d4546715061624c57373863524b3632696f764d5551684669666761726368697665582001010101010101010101010101010101010101010101010101010101010101016770726f66696c65026776657273696f6e01686f6273657276657278396469643a6b65793a7a446e616557703168455a5a393753435a6d65716f6b366b504457667a485763766145357a7265645a36516a316d7a7a586870726576696f7573d82a58250001711220d2aafcd79c3c663ebd9aed97dd21570529b6c505b4cf37f37556a00dedfc40956873657175656e6365026973616d706c656441741b000001a1535d8402"
+diff --git a/.design/kan-v2-recovery-bundle-codec.md b/.design/kan-v2-recovery-bundle-codec.md
+index 15f112d..05bf0df 100644
+--- a/.design/kan-v2-recovery-bundle-codec.md
++++ b/.design/kan-v2-recovery-bundle-codec.md
+@@ -303,0 +304,30 @@ open until their real operations and crash outcomes are tested and reviewed.
++
++### Second independent review decisions
++
++Observer authority is a separate role and signature domain from archive issuer
++authority. The wire codec permits explicitly pinned equal observer/issuer DIDs;
++it never treats an observer signature as an archive proof. Distinct-key policy
++belongs to owner configuration. Recovery job configuration should default to a
++separate observer key and disclose explicit reuse; equality in the wire is not
++proof of independent authorities or compromise isolation. This interpretation
++of parent REQ-1 is recorded rather than silently requiring a new wire restriction.
++The same-key role fixture pins this decision.
++
++Refusal reason strings in the cross-implementation fixtures identify their
++single-fault cases. They do not define a total precedence for inputs with several
++independent faults: Rust and Python may name different first faults while both
++refuse. No authorization or state transition may depend on which diagnostic
++string wins. Acceptance and byte identity remain the interoperability contract.
++
++The expanded fixtures now distinguish canonical CID text order from binary order
++for unavailable entries, original membership, original objects and R1 candidates.
++The draft DDL bounds identifier text by bytes, excludes embedded NUL and requires
++printable ASCII; complete canonical DID/CID validation remains a verifier duty.
++SQLite's lossless affinity coercion is not a promise about caller bind types:
++writers must bind typed values and readers must still check stored types.
++
++An authenticated expected object length above 4 MiB also refuses KNB1 creation
++as `forensic-recovery-required`, even when no oversized physical row survives.
++Do not truncate the expected length or drop that reference to fit the format.
++Retain source and failed output; the generic manifest schema's larger integer
++range does not widen this proposed recovery format's representable object size.
+diff --git a/.design/kan-v2-recovery-bundles.md b/.design/kan-v2-recovery-bundles.md
+index 82d9ee0..8665f8b 100644
+--- a/.design/kan-v2-recovery-bundles.md
++++ b/.design/kan-v2-recovery-bundles.md
+@@ -254,0 +255,7 @@ claiming recovery coverage.
++
++The second codec review clarifies that REQ-1 separates observer and issuer roles
++and signature domains; equal explicitly pinned keys are wire-valid but do not
++provide independent-key isolation. Owner recovery jobs default to distinct keys
++and disclose reuse. The codec appendix records this decision and diagnostic
++precedence limits. `forensic-recovery-required` also covers authenticated expected
++object lengths beyond 4 MiB, whether or not the original object row is present.
+diff --git a/.design/tools/recovery_bundle_schema.py b/.design/tools/recovery_bundle_schema.py
+index 5a8f6e5..d4bcbe4 100644
+--- a/.design/tools/recovery_bundle_schema.py
++++ b/.design/tools/recovery_bundle_schema.py
+@@ -65,0 +66,14 @@ class DraftSchema(unittest.TestCase):
++    def test_identifier_byte_bounds_ascii_and_embedded_nul(self):
++        for value in ['é'*56, 'é'+'a'*55, 'a'*55+'\0', 'a'*55+'\n']:
++            for field in (2,6):
++                row=[1,bytes(32),'d'*56,2,bytes(32),bytes(32),'i'*56]
++                row[field]=value
++                self.reject('INSERT INTO bundle_identity VALUES(?,?,?,?,?,?,?)',row)
++        for table in ('member_objects','restored_objects'):
++            for key in ['é'*64, 'é'+'a'*127, 'x\0hidden','line\nbreak','has space']:
++                self.reject('INSERT INTO '+table+' VALUES(?,?)',(key,b'x'))
++            with self.assertRaises(sqlite3.IntegrityError):
++                self.db.execute("INSERT INTO "+table+" VALUES(CAST(X'FF' AS TEXT),X'01')")
++        for key in ['é'*64,'x\0hidden','line\nbreak']:
++            self.reject('INSERT INTO member_membership VALUES(?,?)',(key,1))
++
+diff --git a/.design/tools/recovery_commitments.py b/.design/tools/recovery_commitments.py
+index 7aa6a95..3accafe 100644
+--- a/.design/tools/recovery_commitments.py
++++ b/.design/tools/recovery_commitments.py
+@@ -138 +138,12 @@ def vectors():
+-    candidates=[[],[(key,good)],[(key,good),(other_key,other)]]
++    # Deliberately distinguish canonical text order from binary CID order.
++    # The base32 alphabet puts digits after letters numerically, while ASCII
++    # text sorts them before letters. The earlier two-object fixture did not.
++    probes=[('public ordering fixture '+str(n)).encode() for n in range(100)]
++    pair=next((a,b) for a in probes for b in probes if (raw_cid(a)<raw_cid(b)) != (cid_bytes(raw_cid(a))<cid_bytes(raw_cid(b))))
++    m=copy.deepcopy(base);m['objects']=[(raw_cid(value),value) for value in pair]
++    add('cid-text-order-framing',m)
++    order_objects=m['objects']
++    m=decode_notation(next(row['member'] for row in rows if row['name']=='partial-copy-framing'))
++    m['membership']=[(raw_cid(value),len(value)) for value in pair]
++    add('membership-cid-text-order-framing',m)
++    candidates=[[],[(key,good)],[(key,good),(other_key,other)],order_objects]
+@@ -172 +183 @@ def main():
+-    print('7 member/output and 3 restoration framing vectors; local negative checks pass. No logical-member acceptance claimed.')
++    print(f"{len(generated['member'])} member/output and {len(generated['restorations'])} restoration framing vectors; local negative checks pass. No logical-member acceptance claimed.")
+diff --git a/.design/tools/recovery_observation_vectors.py b/.design/tools/recovery_observation_vectors.py
+index 73f5e23..876afc4 100644
+--- a/.design/tools/recovery_observation_vectors.py
++++ b/.design/tools/recovery_observation_vectors.py
+@@ -248 +248,9 @@ def vectors():
+-    return {'status':'proposal-wire-layer-only-not-complete-bundle-validation','publicObserverScalar':3,'context':ctx,'positive':rows,'shapePositive':shapes,'negative':negative}
++    texts=sorted([codec.cid(b'probe-19',0x55),codec.cid(b'probe-20',0x55)])
++    require(texts!=sorted(texts,key=codec.cid_bytes),'discriminating CID order')
++    entries=[{'occurrence':1,'cid':codec.link(text),'expectedLength':8,'state':'missing'} for text in texts]
++    shape('canonical-cid-text-order',1,[(['body','entries'],entries)])
++    change('binary-cid-order','entry-order-unique',['body','entries'],list(reversed(entries)),1)
++    same_context=copy.deepcopy(ctx);same_context['issuer']=same_context['observer']
++    same_statement=copy.deepcopy(rows[0]['statement']);same_statement['issuer']=same_context['issuer']
++    same_key={'context':same_context,'envelopeHex':sign(same_statement).hex()}
++    return {'status':'proposal-wire-layer-only-not-complete-bundle-validation','publicObserverScalar':3,'context':ctx,'positive':rows,'shapePositive':shapes,'sameKeyRoles':same_key,'negative':negative}
+@@ -263,0 +272 @@ def checks(value):
++    same=value['sameKeyRoles'];verify(bytes.fromhex(same['envelopeHex']),codec.from_fixture(same['context']))
+diff --git a/scripts/recovery_observation_negative_controls.py b/scripts/recovery_observation_negative_controls.py
+index 720869a..47f425f 100644
+--- a/scripts/recovery_observation_negative_controls.py
++++ b/scripts/recovery_observation_negative_controls.py
+@@ -9,0 +10 @@ CASES=[
++ ('binary-cid-order','cid.to_string(),','format!("{:02x?}", cid.to_bytes()),',NEGATIVE),
+diff --git a/scripts/revert_v2.py b/scripts/revert_v2.py
+index 35b5de5..5297440 100644
+--- a/scripts/revert_v2.py
++++ b/scripts/revert_v2.py
+@@ -39,0 +40 @@ PYTHON_TESTS = {
++    'recovery_identifier_bytes': ('.design/tools/recovery_bundle_schema.py', 'DraftSchema.test_identifier_byte_bounds_ascii_and_embedded_nul'),
+diff --git a/tests/evidence_recovery_observation.rs b/tests/evidence_recovery_observation.rs
+index 407d591..11fa678 100644
+--- a/tests/evidence_recovery_observation.rs
++++ b/tests/evidence_recovery_observation.rs
+@@ -195,0 +196,10 @@ fn signed_cross_context_chain_and_profile_confusion_refuse() {
++
++#[test]
++fn explicitly_pinned_same_key_roles_are_wire_valid_without_combining_authority() {
++    let f = fixture();
++    let same = &f["sameKeyRoles"];
++    let ctx = context(same);
++    assert_eq!(ctx.observer, ctx.issuer);
++    let observation = observation::authenticate(&raw(&same["envelopeHex"]), &ctx, None).unwrap();
++    assert_eq!(observation.context(), &ctx);
++}

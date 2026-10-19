@@ -135,7 +135,18 @@ def vectors():
     plan=json.loads((ROOT/'.design/fixtures/copy-plan-v1.json').read_text())['positive'][0]
     m=copy.deepcopy(base);m.update(profile=3,archive=bytes.fromhex(plan['archiveHex']),scope=bytes.fromhex(plan['plan']['scopeToken']['$bytes']),issuer=plan['plan']['issuer'],plan=bytes.fromhex(plan['hex']),membership=[(key,len(good)),(other_key,len(other))],objects=[(key,good)])
     add('partial-copy-framing',m)
-    candidates=[[],[(key,good)],[(key,good),(other_key,other)]]
+    # Deliberately distinguish canonical text order from binary CID order.
+    # The base32 alphabet puts digits after letters numerically, while ASCII
+    # text sorts them before letters. The earlier two-object fixture did not.
+    probes=[('public ordering fixture '+str(n)).encode() for n in range(100)]
+    pair=next((a,b) for a in probes for b in probes if (raw_cid(a)<raw_cid(b)) != (cid_bytes(raw_cid(a))<cid_bytes(raw_cid(b))))
+    m=copy.deepcopy(base);m['objects']=[(raw_cid(value),value) for value in pair]
+    add('cid-text-order-framing',m)
+    order_objects=m['objects']
+    m=decode_notation(next(row['member'] for row in rows if row['name']=='partial-copy-framing'))
+    m['membership']=[(raw_cid(value),len(value)) for value in pair]
+    add('membership-cid-text-order-framing',m)
+    candidates=[[],[(key,good)],[(key,good),(other_key,other)],order_objects]
     return {'status':'proposal-framing-only-not-logical-member-validation','member':rows,'restorations':[{'candidates':notation(c),'R1':restoration_digest(c).hex()} for c in candidates]}
 
 
@@ -169,7 +180,7 @@ def main():
     if args.write:PATH.write_text(json.dumps(generated,indent=2)+'\n')
     else:
         stored=json.loads(PATH.read_text());checks(stored);require(stored==generated,'proposal changed; explicit review/regeneration required')
-    print('7 member/output and 3 restoration framing vectors; local negative checks pass. No logical-member acceptance claimed.')
+    print(f"{len(generated['member'])} member/output and {len(generated['restorations'])} restoration framing vectors; local negative checks pass. No logical-member acceptance claimed.")
 
 
 if __name__=='__main__':main()

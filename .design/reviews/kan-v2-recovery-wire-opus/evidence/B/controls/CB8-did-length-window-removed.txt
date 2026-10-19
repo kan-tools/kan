@@ -1,0 +1,46 @@
+$ cargo test --offline --locked --features v2-crypto --test evidence_recovery_observation --test zz_review_observation_probes --no-fail-fast
+
+running 6 tests
+test caller_pins_predecessors_and_signer_are_not_learned_from_envelope ... FAILED
+test signed_cross_context_chain_and_profile_confusion_refuse ... ok
+test independently_resigned_hostile_vectors_refuse_with_named_error ... FAILED
+test independent_maximum_shape_vectors_authenticate_without_claiming_semantics ... ok
+test independent_python_bytes_signatures_and_predecessors_match ... ok
+test truncation_and_oversized_envelopes_cannot_authenticate ... ok
+
+failures:
+
+---- caller_pins_predecessors_and_signer_are_not_learned_from_envelope stdout ----
+
+thread 'caller_pins_predecessors_and_signer_are_not_learned_from_envelope' (9914166) panicked at /Users/m/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/atrium-crypto-0.1.3/src/did.rs:85:32:
+range end index 2 out of range for slice of length 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- independently_resigned_hostile_vectors_refuse_with_named_error stdout ----
+
+thread 'independently_resigned_hostile_vectors_refuse_with_named_error' (9914169) panicked at /Users/m/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/atrium-crypto-0.1.3/src/did.rs:85:32:
+range end index 2 out of range for slice of length 0
+
+
+failures:
+    caller_pins_predecessors_and_signer_are_not_learned_from_envelope
+    independently_resigned_hostile_vectors_refuse_with_named_error
+
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
+
+running 2 tests
+test review_pb2_predecessor_context_and_private_signer_bounds ... ok
+test review_pb1_python_generated_probes_match_named_rust_outcomes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.local-state/reviews/recovery-wire)
+    Finished `test` profile [unoptimized] target(s) in 7.29s
+     Running tests/evidence_recovery_observation.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_observation-d6de5ba9a7670a9d)
+error: test failed, to rerun pass `--test evidence_recovery_observation`
+     Running tests/zz_review_observation_probes.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/zz_review_observation_probes-158fd7ac9eaa250b)
+error: 1 target failed:
+    `--test evidence_recovery_observation`
+
+exit=101

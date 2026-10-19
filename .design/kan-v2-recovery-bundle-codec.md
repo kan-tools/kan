@@ -301,3 +301,33 @@ member/proof validation, exact loss partitioning, candidate/history consistency,
 publication replay and external-checkpoint validation; then freeze their complete
 cross-implementation vectors and DDL. All recovery writer/job/RPC/UI criteria stay
 open until their real operations and crash outcomes are tested and reviewed.
+
+### Second independent review decisions
+
+Observer authority is a separate role and signature domain from archive issuer
+authority. The wire codec permits explicitly pinned equal observer/issuer DIDs;
+it never treats an observer signature as an archive proof. Distinct-key policy
+belongs to owner configuration. Recovery job configuration should default to a
+separate observer key and disclose explicit reuse; equality in the wire is not
+proof of independent authorities or compromise isolation. This interpretation
+of parent REQ-1 is recorded rather than silently requiring a new wire restriction.
+The same-key role fixture pins this decision.
+
+Refusal reason strings in the cross-implementation fixtures identify their
+single-fault cases. They do not define a total precedence for inputs with several
+independent faults: Rust and Python may name different first faults while both
+refuse. No authorization or state transition may depend on which diagnostic
+string wins. Acceptance and byte identity remain the interoperability contract.
+
+The expanded fixtures now distinguish canonical CID text order from binary order
+for unavailable entries, original membership, original objects and R1 candidates.
+The draft DDL bounds identifier text by bytes, excludes embedded NUL and requires
+printable ASCII; complete canonical DID/CID validation remains a verifier duty.
+SQLite's lossless affinity coercion is not a promise about caller bind types:
+writers must bind typed values and readers must still check stored types.
+
+An authenticated expected object length above 4 MiB also refuses KNB1 creation
+as `forensic-recovery-required`, even when no oversized physical row survives.
+Do not truncate the expected length or drop that reference to fit the format.
+Retain source and failed output; the generic manifest schema's larger integer
+range does not widen this proposed recovery format's representable object size.

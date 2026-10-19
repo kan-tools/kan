@@ -1,0 +1,45 @@
+$ cargo test --offline --locked --features v2-crypto --test evidence_reconstruction
+# start 2026-10-19T14:02:53Z CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target JOBS=4
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.local-state/reviews/recovery-wire)
+    Finished `test` profile [unoptimized] target(s) in 6.92s
+     Running tests/evidence_reconstruction.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_reconstruction-f47b82f29e147a62)
+
+running 15 tests
+test capture_family_size_limit_precedes_unknown_envelope_classification ... ok
+test all_truncated_header_prefixes_fail_without_panicking ... ok
+test multibyte_and_escaped_header_text_preserves_original_byte_spans ... ok
+test exact_spans_binary_body_and_u64_coordinates_are_not_rounded ... ok
+test malformed_json_encoding_trailing_data_and_nested_input_refuse ... ok
+test duplicate_and_escaped_alias_keys_never_choose_a_winner ... ok
+test opaque_and_unsupported_are_distinct_from_malformed_capture ... ok
+test non_chunk_events_cannot_smuggle_body_bytes ... ok
+test identifiers_and_started_string_bounds_match_recorder ... ok
+test current_production_recorder_event_forms_roundtrip_with_exact_bodies ... ok
+test recognized_header_requires_explicit_timestamp_even_when_unknown ... FAILED
+test recognized_shapes_reject_missing_extra_wrong_type_and_bad_integer_fields ... ok
+test every_recognized_event_rejects_extra_fields_including_unit_variants ... FAILED
+test bounded_header_body_and_total_before_materialization ... ok
+test mutated_bounded_inputs_never_panic_or_claim_spans_outside_input ... ok
+
+failures:
+
+---- recognized_header_requires_explicit_timestamp_even_when_unknown stdout ----
+
+thread 'recognized_header_requires_explicit_timestamp_even_when_unknown' (9904329) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Capture(Frame { header: Header { version: 2, attempt: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", observer: Collector, ordinal: 9007199254740993, observed_at_unix_micros: None, elapsed_micros: 18446744073709551615, unconfirmed_before: 0, event: RequestChunk { offset: 9007199254740995 } }, body: [], header_span: 9..269, body_span: 269..269 })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- every_recognized_event_rejects_extra_fields_including_unit_variants stdout ----
+
+thread 'every_recognized_event_rejects_extra_fields_including_unit_variants' (9904321) panicked at tests/evidence_reconstruction.rs:16:30:
+called `Result::unwrap_err()` on an `Ok` value: Capture(Frame { header: Header { version: 2, attempt: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", observer: Collector, ordinal: 9007199254740993, observed_at_unix_micros: None, elapsed_micros: 18446744073709551615, unconfirmed_before: 0, event: ForwardingIntent }, body: [], header_span: 9..295, body_span: 295..295 })
+
+
+failures:
+    every_recognized_event_rejects_extra_fields_including_unit_variants
+    recognized_header_requires_explicit_timestamp_even_when_unknown
+
+test result: FAILED. 13 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `--test evidence_reconstruction`
+# end 2026-10-19T14:03:00Z exit=101

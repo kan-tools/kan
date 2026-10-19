@@ -193,3 +193,13 @@ fn signed_cross_context_chain_and_profile_confusion_refuse() {
     .is_err());
     assert!(observation::authenticate(foreign.bytes(), &ctx, None).is_err());
 }
+
+#[test]
+fn explicitly_pinned_same_key_roles_are_wire_valid_without_combining_authority() {
+    let f = fixture();
+    let same = &f["sameKeyRoles"];
+    let ctx = context(same);
+    assert_eq!(ctx.observer, ctx.issuer);
+    let observation = observation::authenticate(&raw(&same["envelopeHex"]), &ctx, None).unwrap();
+    assert_eq!(observation.context(), &ctx);
+}

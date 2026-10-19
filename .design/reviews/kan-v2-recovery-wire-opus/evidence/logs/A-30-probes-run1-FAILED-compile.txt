@@ -1,0 +1,19 @@
+$ cargo test --offline --locked --features v2-crypto --test zz_review_decoder_probes
+# start 2026-10-19T14:04:24Z CARGO_TARGET_DIR=/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target JOBS=4
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-bundle-codec/.local-state/reviews/recovery-wire)
+error[E0716]: temporary value dropped while borrowed
+   --> tests/zz_review_decoder_probes.rs:180:25
+    |
+180 |         let r = decode(&wire(h.as_bytes(), b""));
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^ - temporary value is freed at the end of this statement
+    |                         |
+    |                         creates a temporary value which is freed while still in use
+181 |         let l = label(&r);
+    |                       -- borrow later used here
+    |
+    = note: consider using a `let` binding to create a longer lived value
+
+For more information about this error, try `rustc --explain E0716`.
+error: could not compile `kan` (test "zz_review_decoder_probes") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+# end 2026-10-19T14:04:30Z exit=101

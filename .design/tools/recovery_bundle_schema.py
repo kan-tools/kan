@@ -63,6 +63,20 @@ class DraftSchema(unittest.TestCase):
         self.db.execute('INSERT INTO member_records VALUES(?,?,?,?)', (1,bytes(65536),bytes(65536),bytes(16384)))
         self.reject('INSERT INTO member_records VALUES(?,?,?,?)', (1,b'm',b'r',b'p'))
 
+    def test_identifier_byte_bounds_ascii_and_embedded_nul(self):
+        for value in ['é'*56, 'é'+'a'*55, 'a'*55+'\0', 'a'*55+'\n']:
+            for field in (2,6):
+                row=[1,bytes(32),'d'*56,2,bytes(32),bytes(32),'i'*56]
+                row[field]=value
+                self.reject('INSERT INTO bundle_identity VALUES(?,?,?,?,?,?,?)',row)
+        for table in ('member_objects','restored_objects'):
+            for key in ['é'*64, 'é'+'a'*127, 'x\0hidden','line\nbreak','has space']:
+                self.reject('INSERT INTO '+table+' VALUES(?,?)',(key,b'x'))
+            with self.assertRaises(sqlite3.IntegrityError):
+                self.db.execute("INSERT INTO "+table+" VALUES(CAST(X'FF' AS TEXT),X'01')")
+        for key in ['é'*64,'x\0hidden','line\nbreak']:
+            self.reject('INSERT INTO member_membership VALUES(?,?)',(key,1))
+
     def test_identity_and_membership_local_shapes(self):
         identity=[1,bytes(32),'d'*56,2,bytes(32),bytes(32),'i'*56]
         for index, values in [(0,[0,2]),(1,[b'',bytes(33),'x'*32]),(2,['x'*55,'x'*81]),(3,[1,4]),(4,[bytes(31),'x'*32]),(5,[bytes(33),'x'*32]),(6,['x'*55,'x'*81])]:

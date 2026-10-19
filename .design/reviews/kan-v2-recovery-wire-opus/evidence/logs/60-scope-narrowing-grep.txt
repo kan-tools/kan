@@ -1,0 +1,5 @@
+== c04ee13 (added lines; production/design/tools only)
+== 1833ee5 (added lines; production/design/tools only)
+156:+small synthetic CBOR; full valid-member fixtures belong to the later verifier.
+541:+    st=copy.deepcopy(rows[1]['statement']);st['event']='created';st['body']=copy.deepcopy(rows[0]['statement']['body']);add('creation-later','created-position',1,st)
+603:+    print(f"{len(generated['positive'])} chain positives, {len(generated['shapePositive'])} shape positives and {len(generated['negative'])} re-signed/malformed wire vectors pass; full member/state validation remains separate.")
