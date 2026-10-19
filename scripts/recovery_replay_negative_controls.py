@@ -22,6 +22,8 @@ CASES = [
     ('intent-citation', 'link(&b["intent"])? == &a.intent', 'true || link(&b["intent"])? == &a.intent', VECTOR),
     ('terminal-attempt', 'a.observed_at_sequence.is_none()', 'true || a.observed_at_sequence.is_none()', VECTOR),
     ('external-checkpoint', 'require(checkpoint_seen, "external checkpoint absent")?', 'require(true || checkpoint_seen, "external checkpoint absent")?', 'rollback_before_external_checkpoint_and_foreign_checkpoint_refuse'),
+    ('partial-candidate-length', 'length: complete_recipe.then_some(m.length)', 'length: Some(m.length)', 'partial_membership_restoration_keeps_the_original_unverified_basis'),
+    ('restoration-basis', 'basis: keys[name].basis', 'basis: Basis::VerifiedCopyRecipe', 'partial_membership_restoration_keeps_the_original_unverified_basis'),
 ]
 
 
@@ -50,8 +52,10 @@ def main():
             assert 'test ' + test + ' ... FAILED' in log, name + ' lacks assertion failure'
             if test == VECTOR:
                 assert 'hostile history must refuse' in log, name + ' was diagnostic-only'
-            else:
+            elif test == 'rollback_before_external_checkpoint_and_foreign_checkpoint_refuse':
                 assert 'left: None' in log, name + ' did not accept truncated history'
+            else:
+                assert 'candidate expected length' in log or 'assertion failed:' in log, name + ' lacks changed restoration semantics'
             print('DEMONSTRATED: ' + name, flush=True)
             FILE.write_text(original)
         old = '.map_err(|_| Error::Invalid("retained writer request"))?;'

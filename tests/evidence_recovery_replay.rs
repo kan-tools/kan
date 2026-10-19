@@ -180,6 +180,14 @@ fn independent_state_vectors_match_acceptance_commitments_attempts_and_checkpoin
         assert_eq!(result.latest().context, c.context);
         assert_eq!(result.external(), c.checkpoint.as_ref());
         assert_eq!(result.restored(), e["restored"].as_u64().unwrap());
+        let restored:Vec<_>=result.restorations().iter().map(|r|serde_json::json!({"cid":r.cid.to_string(),"length":r.length,"basis":format!("{:?}",r.basis)})).collect();
+        assert_eq!(
+            serde_json::json!(restored),
+            e["restoredObjects"],
+            "{}",
+            v["name"]
+        );
+
         assert_eq!(
             hex(result.member().commitment()),
             v["member"]["expected"]["member"]
@@ -188,7 +196,7 @@ fn independent_state_vectors_match_acceptance_commitments_attempts_and_checkpoin
         assert_eq!(serde_json::json!(attempts), e["attempts"], "{}", v["name"]);
         passed += 1;
     }
-    assert_eq!((passed, refused), (10, 32));
+    assert_eq!((passed, refused), (13, 32));
 }
 #[test]
 fn restoration_does_not_rewrite_original_loss_or_assert_current_output_exists() {
@@ -303,4 +311,24 @@ fn physical_candidate_duplicates_and_oversized_envelopes_refuse() {
         c.verify(limits()).err(),
         Some(Error::Invalid("observation authentication"))
     );
+}
+
+#[test]
+fn partial_membership_restoration_keeps_the_original_unverified_basis() {
+    use kan::evidence_recovery_member::Basis;
+    let c = Case::named("partial-membership-restoration-does-not-promote-source-authority");
+    let r = c.verify(limits()).unwrap();
+    assert!(!r.member().recipe_metadata_complete());
+    assert_eq!(r.restored(), 2);
+    assert!(r
+        .restorations()
+        .iter()
+        .all(|r| r.basis == Basis::UnverifiedMembership && r.length > 0));
+    assert_eq!(r.member().losses().len(), 1);
+    // One restored key was already available and had no initial loss.
+    assert!(r.attempts().is_empty());
+    let loss = &r.member().losses()[0];
+    assert_eq!(loss.basis, Basis::UnverifiedMembership);
+    assert_eq!(loss.expected_length, None);
+    assert_eq!(loss.occurrence, None);
 }

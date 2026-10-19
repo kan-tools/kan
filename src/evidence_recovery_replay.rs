@@ -5,7 +5,7 @@ use crate::{
     evidence_recovery_commitment::{
         self as commitment, Counts, Domain, Header, Limits, MemberFraming, RestorationFraming,
     },
-    evidence_recovery_member::{self as member, Availability, Input, Member, Object},
+    evidence_recovery_member::{self as member, Availability, Basis, Input, Member, Object},
     evidence_recovery_observation::{self as observation, Authenticated, Context},
 };
 use atproto_dasl::{Cid, Ipld};
@@ -66,11 +66,18 @@ pub struct Attempt {
     /// The observer's attributed claim; not proof of current physical output.
     pub observed_at_sequence: Option<u64>,
 }
+/// Verified candidate bytes, with source membership authority kept separate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Restoration {
+    pub cid: Cid,
+    pub length: u64,
+    pub basis: Basis,
+}
 pub struct Replay {
     member: Member,
     checkpoint: Checkpoint,
     external: Option<Checkpoint>,
-    restored: u64,
+    restorations: Vec<Restoration>,
     attempts: Vec<Attempt>,
 }
 impl Replay {
@@ -84,7 +91,10 @@ impl Replay {
         self.external.as_ref()
     }
     pub fn restored(&self) -> u64 {
-        self.restored
+        self.restorations.len() as u64
+    }
+    pub fn restorations(&self) -> &[Restoration] {
+        &self.restorations
     }
     pub fn attempts(&self) -> &[Attempt] {
         &self.attempts
@@ -283,8 +293,13 @@ struct Key<'a> {
     cid: Cid,
     length: Option<u64>,
     original: Option<&'a [u8]>,
+    basis: Basis,
 }
-fn keys<'a>(input: Input<'a>, work: &Work) -> Result<BTreeMap<String, Key<'a>>> {
+fn keys<'a>(
+    input: Input<'a>,
+    complete_recipe: bool,
+    work: &mut Work,
+) -> Result<BTreeMap<String, Key<'a>>> {
     let mut out = BTreeMap::new();
     for m in input.membership {
         work.check()?;
@@ -292,13 +307,18 @@ fn keys<'a>(input: Input<'a>, work: &Work) -> Result<BTreeMap<String, Key<'a>>> 
             m.cid.to_string(),
             Key {
                 cid: m.cid.clone(),
-                length: Some(m.length),
+                length: complete_recipe.then_some(m.length),
                 original: None,
+                basis: if complete_recipe {
+                    Basis::VerifiedCopyRecipe
+                } else {
+                    Basis::UnverifiedMembership
+                },
             },
         );
     }
     for row in input.records {
-        work.check()?;
+        work.charge(0, row.manifest.len() as u64)?;
         let Decoded::Known(record) =
             evidence::decode(row.manifest).map_err(|_| Error::Invalid("member changed"))?
         else {
@@ -310,11 +330,17 @@ fn keys<'a>(input: Input<'a>, work: &Work) -> Result<BTreeMap<String, Key<'a>>> 
         let e = fields(es.first().ok_or(Error::Invalid("member entries"))?)?;
         let cid = link(&e["ciphertext"])?;
         let length = integer(&e["length"])?;
-        out.entry(cid.to_string()).or_insert_with(|| Key {
-            cid: cid.clone(),
-            length: Some(length),
-            original: None,
-        });
+        out.entry(cid.to_string())
+            .and_modify(|key| {
+                key.length = Some(length);
+                key.basis = Basis::IssuerMetadata;
+            })
+            .or_insert_with(|| Key {
+                cid: cid.clone(),
+                length: Some(length),
+                original: None,
+                basis: Basis::IssuerMetadata,
+            });
     }
     for o in input.objects {
         work.check()?;
@@ -323,6 +349,7 @@ fn keys<'a>(input: Input<'a>, work: &Work) -> Result<BTreeMap<String, Key<'a>>> 
                 cid: o.cid.clone(),
                 length: None,
                 original: None,
+                basis: Basis::OriginalObject,
             })
             .original = Some(o.bytes);
     }
@@ -470,9 +497,11 @@ pub fn verify<'a>(
             "external checkpoint context",
         )?
     }
+    // Reject an already-known oversized history before auditing payloads.
+    work.charge(observations.len() as u64, 0)?;
     let original = audit(input, &mut work)?;
     let expected_frontier = frontier(&original);
-    let keys = keys(input, &work)?;
+    let keys = keys(input, original.recipe_metadata_complete(), &mut work)?;
     work.charge(candidates.len() as u64, 0)?;
     let mut physical = BTreeMap::new();
     let mut last: Option<String> = None;
@@ -510,7 +539,7 @@ pub fn verify<'a>(
     let mut cached: Option<([u8; 32], [u8; 32])> = None;
     let mut checkpoint_seen = external.is_none();
     for raw in observations {
-        work.charge(1, raw.len() as u64)?;
+        work.charge(0, raw.len() as u64)?;
         let auth = observation::authenticate(raw, input.context, previous.as_ref())
             .map_err(|_| Error::Invalid("observation authentication"))?;
         let st = fields(auth.statement())?;
@@ -630,7 +659,14 @@ pub fn verify<'a>(
             statement: tip.statement_cid().clone(),
         },
         external: external.cloned(),
-        restored: selected.len() as u64,
+        restorations: selected
+            .iter()
+            .map(|(name, data)| Restoration {
+                cid: keys[name].cid.clone(),
+                length: data.len() as u64,
+                basis: keys[name].basis,
+            })
+            .collect(),
         attempts: attempts.into_values().collect(),
     })
 }

@@ -468,7 +468,11 @@ restoration or publication. A late, omitted, repeated or altered loss refuses.
 The member-verifier review must be resolved before qualifying this consumer.
 
 Each physical candidate must have exactly one restored observation, target an
-existing member key/reference, match its content address and every known length.
+existing member key/reference, match its content address and every authenticated
+expected length. Incomplete-copy membership-only lengths are retained claims,
+not candidate constraints. Replay returns the member-derived basis for every restoration, including
+an already-available key with no initial loss;
+restoration cannot promote UnverifiedMembership into authenticated source evidence.
 No unsigned candidate, duplicate restoration, hidden subset or new orphan is
 accepted. An intent commits to all candidates observed before it. Replay computes
 that historical R1 and deterministic output union, re-audits the virtual output

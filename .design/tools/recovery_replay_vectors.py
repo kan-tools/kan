@@ -22,14 +22,20 @@ def frontier(m):
  if not m['records']:return {'through':0,'manifest':None,'attestation':None}
  _,mb,_,pb=m['records'][-1]
  return {'through':len(m['records']),'manifest':link(codec.cid(mb)),'attestation':link(codec.cid(codec.decode(pb)['statement']))}
-def losses(m):return [{**l,'cid':link(l['cid'])} for l in members.losses(m)[0]]
+def losses(m):return [{**{k:v for k,v in l.items() if k!='basis'},'cid':link(l['cid'])} for l in members.losses(m)[0]]
 def complete(m):return m['profile']==2 or len(m['records'])>=codec.decode(m['plan'])['sourceThrough']
 def keys(m):
- result={c:n for c,n in m['membership']}
+ result={c:n if complete(m) else None for c,n in m['membership']}
  for _,mb,_,_ in m['records']:
   for e in codec.decode(mb)['body']['entries']:result[text(e['ciphertext'])]=e['length']
  for c,_ in m['objects']:result.setdefault(c,None)
  return result
+
+def basis(m,cid):
+ for _,mb,_,_ in m['records']:
+  if any(text(e['ciphertext'])==cid for e in codec.decode(mb)['body']['entries']):return 'IssuerMetadata'
+ if cid in dict(m['membership']):return 'VerifiedCopyRecipe' if complete(m) else 'UnverifiedMembership'
+ return 'OriginalObject'
 
 def check_writer(m,objects):
  for _,mb,rb,_ in m['records']:
@@ -108,7 +114,7 @@ def replay(h,envelopes):
   if h.checkpoint and h.checkpoint[0]==seq:need(h.checkpoint[1]==text(st['statementCid']),'external checkpoint statement');seen=True
   previous=st
  need(offset==len(lost),'initial loss incomplete');need(len(selected)==len(physical),'candidate without restoration');need(seen,'external checkpoint absent')
- return {'latestSequence':previous['sequence'],'latestCid':text(previous['statementCid']),'restored':len(selected),'attempts':[{'id':i.hex(),'intent':text(a['intent']),'output':a['output'].hex(),'restorations':a['restorations'].hex(),'failureCount':a['failureCount'],'observedAt':a['observedAt']} for i,a in sorted(attempts.items())]}
+ return {'latestSequence':previous['sequence'],'latestCid':text(previous['statementCid']),'restored':len(selected),'restoredObjects':[{'cid':c,'length':len(b),'basis':basis(m,c)} for c,b in sorted(selected.items())],'attempts':[{'id':i.hex(),'intent':text(a['intent']),'output':a['output'].hex(),'restorations':a['restorations'].hex(),'failureCount':a['failureCount'],'observedAt':a['observedAt']} for i,a in sorted(attempts.items())]}
 
 def base(profile=2,damaged=True,n=2):
  m,o=members.build(profile,n);saved=copy.deepcopy(m['objects']);m['objects']=[] if damaged else m['objects'];h=History(m,o);h.initial();return h,saved
@@ -136,6 +142,20 @@ def vectors():
  h,saved=base(2,False);i=h.intent();h.restore(*saved[0]);h.outcome(i);j=h.intent(10);h.outcome(j);add('later-candidate-keeps-earlier-intent-history',h)
  h,_=base(3,False,3);h.m['records']=h.m['records'][:1];h.events=[];h.initial();add('partial-copy-retained-no-publication',h)
  h,_=base(2,False,0);i=h.intent();h.outcome(i,'publication-failed');add('failed-intent-remains-unobserved',h)
+ h,_=base(3,False,3);h.m['records']=h.m['records'][:1];data=b'unverified retained key';cid=frame.raw_cid(data)
+ h.m['membership'].append([cid,77]);h.m['membership'].sort();h.events=[];h.initial();h.restore(cid,data)
+ referenced=text(codec.decode(h.m['records'][0][1])['body']['entries'][0]['ciphertext'])
+ h.restore(*next(o for o in h.m['objects'] if o[0]!=referenced))
+ add('partial-membership-restoration-does-not-promote-source-authority',h)
+ # Complete-copy staged membership and raw original-only keys exercise the
+ # other restoration bases independently of any unavailable-request inference.
+ m,o=members.build(3,0);data=b'complete copy staged object';cid=frame.raw_cid(data);m['membership']=[[cid,len(data)]]
+ source=hashlib.sha256(b'tools.kan.archive.copy-source.v1\0'+members.framed(b'commits')+(0).to_bytes(8,'big')+members.framed(b'objects')+(1).to_bytes(8,'big')+members.framed(codec.cid_bytes(cid))+len(data).to_bytes(8,'big')).digest()
+ plan=codec.decode(m['plan']);plan['sourceDigest']=source;m['plan']=codec.encode(plan);m['archive']=hashlib.sha256(b'tools.kan.archive.copy-plan.v1\0'+m['plan']).digest()
+ h=History(m,o);h.initial();h.restore(cid,data);i=h.intent();h.outcome(i);add('verified-copy-recipe-staged-restoration',h)
+ m,o=members.build(2,0);data=b'raw original-only object';cid=frame.raw_cid(data);m['objects']=[[cid,b'wrong bytes']]
+ h=History(m,o);h.initial();h.restore(cid,data);i=h.intent();h.outcome(i);add('original-object-basis-survives-restoration',h)
+
  def ready():
   h,saved=base()
   for cid,b in saved:h.restore(cid,b)
