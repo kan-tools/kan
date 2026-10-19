@@ -334,6 +334,20 @@ fn reviewer_budget_monotonicity_and_bounds() {
             }
         }
         let min_bytes = lo;
+        // Independently measured in opening review B-F1, including the extra
+        // request-writer verification pass (3015/1556/0/3015 bytes respectively).
+        // A monotonicity-only assertion cannot detect an omitted work charge.
+        let expected_min_bytes = match name {
+            "profile2-restored-failure-observed" => 31919,
+            "later-candidate-keeps-earlier-intent-history" => 43865,
+            "greedy-32-plus-2-loss-partition" => 135343,
+            "profile3-restored-failure-observed" => 34344,
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            min_bytes, expected_min_bytes,
+            "scan-charge accounting: {name}"
+        );
         let mut l = limits();
         l.bytes = min_bytes - 1;
         let below_bytes = c.verify(l).err();
@@ -394,6 +408,9 @@ fn valid_writer_signature_with_wrong_manifest_binding_refuses() {
 }
 #[test]
 fn unavailable_partition_has_a_pinned_conservative_envelope_bound() {
+    // This echoes the independent Python fixture's arithmetic; it does not
+    // encode a maximal statement in Rust. The generator's --check verifies the
+    // maximal signed shape, and Rust separately verifies the signed corpus.
     let f: Value = serde_json::from_str(include_str!(
         "../.design/fixtures/recovery-replay-review-v1.json"
     ))

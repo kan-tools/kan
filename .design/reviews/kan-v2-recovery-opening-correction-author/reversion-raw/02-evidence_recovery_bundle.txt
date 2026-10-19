@@ -1,0 +1,22 @@
+
+running 1 test
+test empty_originals_remain_exact_evidence_before_and_after_restoration ... FAILED
+
+failures:
+
+---- empty_originals_remain_exact_evidence_before_and_after_restoration stdout ----
+
+thread 'empty_originals_remain_exact_evidence_before_and_after_restoration' (10280718) panicked at tests/evidence_recovery_bundle.rs:359:33:
+E1-empty-original-initial-loss: invalid recovery bundle: projected cell storage class
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    empty_originals_remain_exact_evidence_before_and_after_restoration
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.07s
+
+   Compiling kan v1.0.0-beta.1 (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-recovery-opening/.local-state/reversion/9eb2cc4d28e64818b175211259f80971)
+    Finished `test` profile [unoptimized] target(s) in 7.37s
+     Running tests/evidence_recovery_bundle.rs (/Users/m/code/kan-tools/kan/.worktrees/kan-v2-library-resilience/.local-state/target/debug/deps/evidence_recovery_bundle-bae884b5e26db009)
+error: test failed, to rerun pass `--test evidence_recovery_bundle`

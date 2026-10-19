@@ -32,8 +32,8 @@ def create(path,case,encoding='UTF-8'):
     db.commit();db.close()
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('out',type=Path);p.add_argument('--case');p.add_argument('--encoding',default='UTF-8',choices=['UTF-8','UTF-16le']);a=p.parse_args()
-    cases=json.loads((ROOT/'.design/fixtures/recovery-replay-v1.json').read_text())['cases']
+    p=argparse.ArgumentParser();p.add_argument('out',type=Path);p.add_argument('--case');p.add_argument('--vectors',type=Path,default=ROOT/'.design/fixtures/recovery-replay-v1.json');p.add_argument('--encoding',default='UTF-8',choices=['UTF-8','UTF-16le']);a=p.parse_args()
+    cases=json.loads(a.vectors.read_text())['cases']
     a.out.mkdir(parents=True,exist_ok=True)
     for case in cases:
         if a.case and case['name']!=a.case:continue

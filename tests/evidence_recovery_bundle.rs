@@ -76,8 +76,10 @@ fn construct(dir: &Path, name: Option<&str>, encoding: &str) {
     );
 }
 fn fixture() -> (tempfile::TempDir, PathBuf, Value) {
+    fixture_named("profile2-restored-failure-observed")
+}
+fn fixture_named(name: &str) -> (tempfile::TempDir, PathBuf, Value) {
     let dir = tempfile::tempdir().unwrap();
-    let name = "profile2-restored-failure-observed";
     construct(dir.path(), Some(name), "UTF-8");
     let path = dir.path().join(format!("{name}.sqlite"));
     let v = cases().into_iter().find(|v| v["name"] == name).unwrap();
@@ -146,6 +148,7 @@ fn schema_marker_history_identity_and_physical_cell_damage_refuse() {
  "UPDATE restored_objects SET bytes=CAST(bytes AS TEXT);",
  "UPDATE restored_objects SET bytes=zeroblob(4194305);",
  "UPDATE restored_objects SET cid=upper(cid);",
+ "UPDATE restored_objects SET cid='b'||upper(substr(cid,2));",
  "UPDATE restored_objects SET cid=cid||char(0);",
  "DELETE FROM restored_objects;",
  ];
@@ -319,7 +322,173 @@ fn hot_rollback_journal_refuses_without_recovering_source_media() {
     let before_main = std::fs::read(&path).unwrap();
     let before_journal = std::fs::read(&journal).unwrap();
     assert!(before_journal.len() > 512);
-    assert!(bundle::inspect(&path, pins(&v), None, budget()).is_err());
+    assert!(matches!(bundle::inspect(&path, pins(&v), None, budget()),
+        Err(Error::Sql(rusqlite::Error::SqliteFailure(code,_)))
+        if code.code == rusqlite::ErrorCode::ReadOnly && code.extended_code == 776));
     assert_eq!(std::fs::read(&path).unwrap(), before_main);
     assert_eq!(std::fs::read(&journal).unwrap(), before_journal);
+}
+
+#[test]
+fn empty_originals_remain_exact_evidence_before_and_after_restoration() {
+    let dir = tempfile::tempdir().unwrap();
+    let python = std::env::var_os("KAN_TLS_ORACLE_PYTHON").unwrap_or_else(|| "python3".into());
+    let output = Command::new(python)
+        .args([
+            ".design/tools/recovery_bundle_files.py",
+            dir.path().to_str().unwrap(),
+            "--vectors",
+            ".design/fixtures/recovery-bundle-review-v1.json",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../.design/fixtures/recovery-bundle-review-v1.json"
+    ))
+    .unwrap();
+    for v in vectors["cases"].as_array().unwrap() {
+        let name = v["name"].as_str().unwrap();
+        let path = dir.path().join(format!("{name}.sqlite"));
+        let before = std::fs::read(&path).unwrap();
+        let got = bundle::inspect(&path, pins(v), None, budget())
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(
+            got.replay().restored(),
+            v["candidates"].as_array().unwrap().len() as u64
+        );
+        assert_eq!(
+            got.replay().latest().sequence,
+            v["observations"].as_array().unwrap().len() as u64
+        );
+        assert_eq!(got.replay().member().losses().len(), 1);
+        assert_eq!(
+            got.replay().member().recipe_metadata_complete(),
+            v["member"]["expected"]["recipeMetadataComplete"]
+                .as_bool()
+                .unwrap()
+        );
+        assert_eq!(
+            kan::evidence_service::hex(got.replay().member().commitment()),
+            v["member"]["expected"]["member"]
+        );
+        assert_eq!(
+            got.replay().member().losses()[0].state,
+            kan::evidence_recovery_member::Availability::Corrupt
+        );
+        let db = Connection::open(&path).unwrap();
+        let (kind, original): (String, Vec<u8>) = db
+            .query_row(
+                "SELECT typeof(bytes),bytes FROM member_objects WHERE cid=?",
+                [v["member"]["objects"][0][0].as_str().unwrap()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, "blob");
+        assert_eq!(
+            original,
+            unhex(v["member"]["objects"][0][1].as_str().unwrap(), 4194304).unwrap()
+        );
+        drop(db);
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            before,
+            "source changed: {name}"
+        );
+    }
+}
+
+#[test]
+fn sqlite_schema_loading_obeys_deadline_and_in_flight_cancellation() {
+    // Promoted from independent review A12. Direct schema insertion avoids
+    // quadratic fixture construction; inspection must still load the schema.
+    // This is a local SQLite execution bound, not arbitrary filesystem latency.
+    let (_dir, path, v) = fixture();
+    let db = Connection::open(&path).unwrap();
+    db.set_db_config(rusqlite::config::DbConfig::SQLITE_DBCONFIG_DEFENSIVE, false)
+        .unwrap();
+    db.execute_batch("PRAGMA writable_schema=ON; WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<400000) INSERT INTO sqlite_schema SELECT 'view','v'||i,'v'||i,0,'CREATE VIEW v'||i||' AS SELECT '||i||' AS n' FROM n; PRAGMA writable_schema=OFF;").unwrap();
+    drop(db);
+    let before = std::fs::read(&path).unwrap();
+    let mut b = budget();
+    b.duration = Duration::from_millis(150);
+    let started = Instant::now();
+    assert!(matches!(
+        bundle::inspect(&path, pins(&v), None, b),
+        Err(Error::Budget("duration"))
+    ));
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "deadline did not interrupt SQLite schema loading"
+    );
+    let b = budget();
+    let flag = b.cancelled.clone();
+    let cancelling = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(100));
+        flag.store(true, std::sync::atomic::Ordering::Relaxed);
+    });
+    let started = Instant::now();
+    let result = bundle::inspect(&path, pins(&v), None, b);
+    cancelling.join().unwrap();
+    assert!(matches!(result, Err(Error::Cancelled)));
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "cancellation did not interrupt SQLite schema loading"
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn parser_accepted_noncanonical_spellings_refuse_in_every_key_table() {
+    for (table, name) in [
+        (
+            "member_objects",
+            "original-object-basis-survives-restoration",
+        ),
+        ("restored_objects", "profile2-restored-failure-observed"),
+        ("member_membership", "profile3-restored-failure-observed"),
+    ] {
+        let (_dir, path, v) = fixture_named(name);
+        let db = Connection::open(&path).unwrap();
+        assert!(
+            db.execute(
+                &format!("UPDATE {table} SET cid='b'||upper(substr(cid,2));"),
+                []
+            )
+            .unwrap()
+                > 0
+        );
+        drop(db);
+        let result = bundle::inspect(&path, pins(&v), None, budget());
+        assert!(
+            result.is_err(),
+            "accepted mutation: parser-accepted noncanonical {table} key"
+        );
+        assert!(matches!(
+            result,
+            Err(Error::Invalid("canonical CID spelling"))
+        ));
+    }
+}
+
+#[test]
+fn oversized_and_malformed_physical_media_retain_sqlite_refusal_codes() {
+    for sql in [
+        "UPDATE member_objects SET bytes=zeroblob(6291456);",
+        "PRAGMA writable_schema=ON; INSERT INTO sqlite_schema VALUES('table','bad','bad',0,'CREATE TABLE bad('); PRAGMA writable_schema=OFF;",
+    ] {
+        let (_dir,path,v)=fixture_named("original-object-basis-survives-restoration");
+        let db=Connection::open(&path).unwrap();
+        db.set_db_config(rusqlite::config::DbConfig::SQLITE_DBCONFIG_DEFENSIVE,false).unwrap();
+        db.execute_batch("PRAGMA ignore_check_constraints=ON;").unwrap();db.execute_batch(sql).unwrap();assert!(db.changes()>0,"fixture mutation must change a row");drop(db);
+        let before=std::fs::read(&path).unwrap();
+        let expected=if sql.starts_with("UPDATE") {rusqlite::ErrorCode::TooBig} else {rusqlite::ErrorCode::DatabaseCorrupt};
+        assert!(matches!(bundle::inspect(&path,pins(&v),None,budget()),
+            Err(Error::Sql(rusqlite::Error::SqliteFailure(code,_))) if code.code==expected));
+        assert_eq!(std::fs::read(&path).unwrap(),before);
+    }
 }
