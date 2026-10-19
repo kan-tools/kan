@@ -1,0 +1,6 @@
+DEMONSTRATED: omit-copy-deadline
+DEMONSTRATED: omit-copy-revalidation
+DEMONSTRATED: use-parse-window
+DEMONSTRATED: classify-invalid-as-busy
+DEMONSTRATED: wrapper-discards-returned-wait
+Five compiled mutants fail assertions; restored backend/wrapper checks pass.
