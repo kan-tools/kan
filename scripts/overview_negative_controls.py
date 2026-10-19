@@ -15,6 +15,7 @@ def main():
     for path,value in originals.items(): (OUT/(path.name+'.original')).write_text(value)
     s=originals[SOURCE]
     cases=[
+      ('restart-render-collision',JS,originals[JS].replace("s.last_job+':'+JSON.stringify(v)","s.last_job+':'+v.manifest_sha256"),'a reused job number after restart cannot retain old overview totals'),
       ('remove-connection-bound',DASHBOARD,originals[DASHBOARD].replace('Semaphore::new(8)', 'Semaphore::new(16)'),'overview_http_connection_limit_releases_slots_after_requests'),
       ('no-deduplication',SOURCE,s.replace('        if let Some(old) = map.get(&key) {','        let key = format!("{key}:{}",map.len());\n        if let Some(old) = map.get(&key) {'),'cumulative_rows_are_deduplicated_without_rewriting_sources'),
       ('no-dominance',SOURCE,s.replace('if !dominates {','if false && !dominates {'),'intermediate_regressions_conflicting_observers_and_terminals_refuse_publication'),

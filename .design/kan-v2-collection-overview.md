@@ -232,3 +232,13 @@ new HTTP socket regression checks eight held header requests, refusal of a ninth
 and permit reuse after completion. The 40,000-row active-source regression runs
 100 real health writes during refresh. Qualification and fresh review of these
 corrections must be recorded before closing their acceptance criteria.
+
+### Restart rendering follow-up
+
+The ongoing cold correction review reproduced a collision when a restarted
+service reused a job number with the same collection manifest. The UI now keys
+rendering by the full immutable sample; new totals, source digests and timestamps
+cannot be paired with the prior rendered body. The new regression passes, the
+whole production fix reverted fails, and all 27 Operations UI checks pass after
+restoration. Evidence is in `.design/reviews/kan-v2-overview-restart-author/`.
+Fresh review of this correction remains required.
