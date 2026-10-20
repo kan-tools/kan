@@ -371,6 +371,45 @@ stale restore. A bounded result may report unavailable/corrupt selected evidence
 it must not label an unscanned archive globally verified. The accepted target stays
 unchanged; a new cache hit count or a smaller passing workload cannot close AC-8.
 
+#### Authenticated serving-index implementation contract
+
+The bounded-serving work uses a separate content-addressed binary Patricia map;
+`src/mst/` remains unchanged because its canonical rebuild currently walks all keys.
+The new pure codec is `src/evidence_index.rs`. Its root authenticates map contents
+only when bound to an independently validated service checkpoint. It is neither a
+source-event identifier nor a replacement for archive, custody or scope authority.
+No new capture URI or reinterpretation of old claim/receipt bytes follows from it.
+
+Keys are SHA-256 over the versioned key domain, a length-framed namespace and an
+opaque coordinate. Values are bounded metadata commitments, never captured content
+or semantic names. Leaves encode a 32-byte key and a bounded value; branch nodes
+encode the first differing bit, a canonical shared prefix and two child hashes.
+Nodes use a separate versioned hash domain. Reads authenticate each traversed node
+and validate increasing branch depths and child prefixes. Missing, oversized,
+malformed or hash-mismatched nodes fail; they do not turn into absence. Insertion
+rewrites one path, preserving prior roots. At most 257 existing nodes are read for
+a 256-bit key, independent of corpus size. A returned new root is published only
+after every new node write succeeds; failed writes can leave unreachable blocks,
+but cannot change the caller's accepted root.
+
+The initial codec has no filesystem writer or service activation. Its independent
+Python reference rebuilds canonical trees from sorted key sets, while Rust updates
+one path; shared vectors and insertion-order comparisons check agreement. Fault
+checks cover missing nodes, byte substitution, invalid prefixes/depths, bounded
+lookup work and interrupted writes preserving the accepted root. These establish
+only the map primitive, not bounded archive operation or production index custody.
+
+Before wiring serving paths, add a signed checkpoint binding archive/profile,
+verified frontier and exact index root, with index blocks/checkpoint committed in
+the same transaction as evidence and receipts. Verify requested source metadata
+and payloads against that root; authenticate writer/operation/slot lookups before
+using them for admission. Existing archives need explicit verified initialization
+or rebuild; missing index state must report that work, never silently scan history
+in a nominally bounded request. Inventory, copied archives, erasure/custody,
+backup/recovery and independent freshness checks must all use the same contract.
+Their schema, mutation ownership and crash boundaries are still implementation
+work; the pure map alone closes none of those integration requirements.
+
 ### 11. Compatibility and explicit departures
 
 | Existing boundary | Retain | Proposed change |

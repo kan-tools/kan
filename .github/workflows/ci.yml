@@ -29,6 +29,7 @@ jobs:
       - run: ./scripts/check-citations.sh --self-test
       - run: ./scripts/check-citations.sh
       - run: python3 scripts/evidence_reference.py --check
+      - run: python3 scripts/serving_index_reference.py --check
       - run: node --test tests/library_ui.test.cjs tests/operations_ui.test.cjs tests/operations_review_ui.test.cjs tests/operations_restart_review.test.cjs tests/theme_ui.test.cjs
       - run: python3 tests/test_revert_v2.py
 
@@ -66,6 +67,7 @@ jobs:
       - run: cargo test --features v2-crypto --lib evidence_spool::tests
       - run: cargo test --features v2-crypto --lib evidence_store::inventory::tests
       - run: cargo test --features v2-crypto --lib evidence_store::erasure::selection_tests
+      - run: cargo test --features v2-crypto --lib evidence_index::tests
       - run: cargo test --features v2-crypto --lib evidence_store::attested::audit_cache_tests
       - run: cargo test --features v2-crypto --lib evidence_store::admission_tests
       - run: cargo test --features v2-crypto --lib evidence_service::audit_tests
