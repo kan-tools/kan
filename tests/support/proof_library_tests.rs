@@ -658,6 +658,15 @@ async fn large_attempt_reads_over_ten_megabytes_with_all_chunk_citations() {
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
+        let binding = attested::Binding {
+            archive: [2; 32],
+            scope: [1; 32],
+            issuer: identity(8).did().to_string(),
+        };
+        attested::Archive::open(&root, binding.clone())
+            .unwrap()
+            .rebuild_serving_index(&identity(8))
+            .unwrap();
         Fixture {
             root,
             binding: attested::Binding {
@@ -673,6 +682,7 @@ async fn large_attempt_reads_over_ten_megabytes_with_all_chunk_citations() {
             encrypted_frame(n, a, p, &frames[n as usize])
         });
         let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+        archive.rebuild_serving_index(&identity(8)).unwrap();
         for (n, frame) in frames.iter().enumerate().skip(3) {
             let previous = Some(
                 service::append_manifest(f.requests.last().unwrap())
@@ -682,7 +692,7 @@ async fn large_attempt_reads_over_ten_megabytes_with_all_chunk_citations() {
             );
             let bytes = encrypted_frame(n as u8, 8, previous, frame);
             archive
-                .admit(&bytes, &identity(8), &grant(), 200 + n as u64)
+                .admit_indexed(&bytes, &identity(8), &grant(), 200 + n as u64, None)
                 .unwrap();
             f.requests.push(bytes);
         }
@@ -693,7 +703,7 @@ async fn large_attempt_reads_over_ten_megabytes_with_all_chunk_citations() {
         "synthetic large archive prepared in {:?}",
         started.elapsed()
     );
-    let server = Server::start(&f).await;
+    let server = Server::start_initialized(&f).await;
     let ui = Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
         .await;
     let catalog = ui.call(json!({"action":"catalog"}), 200).await;

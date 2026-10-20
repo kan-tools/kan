@@ -55,6 +55,9 @@ impl Server {
                 .rebuild_serving_index(&identity(8))
                 .unwrap(),
         };
+        Self::start_initialized(f).await
+    }
+    async fn start_initialized(f: &Fixture) -> Self {
         Self::start_with(
             wire::Service::new_indexed(
                 f.db(),
