@@ -10,9 +10,11 @@ use serde_json::{json, Value};
 use std::{collections::BTreeMap, time::Duration};
 mod discovery;
 pub mod knowledge;
+pub mod outbox;
 pub mod search;
 
 pub struct Readers {
+    outbox: Option<outbox::AnnotationOutbox>,
     pub(super) operations: Option<crate::evidence_dashboard::Embedded>,
     workspace: Option<std::sync::Arc<crate::evidence_workspace::Workspace>>,
     legacy: Option<legacy::Reader>,
@@ -46,12 +48,23 @@ impl Readers {
             }
         }
         Ok(Self {
+            outbox: None,
             operations: None,
             workspace: None,
             legacy,
             proof: selected,
             workers: std::sync::Arc::new(tokio::sync::Semaphore::new(2)),
         })
+    }
+    pub fn with_annotation_outbox(
+        mut self,
+        outbox: outbox::AnnotationOutbox,
+    ) -> Result<Self, Failure> {
+        if outbox.writer() != self.workspace()?.author() {
+            return Err(Failure::Invalid);
+        }
+        self.outbox = Some(outbox);
+        Ok(self)
     }
     pub fn with_operations(mut self, operations: crate::evidence_dashboard::Embedded) -> Self {
         self.operations = Some(operations);
@@ -137,6 +150,11 @@ impl Readers {
     }
     pub(super) async fn query(&self, request: Query) -> Result<Vec<u8>, ContentError> {
         let value = match request {
+            Query::AnnotationDelivery { id } => self.annotation_delivery(&id).await?,
+            Query::AnnotationQueue { id, destination } => {
+                self.annotation_queue(&id, &destination).await?
+            }
+            Query::AnnotationDrain { destination } => self.annotation_drain(&destination).await?,
             Query::AnnotationPreview { draft } => self.annotation_preview(draft).await?,
             Query::AnnotationSave { draft, preview } => {
                 self.annotation_save(draft, preview).await?

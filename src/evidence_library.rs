@@ -11,6 +11,7 @@ use hyper::{
 };
 use hyper_util::rt::TokioIo;
 pub use proof::knowledge::{Citation as EvidenceCitation, Draft as AnnotationDraft};
+pub use proof::outbox::AnnotationOutbox;
 pub use proof::{
     search::{Filter as SearchFilter, Target as SearchTarget},
     Readers,
@@ -25,6 +26,16 @@ use tokio::{
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Query {
+    AnnotationDelivery {
+        id: String,
+    },
+    AnnotationQueue {
+        id: String,
+        destination: String,
+    },
+    AnnotationDrain {
+        destination: String,
+    },
     AnnotationPreview {
         draft: AnnotationDraft,
     },
@@ -135,7 +146,10 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
 async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
-        Query::AnnotationPreview { .. }
+        Query::AnnotationDelivery { .. }
+        | Query::AnnotationQueue { .. }
+        | Query::AnnotationDrain { .. }
+        | Query::AnnotationPreview { .. }
         | Query::AnnotationSave { .. }
         | Query::Annotations { .. }
         | Query::IndexPage { .. }

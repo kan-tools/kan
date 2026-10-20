@@ -166,6 +166,24 @@ impl Workspace {
         }
         Ok(workspace)
     }
+    /// Queue the immutable authored declaration, not a mutable browser draft.
+    pub(crate) fn queue_annotation(
+        &self,
+        spool: &mut crate::evidence_spool::Spool,
+        recipient: &[u8; 32],
+        operation: &[u8; 16],
+        id: &str,
+    ) -> Result<()> {
+        let declaration = self.get("annotation", id)?.ok_or(Failure::AccessLimited)?;
+        let bytes = serde_json::to_vec(
+            &serde_json::json!({"format":"kan-annotation/1","declaration":declaration}),
+        )
+        .map_err(invalid)?;
+        match crate::evidence_delivery::queue(spool, &self.signer, recipient, operation, &bytes) {
+            Ok(_) | Err(crate::evidence_delivery::Error::ReusedOperation) => Ok(()),
+            Err(_) => Err(Failure::Unavailable),
+        }
+    }
     pub fn author(&self) -> String {
         self.signer.did().to_string()
     }

@@ -529,7 +529,24 @@
         const value=await rpc({action:'proof-source',...cite,offset:'0',length:'65536'});if(!value)return;
         selected=value.record.sequence;selections.set(selected,cite.selection);showSource(value);tab('source');
       }));row.append(open);}
+      const publication=textNode('div','');const check=textNode('button','Check ledger publication');check.addEventListener('click',()=>run(async()=>{const value=await rpc({action:'annotation-delivery',id:note.id});if(value)renderPublication(publication,note.id,value);}));row.append(check);row.append(publication);
       const correct=textNode('button','Append correction');correct.addEventListener('click',()=>editAnnotation(note.draft.cites,note.draft.subject,note.id));row.append(correct);$('annotation-list').append(row);
+    }
+  }
+  function renderPublication(parent,id,value) {
+    parent.replaceChildren();
+    if(value.state==='not-configured'){parent.append(textNode('p','Stored in this reader workspace. No ledger publication destination is configured.'));return;}
+    if(!['not-queued','queued','acknowledged'].includes(value.state) || !value.destination || typeof value.destination_digest!=='string')throw new Error('Invalid publication status.');
+    parent.append(textNode('p',`${value.state} · destination scope ${value.destination.scope} · issuer ${value.destination.issuer} · recipient ${value.destination.recipient} · ${value.destination.endpoint}`));
+    if(value.record)parent.append(textNode('p',`Manifest: ${value.record.manifest} · writer position ${value.record.position}`));
+    if(value.state==='not-queued'){
+      const queue=textNode('button','Queue encrypted annotation');queue.addEventListener('click',()=>run(async()=>{const result=await rpc({action:'annotation-queue',id,destination:value.destination_digest});if(result)renderPublication(parent,id,result);}));parent.append(queue);
+    } else if(value.state==='queued') {
+      const deliver=textNode('button','Deliver one queued record');deliver.addEventListener('click',()=>run(async()=>{
+        const result=await rpc({action:'annotation-drain',destination:value.destination_digest});if(!result)return;
+        notice(`Publication queue: ${result.pending} remaining. Original queued bytes are retained until acknowledged.`);
+        const status=await rpc({action:'annotation-delivery',id});if(status)renderPublication(parent,id,status);
+      }));parent.append(deliver);
     }
   }
   $('load-annotations').addEventListener('click',()=>run(loadAnnotations));

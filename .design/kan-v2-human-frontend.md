@@ -233,3 +233,21 @@ capture-to-proof-Library route; full-archive admission audit performance remains
 unchanged. Reader-workspace annotations are currently local authored records;
 publication of those declarations to the blind ledger is still required before
 calling the knowledge work package complete.
+
+### Annotation publication through the shared spool
+
+An optional operator-selected annotation outbox binds an existing spool, a fixed
+loopback/tunnel service endpoint, a recipient key and the workspace signing author.
+The UI first reads a destination preview, then explicitly queues the selected
+immutable declaration. Its confirmation digest binds scope, issuer, recipient,
+endpoint, spool path and writer; every use rechecks the spool's current binding.
+The plaintext frame is canonical JSON `{format: "kan-annotation/1", declaration}`,
+encrypted and signed by the existing delivery layer. The inner author is the
+workspace signer and the outer retained writer; no plaintext enters the blind
+service. A deterministic operation ID makes retries reuse the exact queued bytes.
+The UI distinguishes local-only, queued and acknowledged publication; a lost reply
+is resolved by inspecting the spool, never by resealing or replaying inference.
+One bounded delivery action advances the configured queue; the existing drainer
+can run it independently. Cross-reader citation resolution, reconstruction of
+workspace projections from published declarations and imported v1 claim rendering
+remain required; this publication adapter alone does not close Knowledge.

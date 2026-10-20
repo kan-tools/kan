@@ -1,5 +1,14 @@
 use super::*;
 use serde_json::{json, Value};
+fn private_workspace_directory() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    dir
+}
 const TOKEN: &str = "synthetic-proof-library-access-token";
 struct Ui {
     url: String,
@@ -846,7 +855,7 @@ async fn fragmented_session_metadata_crosses_pages_and_preserves_loss_and_revoca
 async fn encrypted_search_views_restart_exact_citations_loss_and_revocation() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
-    let local = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
     fn text(n: u8, audience: u8, previous: Option<String>) -> Vec<u8> {
         let mut req = service::SignedRequest::decode(&request(n, audience, previous))
             .unwrap()
@@ -973,7 +982,7 @@ async fn encrypted_search_views_restart_exact_citations_loss_and_revocation() {
 #[tokio::test]
 async fn annotations_preview_append_correction_preserve_cites_and_filter_revoked_sources() {
     let dir = tempfile::tempdir().unwrap();
-    let local = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
     let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
     let server = Server::start(&f).await;
     let ui = Ui::start(
@@ -1090,7 +1099,7 @@ async fn annotations_preview_append_correction_preserve_cites_and_filter_revoked
 #[tokio::test]
 async fn application_operations_mount_preserves_its_independent_read_credential() {
     let dir = tempfile::tempdir().unwrap();
-    let local = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
     let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
     let server = Server::start(&f).await;
     let spool = local.path().join("spool.sqlite");
@@ -1173,4 +1182,146 @@ async fn application_operations_mount_preserves_its_independent_read_credential(
     );
     ui.stop().await;
     server.stop().await;
+}
+
+#[tokio::test]
+async fn annotation_publication_is_explicit_destination_bound_and_exactly_retried() {
+    let dir = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let remote = tempfile::tempdir().unwrap();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let binding = attested::Binding {
+        archive: [81; 32],
+        scope: [82; 32],
+        issuer: identity(7).did().to_string(),
+    };
+    let ingest = kan::evidence_service::AdmittingService::new(
+        attested::Archive::create(remote.path(), binding.clone()).unwrap(),
+        identity(7),
+        vec![Grant {
+            principal: identity(6).did().to_string(),
+            append: true,
+            inventory: false,
+        }],
+    )
+    .unwrap();
+    let listener = kan::evidence_http::bind("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
+    let endpoint = format!("http://{}/v1/rpc", listener.local_addr().unwrap());
+    let task = tokio::spawn(kan::evidence_http::serve_admitted(listener, ingest));
+    let private = [83; 32];
+    let recipient = kan::evidence_crypto::public_key(&private).unwrap();
+    let spool = local.path().join("publication.sqlite");
+    drop(
+        kan::evidence_spool::Spool::create(
+            &spool,
+            &service::hex(&binding.scope),
+            identity(6).did().as_str(),
+            &binding.issuer,
+            8 * 1024 * 1024,
+        )
+        .unwrap(),
+    );
+    let readers = kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+        .unwrap()
+        .with_workspace(
+            kan::evidence_workspace::Workspace::open(
+                &local.path().join("workspace.sqlite"),
+                identity(6),
+                [97; 32],
+            )
+            .unwrap(),
+        )
+        .with_annotation_outbox(
+            kan::evidence_library::AnnotationOutbox::new(spool.clone(), endpoint, recipient)
+                .unwrap(),
+        )
+        .unwrap();
+    let ui = Ui::start(readers).await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let page=ui.call(json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"cursor":null,"limit":1}),200).await;
+    let draft = json!({"subject":"decision/publication","text":"Publish only after explicit destination confirmation","tags":[],"cites":[{"source":entry["id"],"pin":entry["pin"],"selection":page["records"][0]["selection"]}],"supersedes":null});
+    let preview = ui
+        .call(json!({"action":"annotation-preview","draft":draft}), 200)
+        .await;
+    let saved = ui
+        .call(
+            json!({"action":"annotation-save","draft":draft,"preview":preview["id"]}),
+            200,
+        )
+        .await;
+    let status = ui
+        .call(
+            json!({"action":"annotation-delivery","id":saved["id"]}),
+            200,
+        )
+        .await;
+    assert_eq!(status["state"], "not-queued");
+    assert_eq!(status["destination"]["scope"], service::hex(&binding.scope));
+    ui.call(
+        json!({"action":"annotation-queue","id":saved["id"],"destination":"changed-destination"}),
+        400,
+    )
+    .await;
+    assert!(kan::evidence_spool::Spool::open(&spool)
+        .unwrap()
+        .head()
+        .unwrap()
+        .is_none());
+    let queued=ui.call(json!({"action":"annotation-queue","id":saved["id"],"destination":status["destination_digest"]}),200).await;
+    assert_eq!(queued["state"], "queued");
+    let before = kan::evidence_spool::Spool::open(&spool)
+        .unwrap()
+        .head()
+        .unwrap()
+        .unwrap();
+    let plain = kan::evidence_delivery::decrypt_request(
+        &before,
+        &private,
+        &binding.scope,
+        identity(6).did().as_str(),
+    )
+    .unwrap();
+    let raw: Value = serde_json::from_slice(&plain).unwrap();
+    assert_eq!(raw["format"], "kan-annotation/1");
+    assert_eq!(raw["declaration"], saved);
+    assert_eq!(queued,ui.call(json!({"action":"annotation-queue","id":saved["id"],"destination":status["destination_digest"]}),200).await);
+    assert_eq!(
+        before,
+        kan::evidence_spool::Spool::open(&spool)
+            .unwrap()
+            .head()
+            .unwrap()
+            .unwrap()
+    );
+    let delivered = ui
+        .call(
+            json!({"action":"annotation-drain","destination":status["destination_digest"]}),
+            200,
+        )
+        .await;
+    assert_eq!(delivered["pending"], "0");
+    assert_eq!(
+        ui.call(
+            json!({"action":"annotation-delivery","id":saved["id"]}),
+            200
+        )
+        .await["state"],
+        "acknowledged"
+    );
+    assert_eq!(
+        attested::Archive::open(remote.path(), binding)
+            .unwrap()
+            .verify()
+            .unwrap()
+            .through,
+        1
+    );
+    ui.stop().await;
+    server.stop().await;
+    task.abort();
+    let _ = task.await;
 }

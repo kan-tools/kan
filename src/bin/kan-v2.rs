@@ -177,6 +177,9 @@ enum Command {
         operations_journal: Option<PathBuf>,
         #[arg(long, requires = "operations_journal")]
         operations_token_file: Option<PathBuf>,
+        /// Fixed annotation publication destination: spool, endpoint, recipient.
+        #[arg(long, requires = "workspace")]
+        annotation_outbox: Option<PathBuf>,
         /// Execute one shared Library API request from a JSON file and exit.
         #[arg(long)]
         request: Option<PathBuf>,
@@ -574,6 +577,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             listen,
             workspace,
             workspace_key,
+            annotation_outbox,
             operations_journal,
             operations_token_file,
             request,
@@ -652,6 +656,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     service_identity(&signing_key)?,
                     recipient_private(&key)?,
                 )?);
+            }
+            if let Some(path) = annotation_outbox {
+                #[derive(serde::Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Outbox {
+                    spool: PathBuf,
+                    endpoint: String,
+                    recipient: String,
+                }
+                let config: Outbox =
+                    serde_json::from_slice(&kan::evidence_gateway::secret_file(&path)?)?;
+                if !config.spool.is_absolute() {
+                    return Err("annotation spool must be absolute".into());
+                }
+                reader =
+                    reader.with_annotation_outbox(kan::evidence_library::AnnotationOutbox::new(
+                        config.spool,
+                        config.endpoint,
+                        fixed_hex(&config.recipient)?,
+                    )?)?;
             }
             if let (Some(journal), Some(token_path)) = (operations_journal, operations_token_file) {
                 let token = String::from_utf8(kan::evidence_gateway::secret_file(&token_path)?)?

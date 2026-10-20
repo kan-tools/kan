@@ -7,9 +7,18 @@ fn identity(n: u8) -> Identity {
     f.write_all(&[n; 32]).unwrap();
     Identity::load_existing(f.path()).unwrap()
 }
+fn private_directory() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    dir
+}
 #[test]
 fn encrypted_workspace_survives_restart_and_refuses_wrong_keys_substitution_and_overwrite() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = private_directory();
     let path = dir.path().join("workspace.sqlite");
     let value = json!({"title":"unique private owner view","targets":["a"],"text":"hidden needle"});
     let w = Workspace::open(&path, identity(6), [8; 32]).unwrap();
@@ -50,7 +59,7 @@ fn encrypted_workspace_survives_restart_and_refuses_wrong_keys_substitution_and_
 }
 #[test]
 fn large_projection_chunks_are_authenticated_and_hot_journals_are_not_implicitly_recovered() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = private_directory();
     let path = dir.path().join("workspace.sqlite");
     let w = Workspace::open(&path, identity(6), [8; 32]).unwrap();
     let value = json!({"text":"x".repeat(2*1024*1024)});
@@ -67,7 +76,7 @@ fn large_projection_chunks_are_authenticated_and_hot_journals_are_not_implicitly
 #[test]
 fn workspace_refuses_public_files_symlinks_and_hardlinks() {
     use std::os::unix::fs::{symlink, PermissionsExt};
-    let dir = tempfile::tempdir().unwrap();
+    let dir = private_directory();
     let path = dir.path().join("workspace.sqlite");
     drop(Workspace::open(&path, identity(6), [8; 32]).unwrap());
     let alias = dir.path().join("alias.sqlite");

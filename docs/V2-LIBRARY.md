@@ -350,3 +350,35 @@ History/overview refresh and cancellation use the existing operations manager.
 Both surfaces share the light/dark/system appearance setting. This mount exposes
 operational observations only; owner mutation jobs remain a separate capability
 and are not implied by either read token.
+
+## Publish annotations to the encrypted ledger
+
+Create a dedicated spool with the existing `spool-init` command, using the Library
+signing identity as writer and the chosen destination scope/issuer. Give this writer
+append permission at the destination service. Configure an owner-only JSON file:
+
+```json
+{
+  "spool": "/absolute/path/private/annotation-spool.sqlite",
+  "endpoint": "http://127.0.0.1:7282/v1/rpc",
+  "recipient": "<64 lowercase hex characters for the destination public key>"
+}
+```
+
+Add `--annotation-outbox /absolute/path/private/annotation-outbox.json` alongside
+the workspace options. No declaration publishes automatically. In its annotation
+entry, choose **Check ledger publication**, inspect the fixed scope, issuer and
+recipient, then **Queue encrypted annotation**. **Deliver one queued record**
+advances this dedicated queue; it may deliver an earlier pending annotation first.
+Use the existing independent spool drainer for continuous delivery. Acknowledged
+means the signed durable commit reply was accepted, not independent backup or
+complete capture. Restart/retry keeps original queued bytes. Changing the spool's
+binding invalidates the configured destination instead of silently redirecting it.
+
+API equivalents: `annotation-delivery` (`id`), `annotation-queue` (`id`,
+`destination`, the returned confirmation digest), and `annotation-drain`
+(`destination`). The server chooses all filesystem paths and network destinations
+from operator configuration. Published records use `kan-annotation/1` encrypted
+plaintext frames and preserve the authored declaration and all citations. Keep the
+workspace backup as well: automatic rebuilding from published annotations and
+cross-reader citation resolution are not implemented yet.
