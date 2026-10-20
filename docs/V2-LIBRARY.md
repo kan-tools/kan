@@ -1236,3 +1236,24 @@ between batches cannot turn retained model output into an orphan. Owner jobs sho
 `pending-batches` until a subsequent dependency scan finds nothing left; resume
 continues the retained authorization. Each batch preserves unrelated entries and
 its tombstones reject delayed writes.
+
+
+Capture-erasure preview discovery is resumable. The same `preview-erasure` request
+may first return `state: "discovering"`, scanned/total record coordinates and the
+number of matching capture records, without a plan, digest or erasure authority.
+Repeat it to continue; the Library shows **Continue discovery** and keeps erasure
+confirmation disabled until a complete preview exists. Checkpoints live in the
+encrypted owner journal and survive restart. CLI/MCP use the same response.
+`page_records` optionally lowers the default 512-record page budget (1–512);
+payload discovery also yields after 16 MiB or five seconds of loop work. Archive
+verification remains required and is outside that loop budget.
+
+Checkpoint identity binds the selected target, capture and independently current
+owner custody. Appends extend a retained prefix; changed prefixes are refused.
+Once discovery closes, the owner journal retains its exact preview receipt.
+Confirmation revalidates current custody, selected bytes and the complete frontier
+against that receipt; it does not restart a whole-archive decode. Any intervening
+append requires a fresh preview, which continues from the retained checkpoint.
+Older previews without receipts still receive full membership revalidation.
+The former 100,000-record / 256 MiB whole-archive discovery ceilings are removed;
+individual signed erasure-plan and complete-capture selection limits remain.

@@ -909,6 +909,7 @@ fn capture_erasure_scans_the_complete_archive_and_refuses_active_or_unknown_memb
     let key = [18; 32];
     let public = crypto::public_key(&key).unwrap();
     let mut previous = None;
+    let mut checkpoint = None;
     for (position, attempt, ordinal, event) in [
         (
             0,
@@ -980,12 +981,58 @@ fn capture_erasure_scans_the_complete_archive_and_refuses_active_or_unknown_memb
                 .cid()
                 .to_string(),
         );
+        if position == 1 {
+            let selected = Capture {
+                writer: identity(6).did().to_string(),
+                observer: "gateway".into(),
+                attempt: hex(&[20; 32]),
+            };
+            let page = archive
+                .scan_capture_erasure(selected, &[key], None, 1, 1024 * 1024)
+                .unwrap();
+            assert!(!page.complete());
+            assert!(archive
+                .finish_capture_erasure(page.clone(), hex(&[1; 32]), 101)
+                .is_err());
+            checkpoint = Some(serde_json::to_vec(&page).unwrap());
+        }
     }
     let selected = Capture {
         writer: identity(6).did().to_string(),
         observer: "gateway".into(),
         attempt: hex(&[20; 32]),
     };
+    drop(archive);
+    let mut archive = Archive::open(dir.path(), binding()).unwrap();
+    let page = archive
+        .scan_capture_erasure(
+            selected.clone(),
+            &[key],
+            Some(serde_json::from_slice(&checkpoint.unwrap()).unwrap()),
+            1,
+            1024 * 1024,
+        )
+        .unwrap();
+    assert_eq!(
+        page.progress()["through"],
+        "3",
+        "newly appended records extend the pinned scan"
+    );
+    assert_eq!(page.progress()["scanned_through"], "2");
+    let changed = Capture {
+        attempt: hex(&[21; 32]),
+        ..selected.clone()
+    };
+    assert!(archive
+        .scan_capture_erasure(changed, &[key], Some(page.clone()), 1, 1024 * 1024)
+        .is_err());
+    let page = archive
+        .scan_capture_erasure(selected.clone(), &[key], Some(page), 1, 1024 * 1024)
+        .unwrap();
+    assert!(page.complete());
+    let paged = archive
+        .finish_capture_erasure(page, hex(&[1; 32]), 101)
+        .unwrap();
     let preview = archive
         .preview_capture_erasure(selected.clone(), &[key], hex(&[1; 32]), 101)
         .unwrap();
@@ -999,6 +1046,7 @@ fn capture_erasure_scans_the_complete_archive_and_refuses_active_or_unknown_memb
         vec![1, 3]
     );
     assert!(!preview.recording_gap);
+    assert_eq!(paged.plan, preview.plan);
     let active = Capture {
         attempt: hex(&[21; 32]),
         ..selected.clone()

@@ -160,6 +160,149 @@ fn capture(
             .preview_capture_erasure(selected, &keys, nonce, now)?,
     })
 }
+enum Discovery {
+    Pending(Value),
+    Complete(Box<storage::CapturePreview>),
+}
+fn discover_capture(
+    journal: &Workspace,
+    target: &Target,
+    selected: storage::Capture,
+    page_records: usize,
+) -> Result<Discovery, Failure> {
+    let Configured {
+        root,
+        history,
+        keys: files,
+        ..
+    } = configured(target)?;
+    let current = history.current()?;
+    current.check_archive(&root.join("archive.sqlite"), &history.binding)?;
+    let key = Owner::hash(
+        &json!({"version":1,"target":target,"capture":selected,"custody":current.tip}),
+    )?;
+    let checkpoint = |n| format!("capture-discovery:{key}:{n}");
+    let next = first_unused(|n| Ok(journal.get("owner-result", &checkpoint(n))?.is_some()))?;
+    let previous = if next == 0 {
+        None
+    } else {
+        Some(
+            serde_json::from_value::<storage::CaptureScan>(
+                journal
+                    .get("owner-result", &checkpoint(next - 1))?
+                    .ok_or(Failure::Corrupt)?,
+            )
+            .map_err(invalid)?,
+        )
+    };
+    let keys = files
+        .iter()
+        .map(|p| crate::evidence_crypto::read_private_key(p).map_err(invalid))
+        .collect::<Result<Vec<_>, _>>()?;
+    let binding = history.binding.owner_binding()?;
+    let nonce = service::hex(&rand::random::<[u8; 32]>());
+    let now = crate::evidence_operations::now();
+    // Each page is durable before constructing an erasure authority. A crash or
+    // stale frontier therefore continues discovery instead of restarting it.
+    let retain = |scan: &storage::CaptureScan| -> Result<(), Failure> {
+        journal.put(
+            "owner-result",
+            &checkpoint(next),
+            serde_json::to_value(scan).map_err(invalid)?,
+        )
+    };
+    let resolved = match history.binding.profile {
+        Profile::Admitted => {
+            let archive = store::attested::Archive::open(root, binding)?;
+            let scan = archive.scan_capture_erasure(
+                selected,
+                &keys,
+                previous,
+                page_records,
+                16 * 1024 * 1024,
+            )?;
+            retain(&scan)?;
+            if !scan.complete() {
+                return Ok(Discovery::Pending(scan.progress()));
+            }
+            archive.finish_capture_erasure(scan, nonce, now)?
+        }
+        Profile::Copied => {
+            let archive = store::copied::Archive::open(root, binding)?;
+            let scan = archive.scan_capture_erasure(
+                selected,
+                &keys,
+                previous,
+                page_records,
+                16 * 1024 * 1024,
+            )?;
+            retain(&scan)?;
+            if !scan.complete() {
+                return Ok(Discovery::Pending(scan.progress()));
+            }
+            archive.finish_capture_erasure(scan, nonce, now)?
+        }
+    };
+    Ok(Discovery::Complete(Box::new(resolved)))
+}
+fn prepared_capture(
+    journal: &Workspace,
+    target: &Target,
+    preview: &Preview,
+) -> Result<storage::CapturePreview, Failure> {
+    let erasure = preview
+        .authorization
+        .erasure
+        .as_ref()
+        .ok_or(Failure::Invalid)?;
+    let expected = storage::CapturePreview {
+        capture: preview.capture.clone(),
+        plan: erasure.plan.clone(),
+        recording_gap: preview.recording_gap,
+        coverage: preview.coverage.clone(),
+    };
+    let value = serde_json::to_value(&expected).map_err(invalid)?;
+    let receipt = format!("capture-preview:{}", Owner::hash(&value)?);
+    if let Some(retained) = journal.get("owner-result", &receipt)? {
+        if retained != value {
+            return Err(Failure::Corrupt);
+        }
+        let Configured { root, history, .. } = configured(target)?;
+        let current = history.current()?;
+        current.check_archive(&root.join("archive.sqlite"), &history.binding)?;
+        let binding = history.binding.owner_binding()?;
+        let sequences = erasure
+            .plan
+            .targets
+            .iter()
+            .map(|t| t.sequence)
+            .collect::<Vec<_>>();
+        let fresh = match history.binding.profile {
+            Profile::Admitted => store::attested::Archive::open(root, binding)?.preview_erasure(
+                &sequences,
+                erasure.plan.nonce.clone(),
+                erasure.plan.recorded_at,
+            )?,
+            Profile::Copied => store::copied::Archive::open(root, binding)?.preview_erasure(
+                &sequences,
+                erasure.plan.nonce.clone(),
+                erasure.plan.recorded_at,
+            )?,
+        };
+        if fresh != erasure.plan {
+            return Err(Failure::Conflict);
+        }
+        return Ok(expected);
+    }
+    // Older previews have no discovery receipt. Recompute their membership;
+    // browser-supplied checkpoints are never trusted as selection authority.
+    capture(
+        target,
+        preview.capture.clone(),
+        erasure.plan.nonce.clone(),
+        erasure.plan.recorded_at,
+    )
+}
 fn contract(target: &Target, plan: &Preview) -> Result<Value, Failure> {
     let value = json!({"version":1,"target":target,"operation":"erase-capture","plan":plan,
         "effect":"Erase this closed capture from the configured archives after publishing independent owner authorization. Preserve minimal provenance. Scan configured publication archives for source-dependent annotations and their correction/withdrawal descendants, journal exact child authorizations before cleanup, and reconcile their configured replicas and admitted queue copies. Configured stopped workspaces reconcile dependent data against current owner erasure history. Configured admitted publication queues cancel selected heads under current policy with commitment-only admission and signed completion. Blocked queues and other copy cleanup remain pending; historical backups and keys are not cryptographically erased.",
@@ -177,7 +320,11 @@ impl Owner {
         self: &Arc<Self>,
         target: String,
         selected: storage::Capture,
+        page_records: usize,
     ) -> Result<Value, Failure> {
+        if page_records == 0 || page_records > 512 {
+            return Err(Failure::Invalid);
+        }
         let target = self
             .targets
             .get(&target)
@@ -188,14 +335,14 @@ impl Owner {
             .clone()
             .try_acquire_owned()
             .map_err(|_| Failure::Unavailable)?;
+        let owner = self.clone();
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            let resolved = capture(
-                &target,
-                selected,
-                service::hex(&rand::random::<[u8; 32]>()),
-                crate::evidence_operations::now(),
-            )?;
+            let resolved=match discover_capture(&owner.workspace,&target,selected,page_records)? {
+                Discovery::Pending(progress)=>return Ok(json!({"target":target.id(),"state":"discovering","progress":progress,"effect":"Discovery only; no erasure authorization or deletion has occurred. Repeat this preview request to continue."})),
+                Discovery::Complete(resolved)=>*resolved,
+            };
+            let receipt=serde_json::to_value(&resolved).map_err(invalid)?;
             let Configured {
                 history, issuer, ..
             } = configured(&target)?;
@@ -209,6 +356,7 @@ impl Owner {
                     .preview(Some(record), service::hex(&rand::random::<[u8; 32]>()))?,
             };
             let c = contract(&target, &plan)?;
+            owner.workspace.put("owner-result",&format!("capture-preview:{}",Self::hash(&receipt)?),receipt)?;
             Ok(json!({"target":target.id(),"digest":Self::hash(&c)?,"plan":plan,"contract":c}))
         })
         .await
@@ -283,7 +431,7 @@ impl Owner {
             let _permit=permit;
             // Recompute complete membership, including stale-frontier refusal.
             let erasure=plan.authorization.erasure.as_ref().ok_or(Failure::Invalid)?;
-            let fresh=capture(&selected,plan.capture.clone(),erasure.plan.nonce.clone(),erasure.plan.recorded_at)?;
+            let fresh=prepared_capture(&owner.workspace,&selected,&plan)?;
             if fresh.plan!=erasure.plan || fresh.recording_gap!=plan.recording_gap || fresh.coverage!=plan.coverage {return Err(Failure::Conflict);}
             let Configured { history, signing, .. }=configured(&selected)?;
             let current=history.current()?;

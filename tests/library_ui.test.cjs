@@ -888,3 +888,17 @@ test('owner history pages retain bounded navigation and discard late pages on lo
  walk(u.node('owner-jobs')).find(n=>n.textContent==='First jobs').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'catalog'});
  u.node('owner-lock').click();await u.respond(catalog);assert.equal(u.node('owner-jobs').children.length,0);assert.equal(u.node('owner-controls').hidden,true);
 });
+
+
+test('capture discovery remains non-destructive until a complete preview and can continue',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();
+ await u.respond({owner:'owner',targets:[{kind:'capture-erasure',id:'capture'}],jobs:[],limits:{jobs_per_page:10}});
+ u.node('erasure-writer').value='did:key:writer';u.node('erasure-attempt').value='a'.repeat(64);
+ u.node('erasure-preview').click();await tick();const request=JSON.parse(u.pending[0].opts.body);
+ await u.respond({target:'capture',state:'discovering',progress:{scanned_through:'512',through:'2000',selected_records:2},effect:'Discovery only'});
+ assert.equal(u.node('erasure-apply').disabled,true);assert.match(u.node('erasure-status').textContent,/512 of 2000/);assert.equal(u.node('erasure-preview').textContent,'Continue discovery');
+ u.node('erasure-preview').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),request);
+ await u.respond({target:'capture',digest:'complete',plan:{recording_gap:false,authorization:{erasure:{plan:{targets:[{},{}]}}}},contract:{effect:'Review selected capture'}});
+ assert.equal(u.node('erasure-apply').disabled,false);assert.equal(u.node('erasure-preview').textContent,'Preview capture erasure');
+ u.node('owner-lock').click();assert.equal(u.node('erasure-apply').disabled,true);
+});

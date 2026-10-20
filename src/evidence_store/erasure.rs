@@ -607,10 +607,33 @@ pub struct CapturePreview {
     pub recording_gap: bool,
     pub coverage: String,
 }
+/// An authenticated owner-side discovery checkpoint, never a client-provided
+/// selection authority. Contains coordinates and framing state, not raw payloads.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureScan {
+    capture: Capture,
+    binding: (String, String, String),
+    through: u64,
+    tip: Option<String>,
+    next: u64,
+    found: BTreeMap<u64, u64>,
+    gap: bool,
+    started: bool,
+    terminal: Option<u64>,
+}
+impl CaptureScan {
+    pub fn complete(&self) -> bool {
+        self.next > self.through
+    }
+    pub fn progress(&self) -> serde_json::Value {
+        serde_json::json!({"scanned_through":self.next.saturating_sub(1).to_string(),"through":self.through.to_string(),"selected_records":self.found.len(),"complete":self.complete()})
+    }
+}
 #[cfg(feature = "v2-crypto")]
 impl attested::Archive {
-    /// Scan the full pinned archive for a closed capture, retaining only exact
-    /// coordinates. A page/window selection cannot establish this closure.
+    /// Offline convenience wrapper. The owner API persists each bounded scan
+    /// checkpoint instead of keeping one HTTP request open for the full archive.
     pub fn preview_capture_erasure(
         &self,
         capture: Capture,
@@ -618,6 +641,26 @@ impl attested::Archive {
         nonce: String,
         now: u64,
     ) -> Result<CapturePreview> {
+        let mut scan = None;
+        loop {
+            let next =
+                self.scan_capture_erasure(capture.clone(), keys, scan, 512, 16 * 1024 * 1024)?;
+            if next.complete() {
+                return self.finish_capture_erasure(next, nonce, now);
+            }
+            scan = Some(next);
+        }
+    }
+    /// Resume only a checkpoint retrieved from authenticated owner storage.
+    /// Appended records extend the frontier; a rewritten prefix is refused.
+    pub fn scan_capture_erasure(
+        &self,
+        capture: Capture,
+        keys: &[[u8; 32]],
+        previous: Option<CaptureScan>,
+        max_records: usize,
+        max_bytes: usize,
+    ) -> Result<CaptureScan> {
         use crate::{
             evidence_capture::Event,
             evidence_reconstruction::{self as reconstruction, Decoded},
@@ -635,25 +678,66 @@ impl attested::Archive {
         }
         service::author(&capture.writer).map_err(|_| Error::Invalid("capture writer"))?;
         let verified = self.verify()?;
-        if verified.through > 100_000 {
-            return Err(Error::Invalid("capture erasure scan limit"));
+        if max_records == 0 || max_records > 4096 || max_bytes == 0 || max_bytes > 256 * 1024 * 1024
+        {
+            return Err(Error::Invalid("capture scan page budget"));
         }
-        let deadline = std::time::Instant::now() + Duration::from_secs(120);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let tx = self.ledger.conn.unchecked_transaction()?;
         let snap = self.ledger.snapshot()?;
         if snap.through != verified.through || snap.tip != verified.manifest {
             return Err(Error::Conflict("archive advanced during erasure scan"));
         }
+        let binding = (
+            service::hex(&self.binding.archive),
+            service::hex(&self.binding.scope),
+            self.binding.issuer.clone(),
+        );
+        let mut state = previous.unwrap_or_else(|| CaptureScan {
+            capture: capture.clone(),
+            binding: binding.clone(),
+            through: 0,
+            tip: None,
+            next: 1,
+            found: BTreeMap::new(),
+            gap: false,
+            started: false,
+            terminal: None,
+        });
+        if state.capture != capture
+            || state.binding != binding
+            || state.next == 0
+            || state.next > state.through.saturating_add(1)
+            || state.through > snap.through
+            || state.found.len() > MAX_TARGETS
+        {
+            return Err(Error::Conflict("capture scan checkpoint mismatch"));
+        }
+        if state.through != 0
+            && Some(
+                attested::record(&tx, state.through)?
+                    .manifest
+                    .cid()
+                    .to_string(),
+            ) != state.tip
+        {
+            return Err(Error::Conflict("capture scan prefix changed"));
+        }
+        state.through = snap.through;
+        state.tip = snap.tip.as_ref().map(ToString::to_string);
         let history = load(&tx)?;
-        let mut found = BTreeMap::new();
         let mut spent = 0usize;
-        let mut gap = false;
-        let mut started = false;
-        let mut terminal = None;
-        for sequence in 1..=snap.through {
-            if std::time::Instant::now() >= deadline {
-                return Err(Error::Invalid("capture erasure scan deadline"));
+        let mut processed = 0;
+        while state.next <= state.through {
+            if processed >= max_records
+                || spent >= max_bytes
+                || (processed > 0 && std::time::Instant::now() >= deadline)
+            {
+                break;
             }
+            let sequence = state.next;
+            state.next = state.next.checked_add(1).ok_or_else(corrupt)?;
+            processed += 1;
             let row = attested::record(&tx, sequence)?;
             if writer(&row.manifest) != capture.writer {
                 continue;
@@ -666,9 +750,6 @@ impl attested::Archive {
                 .ledger
                 .retained_object(&object.parse().map_err(|_| corrupt())?)?;
             spent = spent.checked_add(signed_bytes.len()).ok_or_else(corrupt)?;
-            if spent > 256 * 1024 * 1024 {
-                return Err(Error::Invalid("capture erasure scan byte limit"));
-            }
             let signed =
                 service::verify_retained_request(&row, &signed_bytes).map_err(|_| corrupt())?;
             let service::Command::Append { ciphertext, .. } = signed.request.command else {
@@ -708,22 +789,23 @@ impl attested::Archive {
             if frame.header.attempt != capture.attempt || observer != capture.observer {
                 continue;
             }
-            if found.len() >= MAX_TARGETS || found.insert(frame.header.ordinal, sequence).is_some()
+            if state.found.len() >= MAX_TARGETS
+                || state.found.insert(frame.header.ordinal, sequence).is_some()
             {
                 return Err(Error::Invalid(
                     "capture duplicate ordinal or selection limit",
                 ));
             }
-            gap |= frame.header.unconfirmed_before != 0;
+            state.gap |= frame.header.unconfirmed_before != 0;
             match frame.header.event {
                 Event::Started { .. } => {
-                    if frame.header.ordinal != 0 || started {
+                    if frame.header.ordinal != 0 || state.started {
                         return Err(Error::Invalid("capture start"));
                     }
-                    started = true;
+                    state.started = true;
                 }
                 Event::Terminal { .. } => {
-                    let previous_terminal = terminal.replace(frame.header.ordinal);
+                    let previous_terminal = state.terminal.replace(frame.header.ordinal);
                     if previous_terminal.is_some() {
                         return Err(Error::Invalid("capture terminal"));
                     }
@@ -731,6 +813,36 @@ impl attested::Archive {
                 _ => (),
             }
         }
+        tx.commit()?;
+        Ok(state)
+    }
+    /// Construct a complete current-frontier plan from an authenticated scan.
+    pub fn finish_capture_erasure(
+        &self,
+        state: CaptureScan,
+        nonce: String,
+        now: u64,
+    ) -> Result<CapturePreview> {
+        if !state.complete()
+            || state.binding
+                != (
+                    service::hex(&self.binding.archive),
+                    service::hex(&self.binding.scope),
+                    self.binding.issuer.clone(),
+                )
+        {
+            return Err(Error::Conflict("capture discovery incomplete"));
+        }
+        let CaptureScan {
+            capture,
+            through,
+            tip,
+            found,
+            mut gap,
+            started,
+            terminal,
+            ..
+        } = state;
         let terminal = terminal.ok_or(Error::Invalid(
             "capture still active or terminal unavailable",
         ))?;
@@ -742,11 +854,8 @@ impl attested::Archive {
                 .checked_add(1)
                 .ok_or(Error::Invalid("capture ordinal overflow"))?;
         let sequences: Vec<_> = found.into_values().collect();
-        tx.commit()?;
         let plan = self.preview_erasure(&sequences, nonce, now)?;
-        if plan.through != snap.through
-            || Some(&plan.tip) != snap.tip.as_ref().map(|id| id.to_string()).as_ref()
-        {
+        if plan.through != through || Some(&plan.tip) != tip.as_ref() {
             return Err(Error::Conflict("archive advanced after capture scan"));
         }
         Ok(CapturePreview {capture,plan,recording_gap:gap,coverage:"All retained records of this closed writer/observer/attempt in the pinned archive. Recording gaps remain disclosed. Other archives, spools, derivatives and backups require coordinated cleanup; this is a storage plan only.".into()})

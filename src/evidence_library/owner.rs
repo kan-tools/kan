@@ -134,6 +134,8 @@ pub enum Request {
     PreviewErasure {
         target: String,
         capture: crate::evidence_store::erasure::Capture,
+        #[serde(default = "capture_page_records")]
+        page_records: usize,
     },
     ApplyErasure {
         target: String,
@@ -646,9 +648,11 @@ impl Owner {
                 preview,
                 wait,
             } => self.apply_backup_purge(*plan, preview, wait).await,
-            Request::PreviewErasure { target, capture } => {
-                self.preview_erasure(target, capture).await
-            }
+            Request::PreviewErasure {
+                target,
+                capture,
+                page_records,
+            } => self.preview_erasure(target, capture, page_records).await,
             Request::ApplyErasure {
                 target,
                 plan,
@@ -1017,4 +1021,8 @@ fn first_unused(mut present: impl FnMut(usize) -> Result<bool, Failure>) -> Resu
         }
     }
     Ok(high)
+}
+
+fn capture_page_records() -> usize {
+    512
 }

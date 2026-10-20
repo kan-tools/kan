@@ -4855,8 +4855,25 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
             .with_owner(owner)
     };
     let ui = Ui::start(readers()).await;
-    let query = json!({"action":"preview-erasure","target":"capture","capture":{"writer":identity(6).did().as_str(),"observer":"collector","attempt":"a".repeat(64)}});
+    let query = json!({"action":"preview-erasure","target":"capture","page_records":1,"capture":{"writer":identity(6).did().as_str(),"observer":"collector","attempt":"a".repeat(64)}});
     owner_call(&ui, TOKEN, query.clone(), 401).await;
+    let first = owner_call(&ui, OWNER, query.clone(), 200).await;
+    assert_eq!(first["state"], "discovering");
+    assert_eq!(first["progress"]["scanned_through"], "1");
+    assert!(first.get("plan").is_none());
+    assert_eq!(
+        history.current().unwrap().history.len(),
+        1,
+        "partial discovery authorizes no erasure"
+    );
+    ui.stop().await;
+    let ui = Ui::start(readers()).await;
+    let second = owner_call(&ui, OWNER, query.clone(), 200).await;
+    assert_eq!(second["state"], "discovering");
+    assert_eq!(
+        second["progress"]["scanned_through"], "2",
+        "restart resumes authenticated discovery"
+    );
     let preview = owner_call(&ui, OWNER, query, 200).await;
     assert_eq!(
         preview["plan"]["authorization"]["erasure"]["plan"]["targets"]

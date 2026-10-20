@@ -743,12 +743,16 @@
   }));
   $('owner-lock').addEventListener('click',()=>{lockOwner();$('owner-maintenance').hidden=false;});
 
-  function invalidateErasure(){erasurePreview=null;$('erasure-apply').disabled=true;$('erasure-plan').textContent='';}
+  function invalidateErasure(){erasurePreview=null;$('erasure-preview').textContent='Preview capture erasure';$('erasure-apply').disabled=true;$('erasure-plan').textContent='';}
   function clearErasure(){invalidateErasure();$('erasure-controls').hidden=true;$('erasure-writer').value='';$('erasure-attempt').value='';$('erasure-observer').value='collector';$('erasure-status').textContent='';}
   for(const id of ['erasure-writer','erasure-attempt','erasure-observer'])$(id).addEventListener('input',()=>{ownerEpoch++;if(ownerController)ownerController.abort();invalidateErasure();});
   $('erasure-preview').addEventListener('click',()=>ownerRun(async()=>{
     invalidateErasure();const target=$('owner-target').value,capture={writer:$('erasure-writer').value.trim(),observer:$('erasure-observer').value,attempt:$('erasure-attempt').value.trim()};
     const value=await ownerRpc({action:'preview-erasure',target,capture});if(!value)return;
+    if(value.target===target&&value.state==='discovering'){
+      $('erasure-status').textContent=`Discovery scanned through ${value.progress?.scanned_through??'unknown'} of ${value.progress?.through??'unknown'} records · ${value.progress?.selected_records??0} capture records found. Continue discovery to finish the preview; nothing has been erased.`;
+      $('erasure-plan').textContent=value.effect||'';$('erasure-preview').textContent='Continue discovery';return;
+    }
     if(value.target!==target||typeof value.digest!=='string'||!Array.isArray(value.plan?.authorization?.erasure?.plan?.targets)||!value.contract)throw new Error('Invalid erasure preview.');
     erasurePreview=value;$('erasure-status').textContent=`${value.plan.authorization.erasure.plan.targets.length} capture records selected · ${value.plan.recording_gap?'recording gaps reported':'no recording gap reported'}. Review the exact destinations and remaining cleanup below.`;
     $('erasure-plan').textContent=JSON.stringify(value.contract,null,2);$('erasure-apply').disabled=false;

@@ -263,6 +263,34 @@ impl Archive {
             .preview_capture_erasure(capture, keys, nonce, now)
     }
 
+    #[cfg(feature = "v2-crypto")]
+    pub fn scan_capture_erasure(
+        &self,
+        capture: super::erasure::Capture,
+        keys: &[[u8; 32]],
+        previous: Option<super::erasure::CaptureScan>,
+        max_records: usize,
+        max_bytes: usize,
+    ) -> Result<super::erasure::CaptureScan> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner
+            .scan_capture_erasure(capture, keys, previous, max_records, max_bytes)
+    }
+    #[cfg(feature = "v2-crypto")]
+    pub fn finish_capture_erasure(
+        &self,
+        scan: super::erasure::CaptureScan,
+        nonce: String,
+        now: u64,
+    ) -> Result<super::erasure::CapturePreview> {
+        if !self.verify()?.copy.source_copy_complete {
+            return Err(Error::Conflict("copy incomplete"));
+        }
+        self.inner.finish_capture_erasure(scan, nonce, now)
+    }
+
     pub fn preview_erasure(
         &self,
         sequences: &[u64],
