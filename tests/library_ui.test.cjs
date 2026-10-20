@@ -525,3 +525,7 @@ test('annotation preview verifies exact citations before append and corrections 
 test('editing or cancelling an annotation invalidates an in-flight preview',async()=>{
  for(const action of ['edit','cancel']){const u=ui();await openKnowledge(u);u.node('annotation-form').events.submit({preventDefault(){}});await tick();const pending=u.pending[0];if(action==='edit'){u.node('annotation-text').value='changed';u.node('annotation-text').events.input();}else u.node('cancel-annotation').click();assert.equal(pending.opts.signal.aborted,true);await u.respond({id:'stale',declaration:{author:'owner',draft:{}},evidence:[],effect:'old'});assert.equal(u.node('save-annotation').disabled,true);assert.equal(u.node('annotation-preview').textContent,'');}
 });
+
+test('operations navigation is shown only for a configured capability and cleared on lock',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')],capabilities:[...proofCatalog.capabilities,'operations-read']});await u.respond(proofPage);assert.equal(u.node('operations-link').hidden,false);u.node('lock').click();assert.equal(u.node('operations-link').hidden,true);
+});

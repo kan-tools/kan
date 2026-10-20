@@ -172,6 +172,11 @@ enum Command {
         workspace: Option<PathBuf>,
         #[arg(long, requires = "workspace")]
         workspace_key: Option<PathBuf>,
+        /// Mount existing operations with a separate read credential.
+        #[arg(long, requires = "operations_token_file")]
+        operations_journal: Option<PathBuf>,
+        #[arg(long, requires = "operations_journal")]
+        operations_token_file: Option<PathBuf>,
         /// Execute one shared Library API request from a JSON file and exit.
         #[arg(long)]
         request: Option<PathBuf>,
@@ -569,6 +574,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             listen,
             workspace,
             workspace_key,
+            operations_journal,
+            operations_token_file,
             request,
         } => {
             #[derive(serde::Deserialize)]
@@ -645,6 +652,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     service_identity(&signing_key)?,
                     recipient_private(&key)?,
                 )?);
+            }
+            if let (Some(journal), Some(token_path)) = (operations_journal, operations_token_file) {
+                let token = String::from_utf8(kan::evidence_gateway::secret_file(&token_path)?)?
+                    .trim_end_matches('\n')
+                    .to_string();
+                reader =
+                    reader.with_operations(kan::evidence_dashboard::Embedded::new(journal, token)?);
             }
             if let Some(path) = request {
                 let bytes = kan::evidence_gateway::secret_file(&path)?;

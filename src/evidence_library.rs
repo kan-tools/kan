@@ -257,6 +257,12 @@ async fn handle(
         return Ok(denied(StatusCode::FORBIDDEN));
     }
     let path = r.uri().path_and_query().map(|p| p.as_str());
+    if path.is_some_and(|p| p == "/operations" || p.starts_with("/operations/")) {
+        return match &reader.operations {
+            Some(operations) => operations.handle(r, host).await,
+            None => Ok(denied(StatusCode::NOT_FOUND)),
+        };
+    }
     if r.method() == hyper::Method::GET {
         return Ok(match path {
             Some("/") => response(

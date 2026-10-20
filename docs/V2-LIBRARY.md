@@ -337,3 +337,16 @@ This command opens only an existing explicitly selected admitted archive; it doe
 not convert a legacy archive, initialize one implicitly or enable network exposure
 beyond loopback. Use the existing authenticated transport/tunnel arrangement for
 remote access. Grant changes currently require owner restart/reconfiguration.
+
+## Operations in the same application
+
+To mount the existing operations console under `/operations/`, add
+`--operations-journal /absolute/path/operations.sqlite` (or a preserved-generation
+collection directory) and `--operations-token-file /absolute/path/operations.token`
+to `kan-v2 library`. The Library navigation then exposes **Operations**. Its
+separate credential is required on operations APIs; a Library token does not gain
+operations access, and the operations token does not gain evidence access.
+History/overview refresh and cancellation use the existing operations manager.
+Both surfaces share the light/dark/system appearance setting. This mount exposes
+operational observations only; owner mutation jobs remain a separate capability
+and are not implied by either read token.

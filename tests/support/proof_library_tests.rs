@@ -1086,3 +1086,91 @@ async fn annotations_preview_append_correction_preserve_cites_and_filter_revoked
     ui.stop().await;
     server.stop().await;
 }
+
+#[tokio::test]
+async fn application_operations_mount_preserves_its_independent_read_credential() {
+    let dir = tempfile::tempdir().unwrap();
+    let local = tempfile::tempdir().unwrap();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let spool = local.path().join("spool.sqlite");
+    drop(
+        kan::evidence_spool::Spool::create(
+            &spool,
+            &service::hex(&[1; 32]),
+            identity(6).did().as_str(),
+            identity(8).did().as_str(),
+            1024 * 1024,
+        )
+        .unwrap(),
+    );
+    let journal = local.path().join("operations.sqlite");
+    drop(kan::evidence_operations::Journal::create(&journal, &spool).unwrap());
+    const OPS: &str = "synthetic-separate-operations-token";
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_operations(kan::evidence_dashboard::Embedded::new(journal, OPS.into()).unwrap()),
+    )
+    .await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    assert!(catalog["capabilities"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("operations-read")));
+    let base = ui.url.trim_end_matches("/api/library");
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let html = client
+        .get(format!("{base}/operations/"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(html.status(), 200);
+    let html = html.text().await.unwrap();
+    assert!(html.contains("src=\"/operations/app.js\""));
+    assert!(html.contains("href=\"/operations/style.css\""));
+    assert_eq!(
+        client
+            .get(format!("{base}/operations/api/status"))
+            .bearer_auth(TOKEN)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    let status = client
+        .get(format!("{base}/operations/api/status"))
+        .bearer_auth(OPS)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(status.status(), 200);
+    let status: Value = status.json().await.unwrap();
+    assert_eq!(status["version"], 2);
+    assert!(status["journal"].is_object());
+    assert_eq!(
+        client
+            .get(format!("{base}/operations/api/status"))
+            .bearer_auth(OPS)
+            .header("Origin", "http://untrusted.invalid")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    assert_eq!(
+        client
+            .post(&ui.url)
+            .bearer_auth(OPS)
+            .json(&json!({"action":"catalog"}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    ui.stop().await;
+    server.stop().await;
+}

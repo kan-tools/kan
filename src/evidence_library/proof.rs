@@ -13,6 +13,7 @@ pub mod knowledge;
 pub mod search;
 
 pub struct Readers {
+    pub(super) operations: Option<crate::evidence_dashboard::Embedded>,
     workspace: Option<std::sync::Arc<crate::evidence_workspace::Workspace>>,
     legacy: Option<legacy::Reader>,
     proof: BTreeMap<String, proof::Reader>,
@@ -45,11 +46,16 @@ impl Readers {
             }
         }
         Ok(Self {
+            operations: None,
             workspace: None,
             legacy,
             proof: selected,
             workers: std::sync::Arc::new(tokio::sync::Semaphore::new(2)),
         })
+    }
+    pub fn with_operations(mut self, operations: crate::evidence_dashboard::Embedded) -> Self {
+        self.operations = Some(operations);
+        self
     }
     pub fn with_workspace(mut self, workspace: crate::evidence_workspace::Workspace) -> Self {
         self.workspace = Some(std::sync::Arc::new(workspace));
@@ -257,7 +263,7 @@ impl Readers {
                 )
                 .await;
             }
-            Query::Catalog if !self.proof.is_empty() => {
+            Query::Catalog if !self.proof.is_empty() || self.operations.is_some() => {
                 let mut configured = self
                     .legacy
                     .as_ref()
@@ -286,7 +292,13 @@ impl Readers {
                 let mut catalog = json!({"version":2,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},
                     "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links"],
                     "unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]});
-                if self.workspace.is_some() {
+                if self.operations.is_some() {
+                    catalog["capabilities"]
+                        .as_array_mut()
+                        .unwrap()
+                        .push(json!("operations-read"));
+                }
+                if self.workspace.is_some() && !self.proof.is_empty() {
                     catalog["capabilities"].as_array_mut().unwrap().extend([
                         json!("text-search"),
                         json!("saved-views"),
