@@ -1572,8 +1572,8 @@ async fn epoch_rotation_changes_new_capture_and_history_failure_forwards_with_vi
     let (mut cfg, health, writer) =
         config(Route::new(&p).unwrap(), Observer::Gateway, dir.path(), true);
     cfg.key_history = Some(history.clone());
-    let (url, _gateway) = start(ListenerAuth::LoopbackToken(TOKEN.into()), cfg).await;
-    let client = reqwest::Client::new();
+    let (url, _gateway) = start(tls(), cfg).await;
+    let client = client(true);
     assert_eq!(
         client
             .post(&url)
