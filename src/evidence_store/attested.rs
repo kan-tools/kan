@@ -72,7 +72,30 @@ pub(super) fn initialize(tx: &rusqlite::Transaction<'_>, binding: &Binding) -> R
     Ok(())
 }
 
+/// Disposable memoization of successful cryptographic checks over exact bytes.
+/// Every audit still checks current payload hashes, metadata, shape and chain.
+#[derive(Default)]
+pub(super) struct AuditCache {
+    entries: std::collections::BTreeMap<[u8; 32], (Verified, String)>,
+    bytes: usize,
+    #[cfg(test)]
+    hits: usize,
+}
+impl AuditCache {
+    fn insert(&mut self, key: [u8; 32], proof: &Verified, audience: &str) {
+        let cost = proof.bytes().len() + proof.statement_bytes().len() + audience.len() + 1024;
+        if self.entries.len() < 4096
+            && self.bytes + cost <= 8 * 1024 * 1024
+            && !self.entries.contains_key(&key)
+        {
+            self.bytes += cost;
+            self.entries
+                .insert(key, (proof.clone(), audience.to_owned()));
+        }
+    }
+}
 pub struct Archive {
+    pub(super) audit_cache: std::cell::RefCell<AuditCache>,
     pub(super) ledger: Ledger,
     pub(super) binding: Binding,
     pub(super) copy: Option<crate::evidence_copy_plan::Plan>,
@@ -124,7 +147,7 @@ pub(super) fn record(conn: &Connection, sequence: u64) -> Result<Committed> {
         stmt.query([i64::try_from(sequence).map_err(|_| Error::Invalid("sequence overflow"))?])?;
     raw_commit(rows.next()?.ok_or(Error::MissingCommit(sequence))?)
 }
-fn retained(conn: &Connection, record: &Committed, binding: &Binding) -> Result<SignedRequest> {
+fn retained_bytes(conn: &Connection, record: &Committed) -> Result<Vec<u8>> {
     let es: Vec<_> = entries(&record.manifest).collect();
     if es.len() != 1 {
         return Err(corrupt("service manifest entries"));
@@ -144,15 +167,10 @@ fn retained(conn: &Connection, record: &Committed, binding: &Binding) -> Result<
     {
         return Err(corrupt("retained signed request"));
     }
-    let signed = service::verify_retained_request(record, &bytes)
-        .map_err(|_| corrupt("retained request binding"))?;
-    if signed.request.scope != service::hex(&binding.scope) {
-        return Err(corrupt("retained request scope"));
-    }
-    Ok(signed)
+    Ok(bytes)
 }
 
-// Caller owns a transaction. Constant working memory; currently a full scan.
+// Caller owns a transaction. Full scan; optional bounded crypto memoization.
 // `through` excludes a new, not-yet-attested row inside admission's transaction.
 pub(super) fn audit_prefix(
     conn: &Connection,
@@ -160,6 +178,16 @@ pub(super) fn audit_prefix(
     through: u64,
     target: Option<&Cid>,
     copy: Option<&crate::evidence_copy_plan::Plan>,
+) -> Result<(Frontier, Option<Verified>)> {
+    audit_prefix_cached(conn, binding, through, target, copy, None)
+}
+fn audit_prefix_cached(
+    conn: &Connection,
+    binding: &Binding,
+    through: u64,
+    target: Option<&Cid>,
+    copy: Option<&crate::evidence_copy_plan::Plan>,
+    mut cache: Option<&mut AuditCache>,
 ) -> Result<(Frontier, Option<Verified>)> {
     check_binding(conn, binding)?;
     let count: i64 = conn.query_row("SELECT count(*) FROM attestations", [], |r| r.get(0))?;
@@ -178,21 +206,60 @@ pub(super) fn audit_prefix(
         if record.sequence != frontier.through + 1 {
             return Err(corrupt("noncontiguous attestation chain"));
         }
-        let verified = proof::verify(
-            &envelope(conn, record.sequence)?,
-            &binding.context(),
-            &record.manifest,
-            &record.receipt,
-            &frontier,
-        )
-        .map_err(|_| corrupt("invalid attestation chain"))?;
-        let signed = retained(conn, &record, binding)?;
+        let envelope = envelope(conn, record.sequence)?;
+        // Hash the CURRENT retained bytes even on a memoized cryptographic check.
+        // The authenticated manifest includes this checked ciphertext CID.
+        let bytes = retained_bytes(conn, &record)?;
+        let mut fingerprint = Sha256::new();
+        fingerprint.update(b"kan.admission.crypto-cache.v1\0");
+        fingerprint.update(binding.archive);
+        fingerprint.update(binding.scope);
+        for part in [
+            binding.issuer.as_bytes(),
+            record.manifest.bytes(),
+            record.receipt.bytes(),
+            envelope.as_slice(),
+        ] {
+            fingerprint.update((part.len() as u64).to_be_bytes());
+            fingerprint.update(part);
+        }
+        let key: [u8; 32] = fingerprint.finalize().into();
+        let cached = cache.as_ref().and_then(|c| c.entries.get(&key)).cloned();
+        let (verified, audience) = if let Some((verified, audience)) = cached {
+            #[cfg(test)]
+            if let Some(cache) = cache.as_mut() {
+                cache.hits += 1;
+            }
+            if verified.previous() != &frontier {
+                return Err(corrupt("invalid attestation chain"));
+            }
+            (verified, audience)
+        } else {
+            let verified = proof::verify(
+                &envelope,
+                &binding.context(),
+                &record.manifest,
+                &record.receipt,
+                &frontier,
+            )
+            .map_err(|_| corrupt("invalid attestation chain"))?;
+            let signed = service::verify_retained_request(&record, &bytes)
+                .map_err(|_| corrupt("retained request binding"))?;
+            if signed.request.scope != service::hex(&binding.scope) {
+                return Err(corrupt("retained request scope"));
+            }
+            let audience = signed.request.audience;
+            if let Some(cache) = cache.as_mut() {
+                cache.insert(key, &verified, &audience);
+            }
+            (verified, audience)
+        };
         match verified.purpose() {
             Purpose::Admitted => {
                 if copy.is_some_and(|p| record.sequence <= p.source().through) {
                     return Err(corrupt("admission inside planned retained prefix"));
                 }
-                if signed.request.audience != binding.issuer {
+                if audience != binding.issuer {
                     return Err(corrupt("admitted request audience"));
                 }
             }
@@ -202,7 +269,7 @@ pub(super) fn audit_prefix(
                 if record.sequence > plan.source().through {
                     return Err(corrupt("retained-verified row after planned prefix"));
                 }
-                if signed.request.audience != plan.source().historical_issuer {
+                if audience != plan.source().historical_issuer {
                     return Err(corrupt(
                         "retained-verified historical issuer differs from copy plan",
                     ));
@@ -236,6 +303,7 @@ impl Archive {
             RECOVERY_SQLITE_LENGTH_LIMIT,
         )?;
         Ok(Self {
+            audit_cache: Default::default(),
             ledger,
             binding,
             copy: None,
@@ -252,6 +320,7 @@ impl Archive {
         )?;
         conn.busy_timeout(Duration::from_secs(5))?;
         let archive = Self {
+            audit_cache: Default::default(),
             ledger: Ledger { conn },
             binding,
             copy: None,
@@ -281,6 +350,7 @@ impl Archive {
                 RECOVERY_SQLITE_LENGTH_LIMIT,
             )?;
             Self {
+                audit_cache: Default::default(),
                 ledger,
                 binding,
                 copy: None,
@@ -327,12 +397,14 @@ impl Archive {
                 return Err(Error::Conflict("copy is incomplete"));
             }
         }
-        let (frontier, selected) = audit_prefix(
+        let mut cache = target.map(|_| self.audit_cache.borrow_mut());
+        let (frontier, selected) = audit_prefix_cached(
             &tx,
             &self.binding,
             base.snapshot.through,
             target,
             self.copy.as_ref(),
+            cache.as_deref_mut(),
         )?;
         if frontier.manifest != base.snapshot.tip {
             return Err(corrupt("attestation tip"));
@@ -532,4 +604,105 @@ pub(super) fn verify_contents(
         return Err(corrupt("attestation tip"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod audit_cache_tests {
+    use super::*;
+    use std::io::Write;
+    fn identity(n: u8) -> Identity {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(&[n; 32]).unwrap();
+        Identity::load_existing(file.path()).unwrap()
+    }
+    #[test]
+    fn exact_crypto_checks_are_reused_but_payload_and_proof_damage_still_refuse_admission() {
+        let dir = tempfile::tempdir().unwrap();
+        let signer = identity(8);
+        let writer = identity(6);
+        let binding = Binding {
+            archive: [1; 32],
+            scope: [2; 32],
+            issuer: signer.did().to_string(),
+        };
+        let grant = Grant {
+            principal: writer.did().to_string(),
+            append: true,
+            inventory: true,
+        };
+        let mut archive = Archive::create(dir.path(), binding.clone()).unwrap();
+        let make = |position: u64, previous: Option<String>| {
+            SignedRequest::sign(
+                service::Request {
+                    version: 1,
+                    scope: service::hex(&binding.scope),
+                    principal: writer.did().to_string(),
+                    audience: binding.issuer.clone(),
+                    expires: None,
+                    command: service::Command::Append {
+                        id: service::hex(&[position as u8; 16]),
+                        position,
+                        previous,
+                        ciphertext: service::hex(b"retained encrypted bytes"),
+                    },
+                },
+                &writer,
+            )
+            .unwrap()
+            .bytes()
+            .unwrap()
+        };
+        let first = make(0, None);
+        let a = archive.admit(&first, &signer, &grant, 100).unwrap();
+        let second = make(1, Some(a.record.manifest.cid().to_string()));
+        archive.admit(&second, &signer, &grant, 101).unwrap();
+        let before = archive.audit_cache.borrow().hits;
+        archive.admit(&first, &signer, &grant, 102).unwrap();
+        assert!(archive.audit_cache.borrow().hits > before);
+        assert_eq!(archive.audit_cache.borrow().entries.len(), 2);
+        let conn = Connection::open(dir.path().join("archive.sqlite")).unwrap();
+        let object = ciphertext_cid(&first).to_string();
+        let mut bad = first.clone();
+        *bad.last_mut().unwrap() ^= 1;
+        conn.execute(
+            "UPDATE objects SET bytes=? WHERE cid=?",
+            rusqlite::params![bad, object],
+        )
+        .unwrap();
+        assert!(archive.admit(&second, &signer, &grant, 103).is_err());
+        conn.execute(
+            "UPDATE objects SET bytes=? WHERE cid=?",
+            rusqlite::params![first, object],
+        )
+        .unwrap();
+        let original = envelope(&conn, 1).unwrap();
+        let mut corrupt_proof = original.clone();
+        *corrupt_proof.last_mut().unwrap() ^= 1;
+        conn.execute(
+            "UPDATE attestations SET envelope=? WHERE sequence=1",
+            [corrupt_proof],
+        )
+        .unwrap();
+        assert!(archive.admit(&second, &signer, &grant, 104).is_err());
+        conn.execute(
+            "UPDATE attestations SET envelope=? WHERE sequence=1",
+            [original],
+        )
+        .unwrap();
+        let hits = archive.audit_cache.borrow().hits;
+        archive.verify().unwrap();
+        assert_eq!(
+            archive.audit_cache.borrow().hits,
+            hits,
+            "standalone verification must not depend on memoized checks"
+        );
+        assert!(
+            archive
+                .admit(&first, &signer, &grant, 105)
+                .unwrap()
+                .record
+                .duplicate
+        );
+        assert!(archive.audit_cache.borrow().bytes <= 8 * 1024 * 1024);
+    }
 }

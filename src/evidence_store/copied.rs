@@ -259,6 +259,7 @@ impl Archive {
         )?;
         let archive = Self {
             inner: attested::Archive {
+                audit_cache: Default::default(),
                 ledger,
                 binding,
                 copy: Some(plan),
