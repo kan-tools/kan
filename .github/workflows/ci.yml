@@ -10,6 +10,7 @@ concurrency:
 
 jobs:
   test:
+    needs: msrv
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,6 +71,7 @@ jobs:
   # short integration check on rebuilding the O(n²) admission fixture. Push
   # runs own this test; the PR event uses the same head without duplicating it.
   capacity:
+    needs: msrv
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 45

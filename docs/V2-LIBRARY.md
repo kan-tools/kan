@@ -593,3 +593,17 @@ commands. Without them it continues to require the legacy archive profile. A
 proof restore audits the issuer-bound metadata chain and reads source bytes from
 that same pinned transaction. It verifies imported file bytes; repository graph
 reachability, identity migration and final cutover remain separate checks.
+
+Search filters include verified writer, capture observer, exact attempt ID,
+evidence kind, and inclusive issuer-attestation time bounds. The API names the
+latter `attested_from` / `attested_to` as canonical unsigned millisecond strings;
+the browser converts local date/time inputs. These are distinct from observer
+clock claims inside captures. Saved views retain the complete filter.
+
+The encrypted `raw-text/2` projection also indexes up to 2,048 string values from
+each complete JSON span (bounded to 8,192 visited JSON values). Escaped string
+matches are marked `json-string` / `coarse` and cite the enclosing original span,
+not an invented exact substring. Current source is re-read before returning a hit.
+Text crossing capture chunks still requires conversation reconstruction; this
+index explicitly reports that coverage limitation. Older projection pages remain
+retained and are not treated as the new interpretation.

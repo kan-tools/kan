@@ -428,7 +428,14 @@ async fn proof_library_browser_fixture() {
 }
 
 fn captured_request(n: u8, audience: u8, previous: Option<String>) -> Vec<u8> {
-    let body = br#"{"messages":[{"role":"user","content":"Hello proof archive"}]}"#;
+    captured_request_body(
+        n,
+        audience,
+        previous,
+        br#"{"messages":[{"role":"user","content":"Hello proof archive"}]}"#,
+    )
+}
+fn captured_request_body(n: u8, audience: u8, previous: Option<String>, body: &[u8]) -> Vec<u8> {
     let event = match n {
         0 => json!({"type":"started","method":"POST","route":"/v1/messages"}),
         1 => json!({"type":"request-chunk","offset":0}),
@@ -2169,4 +2176,80 @@ async fn proof_import_restoration_and_owner_job_verify_selected_bytes_without_cu
         ui.stop().await;
         server.stop().await;
     }
+}
+
+#[tokio::test]
+async fn search_normalizes_complete_json_with_enclosing_cites_and_reproducible_facets() {
+    let dir = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let body = br#"{"messages":[{"role":"user","content":"Hello \u0070roof archive"}]}"#;
+    let f = fixture_requests(dir.path(), Profile::Admitted, |n, a, p| {
+        captured_request_body(n, a, p, body)
+    });
+    let server = Server::start(&f).await;
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("search.sqlite"),
+                    identity(6),
+                    [97; 32],
+                )
+                .unwrap(),
+            ),
+    )
+    .await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let target = json!({"source":entry["id"],"pin":entry["pin"]});
+    let indexed = ui
+        .call(json!({"action":"index-page","target":target}), 200)
+        .await;
+    assert_eq!(indexed["facets_as_indexed"]["observer"]["collector"], 3);
+    let mut query = json!({"action":"search-page","target":target,"filter":{"text":"Hello proof","observer":"collector","attempt":"a".repeat(64)}});
+    let found = ui.call(query.clone(), 200).await;
+    assert_eq!(found["hits"].as_array().unwrap().len(), 1);
+    let hit = &found["hits"][0];
+    assert_eq!(hit["interpretation"], "json-string");
+    assert_eq!(hit["coarse"], true);
+    assert_eq!(hit["record"]["sequence"], "2");
+    let source=ui.call(json!({"action":"proof-source","source":entry["id"],"pin":entry["pin"],"selection":hit["record"]["selection"],"offset":hit["offset"],"length":body.len().to_string()}),200).await;
+    assert_eq!(source["bytes_hex"], service::hex(body));
+    query["filter"]["attested_from"] = hit["attested_at"].clone();
+    query["filter"]["attested_to"] = hit["attested_at"].clone();
+    assert_eq!(
+        ui.call(query.clone(), 200).await["hits"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let saved=ui.call(json!({"action":"save-view","name":"One attested attempt","targets":[target],"filter":query["filter"]}),200).await;
+    assert_eq!(saved["filter"]["observer"], "collector");
+    assert_eq!(saved["filter"]["attested_from"], hit["attested_at"]);
+    let mut wrong = query.clone();
+    wrong["filter"]["observer"] = json!("gateway");
+    assert!(ui.call(wrong, 200).await["hits"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    wrong = query.clone();
+    wrong["filter"]["attempt"] = json!("b".repeat(64));
+    assert!(ui.call(wrong, 200).await["hits"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    wrong = query.clone();
+    wrong["filter"]["attested_to"] = json!("0");
+    ui.call(wrong, 400).await;
+    wrong = query.clone();
+    wrong["filter"]["attested_from"] = json!("01");
+    ui.call(wrong, 400).await;
+    f.remove(1);
+    let erased = ui.call(query, 200).await;
+    assert!(erased["hits"].as_array().unwrap().is_empty());
+    assert_eq!(erased["unavailable_matches"], 1);
+    ui.stop().await;
+    server.stop().await;
 }

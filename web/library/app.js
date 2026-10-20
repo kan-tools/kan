@@ -16,6 +16,9 @@
   let annotationsEnabled=false, annotationCites=[], annotationDerivations=[], annotationRelations=[], annotationSupersedes=null, annotationPreview=null;
   let attemptMode = false;
   let pinWire = null, contentEnabled = false, contentValue = null, returnItem = null;
+  function navigation(visible) {
+    for(const [id,section] of [['evidence','evidence'],['search','search-workspace'],['sessions','session-workspace'],['imports','discovery'],['knowledge','knowledge'],['views','search-workspace'],['analysis','analysis'],['owner','owner-maintenance']])$('nav-'+id).hidden=!visible||$(section).hidden;
+  }
   function releaseExport(url) { clearTimeout(exports.get(url)); exports.delete(url); URL.revokeObjectURL(url); }
   function notice(text, error = false) { $('notice').textContent = text; $('notice').className = `notice${error ? ' error' : ''}`; }
   function clearContent(clearSelection = true) {
@@ -39,7 +42,7 @@
   function lock(message = 'Locked · connect to browse authorized evidence.') {
     for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
-    lockOwner();$('operations-link').hidden=true;clearAnalysis(true);clearKnowledge(true);clearSearch(true);
+    navigation(false);lockOwner();$('operations-link').hidden=true;clearAnalysis(true);clearKnowledge(true);clearSearch(true);
     pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); clearWorkspace(); selections.clear(); clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
     $('catalog-status').textContent = ''; $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
     $('lock').disabled = true; $('token').value = ''; notice(message); $('token').focus();
@@ -163,7 +166,7 @@
     }
   }
   async function catalog() {
-    lockOwner();$('operations-link').hidden=true;clearAnalysis(true);clearKnowledge(true);clearSearch(true);
+    navigation(false);lockOwner();$('operations-link').hidden=true;clearAnalysis(true);clearKnowledge(true);clearSearch(true);
     clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
     pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); clearWorkspace(); selections.clear();
     scopes = []; pin = null; history = []; after = 0; next = null;
@@ -188,6 +191,7 @@
     renderWorkspace();
     for (const scope of scopes) { const option = document.createElement('option'); option.value = sourceId(scope); option.textContent = scope.protocol === 'kan-proof-reader/1' ? `${scope.scope} · ${scope.binding.profile} · ${scope.binding.archive}` : scope.scope; $('scope').append(option); }
     $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;
+    navigation(true);
     const partial = value.coverage === 'partial';
     $('catalog-status').className = partial ? 'partial' : '';
     $('catalog-status').textContent = partial
@@ -202,7 +206,7 @@
 
   function choose(entry) {
     clearDiscovery(); activeSource = entry; pin = entry.pin; pinWire = entry.pin_wire || null; history = [];
-    $('discovery').hidden = !entry.capabilities?.includes('attempt-discovery');
+    $('discovery').hidden = !entry.capabilities?.includes('attempt-discovery');navigation(true);
     contentEnabled = entry.capabilities ? entry.capabilities.includes('content-inspection') : catalogContent;
     $('content-support').textContent = contentEnabled ? 'Select captures on this page. Interpretation covers only this selection.' : 'Selected Content is not yet available for this source. Source and provenance remain browsable.';
   }
@@ -768,7 +772,7 @@
     searchRun++; searchStates=[]; searchFilter=null; searchHits.clear(); searchPages=0;
     $('search-results').replaceChildren();$('search-facets').replaceChildren();$('search-coverage').textContent='';
     $('saved-views').replaceChildren();$('views-status').textContent='';$('save-view').disabled=true;$('resume-search').disabled=true;$('stop-search').disabled=true;
-    if(hide){$('search-workspace').hidden=true;$('search-text').value='';$('search-writer').value='';$('view-name').value='';}
+    if(hide){for(const id of ['search-observer','search-attempt','search-from','search-to'])$(id).value='';$('search-workspace').hidden=true;$('search-text').value='';$('search-writer').value='';$('view-name').value='';}
   }
   function searchTargets(entries) {
     return entries.map(entry=>({entry:{...entry},cursor:null,complete:false,count:0,binary:0n,unavailable:0,facets:new Map()}));
@@ -778,7 +782,7 @@
     for(const {state,hit} of searchHits.values()) {
       const row=textNode('article','');row.className='search-result';
       row.append(textNode('p',`${state.entry.scope} · ${state.entry.binding.archive} · occurrence ${hit.record.sequence}`));
-      row.append(textNode('pre',hit.snippet));row.append(textNode('p',`${hit.kind} · ${hit.writer} · bytes ${hit.offset}–${hit.end}`));
+      row.append(textNode('pre',hit.snippet));row.append(textNode('p',`${hit.kind} · ${hit.writer} · ${hit.coarse?'decoded JSON text; enclosing source':'exact UTF-8 source'} bytes ${hit.offset}–${hit.end}`));
       const open=textNode('button','Open exact source');open.addEventListener('click',()=>run(async()=>{
         searchRun++;cancelWork();choose(state.entry);clearContent();clearInspector();checks.clear();buttons.clear();selections.clear();selections.set(hit.record.sequence,hit.record.selection);
         $('rows').replaceChildren();after=0;next=null;history=[];$('previous').disabled=true;$('next').disabled=true;$('count').textContent='Search selection';$('page-position').textContent='Choose an archive to browse inventory';$('empty').hidden=true;
@@ -790,7 +794,7 @@
       const facets=[...state.facets].map(([k,n])=>`${k}: ${n}`).join(' · ');
       $('search-facets').append(textNode('p',`${state.entry.binding.archive}: ${state.count} indexed occurrences searched · ${state.complete?'pinned inventory scan complete':'partial scan'} · ${state.binary} unsearchable bytes · ${state.unavailable} unavailable matches${facets?' · '+facets:''}`));
     }
-    $('search-coverage').textContent=`${searchHits.size} matches shown across ${searchPages} index pages. Facets reflect indexing time. Headers and UTF-8 capture bodies are searched separately; binary spans and phrases crossing chunks are excluded. Complete inventory does not prove complete capture.`;
+    $('search-coverage').textContent=`${searchHits.size} matches shown across ${searchPages} index pages. Facets reflect indexing time. Raw UTF-8 and bounded decoded strings from complete JSON spans are searched; normalized matches cite their enclosing source. Binary spans and phrases crossing chunks are excluded. Complete inventory does not prove complete capture.`;
     $('resume-search').disabled=searchStates.every(s=>s.complete);$('save-view').disabled=!searchFilter || !searchStates.length;
   }
   async function searchWindow() {
@@ -820,6 +824,10 @@
   $('search-form').addEventListener('submit',event=>{event.preventDefault();run(async()=>{
     cancelWork();clearSearch();
     searchFilter={text:$('search-text').value.trim(),writer:$('search-writer').value.trim()||null,kind:$('search-kind').value||null};
+    if($('search-observer').value)searchFilter.observer=$('search-observer').value;
+    if($('search-attempt').value.trim())searchFilter.attempt=$('search-attempt').value.trim();
+    for(const [input,key] of [['search-from','attested_from'],['search-to','attested_to']])if($(input).value){const n=new Date($(input).value).getTime();if(!Number.isSafeInteger(n)||n<0)throw new Error('Invalid attestation date.');searchFilter[key]=String(n);}
+    if(searchFilter.attested_from&&searchFilter.attested_to&&BigInt(searchFilter.attested_from)>BigInt(searchFilter.attested_to))throw new Error('Date range is reversed.');
     if(!searchFilter.text){notice('Enter text to search.',true);return;}
     const entries=$('search-scope').value==='selected' ? [activeSource] : scopes;
     searchStates=searchTargets(entries.filter(s=>s?.protocol==='kan-proof-reader/1'));
@@ -844,7 +852,8 @@
       const open=textNode('button','Run pinned view');open.addEventListener('click',()=>run(async()=>{
         const entries=view.targets.map(t=>{const entry=scopes.find(s=>sourceId(s)===t.source);if(!entry)throw new Error('Source catalog changed.');return {...entry,pin:t.pin,pin_wire:JSON.stringify(t.pin)};});
         cancelWork();clearSearch();searchFilter=view.filter;searchStates=searchTargets(entries);
-        $('search-text').value=searchFilter.text;$('search-writer').value=searchFilter.writer||'';$('search-kind').value=searchFilter.kind||'';
+        $('search-text').value=searchFilter.text;$('search-writer').value=searchFilter.writer||'';$('search-kind').value=searchFilter.kind||'';$('search-observer').value=searchFilter.observer||'';$('search-attempt').value=searchFilter.attempt||'';
+        for(const [input,key] of [['search-from','attested_from'],['search-to','attested_to']]){$(input).value='';if(searchFilter[key]){const d=new Date(Number(searchFilter[key]));if(!Number.isNaN(d.getTime()))$(input).value=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);}}
         await searchWindow();
       }));row.append(open);$('saved-views').append(row);
     }

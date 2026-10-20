@@ -175,7 +175,7 @@ impl Workspace {
         expected: &str,
         spool: &mut crate::evidence_spool::Spool,
         limit: usize,
-    ) -> Result<crate::evidence_import::Progress, crate::evidence_import::Error> {
+    ) -> std::result::Result<crate::evidence_import::Progress, crate::evidence_import::Error> {
         plan.enqueue(expected, spool, &self.signer, limit)
     }
     pub(crate) fn queue_annotation(

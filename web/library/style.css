@@ -31,3 +31,8 @@
 .conversation-attempt{border-top:1px solid var(--line);padding:1.25rem 0}.conversation-attempt h3{overflow-wrap:anywhere}.conversation-stream{margin:1rem 0}.conversation-stream>summary{cursor:pointer;font-weight:600;padding:.5rem 0}
 
 #knowledge-subjects{display:flex;flex-wrap:wrap;gap:.5rem;margin:1rem 0}.relation-table{width:100%;text-align:left;border-collapse:collapse}.relation-table td,.relation-table th{padding:.6rem;border-bottom:1px solid var(--line);overflow-wrap:anywhere}#knowledge-detail{overflow-x:auto}fieldset{border:1px solid var(--line);margin:1rem 0;padding:1rem}
+
+/* One application, with capability-aware links and keyboard-addressable sections. */
+html{scroll-padding-top:1.5rem}aside nav{display:grid;gap:.2rem}aside a.nav{text-decoration:none}aside a.nav:hover,aside a.nav:focus-visible{background:var(--soft);color:var(--ink)}[tabindex="-1"]:focus-visible{outline:2px solid var(--green);outline-offset:6px}#content-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%}
+@media(max-width:900px){aside nav{display:flex;flex-wrap:wrap;gap:.3rem}aside a.nav{padding:.5rem .7rem;font-size:.8rem}}
+@media(prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
