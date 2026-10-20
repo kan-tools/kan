@@ -1661,8 +1661,8 @@ async fn epoch_rotation_changes_new_capture_and_history_failure_forwards_with_vi
     .unwrap();
     let c = rusqlite::Connection::open(dir.path().join("spool")).unwrap();
     assert_eq!(
-        c.query_row("SELECT count(*) FROM pending", [], |r| r.get::<_, usize>(0))
+        c.query_row("SELECT count(*) FROM pending", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        count
+        count as i64
     );
 }
