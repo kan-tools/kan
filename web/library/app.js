@@ -11,6 +11,7 @@
   const sourceId = entry => entry.id || entry.scope;
   const isProof = () => activeSource?.protocol === 'kan-proof-reader/1';
   const buttons = new Map(), exports = new Map(), contentSelection = new Set(), checks = new Map();
+  let annotationRecovery=null;
   let searchStates = [], searchRun = 0, searchFilter = null, searchHits = new Map(), searchPages = 0;
   let analysisEnabled=false,analysisDraft=null,analysisPreview=null,analysisRecipes=[];
   let annotationsEnabled=false, annotationCites=[], annotationDerivations=[], annotationRelations=[], annotationSupersedes=null, annotationPreview=null;
@@ -33,13 +34,15 @@
   }
   function cancelWork() { epoch++; if (controller) controller.abort(); }
   function clearInspector() {
-    $('annotate-source').hidden=true;$('analyze-source').hidden=true;
+    $('annotate-source').hidden=true;$('analyze-source').hidden=true;annotationRecovery=null;$('restore-annotation').hidden=true;$('annotation-recovery').hidden=true;$('annotation-recovery-preview').textContent='';$('annotation-recovery-save').disabled=true;
     source = null; selected = null; $('download').disabled = true; $('more').disabled = true; $('source-tab').disabled = true; $('provenance-tab').disabled = true; $('inspection').hidden = true; $('source').textContent = '';
+    $('reference-export').hidden=true;$('reference-value').value='';
     $('provenance').replaceChildren(); $('range').textContent = ''; $('selection').textContent = 'Select an occurrence';
     $('source-hint').textContent = 'Read exact retained bytes alongside their provenance.'; $('close-inspector').hidden = true;
     for (const button of buttons.values()) button.setAttribute('aria-pressed', 'false');
   }
   function lock(message = 'Locked · connect to browse authorized evidence.') {
+    $('reference-input').value='';
     for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
     navigation(false);lockOwner();$('operations-link').hidden=true;clearAnalysis(true);clearKnowledge(true);clearSearch(true);
@@ -98,6 +101,8 @@
     for (const [key, val] of Object.entries({Scope:value.scope, Manifest:value.record.manifest, Receipt:value.record.receipt, 'Observed writer':value.writer || 'Unavailable for present-time verification', Observer:'Not normalized in this source view', 'Claimed speaker':'Not inferred from the writer key', 'Service issuer':value.service_issuer, Signature:value.signature, Admission:value.admission, 'Content trust':value.content_trust, ...(value.archive ? {Archive:value.archive, Profile:value.profile, 'Proof purpose':value.record.purpose, 'Attested at (Unix milliseconds)':value.record.issued_at, 'Receipt issuer':value.record.receipt_issuer, Attestation:value.record.attestation, Availability:value.availability} : {})})) {
       const dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = key; dd.textContent = val; $('provenance').append(dt); $('provenance').append(dd);
     }
+    if(annotationsEnabled&&value.reference&&value.offset==='0'&&typeof value.utf8==='string'){try{$('restore-annotation').hidden=JSON.parse(value.utf8).format!=='kan-annotation/1';}catch{$('restore-annotation').hidden=true;}}
+    if(value.reference){$('reference-value').value=JSON.stringify({reference:value.reference,offset:String(value.offset||'0')},null,2);$('reference-export').hidden=false;}
     notice(unavailable ? `Source ${value.availability} · provenance retained; no bytes substituted.` : 'Source verified · this is one retained occurrence, not a reconstructed session.');
   }
   async function inspect(sequence, offset = 0) {
@@ -106,6 +111,31 @@
     const value = await rpc(sourceRequest(sequence, offset)); if (!value) return;
     showSource(value); tab('source'); $('source-tab').focus();
   }
+  $('restore-annotation').addEventListener('click',()=>run(async()=>{
+    if(!source?.reference)return;annotationRecovery=null;$('annotation-recovery-save').disabled=true;
+    const reference=source.reference,result=await rpc({action:'restore-annotation',reference});if(!result)return;
+    if(result.state!=='preview'||typeof result.digest!=='string'||!result.contract?.declaration)throw new Error('Invalid recovery preview.');
+    annotationRecovery={reference,preview:result.digest};$('annotation-recovery-preview').textContent=JSON.stringify(result,null,2);$('annotation-recovery').hidden=false;$('annotation-recovery-save').disabled=false;
+  }));
+  $('annotation-recovery-save').addEventListener('click',()=>run(async()=>{
+    if(!annotationRecovery)return;$('annotation-recovery-save').disabled=true;
+    const result=await rpc({action:'restore-annotation',...annotationRecovery});if(!result)return;
+    if(result.state!=='restored'||!result.annotation)throw new Error('Invalid recovery result.');
+    annotationRecovery=null;$('annotation-recovery-preview').textContent=`Restored ${result.annotation.id} · original author ${result.annotation.author}. No analysis or publication triggered.`;notice('Published annotation restored. Load annotations to inspect its retained history.');
+  }));
+  $('reference-form').addEventListener('submit',event=>{event.preventDefault();run(async()=>{
+    const text=$('reference-input').value;if(text.length>4096)throw new Error('Reference too large.');
+    const input=JSON.parse(text),reference=input.reference||input,offset=input.offset||'0';
+    if(typeof offset!=='string'||!/^(0|[1-9][0-9]{0,19})$/.test(offset))throw new Error('Invalid source offset.');
+    cancelWork();clearContent();clearInspector();
+    const resolved=await rpc({action:'resolve-reference',reference});if(!resolved)return;
+    const configured=scopes.find(s=>sourceId(s)===resolved.source);
+    if(!configured||!resolved.pin||!resolved.record?.selection)throw new Error('Reference archive is unavailable.');
+    const entry={...configured,pin:resolved.pin,pin_wire:resolved.pin_wire};
+    choose(entry);$('scope').value=resolved.source;checks.clear();buttons.clear();selections.clear();selections.set(resolved.record.sequence,resolved.record.selection);
+    $('rows').replaceChildren();after=0;next=null;history=[];$('previous').disabled=true;$('next').disabled=true;$('count').textContent='Resolved reference';$('page-position').textContent='Fresh authorized snapshot';$('empty').hidden=true;
+    await inspect(resolved.record.sequence,offset);
+  });});
   async function page(position) {
     clearContent(); checks.clear(); clearInspector(); buttons.clear(); selections.clear(); $('rows').replaceChildren();
     $('count').textContent = ''; $('coverage').textContent = ''; $('page-position').textContent = 'Loading…';
@@ -136,8 +166,8 @@
   }
   function renderCapabilities(value) {
     if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
-    const labels = {'import-content':'Imported v1 files and claims','owner-maintenance':'Owner maintenance','operations-read':'Operations reader','text-search':'Persistent text search','attempt-content':'Large attempt Content','session-content':'Conversation reader','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
-    const supported = new Set(['import-content','owner-maintenance','analysis','operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links','session-content']), seen = new Set();
+    const labels = {'portable-references':'Portable evidence references','import-content':'Imported v1 files and claims','owner-maintenance':'Owner maintenance','operations-read':'Operations reader','text-search':'Persistent text search','attempt-content':'Large attempt Content','session-content':'Conversation reader','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
+    const supported = new Set(['portable-references','import-content','owner-maintenance','analysis','operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links','session-content']), seen = new Set();
     $('capability-list').replaceChildren();
     for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
       for (const capability of items) {
@@ -745,10 +775,12 @@
       const row=textNode('article','');row.className='annotation';row.append(textNode('h3',note.draft.subject));row.append(textNode('pre',note.draft.text));row.append(textNode('p',`Author: ${note.author} · recorded at Unix ${note.recorded_at || 'unknown'} · ${note.id}`));if(note.draft.derived_from?.length)row.append(textNode('p',`Derived from analysis jobs: ${note.draft.derived_from.join(', ')}`));row.append(textNode('p',`Tags: ${note.draft.tags.join(', ')}${note.draft.supersedes?` · corrects ${note.draft.supersedes}`:''}`));
       for(const cite of note.draft.cites){const open=textNode('button','Inspect cited evidence');open.addEventListener('click',()=>run(async()=>{
         const entry=scopes.find(s=>sourceId(s)===cite.source);if(!entry)throw new Error('Source catalog changed.');
-        choose({...entry,pin:cite.pin,pin_wire:JSON.stringify(cite.pin)});clearContent();checks.clear();buttons.clear();selections.clear();$('rows').replaceChildren();$('previous').disabled=true;$('next').disabled=true;
-        const value=await rpc({action:'proof-source',...cite,offset:'0',length:'65536'});if(!value)return;
-        selected=value.record.sequence;selections.set(selected,cite.selection);showSource(value);tab('source');
+        clearContent();clearInspector();checks.clear();buttons.clear();selections.clear();$('rows').replaceChildren();$('previous').disabled=true;$('next').disabled=true;
+        const value=await rpc(note.recovered_from?{action:'citation-source',cite,offset:'0',length:'65536'}:{action:'proof-source',...cite,offset:'0',length:'65536'});if(!value)return;
+        choose({...entry,pin:value.pin||cite.pin,pin_wire:value.pin_wire||JSON.stringify(cite.pin)});
+        selected=value.record.sequence;selections.set(selected,value.record.selection||cite.selection);showSource(value);tab('source');
       }));row.append(open);}
+      if(note.recovered_from)row.append(textNode('p',`Restored from ledger publication · ${note.recovered_from.source} · original attribution retained`));
       const publication=textNode('div','');const check=textNode('button','Check ledger publication');check.addEventListener('click',()=>run(async()=>{const value=await rpc({action:'annotation-delivery',id:note.id});if(value)renderPublication(publication,note.id,value);}));row.append(check);row.append(publication);
       if(analysisEnabled){const analyze=textNode('button','Analyze cited evidence');analyze.addEventListener('click',()=>run(()=>editAnalysis(note.draft.cites)));row.append(analyze);}
       if(note.analysis_trigger_plan?.length){

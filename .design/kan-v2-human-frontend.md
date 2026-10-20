@@ -360,3 +360,21 @@ enclosing source ranges and reporting unavailable streams. Message boundaries
 are preserved; separate SSE delta items are not implicitly concatenated. No
 normalized text is written to blind storage. Browser work windows bound retained
 members and interpretation calls, and cancellation keeps completed results only.
+
+### Portable provenance and annotation recovery
+
+Portable references bind archive identity, sequence and manifest/attestation/receipt
+identities. Resolution obtains a fresh authorized snapshot and verifies membership
+through the existing proof service; it never imports another reader's authority.
+Signed historical citation tokens can likewise be rebound through current service
+verification. Their original pin is retained as source data, not treated as a new
+reader capability. Analysis previews bind immutable record metadata and original
+citations, excluding newly minted local continuation signatures.
+
+Explicit annotation recovery reads a publication under current grants, verifies
+its writer and original declaration hash, and previews installation in the encrypted
+workspace. One immutable annotation value retains the original declaration plus
+its recovery origin, making attribution and disclosure dependencies atomic.
+Recovered records require current access to the publication and all cited archives.
+No trigger or publication is invoked. Exact retries preserve prior entries;
+foreign-authored records cannot be republished under the restoring reader's name.

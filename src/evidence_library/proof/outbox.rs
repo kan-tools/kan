@@ -101,6 +101,9 @@ impl Readers {
             .workspace()?
             .get("annotation", id)?
             .ok_or(Failure::AccessLimited)?;
+        if record["author"] != self.workspace()?.author() {
+            return Err(Failure::AccessLimited.into());
+        }
         self.annotation_preview(
             serde_json::from_value(record["draft"].clone()).map_err(|_| Failure::Corrupt)?,
         )

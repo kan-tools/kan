@@ -2492,3 +2492,237 @@ async fn search_reconstructs_chunked_messages_with_all_citations_and_rechecks_lo
         server.stop().await;
     }
 }
+
+#[tokio::test]
+async fn portable_references_rebind_for_another_reader_without_granting_access_or_hiding_loss() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = private_workspace_directory();
+        let f = fixture_requests(dir.path(), profile, encrypted);
+        let server = Server::start(&f).await;
+        let first = server.client(&f);
+        let pin = first.snapshot().await.unwrap();
+        let page = first.page(&pin, None, 3).await.unwrap();
+        let row = &page.records[0];
+        let reference = client::Reference::new(first.binding(), row);
+        let second = || {
+            client::Reader::new(
+                identity(7),
+                client::Access {
+                    binding: binding(&f),
+                    endpoint: server.endpoint.clone(),
+                    private_key: PRIVATE,
+                },
+            )
+            .unwrap()
+        };
+        assert!(matches!(
+            second().resolve_reference(&reference).await,
+            Err(Failure::AccessLimited)
+        ));
+        server
+            .service
+            .lock()
+            .unwrap()
+            .replace_grants(vec![
+                grant(),
+                Grant {
+                    principal: identity(7).did(),
+                    append: false,
+                    inventory: true,
+                },
+            ])
+            .unwrap();
+        // Reader-local selections remain local. The portable identity is resolved afresh.
+        assert!(matches!(
+            second().source(&pin, &row.selection).await,
+            Err(Failure::AccessLimited)
+        ));
+        let ui =
+            Ui::start(kan::evidence_library::Readers::new(None, vec![second()]).unwrap()).await;
+        let request = json!({"action":"resolve-reference","reference":reference});
+        let resolved = ui.call(request.clone(), 200).await;
+        assert_eq!(resolved["record"]["manifest"], row.manifest);
+        assert_eq!(resolved["record"]["receipt"], row.receipt);
+        assert_ne!(
+            resolved["record"]["selection"],
+            serde_json::to_value(&row.selection).unwrap()
+        );
+        let source = ui.call(json!({"action":"proof-source","source":resolved["source"],"pin":resolved["pin"],"selection":resolved["record"]["selection"],"offset":"0","length":"100"}),200).await;
+        assert_eq!(source["bytes_hex"], service::hex(RAW));
+        assert_eq!(
+            source["reference"],
+            serde_json::to_value(&reference).unwrap()
+        );
+        let mut forged = request.clone();
+        forged["reference"]["receipt"] = json!(page.records[1].receipt);
+        ui.call(forged, 503).await;
+        f.remove(2);
+        let missing = ui.call(request.clone(), 200).await;
+        assert_eq!(missing["record"]["availability"], "missing");
+        server
+            .service
+            .lock()
+            .unwrap()
+            .replace_grants(vec![grant()])
+            .unwrap();
+        ui.call(request, 403).await;
+        ui.stop().await;
+        server.stop().await;
+    }
+}
+
+#[tokio::test]
+async fn published_annotations_restore_original_authorship_and_rebind_citations_without_side_effects(
+) {
+    let dir = private_workspace_directory();
+    let local = private_workspace_directory();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let first = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("original.sqlite"),
+                    identity(6),
+                    [91; 32],
+                )
+                .unwrap(),
+            ),
+    )
+    .await;
+    let catalog = first.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let rows = first
+        .call(
+            json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"limit":3}),
+            200,
+        )
+        .await;
+    let cite = json!({"source":entry["id"],"pin":entry["pin"],"selection":rows["records"][0]["selection"]});
+    let draft = json!({"subject":"telos/durable-knowledge","text":"Original annotation must survive workspace loss","tags":["retained"],"cites":[cite],"supersedes":null});
+    let preview = first
+        .call(json!({"action":"annotation-preview","draft":draft}), 200)
+        .await;
+    let saved = first
+        .call(
+            json!({"action":"annotation-save","draft":draft,"preview":preview["id"]}),
+            200,
+        )
+        .await;
+    let bytes =
+        serde_json::to_vec(&json!({"format":"kan-annotation/1","declaration":saved})).unwrap();
+    let previous = Some(
+        service::append_manifest(f.requests.last().unwrap())
+            .unwrap()
+            .cid()
+            .to_string(),
+    );
+    let publication = encrypted_frame(3, 8, previous, &bytes);
+    let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+    archive
+        .admit(&publication, &identity(8), &grant(), 1000)
+        .unwrap();
+    drop(archive);
+    first.stop().await;
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![
+            grant(),
+            Grant {
+                principal: identity(7).did(),
+                append: false,
+                inventory: true,
+            },
+        ])
+        .unwrap();
+    let other = client::Reader::new(
+        identity(7),
+        client::Access {
+            binding: binding(&f),
+            endpoint: server.endpoint.clone(),
+            private_key: PRIVATE,
+        },
+    )
+    .unwrap();
+    let pin = other.snapshot().await.unwrap();
+    let page = other.page(&pin, None, 1).await.unwrap();
+    let reference = client::Reference::new(other.binding(), &page.records[0]);
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![other])
+            .unwrap()
+            .with_workspace(
+                kan::evidence_workspace::Workspace::open(
+                    &local.path().join("rebuilt.sqlite"),
+                    identity(7),
+                    [92; 32],
+                )
+                .unwrap(),
+            ),
+    )
+    .await;
+    let preview = ui
+        .call(
+            json!({"action":"restore-annotation","reference":reference}),
+            200,
+        )
+        .await;
+    assert_eq!(preview["contract"]["declaration"], saved);
+    ui.call(
+        json!({"action":"restore-annotation","reference":reference,"preview":"wrong"}),
+        400,
+    )
+    .await;
+    let request =
+        json!({"action":"restore-annotation","reference":reference,"preview":preview["digest"]});
+    let restored = ui.call(request.clone(), 200).await;
+    assert_eq!(restored["annotation"]["author"], identity(6).did());
+    assert_eq!(restored["annotation"]["id"], saved["id"]);
+    assert_eq!(restored["annotation"]["recorded_at"], saved["recorded_at"]);
+    assert_eq!(restored["annotation"]["draft"], saved["draft"]);
+    assert_eq!(restored["automatic_analysis"], "not-triggered");
+    assert_eq!(ui.call(request, 200).await, restored);
+    let notes = ui.call(json!({"action":"annotations"}), 200).await;
+    assert_eq!(notes["records"].as_array().unwrap().len(), 1);
+    let source = ui
+        .call(
+            json!({"action":"citation-source","cite":cite,"offset":"0","length":"100"}),
+            200,
+        )
+        .await;
+    assert_eq!(source["bytes_hex"], service::hex(RAW));
+    assert_ne!(source["record"]["selection"], cite["selection"]);
+    let mut forged = cite.clone();
+    forged["selection"]["signature"] = json!("00".repeat(64));
+    ui.call(
+        json!({"action":"citation-source","cite":forged,"offset":"0","length":"100"}),
+        400,
+    )
+    .await;
+    ui.call(
+        json!({"action":"annotation-delivery","id":saved["id"]}),
+        403,
+    )
+    .await;
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![grant()])
+        .unwrap();
+    assert!(
+        ui.call(json!({"action":"annotations"}), 200).await["records"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    ui.call(
+        json!({"action":"citation-source","cite":cite,"offset":"0","length":"100"}),
+        403,
+    )
+    .await;
+    ui.stop().await;
+    server.stop().await;
+}

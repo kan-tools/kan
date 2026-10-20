@@ -111,6 +111,18 @@ pub enum Query {
         filter: SearchFilter,
     },
     Views,
+    CitationSource {
+        cite: EvidenceCitation,
+        offset: String,
+        length: String,
+    },
+    RestoreAnnotation {
+        reference: verified::Reference,
+        preview: Option<String>,
+    },
+    ResolveReference {
+        reference: verified::Reference,
+    },
     ProofAttempt {
         source: String,
         pin: verified::Pin,
@@ -215,6 +227,9 @@ async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
         | Query::SaveView { .. }
         | Query::Views
         | Query::ProofAttempt { .. }
+        | Query::ResolveReference { .. }
+        | Query::RestoreAnnotation { .. }
+        | Query::CitationSource { .. }
         | Query::ProofDiscover { .. }
         | Query::ProofContent { .. }
         | Query::ProofSnapshot { .. }

@@ -249,7 +249,7 @@ impl Engine {
                 .get(&cite.source)
                 .ok_or(Failure::AccessLimited)?;
             let Source::Available { plaintext, .. } =
-                reader.source(&cite.pin, &cite.selection).await?
+                reader.cited_source(&cite.pin, &cite.selection).await?
             else {
                 return Err(Failure::Missing);
             };
@@ -378,7 +378,7 @@ impl Readers {
                 ..
             } = self
                 .selected(&cite.source)?
-                .source(&cite.pin, &cite.selection)
+                .cited_source(&cite.pin, &cite.selection)
                 .await?
             else {
                 return Err(Failure::Missing.into());
@@ -397,6 +397,14 @@ impl Readers {
                     json!({"utf8":std::str::from_utf8(&plaintext).ok(),"hex":if std::str::from_utf8(&plaintext).is_err(){Some(service::hex(&plaintext))}else{None}})
                 }
             };
+            // Reader-local continuation signatures can change when rebinding
+            // a foreign citation. Bind previews to immutable evidence metadata;
+            // the exact original citation remains in the input manifest.
+            let mut record = serde_json::to_value(record).map_err(|_| Failure::Invalid)?;
+            record
+                .as_object_mut()
+                .ok_or(Failure::Corrupt)?
+                .remove("selection");
             prompt.push(json!({"input":inputs.len(),"source":cite.source,"record":record,"content":display}));
             inputs.push(json!({"citation":cite,"record":record,"writer":writer,"bytes_hex":service::hex(&plaintext),"sha256":service::hex(&Sha256::digest(&plaintext))}));
         }
@@ -410,7 +418,7 @@ impl Readers {
         // Revalidate current authority across all input sources.
         for cite in &draft.cites {
             self.selected(&cite.source)?
-                .page(&cite.pin, None, 1)
+                .check_citation_access(&cite.pin, &cite.selection)
                 .await?;
         }
         Ok((preview, contract))
@@ -467,7 +475,7 @@ impl Readers {
         };
         for cite in &draft.cites {
             self.selected(&cite.source)?
-                .page(&cite.pin, None, 1)
+                .check_citation_access(&cite.pin, &cite.selection)
                 .await?;
         }
         Ok(status)
@@ -506,7 +514,7 @@ impl Readers {
                 return Err(Failure::AccessLimited.into());
             }
             self.selected(&cite.source)?
-                .page(&cite.pin, None, 1)
+                .check_citation_access(&cite.pin, &cite.selection)
                 .await?;
         }
         if cancel {

@@ -701,3 +701,26 @@ test('search reconstructs selected attempts after inventory and opens every cont
  assert.equal(u.node('search-results').children.length,1);assert.match(u.node('search-facets').children.map(n=>n.textContent).join(' '),/response: unavailable/);assert.equal(u.node('resume-search').disabled,true);
  const links=walk(u.node('search-results')).filter(n=>n.textContent.startsWith('Source '));assert.equal(links.length,2);links[1].click();await tick();q=JSON.parse(u.pending[0].opts.body);assert.equal(q.source,'archive-A');assert.equal(q.offset,'300');assert.deepEqual(q.selection,second.selection);await u.respond(proofSource);
 });
+
+test('portable reference resolution installs fresh reader selections and clears exports on lock',async()=>{
+ const fresh={...proofCatalog,scopes:[proofEntry('archive-A')]};const u=ui();await u.login();await u.respond(fresh);await u.respond(proofPage);
+ const reference={version:1,binding:{archive:'archive-A'},coordinate:{through:'1',manifest:'m',attestation:'a'},receipt:'r'};
+ u.node('reference-input').value=JSON.stringify({reference,offset:'9'});u.node('reference-form').events.submit({preventDefault(){}});await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'resolve-reference',reference});
+ const entry=fresh.scopes[0],record={...proofRow,selection:{...proofRow.selection,body:'new-reader-selection'}};
+ await u.respond({source:entry.id,pin:entry.pin,pin_wire:entry.pin_wire,record,reference});
+ const query=JSON.parse(u.pending[0].opts.body);assert.equal(query.action,'proof-source');assert.equal(query.offset,'9');assert.deepEqual(query.selection,record.selection);
+ await u.respond({...proofSource,record,reference,offset:'9'});assert.deepEqual(JSON.parse(u.node('reference-value').value),{reference,offset:'9'});assert.equal(u.node('reference-export').hidden,false);
+ u.node('lock').click();assert.equal(u.node('reference-input').value,'');assert.equal(u.node('reference-value').value,'');assert.equal(u.node('reference-export').hidden,true);
+});
+
+test('published annotation restoration requires preview and keeps provenance and lock state',async()=>{
+ const u=ui();await u.login();await u.respond(knowledgeCatalog);await u.respond(proofPage);
+ u.node('rows').children[0].click();await tick();
+ const reference={version:1,binding:{archive:'archive-A'},coordinate:{through:'3'},receipt:'r'};
+ await u.respond({...proofSource,reference,utf8:'{"format":"kan-annotation/1","declaration":{}}',offset:'0'});
+ assert.equal(u.node('restore-annotation').hidden,false);u.node('restore-annotation').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).action,'restore-annotation');
+ await u.respond({state:'preview',digest:'checked',contract:{declaration:{author:'original',id:'retained'}}});assert.equal(u.node('annotation-recovery-save').disabled,false);
+ u.node('annotation-recovery-save').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'restore-annotation',reference,preview:'checked'});
+ await u.respond({state:'restored',annotation:{id:'retained',author:'original'}});assert.match(u.node('annotation-recovery-preview').textContent,/original author original/);
+ u.node('lock').click();assert.equal(u.node('annotation-recovery').hidden,true);assert.equal(u.node('annotation-recovery-preview').textContent,'');
+});

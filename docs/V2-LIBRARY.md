@@ -666,3 +666,31 @@ For the browser, configure a separate functioning owner journal with a fixed tar
 The owner console previews and runs `recover` into a new nonce-named output. If the
 owner journal itself cannot open, use the CLI recovery path first. No key is sent
 to the browser. The output directory must already exist with owner-only permissions.
+
+### Portable references and restoring published annotations
+
+Source inspection exposes a portable reference containing the archive binding,
+sequence, manifest, attestation and receipt. It contains no decryption key or
+read grant. Paste its JSON into **Open an evidence reference** to resolve it with
+the current reader's fresh snapshot. The shared `resolve-reference` API verifies
+current archive membership and grants, then returns current reader selections.
+Missing payloads retain their reference and provenance. Wrong identities or
+receipts refuse resolution; possession of a reference does not grant access.
+
+A retained `kan-annotation/1` source offers **Restore published annotation**.
+The shared `restore-annotation` API takes a reference; without `preview` it returns
+a digest-bound plan, and with that digest it installs the verified declaration in
+the encrypted workspace. It preserves the original author, ID, timestamp, draft,
+correction/analysis references and publication origin. The retained request writer
+must match the declared author and the original declaration digest must match.
+Exact retries reuse the original record. Restoration does not schedule analysis
+or republish. A different reader may restore an authorized annotation, but cannot
+publish it as though they were its original author.
+
+Restored annotations are disclosed only with current access to both their
+publication archive and every cited archive. `citation-source` resolves a signed
+citation under the current reader; the service proves current membership and
+access independently of the original reader. Original citation data remains in
+the annotation. Missing correction parents and analysis jobs stay unresolved until
+separately recovered. This restores selected publications; it does not certify
+that all annotations were published or all local history has been recovered.

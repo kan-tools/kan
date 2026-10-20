@@ -39,16 +39,7 @@ impl Readers {
         let mut selected = BTreeMap::new();
         for reader in proofs {
             let binding = reader.binding();
-            let id = format!(
-                "proof:{}:{}:{}:{}",
-                match binding.profile {
-                    wire::Profile::Admitted => "admitted",
-                    wire::Profile::Copied => "copied",
-                },
-                binding.archive,
-                binding.scope,
-                binding.issuer
-            );
+            let id = source_id(binding);
             if selected.insert(id, std::sync::Arc::new(reader)).is_some() {
                 return Err(Failure::Invalid);
             }
@@ -147,12 +138,12 @@ impl Readers {
                 let pin = reader.snapshot().await?;
                 Ok(json!({"id":id,"scope":reader.binding().scope,"binding":reader.binding(),
                     "protocol":wire::PROTOCOL,"pin_wire":serde_json::to_string(&pin).map_err(|_|Failure::Invalid)?,"pin":pin,
-                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content","import-content"]}))
+                    "capabilities":["portable-references","snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content","import-content"]}))
             } else {
                 let reader = self.legacy.as_ref().ok_or(Failure::Invalid)?;
                 let pin = reader.snapshot(id).await?;
                 Ok(json!({"id":id,"scope":id,"protocol":"legacy","pin_wire":content::pin_wire(&pin)?,"pin":pin,
-                    "capabilities":["snapshot-inventory","source-ranges","provenance","content-inspection"]}))
+                    "capabilities":["portable-references","snapshot-inventory","source-ranges","provenance","content-inspection"]}))
             }
         }).await.unwrap_or(Err(Failure::Unavailable)))
     }
@@ -367,7 +358,7 @@ impl Readers {
                     }
                 }
                 let mut catalog = json!({"version":2,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},
-                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content","import-content"],
+                    "capabilities":["portable-references","snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content","import-content"],
                     "unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]});
                 if self.owner.is_some() {
                     catalog["capabilities"]
@@ -403,6 +394,37 @@ impl Readers {
                         .retain(|v| v != "saved-views" && v != "annotations");
                 }
                 catalog
+            }
+            Query::CitationSource {
+                cite,
+                offset,
+                length,
+            } => {
+                let offset =
+                    usize::try_from(content::coordinate(&offset)?).map_err(|_| Failure::Invalid)?;
+                let length =
+                    usize::try_from(content::coordinate(&length)?).map_err(|_| Failure::Invalid)?;
+                if length == 0 || length > legacy::RANGE_LIMIT {
+                    return Err(Failure::Invalid.into());
+                }
+                let reader = self.selected(&cite.source)?;
+                let (pin, value) = reader.rebind_citation(&cite.selection).await?;
+                let mut result = source_value(reader.binding(), value, offset, length)?;
+                result["pin"] = json!(pin);
+                result["pin_wire"] =
+                    json!(serde_json::to_string(&pin).map_err(|_| Failure::Invalid)?);
+                result
+            }
+            Query::RestoreAnnotation { reference, preview } => {
+                self.restore_annotation(reference, preview).await?
+            }
+            Query::ResolveReference { reference } => {
+                let source = source_id(&reference.binding);
+                let (pin, record) = self
+                    .selected(&source)?
+                    .resolve_reference(&reference)
+                    .await?;
+                json!({"source":source,"pin":pin,"pin_wire":serde_json::to_string(&pin).map_err(|_|Failure::Invalid)?,"record":record,"reference":reference})
             }
             Query::ProofSnapshot { source } => {
                 let pin = self.selected(&source)?.snapshot().await?;
@@ -450,6 +472,18 @@ impl Readers {
         serde_json::to_vec(&value).map_err(|_| Failure::Invalid.into())
     }
 }
+fn source_id(binding: &wire::Binding) -> String {
+    format!(
+        "proof:{}:{}:{}:{}",
+        match binding.profile {
+            wire::Profile::Admitted => "admitted",
+            wire::Profile::Copied => "copied",
+        },
+        binding.archive,
+        binding.scope,
+        binding.issuer
+    )
+}
 fn source_value(
     binding: &wire::Binding,
     value: proof::Source,
@@ -466,7 +500,8 @@ fn source_value(
         proof::Source::Missing { record } => (record, None, None, "missing"),
         proof::Source::Corrupt { record } => (record, None, None, "corrupt"),
     };
-    let mut result = json!({"scope":binding.scope,"archive":binding.archive,"profile":binding.profile,
+    let reference = proof::Reference::new(binding, &record);
+    let mut result = json!({"reference":reference,"scope":binding.scope,"archive":binding.archive,"profile":binding.profile,
         "record":record,"writer":writer,"service_issuer":binding.issuer,"availability":availability,
         "signature":if plaintext.is_some() {"Retained writer signature verified on this read"} else {"Writer signature cannot be rechecked without valid retained source"},
         "admission":"Issuer-attested metadata; proof purpose shown separately",

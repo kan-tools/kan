@@ -36,30 +36,151 @@ pub struct Draft {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub relations: Vec<Relation>,
 }
+impl Draft {
+    fn validate(&self) -> Result<(), Failure> {
+        if self.subject.trim().is_empty()
+            || self.subject.len() > 256
+            || self.text.trim().is_empty()
+            || self.text.len() > 8192
+            || self.tags.len() > 32
+            || self.tags.iter().any(|s| s.is_empty() || s.len() > 64)
+            || self.cites.is_empty()
+            || self.cites.len() > 8
+            || self.derived_from.len() > 8
+            || self.relations.len() > 16
+            || self
+                .relations
+                .iter()
+                .any(|r| r.target.trim().is_empty() || r.target.len() > 256)
+        {
+            return Err(Failure::Invalid);
+        }
+        Ok(())
+    }
+}
 impl Readers {
+    pub(super) async fn restore_annotation(
+        &self,
+        reference: crate::evidence_reader::proof::Reference,
+        preview: Option<String>,
+    ) -> Result<Value, ContentError> {
+        let _permit = self
+            .workers
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ContentError::Busy)?;
+        let workspace = self.workspace()?;
+        let source = super::source_id(&reference.binding);
+        let reader = self.selected(&source)?;
+        let (pin, record) = reader.resolve_reference(&reference).await?;
+        let crate::evidence_reader::proof::Source::Available {
+            writer, plaintext, ..
+        } = reader.source(&pin, &record.selection).await?
+        else {
+            return Err(Failure::Missing.into());
+        };
+        if plaintext.len() > 262144 {
+            return Err(Failure::Invalid.into());
+        }
+        let publication: Value =
+            serde_json::from_slice(&plaintext).map_err(|_| Failure::Invalid)?;
+        if publication["format"] != "kan-annotation/1"
+            || publication.as_object().is_none_or(|m| m.len() != 2)
+        {
+            return Err(Failure::Invalid.into());
+        }
+        let declaration = &publication["declaration"];
+        let object = declaration.as_object().ok_or(Failure::Invalid)?;
+        let fields = [
+            "version",
+            "author",
+            "analysis_trigger_plan",
+            "draft",
+            "id",
+            "recorded_at",
+        ];
+        if object.len() != fields.len()
+            || fields.iter().any(|k| !object.contains_key(*k))
+            || declaration["version"] != 1
+            || declaration["author"] != writer
+        {
+            return Err(Failure::Invalid.into());
+        }
+        let draft: Draft =
+            serde_json::from_value(declaration["draft"].clone()).map_err(|_| Failure::Invalid)?;
+        draft.validate()?;
+        crate::evidence_content::coordinate(
+            declaration["recorded_at"]
+                .as_str()
+                .ok_or(Failure::Invalid)?,
+        )?;
+        let id = declaration["id"].as_str().ok_or(Failure::Invalid)?;
+        let mut original = declaration.clone();
+        original
+            .as_object_mut()
+            .ok_or(Failure::Invalid)?
+            .remove("id");
+        original
+            .as_object_mut()
+            .ok_or(Failure::Invalid)?
+            .remove("recorded_at");
+        if crate::evidence_service::hex(&Sha256::digest(
+            serde_json::to_vec(&original).map_err(|_| Failure::Invalid)?,
+        )) != id
+        {
+            return Err(Failure::Corrupt.into());
+        }
+        let (authorized, partial) = self.authorized_sources().await;
+        if !authorized.contains(&source)
+            || draft.cites.iter().any(|c| !authorized.contains(&c.source))
+        {
+            return Err(if partial {
+                Failure::Unavailable
+            } else {
+                Failure::AccessLimited
+            }
+            .into());
+        }
+        let contract = json!({"version":1,"workspace_author":workspace.author(),"reference":reference,"declaration":declaration});
+        let digest = crate::evidence_service::hex(&Sha256::digest(
+            serde_json::to_vec(&contract).map_err(|_| Failure::Invalid)?,
+        ));
+        let mut restored = declaration.clone();
+        restored["recovered_from"] = json!({"source":source,"reference":reference,"writer":writer});
+        if let Some(expected) = preview {
+            if expected != digest {
+                return Err(Failure::Invalid.into());
+            }
+            reader.page(&pin, None, 1).await?;
+            if let Some(prior) = workspace.get("annotation", id)? {
+                let mut plain = prior.clone();
+                plain
+                    .as_object_mut()
+                    .ok_or(Failure::Corrupt)?
+                    .remove("recovered_from");
+                if plain != *declaration {
+                    return Err(Failure::Conflict.into());
+                }
+                restored = prior;
+            } else {
+                workspace.put("annotation", id, restored.clone())?;
+            }
+            Ok(
+                json!({"state":"restored","annotation":restored,"automatic_analysis":"not-triggered","publication":"not-performed"}),
+            )
+        } else {
+            Ok(
+                json!({"state":"preview","digest":digest,"contract":contract,"effect":"Restore the exact published annotation into this encrypted workspace, retaining its original author, ID, timestamp, citations and publication origin. Do not trigger analysis or republish. Missing correction parents or analysis jobs remain unresolved."}),
+            )
+        }
+    }
     pub(super) async fn annotation_preview(&self, mut draft: Draft) -> Result<Value, ContentError> {
         let _permit = self
             .workers
             .clone()
             .try_acquire_owned()
             .map_err(|_| ContentError::Busy)?;
-        if draft.subject.trim().is_empty()
-            || draft.subject.len() > 256
-            || draft.text.trim().is_empty()
-            || draft.text.len() > 8192
-            || draft.tags.len() > 32
-            || draft.tags.iter().any(|s| s.is_empty() || s.len() > 64)
-            || draft.cites.is_empty()
-            || draft.cites.len() > 8
-            || draft.derived_from.len() > 8
-            || draft.relations.len() > 16
-            || draft
-                .relations
-                .iter()
-                .any(|r| r.target.trim().is_empty() || r.target.len() > 256)
-        {
-            return Err(Failure::Invalid.into());
-        }
+        draft.validate()?;
         draft.tags.sort();
         draft.tags.dedup();
         let mut relations = Vec::new();
@@ -139,7 +260,7 @@ impl Readers {
         for cite in &draft.cites {
             let source = self
                 .selected(&cite.source)?
-                .source(&cite.pin, &cite.selection)
+                .cited_source(&cite.pin, &cite.selection)
                 .await?;
             let (record, availability) = match source {
                 crate::evidence_reader::proof::Source::Available { record, .. } => {
@@ -205,7 +326,10 @@ impl Readers {
         for declaration in declarations {
             let draft: Draft = serde_json::from_value(declaration["draft"].clone())
                 .map_err(|_| Failure::Corrupt)?;
-            if draft.cites.is_empty()
+            if declaration["recovered_from"]["source"]
+                .as_str()
+                .is_some_and(|s| !authorized.contains(s))
+                || draft.cites.is_empty()
                 || draft.cites.iter().any(|c| !authorized.contains(&c.source))
                 || subject.as_ref().is_some_and(|s| s != &draft.subject)
                 || tag.as_ref().is_some_and(|t| !draft.tags.contains(t))
