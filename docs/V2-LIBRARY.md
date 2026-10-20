@@ -1,10 +1,10 @@
 # Evidence Library
 
-The experimental Library serves real, authorized evidence inventory and exact
-source ranges. It is the first browsing slice of Kan Studio. It is not yet the
-complete frontend: persistent search, cross-archive session views, annotations, saved
-views, analysis, administrative jobs and an integrated Operations area remain
-required build items. No example or synthetic success is served by this app.
+The experimental Library serves authorized evidence inventory and exact source
+ranges alongside cross-archive conversations, persistent search, saved views,
+annotations, background analysis, owner administration and integrated Operations.
+Every area uses the shared v2 API. Integrated qualification is still in progress;
+the app does not substitute examples or synthetic success for unavailable data.
 
 Build with `v2-crypto`. Give the reader a dedicated signing identity with only
 `inventory: true, append: false` at each selected service. Keep it separate from
@@ -50,8 +50,9 @@ visible. All grouping includes the configured archive, verified writer and
 observer; matching text or timestamps never constructs session identity.
 
 These headers are opt-in calling conventions, not a claim that every installed
-harness emits them. Large fragmented HTTP metadata currently remains raw evidence
-without session interpretation. Requests with no explicit links remain independent.
+harness emits them. Supported fragmented HTTP metadata is reconstructed with
+exact contributing citations as described in [Chunked metadata and session links](#chunked-metadata-and-session-links).
+Requests with no explicit links remain independent.
 Session views cover the scanned window, not an unseen whole-archive index. Branches
 and compaction preserve earlier source instead of rewriting history.
 
@@ -203,12 +204,13 @@ page displays no rows or counts from its failed response. Refresh the snapshot
 or select another scope to recover. This does not bypass verification or skip
 unreadable rows silently.
 
-The current storage Page RPC verifies referenced objects as it reads records.
+The legacy storage Page RPC verifies referenced objects as it reads records.
 A damaged or missing object can therefore make its containing page unavailable;
-this first reader does not yet return per-occurrence unavailable-evidence rows.
+that protocol does not return per-occurrence unavailable-evidence rows.
 The service reports absent retained bytes as corruption, so physical absence and
-corruption are not independently distinguished by the Library. That remaining
-backend contract is required for full browsing coverage.
+corruption are not independently distinguished for legacy sources. Proof sources
+provide individual missing/corrupt/erased availability while preserving readable
+inventory and exact source failures.
 
 Directional formatting controls default to hex, like control bytes. An explicit
 UTF-8 toggle shows the exact original text; it does not sanitize or rewrite the
@@ -401,8 +403,9 @@ API equivalents: `annotation-delivery` (`id`), `annotation-queue` (`id`,
 (`destination`). The server chooses all filesystem paths and network destinations
 from operator configuration. Published records use `kan-annotation/1` encrypted
 plaintext frames and preserve the authored declaration and all citations. Keep the
-workspace backup as well: automatic rebuilding from published annotations and
-cross-reader citation resolution are not implemented yet.
+workspace backup as well. [Portable references and published annotation restoration](#portable-references-and-restoring-published-annotations)
+support explicit reconstruction and cross-reader source resolution under current
+grants; they do not silently recreate every item in a lost workspace.
 
 After scanning authorized archives, use **Read conversation** on an explicit
 session group. Responses and tool activity appear beside gaps and membership

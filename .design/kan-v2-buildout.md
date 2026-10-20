@@ -63,6 +63,26 @@ Merge P0 first after review and relevant checks. Prefer the project's regular me
 
 Future implementation PRs use this same ordering. Keep the active stack short: only branch from an unmerged predecessor when the dependency is concrete; otherwise branch from the latest accepted main. Creation of this plan does not authorize automatic future merges, cleanup of active worktrees, or release publication.
 
+**Current integration and conditional merge plan (2026-10-20).** The existing
+stack contains 50 draft PRs, #264 through #313, in strict dependency order. A
+read-only check at `bfd82da` found every published PR head and current main
+(`bc20720`) in the integration ancestry. The active SOP now requires one final
+integrated review, rather than restarting a review for each historical slice.
+
+After qualification and that review, record the accepted integration SHA and the
+exact PR heads, then request approval for the concrete merge sequence. Recheck
+those heads and main immediately before execution. Merge #264 first, then retarget
+and merge each dependent child in order, preserving ancestry with merge commits.
+Honor required checks and inspect each child delta after retargeting. An unexpected
+head/base change stops the sequence for reconciliation against the reviewed tree;
+do not automatically replay or squash the stack. Keep parent branches until their
+children are retargeted. The intermediate commits are not release candidates:
+later integration commits contain fixes to earlier slices. Qualify the completed
+main tree and actual Cargo package before choosing a release tag or publishing.
+Deployment, production migration/erasure and deletion of worktrees or source
+backups remain separate actions. No merge, tag, publication or cutover is performed
+by preparing this plan.
+
 | Slice | Depends on | Reviewable change | Exit evidence / parent coverage |
 |---|---|---|---|
 | P0 architecture | Existing main | Product direction and migration requirements | Parent design check and architecture review; open questions remain visible |

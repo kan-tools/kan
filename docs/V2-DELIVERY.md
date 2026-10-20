@@ -1,6 +1,6 @@
 # Experimental encrypted delivery
 
-Build with `cargo build --features v2-crypto --bin kan-v2`. This is a manual encrypted delivery path for bounded raw chunks. It is not yet the harness proxy, multi-chunk migration driver or production deployment. Credentials and directories must already exist. Never point an experiment at your only copy of source data.
+Build with `cargo build --features v2-crypto --bin kan-v2`. This runbook covers manual encrypted delivery of bounded raw chunks. Use [the gateway](V2-GATEWAY.md) for harness traffic, [the importer](V2-IMPORT.md) for v1 repositories, and [managed deployment](V2-DEPLOYMENT.md) for enrolled service launches. Credentials and directories must already exist. Preserve original source data when rehearsing migration.
 
 The writer uses the existing kan P-256 signing-key file format. The archive recipient is a separate X25519 key: the sender only needs its canonical 32-byte public key as lowercase hex. Offline recovery requires the matching raw 32-byte private key in an owner-only regular file. These commands never mint, install or discover keys. Backing up and testing recovery of that private key remains an operator responsibility.
 
@@ -35,7 +35,7 @@ kan-v2 decrypt-request retained-request.json --recipient-key "$RECIPIENT_PRIVATE
 
 `spool-head` emits exact signed bytes and never removes them. `decrypt-request` verifies the signature, explicit scope/writer pins and authenticated encryption before writing any plaintext. The writer pin identifies the outer request signer, not who originally encrypted or authored the plaintext: another writer can copy ciphertext within the same scope and sign a new wrapper. Signature validity does not establish historical service authorization. Redirection creates files under your shell's permissions; use an owner-only directory and appropriate umask for plaintext. The server's separate `rpc` read capability can return retained requests after local dequeue; extracting those bytes requires parsing the signed response, not treating the response itself as an encrypted request.
 
-Service endpoint restrictions, issuer verification, bounded response handling and explicit signed access grants are inherited from the service transport. No environment proxy or redirect is followed. The built-in development listener remains loopback-only. Production service configuration, recovery-key custody, provider forwarding and visible capture-gap signaling remain subsequent build points.
+Service endpoint restrictions, issuer verification, bounded response handling and explicit signed access grants are inherited from the service transport. No environment proxy or redirect is followed. The built-in development listener remains loopback-only. The gateway and capture runbooks cover provider forwarding and visible gaps; the Library runbook covers wrapped recovery keys and cold-host recovery. Deployment-specific qualification and live cutover remain separate owner decisions.
 
 ## Managed erasure and restored queues
 
