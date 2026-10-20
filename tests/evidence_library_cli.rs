@@ -244,6 +244,15 @@ async fn library_cli_browses_authenticated_retained_source_without_storage_autho
         assert!(names.contains(&"kan_v2_read"));
         assert_eq!(names.contains(&"kan_v2_write"), writes);
         assert!(!names.contains(&"kan_v2_owner"));
+        let write=mcp_request(&mut input,&mut output,6,"tools/call",serde_json::json!({"name":"kan_v2_write","arguments":{"query":{"action":"unknown-future-action"}}})).await;
+        if writes {
+            assert_eq!(
+                write["result"]["structuredContent"]["error"],
+                "invalid-request"
+            );
+        } else {
+            assert!(write["error"].is_object());
+        }
         let result=mcp_request(&mut input,&mut output,3,"tools/call",serde_json::json!({"name":"kan_v2_read","arguments":{"query":{"action":"source","pin":pin,"sequence":1,"offset":0,"length":100}}})).await;
         assert_eq!(result["result"]["isError"], false);
         assert_eq!(result["result"]["structuredContent"], source);

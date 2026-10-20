@@ -174,7 +174,9 @@ impl Server {
         }
     }
 }
-#[tool_handler]
+// Route both discovery and invocation through the instance whose disabled
+// capabilities were removed. The macro default constructs a fresh full router.
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for Server {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
