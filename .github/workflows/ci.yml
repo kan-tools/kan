@@ -58,6 +58,7 @@ jobs:
       - run: cargo test --features v2-crypto --lib evidence_content
       - run: cargo test --features v2-crypto --lib evidence_library::proof::imports::current
       - run: cargo test --features v2-crypto --lib evidence_library::proof::knowledge
+      - run: cargo test --features v2-crypto --lib evidence_library::proof::analysis::adapters
       - run: cargo test --features v2-crypto --lib evidence_library::mcp
       - run: cargo test --features v2-crypto --lib evidence_gateway::admission_tests
       - run: cargo test --features v2-crypto --lib evidence_operations::tests

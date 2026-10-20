@@ -631,3 +631,24 @@ The installed kan is 0.13.0-beta.1. Bulk claims and issues were read successfull
 The graph currently reports generative-build after design. That describes the recorded vocabulary; it is not authorization to start implementation or proof that this draft's open contracts are resolved. This pass targets the existing raw-data-and-projections principle; it does not invent a new milestone telos or human evidence criteria. A bridge to that deliberately unwitnessed maintenance target cannot honestly prove attainment.
 
 Recording was attempted with `day design record` against this document and the existing raw-data-and-projections claim as a normative citation. It exited 2 before appending: the two unattributed withheld claims make the new subject's absence indeterminate. `day bridge declare` likewise exited 2 before declaring the proposed bridge. No observe/plan/decide CIDs or bridge CID were produced. The file needs back-filling through day after its read context can establish subject history; no claims were assembled manually and no trust settings were changed. Validation is available despite this recording limitation.
+
+### Decision adapter implementation contract — 2026-10-20
+
+The integrated analysis scheduler now distinguishes `anthropic-messages` from
+`typesafe-system-one`. Both use explicitly configured loopback collector endpoints,
+source grants, fixed versioned recipes, preview-bound submissions and encrypted
+run/input/output history. A TypeSafe gateway profile forwards only `/v1/systemone`
+to its configured origin, inserting a separately provisioned provider Bearer key;
+collector credentials and source text cannot choose that destination or key.
+Typed questions support Choice, Score and Noul with exact question-ID coverage and
+bounded answer validation. Full returned distributions/model identity remain
+untrusted recorded output, not automatic action or identity authority. TypeSafe
+has no requested output-token cap; its question/response bounds are disclosed
+separately. Generative summaries remain on the generative adapter. Swapping models
+or adapters cannot overwrite earlier runs or require their providers for reading
+retained results. This does not select Jev operationally or establish its quality;
+the user-approved corpus comparison described in §9 remains an operational choice.
+Primary interface checked against TypeSafe's [HTTP examples](https://docs.typesafe.ai/introduction/quickstart#call-it-the-api)
+and [question contracts](https://docs.typesafe.ai/primitives) on this date. Runtime
+qualification of the new protocol path remains pending; tests use synthetic
+responses and never upload production traces.

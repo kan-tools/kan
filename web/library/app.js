@@ -902,13 +902,18 @@
     }
     return true;
   }
+  function analysisResultText(result) {
+    const parsed=result?.parsed;
+    if(parsed?.answers && typeof parsed.answers==='object' && !Array.isArray(parsed.answers))return JSON.stringify({model:parsed.model,answers:parsed.answers,usage:parsed.usage},null,2);
+    return (Array.isArray(parsed?.content)?parsed.content:[]).filter(b=>b.type==='text'&&typeof b.text==='string').map(b=>b.text).join('\n');
+  }
   async function inspectAnalysis(id,cancel=false){
     $('analysis-detail').replaceChildren();const value=await rpc({action:'analysis-job',id,cancel});if(!value)return;
     const root=$('analysis-detail');root.append(textNode('h3',`Job ${value.state}`));root.append(textNode('p','Derived model output · assertions are untrusted. No claims or actions were published.','content-coverage'));
-    for(const block of value.result?.parsed?.content||[])if(block.type==='text'&&typeof block.text==='string')appendPagedText(root,block.text,'content-text');
+    const resultText=analysisResultText(value.result);if(resultText)appendPagedText(root,resultText,'content-text');
     if(annotationsEnabled&&value.result) {
       const promote=textNode('button','Draft annotation from this result');promote.addEventListener('click',()=>{
-        const text=(value.result.parsed?.content||[]).filter(b=>b.type==='text'&&typeof b.text==='string').map(b=>b.text).join('\n');
+        const text=analysisResultText(value.result);
         editAnnotation(value.job.draft.cites,`analysis/${value.job.draft.recipe}`,null,[value.job.id]);$('annotation-text').value=text.slice(0,8192);
         if(text.length>8192)notice('Draft excerpted to the annotation limit. The complete result remains linked through job provenance.');
       });root.append(promote);
@@ -928,7 +933,7 @@
     if(!analysisDraft)return;analysisPreview=null;$('submit-analysis').disabled=true;analysisDraft.recipe=$('analysis-recipe').value;
     const checked=await rpc({action:'analysis-preview',draft:analysisDraft});if(!checked)return;
     if(typeof checked.digest!=='string'||typeof checked.nonce!=='string')throw new Error('Invalid analysis preview.');
-    analysisPreview=checked;$('analysis-preview').textContent=`${checked.effect}\nDestination: ${checked.endpoint}\nModel: ${checked.model}\nRecipe: ${checked.recipe.id} / ${checked.recipe.revision} / ${checked.recipe.purpose}\nInput: ${checked.input_bytes} bytes · output limit ${checked.max_output_tokens} tokens\n\n${checked.recipe.instructions}`;$('submit-analysis').disabled=false;
+    analysisPreview=checked;$('analysis-preview').textContent=`${checked.effect}\nDestination: ${checked.endpoint}\nAdapter: ${checked.adapter||'anthropic-messages'}\nModel: ${checked.model}\nRecipe: ${checked.recipe.id} / ${checked.recipe.revision} / ${checked.recipe.purpose}\nInput: ${checked.input_bytes} bytes · ${checked.max_output_tokens==null?'structured answers; no provider token limit':`output limit ${checked.max_output_tokens} tokens`}\n\n${checked.recipe.instructions}${checked.recipe.questions?'\n\nQuestions: '+JSON.stringify(checked.recipe.questions,null,2):''}`;$('submit-analysis').disabled=false;
   });});
   $('submit-analysis').addEventListener('click',()=>run(async()=>{
     if(!analysisPreview||!analysisDraft)return;const checked=analysisPreview;$('submit-analysis').disabled=true;

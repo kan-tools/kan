@@ -992,3 +992,17 @@ test('graph pages preserve continuation through empty results, retry failures, a
  u.node('load-subjects').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'knowledge-graph',subject:null,day:true,after:null,limit:100});
  u.node('lock').click();await u.respond(empty);assert.equal(u.node('next-subjects').disabled,true);assert.equal(u.node('knowledge-coverage').textContent,'');
 });
+
+test('structured analysis answers retain model distributions and explicit promotion lineage',async()=>{
+ const u=ui(),request=await openAnalysisUI(u);u.node('cancel-analysis-draft').click();await u.respond({});
+ u.node('load-analysis').click();await tick();const job={id:'decision-job',draft:request.draft};
+ await u.respond({configuration:{...analysisConfiguration,adapter:'typesafe-system-one'},jobs:[{state:'succeeded',job}],coverage:'complete'});
+ walk(u.node('analysis-jobs')).find(n=>n.textContent==='Inspect job and lineage').click();await tick();
+ const parsed={model:'synthetic-jev-fixture',answers:{boundary:{type:'choice',choice:'uncertain',confidence:0.12,probabilities:{same:0.3,new:0.3,uncertain:0.4}}},usage:{input_tokens:41,output_tokens:12}};
+ await u.respond({state:'succeeded',job,input:{adapter:'typesafe-system-one'},result:{adapter:'typesafe-system-one',parsed}});
+ assert.ok(walk(u.node('analysis-detail')).some(n=>n.textContent.includes('synthetic-jev-fixture')));
+ walk(u.node('analysis-detail')).find(n=>n.textContent==='Draft annotation from this result').click();
+ assert.deepEqual(JSON.parse(u.node('annotation-text').value),parsed);
+ u.node('annotation-form').events.submit({preventDefault(){}});await tick();const preview=JSON.parse(u.pending[0].opts.body);
+ assert.deepEqual(preview.draft.derived_from,['decision-job']);assert.deepEqual(preview.draft.cites,request.draft.cites);
+});

@@ -524,6 +524,9 @@ fn sse() -> Vec<u8> {
 }
 type Requests = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
 async fn anthropic_provider() -> (String, Requests, Task) {
+    structured_provider(false).await
+}
+async fn structured_provider(system_one: bool) -> (String, Requests, Task) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let origin = format!("http://{}/", listener.local_addr().unwrap());
     let requests: Requests = Arc::new(Mutex::new(Vec::new()));
@@ -553,7 +556,9 @@ async fn anthropic_provider() -> (String, Requests, Task) {
             }
             let count = head.starts_with("POST /v1/messages/count_tokens");
             r.lock().unwrap().push((head, body));
-            let (body, kind) = if count {
+            let (body, kind) = if system_one {
+                (br#"{"model":"synthetic-jev-fixture","answers":{"decision":{"type":"noul","noul":0.7}}}"#.to_vec(), "application/json")
+            } else if count {
                 (b"{\"input_tokens\":42}".to_vec(), "application/json")
             } else {
                 (sse(), "text/event-stream")
@@ -1685,4 +1690,93 @@ async fn epoch_rotation_changes_new_capture_and_history_failure_forwards_with_vi
             .unwrap(),
         count as i64
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn typesafe_profile_captures_exact_two_hop_decisions_without_forwarding_local_credentials() {
+    let gd = tempfile::tempdir().unwrap();
+    let cd = tempfile::tempdir().unwrap();
+    let (origin, requests, _provider) = structured_provider(true).await;
+    let (mut gateway_config, _, gateway_did) = config(
+        Route::new(&origin).unwrap(),
+        Observer::Gateway,
+        gd.path(),
+        true,
+    );
+    gateway_config.profile = gateway::Profile::Typesafe;
+    gateway_config.provider_key = Some(reqwest::header::HeaderValue::from_static(
+        "synthetic-typesafe-provider-key",
+    ));
+    let (remote, _gateway) = start(tls(), gateway_config).await;
+    let (mut collector_config, _, collector_did) = config(
+        Route::mutual_tls(remote.trim_end_matches("v1/forward"), CA, ID).unwrap(),
+        Observer::Collector,
+        cd.path(),
+        true,
+    );
+    collector_config.profile = gateway::Profile::Typesafe;
+    let (local, _collector) =
+        start(ListenerAuth::LoopbackToken(TOKEN.into()), collector_config).await;
+    let origin = local.trim_end_matches("v1/forward");
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let body = br#"{ "model":"synthetic-jev-fixture", "state":"Untrusted decision input", "questions":{"decision":{"type":"noul","instructions":"Is a decision present?"}} }"#;
+    let response = client
+        .post(format!("{origin}v1/systemone"))
+        .bearer_auth(TOKEN)
+        .header("content-type", "application/json")
+        .header("anthropic-version", "must-not-forward")
+        .body(body.to_vec())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.headers()["content-type"], "application/json");
+    let response = response.bytes().await.unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&response).unwrap()["answers"]["decision"]
+            ["noul"],
+        0.7
+    );
+    {
+        let seen = requests.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert!(seen[0].0.starts_with("POST /v1/systemone "));
+        assert_eq!(seen[0].1, body);
+        let head = seen[0].0.to_ascii_lowercase();
+        assert!(head.contains("authorization: bearer synthetic-typesafe-provider-key\r\n"));
+        assert!(!head.contains(TOKEN));
+        assert!(!head.contains("anthropic-version:"));
+        assert!(!head.contains("x-api-key:"));
+    }
+    for path in ["v1/messages", "v1/systemone?url=elsewhere", "v1/forward"] {
+        assert_eq!(
+            client
+                .post(format!("{origin}{path}"))
+                .bearer_auth(TOKEN)
+                .body("{}")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            404
+        );
+    }
+    assert_eq!(requests.lock().unwrap().len(), 1);
+    for (dir, did) in [(gd.path(), gateway_did), (cd.path(), collector_did)] {
+        let frames = frames(&dir.join("spool"), &did);
+        let mut request_body = Vec::new();
+        let mut response_body = Vec::new();
+        for (header, bytes) in frames {
+            let metadata = serde_json::to_string(&header).unwrap();
+            assert!(!metadata.contains("synthetic-typesafe-provider-key"));
+            assert!(!metadata.contains(TOKEN));
+            match header.event {
+                capture::Event::RequestChunk { .. } => request_body.extend(bytes),
+                capture::Event::ResponseChunk { .. } => response_body.extend(bytes),
+                _ => (),
+            }
+        }
+        assert_eq!(request_body, body);
+        assert_eq!(response_body, response);
+    }
 }

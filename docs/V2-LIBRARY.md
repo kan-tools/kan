@@ -446,8 +446,47 @@ browser. Example (replace every illustrative value before use):
 ```
 
 Supported purposes are `segment`, `extract`, `summarize`, and `day-assessment`.
-This uses the configured collector/gateway's Anthropic Messages interface. It
+The default adapter uses the configured collector/gateway's Anthropic Messages interface. It
 never chooses a provider, buys credits or obtains production credentials.
+
+For typed decisions, set `"adapter": "typesafe-system-one"` and use the fixed
+loopback endpoint `/v1/systemone` with the collector/gateway's `--profile typesafe`.
+Select the model explicitly. Each recipe supplies a `questions` map, for example:
+
+```json
+"questions": {
+  "boundary": {
+    "type": "choice",
+    "instructions": "Do these supplied inputs change topic?",
+    "criteria": {
+      "same": "Continuation of the same topic",
+      "new": "A distinct topic begins",
+      "unknown": "The evidence is insufficient"
+    }
+  },
+  "decision": {"type": "noul", "instructions": "Is an explicit decision recorded?"}
+}
+```
+
+The adapter sends selected evidence as `state` and preserves question names,
+criteria, returned model identity and full answer distributions. It supports
+Choice, Score and Noul questions; it does not turn decisions into prose summaries
+or execute the suggested decisions. `summarize` recipes require the generative
+adapter. Question/answer contracts follow the [TypeSafe primitives](https://docs.typesafe.ai/primitives)
+and [HTTP interface](https://docs.typesafe.ai/introduction/quickstart#call-it-the-api),
+checked 2026-10-20. Support is protocol qualification, not a measured model-quality
+or cost claim. No production traces or model credentials are bundled.
+
+At most 32 questions and 64 KiB of question metadata are accepted per recipe.
+The TypeSafe interface has no requested output-token limit: `max_output_tokens`
+in configuration applies only to Anthropic, and decision previews report that
+limit as unavailable. Both adapters retain at most 2 MiB of response bytes, with
+explicit truncation/failure. Missing answers, unexpected question identities,
+invalid probabilities or malformed results remain inspectable failed attempts.
+The human result view displays structured answers and usage when supplied, with
+the same explicit annotation-promotion and source-lineage controls. Changing
+adapters or models produces a new preview/run; old results remain readable under
+current source grants without calling the old provider again.
 
 Inspect a source and choose **Analyze**. Preview shows the exact recipe revision,
 model, destination and input budget. **Start background job** submits it; **Refresh

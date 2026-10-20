@@ -33,6 +33,7 @@ pub type HealthReporter = Arc<dyn Fn(&capture::Health) + Send + Sync>;
 pub enum Profile {
     Opaque,
     Anthropic,
+    Typesafe,
 }
 pub struct Config {
     pub profile: Profile,
@@ -65,7 +66,7 @@ impl Config {
     }
     pub fn validate(&self) -> io::Result<()> {
         self.recipient_for_attempt()?;
-        if self.profile == Profile::Anthropic
+        if self.profile != Profile::Opaque
             && (!self.route.is_origin()
                 || self.observer == capture::Observer::Gateway
                     && self
@@ -76,7 +77,7 @@ impl Config {
             return Err(invalid());
         }
         if self.provider_key.is_some()
-            && (self.observer != capture::Observer::Gateway || self.profile != Profile::Anthropic)
+            && (self.observer != capture::Observer::Gateway || self.profile == Profile::Opaque)
         {
             return Err(invalid());
         }
@@ -327,22 +328,27 @@ async fn handle(
             Ok(r) => Some(r),
             Err(_) => return Ok(error(StatusCode::NOT_FOUND)),
         },
+        Profile::Typesafe => match config.route.typesafe_path(path) {
+            Ok(r) => Some(r),
+            Err(_) => return Ok(error(StatusCode::NOT_FOUND)),
+        },
         _ => return Ok(error(StatusCode::NOT_FOUND)),
     };
-    let metadata = if config.profile == Profile::Anthropic {
+    let metadata = if config.profile != Profile::Opaque {
         Some(request.headers().clone())
     } else {
         None
     };
     let mut outgoing = reqwest::header::HeaderMap::new();
-    if config.profile == Profile::Anthropic {
+    if config.profile != Profile::Opaque {
         let clean = end_to_end(
             request.headers(),
             config.observer == capture::Observer::Collector,
         );
         for (name, value) in &clean {
-            if name.as_str().starts_with("anthropic-")
-                || name.as_str().starts_with("x-claude-code-")
+            if (config.profile == Profile::Anthropic
+                && (name.as_str().starts_with("anthropic-")
+                    || name.as_str().starts_with("x-claude-code-")))
                 || (config.observer == capture::Observer::Collector
                     && matches!(
                         name.as_str(),
@@ -362,7 +368,17 @@ async fn handle(
             }
         }
         if let Some(key) = &config.provider_key {
-            outgoing.insert("x-api-key", key.clone());
+            if config.profile == Profile::Typesafe {
+                let Ok(mut bearer) = reqwest::header::HeaderValue::from_bytes(
+                    &[b"Bearer ".as_slice(), key.as_bytes()].concat(),
+                ) else {
+                    return Ok(error(StatusCode::SERVICE_UNAVAILABLE));
+                };
+                bearer.set_sensitive(true);
+                outgoing.insert("authorization", bearer);
+            } else {
+                outgoing.insert("x-api-key", key.clone());
+            }
         }
     }
     let exchange = if config.observer == capture::Observer::Collector {
@@ -469,7 +485,7 @@ async fn handle(
         .boxed_unsync(),
     );
     *response.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY);
-    if profile == Profile::Anthropic {
+    if profile != Profile::Opaque {
         *response.headers_mut() = end_to_end(&headers, false);
     } else {
         response.headers_mut().insert(
