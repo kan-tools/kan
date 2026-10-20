@@ -248,6 +248,33 @@ pub struct Archive {
     inner: attested::Archive,
 }
 impl Archive {
+    /// Open selected authenticated metadata without rescanning the imported corpus.
+    pub fn open_indexed(
+        root: &Path,
+        binding: attested::Binding,
+        expected_erasure_tip: Option<&str>,
+    ) -> Result<Self> {
+        Ok(Self {
+            inner: attested::Archive::open_indexed_profile(
+                root,
+                binding,
+                expected_erasure_tip,
+                true,
+            )?,
+        })
+    }
+    /// Native append requires a checkpoint certifying completed copy metadata.
+    pub fn admit_indexed(
+        &mut self,
+        bytes: &[u8],
+        signer: &Identity,
+        grant: &Grant,
+        now: u64,
+        current_erasure_tip: Option<&str>,
+    ) -> std::result::Result<attested::Admission, Failure> {
+        self.inner
+            .admit_indexed(bytes, signer, grant, now, current_erasure_tip)
+    }
     pub fn rebuild_serving_index(&self, signer: &Identity) -> Result<serving::Checkpoint> {
         self.inner.rebuild_serving_index(signer)
     }

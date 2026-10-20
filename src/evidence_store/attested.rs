@@ -568,9 +568,6 @@ impl Archive {
                 (None, previous, duplicate)
             }
             AdmissionMode::Indexed(tip) => {
-                if self.copy.is_some() {
-                    return Err(Failure::Invalid);
-                }
                 let (checkpoint, previous, duplicate) = serving::admission_checkpoint(
                     &self.ledger.conn,
                     &self.binding,
@@ -610,7 +607,14 @@ impl Archive {
             // against the signed index; legacy mode retains its full audit.
             check_binding(tx, binding)?;
             if let Some(plan) = copy {
-                copied::admission_ready(tx, binding, plan, previous.through)?;
+                if let Some(checkpoint) = &indexed {
+                    copied::check_plan(tx, binding, plan)?;
+                    if checkpoint.recipe_metadata_match() != Some(true) {
+                        return Err(Error::Conflict("copy is incomplete"));
+                    }
+                } else {
+                    copied::admission_ready(tx, binding, plan, previous.through)?;
+                }
             }
             if let Some(checkpoint) = &indexed {
                 serving::check_admission(tx, binding, checkpoint, row)?;

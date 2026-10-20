@@ -1638,6 +1638,9 @@ fn copied_index_tracks_resumable_recipe_prefix_native_append_and_erasure() {
     let partial = open(None);
     assert_eq!(partial.frontier().through, 1);
     assert_eq!(partial.recipe_metadata_match(), Some(false));
+    assert!(archive
+        .admit_indexed(&request(3, 8, None), &identity(8), &grant(), 200, None)
+        .is_err());
     let old_pin = partial.frontier().clone();
     drop(partial);
     drop(archive);
@@ -1676,8 +1679,16 @@ fn copied_index_tracks_resumable_recipe_prefix_native_append_and_erasure() {
     );
     let prev = indexed.frontier().manifest.as_ref().unwrap().to_string();
     drop(indexed);
+    drop(archive);
+    let mut archive = copied::Archive::open_indexed(&f.root, f.binding.clone(), None).unwrap();
     archive
-        .admit(&request(3, 8, Some(prev)), &identity(8), &grant(), 200)
+        .admit_indexed(
+            &request(3, 8, Some(prev)),
+            &identity(8),
+            &grant(),
+            200,
+            None,
+        )
         .unwrap();
     let indexed = open(None);
     assert_eq!(indexed.frontier().through, 4);
@@ -1731,11 +1742,26 @@ fn copied_index_tracks_resumable_recipe_prefix_native_append_and_erasure() {
                 rows: 2,
                 ..page_budget()
             },
-            small,
+            small.clone(),
         )
         .unwrap();
     assert_eq!(page.records[1].availability, Availability::Erased);
+    let previous = page.records[0].record.manifest.cid().to_string();
     drop(indexed);
+    f.edit("UPDATE commits SET receipt=x'00' WHERE sequence=1");
+    assert!(copied::Archive::open(&f.root, f.binding.clone()).is_err());
+    let mut bounded =
+        copied::Archive::open_indexed(&f.root, f.binding.clone(), custody.tip.as_deref()).unwrap();
+    bounded
+        .admit_indexed(
+            &request(4, 8, Some(previous)),
+            &identity(8),
+            &grant(),
+            2001,
+            custody.tip.as_deref(),
+        )
+        .unwrap();
+    assert_eq!(open(custody.tip.as_deref()).frontier().through, 5);
     f.edit("UPDATE upgrade_plan SET envelope=x'00' WHERE singleton=1");
     assert!(Inventory::open_indexed(
         &f.db(),

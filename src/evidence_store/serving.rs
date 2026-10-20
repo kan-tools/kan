@@ -613,6 +613,9 @@ pub(super) fn admission_checkpoint(
         return Err(Error::Conflict("serving custody differs from owner"));
     }
     let previous = checkpoint.validate(binding)?;
+    if checkpoint.recipe_metadata_match() == Some(false) {
+        return Err(Error::Conflict("copy is incomplete"));
+    }
     let mut map = Map::new(
         SqlBlocks {
             conn: &tx,
@@ -735,6 +738,14 @@ impl attested::Archive {
         binding: attested::Binding,
         expected_erasure_tip: Option<&str>,
     ) -> Result<Self> {
+        Self::open_indexed_profile(root, binding, expected_erasure_tip, false)
+    }
+    pub(super) fn open_indexed_profile(
+        root: &Path,
+        binding: attested::Binding,
+        expected_erasure_tip: Option<&str>,
+        copied: bool,
+    ) -> Result<Self> {
         binding.validate()?;
         let path = root.join("archive.sqlite");
         private_file(&path)?;
@@ -744,11 +755,18 @@ impl attested::Archive {
             RECOVERY_SQLITE_LENGTH_LIMIT,
         )?;
         conn.busy_timeout(Duration::from_secs(5))?;
+        let ledger = Ledger { conn };
+        ledger.check_profile(if copied { 3 } else { 2 })?;
+        let copy = if copied {
+            Some(copied::stored_plan(&ledger.conn, &binding)?)
+        } else {
+            None
+        };
         let archive = Self {
             audit_cache: Default::default(),
-            ledger: Ledger { conn },
+            ledger,
             binding,
-            copy: None,
+            copy,
         };
         archive.indexed_frontier(expected_erasure_tip)?;
         configure(&archive.ledger.conn)?;
@@ -756,12 +774,14 @@ impl attested::Archive {
     }
     /// Authenticate current indexed metadata without a lifetime audit.
     pub fn indexed_frontier(&self, expected_erasure_tip: Option<&str>) -> Result<Frontier> {
-        if self.copy.is_some() {
-            return Err(Error::Invalid("indexed admitted profile required"));
-        }
         let tx = self.ledger.conn.unchecked_transaction()?;
-        self.ledger.check_profile(2)?;
-        self.ledger.check_write_profile(true)?;
+        if self.copy.is_some() {
+            self.ledger.check_profile(3)?;
+            self.ledger.check_copy_schema()?;
+        } else {
+            self.ledger.check_profile(2)?;
+            self.ledger.check_write_profile(true)?;
+        }
         attested::check_binding(&tx, &self.binding)?;
         let checkpoint = load(&tx, &self.binding)?;
         check_current(&tx, &self.binding, &checkpoint)?;

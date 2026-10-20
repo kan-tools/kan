@@ -460,6 +460,10 @@ retain the copy commitment. Reading an earlier pin reports recipe completion onl
 when that pin contains the whole planned prefix. Selected source bytes are freshly
 checked; the completion bit is not a claim that every imported payload is present.
 No original request, receipt, proof or recipe is rewritten by index initialization.
+The copied storage API also offers `open_indexed` / `admit_indexed`; admission
+requires authenticated completed-copy state and rechecks its exact recipe under
+the writer transaction. Incomplete imports remain browsable but cannot accept a
+new native append. Full copy/recovery audits remain explicit maintenance paths.
 
 The explicit `Archive::open_indexed` / `admit_indexed` storage path checks the
 signed checkpoint, exact database tip, and caller-supplied current erasure custody
