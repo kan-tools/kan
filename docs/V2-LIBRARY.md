@@ -1087,15 +1087,20 @@ and service enrollment/activation remains explicit.
 Publication cleanup scans each configured archive's verified prefix, decrypts with
 the explicitly configured keys, and verifies annotation attribution and citation
 tokens. It follows exact source coordinates across the configured archives plus
-same-author, same-subject correction and withdrawal parents. Text that merely
-mentions a CID does not select a publication. Missing keys, missing/corrupt source,
+same-author, same-subject correction and withdrawal parents. Before deleting any
+configured workspace lineage, it resolves local source-dependent annotations
+through trigger, retry and promotion edges, verifies their canonical declarations,
+and uses their identities to select published or queued copies. The retained
+cleanup plan stores opaque subject equality hashes, never subject text or bodies.
+If publication planning is unavailable, workspace cleanup waits so this evidence
+is not lost. Text that merely mentions a CID does not select a publication. Missing keys, missing/corrupt source,
 unknown annotation versions or exceeded scan bounds leave cleanup pending.
 All selected child authorizations are stored together in the encrypted owner
 journal before publication deletion. Resume uses those exact records even after
 the publication bytes are gone, including when a replica comes back online.
 The report identifies each selected prefix, replica and admitted spool cleanup;
-it does not claim global coverage. Blocked unpublished requests, dependencies known only
-through analysis-job lineage, later appends and unconfigured copies remain explicit
+it does not claim global coverage. Blocked unpublished requests, unavailable or unconfigured lineage, later appends
+and unconfigured copies remain explicit
 coordination work. Bounds are 16 destinations, 4,096 annotation occurrences,
 512 selected occurrences, 256 MiB of requests and 120 seconds per planning pass.
 Configured workspaces also reconcile the publication histories, so caches that cite

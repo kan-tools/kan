@@ -4382,20 +4382,26 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
     let derived_path = local.path().join("reader.sqlite");
     let derived =
         kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE).unwrap();
-    let note = "1".repeat(64);
-    let correction = "2".repeat(64);
-    let promoted = "3".repeat(64);
-    let keep = "4".repeat(64);
+    let annotation = |mut draft: Value| {
+        use sha2::{Digest, Sha256};
+        draft["subject"] = json!("workspace-erasure");
+        draft["tags"] = json!([]);
+        if draft.get("supersedes").is_none() {
+            draft["supersedes"] = Value::Null;
+        }
+        let mut declaration = json!({"version":1,"author":identity(9).did().as_str(),"analysis_trigger_plan":[],"draft":draft});
+        let id = service::hex(&Sha256::digest(serde_json::to_vec(&declaration).unwrap()));
+        declaration["id"] = json!(id);
+        declaration["recorded_at"] = json!("100");
+        derived.put("annotation", &id, declaration).unwrap();
+        id
+    };
     let job = "5".repeat(64);
     let retry = "6".repeat(64);
-    derived
-        .put(
-            "annotation",
-            &note,
-            json!({"id":note,"draft":{"cites":[cite],"text":"raw-derived-secret"}}),
-        )
-        .unwrap();
-    derived.put("annotation",&correction,json!({"id":correction,"draft":{"cites":[unrelated],"supersedes":note,"text":"corrected-derived-secret"}})).unwrap();
+    let note = annotation(json!({"cites":[cite],"text":"raw-derived-secret"}));
+    let correction = annotation(
+        json!({"cites":[unrelated],"supersedes":note,"text":"corrected-derived-secret"}),
+    );
     derived
         .put(
             "analysis-job",
@@ -4417,12 +4423,49 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
             json!({"state":"succeeded","text":"model-derived-secret"}),
         )
         .unwrap();
-    derived.put("annotation",&promoted,json!({"id":promoted,"draft":{"cites":[unrelated],"derived_from":[retry],"text":"promoted-secret"}})).unwrap();
-    derived
-        .put(
-            "annotation",
-            &keep,
-            json!({"id":keep,"draft":{"cites":[unrelated],"text":page.records[0].manifest}}),
+    let promoted =
+        annotation(json!({"cites":[unrelated],"derived_from":[retry],"text":"promoted-secret"}));
+    let keep = annotation(json!({"cites":[unrelated],"text":page.records[0].manifest}));
+    // This published annotation's own raw citation is unrelated. Its source
+    // dependency is only in the local trigger -> retry -> promotion graph.
+    let plain=serde_json::to_vec(&json!({"format":"kan-annotation/1","declaration":derived.get("annotation",&promoted).unwrap().unwrap()})).unwrap();
+    let raw = service::SignedRequest::sign(
+        service::Request {
+            version: 1,
+            scope: service::hex(&queue_binding.scope),
+            audience: queue_binding.issuer.clone(),
+            principal: identity(9).did().to_string(),
+            expires: None,
+            command: service::Command::Append {
+                id: service::hex(&[99; 16]),
+                position: 0,
+                previous: None,
+                ciphertext: service::hex(
+                    &kan::evidence_crypto::seal(
+                        &kan::evidence_crypto::public_key(&PRIVATE).unwrap(),
+                        &queue_binding.scope,
+                        &plain,
+                    )
+                    .unwrap(),
+                ),
+            },
+        },
+        &identity(9),
+    )
+    .unwrap()
+    .bytes()
+    .unwrap();
+    attested::Archive::open(&queue_root, queue_binding.clone())
+        .unwrap()
+        .admit(
+            &raw,
+            &identity(8),
+            &Grant {
+                principal: identity(9).did().to_string(),
+                append: true,
+                inventory: false,
+            },
+            150,
         )
         .unwrap();
     derived
@@ -4644,7 +4687,7 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         attested::Archive::verify_file(&queue_root.join("archive.sqlite"), queue_binding.clone())
             .unwrap()
             .erased_objects,
-        1
+        2
     );
     {
         let retained =
@@ -4659,7 +4702,9 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
                 .unwrap();
             let bytes = serde_json::to_string(&value).unwrap();
             assert!(
-                !bytes.contains("publication-erasure") && !bytes.contains("queue-erasure"),
+                !bytes.contains("publication-erasure")
+                    && !bytes.contains("queue-erasure")
+                    && !bytes.contains("workspace-erasure"),
                 "cleanup journal must not retain erased subject text"
             );
             assert!(
@@ -4668,6 +4713,14 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
             );
         }
     }
+    let selected = attested::Archive::open(&queue_root, queue_binding.clone())
+        .unwrap()
+        .erasure_history()
+        .unwrap();
+    assert_eq!(
+        selected.records[0].plan.targets[0].sequence, 1,
+        "analysis-only publication dependency is erased before queued successors"
+    );
     assert_eq!(done["attempts"], 2);
     assert_eq!(
         owner_call(&ui, OWNER, apply.clone(), 200).await,
@@ -4777,8 +4830,8 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
     );
     assert_eq!(
         queue_history.current().unwrap().history.len(),
-        3,
-        "exactly two cancelled requests retain owner authorization"
+        4,
+        "published promotion and two cancelled requests retain owner authorization"
     );
     let queue = kan::evidence_spool::Spool::open(&queue_path).unwrap();
     assert!(queue.head().unwrap().is_none());
@@ -4802,7 +4855,7 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         attested::Archive::verify_file(&queue_root.join("archive.sqlite"), queue_binding.clone())
             .unwrap()
             .erased_objects,
-        2
+        3
     );
     assert_eq!(resumed["attempts"], 3);
     assert_eq!(

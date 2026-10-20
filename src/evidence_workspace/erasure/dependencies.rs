@@ -48,6 +48,36 @@ fn cites(v: &Value, binding: &Binding, targets: &BTreeSet<(String, String)>) -> 
     )
 }
 impl Workspace {
+    /// Owner-side read snapshot of source-dependent annotation declarations.
+    /// Resolve this before deleting local job lineage; the coordinator retains
+    /// only authenticated declaration identities in its encrypted cleanup plan.
+    pub(crate) fn source_erasure_annotations(
+        &self,
+        binding: &Binding,
+        record: &Record,
+    ) -> Result<Vec<Value>> {
+        let conn = self.conn.lock().map_err(invalid)?;
+        let tx = conn.unchecked_transaction().map_err(invalid)?;
+        let selected = self.erasure_dependency_ids(&tx, binding, record)?;
+        let mut annotations = Vec::new();
+        for (kind, id) in selected {
+            if kind != "annotation" {
+                continue;
+            }
+            let body: Option<Vec<u8>> = tx
+                .query_row(
+                    "SELECT body FROM entries WHERE kind=? AND id=?",
+                    params![kind, id],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(invalid)?;
+            if let Some(body) = body {
+                annotations.push(self.unseal(&kind, &id, &body)?);
+            }
+        }
+        Ok(annotations)
+    }
     /// Resolve direct citations and transitive correction, promotion, retry and
     /// trigger edges under exclusive maintenance. The caller must independently
     /// authorize the record; its issuer signature alone is not owner consent.

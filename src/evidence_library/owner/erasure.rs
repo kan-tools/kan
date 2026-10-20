@@ -474,11 +474,16 @@ fn cleanup(
     let mut derived = Vec::new();
     // Resolve and journal publication lineage before local dependency cleanup
     // can remove the corresponding annotation declarations.
-    let published = match publications::cleanup(publications, history, &record, journal, job) {
-        Ok(value) => value,
-        Err(error) => json!({"state":"pending","error":error}),
-    };
+    let published =
+        match publications::cleanup(publications, workspaces, history, &record, journal, job) {
+            Ok(value) => value,
+            Err(error) => json!({"state":"pending","error":error}),
+        };
     for workspace in workspaces {
+        if !publications.is_empty() && published["state"] == "pending" {
+            derived.push(json!({"database":workspace.database,"state":"pending","reason":"publication-lineage-plan-not-retained"}));
+            continue;
+        }
         let work = || -> Result<Value, Failure> {
             let local = Workspace::open_for_erasure(
                 &workspace.database,

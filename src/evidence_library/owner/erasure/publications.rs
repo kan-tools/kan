@@ -266,7 +266,11 @@ fn scan(
     }
     Ok(Scan { frontier, nodes })
 }
-fn closure(nodes: &[Node], seeds: &BTreeSet<String>) -> BTreeSet<usize> {
+fn closure(
+    nodes: &[Node],
+    seeds: &BTreeSet<String>,
+    identities: &BTreeSet<(String, String, String)>,
+) -> BTreeSet<usize> {
     let mut by_coordinate = BTreeMap::<&str, Vec<usize>>::new();
     let mut by_parent = BTreeMap::<&(String, String, String), Vec<usize>>::new();
     for (n, node) in nodes.iter().enumerate() {
@@ -279,6 +283,12 @@ fn closure(nodes: &[Node], seeds: &BTreeSet<String>) -> BTreeSet<usize> {
     }
     let mut selected = BTreeSet::new();
     let mut pending = VecDeque::new();
+    pending.extend(
+        nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(n, node)| identities.contains(&node.identity).then_some(n)),
+    );
     for seed in seeds {
         if let Some(children) = by_coordinate.get(seed.as_str()) {
             pending.extend(children.iter().copied());
@@ -317,6 +327,7 @@ struct Plan {
 }
 fn plan(
     targets: &[PublicationTarget],
+    workspaces: &[WorkspaceTarget],
     primary: &custody::Access,
     parent: &custody::Record,
     job: &str,
@@ -340,7 +351,43 @@ fn plan(
         .iter()
         .map(|t| coordinate(&primary.binding, &t.sequence.to_string(), &t.manifest))
         .collect::<Result<BTreeSet<_>, _>>()?;
-    let selected = closure(&nodes, &seeds);
+    let mut identities = BTreeSet::new();
+    for workspace in workspaces {
+        if Instant::now() >= deadline || !workspace.database.is_file() {
+            return Err(Failure::Unavailable);
+        }
+        let local = Workspace::open(
+            &workspace.database,
+            Identity::load_existing(&workspace.signing_key).map_err(invalid)?,
+            crate::evidence_crypto::read_private_key(&workspace.recipient_key).map_err(invalid)?,
+        )?;
+        for mut declaration in local.source_erasure_annotations(&primary.binding, erased)? {
+            if Instant::now() >= deadline {
+                return Err(Failure::Unavailable);
+            }
+            declaration
+                .as_object_mut()
+                .ok_or(Failure::Corrupt)?
+                .remove("recovered_from");
+            let author = declaration["author"]
+                .as_str()
+                .ok_or(Failure::Corrupt)?
+                .to_string();
+            let encoded =
+                serde_json::to_vec(&json!({"format":"kan-annotation/1","declaration":declaration}))
+                    .map_err(invalid)?;
+            let (declaration, draft) = knowledge::decode_publication(&encoded, &author)?;
+            identities.insert(identity_key(
+                &author,
+                declaration["id"].as_str().ok_or(Failure::Corrupt)?,
+                &draft.subject,
+            ));
+            if identities.len() > 4096 {
+                return Err(Failure::Unavailable);
+            }
+        }
+    }
+    let selected = closure(&nodes, &seeds, &identities);
     // A bounded immutable journal record must fit before any child erasure.
     if selected.len() > 512 {
         return Err(Failure::Unavailable);
@@ -388,19 +435,18 @@ fn plan(
             authorization,
         });
     }
+    identities.extend(selected.iter().map(|i| nodes[*i].identity.clone()));
     Ok(Plan {
         version: 1,
         job: job.into(),
         parent: parent.id()?,
         destinations,
-        identities: selected
-            .iter()
-            .map(|i| nodes[*i].identity.clone())
-            .collect(),
+        identities,
     })
 }
 pub(super) fn cleanup(
     targets: &[PublicationTarget],
+    workspaces: &[WorkspaceTarget],
     primary: &custody::Access,
     parent: &custody::Record,
     journal: &Workspace,
@@ -413,7 +459,7 @@ pub(super) fn cleanup(
     let plan: Plan = if let Some(value) = journal.get("owner-result", &key)? {
         serde_json::from_value(value).map_err(invalid)?
     } else {
-        let plan = plan(targets, primary, parent, job)?;
+        let plan = plan(targets, workspaces, primary, parent, job)?;
         let value = serde_json::to_value(&plan).map_err(invalid)?;
         if serde_json::to_vec(&value).map_err(invalid)?.len() > 250 * 1024 {
             return Err(Failure::Unavailable);
@@ -465,6 +511,9 @@ pub(super) fn cleanup(
             if let Some(record) = selection.authorization {
                 target.history.append(record)?;
             }
+            // Queue planning must see the published-copy authorization already
+            // reconciled locally; replicas are reconciled after cancellations.
+            target.history.reconcile_archive(&target.root)?;
             let mut queues = Vec::new();
             for path in &target.spools {
                 let reconcile = || -> Result<Value, Failure> {
@@ -530,6 +579,6 @@ pub(super) fn cleanup(
         });
     }
     Ok(
-        json!({"state":"selected-prefix-planned","destinations":reports,"remaining":"Blocked queues, analysis-job-only dependencies, later publications and unconfigured copies require coordinated cleanup; this is not global erasure completion."}),
+        json!({"state":"selected-prefix-planned","destinations":reports,"remaining":"Blocked queues, unavailable lineage, later publications and unconfigured copies require coordinated cleanup; this is not global erasure completion."}),
     )
 }
