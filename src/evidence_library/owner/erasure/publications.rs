@@ -1,6 +1,7 @@
 //! Bounded full-prefix publication discovery. Exact child authorizations are
 //! encrypted in the owner journal before any publication payload is removed.
 use super::*;
+mod queues;
 use crate::{
     evidence_library::proof::knowledge,
     evidence_store::inventory::{self, Availability, Budget, Inventory, PageBudget, Source},
@@ -19,6 +20,8 @@ pub struct PublicationTarget {
     pub signing_key: PathBuf,
     pub issuer_key: PathBuf,
     pub private_keys: Vec<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<crate::evidence_policy::Access>,
     #[serde(default)]
     pub replicas: Vec<PathBuf>,
     #[serde(default)]
@@ -38,6 +41,15 @@ pub(super) fn validate(
     let mut queues = BTreeSet::new();
     for t in targets {
         t.history.validate()?;
+        if let Some(policy) = &t.policy {
+            policy.validate()?;
+            if policy.minimum.is_none()
+                || policy.binding != t.history.binding
+                || policy.owner != t.history.owner
+            {
+                return Err(Failure::Invalid);
+            }
+        }
         if t.history.minimum.is_none()
             || !t.root.is_absolute()
             || !t.signing_key.is_absolute()
@@ -96,6 +108,73 @@ struct Scan {
     frontier: crate::evidence_attestation::Frontier,
     nodes: Vec<Node>,
 }
+type Keys = BTreeMap<Vec<u8>, [u8; 32]>;
+fn keyring(target: &PublicationTarget) -> Result<Keys, Failure> {
+    target
+        .private_keys
+        .iter()
+        .map(|p| {
+            let key = crate::evidence_crypto::read_private_key(p).map_err(invalid)?;
+            let public = crate::evidence_crypto::public_key(&key).map_err(invalid)?;
+            Ok((Sha256::digest(public).to_vec(), key))
+        })
+        .collect::<Result<BTreeMap<_, _>, Failure>>()
+}
+struct Lineage {
+    identity: (String, String, String),
+    cites: Vec<String>,
+    parents: Vec<(String, String, String)>,
+}
+fn decode(raw: &[u8], binding: &Binding, keys: &Keys) -> Result<Option<Lineage>, Failure> {
+    let signed = service::SignedRequest::decode(raw)?;
+    let writer = &signed.request.principal;
+    if signed.request.scope != binding.scope {
+        return Err(Failure::AccessLimited);
+    }
+    let service::Command::Append { ciphertext, .. } = signed.request.command else {
+        return Err(Failure::Corrupt);
+    };
+    let encrypted = service::unhex(&ciphertext, service::MAX_PAYLOAD)?;
+    let recipient = crate::evidence_crypto::recipient_id(&encrypted).map_err(invalid)?;
+    let key = keys.get(recipient).ok_or(Failure::AccessLimited)?;
+    let plaintext = crate::evidence_crypto::open(key, &binding.owner_binding()?.scope, &encrypted)
+        .map_err(invalid)?;
+    // Capture frames and opaque payloads have no annotation envelope.
+    // Malformed JSON or unknown annotation versions cannot establish a
+    // complete negative classification and therefore refuse this scan.
+    if plaintext.iter().find(|b| !b.is_ascii_whitespace()) != Some(&b'{') {
+        return Ok(None);
+    }
+    let envelope: Value = serde_json::from_slice(&plaintext).map_err(invalid)?;
+    if !envelope["format"]
+        .as_str()
+        .is_some_and(|f| f.starts_with("kan-annotation/"))
+    {
+        return Ok(None);
+    }
+    let (declaration, draft) = knowledge::decode_publication(&plaintext, writer)?;
+    let id = declaration["id"].as_str().ok_or(Failure::Corrupt)?;
+    let mut cites = Vec::new();
+    for cite in &draft.cites {
+        let (source, selected) = cite.selection.attributed_source()?;
+        cites.push(coordinate(
+            source,
+            &selected.through,
+            selected.manifest.as_deref().ok_or(Failure::Corrupt)?,
+        )?);
+    }
+    let parents = draft
+        .supersedes
+        .iter()
+        .chain(draft.withdraws.iter())
+        .map(|id| identity_key(writer, id, &draft.subject))
+        .collect();
+    Ok(Some(Lineage {
+        identity: identity_key(writer, id, &draft.subject),
+        cites,
+        parents,
+    }))
+}
 fn budget(deadline: Instant) -> Result<Budget, Failure> {
     let duration = deadline
         .checked_duration_since(Instant::now())
@@ -117,15 +196,7 @@ fn scan(
     let binding = &target.history.binding;
     let path = target.root.join("archive.sqlite");
     current.check_archive(&path, binding)?;
-    let keys = target
-        .private_keys
-        .iter()
-        .map(|p| {
-            let key = crate::evidence_crypto::read_private_key(p).map_err(invalid)?;
-            let public = crate::evidence_crypto::public_key(&key).map_err(invalid)?;
-            Ok((Sha256::digest(public).to_vec(), key))
-        })
-        .collect::<Result<BTreeMap<_, _>, Failure>>()?;
+    let keys = keyring(target)?;
     let inventory = Inventory::open(
         &path,
         binding.profile.inventory(),
@@ -149,7 +220,7 @@ fn scan(
             if item.availability == Availability::Erased {
                 continue;
             }
-            let Source::Available { bytes, writer } = inventory::source(
+            let Source::Available { bytes, .. } = inventory::source(
                 &path,
                 binding.profile.inventory(),
                 binding.owner_binding()?,
@@ -164,46 +235,9 @@ fn scan(
             if *spent > 256 * 1024 * 1024 {
                 return Err(Failure::Unavailable);
             }
-            let signed = service::SignedRequest::decode(&bytes)?;
-            let service::Command::Append { ciphertext, .. } = signed.request.command else {
-                return Err(Failure::Corrupt);
+            let Some(lineage) = decode(&bytes, binding, &keys)? else {
+                continue;
             };
-            let encrypted = service::unhex(&ciphertext, service::MAX_PAYLOAD)?;
-            let recipient = crate::evidence_crypto::recipient_id(&encrypted).map_err(invalid)?;
-            let key = keys.get(recipient).ok_or(Failure::AccessLimited)?;
-            let plaintext =
-                crate::evidence_crypto::open(key, &binding.owner_binding()?.scope, &encrypted)
-                    .map_err(invalid)?;
-            // Capture frames and opaque payloads have no annotation envelope.
-            // Malformed JSON or unknown annotation versions cannot establish a
-            // complete negative classification and therefore refuse this scan.
-            if plaintext.iter().find(|b| !b.is_ascii_whitespace()) != Some(&b'{') {
-                continue;
-            }
-            let envelope: Value = serde_json::from_slice(&plaintext).map_err(invalid)?;
-            if !envelope["format"]
-                .as_str()
-                .is_some_and(|f| f.starts_with("kan-annotation/"))
-            {
-                continue;
-            }
-            let (declaration, draft) = knowledge::decode_publication(&plaintext, &writer)?;
-            let id = declaration["id"].as_str().ok_or(Failure::Corrupt)?;
-            let mut cites = Vec::new();
-            for cite in &draft.cites {
-                let (source, selected) = cite.selection.attributed_source()?;
-                cites.push(coordinate(
-                    source,
-                    &selected.through,
-                    selected.manifest.as_deref().ok_or(Failure::Corrupt)?,
-                )?);
-            }
-            let parents = draft
-                .supersedes
-                .iter()
-                .chain(draft.withdraws.iter())
-                .map(|id| identity_key(&writer, id, &draft.subject))
-                .collect();
             nodes.push(Node {
                 destination,
                 sequence: item.record.sequence,
@@ -212,9 +246,9 @@ fn scan(
                     &item.record.sequence.to_string(),
                     &item.record.manifest.cid().to_string(),
                 )?,
-                identity: identity_key(&writer, id, &draft.subject),
-                cites,
-                parents,
+                identity: lineage.identity,
+                cites: lineage.cites,
+                parents: lineage.parents,
             });
             if nodes.len() > 4096 {
                 return Err(Failure::Unavailable);
@@ -273,6 +307,8 @@ struct Plan {
     job: String,
     parent: String,
     destinations: Vec<Selection>,
+    #[serde(default)]
+    identities: BTreeSet<(String, String, String)>,
 }
 fn plan(
     targets: &[PublicationTarget],
@@ -352,6 +388,10 @@ fn plan(
         job: job.into(),
         parent: parent.id()?,
         destinations,
+        identities: selected
+            .iter()
+            .map(|i| nodes[*i].identity.clone())
+            .collect(),
     })
 }
 pub(super) fn cleanup(
@@ -383,6 +423,34 @@ pub(super) fn cleanup(
     {
         return Err(Failure::Corrupt);
     }
+    let mut seeds = parent
+        .change
+        .erasure
+        .as_ref()
+        .ok_or(Failure::Corrupt)?
+        .plan
+        .targets
+        .iter()
+        .map(|t| coordinate(&primary.binding, &t.sequence.to_string(), &t.manifest))
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    for selection in &plan.destinations {
+        if let Some(record) = &selection.authorization {
+            for t in &record
+                .change
+                .erasure
+                .as_ref()
+                .ok_or(Failure::Corrupt)?
+                .plan
+                .targets
+            {
+                seeds.insert(coordinate(
+                    &selection.binding,
+                    &t.sequence.to_string(),
+                    &t.manifest,
+                )?);
+            }
+        }
+    }
     let mut reports = Vec::new();
     for (target, selection) in targets.iter().zip(plan.destinations) {
         if selection.binding != target.history.binding {
@@ -391,6 +459,39 @@ pub(super) fn cleanup(
         let result = || -> Result<Value, Failure> {
             if let Some(record) = selection.authorization {
                 target.history.append(record)?;
+            }
+            let mut queues = Vec::new();
+            for path in &target.spools {
+                let reconcile = || -> Result<Value, Failure> {
+                    let mut spool = crate::evidence_spool::Spool::open(path)
+                        .map_err(|_| Failure::Unavailable)?;
+                    let report = match spool.reconcile_erasure(&target.history) {
+                        Ok(report) => report,
+                        Err(crate::evidence_spool::Error::Conflict) => {
+                            json!({"state":"awaiting-cancellation-completion"})
+                        }
+                        Err(_) => return Err(Failure::Unavailable),
+                    };
+                    let cancellation = queues::cancel(
+                        target,
+                        path,
+                        &mut spool,
+                        &seeds,
+                        &plan.identities,
+                        journal,
+                        job,
+                    )?;
+                    let purged = spool
+                        .reclaim_erased_pages()
+                        .map_err(|_| Failure::Unavailable)?;
+                    Ok(
+                        json!({"database":path,"result":report,"cancellation":cancellation,"page_reclamation":if purged{"completed"}else{"pending"}}),
+                    )
+                };
+                queues.push(match reconcile() {
+                    Ok(value) => value,
+                    Err(error) => json!({"database":path,"state":"pending","error":error}),
+                });
             }
             let mut archives = Vec::new();
             for root in std::iter::once(&target.root).chain(&target.replicas) {
@@ -414,26 +515,6 @@ pub(super) fn cleanup(
                     Err(error)=>json!({"root":root,"state":"pending","error":error}),
                 });
             }
-            let mut queues = Vec::new();
-            for path in &target.spools {
-                let reconcile = || -> Result<Value, Failure> {
-                    let mut spool = crate::evidence_spool::Spool::open(path)
-                        .map_err(|_| Failure::Unavailable)?;
-                    let report = spool
-                        .reconcile_erasure(&target.history)
-                        .map_err(|_| Failure::Unavailable)?;
-                    let purged = spool
-                        .reclaim_erased_pages()
-                        .map_err(|_| Failure::Unavailable)?;
-                    Ok(
-                        json!({"database":path,"result":report,"page_reclamation":if purged{"completed"}else{"pending"}}),
-                    )
-                };
-                queues.push(match reconcile() {
-                    Ok(value) => value,
-                    Err(error) => json!({"database":path,"state":"pending","error":error}),
-                });
-            }
             Ok(
                 json!({"binding":selection.binding,"coverage":"selected-prefix","frontier":selection.frontier,"archives":archives,"spools":queues}),
             )
@@ -444,6 +525,6 @@ pub(super) fn cleanup(
         });
     }
     Ok(
-        json!({"state":"selected-prefix-planned","destinations":reports,"remaining":"Unpublished requests, analysis-job-only dependencies, later publications and unconfigured copies require coordinated cleanup; this is not global erasure completion."}),
+        json!({"state":"selected-prefix-planned","destinations":reports,"remaining":"Blocked queues, analysis-job-only dependencies, later publications and unconfigured copies require coordinated cleanup; this is not global erasure completion."}),
     )
 }

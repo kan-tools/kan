@@ -4146,6 +4146,74 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         .unwrap()
         .backup(&publication_backup)
         .unwrap();
+    // A separate admitted destination has unpublished note / unrelated note /
+    // correction. Cancellation preserves the original writer chain and must
+    // wait for the unrelated middle request to be normally delivered.
+    let queue_dir = private_workspace_directory();
+    let queue_custody = private_workspace_directory();
+    let queue_policy_dir = private_workspace_directory();
+    let queue_root = queue_dir.path().join("archive");
+    let queue_binding = attested::Binding {
+        archive: [42; 32],
+        scope: f.binding.scope,
+        issuer: f.binding.issuer.clone(),
+    };
+    attested::Archive::create(&queue_root, queue_binding.clone()).unwrap();
+    let mut queue_history:Access=serde_json::from_value(json!({"directory":queue_custody.path(),"binding":{"profile":"admitted","archive":service::hex(&queue_binding.archive),"scope":service::hex(&queue_binding.scope),"issuer":queue_binding.issuer},"owner":identity(9).did().as_str()})).unwrap();
+    queue_history.initialize().unwrap();
+    let genesis = Record::sign(
+        queue_history.preview(None, "d".repeat(64)).unwrap(),
+        &identity(9),
+    )
+    .unwrap();
+    let minimum = genesis.id().unwrap();
+    queue_history.append(genesis).unwrap();
+    queue_history.minimum = Some(minimum);
+    let mut queue_policy:kan::evidence_policy::Access=serde_json::from_value(json!({"directory":queue_policy_dir.path(),"binding":queue_history.binding,"owner":identity(9).did().as_str()})).unwrap();
+    queue_policy.initialize().unwrap();
+    let genesis = kan::evidence_policy::Record::sign(
+        queue_policy.preview(vec![grant()], "e".repeat(64)).unwrap(),
+        &identity(9),
+    )
+    .unwrap();
+    let minimum = genesis.id().unwrap();
+    queue_policy.append(genesis).unwrap();
+    queue_policy.minimum = Some(minimum);
+    let queue_path = queue_dir.path().join("sender.sqlite");
+    let mut queue = kan::evidence_spool::Spool::create(
+        &queue_path,
+        &service::hex(&queue_binding.scope),
+        identity(6).did().as_str(),
+        &queue_binding.issuer,
+        1024 * 1024,
+    )
+    .unwrap();
+    let mut queued_parent = None;
+    let mut previous = None;
+    let mut queued_requests = Vec::new();
+    for n in 0..3 {
+        use sha2::{Digest, Sha256};
+        let mut declaration = json!({"version":1,"author":identity(6).did().as_str(),"analysis_trigger_plan":[],
+            "draft":{"subject":"queue-erasure","text":format!("queued publication {n}"),"tags":[],
+                "cites":[if n==0 {cite.clone()} else {unrelated.clone()}],"supersedes":if n==2 {queued_parent.clone()} else {None::<String>}}});
+        let id = service::hex(&Sha256::digest(serde_json::to_vec(&declaration).unwrap()));
+        if n == 0 {
+            queued_parent = Some(id.clone());
+        }
+        declaration["id"] = json!(id);
+        declaration["recorded_at"] = json!("100");
+        let raw = encrypted_frame(
+            n,
+            8,
+            previous,
+            &serde_json::to_vec(&json!({"format":"kan-annotation/1","declaration":declaration}))
+                .unwrap(),
+        );
+        previous = Some(service::append_manifest(&raw).unwrap().cid().to_string());
+        queue.enqueue(&raw).unwrap();
+        queued_requests.push(raw);
+    }
+    drop(queue);
     let derived_path = local.path().join("reader.sqlite");
     let derived =
         kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE).unwrap();
@@ -4257,7 +4325,7 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
     let readers = || {
         let workspace =
             kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
-        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"capture-erasure","id":"capture","root":f.root,"history":history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"replicas":[replica.path()],"workspaces":[{"database":derived_path,"signing_key":signing,"recipient_key":private}],"spools":[sender_path],"publications":[{"root":publications.root,"history":publication_history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"replicas":[publication_replica.path()]}]}]})).unwrap(),workspace).unwrap();
+        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"capture-erasure","id":"capture","root":f.root,"history":history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"replicas":[replica.path()],"workspaces":[{"database":derived_path,"signing_key":signing,"recipient_key":private}],"spools":[sender_path],"publications":[{"root":publications.root,"history":publication_history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"replicas":[publication_replica.path()]},{"root":queue_root,"history":queue_history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"policy":queue_policy,"spools":[queue_path]}]}]})).unwrap(),workspace).unwrap();
         kan::evidence_library::Readers::new(None, vec![server.client(&f)])
             .unwrap()
             .with_owner(owner)
@@ -4378,6 +4446,41 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
     assert_eq!(rows.records[1].availability, Availability::Erased);
     assert_eq!(rows.records[2].availability, Availability::Erased);
     drop(retained);
+    assert_eq!(
+        done["result"]["report"]["publications"]["destinations"][1]["spools"][0]["cancellation"]
+            ["state"],
+        "pending-unrelated-prefix",
+        "{done}"
+    );
+    assert_eq!(
+        done["result"]["report"]["publications"]["destinations"][1]["spools"][0]["cancellation"]
+            ["processed"],
+        1
+    );
+    let queue = kan::evidence_spool::Spool::open(&queue_path).unwrap();
+    assert_eq!(queue.head().unwrap().as_ref(), Some(&queued_requests[1]));
+    assert!(
+        queue
+            .operation(&service::hex(&[1; 16]))
+            .unwrap()
+            .unwrap()
+            .erased
+    );
+    assert!(
+        !queue
+            .operation(&service::hex(&[3; 16]))
+            .unwrap()
+            .unwrap()
+            .erased,
+        "selected tail cannot jump unaffected prefix"
+    );
+    drop(queue);
+    assert_eq!(
+        attested::Archive::verify_file(&queue_root.join("archive.sqlite"), queue_binding.clone())
+            .unwrap()
+            .erased_objects,
+        1
+    );
     assert_eq!(done["attempts"], 2);
     assert_eq!(
         owner_call(&ui, OWNER, apply.clone(), 200).await,
@@ -4432,6 +4535,26 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         )
         .unwrap();
     }
+    // Normal managed delivery advances only the unrelated middle request.
+    {
+        let mut service = service::AdmittingService::new(
+            attested::Archive::open(&queue_root, queue_binding.clone()).unwrap(),
+            identity(8),
+            vec![grant()],
+        )
+        .unwrap()
+        .with_erasure_history(queue_history.clone())
+        .unwrap()
+        .with_policy(queue_policy.clone())
+        .unwrap();
+        let reply = service.dispatch(&queued_requests[1], 200).unwrap();
+        let mut queue = kan::evidence_spool::Spool::open(&queue_path)
+            .unwrap()
+            .with_erasure_history(queue_history.clone())
+            .unwrap();
+        queue.acknowledge(&reply.bytes().unwrap()).unwrap();
+        assert_eq!(queue.head().unwrap().as_ref(), Some(&queued_requests[2]));
+    }
     let ui = Ui::start(readers()).await;
     let resumed = owner_call(
         &ui,
@@ -4458,6 +4581,41 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
             .records
             .len(),
         1
+    );
+    assert_eq!(
+        resumed["result"]["report"]["publications"]["destinations"][1]["spools"][0]["cancellation"]
+            ["state"],
+        "queue-empty",
+        "{resumed}"
+    );
+    assert_eq!(
+        queue_history.current().unwrap().history.len(),
+        3,
+        "exactly two cancelled requests retain owner authorization"
+    );
+    let queue = kan::evidence_spool::Spool::open(&queue_path).unwrap();
+    assert!(queue.head().unwrap().is_none());
+    assert!(
+        queue
+            .operation(&service::hex(&[3; 16]))
+            .unwrap()
+            .unwrap()
+            .erased,
+        "queued correction follows journaled parent after restart"
+    );
+    assert!(
+        !queue
+            .operation(&service::hex(&[2; 16]))
+            .unwrap()
+            .unwrap()
+            .erased
+    );
+    drop(queue);
+    assert_eq!(
+        attested::Archive::verify_file(&queue_root.join("archive.sqlite"), queue_binding.clone())
+            .unwrap()
+            .erased_objects,
+        2
     );
     assert_eq!(resumed["attempts"], 3);
     assert_eq!(

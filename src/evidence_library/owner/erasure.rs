@@ -163,7 +163,7 @@ fn capture(
 }
 fn contract(target: &Target, plan: &Preview) -> Result<Value, Failure> {
     let value = json!({"version":1,"target":target,"operation":"erase-capture","plan":plan,
-        "effect":"Erase this closed capture from the configured archives after publishing independent owner authorization. Preserve minimal provenance. Scan configured publication archives for source-dependent annotations and their correction/withdrawal descendants, journal exact child authorizations before cleanup, and reconcile their configured replicas and admitted queue copies. Configured stopped workspaces reconcile dependent data against current owner erasure history. Unpublished queue and other copy cleanup remain pending; historical backups and keys are not cryptographically erased.",
+        "effect":"Erase this closed capture from the configured archives after publishing independent owner authorization. Preserve minimal provenance. Scan configured publication archives for source-dependent annotations and their correction/withdrawal descendants, journal exact child authorizations before cleanup, and reconcile their configured replicas and admitted queue copies. Configured stopped workspaces reconcile dependent data against current owner erasure history. Configured admitted publication queues cancel selected heads under current policy with commitment-only admission and signed completion. Blocked queues and other copy cleanup remain pending; historical backups and keys are not cryptographically erased.",
         "cancellation":"Once accepted, authorization and erasure cannot be rolled back. Resume the retained job after interruption."});
     if serde_json::to_vec(&value).map_err(invalid)?.len() > 200 * 1024 {
         return Err(Failure::Unavailable);

@@ -699,7 +699,7 @@
           for(const destination of publications.destinations||[]){
             row.append(textNode('p',`${destination.binding?.archive||'Publication archive'} · ${destination.state||destination.coverage||'pending'} · selected through ${destination.frontier?.through||'unknown'}`));
             for(const archive of destination.archives||[])row.append(textNode('p',`${archive.root} · ${archive.state} · page reclamation ${archive.page_reclamation||'pending'}`));
-            for(const queue of destination.spools||[])row.append(textNode('p',`${queue.database} · ${queue.state||queue.result?.state||'pending'} · page reclamation ${queue.page_reclamation||'pending'}`));
+            for(const queue of destination.spools||[])row.append(textNode('p',`${queue.database} · ${queue.state||queue.result?.state||'pending'} · cancellation ${queue.cancellation?.state||'not completed'} · ${queue.cancellation?.processed??0} requests processed · page reclamation ${queue.page_reclamation||'pending'}`));
           }
           if(publications.remaining)row.append(textNode('p',publications.remaining,'content-coverage'));
         }

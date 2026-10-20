@@ -110,6 +110,34 @@ pub(in crate::evidence_store) fn install_initial(
     Ok(())
 }
 impl attested::Archive {
+    /// Select the exact signed request, whether still unpublished or admitted
+    /// during a coordinator's earlier scan. The caller must fence enrolled
+    /// admission while preparing and publishing its owner authorization.
+    pub(crate) fn preview_request_erasure(
+        &self,
+        raw: &[u8],
+        nonce: String,
+        now: u64,
+    ) -> Result<Plan> {
+        let manifest = service::append_manifest(raw).map_err(|_| corrupt())?;
+        let sequence: Option<i64> = self
+            .ledger
+            .conn
+            .query_row(
+                "SELECT sequence FROM commits WHERE cid=?",
+                [manifest.cid().to_string()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match sequence {
+            Some(sequence) => self.preview_erasure(
+                &[u64::try_from(sequence).map_err(|_| corrupt())?],
+                nonce,
+                now,
+            ),
+            None => self.preview_erased_admission(raw, nonce, now),
+        }
+    }
     /// Preview exact commitment-only admission. The coordinating owner must
     /// establish derivative membership and sign/publish independent consent.
     /// Only an actually next, not-yet-committed writer operation is eligible.

@@ -376,6 +376,27 @@ impl Access {
     /// record. A lost acknowledgement may retry the same bytes after later edits.
     pub fn append(&self, record: Record) -> Result<Value> {
         let snapshot = self.read_locked(self.lease(true)?)?;
+        self.append_locked(record, snapshot)
+    }
+    /// Prepare and durably journal an owner action while enrolled readers and
+    /// ingest writers are excluded. The callback must not reacquire this history.
+    /// This closes the preview/publication race for prospective erased admission.
+    pub(crate) fn append_prepared(
+        &self,
+        prepare: impl FnOnce(&Snapshot) -> Result<Record>,
+    ) -> Result<Record> {
+        if self.minimum.is_none() {
+            return Err(Failure::AccessLimited);
+        }
+        let snapshot = self.read_locked(self.lease(true)?)?;
+        if snapshot.history.is_empty() {
+            return Err(Failure::AccessLimited);
+        }
+        let record = prepare(&snapshot)?;
+        self.append_locked(record.clone(), snapshot)?;
+        Ok(record)
+    }
+    fn append_locked(&self, record: Record, snapshot: Snapshot) -> Result<Value> {
         let bytes = serde_json::to_vec(&record).map_err(invalid)?;
         if bytes.len() > MAX_RECORD {
             return Err(Failure::Invalid);

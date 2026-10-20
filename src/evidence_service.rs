@@ -1000,6 +1000,136 @@ mod audit_tests {
     }
 
     #[test]
+    fn owner_preparation_fences_admission_and_selects_unpublished_or_existing_requests() {
+        use crate::{
+            evidence_erasure_history as custody,
+            evidence_store::{attested, erasure},
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("archive");
+        let directory = temp.path().join("custody");
+        std::fs::create_dir(&directory).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let owner = Identity::generate();
+        let issuer = Identity::generate();
+        let writer = Identity::generate();
+        let binding = attested::Binding {
+            archive: [2; 32],
+            scope: [1; 32],
+            issuer: issuer.did().to_string(),
+        };
+        let archive = attested::Archive::create(&root, binding.clone()).unwrap();
+        let mut history = custody::Access {
+            directory,
+            binding: crate::evidence_proof_service::Binding {
+                profile: crate::evidence_proof_service::Profile::Admitted,
+                archive: hex(&binding.archive),
+                scope: hex(&binding.scope),
+                issuer: binding.issuer.clone(),
+            },
+            owner: owner.did().to_string(),
+            minimum: None,
+        };
+        history.initialize().unwrap();
+        let genesis =
+            custody::Record::sign(history.preview(None, "a".repeat(64)).unwrap(), &owner).unwrap();
+        let minimum = genesis.id().unwrap();
+        history.append(genesis).unwrap();
+        history.minimum = Some(minimum);
+        let mut service = AdmittingService::new(
+            archive,
+            issuer,
+            vec![Grant {
+                principal: writer.did().to_string(),
+                append: true,
+                inventory: true,
+            }],
+        )
+        .unwrap()
+        .with_erasure_history(history.clone())
+        .unwrap();
+        let mut previous = None;
+        for n in 0..2u8 {
+            let raw = SignedRequest::sign(
+                Request {
+                    version: 1,
+                    scope: hex(&binding.scope),
+                    audience: binding.issuer.clone(),
+                    principal: writer.did().to_string(),
+                    expires: None,
+                    command: Command::Append {
+                        id: hex(&[n + 1; 16]),
+                        position: n as u64,
+                        previous,
+                        ciphertext: hex(b"synthetic ciphertext"),
+                    },
+                },
+                &writer,
+            )
+            .unwrap()
+            .bytes()
+            .unwrap();
+            if n == 1 {
+                assert!(service.dispatch(&raw, 100).unwrap().reply.result.is_ok());
+            }
+            let record = history
+                .append_prepared(|snapshot| {
+                    let plan = attested::Archive::open(&root, binding.clone())
+                        .unwrap()
+                        .preview_request_erasure(&raw, hex(&[n + 2; 32]), 101)
+                        .unwrap();
+                    assert_eq!(plan.initial_erasure.is_some(), n == 0);
+                    assert!(
+                        matches!(service.dispatch(&raw, 100), Err(Failure::Unavailable)),
+                        "managed ingest cannot run during owner preparation"
+                    );
+                    let erasure = erasure::Record::sign(plan, &service.signer).unwrap();
+                    custody::Record::sign(
+                        custody::Change {
+                            version: 1,
+                            binding: history.binding.clone(),
+                            owner: history.owner.clone(),
+                            sequence: snapshot.history.len().to_string(),
+                            previous: snapshot.tip.clone(),
+                            nonce: hex(&[n + 4; 32]),
+                            recorded_at: "101".into(),
+                            erasure: Some(erasure),
+                        },
+                        &owner,
+                    )
+                })
+                .unwrap();
+            assert!(
+                service.dispatch(&raw, 100).is_err(),
+                "published custody fences old ordinary admission before cleanup"
+            );
+            if n == 0 {
+                assert!(matches!(
+                    service
+                        .admit_erased(&raw, record.change.erasure.as_ref().unwrap(), &history)
+                        .unwrap()
+                        .reply
+                        .result,
+                    Ok(Output::ErasedCommitted { .. })
+                ));
+            } else {
+                history.reconcile_archive(&root).unwrap();
+            }
+            previous = Some(append_manifest(&raw).unwrap().cid().to_string());
+        }
+        assert_eq!(
+            attested::Archive::verify_file(&root.join("archive.sqlite"), binding)
+                .unwrap()
+                .erased_objects,
+            2
+        );
+    }
+
+    #[test]
     fn reads_cannot_cross_audited_frontier_when_raw_append_arrives_after_audit() {
         let temp = tempfile::tempdir().unwrap();
         let writer = Identity::generate();

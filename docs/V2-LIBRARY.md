@@ -1059,7 +1059,7 @@ The experimental `capture-erasure` owner target accepts `id`, `root`, `history`
 optional `replicas` (same-binding archive directories), `spools` (absolute sender
 queue paths), `workspaces` entries `{database, signing_key, recipient_key}`, and
 `publications` entries `{root, history, signing_key, issuer_key, private_keys,
-replicas?, spools?}` for distinct annotation archives. All paths come from
+replicas?, spools?, policy?}` for distinct annotation archives. All paths come from
 owner configuration. A stopped replica may remain offline at startup.
 
 The Library owner panel and shared owner request CLI support:
@@ -1094,12 +1094,28 @@ All selected child authorizations are stored together in the encrypted owner
 journal before publication deletion. Resume uses those exact records even after
 the publication bytes are gone, including when a replica comes back online.
 The report identifies each selected prefix, replica and admitted spool cleanup;
-it does not claim global coverage. Unpublished requests, dependencies known only
+it does not claim global coverage. Blocked unpublished requests, dependencies known only
 through analysis-job lineage, later appends and unconfigured copies remain explicit
 coordination work. Bounds are 16 destinations, 4,096 annotation occurrences,
 512 selected occurrences, 256 MiB of requests and 120 seconds per planning pass.
 Configured workspaces also reconcile the publication histories, so caches that cite
 a removed publication are covered.
+
+For admitted publication destinations, `policy` supplies independently pinned
+current writer grants for unpublished cancellation. The owner worker authenticates
+the current queue head and checks its exact citations and retained annotation
+lineage. Under exclusive erasure custody it journals and authorizes either an
+already-admitted payload removal or an initial erased commitment. Initial admission
+commits the original request's manifest and issuer proof without staging its body;
+only the resulting archive-bound signed completion can retire the sender bytes.
+A retry after interruption retrieves that same commitment. An unrelated head stays
+intact and reports `pending-unrelated-prefix`; normally deliver it before resuming
+cleanup of selected successors. No request is re-signed or silently skipped.
+Cancellation is bounded to 128 heads / 120 seconds per queue attempt and 512 retained
+intents per owner job. Missing policy, revoked append grants or unavailable custody
+leave the queue pending. Running senders/ingest must independently enroll in custody
+for the admission fence; registering a path here does not enroll another process.
+
 
 Enroll a reader workspace with repeated `--workspace-erasure-history HISTORY.json`
 arguments to `kan-v2 library` (alongside `--workspace` / `--workspace-key`). Keep
