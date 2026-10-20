@@ -335,6 +335,42 @@ this manifest, consent, bounded worker and explicit bulk-selection path in the
 shared owner API and Library. Runtime qualification remains pending CI; this is
 not a release or a claim of constant-memory discovery.
 
+#### Scale qualification still outstanding
+
+Source inspection at integration commit `31fa5f1` contradicts completion of REQ-8 /
+AC-8. `src/evidence_store/attested.rs` runs `verify_for` from ordinary admission;
+that calls `Ledger::verify_contents` and `audit_prefix_cached`. The latter still
+walks the retained prefix and reads/hashes current payloads. Its bounded cache
+memoizes exact-byte cryptographic verification, not archive membership or payload
+availability. `Archive::open` also calls the full verifier. In
+`src/evidence_store/inventory.rs`, startup explicitly audits the entire metadata
+chain before servicing bounded pages. Streaming these scans bounds some memory
+but does not make I/O independent of lifetime archive size.
+
+The passing 11 MiB / 179-occurrence workload therefore proves capture/retrieval
+beyond the original reported ceiling; it does not prove the 10 GiB / 100 GiB
+acceptance criterion. The measured roughly threefold fixture preparation speedup
+is not evidence that routine append/open/range-read has the required complexity.
+This remains implementation work before full-v2 completion, followed by remote
+scale measurements. No large local build or dataset is authorized by this note.
+
+The next storage implementation must separate explicit whole-archive maintenance
+verification from normal serving while retaining authenticated membership,
+current custody and exact selected-byte verification. A fast path must not simply
+trust an unauthenticated index, file timestamp, or archived freshness claim. It
+must define how committed frontiers and indexed membership survive restart,
+concurrent writers, missing/corrupt payloads, restored old stores and erasure.
+Any added persisted frontier/index/proof changes require the surface catalog and
+protocol compatibility contract to change with the implementation. Existing strict
+owner verification/recovery APIs remain available as explicit maintenance work;
+no current integrity guarantee may disappear behind a silently changed method.
+
+Qualification must measure ordinary operations at both declared archive sizes and
+also mutate old/current metadata, payloads and checkpoints, exercising restart and
+stale restore. A bounded result may report unavailable/corrupt selected evidence;
+it must not label an unscanned archive globally verified. The accepted target stays
+unchanged; a new cache hit count or a smaller passing workload cannot close AC-8.
+
 ### 11. Compatibility and explicit departures
 
 | Existing boundary | Retain | Proposed change |
