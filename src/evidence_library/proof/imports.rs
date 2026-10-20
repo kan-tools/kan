@@ -1,5 +1,6 @@
 //! Read-only import reconstruction. Reuses the recovery validator and CAR
-//! scanner; individual claim verification does not confer repository membership.
+//! scanner. Repository membership and the selected trust fold remain separate
+//! from individual signatures, source capture and current access grants.
 use super::Readers;
 use crate::{
     evidence_content::ContentError,
@@ -7,7 +8,19 @@ use crate::{
     evidence_restore as restore,
     evidence_service::{self as service, Failure},
 };
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+mod repository;
+
+#[derive(Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct View {
+    #[serde(default)]
+    pub trust: Vec<crate::claim::v1::AuthorId>,
+    #[serde(default)]
+    pub subjects_after: usize,
+}
+
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
@@ -34,6 +47,8 @@ fn cite(frame: &Frame, start: usize, end: usize) -> Value {
     json!({"record":frame.record,"bytes":[(frame.offset+start).to_string(),(frame.offset+end).to_string()]})
 }
 impl Readers {
+    // One request preserves explicit source, pin, selection and presentation bounds.
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn import_content(
         &self,
         source: &str,
@@ -42,6 +57,7 @@ impl Readers {
         plan_id: &str,
         file: Option<usize>,
         after: usize,
+        view: View,
     ) -> Result<Value, ContentError> {
         if selections.is_empty()
             || selections.len() > 1024
@@ -50,6 +66,12 @@ impl Readers {
                 .bytes()
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
             || after > 100_000
+            || view.subjects_after > 4096
+            || view.trust.len() > 128
+            || view
+                .trust
+                .iter()
+                .any(|a| a.did.len() > 256 || a.agent.as_ref().is_some_and(|k| k.len() > 256))
         {
             return Err(invalid());
         }
@@ -135,6 +157,7 @@ impl Readers {
                     &recipient,
                     file,
                     after,
+                    &view,
                 )
             })
             .await
@@ -150,6 +173,7 @@ impl Readers {
         .map_err(|_| ContentError::Limited)?
     }
 }
+#[allow(clippy::too_many_arguments)]
 fn inspect(
     frames: &BTreeMap<usize, Frame>,
     id: &str,
@@ -158,8 +182,9 @@ fn inspect(
     recipient: &str,
     selected: Option<usize>,
     after: usize,
+    view_options: &View,
 ) -> Result<Value, ContentError> {
-    let coverage="Selected import frames only. File hashes and individually supported claim signatures are verified; repository membership, completeness, identity resolution and cutover are not certified. Original files and claim citations remain distinct from v2 annotations.";
+    let coverage="Selected import frames only. File hashes and individually supported claim signatures are verified; Repository membership is evaluated only with the exact sibling HEAD and complete selected CAR; trust folding is explicitly selected and does not certify migration completeness or cutover. Original files and claim citations remain distinct from v2 annotations.";
     let mut result = json!({"version":"kan-import-content/1","plan":id,"state":"inventory-incomplete","coverage":coverage,"files":[],"inventory_cites":[],"file":null});
     let Some(first) = frames.get(&0) else {
         return Ok(result);
@@ -253,7 +278,38 @@ fn inspect(
             }
             let mut view = json!({"state":"verified","index":selected,"path":file.path,"length":bytes.len().to_string(),"sha256":file.sha256,"sources":sources});
             if file.path.ends_with(".car") {
-                view["car"] = car(&bytes, after, &spans)?;
+                let parent = std::path::Path::new(&file.path)
+                    .parent()
+                    .ok_or_else(invalid)?;
+                let head_path = parent.join("HEAD").to_string_lossy().into_owned();
+                let mut head_start = parts;
+                let mut head = None;
+                for candidate in &plan.files {
+                    if candidate.path == head_path {
+                        if candidate.length > 256 {
+                            return Err(invalid());
+                        }
+                        let mut content = Vec::new();
+                        let mut cites = Vec::new();
+                        for part in 0..candidate.chunks.len() {
+                            let Some(frame) = frames.get(&(head_start + part)) else {
+                                break;
+                            };
+                            let body = &frame.bytes[frame.offset..];
+                            content.extend_from_slice(body);
+                            cites.push(cite(frame, 0, body.len()));
+                        }
+                        if cites.len() == candidate.chunks.len() {
+                            if digest(&content) != candidate.sha256 {
+                                return Err(invalid());
+                            }
+                            head = Some((content, cites));
+                        }
+                        break;
+                    }
+                    head_start += candidate.chunks.len();
+                }
+                view["car"] = car(&bytes, after, &spans, head.as_ref(), view_options)?;
             } else {
                 let end = bytes.len().min(65536);
                 view["preview"] = json!(std::str::from_utf8(&bytes[..end]).ok());
@@ -269,6 +325,8 @@ fn car(
     bytes: &[u8],
     after: usize,
     spans: &[(usize, usize, &Frame)],
+    head: Option<&(Vec<u8>, Vec<Value>)>,
+    view: &View,
 ) -> Result<Value, ContentError> {
     let mut scan = crate::migration_preflight::CarScan {
         roots: vec![],
@@ -291,6 +349,7 @@ fn car(
     ) {
         scan.error = Some(e.to_string());
     }
+    let repository = repository::inspect(bytes, &ranges, head, view, scan.error.is_none())?;
     // A corrupt tail never silently turns a verified prefix into a valid CAR.
     let mut records = Vec::new();
     let mut next = after;
@@ -302,6 +361,7 @@ fn car(
         } else {
             claim(&bytes[body..end])
         };
+        value["membership"] = repository.membership(&cid.to_string());
         value["block"] = json!(cid.to_string());
         value["file_bytes"] = json!([body.to_string(), end.to_string()]);
         value["sources"] = json!(spans
@@ -320,7 +380,7 @@ fn car(
         next += 1;
     }
     Ok(
-        json!({"scan":scan,"records":records,"after":after,"next":(next<ranges.len()).then_some(next),"membership":"Not evaluated. Blocks may be unreachable or historical; no fold or repository-head authority is inferred."}),
+        json!({"scan":scan,"records":records,"after":after,"next":(next<ranges.len()).then_some(next),"membership":repository.notice,"repository":repository.value}),
     )
 }
 fn claim(bytes: &[u8]) -> Value {

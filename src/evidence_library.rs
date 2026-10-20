@@ -13,6 +13,7 @@ use hyper::{
 use hyper_util::rt::TokioIo;
 pub use owner::{Config as OwnerConfig, Owner, Request as OwnerRequest};
 pub use proof::analysis::{Config as AnalysisConfig, Draft as AnalysisDraft};
+pub use proof::imports::View as ImportView;
 pub use proof::knowledge::{Citation as EvidenceCitation, Draft as AnnotationDraft};
 pub use proof::outbox::AnnotationOutbox;
 pub use proof::sessions::{Identity as SessionIdentity, Selection as SessionSelection};
@@ -38,6 +39,8 @@ pub enum Query {
         file: Option<usize>,
         #[serde(default)]
         after: usize,
+        #[serde(default)]
+        view: ImportView,
     },
     KnowledgeGraph {
         subject: Option<String>,

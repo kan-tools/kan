@@ -329,9 +329,9 @@
       root.append(list);
     }
   }
-  async function readImport(entry,items,file=null,after=0) {
+  async function readImport(entry,items,file=null,after=0,view={trust:[],subjects_after:0}) {
     clearContent();clearInspector();notice('Verifying imported file commitments and retained claim records…');
-    const request={action:'proof-import',source:sourceId(entry),pin:entry.pin,selections:items.map(i=>i.record.selection),plan:items[0].description.plan,file,after};
+    const request={action:'proof-import',source:sourceId(entry),pin:entry.pin,selections:items.map(i=>i.record.selection),plan:items[0].description.plan,file,after,view};
     const value=await rpc(request);if(!value)return;
     if(value.version!=='kan-import-content/1'||value.source!==request.source||JSON.stringify(value.pin)!==JSON.stringify(entry.pin)||value.plan!==request.plan||!['inventory-verified','inventory-incomplete'].includes(value.state)||!Array.isArray(value.files)||value.files.length>16384||!Array.isArray(value.unavailable))throw new Error('Invalid import result.');
     const panel=document.createElement('div'), importSelections=new Map(items.map(i=>[i.record.sequence,i]));
@@ -352,7 +352,7 @@
     for(const f of value.files) {
       if(!Number.isSafeInteger(f.index)||typeof f.path!=='string'||typeof f.length!=='string')throw new Error('Invalid import file.');
       const row=document.createElement('article');row.append(textNode('h3',f.path));row.append(textNode('p',`${f.length} bytes · ${f.present_parts}/${f.parts} parts selected`));
-      const open=textNode('button',`Read ${f.path}`);open.addEventListener('click',()=>run(()=>readImport(entry,items,f.index)));row.append(open);panel.append(row);
+      const open=textNode('button',`Read ${f.path}`);open.addEventListener('click',()=>run(()=>readImport(entry,items,f.index,0,view)));row.append(open);panel.append(row);
     }
     if(value.file) {
       const f=value.file;if(!['verified','incomplete'].includes(f.state)||f.index!==file)throw new Error('Invalid file result.');
@@ -364,14 +364,38 @@
           if(!Array.isArray(f.car.records)||f.car.records.length>100)throw new Error('Invalid CAR page.');
           panel.append(textNode('p',f.car.membership,'content-coverage'));
           if(f.car.scan.error)panel.append(textNode('p',`CAR inspection incomplete: ${f.car.scan.error}`,'content-warning'));
+          if(f.car.repository) {
+            const repo=f.car.repository;panel.append(textNode('h3',`Repository · ${repo.state}`));
+            if(repo.reason)panel.append(textNode('p',repo.reason,'content-warning'));
+            sources(panel,repo.head_sources||[]);
+            if(repo.state==='membership-verified') {
+              panel.append(textNode('p',`HEAD ${repo.head} · ${repo.records} reachable records · commit ${repo.commit.signature}`,'content-identity'));
+              const openBlock=(parent,label,position)=>{if(!Number.isSafeInteger(position)||position<0||position>100000)throw new Error('Invalid repository source.');const button=textNode('button',label);button.addEventListener('click',()=>run(()=>readImport(entry,items,file,position,view)));parent.append(button);};
+              openBlock(panel,'Inspect repository commit',repo.commit.after);
+              if(!repo.fold||!Array.isArray(repo.authors)||repo.authors.length>128||!Array.isArray(repo.fold.classes)||repo.fold.classes.length>100)throw new Error('Invalid repository fold.');
+              panel.append(textNode('p',repo.fold.coverage,'content-coverage'));
+              const authors=document.createElement('fieldset');authors.append(textNode('legend','Authors included in this repository view'));
+              const selectedAuthors=[];
+              for(const author of repo.authors){const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=view.trust.some(a=>JSON.stringify(a)===JSON.stringify(author));label.append(input);label.append(textNode('span',`${author.did}${author.agent?' · agent '+JSON.stringify(author.agent):' · direct author'}`));authors.append(label);selectedAuthors.push({author,input});}
+              const apply=textNode('button','Apply repository trust view');apply.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{trust:selectedAuthors.filter(a=>a.input.checked).map(a=>a.author),subjects_after:0})));authors.append(apply);panel.append(authors);
+              panel.append(textNode('p',`${repo.fold.verified_claims} verified legacy claims · ${repo.fold.uninterpreted_members} other or unsupported members · ${repo.fold.total_classes} visible subject groups`));
+              if(repo.fold.excluded_by_trust?.length)details(panel,'Claims excluded by selected trust',JSON.stringify(repo.fold.excluded_by_trust,null,2));
+              for(const group of repo.fold.classes){const article=document.createElement('article');article.className='conversation-attempt';article.append(textNode('h3',group.subjects.map(s=>s.Local||JSON.stringify(s)).join(' · ')));article.append(textNode('p',`${group.status.kind}${group.status.value?' · '+group.status.value:''}${group.flagged_oversized?' · unusually large identity group':''}`));
+                for(const claim of group.claims){article.append(textNode('pre',JSON.stringify({author:claim.author,body:claim.body,cites:claim.cites},null,2)));openBlock(article,`Inspect claim ${claim.id}`,claim.source.after);}
+                details(article,'Identity witnesses and live status claims',JSON.stringify({witnesses:group.witnesses,live_status_claims:group.live_status_claims},null,2));panel.append(article);
+              }
+              if(repo.fold.next!==null){const more=textNode('button','Next repository subjects');more.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,subjects_after:repo.fold.next})));panel.append(more);}
+            }
+          }
           for(const record of f.car.records) {
             const article=document.createElement('article');article.className='conversation-attempt';
             article.append(textNode('h3',`${record.state} · ${record.id||record.block}`));
+            if(record.membership)article.append(textNode('p',`Repository membership: ${record.membership.state}${record.membership.paths?' · '+record.membership.paths.join(', '):''}`));
             article.append(textNode('pre',JSON.stringify(record.claim||{notice:record.notice,codec:record.codec},null,2)));
             sources(article,record.sources);panel.append(article);
             if(annotationsEnabled&&record.state==='verified-claim'&&record.sources.length<=8){const note=textNode('button','Annotate this imported claim');note.addEventListener('click',()=>editAnnotation(record.sources.map(c=>({source:sourceId(entry),pin:entry.pin,selection:importSelections.get(c.record.sequence).record.selection})),`claim/${record.id}`));article.append(note);}
           }
-          if(f.car.next!==null){if(!Number.isSafeInteger(f.car.next)||f.car.next<=after)throw new Error('Invalid CAR continuation.');const more=textNode('button','Next imported blocks');more.addEventListener('click',()=>run(()=>readImport(entry,items,file,f.car.next)));panel.append(more);}
+          if(f.car.next!==null){if(!Number.isSafeInteger(f.car.next)||f.car.next<=after)throw new Error('Invalid CAR continuation.');const more=textNode('button','Next imported blocks');more.addEventListener('click',()=>run(()=>readImport(entry,items,file,f.car.next,view)));panel.append(more);}
         } else panel.append(textNode('pre',f.preview===null?'Binary bytes · inspect exact Source.':`${f.preview}${f.truncated?'\n[Preview truncated; exact bytes remain in Source.]':''}`));
       }
     }

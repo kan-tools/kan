@@ -694,3 +694,21 @@ access independently of the original reader. Original citation data remains in
 the annotation. Missing correction parents and analysis jobs stay unresolved until
 separately recovered. This restores selected publications; it does not certify
 that all annotations were published or all local history has been recovered.
+
+Imported `repo.car` files now show membership under the exact saved sibling
+`HEAD`, with separate commit-signature and claim-signature results. A missing,
+invalid or incomplete HEAD/tree keeps membership unknown; historical CAR roots
+are never substituted. Exact HEAD and claim source links remain available.
+
+In the repository panel, select the authors to include and choose **Apply
+repository trust view**. This runs Kan's native v1 fold, showing subjects,
+correction/retraction effects, identity witnesses and settled/confirmed/contested
+status. The initial view includes no authors; it reports claims excluded by that
+choice. Agent-qualified identities stay distinct. **Inspect claim** opens the
+original block and its byte citations. **Next repository subjects** continues
+large results. The equivalent Library/CLI request adds
+`"view":{"trust":[{"did":"did:key:…","agent":null}],"subjects_after":0}` to
+`proof-import`. This interpretation does not change grants, source records or
+repository ownership. Unsupported/current identity-governed records remain
+outside this legacy fold with explicit coverage; bounds and missing inputs are
+shown rather than converted into an empty authoritative result.

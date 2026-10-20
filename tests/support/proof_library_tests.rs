@@ -2728,3 +2728,234 @@ async fn published_annotations_restore_original_authorship_and_rebind_citations_
     ui.stop().await;
     server.stop().await;
 }
+
+async fn repository_import_frames(audience: u8, damage: &str) -> (String, Vec<Vec<u8>>) {
+    use kan::claim::v1::{ClaimBody, StatusValue};
+    use sha2::{Digest, Sha256};
+    let (_, _, mut car) = imported_claim_frames(audience);
+    let first = atproto_dasl::car::CarReader::new(std::io::Cursor::new(&car))
+        .await
+        .unwrap()
+        .next_block()
+        .await
+        .unwrap()
+        .unwrap();
+    let original = atproto_dasl::Cid::from(first.cid);
+    let old_root = original.to_string();
+    let claim: kan::store::log::StoredClaim = atproto_dasl::from_slice(&first.data).unwrap();
+    fn push(car: &mut Vec<u8>, bytes: Vec<u8>) -> atproto_dasl::Cid {
+        let cid = atproto_dasl::Cid::from(atproto_repo::compute_cid(&bytes));
+        let mut n = cid.to_bytes().len() + bytes.len();
+        while n >= 128 {
+            car.push((n as u8 & 127) | 128);
+            n >>= 7;
+        }
+        car.push(n as u8);
+        car.extend(cid.to_bytes());
+        car.extend(bytes);
+        cid
+    }
+    let mut entries = vec![("dev.kan.claim/original".to_string(), original)];
+    for (author, status, key) in [
+        (6, StatusValue::Blocked, "tools.kan.claim/status-a"),
+        (7, StatusValue::Resolved, "tools.kan.claim/status-b"),
+        (8, StatusValue::Open, "orphan"),
+    ] {
+        let mut record = claim.clone();
+        record.claim.content.author.did = identity(author).did().to_string();
+        record.claim.content.body = ClaimBody::Status { value: status };
+        let id = kan::cid::content_cid(&record.claim.content).unwrap();
+        record.claim.sig = identity(author).sign(&id.to_bytes()).unwrap();
+        let cid = push(&mut car, atproto_dasl::to_vec(&record).unwrap());
+        if key != "orphan" {
+            entries.push((key.into(), cid));
+        }
+    }
+    let node = kan::mst::MstNode::new(
+        entries
+            .into_iter()
+            .map(|(k, c)| kan::mst::TreeEntry::first(&k, c))
+            .collect(),
+    );
+    let node_bytes = atproto_dasl::to_vec(&node).unwrap();
+    let node_cid = if damage == "missing-node" {
+        atproto_dasl::Cid::from(atproto_repo::compute_cid(&node_bytes))
+    } else {
+        push(&mut car, node_bytes)
+    };
+    let unsigned = atproto_repo::repo::Commit::new_unsigned(
+        identity(6).did().to_string(),
+        node_cid,
+        "3jzfcijpj2z2a".into(),
+        None,
+    );
+    let mut signature = identity(6).sign(&unsigned.to_bytes().unwrap()).unwrap();
+    if damage == "bad-signature" {
+        signature[0] ^= 1;
+    }
+    let head = push(&mut car, unsigned.sign(signature).to_bytes().unwrap());
+    let head = if damage == "wrong-head" {
+        old_root.into_bytes()
+    } else {
+        head.to_string().into_bytes()
+    };
+    if damage == "corrupt-tail" {
+        car.push(128);
+    }
+    let inputs = [("repo.car", car), ("HEAD", head)];
+    let files: Vec<_>=inputs.iter().map(|(path,body)|{let hash=service::hex(&Sha256::digest(body));json!({"path":path,"length":body.len(),"sha256":hash,"chunks":[{"length":body.len(),"sha256":hash}]})}).collect();
+    let inventory: Vec<_> = files
+        .iter()
+        .map(|f| json!({"path":f["path"],"length":f["length"],"sha256":f["sha256"]}))
+        .collect();
+    let document=serde_json::to_vec(&json!({"profile":1,"source_id":service::hex(&[44;32]),"selection":"store","recipient":service::hex(&kan::evidence_crypto::public_key(&PRIVATE).unwrap()),"route":{"scope":service::hex(&[1;32]),"writer":identity(6).did().as_str(),"audience":identity(audience).did().as_str()},"inventory":{"selected_inventory_complete":true,"notices":[],"files":inventory},"files":files})).unwrap();
+    let mut hash = Sha256::new();
+    hash.update(b"tools.kan.import.plan.v1\0");
+    hash.update(&document);
+    let plan = service::hex(&hash.finalize());
+    let mut frames = Vec::new();
+    for (n, (kind, file, body)) in std::iter::once(("inventory", None, document))
+        .chain(
+            inputs
+                .into_iter()
+                .enumerate()
+                .map(|(i, (_, body))| ("data", Some(i), body)),
+        )
+        .enumerate()
+    {
+        let header=serde_json::to_vec(&json!({"version":1,"plan":plan,"ordinal":n,"kind":kind,"file":file,"part":0,"parts":1})).unwrap();
+        let mut frame = b"KANI\x01".to_vec();
+        frame.extend((header.len() as u32).to_be_bytes());
+        frame.extend(header);
+        frame.extend(body);
+        frames.push(frame);
+    }
+    (plan, frames)
+}
+#[tokio::test]
+async fn imported_repository_membership_and_trust_fold_preserve_head_boundaries_and_citations() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = tempfile::tempdir().unwrap();
+        let (plan, frames) =
+            repository_import_frames(if profile == Profile::Admitted { 8 } else { 7 }, "none")
+                .await;
+        let f = fixture_requests(dir.path(), profile, |n, a, p| {
+            import_request(n, a, p, &plan, &frames[n as usize], false)
+        });
+        let server = Server::start(&f).await;
+        let ui =
+            Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+                .await;
+        let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+        let entry = &catalog["scopes"][0];
+        let page = ui
+            .call(
+                json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"limit":20}),
+                200,
+            )
+            .await;
+        let selections: Vec<_> = page["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["selection"].clone())
+            .collect();
+        let mut query = json!({"action":"proof-import","source":entry["id"],"pin":entry["pin"],"selections":selections,"plan":plan,"file":0});
+        let untrusted = ui.call(query.clone(), 200).await;
+        let repo = &untrusted["file"]["car"]["repository"];
+        assert_eq!(repo["state"], "membership-verified");
+        assert_eq!(repo["records"], 3);
+        assert_eq!(repo["fold"]["verified_claims"], 3);
+        assert_eq!(repo["fold"]["total_classes"], 0);
+        assert_eq!(repo["fold"]["excluded_by_trust"][0]["claims"], 3);
+        assert_eq!(repo["commit"]["signature"], "valid-static-did-key");
+        assert_eq!(repo["head_sources"][0]["record"]["sequence"], "3");
+        assert_eq!(
+            untrusted["file"]["car"]["records"][3]["membership"]["state"],
+            "not-a-current-record"
+        );
+        let author6 = json!({"did":identity(6).did().as_str(),"agent":null});
+        let author7 = json!({"did":identity(7).did().as_str(),"agent":null});
+        query["view"] = json!({"trust":[author6]});
+        let solo = ui.call(query.clone(), 200).await;
+        assert_eq!(
+            solo["file"]["car"]["repository"]["fold"]["classes"][0]["status"]["value"],
+            "Blocked"
+        );
+        query["view"] = json!({"trust":[author6,author7]});
+        let peers = ui.call(query.clone(), 200).await;
+        let group = &peers["file"]["car"]["repository"]["fold"]["classes"][0];
+        assert_eq!(group["status"]["kind"], "contested");
+        assert_eq!(group["live_status_claims"].as_array().unwrap().len(), 2);
+        let position = group["claims"][0]["source"]["after"].as_u64().unwrap() as usize;
+        let record = &peers["file"]["car"]["records"][position];
+        assert_eq!(record["id"], group["claims"][0]["id"]);
+        assert_eq!(record["membership"]["state"], "reachable");
+        assert!(!record["sources"].as_array().unwrap().is_empty());
+        let mut no_head = query.clone();
+        no_head["selections"] = json!([selections[1], selections[2]]);
+        assert_eq!(
+            ui.call(no_head, 200).await["file"]["car"]["repository"]["state"],
+            "head-unavailable"
+        );
+        f.remove(2);
+        assert_eq!(
+            ui.call(query.clone(), 200).await["file"]["car"]["repository"]["state"],
+            "head-unavailable"
+        );
+        server
+            .service
+            .lock()
+            .unwrap()
+            .replace_grants(vec![])
+            .unwrap();
+        ui.call(query, 403).await;
+        ui.stop().await;
+        server.stop().await;
+    }
+}
+#[tokio::test]
+async fn imported_repository_never_falls_back_from_invalid_head_or_partial_tree() {
+    for (damage, expected) in [
+        ("wrong-head", "commit-invalid"),
+        ("bad-signature", "commit-invalid"),
+        ("missing-node", "membership-incomplete"),
+        ("corrupt-tail", "car-incomplete"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let (plan, frames) = repository_import_frames(8, damage).await;
+        let f = fixture_requests(dir.path(), Profile::Admitted, |n, a, p| {
+            import_request(n, a, p, &plan, &frames[n as usize], false)
+        });
+        let server = Server::start(&f).await;
+        let ui =
+            Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+                .await;
+        let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+        let entry = &catalog["scopes"][0];
+        let page = ui
+            .call(
+                json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"limit":20}),
+                200,
+            )
+            .await;
+        let selections: Vec<_> = page["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["selection"].clone())
+            .collect();
+        let value=ui.call(json!({"action":"proof-import","source":entry["id"],"pin":entry["pin"],"selections":selections,"plan":plan,"file":0}),200).await;
+        assert_eq!(
+            value["file"]["car"]["repository"]["state"], expected,
+            "{damage}"
+        );
+        assert!(value["file"]["car"]["repository"]["fold"].is_null());
+        assert_eq!(
+            value["file"]["car"]["records"][0]["membership"]["state"],
+            "unknown"
+        );
+        ui.stop().await;
+        server.stop().await;
+    }
+}

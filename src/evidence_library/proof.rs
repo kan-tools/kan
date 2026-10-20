@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use std::{collections::BTreeMap, time::Duration};
 pub mod analysis;
 mod discovery;
-mod imports;
+pub(crate) mod imports;
 pub mod knowledge;
 pub mod outbox;
 pub mod search;
@@ -143,7 +143,7 @@ impl Readers {
                 let reader = self.legacy.as_ref().ok_or(Failure::Invalid)?;
                 let pin = reader.snapshot(id).await?;
                 Ok(json!({"id":id,"scope":id,"protocol":"legacy","pin_wire":content::pin_wire(&pin)?,"pin":pin,
-                    "capabilities":["portable-references","snapshot-inventory","source-ranges","provenance","content-inspection"]}))
+                    "capabilities":["snapshot-inventory","source-ranges","provenance","content-inspection"]}))
             }
         }).await.unwrap_or(Err(Failure::Unavailable)))
     }
@@ -163,8 +163,9 @@ impl Readers {
                 plan,
                 file,
                 after,
+                view,
             } => {
-                self.import_content(&source, &pin, &selections, &plan, file, after)
+                self.import_content(&source, &pin, &selections, &plan, file, after, view)
                     .await?
             }
             Query::KnowledgeGraph { subject, day } => self.knowledge_graph(subject, day).await?,

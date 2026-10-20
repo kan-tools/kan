@@ -378,3 +378,31 @@ its recovery origin, making attribution and disclosure dependencies atomic.
 Recovered records require current access to the publication and all cited archives.
 No trigger or publication is invoked. Exact retries preserve prior entries;
 foreign-authored records cannot be republished under the restoring reader's name.
+
+### Imported repository membership and native v1 views
+
+The imported-file reader now pairs a CAR only with its sibling `HEAD` from the
+same verified import plan. It verifies both file hashes, the entire CAR scan,
+HEAD's commit, static did:key commit signatures, and bounded ordered MST
+reachability before marking records current members. It never chooses a newer
+commit or the CAR header root when HEAD is unavailable. Historical/unreferenced
+blocks retain their individual signature display and exact byte citations.
+Other commit identity methods explicitly require resolution; graph reachability
+alone is not identity authentication, scope admission or user trust.
+
+The shared `proof-import` API accepts `view.trust` as exact v1 author identities
+(including agent qualifiers) and `view.subjects_after` for pagination. No authors
+are included implicitly. The existing pure v1 identity, retraction, rejection
+and state folds interpret verified reachable `tools.kan.claim` / `dev.kan.claim`
+records; author exclusion counts, SameAs witnesses, live status claims and
+contested states remain inspectable. Every folded claim links back to its CAR
+block and retained source ranges. Local subjects stay inside this imported
+repository; no cross-import identity merge is inferred. Current identity-governed
+and unsupported codecs remain visible outside this legacy fold. Git ancestry is
+not reconstructed from an import that did not include that evidence.
+
+Presentation bounds are 4,096 reachable records, 8,192 tree nodes, depth 32,
+128 authors, and 100 subject groups / 2 MiB per fold page. Larger or incomplete
+views report their limit and keep the raw file browser available. These are
+query limits, not ingestion or retention caps. No persistent derived authority
+or mutation surface is added.

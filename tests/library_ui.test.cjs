@@ -724,3 +724,14 @@ test('published annotation restoration requires preview and keeps provenance and
  await u.respond({state:'restored',annotation:{id:'retained',author:'original'}});assert.match(u.node('annotation-recovery-preview').textContent,/original author original/);
  u.node('lock').click();assert.equal(u.node('annotation-recovery').hidden,true);assert.equal(u.node('annotation-recovery-preview').textContent,'');
 });
+test('import repository view separates reachability from trust and follows fold sources',async()=>{
+ const u=ui();await openImported(u);await u.respond(importView);walk(u.node('content-panel')).find(n=>n.textContent==='Read repo.car').click();await tick();
+ const author={did:'did:key:synthetic',agent:null},repo={state:'membership-verified',head:'head-cid',head_sources:importView.inventory_cites,records:2,commit:{signature:'valid-static-did-key',after:5},authors:[author],fold:{coverage:'Verified reachable v1 claims; explicit trust is interpretation.',verified_claims:2,uninterpreted_members:0,total_classes:0,classes:[],excluded_by_trust:[{subject:{Local:'telos/memory'},claims:2}],next:null}};
+ const value={...importView,file:{index:0,path:'repo.car',state:'verified',sources:importView.inventory_cites,car:{membership:'Exact imported HEAD only',repository:repo,scan:{error:null},records:[{state:'verified-claim',id:'claim-1',block:'block-1',membership:{state:'not-a-current-record'},claim:{text:'historical'},sources:importView.inventory_cites}],next:null}}};
+ await u.respond(value);assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('not-a-current-record')));
+ const checkbox=walk(u.node('content-panel')).find(n=>n.type==='checkbox');assert.equal(checkbox.checked,false);checkbox.checked=true;
+ walk(u.node('content-panel')).find(n=>n.textContent==='Apply repository trust view').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).view,{trust:[author],subjects_after:0});
+ const folded={...value,file:{...value.file,car:{...value.file.car,repository:{...repo,fold:{...repo.fold,total_classes:1,classes:[{subjects:[{Local:'telos/memory'}],status:{kind:'contested'},live_status_claims:['a','b'],witnesses:[],claims:[{id:'claim-1',author,body:{Observation:{text:'<b>raw</b>'}},cites:['original'],source:{after:2}}]}]}}}}};
+ await u.respond(folded);assert.ok(walk(u.node('content-panel')).some(n=>n.textContent==='contested'));assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('<b>raw</b>')));
+ walk(u.node('content-panel')).find(n=>n.textContent==='Inspect claim claim-1').click();await tick();const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.after,2);assert.deepEqual(request.view.trust,[author]);u.node('lock').click();await u.respond(folded);assert.equal(u.node('content-panel').children.length,0);
+});
