@@ -1056,8 +1056,8 @@ backup or old key is made cryptographically irrecoverable by these operations.
 The experimental `capture-erasure` owner target accepts `id`, `root`, `history`
 (the pinned independent owner-erasure Access configuration), `signing_key`
 (owner), `issuer_key`, `private_keys` (capture decryption credential paths), and
-optional `replicas` (same-binding archive directories) and `workspaces` entries
-`{database, signing_key, recipient_key}`. All paths come from
+optional `replicas` (same-binding archive directories), `spools` (absolute sender
+queue paths) and `workspaces` entries `{database, signing_key, recipient_key}`. All paths come from
 owner configuration. A stopped replica may remain offline at startup.
 
 The Library owner panel and shared owner request CLI support:
@@ -1070,9 +1070,11 @@ The Library owner panel and shared owner request CLI support:
 
 The journal commits before destructive work; independent custody publication
 precedes archive cleanup. Inspect `job` or the owner catalog for per-archive
-results, page reclamation and interrupted attempts. A result remains
-`cleanup-pending` because queue and other publication-copy cleanup and deployment-wide
-enrollment are not yet wired into this coordinator. Configured stopped
+results, page reclamation and interrupted attempts. Configured spools retire admitted
+selected operations using signed manifest commitments; unaffected predecessors
+remain deliverable and later selected entries stay deferred. A result remains
+`cleanup-pending` because unpublished cancellation, other publication-copy cleanup
+and deployment-wide enrollment still require implementation. Configured stopped
 workspaces reconcile authenticated source citations and transitive annotation/
 analysis lineage against current owner custody, retaining unrelated entries.
 Active workspaces, unreadable records and orphan model outputs remain pending. Never
@@ -1090,3 +1092,8 @@ the custody heads and SQLite data version stay unchanged; local writes are check
 before commit. Missing history, altered bytes or incomplete lineage fail closed.
 This flag does not enroll raw archive services or other reader deployments: their
 own custody configuration is still required.
+
+Enroll sender processes separately as described in [V2-DELIVERY.md](V2-DELIVERY.md#managed-erasure-and-restored-queues).
+Adding a spool path to an erasure target schedules cleanup; it does not modify the
+running sender's configuration. Every managed sender must use independent current
+custody, including annotation outboxes and a restarted or restored watcher.

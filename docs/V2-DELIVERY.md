@@ -36,3 +36,51 @@ kan-v2 decrypt-request retained-request.json --recipient-key "$RECIPIENT_PRIVATE
 `spool-head` emits exact signed bytes and never removes them. `decrypt-request` verifies the signature, explicit scope/writer pins and authenticated encryption before writing any plaintext. The writer pin identifies the outer request signer, not who originally encrypted or authored the plaintext: another writer can copy ciphertext within the same scope and sign a new wrapper. Signature validity does not establish historical service authorization. Redirection creates files under your shell's permissions; use an owner-only directory and appropriate umask for plaintext. The server's separate `rpc` read capability can return retained requests after local dequeue; extracting those bytes requires parsing the signed response, not treating the response itself as an encrypted request.
 
 Service endpoint restrictions, issuer verification, bounded response handling and explicit signed access grants are inherited from the service transport. No environment proxy or redirect is followed. The built-in development listener remains loopback-only. Production service configuration, recovery-key custody, provider forwarding and visible capture-gap signaling remain subsequent build points.
+
+## Managed erasure and restored queues
+
+Enroll every managed sender with the independently retained, pinned owner custody
+configuration for its admitted archive. Keep this configuration outside spool
+backups. The same owner history must govern ingest and read services. For example:
+
+```sh
+kan-v2 spool-drain "$QUEUE" --endpoint "$ENDPOINT" \
+  --erasure-history "$ERASURE_CONFIG" --limit 128
+kan-v2 spool-watch "$QUEUE" --journal "$JOURNAL" --endpoint "$ENDPOINT" \
+  --erasure-history "$ERASURE_CONFIG"
+kan-v2 spool-status "$QUEUE" --operation "$OPERATION_HEX" \
+  --erasure-history "$ERASURE_CONFIG"
+```
+
+`spool-head`, `queue-input` and the import commands also accept
+`--erasure-history`. Annotation outbox JSON accepts an optional `erasure_history`
+Access object with `directory`, `binding`, `owner` and pinned `minimum`, matching
+the independently initialized custody configuration. Enrollment survives a queue
+restore because it is supplied by the operator, not loaded from the queue.
+Missing or incompatible custody refuses managed content operations.
+
+An operation selected by current custody is reported as `erased`, even before
+local physical cleanup. A managed sender refuses to export or replay it and
+rejects a delayed acknowledgment for it. Delivery keeps a custody lease through
+the network exchange; new owner authorization must retry while a prior send is
+in flight. Unaffected requests ahead of selected requests remain deliverable.
+
+To reconcile a stopped sender explicitly:
+
+```sh
+kan-v2 reconcile-spool-erasure "$QUEUE" --erasure-history "$ERASURE_CONFIG"
+```
+
+This removes ciphertext retained in selected admitted pending requests and the
+last acknowledgment. It preserves minimal signed authorization and canonical
+manifest commitments sufficient to continue the writer's chain. The first such
+cleanup upgrades the queue to profile 3; earlier binaries refuse to reopen it.
+A selected pending request behind an unrelated predecessor remains deferred;
+deliver the predecessor with current custody and retry cleanup. No acknowledgment
+or admission is invented. Managed delivery also performs this safe retirement
+when the head or last acknowledgment is selected.
+
+Page reclamation, offline backup purge, unpublished cancellation and published
+derivative cleanup have separate statuses. A reconciled admitted queue alone is
+not evidence of complete cross-store erasure. Retain any backup until its owner
+explicitly authorizes deletion; do not activate it through an unenrolled sender.
