@@ -10,7 +10,13 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+mod current;
 mod repository;
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ControlEvidence {
+    pub parts: Vec<super::knowledge::Citation>,
+}
 
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -19,6 +25,12 @@ pub struct View {
     pub trust: Vec<crate::claim::v1::AuthorId>,
     #[serde(default)]
     pub subjects_after: usize,
+    #[serde(default)]
+    pub principals: Vec<String>,
+    #[serde(default)]
+    pub controls: Vec<ControlEvidence>,
+    #[serde(default)]
+    pub current_after: usize,
 }
 
 use sha2::{Digest, Sha256};
@@ -68,6 +80,14 @@ impl Readers {
             || after > 100_000
             || view.subjects_after > 4096
             || view.trust.len() > 128
+            || view.principals.len() > 128
+            || view.principals.iter().any(|p| p.len() > 256)
+            || view.controls.len() > 128
+            || view
+                .controls
+                .iter()
+                .any(|c| c.parts.is_empty() || c.parts.len() > 4)
+            || view.current_after > 4096
             || view
                 .trust
                 .iter()
@@ -82,6 +102,28 @@ impl Readers {
             .map_err(|_| ContentError::Busy)?;
         let reader = self.selected(source)?;
         tokio::time::timeout(std::time::Duration::from_secs(120), async {
+            let mut controls=Vec::new();
+            let mut control_bytes=0usize;
+            for evidence in &view.controls {
+                let mut bytes=Vec::new();let mut binding=None;let mut sources=Vec::new();
+                for (index,part) in evidence.parts.iter().enumerate() {
+                    let source_reader=self.selected(&part.source)?;
+                    let Source::Available {record,writer,plaintext,..}=source_reader.cited_source(&part.pin,&part.selection).await? else {return Err(Failure::Missing.into());};
+                    let offset=if plaintext.starts_with(b"KANI") {
+                        let (header,offset)=restore::decode_frame(&plaintext).map_err(|_|invalid())?;
+                        let identity=(header.plan,header.file,writer);
+                        if header.kind!="data" || header.part!=index || header.parts!=evidence.parts.len() || binding.as_ref().is_some_and(|b|b!=&identity) {return Err(invalid());}
+                        binding=Some(identity);offset
+                    } else {if evidence.parts.len()!=1 {return Err(invalid());}0};
+                    bytes.extend_from_slice(&plaintext[offset..]);
+                    if bytes.len()>262144 {return Err(ContentError::Limited);}
+                    sources.push(json!({"source":part.source,"record":record,"bytes":[offset.to_string(),plaintext.len().to_string()]}));
+                }
+                control_bytes+=bytes.len();if control_bytes>4*1024*1024 {return Err(ContentError::Limited);}
+                bounded::<atproto_dasl::Ipld>(&bytes).map_err(|_|invalid())?;
+                let preserved=crate::identity::control::decode_preserving(&bytes).map_err(|_|invalid())?;
+                controls.push(current::Control {preserved,sources});
+            }
             let mut frames = BTreeMap::new();
             let mut unavailable = Vec::new();
             let mut total = 0usize;
@@ -153,6 +195,7 @@ impl Readers {
             let scope = reader.binding().scope.clone();
             let recipient = recipient.unwrap_or_default();
             let id = plan_id.to_owned();
+            let control_selections=view.controls.clone();
             let mut value = tokio::task::spawn_blocking(move || {
                 let _permit = _permit;
                 inspect(
@@ -164,12 +207,14 @@ impl Readers {
                     file,
                     after,
                     &view,
+                    &controls,
                 )
             })
             .await
             .map_err(|_| Failure::Unavailable)??;
             // The last read is a fresh authorization check, not reliance on a pin.
             reader.page(pin, None, 1).await?;
+            for evidence in &control_selections {for part in &evidence.parts {self.selected(&part.source)?.check_citation_access(&part.pin,&part.selection).await?;}}
             value["source"] = json!(source);
             value["pin"] = json!(pin);
             value["unavailable"] = json!(unavailable);
@@ -189,6 +234,7 @@ fn inspect(
     selected: Option<usize>,
     after: usize,
     view_options: &View,
+    controls: &[current::Control],
 ) -> Result<Value, ContentError> {
     let coverage="Selected import frames only. File hashes and individually supported claim signatures are verified; Repository membership is evaluated only with the exact sibling HEAD and complete selected CAR; trust folding is explicitly selected and does not certify migration completeness or cutover. Original files and claim citations remain distinct from v2 annotations.";
     let mut result = json!({"version":"kan-import-content/1","plan":id,"state":"inventory-incomplete","coverage":coverage,"files":[],"inventory_cites":[],"file":null});
@@ -315,8 +361,13 @@ fn inspect(
                     }
                     head_start += candidate.chunks.len();
                 }
-                view["car"] = car(&bytes, after, &spans, head.as_ref(), view_options)?;
+                view["car"] = car(&bytes, after, &spans, head.as_ref(), view_options, controls)?;
             } else {
+                if bounded::<atproto_dasl::Ipld>(&bytes).is_ok() {
+                    if let Ok(control) = crate::identity::control::decode_preserving(&bytes) {
+                        view["control"] = json!({"logical_id":control.logical_cid().map_err(|_|invalid())?.to_string(),"proved_id":control.proved_cid().map_err(|_|invalid())?.to_string(),"supported":control.is_supported(),"raw":control.raw(),"interpretation":"Selected control evidence is resolved with the other explicitly selected events; this file alone does not establish authority."});
+                    }
+                }
                 let end = bytes.len().min(65536);
                 view["preview"] = json!(std::str::from_utf8(&bytes[..end]).ok());
                 view["preview_bytes"] = json!(end.to_string());
@@ -333,6 +384,7 @@ fn car(
     spans: &[(usize, usize, &Frame)],
     head: Option<&(Vec<u8>, Vec<Value>)>,
     view: &View,
+    controls: &[current::Control],
 ) -> Result<Value, ContentError> {
     let mut scan = crate::migration_preflight::CarScan {
         roots: vec![],
@@ -361,6 +413,7 @@ fn car(
         head,
         view,
         scan.error.is_none() && scan.unsupported_blocks == 0,
+        controls,
     )?;
     // A corrupt tail never silently turns a verified prefix into a valid CAR.
     let mut records = Vec::new();

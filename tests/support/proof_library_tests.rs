@@ -2771,6 +2771,47 @@ async fn repository_import_frames(audience: u8, damage: &str) -> (String, Vec<Ve
             entries.push((key.into(), cid));
         }
     }
+    if damage == "current" {
+        use kan::claim::{
+            CanonicalSet, Claim, ClaimContent, RecordedAt, SubjectPath, UniqueSequence,
+        };
+        use kan::identity::{authorship::Author, control::IdentityVersion};
+        let (inception, _) = current_import_scope();
+        for author in [6, 7] {
+            let signer = identity(author);
+            let did = signer.did();
+            let content = ClaimContent::new(
+                Author::new(
+                    did.clone(),
+                    format!("{did}#{}", did.strip_prefix("did:key:").unwrap()),
+                    IdentityVersion::Static,
+                )
+                .unwrap(),
+                inception.scope_id().unwrap(),
+                None,
+                SubjectPath::new("v2/current".into()).unwrap(),
+                CanonicalSet::new(vec![]).unwrap(),
+                kan::claim::ClaimBody::Status {
+                    value: if author == 6 {
+                        kan::claim::StatusValue::Blocked
+                    } else {
+                        kan::claim::StatusValue::Resolved
+                    },
+                },
+                CanonicalSet::new(vec![]).unwrap(),
+                UniqueSequence::new(vec![]).unwrap(),
+                RecordedAt::new(100).unwrap(),
+            )
+            .unwrap();
+            let claim = Claim::sign_static(content, &signer).unwrap();
+            let bytes = kan::claim::codec::encode_claim(&claim, "3jzfcijpj2z2a").unwrap();
+            entries.push((
+                format!("tools.kan.claim/current-{author}"),
+                push(&mut car, bytes),
+            ));
+        }
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+    }
     let node = kan::mst::MstNode::new(
         entries
             .into_iter()
@@ -3162,4 +3203,117 @@ async fn owner_key_epochs_require_owner_preview_and_restore_wrapped_history_afte
     );
     ui.stop().await;
     server.stop().await;
+}
+
+fn current_import_scope() -> (
+    kan::identity::scope_inception::ScopeInception,
+    kan::identity::control::ControlEvent,
+) {
+    use kan::identity::{
+        control::{IdentityVersion, Proof},
+        scope_inception::ScopeInception,
+    };
+    let root = identity(6);
+    let inception =
+        ScopeInception::new([27; 32], vec!["current".into()], vec![root.did()], vec![]).unwrap();
+    let input = inception.signing_input().unwrap();
+    let did = root.did();
+    let proof = Proof {
+        method: format!("{did}#{}", did.strip_prefix("did:key:").unwrap()),
+        controller_state: IdentityVersion::Static,
+        alg: "P256".into(),
+        sig: root.sign(&input.canonical_bytes().unwrap()).unwrap(),
+    };
+    let event = inception.proved_event(vec![proof]).unwrap();
+    (inception, event)
+}
+#[tokio::test]
+async fn imported_current_claims_keep_signature_scope_authority_and_selected_trust_distinct() {
+    for damaged in [false, true] {
+        let dir = private_workspace_directory();
+        let (plan, frames) = repository_import_frames(8, "current").await;
+        let f = fixture_requests(dir.path(), Profile::Admitted, |n, a, p| {
+            import_request(n, a, p, &plan, &frames[n as usize], false)
+        });
+        let (_, mut control) = current_import_scope();
+        if damaged {
+            control.proofs[0].sig[0] ^= 1;
+        }
+        let previous = Some(
+            service::append_manifest(f.requests.last().unwrap())
+                .unwrap()
+                .cid()
+                .to_string(),
+        );
+        let control_bytes = encrypted_frame(3, 8, previous, &control.canonical_bytes().unwrap());
+        let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+        archive
+            .admit(&control_bytes, &identity(8), &grant(), 200)
+            .unwrap();
+        drop(archive);
+        let server = Server::start(&f).await;
+        let ui =
+            Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+                .await;
+        let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+        let entry = &catalog["scopes"][0];
+        let page = ui
+            .call(
+                json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"limit":20}),
+                200,
+            )
+            .await;
+        let rows = page["records"].as_array().unwrap();
+        let selections = rows
+            .iter()
+            .filter(|r| r["sequence"] != "4")
+            .map(|r| r["selection"].clone())
+            .collect::<Vec<_>>();
+        let control = rows.iter().find(|r| r["sequence"] == "4").unwrap();
+        let mut query = json!({"action":"proof-import","source":entry["id"],"pin":entry["pin"],"selections":selections,"plan":plan,"file":0,"view":{"principals":[identity(6).did(),identity(7).did()]}});
+        let absent = ui.call(query.clone(), 200).await;
+        let current = &absent["file"]["car"]["repository"]["current"];
+        assert_eq!(current["verified_claims"], 2);
+        assert_eq!(current["classes"][0]["status"]["kind"], "unclassified");
+        assert!(current["classes"][0]["claims"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["judgments"]["cryptographicValidity"] == "valid"
+                && c["judgments"]["scopeAdmission"] == "unknown"));
+        query["view"]["controls"] = json!([{"parts":[{"source":entry["id"],"pin":entry["pin"],"selection":control["selection"]}]}]);
+        let resolved = ui.call(query.clone(), 200).await;
+        let current = &resolved["file"]["car"]["repository"]["current"];
+        assert_eq!(
+            current["controls"][0]["sources"][0]["record"]["sequence"],
+            "4"
+        );
+        if damaged {
+            assert_eq!(current["classes"][0]["status"]["kind"], "unclassified");
+        } else {
+            assert_eq!(current["classes"][0]["status"]["value"], "blocked");
+            assert_eq!(
+                current["classes"][0]["live_status_claims"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                1
+            );
+        }
+        query["view"]["principals"] = json!([]);
+        assert_eq!(
+            ui.call(query.clone(), 200).await["file"]["car"]["repository"]["current"]
+                ["total_classes"],
+            0
+        );
+        server
+            .service
+            .lock()
+            .unwrap()
+            .replace_grants(vec![])
+            .unwrap();
+        ui.call(query, 403).await;
+        ui.stop().await;
+        server.stop().await;
+    }
 }

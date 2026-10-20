@@ -803,3 +803,29 @@ keys or plaintext. Archive ciphertext, policy history, encrypted workspaces and
 independent credentials must also be backed up; this package alone is not an
 instance backup. Delegated per-reader wrapping, recovery-credential replacement
 and payload erasure remain distinct lifecycle work.
+
+
+### Current claims in imported repositories
+
+Open a retained public control `.cbor` file and choose **Use this control evidence**.
+The selection survives browsing other imported files, so identity histories and
+scope inception can come from independently imported public stores. Open the
+repository CAR, choose **Current principals included in this view**, then apply.
+The current-claim section shows native identity/governance resolutions, the four
+separate claim judgments, status conflicts, witnesses and exact source links.
+Legacy author/agent trust remains a separate selector. Clear control evidence or
+lock the Library to discard this in-memory selection.
+
+The `proof-import` request's `view` optionally includes `principals`,
+`current_after`, and `controls: [{"parts":[{"source":…, "pin":…, "selection":…}]}]`.
+Each control is one raw retained canonical control event or all ordered data-frame
+parts of one imported control file. The API verifies the selected sources again;
+it never accepts a browser-supplied resolved identity or admission verdict.
+Limits are 128 control records, four parts / 256 KiB each and 4 MiB total, alongside
+the existing repository/presentation bounds. Missing/unreadable selected controls
+refuse the view; omit them to inspect the resulting unresolved authority state.
+
+These are conclusions relative to selected control history. A missing later
+revocation cannot be discovered from absent evidence; there is no implicit claim
+of globally current authority. The native verifier's unsupported identity or
+control versions remain explicitly unresolved, with raw source access preserved.

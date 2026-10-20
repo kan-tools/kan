@@ -105,6 +105,7 @@ pub(super) fn inspect(
     head: Option<&(Vec<u8>, Vec<Value>)>,
     view: &View,
     car_complete: bool,
+    controls: &[super::current::Control],
 ) -> Result<Repository, ContentError> {
     if !car_complete {
         return Ok(unavailable(
@@ -188,6 +189,7 @@ pub(super) fn inspect(
     if let Err(reason) = walk.node(&commit.data, 0) {
         return Ok(unavailable("membership-incomplete", reason, head));
     }
+    let current = super::current::inspect(&walk.entries, &blocks, controls, view)?;
     let mut members = BTreeMap::<String, Vec<String>>::new();
     let mut records = BTreeMap::<String, (Cid, StoredClaim)>::new();
     let mut positions = BTreeMap::<String, Value>::new();
@@ -283,7 +285,7 @@ pub(super) fn inspect(
     Ok(Repository {
         notice: "Reachability is checked against the exact imported HEAD. Commit signatures, individual claim validity, selected view trust and current access remain separate. Local subjects are confined to this imported repository.",
         members: Some(members),
-        value: json!({"state":"membership-verified","head":head_cid.to_string(),"head_sources":head.map(|h|&h.1),"commit":{"did":commit.did,"revision":commit.rev,"signature":signature,"after":commit_index},"records":walk.entries.len(),"authors":authors.into_values().collect::<Vec<_>>(),
+        value: json!({"current":current,"state":"membership-verified","head":head_cid.to_string(),"head_sources":head.map(|h|&h.1),"commit":{"did":commit.did,"revision":commit.rev,"signature":signature,"after":commit_index},"records":walk.entries.len(),"authors":authors.into_values().collect::<Vec<_>>(),
             "fold":{"version":"kan-v1-fold/1","trust":view.trust,"coverage":"Verified reachable v1 claim records only; current identity-governed and unsupported records remain outside this legacy fold. Explicit trust is an interpretation choice, not permission or repository ownership. No Git ancestry provider is consulted.","verified_claims":claims.len(),"uninterpreted_members":uninterpreted,"excluded_by_trust":exclusions,"classes":displayed,"total_classes":total,"next":(next<total).then_some(next)}}),
     })
 }

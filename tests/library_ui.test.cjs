@@ -765,3 +765,17 @@ test('missing decryption epoch keeps provenance but disables source download and
  await u.respond({scope:'s',archive:'archive-A',profile:'admitted',record:proofPage.records[0],availability:'key-unavailable',writer:'verified-writer',content_trust:'Untrusted capture',signature:'Verified writer',admission:'Retained',service_issuer:'issuer'});
  assert.equal(u.node('download').disabled,true);assert.equal(u.node('analyze-source').hidden,true);assert.match(u.node('source').textContent,/key-unavailable/);assert.equal(u.node('provenance-tab').disabled,false);
 });
+test('imported current claims use explicit control evidence and preserve the four judgments in the human view',async()=>{
+ const u=ui();await openImported(u);await u.respond(importView);walk(u.node('content-panel')).find(n=>n.textContent==='Read repo.car').click();await tick();
+ const control={...importView,file:{index:0,path:'inception.cbor',state:'verified',sources:importView.inventory_cites,preview:null,control:{logical_id:'control-id',proved_id:'proved-id',supported:true,raw:{domain:'scope'},interpretation:'Evidence only'}}};
+ await u.respond(control);walk(u.node('content-panel')).find(n=>n.textContent==='Use this control evidence').click();
+ walk(u.node('content-panel')).find(n=>n.textContent==='Read repo.car').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).view.controls.length,1);
+ const principal='did:key:current',current={coverage:'Selected control history only',authors:[principal],verified_claims:1,excluded_by_trust:1,unresolved:[],identities:[],scopes:[],controls:[],classes:[],next:null};
+ const repo={state:'membership-verified',head:'head',records:1,commit:{signature:'valid-static-did-key',after:2},authors:[],fold:{coverage:'Legacy',verified_claims:0,uninterpreted_members:1,total_classes:0,classes:[],next:null},current};
+ const value={...importView,file:{index:0,path:'repo.car',state:'verified',sources:importView.inventory_cites,car:{membership:'HEAD',scan:{error:null},records:[],next:null,repository:repo}}};
+ await u.respond(value);walk(u.node('content-panel')).find(n=>n.type==='checkbox').checked=true;walk(u.node('content-panel')).find(n=>n.textContent==='Apply current principal trust').click();await tick();const view=JSON.parse(u.pending[0].opts.body).view;assert.deepEqual(view.principals,[principal]);assert.equal(view.controls[0].parts[0].source,'archive-A');
+ const group={subjects:[{scope:'scope-id',path:'goal'}],status:{kind:'unclassified'},claims:[{id:'current-claim',content:{body:'raw'},judgments:{cryptographicValidity:'valid',identityStateStanding:'static',scopeAdmission:'unknown',viewTrust:'included'},source:{after:3}}],witnesses:[],live_status_claims:[]};
+ await u.respond({...value,file:{...value.file,car:{...value.file.car,repository:{...repo,current:{...current,excluded_by_trust:0,classes:[group]}}}}});
+ assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('scopeAdmission')));walk(u.node('content-panel')).find(n=>n.textContent==='Inspect current claim current-claim').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,3);
+ u.node('lock').click();await u.respond(value);assert.equal(u.node('content-panel').children.length,0);
+});

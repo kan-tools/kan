@@ -474,3 +474,31 @@ independent credentials are separate backup dependencies. A key-package export
 alone is not a complete instance backup. Recovery credential rotation, delegated
 per-reader wrapping, selective payload erasure and the full clean-host drill
 remain separately required; this first epoch format does not claim them.
+
+
+### Imported current-codec claims and control evidence
+
+Repository membership continues to come only from the exact selected HEAD/MST.
+The current-codec view separately invokes the existing identity, governance,
+capability, mixed-claim and status-fold implementations. Humans explicitly select
+public control files across authorized imported snapshots, then select trusted
+current principals independently from legacy composite authors. Control references
+are reader-verified source selections; their exact byte ranges and current access
+are rechecked when used. Lock clears the browser's control selection.
+
+Every displayed current claim separates cryptographic validity, exact identity
+state, scope admission and view trust. Missing authority never becomes admission
+because a signature verifies. Genesis/recovery checkpoints and methods without
+capability-invocation purpose cannot exercise scope reach. Unsupported selected
+control evidence makes authority unresolved. Inception-only did:kan authority is
+limited to the existing native verifier; unsupported later governance is not
+inferred. A delegated claim requires the named head to delegate to that principal,
+and the native path evaluator handles coverage, revocation and time requirements.
+Author-recorded time is never used as trusted time.
+
+Resolver conclusions are relative to the explicitly selected evidence set, not
+a promise of globally complete/current control history. No implicit network
+resolution, Git ancestry, legacy subject remapping or cross-repository identity
+collapse occurs. Unknown/retired identity versions remain raw inspectable evidence
+if the current native verifier cannot authenticate them. These limitations are
+shown beside the human trust selectors and control provenance.

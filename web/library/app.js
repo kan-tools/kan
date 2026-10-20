@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  let policyRows=[],policyPreview=null,keyPreview=null,keyRestore=null;
+  let policyRows=[],policyPreview=null,keyPreview=null,keyRestore=null,importControls=[];
   let ownerToken='',ownerEpoch=0,ownerController,ownerTargets=[],ownerPreview=null,ownerRetry=null;
   let token = '', epoch = 0, controller, scopes = [], pin, after = 0, next = null, history = [], selected = null, source = null, hexadecimal = false;
   const selections = new Map();
@@ -43,6 +43,7 @@
     for (const button of buttons.values()) button.setAttribute('aria-pressed', 'false');
   }
   function lock(message = 'Locked · connect to browse authorized evidence.') {
+    importControls=[];
     $('reference-input').value='';
     for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
@@ -331,6 +332,7 @@
     }
   }
   async function readImport(entry,items,file=null,after=0,view={trust:[],subjects_after:0}) {
+    view={...view,...(importControls.length?{controls:importControls.map(c=>c.evidence)}:{})};
     clearContent();clearInspector();notice('Verifying imported file commitments and retained claim records…');
     const request={action:'proof-import',source:sourceId(entry),pin:entry.pin,selections:items.map(i=>i.record.selection),plan:items[0].description.plan,file,after,view};
     const value=await rpc(request);if(!value)return;
@@ -346,6 +348,7 @@
         }));parent.append(button);
       }
     }
+    if(importControls.length){panel.append(textNode('p',`${importControls.length} explicitly selected public control records · conclusions are relative to this evidence set.`));const clear=textNode('button','Clear control evidence selection');clear.addEventListener('click',()=>{importControls=[];const next={...view};delete next.controls;run(()=>readImport(entry,items,file,after,next));});panel.append(clear);}
     panel.append(textNode('h2','Imported v1 snapshot'));panel.append(textNode('p',value.coverage,'content-coverage'));
     panel.append(textNode('p',`${value.state} · ${value.unavailable.length} unavailable selected records`,'content-identity'));
     if(value.state==='inventory-incomplete')panel.append(textNode('p','The complete inventory is not selected. Continue discovery to include its parts; file names and contents cannot yet be verified.','content-warning'));
@@ -357,6 +360,7 @@
     }
     if(value.file) {
       const f=value.file;if(!['verified','incomplete'].includes(f.state)||f.index!==file)throw new Error('Invalid file result.');
+      if(f.control){details(panel,'Public control record',JSON.stringify(f.control,null,2));const use=textNode('button','Use this control evidence');use.addEventListener('click',()=>{if(!importControls.some(c=>c.id===(f.control.proved_id||f.control.logical_id))){if(importControls.length>=128)throw new Error('Control evidence selection limit reached.');importControls.push({id:(f.control.proved_id||f.control.logical_id),evidence:{parts:f.sources.map(c=>({source:sourceId(entry),pin:entry.pin,selection:c.record.selection}))}});}notice(`Selected ${importControls.length} control records. Open an imported repository to resolve its current claims.`);});panel.append(use);}
       panel.append(textNode('h2',`${f.path} · ${f.state}`));
       if(f.state==='incomplete')panel.append(textNode('p','Select the remaining file parts to verify and read this file.','content-warning'));
       else {
@@ -378,12 +382,24 @@
               const authors=document.createElement('fieldset');authors.append(textNode('legend','Authors included in this repository view'));
               const selectedAuthors=[];
               for(const author of repo.authors){const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=view.trust.some(a=>JSON.stringify(a)===JSON.stringify(author));label.append(input);label.append(textNode('span',`${author.did}${author.agent?' · agent '+JSON.stringify(author.agent):' · direct author'}`));authors.append(label);selectedAuthors.push({author,input});}
-              const apply=textNode('button','Apply repository trust view');apply.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{trust:selectedAuthors.filter(a=>a.input.checked).map(a=>a.author),subjects_after:0})));authors.append(apply);panel.append(authors);
+              const apply=textNode('button','Apply repository trust view');apply.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,trust:selectedAuthors.filter(a=>a.input.checked).map(a=>a.author),subjects_after:0})));authors.append(apply);panel.append(authors);
               panel.append(textNode('p',`${repo.fold.verified_claims} verified legacy claims · ${repo.fold.uninterpreted_members} other or unsupported members · ${repo.fold.total_classes} visible subject groups`));
               if(repo.fold.excluded_by_trust?.length)details(panel,'Claims excluded by selected trust',JSON.stringify(repo.fold.excluded_by_trust,null,2));
               for(const group of repo.fold.classes){const article=document.createElement('article');article.className='conversation-attempt';article.append(textNode('h3',group.subjects.map(s=>s.Local||JSON.stringify(s)).join(' · ')));article.append(textNode('p',`${group.status.kind}${group.status.value?' · '+group.status.value:''}${group.flagged_oversized?' · unusually large identity group':''}`));
                 for(const claim of group.claims){article.append(textNode('pre',JSON.stringify({author:claim.author,body:claim.body,cites:claim.cites},null,2)));openBlock(article,`Inspect claim ${claim.id}`,claim.source.after);}
                 details(article,'Identity witnesses and live status claims',JSON.stringify({witnesses:group.witnesses,live_status_claims:group.live_status_claims},null,2));panel.append(article);
+              }
+              if(repo.current){
+                const current=repo.current;if(!Array.isArray(current.authors)||current.authors.length>128||!Array.isArray(current.classes)||current.classes.length>100)throw new Error('Invalid current-claim view.');
+                panel.append(textNode('h3','Current claims · identity and scope authority'));panel.append(textNode('p',current.coverage,'content-coverage'));
+                panel.append(textNode('p',`${current.verified_claims} cryptographically verified current claims · ${current.unresolved.length} unresolved · ${current.excluded_by_trust} excluded by selected trust`));
+                const frame=document.createElement('fieldset');frame.append(textNode('legend','Current principals included in this view'));const selectedPrincipals=[];
+                for(const principal of current.authors){const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=(view.principals||[]).includes(principal);label.append(input);label.append(textNode('span',principal));frame.append(label);selectedPrincipals.push({principal,input});}
+                const applyCurrent=textNode('button','Apply current principal trust');applyCurrent.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,principals:selectedPrincipals.filter(p=>p.input.checked).map(p=>p.principal),current_after:0})));frame.append(applyCurrent);panel.append(frame);
+                details(panel,'Identity, governance and control evidence',JSON.stringify({identities:current.identities,scopes:current.scopes,controls:current.controls},null,2));
+                for(const unresolved of current.unresolved){const row=document.createElement('article');row.append(textNode('p',`${unresolved.state} · ${unresolved.reason}`));openBlock(row,'Inspect unresolved current claim',unresolved.after);panel.append(row);}
+                for(const group of current.classes){const article=document.createElement('article');article.append(textNode('h4',group.subjects.map(s=>`${s.scope}: ${s.path}`).join(' · ')));article.append(textNode('p',`${group.status.kind}${group.status.value?' · '+group.status.value:''}`));for(const claim of group.claims){article.append(textNode('pre',JSON.stringify({content:claim.content,judgments:claim.judgments},null,2)));openBlock(article,`Inspect current claim ${claim.id}`,claim.source.after);}details(article,'Current identity witnesses and live status',JSON.stringify({witnesses:group.witnesses,live_status_claims:group.live_status_claims},null,2));panel.append(article);}
+                if(current.next!==null){const more=textNode('button','Next current subjects');more.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,current_after:current.next})));panel.append(more);}
               }
               if(repo.fold.next!==null){const more=textNode('button','Next repository subjects');more.addEventListener('click',()=>run(()=>readImport(entry,items,file,after,{...view,subjects_after:repo.fold.next})));panel.append(more);}
             }
