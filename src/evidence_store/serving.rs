@@ -26,6 +26,20 @@ fn json(value: &impl Serialize) -> Result<Vec<u8>> {
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct CopyState {
+    plan_digest: String,
+    complete: bool,
+}
+impl CopyState {
+    fn new(plan: &crate::evidence_copy_plan::Plan, complete: bool) -> Self {
+        Self {
+            plan_digest: service::hex(&Sha256::digest(plan.bytes())),
+            complete,
+        }
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Statement {
     version: u8,
     binding: WireBinding,
@@ -33,6 +47,8 @@ struct Statement {
     root: Option<String>,
     erasure_tip: Option<String>,
     erasure_through: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    copy: Option<CopyState>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,6 +59,9 @@ pub struct Checkpoint {
 impl Checkpoint {
     pub fn frontier(&self) -> &Coordinate {
         &self.statement.frontier
+    }
+    pub(super) fn recipe_metadata_match(&self) -> Option<bool> {
+        self.statement.copy.as_ref().map(|copy| copy.complete)
     }
     pub fn erasure_tip(&self) -> Option<&str> {
         self.statement.erasure_tip.as_deref()
@@ -65,11 +84,20 @@ impl Checkpoint {
     pub(super) fn validate(&self, binding: &attested::Binding) -> Result<Frontier> {
         binding.validate()?;
         if self.statement.version != 1
-            || self.statement.binding != wire(binding)
+            || self.statement.binding != wire(binding, self.statement.copy.is_some())
             || self.statement.erasure_through > evidence::MAX_SAFE_INTEGER as u64
             || (self.statement.erasure_through == 0) != self.statement.erasure_tip.is_none()
         {
             return Err(corrupt());
+        }
+        if let Some(copy) = &self.statement.copy {
+            if service::unhex(&copy.plan_digest, 32)
+                .map_err(|_| corrupt())?
+                .len()
+                != 32
+            {
+                return Err(corrupt());
+            }
         }
         let frontier = self
             .statement
@@ -95,9 +123,13 @@ impl Checkpoint {
         Ok(frontier)
     }
 }
-fn wire(binding: &attested::Binding) -> WireBinding {
+fn wire(binding: &attested::Binding, copied: bool) -> WireBinding {
     WireBinding {
-        profile: Profile::Admitted,
+        profile: if copied {
+            Profile::Copied
+        } else {
+            Profile::Admitted
+        },
         archive: service::hex(&binding.archive),
         scope: service::hex(&binding.scope),
         issuer: binding.issuer.clone(),
@@ -138,6 +170,17 @@ fn load(conn: &Connection, binding: &attested::Binding) -> Result<Checkpoint> {
         return Err(corrupt());
     }
     checkpoint.validate(binding)?;
+    let profile: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    match (&checkpoint.statement.copy, profile) {
+        (None, 2) => {}
+        (Some(copy), 3) => {
+            let plan = copied::stored_plan(conn, binding)?;
+            if copy.plan_digest != CopyState::new(&plan, copy.complete).plan_digest {
+                return Err(corrupt());
+            }
+        }
+        _ => return Err(corrupt()),
+    }
     Ok(checkpoint)
 }
 struct SqlBlocks<'a> {
@@ -238,13 +281,14 @@ fn publish(
     root: Option<index::Digest>,
     history: &erasure::History,
     signer: &Identity,
+    copy: Option<CopyState>,
 ) -> Result<Checkpoint> {
     if signer.did().as_str() != binding.issuer {
         return Err(Error::Invalid("serving checkpoint signer"));
     }
     let statement = Statement {
         version: 1,
-        binding: wire(binding),
+        binding: wire(binding, copy.is_some()),
         frontier: Coordinate::from_frontier(frontier),
         root: root.map(|v| service::hex(&v)),
         erasure_tip: history.tip.clone(),
@@ -254,6 +298,7 @@ fn publish(
             .map(|r| r.plan.through)
             .max()
             .unwrap_or(0),
+        copy,
     };
     sign_and_publish(tx, binding, statement, signer)
 }
@@ -286,9 +331,6 @@ impl attested::Archive {
     /// Explicit full verification and atomic initialization/rebuild. It does not
     /// change capture bytes, receipt/proof formats, or independently held custody.
     pub fn rebuild_serving_index(&self, signer: &Identity) -> Result<Checkpoint> {
-        if self.copy.is_some() {
-            return Err(Error::Invalid("copied serving index not initialized"));
-        }
         if signer.did().as_str() != self.binding.issuer {
             return Err(Error::Invalid("serving checkpoint signer"));
         }
@@ -296,10 +338,21 @@ impl attested::Archive {
             &self.ledger.conn,
             TransactionBehavior::Immediate,
         )?;
-        self.ledger.check_write_profile(true)?;
-        let verified = self.ledger.verify_contents()?;
-        let (frontier, _) =
-            attested::audit_prefix(&tx, &self.binding, verified.snapshot.through, None, None)?;
+        let (verified, copy) = if let Some(plan) = &self.copy {
+            let verified = copied::full_audit(&self.ledger, &self.binding, plan)?;
+            let copy = CopyState::new(plan, verified.copy.source_copy_complete);
+            (verified.contents, Some(copy))
+        } else {
+            self.ledger.check_write_profile(true)?;
+            (self.ledger.verify_contents()?, None)
+        };
+        let (frontier, _) = attested::audit_prefix(
+            &tx,
+            &self.binding,
+            verified.snapshot.through,
+            None,
+            self.copy.as_ref(),
+        )?;
         if frontier.manifest != verified.snapshot.tip {
             return Err(corrupt());
         }
@@ -328,7 +381,15 @@ impl attested::Archive {
             insert_record(&mut map, &row, &attested::envelope(&tx, sequence)?)?;
         }
         insert_erasures(&mut map, &history)?;
-        let checkpoint = publish(&tx, &self.binding, &frontier, map.root(), &history, signer)?;
+        let checkpoint = publish(
+            &tx,
+            &self.binding,
+            &frontier,
+            map.root(),
+            &history,
+            signer,
+            copy,
+        )?;
         tx.commit()?;
         Ok(checkpoint)
     }
@@ -379,7 +440,15 @@ pub(super) fn advance(
     } else {
         let history = erasure::load(tx)?;
         insert_erasures(&mut map, &history)?;
-        publish(tx, binding, proof.frontier(), map.root(), &history, signer)?;
+        publish(
+            tx,
+            binding,
+            proof.frontier(),
+            map.root(),
+            &history,
+            signer,
+            checkpoint.statement.copy,
+        )?;
     }
     Ok(())
 }
@@ -724,7 +793,7 @@ impl attested::Archive {
         signer: &Identity,
         expected_tip: &str,
     ) -> Result<Option<Checkpoint>> {
-        if signer.did().as_str() != self.binding.issuer || self.copy.is_some() {
+        if signer.did().as_str() != self.binding.issuer {
             return Err(Error::Invalid("serving custody signer/profile"));
         }
         let tx = rusqlite::Transaction::new_unchecked(
@@ -734,7 +803,11 @@ impl attested::Archive {
         if !exists(&tx)? {
             return Ok(None);
         }
-        self.ledger.check_write_profile(true)?;
+        if self.copy.is_some() {
+            self.ledger.check_copy_schema()?;
+        } else {
+            self.ledger.check_write_profile(true)?;
+        }
         attested::check_binding(&tx, &self.binding)?;
         let checkpoint = load(&tx, &self.binding)?;
         let frontier = checkpoint.validate(&self.binding)?;
@@ -778,7 +851,15 @@ impl attested::Archive {
             checkpoint.root()?,
         );
         insert_erasures(&mut map, &history)?;
-        let next = publish(&tx, &self.binding, &frontier, map.root(), &history, signer)?;
+        let next = publish(
+            &tx,
+            &self.binding,
+            &frontier,
+            map.root(),
+            &history,
+            signer,
+            checkpoint.statement.copy,
+        )?;
         tx.commit()?;
         Ok(Some(next))
     }
@@ -828,4 +909,57 @@ pub(super) fn erased(conn: &Connection, checkpoint: &Checkpoint, id: &Cid) -> Re
         return Err(corrupt());
     }
     Ok(true)
+}
+
+/// Called only after copy_batch has audited its resulting source/recipe metadata.
+/// Advance the map within that same transaction, including object-only progress.
+pub(super) fn advance_copy(
+    tx: &rusqlite::Transaction<'_>,
+    binding: &attested::Binding,
+    before: &Snapshot,
+    status: &copied::Status,
+    signer: &Identity,
+) -> Result<()> {
+    if !exists(tx)? {
+        return Ok(());
+    }
+    let checkpoint = load(tx, binding)?;
+    check_current(tx, binding, &checkpoint)?;
+    let mut frontier = checkpoint.validate(binding)?;
+    if frontier.through != before.through || frontier.manifest != before.tip {
+        return Err(Error::Conflict("copy serving frontier changed"));
+    }
+    let plan = copied::stored_plan(tx, binding)?;
+    let mut map = Map::new(
+        SqlBlocks {
+            conn: tx,
+            tx: Some(tx),
+        },
+        checkpoint.root()?,
+    );
+    for sequence in frontier.through + 1..=status.copied_records {
+        let row = attested::record(tx, sequence)?;
+        let envelope = attested::envelope(tx, sequence)?;
+        let verified = proof::verify(
+            &envelope,
+            &binding.context(),
+            &row.manifest,
+            &row.receipt,
+            &frontier,
+        )?;
+        insert_record(&mut map, &row, &envelope)?;
+        frontier = verified.frontier().clone();
+    }
+    let history = erasure::load(tx)?;
+    insert_erasures(&mut map, &history)?;
+    publish(
+        tx,
+        binding,
+        &frontier,
+        map.root(),
+        &history,
+        signer,
+        Some(CopyState::new(&plan, status.source_copy_complete)),
+    )?;
+    Ok(())
 }

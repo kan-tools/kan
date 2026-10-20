@@ -326,39 +326,69 @@ fn copy_death_child() {
 }
 #[test]
 fn every_copy_transaction_boundary_resumes_without_replacing_acknowledged_bytes() {
-    for phase in [
-        CopyBoundary::ObjectInserted,
-        CopyBoundary::InventoryInserted,
-        CopyBoundary::ManifestInserted,
-        CopyBoundary::ProofSigned,
-        CopyBoundary::ProofInserted,
-        CopyBoundary::BeforeCommit,
-        CopyBoundary::AfterCommit,
-    ] {
-        let t = tempfile::tempdir().unwrap();
-        let path = fixture(t.path(), 2, 2);
-        let s = source(&path);
-        let root = t.path().join("copy");
-        drop(Archive::create(&root, &s, binding(&s)).unwrap());
-        let before = std::fs::read(&path).unwrap();
-        let result = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "copy_death_child", "--nocapture"])
-            .env("KAN_COPY_DEATH_PHASE", format!("{phase:?}"))
-            .env("KAN_COPY_DEATH_ROOT", t.path())
-            .output()
-            .unwrap();
-        assert_eq!(
-            result.status.code(),
-            Some(91),
-            "{phase:?}: {}",
-            String::from_utf8_lossy(&result.stderr)
-        );
-        let acknowledged = rows(&root);
-        let mut a = Archive::open(&root, binding(&s)).unwrap();
-        finish(&mut a, &s);
-        assert!(rows(&root).starts_with(&acknowledged));
-        assert_eq!(rows(&root).len(), 2);
-        assert_eq!(std::fs::read(&path).unwrap(), before);
+    for indexed in [false, true] {
+        for phase in [
+            CopyBoundary::ObjectInserted,
+            CopyBoundary::InventoryInserted,
+            CopyBoundary::ManifestInserted,
+            CopyBoundary::ProofSigned,
+            CopyBoundary::ProofInserted,
+            CopyBoundary::BeforeCommit,
+            CopyBoundary::AfterCommit,
+        ] {
+            let t = tempfile::tempdir().unwrap();
+            let path = fixture(t.path(), 2, 2);
+            let s = source(&path);
+            let root = t.path().join("copy");
+            let initialized = Archive::create(&root, &s, binding(&s)).unwrap();
+            if indexed {
+                initialized.rebuild_serving_index(&identity(8)).unwrap();
+            }
+            drop(initialized);
+            let before = std::fs::read(&path).unwrap();
+            let result = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "copy_death_child", "--nocapture"])
+                .env("KAN_COPY_DEATH_PHASE", format!("{phase:?}"))
+                .env("KAN_COPY_DEATH_ROOT", t.path())
+                .output()
+                .unwrap();
+            assert_eq!(
+                result.status.code(),
+                Some(91),
+                "{phase:?}: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            let acknowledged = rows(&root);
+            let inventory = || {
+                kan::evidence_store::inventory::Inventory::open_indexed(
+                    &root.join("archive.sqlite"),
+                    kan::evidence_store::inventory::Profile::Copied,
+                    binding(&s),
+                    None,
+                    None,
+                    kan::evidence_store::inventory::Budget {
+                        items: 1,
+                        metadata_bytes: 1024 * 1024,
+                        duration: std::time::Duration::from_secs(10),
+                        cancelled: Default::default(),
+                    },
+                )
+                .unwrap()
+            };
+            if indexed {
+                assert_eq!(inventory().frontier().through as usize, acknowledged.len());
+            }
+            let mut a = Archive::open(&root, binding(&s)).unwrap();
+            finish(&mut a, &s);
+            assert!(rows(&root).starts_with(&acknowledged));
+            assert_eq!(rows(&root).len(), 2);
+            if indexed {
+                let opened = inventory();
+                assert_eq!(opened.frontier().through, 2);
+                assert_eq!(opened.recipe_metadata_match(), Some(true));
+            }
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
     }
 }
 #[test]

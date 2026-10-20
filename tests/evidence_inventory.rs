@@ -1585,3 +1585,165 @@ fn indexed_source_reopens_current_bytes_and_erasure_custody() {
     ));
     assert_eq!(page.records[0].availability, Availability::Available);
 }
+
+#[test]
+fn copied_index_tracks_resumable_recipe_prefix_native_append_and_erasure() {
+    let temp = tempfile::tempdir().unwrap();
+    let complete = fixture(temp.path(), Profile::Copied);
+    let source = PlannedCopy::open(
+        &temp.path().join("legacy/archive.sqlite"),
+        Target {
+            scope: [1; 32],
+            issuer: identity(8).did().to_string(),
+        },
+        identity(7).did().to_string(),
+        [9; 32],
+    )
+    .unwrap();
+    let f = Fixture {
+        root: temp.path().join("indexed-copy"),
+        binding: complete.binding.clone(),
+        requests: complete.requests.clone(),
+        profile: Profile::Copied,
+    };
+    let mut archive = copied::Archive::create(&f.root, &source, f.binding.clone()).unwrap();
+    archive.rebuild_serving_index(&identity(8)).unwrap();
+    let mut small = budget();
+    small.items = 2;
+    let open = |tip: Option<&str>| {
+        Inventory::open_indexed(
+            &f.db(),
+            f.profile,
+            f.binding.clone(),
+            None,
+            tip,
+            small.clone(),
+        )
+        .unwrap()
+    };
+    assert_eq!(open(None).recipe_metadata_match(), Some(false));
+    let first = archive
+        .copy_batch(
+            &source,
+            &identity(8),
+            1000,
+            copied::Budget {
+                objects: 100,
+                records: 1,
+                bytes: 16 * 1024 * 1024,
+            },
+        )
+        .unwrap();
+    assert!(!first.status.source_copy_complete);
+    let partial = open(None);
+    assert_eq!(partial.frontier().through, 1);
+    assert_eq!(partial.recipe_metadata_match(), Some(false));
+    let old_pin = partial.frontier().clone();
+    drop(partial);
+    drop(archive);
+    let mut archive = copied::Archive::open(&f.root, f.binding.clone()).unwrap();
+    assert!(
+        archive
+            .copy_batch(
+                &source,
+                &identity(8),
+                1001,
+                copied::Budget {
+                    objects: 100,
+                    records: 100,
+                    bytes: 16 * 1024 * 1024
+                }
+            )
+            .unwrap()
+            .status
+            .source_copy_complete
+    );
+    let indexed = open(None);
+    assert_eq!(indexed.frontier().through, 3);
+    assert_eq!(indexed.recipe_metadata_match(), Some(true));
+    assert_eq!(
+        Inventory::open_indexed(
+            &f.db(),
+            f.profile,
+            f.binding.clone(),
+            Some(&old_pin),
+            None,
+            small.clone()
+        )
+        .unwrap()
+        .recipe_metadata_match(),
+        Some(false)
+    );
+    let prev = indexed.frontier().manifest.as_ref().unwrap().to_string();
+    drop(indexed);
+    archive
+        .admit(&request(3, 8, Some(prev)), &identity(8), &grant(), 200)
+        .unwrap();
+    let indexed = open(None);
+    assert_eq!(indexed.frontier().through, 4);
+    let page = indexed
+        .page(
+            None,
+            PageBudget {
+                rows: 2,
+                ..page_budget()
+            },
+            small.clone(),
+        )
+        .unwrap();
+    assert_eq!(
+        page.records[0].proof.purpose(),
+        kan::evidence_attestation::Purpose::Admitted
+    );
+    assert_eq!(
+        page.records[1].proof.purpose(),
+        kan::evidence_attestation::Purpose::RetainedVerified
+    );
+    let selected = page.records[1].selection.clone();
+    drop(indexed);
+    assert!(matches!(
+        inventory::source(
+            &f.db(),
+            f.profile,
+            f.binding.clone(),
+            &selected,
+            service::MAX_REQUEST,
+            small.clone()
+        )
+        .unwrap(),
+        Source::Available { .. }
+    ));
+    let plan = archive
+        .preview_erasure(&[3], service::hex(&[91; 32]), 2000)
+        .unwrap();
+    let custody = archive
+        .apply_erasure(store::erasure::Record::sign(plan, &identity(8)).unwrap())
+        .unwrap();
+    archive
+        .refresh_serving_custody(&identity(8), custody.tip.as_deref().unwrap())
+        .unwrap();
+    let indexed = open(custody.tip.as_deref());
+    assert_eq!(indexed.recipe_metadata_match(), Some(true));
+    let page = indexed
+        .page(
+            None,
+            PageBudget {
+                rows: 2,
+                ..page_budget()
+            },
+            small,
+        )
+        .unwrap();
+    assert_eq!(page.records[1].availability, Availability::Erased);
+    drop(indexed);
+    f.edit("UPDATE upgrade_plan SET envelope=x'00' WHERE singleton=1");
+    assert!(Inventory::open_indexed(
+        &f.db(),
+        f.profile,
+        f.binding.clone(),
+        None,
+        custody.tip.as_deref(),
+        budget()
+    )
+    .is_err());
+}

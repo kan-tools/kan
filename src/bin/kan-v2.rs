@@ -545,7 +545,7 @@ enum Command {
         #[command(flatten)]
         proof: ProofOptions,
     },
-    /// Fully audit an admitted archive and atomically rebuild its serving index.
+    /// Fully audit an admitted or copied archive and atomically rebuild its serving index.
     #[cfg(feature = "v2-service")]
     RebuildServingIndex {
         archive: PathBuf,
@@ -1730,15 +1730,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         } => {
             let binding: kan::evidence_proof_service::Binding =
                 serde_json::from_slice(&bounded_read(std::fs::File::open(binding)?, 4096)?)?;
-            if binding.profile != kan::evidence_proof_service::Profile::Admitted {
-                return Err("serving index currently requires admitted profile".into());
-            }
             let signer = service_identity(&signing_key)?;
-            let archive =
-                kan::evidence_store::attested::Archive::open(&archive, binding.owner_binding()?)?;
-            print_json(&serde_json::to_value(
-                archive.rebuild_serving_index(&signer)?,
-            )?)?;
+            let checkpoint = match binding.profile {
+                kan::evidence_proof_service::Profile::Admitted => {
+                    kan::evidence_store::attested::Archive::open(
+                        &archive,
+                        binding.owner_binding()?,
+                    )?
+                    .rebuild_serving_index(&signer)?
+                }
+                kan::evidence_proof_service::Profile::Copied => {
+                    kan::evidence_store::copied::Archive::open(&archive, binding.owner_binding()?)?
+                        .rebuild_serving_index(&signer)?
+                }
+            };
+            print_json(&serde_json::to_value(checkpoint)?)?;
         }
         Command::Verify { database, proof } => {
             let copy_profile = proof.copy_profile;

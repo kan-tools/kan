@@ -72,7 +72,7 @@ async fn library_browses_two_same_scope_archives_with_verified_tokens_and_curren
     let admitted = fixture_requests(a.path(), Profile::Admitted, encrypted);
     let copied = fixture_requests(b.path(), Profile::Copied, encrypted);
     let first = Server::start_indexed(&admitted).await;
-    let second = Server::start(&copied).await;
+    let second = Server::start_indexed(&copied).await;
     // An unreachable configured legacy source marks coverage partial; it does not
     // suppress the two verified proof archives or turn failure into access denial.
     let legacy = kan::evidence_reader::Reader::new(

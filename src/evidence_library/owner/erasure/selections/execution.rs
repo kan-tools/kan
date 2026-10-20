@@ -20,7 +20,12 @@ fn reconcile(
                 )?;
             }
             Profile::Copied => {
-                store::copied::Archive::open(root, binding)?.reconcile_erasure(&package, tip)?;
+                let mut archive = store::copied::Archive::open(root, binding)?;
+                archive.reconcile_erasure(&package, tip)?;
+                archive.refresh_serving_custody(
+                    &Identity::load_existing(issuer).map_err(invalid)?,
+                    tip,
+                )?;
             }
         }
     }

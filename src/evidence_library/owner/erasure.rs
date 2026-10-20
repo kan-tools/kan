@@ -618,7 +618,14 @@ fn cleanup_selected(
                     archive.reclaim_erased_pages()?
                 }
                 Profile::Copied => {
-                    store::copied::Archive::open(path, binding)?.reclaim_erased_pages()?
+                    let archive = store::copied::Archive::open(path, binding)?;
+                    if let Some(tip) = current.storage_tip()? {
+                        archive.refresh_serving_custody(
+                            &Identity::load_existing(issuer).map_err(invalid)?,
+                            &tip,
+                        )?;
+                    }
+                    archive.reclaim_erased_pages()?
                 }
             })
         };

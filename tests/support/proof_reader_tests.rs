@@ -45,10 +45,16 @@ impl Server {
         Self::start_with(reader(f)).await
     }
     async fn start_indexed(f: &Fixture) -> Self {
-        attested::Archive::open(&f.root, f.binding.clone())
-            .unwrap()
-            .rebuild_serving_index(&identity(8))
-            .unwrap();
+        match f.profile {
+            Profile::Admitted => attested::Archive::open(&f.root, f.binding.clone())
+                .unwrap()
+                .rebuild_serving_index(&identity(8))
+                .unwrap(),
+            Profile::Copied => copied::Archive::open(&f.root, f.binding.clone())
+                .unwrap()
+                .rebuild_serving_index(&identity(8))
+                .unwrap(),
+        };
         Self::start_with(
             wire::Service::new_indexed(
                 f.db(),

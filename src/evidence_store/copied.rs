@@ -248,6 +248,17 @@ pub struct Archive {
     inner: attested::Archive,
 }
 impl Archive {
+    pub fn rebuild_serving_index(&self, signer: &Identity) -> Result<serving::Checkpoint> {
+        self.inner.rebuild_serving_index(signer)
+    }
+    pub fn refresh_serving_custody(
+        &self,
+        signer: &Identity,
+        expected_tip: &str,
+    ) -> Result<Option<serving::Checkpoint>> {
+        self.inner.refresh_serving_custody(signer, expected_tip)
+    }
+
     #[cfg(feature = "v2-crypto")]
     pub fn preview_capture_erasure(
         &self,
@@ -626,6 +637,13 @@ impl Archive {
             }
         }
         let status = full_audit(ledger, self.binding(), self.plan())?.copy;
+        serving::advance_copy(
+            &tx,
+            self.binding(),
+            &before.contents.snapshot,
+            &status,
+            signer,
+        )?;
         observe(CopyBoundary::BeforeCommit);
         tx.commit()?;
         observe(CopyBoundary::AfterCommit);

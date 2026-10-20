@@ -430,7 +430,7 @@ in a nominally bounded request. Inventory, copied archives, erasure/custody,
 backup/recovery and independent freshness checks must all use the same contract.
 The first durable integration is `evidence_store::serving`: an explicit full-audit
 initialization/rebuild creates `serving_nodes` and a signed `serving_checkpoint` in
-one immediate transaction. Checkpoints bind version, admitted profile, archive,
+one immediate transaction. Checkpoints bind version, admitted/copied profile, archive,
 scope, issuer, full frontier, map root, accepted native erasure tip and its highest required archive sequence. The map
 commits exact sequence/manifest/receipt/proof metadata plus operation, writer-head
 and slot coordinates, plus erased-object commitments. Normal admissions into initialized archives advance the
@@ -452,9 +452,14 @@ refresh verifies the native custody extension and unchanged authenticated metada
 frontier, then publishes new erased-object commitments atomically; it neither
 rebuilds the source metadata map nor rescans lifetime payloads. Archives without
 an index remain unindexed. A checkpoint loaded from the archive alone
-cannot establish freshness. This initial integration supports admitted archives;
-copied-profile activation, bounded source availability/external custody checks,
-service routing and scale qualification remain implementation work.
+cannot establish freshness. Copied checkpoints additionally bind the exact recipe
+digest and whether its original metadata prefix has completed. Explicit rebuild
+verifies that recipe against retained metadata; resumable copy batches advance
+records, recipe status and the map atomically. Later current-issuer admissions
+retain the copy commitment. Reading an earlier pin reports recipe completion only
+when that pin contains the whole planned prefix. Selected source bytes are freshly
+checked; the completion bit is not a claim that every imported payload is present.
+No original request, receipt, proof or recipe is rewritten by index initialization.
 
 The explicit `Archive::open_indexed` / `admit_indexed` storage path checks the
 signed checkpoint, exact database tip, and caller-supplied current erasure custody
@@ -472,9 +477,12 @@ storage is available through explicit `rebuild-serving-index` and
 `serve-admitted --indexed`; it is not the default. The HTTP admitting service
 retains grant/policy checks and the independently current owner-custody lease
 through indexed admission. Its existing real encrypted-spool delivery test now
-exercises indexed ingestion. The external owner-custody reader still scans its
-independent control history, and proof-serving/Library reads remain on their old
-path; the option is not a claim that the whole deployment is bounded yet.
+exercises indexed ingestion. `serve-proof --indexed` connects bounded authenticated
+inventory/source reads for both archive profiles to the unchanged Library wire
+protocol. It requires the seekable payload layout described above. The external
+owner-custody and policy readers still scan their independent control histories;
+the option is not a claim that the whole deployment is bounded yet. Scale and
+whole-deployment qualification remain required.
 
 ### 11. Compatibility and explicit departures
 

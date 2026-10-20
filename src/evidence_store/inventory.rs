@@ -245,9 +245,6 @@ impl Inventory {
         current_erasure_tip: Option<&str>,
         budget: Budget,
     ) -> Result<Self> {
-        if profile != Profile::Admitted {
-            return Err(Error::Invalid("indexed copied inventory not initialized"));
-        }
         binding.validate()?;
         let deadline = budget.deadline()?;
         budget.check(deadline)?;
@@ -284,6 +281,12 @@ impl Inventory {
         }
         budget.check(deadline)?;
         conn.progress_handler(0, None::<fn() -> bool>)?;
+        let recipe_metadata_match = checkpoint.recipe_metadata_match().map(|matches| {
+            matches
+                && plan
+                    .as_ref()
+                    .is_some_and(|p| frontier.through >= p.source().through)
+        });
         Ok(Self {
             indexed: Some(checkpoint),
             erasures: Default::default(),
@@ -292,7 +295,7 @@ impl Inventory {
             profile,
             plan,
             frontier,
-            recipe_metadata_match: None,
+            recipe_metadata_match,
         })
     }
     fn open_selected(

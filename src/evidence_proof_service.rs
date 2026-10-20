@@ -390,7 +390,7 @@ impl Service {
     ) -> Result<Self> {
         Self::configured(path, binding, signer, grants, budget, false, None)
     }
-    /// Serve initialized admitted archives through bounded authenticated metadata
+    /// Serve initialized archives through bounded authenticated metadata
     /// and selected payload reads. Current custody remains an external input.
     pub fn new_indexed(
         path: PathBuf,
