@@ -151,7 +151,7 @@ impl Workspace {
             let mut total = 0usize;
             let mut selected = Vec::new();
             for (kind, id) in ids {
-                let size: Option<usize> = conn
+                let size: Option<i64> = conn
                     .query_row(
                         "SELECT length(body) FROM entries WHERE kind=? AND id=?",
                         params![kind, id],
@@ -159,10 +159,11 @@ impl Workspace {
                     )
                     .optional()
                     .map_err(invalid)?;
-                if selected.len() == 4096 || total + size.unwrap_or(0) > 64 * 1024 * 1024 {
+                let size = usize::try_from(size.unwrap_or(0)).map_err(invalid)?;
+                if selected.len() == 4096 || total + size > 64 * 1024 * 1024 {
                     break;
                 }
-                total += size.unwrap_or(0);
+                total += size;
                 selected.push((kind, id));
             }
             selected
