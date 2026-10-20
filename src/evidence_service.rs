@@ -448,6 +448,7 @@ fn view(record: &Committed) -> RecordView {
 /// Explicit profile-2 ingest. Read operations use the separate proof endpoint;
 /// the durable delivery request/reply format remains compatible with the spool.
 pub struct AdmittingService {
+    policy: Option<crate::evidence_policy::Access>,
     archive: crate::evidence_store::attested::Archive,
     signer: Identity,
     grants: BTreeMap<String, Grant>,
@@ -463,12 +464,24 @@ impl AdmittingService {
         }
         archive.verify()?;
         let mut service = Self {
+            policy: None,
             archive,
             signer,
             grants: BTreeMap::new(),
         };
         service.replace_grants(grants)?;
         Ok(service)
+    }
+    pub fn with_policy(mut self, policy: crate::evidence_policy::Access) -> Result<Self> {
+        let binding = self.archive.binding();
+        if policy.binding.profile != crate::evidence_proof_service::Profile::Admitted
+            || policy.binding.owner_binding()? != *binding
+        {
+            return Err(Failure::Invalid);
+        }
+        self.replace_grants(policy.read()?.grants()?)?;
+        self.policy = Some(policy);
+        Ok(self)
     }
     pub fn issuer(&self) -> String {
         self.signer.did().to_string()
@@ -487,6 +500,16 @@ impl AdmittingService {
     pub fn dispatch(&mut self, bytes: &[u8], now: u64) -> Result<SignedReply> {
         if bytes.len() > MAX_REQUEST {
             return Err(Failure::Invalid);
+        }
+        // Keep the shared policy lease through admission, so revocation commits
+        // after earlier authorized work and before later work can authorize.
+        let policy = self
+            .policy
+            .as_ref()
+            .map(crate::evidence_policy::Access::read)
+            .transpose()?;
+        if let Some(snapshot) = &policy {
+            self.replace_grants(snapshot.grants()?)?;
         }
         let result = self.append(bytes, now);
         let reply = Reply {

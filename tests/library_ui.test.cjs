@@ -735,3 +735,16 @@ test('import repository view separates reachability from trust and follows fold 
  await u.respond(folded);assert.ok(walk(u.node('content-panel')).some(n=>n.textContent==='contested'));assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('<b>raw</b>')));
  walk(u.node('content-panel')).find(n=>n.textContent==='Inspect claim claim-1').click();await tick();const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.after,2);assert.deepEqual(request.view.trust,[author]);u.node('lock').click();await u.respond(folded);assert.equal(u.node('content-panel').children.length,0);
 });
+test('owner access controls preview an exact grant set and clear pending changes on edits or lock',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')]});await u.respond(proofPage);u.node('owner-token').value='owner-credential';u.node('owner-connect').events.submit({preventDefault(){}});await tick();
+ await u.respond({owner:'owner',targets:[{kind:'access-policy',id:'policy'}],jobs:[],limits:{jobs:10}});assert.equal(u.node('access-controls').hidden,false);assert.equal(u.node('owner-maintenance-preview').disabled,true);
+ u.node('access-load').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'access',target:'policy',after:0});
+ const grant={principal:'did:key:reader',append:true,inventory:true};const current={sequence:'0',recorded_at:'100',previous:null,grants:[grant]};
+ await u.respond({target:'policy',owner:'owner',snapshot:{tip:'old',changes:1,current:{change:current}},records:[{change:current}],next:null});assert.equal(u.node('access-editor').hidden,false);
+ walk(u.node('access-grants')).find(n=>n.textContent==='Remove grant').click();u.node('access-preview').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview-access',target:'policy',grants:[]});
+ const change={sequence:'1',previous:'old',grants:[],nonce:'nonce'};await u.respond({target:'policy',digest:'digest',change,effect:'Revoke subsequent access; retain prior history.'});assert.match(u.node('access-plan').textContent,/No principals/);
+ u.node('access-apply').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'apply-access',target:'policy',change,preview:'digest'});
+ await u.respond({state:'applied',target:'policy'});await u.respond({target:'policy',owner:'owner',snapshot:{tip:'new',changes:2,current:{change}},records:[{change:current},{change}],next:null});
+ u.node('access-add').click();const input=walk(u.node('access-grants')).find(n=>n.attrs['aria-label']==='Principal DID');input.value='did:key:new';u.node('access-preview').click();await tick();input.events.input();await u.respond({target:'policy',digest:'late',change,effect:'late'});assert.equal(u.node('access-apply').disabled,true);
+ u.node('owner-lock').click();assert.equal(u.node('access-grants').children.length,0);assert.equal(u.node('access-history').children.length,0);assert.equal(u.node('access-plan').textContent,'');
+});

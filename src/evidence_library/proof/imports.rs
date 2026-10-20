@@ -349,7 +349,13 @@ fn car(
     ) {
         scan.error = Some(e.to_string());
     }
-    let repository = repository::inspect(bytes, &ranges, head, view, scan.error.is_none())?;
+    let repository = repository::inspect(
+        bytes,
+        &ranges,
+        head,
+        view,
+        scan.error.is_none() && scan.unsupported_blocks == 0,
+    )?;
     // A corrupt tail never silently turns a verified prefix into a valid CAR.
     let mut records = Vec::new();
     let mut next = after;

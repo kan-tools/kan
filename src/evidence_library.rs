@@ -366,7 +366,7 @@ async fn handle(
         }
         let body = match tokio::time::timeout(
             Duration::from_secs(3),
-            Limited::new(r.into_body(), 16384).collect(),
+            Limited::new(r.into_body(), 131072).collect(),
         )
         .await
         {
@@ -385,6 +385,7 @@ async fn handle(
             },
             Err(Failure::Invalid) => denied(StatusCode::BAD_REQUEST),
             Err(Failure::AccessLimited) => denied(StatusCode::FORBIDDEN),
+            Err(Failure::Conflict) => denied(StatusCode::CONFLICT),
             Err(_) => denied(StatusCode::SERVICE_UNAVAILABLE),
         });
     }

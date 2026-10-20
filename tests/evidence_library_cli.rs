@@ -197,3 +197,77 @@ async fn library_cli_browses_authenticated_retained_source_without_storage_autho
     assert!(html.contains("/theme.js"));
     assert!(html.contains("Source inspector"));
 }
+
+#[test]
+fn owner_cli_initializes_and_applies_the_same_previewed_access_policy() {
+    use serde_json::{json, Value};
+    let dir = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let policy_dir = dir.path().join("policy");
+    std::fs::create_dir(&policy_dir).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&policy_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let signer = Identity::generate();
+    let key = dir.path().join("owner.identity");
+    signer.save(&key).unwrap();
+    let binding = json!({"profile":"admitted","archive":svc::hex(&[1;32]),"scope":svc::hex(&[2;32]),"issuer":Identity::generate().did().as_str()});
+    let policy = json!({"directory":policy_dir,"binding":binding,"owner":signer.did().as_str()});
+    let write = |name: &str, bytes: Vec<u8>| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        path
+    };
+    let policy_config = write("policy.json", serde_json::to_vec(&policy).unwrap());
+    let initialized = Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+        .args(["init-access-policy", policy_config.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        initialized.status.success(),
+        "{}",
+        String::from_utf8_lossy(&initialized.stderr)
+    );
+    let recipient = write("journal.key", vec![91; 32]);
+    let config=write("owner.json",serde_json::to_vec(&json!({"journal":dir.path().join("owner.sqlite"),"signing_key":key,"recipient_key":recipient,"authority":{"token":"synthetic-cli-policy-owner-token-1234","max_jobs":10,"targets":[{"kind":"access-policy","id":"access","policy":policy,"signing_key":key}]}})).unwrap());
+    let call = |request: Value| -> Value {
+        let path = write("request.json", serde_json::to_vec(&request).unwrap());
+        let out = Process::new(env!("CARGO_BIN_EXE_kan-v2"))
+            .args([
+                "owner",
+                "--config",
+                config.to_str().unwrap(),
+                "--request",
+                path.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+    let grants = json!([{"principal":signer.did().as_str(),"append":true,"inventory":false}]);
+    let preview = call(json!({"action":"preview-access","target":"access","grants":grants}));
+    assert_eq!(preview["change"]["grants"], grants);
+    let request = json!({"action":"apply-access","target":"access","change":preview["change"],"preview":preview["digest"]});
+    assert_eq!(call(request.clone())["state"], "applied");
+    assert_eq!(call(request)["state"], "already-applied");
+    assert_eq!(
+        call(json!({"action":"access","target":"access"}))["snapshot"]["changes"],
+        1
+    );
+}

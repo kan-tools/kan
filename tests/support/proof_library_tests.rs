@@ -2802,6 +2802,12 @@ async fn repository_import_frames(audience: u8, damage: &str) -> (String, Vec<Ve
     if damage == "corrupt-tail" {
         car.push(128);
     }
+    if damage == "unsupported-block" {
+        car.push(37);
+        car.extend([1, 0x71, 0x13, 32]);
+        car.extend([0; 32]);
+        car.push(0);
+    }
     let inputs = [("repo.car", car), ("HEAD", head)];
     let files: Vec<_>=inputs.iter().map(|(path,body)|{let hash=service::hex(&Sha256::digest(body));json!({"path":path,"length":body.len(),"sha256":hash,"chunks":[{"length":body.len(),"sha256":hash}]})}).collect();
     let inventory: Vec<_> = files
@@ -2921,6 +2927,7 @@ async fn imported_repository_never_falls_back_from_invalid_head_or_partial_tree(
         ("bad-signature", "commit-invalid"),
         ("missing-node", "membership-incomplete"),
         ("corrupt-tail", "car-incomplete"),
+        ("unsupported-block", "car-incomplete"),
     ] {
         let dir = tempfile::tempdir().unwrap();
         let (plan, frames) = repository_import_frames(8, damage).await;
@@ -2958,4 +2965,103 @@ async fn imported_repository_never_falls_back_from_invalid_head_or_partial_tree(
         ui.stop().await;
         server.stop().await;
     }
+}
+
+#[tokio::test]
+async fn owner_access_policy_previews_preserve_history_and_reject_reader_authority_and_stale_edits()
+{
+    const OWNER: &str = "synthetic-policy-owner-token-123456789";
+    let dir = private_workspace_directory();
+    let local = private_workspace_directory();
+    let policy_dir = private_workspace_directory();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let policy:kan::evidence_policy::Access=serde_json::from_value(json!({"directory":policy_dir.path(),"binding":{"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer},"owner":identity(9).did().as_str()})).unwrap();
+    policy.initialize().unwrap();
+    let key = local.path().join("policy-owner.key");
+    std::fs::write(&key, [9; 32]).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let state = local.path().join("owner.sqlite");
+    let readers = || {
+        let workspace =
+            kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
+        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"access-policy","id":"archive-access","policy":policy,"signing_key":key}]})).unwrap(),workspace).unwrap();
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_owner(owner)
+    };
+    let ui = Ui::start(readers()).await;
+    owner_call(
+        &ui,
+        TOKEN,
+        json!({"action":"access","target":"archive-access"}),
+        401,
+    )
+    .await;
+    let empty = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"access","target":"archive-access"}),
+        200,
+    )
+    .await;
+    assert_eq!(empty["snapshot"]["changes"], 0);
+    let grants = json!([{"principal":identity(6).did().as_str(),"append":true,"inventory":true}]);
+    let first = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview-access","target":"archive-access","grants":grants}),
+        200,
+    )
+    .await;
+    let stale = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview-access","target":"archive-access","grants":[]}),
+        200,
+    )
+    .await;
+    let mut submit = json!({"action":"apply-access","target":"archive-access","change":first["change"],"preview":"wrong"});
+    owner_call(&ui, OWNER, submit.clone(), 400).await;
+    submit["preview"] = first["digest"].clone();
+    let applied = owner_call(&ui, OWNER, submit.clone(), 200).await;
+    assert_eq!(applied["state"], "applied");
+    assert_eq!(
+        owner_call(&ui, OWNER, submit.clone(), 200).await["state"],
+        "already-applied"
+    );
+    owner_call(&ui,OWNER,json!({"action":"apply-access","target":"archive-access","change":stale["change"],"preview":stale["digest"]}),409).await;
+    let revoke = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview-access","target":"archive-access","grants":[]}),
+        200,
+    )
+    .await;
+    owner_call(&ui,OWNER,json!({"action":"apply-access","target":"archive-access","change":revoke["change"],"preview":revoke["digest"]}),200).await;
+    assert_eq!(
+        owner_call(&ui, OWNER, submit, 200).await["state"],
+        "already-applied"
+    );
+    ui.stop().await;
+    let ui = Ui::start(readers()).await;
+    let history = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"access","target":"archive-access"}),
+        200,
+    )
+    .await;
+    assert_eq!(history["snapshot"]["changes"], 2);
+    assert_eq!(history["records"][0]["change"]["grants"], grants);
+    assert_eq!(
+        history["snapshot"]["current"]["change"]["grants"],
+        json!([])
+    );
+    ui.stop().await;
+    server.stop().await;
 }

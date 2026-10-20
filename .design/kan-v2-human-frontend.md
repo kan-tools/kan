@@ -406,3 +406,32 @@ Presentation bounds are 4,096 reachable records, 8,192 tree nodes, depth 32,
 views report their limit and keep the raw file browser available. These are
 query limits, not ingestion or retention caps. No persistent derived authority
 or mutation surface is added.
+
+### Live access policy administration
+
+Proof ingest and proof-read servers may opt into one owner-pinned signed policy
+journal, in place of a static grants file. The policy has the exact archive,
+scope and issuer binding, explicit full grant set, ordered revision, previous
+record digest and nonce. Append and inventory are independent capabilities;
+policy membership supplies no decryption key, provider-forwarding privilege or
+administrative authority. Owner previews bind the prior tip and complete next
+grant set. Applying a stale preview fails; retrying the exact signed declaration
+is idempotent. Prior policies remain immutable and readable.
+
+The same private journal directory can be mounted in separate local services.
+Every request reads and verifies current policy under a shared lease held through
+its authorization/operation; policy changes take the exclusive lease. An
+unreadable, inconsistent or incomplete policy fails closed. A revoked reader's
+next operation cannot reuse an earlier snapshot as authority. In-flight work that
+acquired the earlier policy completes before the change commits. Reader API
+credentials cannot use owner controls. Existing static-grant mode remains explicit
+and does not acquire a fictitious live-update guarantee.
+
+The default policy metadata is signed plaintext (principals, capabilities and
+change times), consistent with the personal instance's rich-metadata profile;
+raw evidence remains encrypted. Deployment must keep the policy directory private
+and back it up with the archive and an independently held current policy digest.
+An optional minimum policy digest detects rollback before that checkpoint.
+Signatures alone cannot detect a whole-directory rollback to an otherwise valid
+prefix when no external checkpoint survives. Key custody/rotation and payload
+erasure are separate contracts, not effects of grant removal.

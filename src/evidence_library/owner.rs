@@ -17,6 +17,11 @@ use std::{
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Target {
+    AccessPolicy {
+        id: String,
+        policy: crate::evidence_policy::Access,
+        signing_key: PathBuf,
+    },
     WorkspaceRecovery {
         id: String,
         database: PathBuf,
@@ -60,7 +65,8 @@ pub enum Target {
 impl Target {
     fn id(&self) -> &str {
         match self {
-            Self::WorkspaceRecovery { id, .. }
+            Self::AccessPolicy { id, .. }
+            | Self::WorkspaceRecovery { id, .. }
             | Self::Archive { id, .. }
             | Self::Operations { id, .. }
             | Self::Migration { id, .. }
@@ -88,6 +94,20 @@ pub struct Config {
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Request {
+    Access {
+        target: String,
+        #[serde(default)]
+        after: usize,
+    },
+    PreviewAccess {
+        target: String,
+        grants: Vec<service::Grant>,
+    },
+    ApplyAccess {
+        target: String,
+        change: Box<crate::evidence_policy::Change>,
+        preview: String,
+    },
     Catalog,
     Preview {
         target: String,
@@ -106,6 +126,11 @@ pub enum Request {
     Job {
         id: String,
     },
+}
+enum PolicyAction {
+    Read(usize),
+    Preview(Vec<service::Grant>),
+    Apply(Box<crate::evidence_policy::Change>, String),
 }
 pub struct Owner {
     _lease: std::fs::File,
@@ -151,6 +176,22 @@ impl Owner {
                 return Err(Failure::Invalid);
             }
             match &target {
+                Target::AccessPolicy {
+                    policy,
+                    signing_key,
+                    ..
+                } => {
+                    policy.validate()?;
+                    if !signing_key.is_absolute()
+                        || crate::sign::Identity::load_existing(signing_key)
+                            .map_err(|_| Failure::Invalid)?
+                            .did()
+                            .as_str()
+                            != policy.owner
+                    {
+                        return Err(Failure::Invalid);
+                    }
+                }
                 Target::WorkspaceRecovery {
                     database,
                     output,
@@ -361,8 +402,64 @@ impl Owner {
             json!({"job":job,"state":result.as_ref().and_then(|r|r["state"].as_str()).unwrap_or(if running{"running"}else{"interrupted"}),"result":result}),
         )
     }
+    async fn policy_action(&self, target: String, action: PolicyAction) -> Result<Value, Failure> {
+        let Target::AccessPolicy {
+            policy,
+            signing_key,
+            ..
+        } = self
+            .targets
+            .get(&target)
+            .ok_or(Failure::AccessLimited)?
+            .clone()
+        else {
+            return Err(Failure::Invalid);
+        };
+        let permit = self
+            .preparation
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Failure::Unavailable)?;
+        tokio::task::spawn_blocking(move || {
+            let _permit=permit;
+            match action {
+                PolicyAction::Read(after) => {
+                    let snapshot=policy.read()?;
+                    if after>snapshot.history.len() {return Err(Failure::Invalid);}
+                    let records=snapshot.history.iter().skip(after).take(16).cloned().collect::<Vec<_>>();
+                    let next=after+records.len();
+                    Ok(json!({"target":target,"binding":policy.binding,"owner":policy.owner,"minimum":policy.minimum,"snapshot":snapshot.value(),"records":records,"next":(next<snapshot.history.len()).then_some(next)}))
+                }
+                PolicyAction::Preview(grants) => {
+                    let change=policy.preview(grants,service::hex(&rand::random::<[u8;32]>()))?;
+                    Ok(json!({"target":target,"digest":change.digest()?,"change":change,"effect":"Replace current append/inventory grants with this complete set. Retain signed prior policies. Revocation affects subsequent service operations; it cannot recall plaintext or keys already acquired. No decryption, forwarding or owner powers are granted."}))
+                }
+                PolicyAction::Apply(change, preview) => {
+                    if change.digest()?!=preview || change.binding!=policy.binding || change.owner!=policy.owner {return Err(Failure::Invalid);}
+                    let signer=crate::sign::Identity::load_existing(&signing_key).map_err(|_|Failure::Unavailable)?;
+                    let record=crate::evidence_policy::Record::sign(*change,&signer)?;
+                    let mut result=policy.append(record)?;result["target"]=json!(target);Ok(result)
+                }
+            }
+        }).await.map_err(|_|Failure::Unavailable)?
+    }
     pub async fn execute(self: &Arc<Self>, request: Request) -> Result<Value, Failure> {
         match request {
+            Request::Access { target, after } => {
+                self.policy_action(target, PolicyAction::Read(after)).await
+            }
+            Request::PreviewAccess { target, grants } => {
+                self.policy_action(target, PolicyAction::Preview(grants))
+                    .await
+            }
+            Request::ApplyAccess {
+                target,
+                change,
+                preview,
+            } => {
+                self.policy_action(target, PolicyAction::Apply(change, preview))
+                    .await
+            }
             Request::Catalog => {
                 let mut jobs = Vec::new();
                 for job in self.workspace.owner_jobs()? {
@@ -479,6 +576,9 @@ fn perform(
 ) -> Result<Value, String> {
     let work = || -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         match target {
+            Target::AccessPolicy { .. } => {
+                Err("access policies use their dedicated preview/apply API".into())
+            }
             Target::WorkspaceRecovery {
                 database,
                 signing_key,

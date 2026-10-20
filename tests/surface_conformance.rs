@@ -14,6 +14,10 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    (
+        "signed-owner-policy",
+        "tests/support/proof_service_tests.rs",
+    ),
     // Owner migration/recovery reuse the typed spool and restore capabilities;
     // their integration witnesses cover exact retry, retained originals and proof pins.
     ("owner-maintenance", "tests/support/proof_library_tests.rs"),
@@ -112,6 +116,18 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("connection-config", ".design/medium-architecture.md"),
 ];
 const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
+    ("src/evidence_policy.rs", "\"LOCK\"", "signed-policy-path"),
+    ("src/evidence_policy.rs", "&name", "signed-policy-path"),
+    (
+        "src/evidence_policy.rs",
+        "format!( \".pending-{}\", service::hex(&rand::random::<[u8; 32]>()) )",
+        "signed-policy-path",
+    ),
+    (
+        "src/evidence_policy.rs",
+        "format!(\"policy-{:020}-{id}.json\", snapshot.history.len())",
+        "signed-policy-path",
+    ),
     (
         "src/evidence_operations_collection.rs",
         "MANIFEST",
@@ -451,6 +467,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", "\"; \"", "not a path"),
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
+    "src/evidence_policy.rs",
     "src/evidence_workspace.rs",
     "src/evidence_operations_collection.rs",
     "src/evidence_operations.rs",
@@ -470,6 +487,13 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_policy.rs",
+        "write_new_owner_only",
+        "EvidencePolicy",
+        2,
+    ),
+    ("src/evidence_policy.rs", "rename", "EvidencePolicy", 1),
     (
         "src/evidence_workspace.rs",
         "write_new_owner_only",
@@ -1375,7 +1399,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "94156707cd7c9c0addf7c7f6107cf49950f2aadec5d7646c107076c351bbf79e",
+                "64e09e101e0f3513ccc537b43833bb993ce44119cdab4c22fc59eee5f25fe196",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

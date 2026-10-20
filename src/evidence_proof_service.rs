@@ -368,6 +368,7 @@ impl SignedReply {
 
 /// Owner configuration, never populated from a remote request. No append API.
 pub struct Service {
+    policy: Option<crate::evidence_policy::Access>,
     path: PathBuf,
     binding: Binding,
     signer: Identity,
@@ -394,12 +395,21 @@ impl Service {
             budget.clone(),
         )?;
         Ok(Self {
+            policy: None,
             path,
             binding,
             signer,
             grants,
             budget,
         })
+    }
+    pub fn with_policy(mut self, policy: crate::evidence_policy::Access) -> Result<Self> {
+        if policy.binding != self.binding {
+            return Err(Failure::Invalid);
+        }
+        self.replace_grants(policy.read()?.grants()?)?;
+        self.policy = Some(policy);
+        Ok(self)
     }
     fn permissions(grants: Vec<Grant>) -> Result<BTreeMap<String, Grant>> {
         let mut selected = BTreeMap::new();
@@ -420,11 +430,20 @@ impl Service {
         if bytes.len() > MAX_REQUEST {
             return Err(Failure::Invalid);
         }
+        let policy = self
+            .policy
+            .as_ref()
+            .map(crate::evidence_policy::Access::read)
+            .transpose()?;
+        let current = policy
+            .as_ref()
+            .map(|s| Self::permissions(s.grants()?))
+            .transpose()?;
         let reply = Reply {
             version: 2,
             request: service::hex(&Sha256::digest(bytes)),
             issuer: self.binding.issuer.clone(),
-            result: self.execute(bytes, now),
+            result: self.execute(bytes, now, current.as_ref().unwrap_or(&self.grants)),
         };
         let signature = self
             .signer
@@ -505,16 +524,13 @@ impl Service {
         };
         Ok(EvidenceRecord { record, source })
     }
-    fn execute(&self, bytes: &[u8], now: u64) -> Result<Output> {
+    fn execute(&self, bytes: &[u8], now: u64, grants: &BTreeMap<String, Grant>) -> Result<Output> {
         let signed = SignedRequest::decode(bytes)?;
         let request = signed.request;
         if request.binding != self.binding
             || request.expires < now
             || request.expires.saturating_sub(now) > 300
-            || !self
-                .grants
-                .get(&request.principal)
-                .is_some_and(|g| g.inventory)
+            || !grants.get(&request.principal).is_some_and(|g| g.inventory)
         {
             return Err(Failure::AccessLimited);
         }

@@ -712,3 +712,36 @@ large results. The equivalent Library/CLI request adds
 repository ownership. Unsupported/current identity-governed records remain
 outside this legacy fold with explicit coverage; bounds and missing inputs are
 shown rather than converted into an empty authoritative result.
+
+For live owner-controlled access, provision an empty private policy directory and
+an access config containing `directory`, the exact proof `binding`, `owner` DID,
+and optional `minimum` signed policy digest. Run
+`kan-v2 init-access-policy /absolute/access.json`. Add an owner target shaped as
+`{"kind":"access-policy","id":"archive-access","policy":{…},"signing_key":"/absolute/owner.key"}`.
+The signing key must match the configured policy owner; proof services need only
+the public owner DID and read access to the policy journal, never that signing key.
+
+Choose that target in Owner maintenance and **Inspect access policy**. Add/remove
+principals and independently select append and inventory permissions; preview
+and apply the complete replacement set. No principal has either capability until
+the first policy is applied. Start `serve-admitted` and `serve-proof` with
+`--access-policy /absolute/access.json` in place of `--grants`. Each request checks
+the current signed policy. Failed reads or corrupt policy do not fall back to old
+grants. Static `--grants` mode remains available with its restart-only semantics.
+
+The shared `kan-v2 owner --config … --request …` commands are `access` (target,
+optional history offset `after`), `preview-access` (target and full `grants`), and
+`apply-access` (target, exact preview `change`, and digest as `preview`). Stale
+previews conflict. Exact applied requests remain idempotent after later changes.
+Policy history is append-only; the current view and paged history survive restart.
+
+Policy metadata is signed plaintext in the private instance directory. It grants
+no decryption, forwarding or owner powers. Back up the complete policy directory
+alongside the archive and retain the current digest independently; configure that
+digest as `minimum` when restoring to detect rollback before the checkpoint.
+Without an external checkpoint, signatures cannot detect replacement of the whole
+journal with a valid older prefix. Revocation does not recall previously copied
+plaintext or keys. Current bounds are 256 principals per policy, 1,024 changes and
+16 MiB total history; capacity fails explicitly and never deletes earlier policy.
+Pending files from interrupted writes are not policy authority and are retained
+for owner inspection. Key rotation and payload erasure remain separate operations.

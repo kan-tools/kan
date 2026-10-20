@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
+  let policyRows=[],policyPreview=null;
   let ownerToken='',ownerEpoch=0,ownerController,ownerTargets=[],ownerPreview=null,ownerRetry=null;
   let token = '', epoch = 0, controller, scopes = [], pin, after = 0, next = null, history = [], selected = null, source = null, hexadecimal = false;
   const selections = new Map();
@@ -617,6 +618,7 @@
   }
 
   function lockOwner(){
+    clearPolicy();
     ownerEpoch++;if(ownerController)ownerController.abort();ownerToken='';ownerTargets=[];ownerPreview=null;ownerRetry=null;
     $('owner-token').value='';$('owner-controls').hidden=true;$('owner-connect').hidden=false;$('owner-maintenance').hidden=true;$('owner-lock').disabled=true;$('owner-submit').disabled=true;
     for(const id of ['owner-target','owner-operation','owner-jobs','owner-detail'])$(id).replaceChildren();$('owner-preview').textContent='';$('owner-status').textContent='Owner access locked. Running maintenance is not cancelled.';
@@ -624,7 +626,7 @@
   async function ownerRpc(body){
     const current=++ownerEpoch;if(ownerController)ownerController.abort();ownerController=new AbortController();
     try{const response=await fetch('/api/owner',{method:'POST',headers:{Authorization:`Bearer ${ownerToken}`,'Content-Type':'application/json'},body:JSON.stringify(body),credentials:'omit',cache:'no-store',signal:ownerController.signal});
-      if(current!==ownerEpoch)return null;if(!response.ok){if(response.status===401||response.status===403){lockOwner();$('owner-maintenance').hidden=false;$('owner-status').textContent='Owner access refused. Reader access has not changed.';return null;}throw new Error('Owner request failed. Refresh jobs before retrying; retained outputs are not removed.');}
+      if(current!==ownerEpoch)return null;if(!response.ok){if(response.status===409){invalidatePolicy();throw new Error('The target changed since preview. Refresh it and review a new preview.');}if(response.status===401||response.status===403){lockOwner();$('owner-maintenance').hidden=false;$('owner-status').textContent='Owner access refused. Reader access has not changed.';return null;}throw new Error('Owner request failed. Refresh jobs before retrying; retained outputs are not removed.');}
       const value=await response.json();return current===ownerEpoch?value:null;
     }catch(error){if(current!==ownerEpoch||error.name==='AbortError')return null;throw error;}
   }
@@ -632,9 +634,10 @@
   function ownerOperations(){
     ownerPreview=null;$('owner-submit').disabled=true;$('owner-preview').textContent='';$('owner-operation').replaceChildren();
     const target=ownerTargets.find(t=>t.id===$('owner-target').value);
-    const operations=target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
+    clearPolicy();$('access-controls').hidden=target?.kind!=='access-policy';$('owner-maintenance-preview').disabled=target?.kind==='access-policy';$('owner-operation').disabled=target?.kind==='access-policy';
+    const operations=target?.kind==='access-policy'?[]:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
     for(const operation of operations){const option=textNode('option',operation);option.value=operation;$('owner-operation').append(option);}
-    $('owner-operation').value=operations[0];
+    $('owner-operation').value=operations[0]||'';
   }
   async function ownerCatalog(){
     const value=await ownerRpc({action:'catalog'});if(!value)return;
@@ -671,6 +674,38 @@
   }));
   $('owner-lock').addEventListener('click',()=>{lockOwner();$('owner-maintenance').hidden=false;});
 
+  function invalidatePolicy(){policyPreview=null;$('access-apply').disabled=true;$('access-plan').textContent='';}
+  function clearPolicy(){invalidatePolicy();policyRows=[];$('access-grants').replaceChildren();$('access-history').replaceChildren();$('access-status').textContent='';$('access-editor').hidden=true;$('access-controls').hidden=true;}
+  function policyEdited(){ownerEpoch++;if(ownerController)ownerController.abort();invalidatePolicy();}
+  function addPolicyRow(grant={principal:'',append:false,inventory:false}){
+    const row=document.createElement('div');row.className='toolbar';
+    const principal=document.createElement('input');principal.value=grant.principal;principal.maxLength=256;principal.setAttribute('aria-label','Principal DID');
+    row.append(principal);const value={row,principal};
+    for(const key of ['append','inventory']){const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.checked=grant[key]===true;check.addEventListener('change',policyEdited);label.append(check);label.append(textNode('span',key==='append'?'Append evidence':'Read inventory and ciphertext'));row.append(label);value[key]=check;}
+    principal.addEventListener('input',policyEdited);const remove=textNode('button','Remove grant');remove.type='button';remove.addEventListener('click',()=>{policyEdited();policyRows=policyRows.filter(p=>p!==value);$('access-grants').replaceChildren();for(const p of policyRows)$('access-grants').append(p.row);});row.append(remove);policyRows.push(value);$('access-grants').append(row);
+  }
+  async function loadPolicy(after=0){
+    invalidatePolicy();const target=$('owner-target').value,value=await ownerRpc({action:'access',target,after});if(!value)return;
+    if(value.target!==target||!value.snapshot||!Array.isArray(value.records)||value.records.length>16)throw new Error('Invalid access policy response.');
+    $('access-status').textContent=`${value.snapshot.changes} signed policy changes · current ${value.snapshot.tip||'uninitialized'} · owner ${value.owner}`;
+    if(after===0){policyRows=[];$('access-grants').replaceChildren();const grants=value.snapshot.current?.change?.grants||[];if(!Array.isArray(grants)||grants.length>256)throw new Error('Invalid access grants.');for(const grant of grants)addPolicyRow(grant);$('access-editor').hidden=false;}
+    $('access-history').replaceChildren();
+    for(const record of value.records){const change=record.change,article=document.createElement('article');article.append(textNode('h4',`Policy revision ${change.sequence} · recorded at Unix ${change.recorded_at}`));article.append(textNode('p',`Previous ${change.previous||'initial policy'} · ${change.grants.length} principals`));for(const g of change.grants)article.append(textNode('p',`${g.principal} · append ${g.append?'allowed':'denied'} · inventory ${g.inventory?'allowed':'denied'}`));$('access-history').append(article);}
+    if(value.next!==null){if(!Number.isSafeInteger(value.next)||value.next<=after)throw new Error('Invalid policy continuation.');const more=textNode('button','Next policy history');more.addEventListener('click',()=>ownerRun(()=>loadPolicy(value.next)));$('access-history').append(more);}
+  }
+  $('access-load').addEventListener('click',()=>ownerRun(()=>loadPolicy()));
+  $('access-add').addEventListener('click',()=>{policyEdited();if(policyRows.length<256)addPolicyRow();});
+  $('access-preview').addEventListener('click',()=>ownerRun(async()=>{
+    invalidatePolicy();const target=$('owner-target').value,grants=policyRows.map(p=>({principal:p.principal.value.trim(),append:p.append.checked,inventory:p.inventory.checked}));
+    const value=await ownerRpc({action:'preview-access',target,grants});if(!value)return;
+    if(value.target!==target||!value.change||typeof value.digest!=='string')throw new Error('Invalid access preview.');policyPreview={target,...value};
+    $('access-plan').textContent=`${value.effect}\n\nRevision ${value.change.sequence} · replaces ${value.change.previous||'no earlier policy'}\n${value.change.grants.map(g=>`${g.principal}: append ${g.append?'allowed':'denied'}, inventory ${g.inventory?'allowed':'denied'}`).join('\n')||'No principals will have append or inventory access.'}`;$('access-apply').disabled=false;
+  }));
+  $('access-apply').addEventListener('click',()=>ownerRun(async()=>{
+    if(!policyPreview)return;const p=policyPreview;$('access-apply').disabled=true;
+    const value=await ownerRpc({action:'apply-access',target:p.target,change:p.change,preview:p.digest});if(!value)return;
+    if(!['applied','already-applied'].includes(value.state))throw new Error('Invalid policy update.');invalidatePolicy();await loadPolicy();$('owner-status').textContent=`Access policy ${value.state}. Prior signed policies remain retained.`;
+  }));
   function clearAnalysis(hide=false) {
     analysisDraft=null;analysisPreview=null;$('analysis-form').hidden=true;$('analysis-target').textContent='';$('analysis-preview').textContent='';$('submit-analysis').disabled=true;$('analysis-detail').replaceChildren();
     if(hide){analysisEnabled=false;analysisRecipes=[];$('analysis').hidden=true;$('analysis-jobs').replaceChildren();$('analysis-recipe').replaceChildren();$('analysis-status').textContent='';}

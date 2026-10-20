@@ -360,6 +360,9 @@ enum Command {
         #[arg(long)]
         writer: String,
     },
+    /// Initialize the lease in a pre-provisioned private access-policy directory.
+    #[cfg(feature = "v2-service")]
+    InitAccessPolicy { config: PathBuf },
     /// Serve an existing opaque partition on loopback; payload encryption is external.
     #[cfg(feature = "v2-service")]
     Serve {
@@ -381,8 +384,15 @@ enum Command {
         binding: PathBuf,
         #[arg(long)]
         signing_key: PathBuf,
+        #[arg(
+            long,
+            required_unless_present = "access_policy",
+            conflicts_with = "access_policy"
+        )]
+        grants: Option<PathBuf>,
+        /// Owner-pinned live policy config, replacing a static grants file.
         #[arg(long)]
-        grants: PathBuf,
+        access_policy: Option<PathBuf>,
         #[arg(long, default_value = "127.0.0.1:7282")]
         listen: std::net::SocketAddr,
     },
@@ -395,8 +405,14 @@ enum Command {
         binding: PathBuf,
         #[arg(long)]
         signing_key: PathBuf,
+        #[arg(
+            long,
+            required_unless_present = "access_policy",
+            conflicts_with = "access_policy"
+        )]
+        grants: Option<PathBuf>,
         #[arg(long)]
-        grants: PathBuf,
+        access_policy: Option<PathBuf>,
         #[arg(long, default_value = "127.0.0.1:7283")]
         listen: std::net::SocketAddr,
         #[arg(long, default_value_t = 100000)]
@@ -1024,6 +1040,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             std::io::stdout().lock().write_all(&plaintext)?;
         }
         #[cfg(feature = "v2-service")]
+        Command::InitAccessPolicy { config } => {
+            let policy: kan::evidence_policy::Access =
+                serde_json::from_slice(&bounded_read(std::fs::File::open(config)?, 65536)?)?;
+            policy.initialize()?;
+            print_json(
+                &serde_json::json!({"initialized":true,"grants":"none; preview and apply an owner policy before starting services"}),
+            )?;
+        }
+        #[cfg(feature = "v2-service")]
         Command::Serve {
             archive,
             scope,
@@ -1056,6 +1081,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             binding,
             signing_key,
             grants,
+            access_policy,
             listen,
         } => {
             let binding: kan::evidence_proof_service::Binding =
@@ -1066,8 +1092,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let service = kan::evidence_service::AdmittingService::new(
                 kan::evidence_store::attested::Archive::open(&archive, binding.owner_binding()?)?,
                 service_identity(&signing_key)?,
-                serde_json::from_slice(&bounded_read(std::fs::File::open(grants)?, 65536)?)?,
+                match grants {
+                    Some(path) => {
+                        serde_json::from_slice(&bounded_read(std::fs::File::open(path)?, 65536)?)?
+                    }
+                    None => Vec::new(),
+                },
             )?;
+            let service = match access_policy {
+                Some(path) => service.with_policy(serde_json::from_slice(&bounded_read(
+                    std::fs::File::open(path)?,
+                    65536,
+                )?)?)?,
+                None => service,
+            };
             tokio::runtime::Runtime::new()?.block_on(async {
                 let listener=kan::evidence_http::bind(listen).await?;
                 eprintln!("proof ingest http://{}/v1/rpc",listener.local_addr()?);
@@ -1083,14 +1121,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             binding,
             signing_key,
             grants,
+            access_policy,
             listen,
             items,
             metadata_bytes,
         } => {
             let binding =
                 serde_json::from_slice(&bounded_read(std::fs::File::open(binding)?, 4096)?)?;
-            let grants =
-                serde_json::from_slice(&bounded_read(std::fs::File::open(grants)?, 65536)?)?;
+            let grants = match grants {
+                Some(path) => {
+                    serde_json::from_slice(&bounded_read(std::fs::File::open(path)?, 65536)?)?
+                }
+                None => Vec::new(),
+            };
             if items == 0 || metadata_bytes == 0 {
                 return Err("proof read budgets must be positive".into());
             }
@@ -1106,6 +1149,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
                 },
             )?;
+            let service = match access_policy {
+                Some(path) => service.with_policy(serde_json::from_slice(&bounded_read(
+                    std::fs::File::open(path)?,
+                    65536,
+                )?)?)?,
+                None => service,
+            };
             tokio::runtime::Runtime::new()?.block_on(async {
                 let listener = kan::evidence_http::bind(listen).await?;
                 eprintln!("proof reader http://{}/v2/read", listener.local_addr()?);

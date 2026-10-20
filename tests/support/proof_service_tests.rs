@@ -544,3 +544,187 @@ async fn proof_http_roundtrip_preserves_signed_loss_states_and_no_store() {
         assert!(task.await.unwrap_err().is_cancelled());
     }
 }
+
+fn policy_directory(f: &Fixture) -> (tempfile::TempDir, kan::evidence_policy::Access) {
+    let directory = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let policy = kan::evidence_policy::Access {
+        directory: directory.path().into(),
+        binding: binding(f),
+        owner: identity(9).did().to_string(),
+        minimum: None,
+    };
+    policy.initialize().unwrap();
+    (directory, policy)
+}
+fn update_policy(
+    policy: &kan::evidence_policy::Access,
+    grants: Vec<Grant>,
+    nonce: u8,
+) -> kan::evidence_policy::Record {
+    let change = policy.preview(grants, service::hex(&[nonce; 32])).unwrap();
+    let record = kan::evidence_policy::Record::sign(change, &identity(9)).unwrap();
+    policy.append(record.clone()).unwrap();
+    record
+}
+#[test]
+fn live_policy_revokes_proof_reads_and_ingest_independently_without_restarting_services() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = fixture(dir.path(), Profile::Admitted);
+    let (_keep, policy) = policy_directory(&f);
+    assert!(reader(&f).with_policy(policy.clone()).is_err());
+    update_policy(&policy, vec![grant()], 1);
+    let read = reader(&f).with_policy(policy.clone()).unwrap();
+    let mut ingest = service::AdmittingService::new(
+        attested::Archive::open(&f.root, f.binding.clone()).unwrap(),
+        identity(8),
+        vec![],
+    )
+    .unwrap()
+    .with_policy(policy.clone())
+    .unwrap();
+    let pin = snapshot(&f, &read);
+    update_policy(
+        &policy,
+        vec![Grant {
+            inventory: false,
+            ..grant()
+        }],
+        2,
+    );
+    let old_pin = signed(
+        &f,
+        wire::Command::Page {
+            pin: pin.clone(),
+            next: pin.clone(),
+            limit: 1,
+        },
+    )
+    .bytes()
+    .unwrap();
+    assert_eq!(
+        read.dispatch(&old_pin, 1500)
+            .unwrap()
+            .reply
+            .result
+            .unwrap_err(),
+        service::Failure::AccessLimited
+    );
+    assert!(ingest
+        .dispatch(&f.requests[0], 1500)
+        .unwrap()
+        .reply
+        .result
+        .is_ok());
+    update_policy(
+        &policy,
+        vec![Grant {
+            append: false,
+            ..grant()
+        }],
+        3,
+    );
+    assert!(read.dispatch(&old_pin, 1500).unwrap().reply.result.is_ok());
+    assert_eq!(
+        ingest
+            .dispatch(&f.requests[0], 1500)
+            .unwrap()
+            .reply
+            .result
+            .unwrap_err(),
+        service::Failure::AccessLimited
+    );
+    update_policy(&policy, vec![], 4);
+    assert_eq!(
+        read.dispatch(&old_pin, 1500)
+            .unwrap()
+            .reply
+            .result
+            .unwrap_err(),
+        service::Failure::AccessLimited
+    );
+    assert!(reader(&f)
+        .with_policy(policy.clone())
+        .unwrap()
+        .dispatch(&old_pin, 1500)
+        .unwrap()
+        .reply
+        .result
+        .is_err());
+    let mut wrong = policy.clone();
+    wrong.binding.archive = service::hex(&[51; 32]);
+    assert!(reader(&f).with_policy(wrong).is_err());
+    assert_eq!(policy.read().unwrap().history.len(), 4);
+}
+#[test]
+fn policy_history_refuses_stale_edits_tampering_and_rollback_and_retains_exact_retries() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = fixture(dir.path(), Profile::Admitted);
+    let (_keep, policy) = policy_directory(&f);
+    let first = update_policy(&policy, vec![grant()], 1);
+    let stale = kan::evidence_policy::Record::sign(
+        policy.preview(vec![], service::hex(&[2; 32])).unwrap(),
+        &identity(9),
+    )
+    .unwrap();
+    let newer = update_policy(
+        &policy,
+        vec![Grant {
+            append: false,
+            ..grant()
+        }],
+        3,
+    );
+    assert_eq!(
+        policy.append(stale).unwrap_err(),
+        service::Failure::Conflict
+    );
+    assert_eq!(
+        policy.append(first.clone()).unwrap()["state"],
+        "already-applied"
+    );
+    let next = kan::evidence_policy::Record::sign(
+        policy.preview(vec![], service::hex(&[4; 32])).unwrap(),
+        &identity(9),
+    )
+    .unwrap();
+    let held = policy.read().unwrap();
+    assert_eq!(
+        policy.append(next.clone()).unwrap_err(),
+        service::Failure::Unavailable
+    );
+    drop(held);
+    let mut forged = next.clone();
+    forged.signature.replace_range(0..2, "ff");
+    assert!(policy.append(forged).is_err());
+    policy.append(next.clone()).unwrap();
+    let mut pinned = policy.clone();
+    pinned.minimum = Some(next.id().unwrap());
+    assert!(pinned.read().is_ok());
+    let path = policy
+        .directory
+        .join(format!("policy-{:020}-{}.json", 2, next.id().unwrap()));
+    let exact = std::fs::read(&path).unwrap();
+    std::fs::remove_file(&path).unwrap();
+    assert!(pinned.read().is_err());
+    assert_eq!(policy.read().unwrap().tip, Some(newer.id().unwrap()));
+    std::fs::write(&path, &exact).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let mut altered: serde_json::Value = serde_json::from_slice(&exact).unwrap();
+    altered["change"]["recorded_at"] = serde_json::json!("0");
+    std::fs::write(&path, serde_json::to_vec(&altered).unwrap()).unwrap();
+    assert!(pinned.read().is_err());
+    std::fs::write(&path, &exact).unwrap();
+    assert_eq!(pinned.read().unwrap().history.len(), 3);
+    assert!(policy
+        .preview(vec![grant(), grant()], service::hex(&[5; 32]))
+        .is_err());
+}
