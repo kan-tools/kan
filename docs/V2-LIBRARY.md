@@ -538,3 +538,27 @@ configured IDs and operations; they cannot supply filesystem paths or commands.
 This maintenance API currently covers backup, derived recovery and operations
 rotation. Import/cutover, live access changes, key lifecycle, erasure and hot
 workspace-journal recovery remain separate implementation work.
+
+### Imported v1 snapshots
+
+Discovery recognizes `KANI/1` frames and groups them by verified writer and plan.
+“Browse imported files and claims” reconstructs the selected inventory, checks its
+plan commitment, scope, writer and recipient, and verifies each selected frame's
+original operation and audience. File reads require every committed part and the
+whole-file hash. Missing parts remain visible; originals are never opened or
+rewritten. The same action is available through `library --request` as
+`proof-import` (`source`, `pin`, `selections`, `plan`, optional `file`, `after`).
+HTTP uses `/api/library/proof-import` with the reader credential.
+
+CAR browsing reuses the migration framing/hash scanner and displays supported
+individually signed claims, including released v1 records, with exact imported
+frame byte ranges. Claim citations and attribution remain in the displayed data.
+Structural, unsupported and unverifiable blocks remain labeled. Block signatures
+alone do not establish repository membership or a trustworthy folded state;
+`did:kan` claims requiring external identity history remain uninterpreted here.
+An owner can create a separate v2 annotation citing an imported claim's evidence.
+
+Presentation is bounded to 1,024 selected frames / 40 MiB, 100 blocks per page,
+4 MiB of rendered records, and 1 MiB per interpreted claim. These are read-window
+limits, not storage or migration limits. Exact retained Source remains available.
+The last grant check runs after reconstruction, and lock clears the derived view.

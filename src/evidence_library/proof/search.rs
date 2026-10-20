@@ -63,6 +63,7 @@ fn doc(source: Source) -> Document {
             record,
             writer,
             plaintext,
+            ..
         } => (record, Some(writer), Some(plaintext), "opaque"),
         Source::Missing { record } => (record, None, None, "missing"),
         Source::Corrupt { record } => (record, None, None, "corrupt"),

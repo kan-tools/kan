@@ -41,6 +41,7 @@ impl Ui {
                 if value["action"] == "proof-content"
                     || value["action"] == "proof-attempt"
                     || value["action"] == "proof-session"
+                    || value["action"] == "proof-import"
                 {
                     format!("{}/{}", self.url, value["action"].as_str().unwrap())
                 } else {
@@ -1754,4 +1755,203 @@ async fn owner_maintenance_uses_separate_authority_preview_exact_retry_and_new_o
     }
     ui.stop().await;
     server.stop().await;
+}
+
+fn imported_claim_frames(audience: u8) -> (String, Vec<Vec<u8>>, Vec<u8>) {
+    use atproto_dasl::Ipld;
+    use kan::claim::v1::{Anchor, AuthorId, Claim, ClaimBody, ClaimContent, SubjectRef};
+    use sha2::{Digest, Sha256};
+    let content = ClaimContent {
+        author: AuthorId {
+            did: identity(6).did().to_string(),
+            agent: None,
+        },
+        workspace: Anchor::Workspace("legacy-project".into()),
+        subject: SubjectRef::Local("telos/reliable-memory".into()),
+        body: ClaimBody::Observation {
+            text: "An imported claim <script> is still source data".into(),
+        },
+        cites: vec![],
+        artifacts: vec![],
+        recorded_at: None,
+    };
+    let id = kan::cid::content_cid(&content).unwrap();
+    let stored = kan::store::log::StoredClaim {
+        claim: Claim {
+            content,
+            sig: identity(6).sign(&id.to_bytes()).unwrap(),
+        },
+        rev: "3jzfcijpj2z2a".into(),
+    };
+    let block = atproto_dasl::to_vec(&stored).unwrap();
+    let cid = kan::cid::content_cid(&stored).unwrap();
+    let header = atproto_dasl::to_vec(&Ipld::Map(std::collections::BTreeMap::from([
+        ("version".into(), Ipld::Integer(1)),
+        ("roots".into(), Ipld::List(vec![Ipld::Link(cid.clone())])),
+    ])))
+    .unwrap();
+    fn varint(mut n: usize, out: &mut Vec<u8>) {
+        while n >= 128 {
+            out.push((n as u8 & 127) | 128);
+            n >>= 7;
+        }
+        out.push(n as u8);
+    }
+    let mut car = Vec::new();
+    varint(header.len(), &mut car);
+    car.extend(header);
+    varint(cid.to_bytes().len() + block.len(), &mut car);
+    car.extend(cid.to_bytes());
+    car.extend(block);
+    let hash = service::hex(&Sha256::digest(&car));
+    let document=serde_json::to_vec(&json!({"profile":1,"source_id":service::hex(&[44;32]),"selection":"store","recipient":service::hex(&kan::evidence_crypto::public_key(&PRIVATE).unwrap()),"route":{"scope":service::hex(&[1;32]),"writer":identity(6).did().as_str(),"audience":identity(audience).did().as_str()},"inventory":{"selected_inventory_complete":true,"notices":[],"files":[{"path":"repo.car","length":car.len(),"sha256":hash}]},"files":[{"path":"repo.car","length":car.len(),"sha256":hash,"chunks":[{"length":car.len(),"sha256":hash}]}]})).unwrap();
+    let mut h = Sha256::new();
+    h.update(b"tools.kan.import.plan.v1\0");
+    h.update(&document);
+    let plan = service::hex(&h.finalize());
+    let complete=serde_json::to_vec(&json!({"plan":plan,"observation":"selected-snapshot-queued","recovery_verified":false,"independent_backup":false,"ready_for_cutover":false})).unwrap();
+    let mut frames = Vec::new();
+    for (n, (kind, file, body)) in [
+        ("inventory", None, document),
+        ("data", Some(0), car.clone()),
+        ("complete", None, complete),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let header=serde_json::to_vec(&json!({"version":1,"plan":plan,"ordinal":n,"kind":kind,"file":file,"part":0,"parts":1})).unwrap();
+        let mut frame = b"KANI\x01".to_vec();
+        frame.extend((header.len() as u32).to_be_bytes());
+        frame.extend(header);
+        frame.extend(body);
+        frames.push(frame);
+    }
+    (plan, frames, car)
+}
+fn import_request(
+    n: u8,
+    audience: u8,
+    previous: Option<String>,
+    plan: &str,
+    frame: &[u8],
+    bad_operation: bool,
+) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    let mut r = service::SignedRequest::decode(&encrypted_frame(n, audience, previous, frame))
+        .unwrap()
+        .request;
+    if let service::Command::Append { id, .. } = &mut r.command {
+        let mut h = Sha256::new();
+        h.update(b"tools.kan.import.operation.v1\0");
+        h.update(plan.as_bytes());
+        h.update((n as u64).to_be_bytes());
+        if !bad_operation {
+            *id = service::hex(&h.finalize()[..16]);
+        }
+    }
+    service::SignedRequest::sign(r, &identity(6))
+        .unwrap()
+        .bytes()
+        .unwrap()
+}
+#[tokio::test]
+async fn imported_v1_browser_reconstructs_signed_claims_with_exact_ranges_and_current_grants() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = tempfile::tempdir().unwrap();
+        let (plan, frames, car) =
+            imported_claim_frames(if profile == Profile::Admitted { 8 } else { 7 });
+        let f = fixture_requests(dir.path(), profile, |n, a, p| {
+            import_request(n, a, p, &plan, &frames[n as usize], false)
+        });
+        let server = Server::start(&f).await;
+        let ui =
+            Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+                .await;
+        let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+        let entry = &catalog["scopes"][0];
+        let discovery=ui.call(json!({"action":"proof-discover","source":entry["id"],"pin":entry["pin"],"limit":20}),200).await;
+        assert!(discovery["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["description"]["kind"] == "import"));
+        let selections: Vec<_> = discovery["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["record"]["selection"].clone())
+            .collect();
+        let query = json!({"action":"proof-import","source":entry["id"],"pin":entry["pin"],"selections":selections,"plan":plan,"file":0});
+        let result = ui.call(query.clone(), 200).await;
+        assert_eq!(result["state"], "inventory-verified");
+        assert_eq!(result["file"]["state"], "verified");
+        assert_eq!(result["file"]["length"], car.len().to_string());
+        let claim = &result["file"]["car"]["records"][0];
+        assert_eq!(claim["state"], "verified-claim");
+        assert_eq!(
+            claim["claim"]["content"]["subject"]["Local"],
+            "telos/reliable-memory"
+        );
+        assert_eq!(result["file"]["car"]["scan"]["verified_blocks"], 1);
+        assert!(result["file"]["car"]["scan"]["error"].is_null());
+        let cite = &claim["sources"][0];
+        assert_eq!(cite["record"]["sequence"], "2");
+        let start: usize = cite["bytes"][0].as_str().unwrap().parse().unwrap();
+        let end: usize = cite["bytes"][1].as_str().unwrap().parse().unwrap();
+        let stored: kan::store::log::StoredClaim =
+            atproto_dasl::from_slice(&frames[1][start..end]).unwrap();
+        assert_eq!(
+            stored.claim.content.subject,
+            kan::claim::v1::SubjectRef::Local("telos/reliable-memory".into())
+        );
+        let mut absent = query.clone();
+        absent["selections"] = json!([selections[0], selections[1]]);
+        assert_eq!(ui.call(absent, 200).await["state"], "inventory-incomplete");
+        let mut duplicate = query.clone();
+        duplicate["selections"] = json!([selections[2], selections[2]]);
+        ui.call(duplicate, 400).await;
+        f.remove(2);
+        let missing = ui.call(query.clone(), 200).await;
+        assert_eq!(missing["file"]["state"], "incomplete");
+        assert_eq!(missing["unavailable"].as_array().unwrap().len(), 1);
+        server
+            .service
+            .lock()
+            .unwrap()
+            .replace_grants(Vec::new())
+            .unwrap();
+        ui.call(query, 403).await;
+    }
+}
+#[tokio::test]
+async fn imported_v1_browser_refuses_mismatched_operations_or_file_commitments() {
+    for bad_operation in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let (plan, mut frames, _) = imported_claim_frames(8);
+        if !bad_operation {
+            *frames[1].last_mut().unwrap() ^= 1;
+        }
+        let f = fixture_requests(dir.path(), Profile::Admitted, |n, a, p| {
+            import_request(n, a, p, &plan, &frames[n as usize], bad_operation)
+        });
+        let server = Server::start(&f).await;
+        let ui =
+            Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+                .await;
+        let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+        let entry = &catalog["scopes"][0];
+        let page = ui
+            .call(
+                json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"limit":20}),
+                200,
+            )
+            .await;
+        let selections: Vec<_> = page["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["selection"].clone())
+            .collect();
+        ui.call(json!({"action":"proof-import","source":entry["id"],"pin":entry["pin"],"selections":selections,"plan":plan,"file":0}),400).await;
+    }
 }

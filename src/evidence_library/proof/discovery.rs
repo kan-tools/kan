@@ -34,7 +34,7 @@ pub(super) async fn page(
             offset += sources.len();
             for source in sources {
             let (record, writer, description) = match source {
-                Source::Available { record, writer, plaintext } => {
+                Source::Available { record, writer, plaintext, .. } => {
                     bytes = bytes.checked_add(plaintext.len()).ok_or(ContentError::Limited)?;
                     if bytes > 8 * 1024 * 1024 {
                         return Err(ContentError::Limited);
@@ -55,6 +55,14 @@ pub(super) async fn page(
 }
 
 fn describe(bytes: &[u8]) -> Value {
+    if bytes.starts_with(b"KANI") {
+        return match crate::evidence_restore::decode_frame(bytes) {
+            Ok((h, _)) => {
+                json!({"kind":"import","plan":h.plan,"ordinal":h.ordinal.to_string(),"part":h.part,"parts":h.parts,"file":h.file,"frame_kind":h.kind})
+            }
+            Err(_) => json!({"kind":"malformed"}),
+        };
+    }
     match capture::decode(bytes) {
         Ok(Decoded::Opaque) => json!({"kind":"opaque"}),
         Ok(Decoded::Unsupported(_)) => json!({"kind":"unsupported"}),

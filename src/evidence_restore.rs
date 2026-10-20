@@ -55,15 +55,15 @@ fn operation(plan: &str, ordinal: usize) -> Vec<u8> {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Header {
-    version: u8,
-    plan: String,
-    ordinal: usize,
-    kind: String,
+pub(crate) struct Header {
+    pub(crate) version: u8,
+    pub(crate) plan: String,
+    pub(crate) ordinal: usize,
+    pub(crate) kind: String,
     #[serde(deserialize_with = "required_optional_index")]
-    file: Option<usize>,
-    part: usize,
-    parts: usize,
+    pub(crate) file: Option<usize>,
+    pub(crate) part: usize,
+    pub(crate) parts: usize,
 }
 fn required_optional_index<'de, D: serde::Deserializer<'de>>(
     d: D,
@@ -72,35 +72,35 @@ fn required_optional_index<'de, D: serde::Deserializer<'de>>(
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Part {
-    length: usize,
-    sha256: String,
+pub(crate) struct Part {
+    pub(crate) length: usize,
+    pub(crate) sha256: String,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct Route {
-    scope: String,
-    writer: String,
-    audience: String,
+pub(crate) struct Route {
+    pub(crate) scope: String,
+    pub(crate) writer: String,
+    pub(crate) audience: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Source {
-    path: String,
-    length: u64,
-    sha256: String,
-    chunks: Vec<Part>,
+pub(crate) struct Source {
+    pub(crate) path: String,
+    pub(crate) length: u64,
+    pub(crate) sha256: String,
+    pub(crate) chunks: Vec<Part>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Plan {
-    profile: u8,
-    source_id: String,
-    selection: String,
-    recipient: String,
-    route: Route,
-    inventory: Value,
-    files: Vec<Source>,
+pub(crate) struct Plan {
+    pub(crate) profile: u8,
+    pub(crate) source_id: String,
+    pub(crate) selection: String,
+    pub(crate) recipient: String,
+    pub(crate) route: Route,
+    pub(crate) inventory: Value,
+    pub(crate) files: Vec<Source>,
 }
 /// Explicit operator pins. The plan must come from the original source planning.
 pub struct Pins<'a> {
@@ -182,16 +182,7 @@ impl Reader<'_> {
             self.pins.writer,
         )
         .map_err(|_| Error::Invalid("request decryption or pins"))?;
-        require(
-            plain.len() >= 9 && plain.len() <= CHUNK + 4096 && plain[..5] == *b"KANI\x01",
-            "frame prefix/length",
-        )?;
-        let length = u32::from_be_bytes(plain[5..9].try_into().expect("fixed prefix")) as usize;
-        require(
-            length > 0 && length <= 4096 && 9 + length <= plain.len(),
-            "header length",
-        )?;
-        let header: Header = serde_json::from_slice(&plain[9..9 + length])?;
+        let (header, body_offset) = decode_frame(&plain)?;
         require(
             header.version == 1
                 && header.plan == self.pins.expected_plan
@@ -200,11 +191,47 @@ impl Reader<'_> {
         )?;
         Ok((
             header,
-            plain[9 + length..].to_vec(),
+            plain[body_offset..].to_vec(),
             json!({"ordinal":ordinal,"sequence":record.sequence,"manifest":record.manifest.cid().to_string(),"audience":signed.request.audience}),
         ))
     }
 }
+/// Shared bounded decoder. Transport and plan bindings are checked by callers.
+pub(crate) fn decode_frame(plain: &[u8]) -> Result<(Header, usize)> {
+    require(
+        plain.len() >= 9 && plain.len() <= CHUNK + 4096 && plain[..5] == *b"KANI\x01",
+        "frame prefix/length",
+    )?;
+    let length = u32::from_be_bytes(plain[5..9].try_into().expect("fixed prefix")) as usize;
+    require(
+        length > 0
+            && length <= 4096
+            && 9 + length <= plain.len()
+            && plain.len() - (9 + length) <= CHUNK,
+        "header length",
+    )?;
+    let header: Header = serde_json::from_slice(&plain[9..9 + length])?;
+    require(
+        header.version == 1
+            && hex32(&header.plan)
+            && header.parts > 0
+            && header.parts <= MAX_CHUNKS
+            && header.part < header.parts
+            && header.ordinal < MAX_CHUNKS + MAX_PLAN / CHUNK + 1,
+        "frame coordinates",
+    )?;
+    require(
+        match header.kind.as_str() {
+            "inventory" => header.file.is_none() && header.parts <= MAX_PLAN / CHUNK,
+            "data" => header.file.is_some_and(|i| i < 16_384),
+            "complete" => header.file.is_none() && header.part == 0 && header.parts == 1,
+            _ => false,
+        },
+        "frame kind",
+    )?;
+    Ok((header, 9 + length))
+}
+
 fn coordinates(
     h: &Header,
     kind: &str,
@@ -224,11 +251,29 @@ fn safe_path(path: &str) -> bool {
             .all(|c| !c.is_empty() && c != "." && c != ".." && !c.contains(['\\', ':', '\0']))
 }
 fn validate_plan(document: &[u8], pins: &Pins<'_>) -> Result<Plan> {
+    validate_document(
+        document,
+        pins.expected_plan,
+        &service::hex(&pins.scope),
+        pins.writer,
+        &service::hex(
+            &crypto::public_key(&pins.recipient_private)
+                .map_err(|_| Error::Invalid("recipient key"))?,
+        ),
+    )
+}
+pub(crate) fn validate_document(
+    document: &[u8],
+    expected_plan: &str,
+    scope: &str,
+    writer: &str,
+    recipient: &str,
+) -> Result<Plan> {
     let mut hash = Sha256::new();
     hash.update(b"tools.kan.import.plan.v1\0");
     hash.update(document);
     require(
-        service::hex(&hash.finalize()) == pins.expected_plan,
+        service::hex(&hash.finalize()) == expected_plan,
         "plan commitment",
     )?;
     let value: Value = serde_json::from_slice(document)?;
@@ -241,13 +286,7 @@ fn validate_plan(document: &[u8], pins: &Pins<'_>) -> Result<Plan> {
         "plan profile",
     )?;
     require(
-        plan.route.scope == service::hex(&pins.scope)
-            && plan.route.writer == pins.writer
-            && plan.recipient
-                == service::hex(
-                    &crypto::public_key(&pins.recipient_private)
-                        .map_err(|_| Error::Invalid("recipient key"))?,
-                ),
+        plan.route.scope == scope && plan.route.writer == writer && plan.recipient == recipient,
         "plan route/recipient",
     )?;
     require(

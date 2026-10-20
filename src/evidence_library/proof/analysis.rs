@@ -375,6 +375,7 @@ impl Readers {
                 record,
                 writer,
                 plaintext,
+                ..
             } = self
                 .selected(&cite.source)?
                 .source(&cite.pin, &cite.selection)

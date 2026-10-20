@@ -243,6 +243,7 @@ pub(crate) async fn proof_content(
                         record,
                         writer,
                         plaintext,
+                        ..
                     } => (record, Some(writer), Ok(plaintext)),
                     Source::Missing { record } => {
                         (record, None, Err(assembly::Unavailable::Missing))

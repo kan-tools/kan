@@ -304,7 +304,7 @@ fn perform(
     operation: Operation,
     destination: Option<&Path>,
 ) -> Result<Value, String> {
-    let work = || -> Result<Value, Box<dyn std::error::Error>> {
+    let work = || -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         match target {
             Target::Operations { collection, .. } => {
                 if operation != Operation::Rotate {

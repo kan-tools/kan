@@ -74,6 +74,7 @@ pub enum Source {
         record: Occurrence,
         writer: String,
         plaintext: Vec<u8>,
+        operation: String,
     },
     Missing {
         record: Occurrence,
@@ -96,6 +97,11 @@ fn token_preimage(body: &TokenBody) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 impl Reader {
+    pub(crate) fn recipient_public(&self) -> Result<String> {
+        crate::evidence_crypto::public_key(&self.access.private_key)
+            .map(|key| service::hex(&key))
+            .map_err(|_| Failure::Invalid)
+    }
     pub fn binding(&self) -> &wire::Binding {
         &self.access.binding
     }
@@ -506,7 +512,7 @@ impl Reader {
                 {
                     return Err(Failure::Corrupt);
                 }
-                let service::Command::Append { ciphertext, .. } = signed.request.command else {
+                let service::Command::Append { ciphertext, id, .. } = signed.request.command else {
                     return Err(Failure::Corrupt);
                 };
                 let ciphertext = service::unhex(&ciphertext, service::MAX_PAYLOAD)?;
@@ -518,6 +524,7 @@ impl Reader {
                     record: occurrence,
                     writer,
                     plaintext,
+                    operation: id,
                 })
             }
             _ => Err(Failure::Corrupt),

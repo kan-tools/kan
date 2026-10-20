@@ -30,6 +30,15 @@ use tokio::{
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Query {
+    ProofImport {
+        source: String,
+        pin: verified::Pin,
+        selections: Vec<verified::Token>,
+        plan: String,
+        file: Option<usize>,
+        #[serde(default)]
+        after: usize,
+    },
     KnowledgeGraph {
         subject: Option<String>,
         #[serde(default)]
@@ -181,7 +190,8 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
 async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
-        Query::KnowledgeGraph { .. }
+        Query::ProofImport { .. }
+        | Query::KnowledgeGraph { .. }
         | Query::AnnotationTriggers { .. }
         | Query::AnalysisPreview { .. }
         | Query::AnalysisSubmit { .. }
@@ -392,9 +402,14 @@ async fn handle(
     }
     let proof_content = path == Some("/api/library/proof-content");
     let proof_attempt = path == Some("/api/library/proof-attempt");
+    let proof_import = path == Some("/api/library/proof-import");
     let proof_session = path == Some("/api/library/proof-session");
     if r.method() != hyper::Method::POST
-        || (path != Some("/api/library") && !proof_content && !proof_attempt && !proof_session)
+        || (path != Some("/api/library")
+            && !proof_content
+            && !proof_attempt
+            && !proof_session
+            && !proof_import)
     {
         return Ok(denied(StatusCode::METHOD_NOT_ALLOWED));
     }
@@ -415,7 +430,7 @@ async fn handle(
         Duration::from_secs(3),
         Limited::new(
             r.into_body(),
-            if proof_attempt || proof_session {
+            if proof_attempt || proof_session || proof_import {
                 2 * 1024 * 1024
             } else if proof_content {
                 65536
@@ -438,6 +453,7 @@ async fn handle(
     if matches!(&request, Query::ProofContent { .. }) != proof_content
         || matches!(&request, Query::ProofAttempt { .. }) != proof_attempt
         || matches!(&request, Query::ProofSession { .. }) != proof_session
+        || matches!(&request, Query::ProofImport { .. }) != proof_import
     {
         return Ok(denied(StatusCode::BAD_REQUEST));
     }

@@ -504,6 +504,7 @@ async fn proof_batch_preserves_order_fresh_loss_and_current_grants() {
                 record,
                 writer,
                 plaintext,
+                ..
             } = source
             else {
                 panic!("available");

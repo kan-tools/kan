@@ -47,14 +47,14 @@
   async function rpc(body) {
     const current = ++epoch; if (controller) controller.abort(); controller = new AbortController();
     try {
-    const response = await fetch(['proof-content','proof-attempt','proof-session'].includes(body.action) ? `/api/library/${body.action}` : '/api/library', {method:'POST', headers:{'Authorization':`Bearer ${token}`, 'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'omit', cache:'no-store', signal:controller.signal});
+    const response = await fetch(['proof-content','proof-attempt','proof-session','proof-import'].includes(body.action) ? `/api/library/${body.action}` : '/api/library', {method:'POST', headers:{'Authorization':`Bearer ${token}`, 'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'omit', cache:'no-store', signal:controller.signal});
     if (current !== epoch) return null;
     if (!response.ok) {
       const denied = response.status === 401 || response.status === 403;
-      const message = body.action === 'proof-discover' && [422,429].includes(response.status) ? 'Discovery reached a work limit or its workers are busy. Retry the same batch; existing scan coverage is unchanged.' : ['content','proof-content','proof-attempt','proof-session'].includes(body.action) && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : ['content','proof-content','proof-attempt','proof-session'].includes(body.action) && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
+      const message = body.action === 'proof-discover' && [422,429].includes(response.status) ? 'Discovery reached a work limit or its workers are busy. Retry the same batch; existing scan coverage is unchanged.' : ['content','proof-content','proof-attempt','proof-session','proof-import'].includes(body.action) && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : ['content','proof-content','proof-attempt','proof-session','proof-import'].includes(body.action) && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
         ? 'Retained source is unavailable for this request. Choose another occurrence or refresh the snapshot.'
         : 'This response could not be verified. Retry, refresh the snapshot, or choose another scope.';
-      const error = new Error(message); error.accessDenied = denied; error.keepContentSelection = ['content','proof-content','proof-attempt','proof-session'].includes(body.action) && [422,429].includes(response.status); error.readerMessage = message; throw error;
+      const error = new Error(message); error.accessDenied = denied; error.keepContentSelection = ['content','proof-content','proof-attempt','proof-session','proof-import'].includes(body.action) && [422,429].includes(response.status); error.readerMessage = message; throw error;
     }
     const value = await response.json(); if (current !== epoch) return null; return value;
     } catch (error) { if (current !== epoch) return null; throw error; }
@@ -133,8 +133,8 @@
   }
   function renderCapabilities(value) {
     if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
-    const labels = {'owner-maintenance':'Owner maintenance','operations-read':'Operations reader','text-search':'Persistent text search','attempt-content':'Large attempt Content','session-content':'Conversation reader','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
-    const supported = new Set(['owner-maintenance','analysis','operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links','session-content']), seen = new Set();
+    const labels = {'import-content':'Imported v1 files and claims','owner-maintenance':'Owner maintenance','operations-read':'Operations reader','text-search':'Persistent text search','attempt-content':'Large attempt Content','session-content':'Conversation reader','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
+    const supported = new Set(['import-content','owner-maintenance','analysis','operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links','session-content']), seen = new Set();
     $('capability-list').replaceChildren();
     for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
       for (const capability of items) {
@@ -246,9 +246,10 @@
     for(const item of items)if(item.resolution_status)parent.append(textNode('p',item.resolution_status,'content-coverage'));
   }
   function renderDiscovery() {
-    const groups = new Map(), other = [];
+    const groups = new Map(), imports = new Map(), other = [];
     for (const item of discovered.values()) {
       const d = item.description;
+      if (d.kind === 'import') { const key=JSON.stringify([item.writer,d.plan]); if(!imports.has(key))imports.set(key,[]);imports.get(key).push(item);continue; }
       if (d.kind !== 'capture') { other.push(item); continue; }
       const key = JSON.stringify([sourceId(activeSource), item.writer, d.observer, d.attempt]);
       if (!groups.has(key)) groups.set(key, []);
@@ -280,16 +281,73 @@
       for (const item of items) { const row = textNode('p', `Ordinal ${item.description.ordinal} · ${item.description.event.type} `); sourceButton(row,item); lineage.append(row); }
       card.append(lineage); root.append(card);
     }
+    for(const items of imports.values()) {
+      const card=document.createElement('details');card.className='attempt';
+      card.append(textNode('summary',`Imported v1 snapshot · ${items.length} frames`));
+      card.append(textNode('p',`Plan ${items[0].description.plan} · Writer ${items[0].writer}`,'content-identity'));
+      card.append(textNode('p','Scan enough inventory and file parts to reconstruct the selected file. Missing parts remain visible.','content-coverage'));
+      const read=textNode('button','Browse imported files and claims');read.addEventListener('click',()=>run(()=>readImport(activeSource,items)));card.append(read);
+      for(const item of items){const row=textNode('p',`${item.description.frame_kind} · ordinal ${item.description.ordinal} `);sourceButton(row,item);card.append(row);}root.append(card);
+    }
     if (other.length) {
       const list = document.createElement('details'); list.append(textNode('summary', `${other.length} unassigned occurrences · missing, corrupt or unrecognized`));
       for (const item of other) { const row = textNode('p', `${item.description.kind} `); sourceButton(row,item); list.append(row); }
       root.append(list);
     }
   }
+  async function readImport(entry,items,file=null,after=0) {
+    clearContent();clearInspector();notice('Verifying imported file commitments and retained claim records…');
+    const request={action:'proof-import',source:sourceId(entry),pin:entry.pin,selections:items.map(i=>i.record.selection),plan:items[0].description.plan,file,after};
+    const value=await rpc(request);if(!value)return;
+    if(value.version!=='kan-import-content/1'||value.source!==request.source||JSON.stringify(value.pin)!==JSON.stringify(entry.pin)||value.plan!==request.plan||!['inventory-verified','inventory-incomplete'].includes(value.state)||!Array.isArray(value.files)||value.files.length>16384||!Array.isArray(value.unavailable))throw new Error('Invalid import result.');
+    const panel=document.createElement('div'), selected=new Map(items.map(i=>[i.record.sequence,i]));
+    function sources(parent,cites) {
+      if(!Array.isArray(cites)||cites.length>1024)throw new Error('Invalid import citations.');
+      for(const c of cites) {
+        const original=selected.get(c.record?.sequence);
+        if(!original||!Array.isArray(c.bytes)||c.bytes.length!==2||c.bytes.some(x=>typeof x!=='string'||!/^(0|[1-9][0-9]*)$/.test(x))||BigInt(c.bytes[0])>BigInt(c.bytes[1]))throw new Error('Invalid import source.');
+        const button=textNode('button',`Source ${c.record.sequence} · ${c.bytes.join('–')}`);button.addEventListener('click',()=>run(async()=>{
+          clearInspector();const result=await rpc({action:'proof-source',source:sourceId(entry),pin:entry.pin,selection:original.record.selection,offset:c.bytes[0],length:'65536'});if(!result)return;showSource(result);tab('source');
+        }));parent.append(button);
+      }
+    }
+    panel.append(textNode('h2','Imported v1 snapshot'));panel.append(textNode('p',value.coverage,'content-coverage'));
+    panel.append(textNode('p',`${value.state} · ${value.unavailable.length} unavailable selected records`,'content-identity'));
+    if(value.state==='inventory-incomplete')panel.append(textNode('p','The complete inventory is not selected. Continue discovery to include its parts; file names and contents cannot yet be verified.','content-warning'));
+    sources(panel,value.inventory_cites||[]);
+    for(const f of value.files) {
+      if(!Number.isSafeInteger(f.index)||typeof f.path!=='string'||typeof f.length!=='string')throw new Error('Invalid import file.');
+      const row=document.createElement('article');row.append(textNode('h3',f.path));row.append(textNode('p',`${f.length} bytes · ${f.present_parts}/${f.parts} parts selected`));
+      const open=textNode('button',`Read ${f.path}`);open.addEventListener('click',()=>run(()=>readImport(entry,items,f.index)));row.append(open);panel.append(row);
+    }
+    if(value.file) {
+      const f=value.file;if(!['verified','incomplete'].includes(f.state)||f.index!==file)throw new Error('Invalid file result.');
+      panel.append(textNode('h2',`${f.path} · ${f.state}`));
+      if(f.state==='incomplete')panel.append(textNode('p','Select the remaining file parts to verify and read this file.','content-warning'));
+      else {
+        sources(panel,f.sources);
+        if(f.car) {
+          if(!Array.isArray(f.car.records)||f.car.records.length>100)throw new Error('Invalid CAR page.');
+          panel.append(textNode('p',f.car.membership,'content-coverage'));
+          if(f.car.scan.error)panel.append(textNode('p',`CAR inspection incomplete: ${f.car.scan.error}`,'content-warning'));
+          for(const record of f.car.records) {
+            const article=document.createElement('article');article.className='conversation-attempt';
+            article.append(textNode('h3',`${record.state} · ${record.id||record.block}`));
+            article.append(textNode('pre',JSON.stringify(record.claim||{notice:record.notice,codec:record.codec},null,2)));
+            sources(article,record.sources);panel.append(article);
+            if(annotationsEnabled&&record.state==='verified-claim'&&record.sources.length<=8){const note=textNode('button','Annotate this imported claim');note.addEventListener('click',()=>editAnnotation(record.sources.map(c=>({source:sourceId(entry),pin:entry.pin,selection:selected.get(c.record.sequence).record.selection})),`claim/${record.id}`));article.append(note);}
+          }
+          if(f.car.next!==null){if(!Number.isSafeInteger(f.car.next)||f.car.next<=after)throw new Error('Invalid CAR continuation.');const more=textNode('button','Next imported blocks');more.addEventListener('click',()=>run(()=>readImport(entry,items,file,f.car.next)));panel.append(more);}
+        } else panel.append(textNode('pre',f.preview===null?'Binary bytes · inspect exact Source.':`${f.preview}${f.truncated?'\n[Preview truncated; exact bytes remain in Source.]':''}`));
+      }
+    }
+    contentValue=value;$('content-panel').replaceChildren();$('content-panel').append(panel);$('content-tab').disabled=false;$('inspection').hidden=false;$('close-inspector').hidden=false;$('selection').textContent='Imported v1 evidence';tab('content');notice('Imported evidence ready · verification scope and exact sources are shown.');
+  }
   function validateDiscovery(value) {
       if (value.version !== 'kan-discovery/1' || !Array.isArray(value.records) || value.records.length > 20) throw new Error('Invalid discovery response.');
       for (const item of value.records) {
-        if (!item?.record?.selection || typeof item.record.sequence !== 'string' || !item.description || !['capture','opaque','unsupported','malformed','missing','corrupt'].includes(item.description.kind)) throw new Error('Invalid discovery record.');
+        if (!item?.record?.selection || typeof item.record.sequence !== 'string' || !item.description || !['capture','import','opaque','unsupported','malformed','missing','corrupt'].includes(item.description.kind)) throw new Error('Invalid discovery record.');
+        if (item.description.kind === 'import' && (typeof item.writer!=='string' || !/^[a-f0-9]{64}$/.test(item.description.plan) || !/^(0|[1-9][0-9]*)$/.test(item.description.ordinal))) throw new Error('Invalid import identity.');
         if (item.description.kind === 'capture' && (typeof item.writer !== 'string' || !/^(0|[1-9][0-9]*)$/.test(item.description.ordinal) || typeof item.description.attempt !== 'string' || !item.description.event)) throw new Error('Invalid capture identity.');
       }
   }

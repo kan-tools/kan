@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use std::{collections::BTreeMap, time::Duration};
 pub mod analysis;
 mod discovery;
+mod imports;
 pub mod knowledge;
 pub mod outbox;
 pub mod search;
@@ -146,7 +147,7 @@ impl Readers {
                 let pin = reader.snapshot().await?;
                 Ok(json!({"id":id,"scope":reader.binding().scope,"binding":reader.binding(),
                     "protocol":wire::PROTOCOL,"pin_wire":serde_json::to_string(&pin).map_err(|_|Failure::Invalid)?,"pin":pin,
-                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content"]}))
+                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content","import-content"]}))
             } else {
                 let reader = self.legacy.as_ref().ok_or(Failure::Invalid)?;
                 let pin = reader.snapshot(id).await?;
@@ -164,6 +165,17 @@ impl Readers {
     }
     pub(super) async fn query(&self, request: Query) -> Result<Vec<u8>, ContentError> {
         let value = match request {
+            Query::ProofImport {
+                source,
+                pin,
+                selections,
+                plan,
+                file,
+                after,
+            } => {
+                self.import_content(&source, &pin, &selections, &plan, file, after)
+                    .await?
+            }
             Query::KnowledgeGraph { subject, day } => self.knowledge_graph(subject, day).await?,
             Query::AnnotationTriggers { id, retry } => self.annotation_triggers(&id, retry).await?,
             Query::AnalysisPreview { draft } => self.analysis_preview(draft).await?,
@@ -340,7 +352,7 @@ impl Readers {
                     }
                 }
                 let mut catalog = json!({"version":2,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},
-                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content"],
+                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content","import-content"],
                     "unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]});
                 if self.owner.is_some() {
                     catalog["capabilities"]
@@ -434,6 +446,7 @@ fn source_value(
             record,
             writer,
             plaintext,
+            ..
         } => (record, Some(writer), Some(plaintext), "available"),
         proof::Source::Missing { record } => (record, None, None, "missing"),
         proof::Source::Corrupt { record } => (record, None, None, "corrupt"),

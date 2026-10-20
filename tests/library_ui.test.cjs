@@ -646,3 +646,18 @@ test('owner target changes invalidate late previews and reader lock clears owner
  const u=ui();await ownerUI(u);u.node('owner-job-form').events.submit({preventDefault(){}});await tick();const pending=u.pending[0];u.node('owner-operation').events.change();assert.equal(pending.opts.signal.aborted,true);await u.respond({digest:'late',nonce:'late',contract:{}});assert.equal(u.node('owner-submit').disabled,true);
  u.node('owner-refresh').click();await tick();u.node('lock').click();await u.respond({owner:'late',targets:[],jobs:[],limits:{jobs:10}});assert.equal(u.node('owner-controls').hidden,true);assert.equal(u.node('owner-jobs').children.length,0);assert.equal(u.node('owner-preview').textContent,'');
 });
+
+const importedItem={record:proofRow,writer:'writer-A',description:{kind:'import',plan:'a'.repeat(64),ordinal:'0',frame_kind:'inventory',part:0,parts:1,file:null}};
+const importView={version:'kan-import-content/1',plan:'a'.repeat(64),source:'archive-A',pin,state:'inventory-verified',coverage:'Selected file hashes and individual signatures; no repository membership.',files:[{index:0,path:'repo.car',length:'400',present_parts:1,parts:1}],inventory_cites:[{record:proofRow,bytes:['9','40']}],unavailable:[],file:null};
+async function openImported(u){await openDiscovery(u);u.node('scan-attempts').click();await tick();await u.respond({version:'kan-discovery/1',records:[importedItem],next:null});walk(u.node('attempts')).find(n=>n.textContent==='Browse imported files and claims').click();await tick();}
+test('import browser opens files, preserves claim text and exact source coordinates, then clears on revocation',async()=>{
+ const u=ui();await openImported(u);assert.equal(u.pending[0].url,'/api/library/proof-import');assert.equal(JSON.parse(u.pending[0].opts.body).plan,importView.plan);await u.respond(importView);
+ walk(u.node('content-panel')).find(n=>n.textContent==='Read repo.car').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).file,0);
+ const value={...importView,file:{index:0,path:'repo.car',state:'verified',sources:importView.inventory_cites,car:{membership:'Not evaluated',scan:{error:null},next:null,records:[{state:'verified-claim',id:'claim-cid',claim:{text:'<script>retained claim</script>',cites:['original-cite']},sources:[{record:proofRow,bytes:['23','39']}]}]}}};
+ await u.respond(value);assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('<script>retained claim</script>')));
+ walk(u.node('content-panel')).find(n=>n.textContent==='Source 3 · 23–39').click();await tick();const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.offset,'23');assert.deepEqual(request.selection,proofRow.selection);await u.respond({},403);assert.equal(u.node('library').hidden,true);assert.equal(u.node('content-panel').children.length,0);
+});
+test('import browser exposes incomplete inventories and rejects a source citation outside the selected frames',async()=>{
+ const u=ui();await openImported(u);await u.respond({...importView,state:'inventory-incomplete',files:[],inventory_cites:[]});assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('complete inventory is not selected')));
+ walk(u.node('attempts')).find(n=>n.textContent==='Browse imported files and claims').click();await tick();await u.respond({...importView,inventory_cites:[{record:{...proofRow,sequence:'99'},bytes:['1','2']}]});assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('inspection').hidden,true);
+});
