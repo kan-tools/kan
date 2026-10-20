@@ -57,7 +57,7 @@ impl Readers {
                 let pin = reader.snapshot().await?;
                 Ok(json!({"id":id,"scope":reader.binding().scope,"binding":reader.binding(),
                     "protocol":wire::PROTOCOL,"pin_wire":serde_json::to_string(&pin).map_err(|_|Failure::Invalid)?,"pin":pin,
-                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery"]}))
+                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links"]}))
             } else {
                 let reader = self.legacy.as_ref().ok_or(Failure::Invalid)?;
                 let pin = reader.snapshot(id).await?;
@@ -68,6 +68,22 @@ impl Readers {
     }
     pub(super) async fn query(&self, request: Query) -> Result<Vec<u8>, ContentError> {
         let value = match request {
+            Query::ProofAttempt {
+                source,
+                pin,
+                selections,
+                format,
+            } => {
+                return content::proof_content(
+                    self.selected(&source)?,
+                    &pin,
+                    &selections,
+                    format,
+                    self.workers.clone(),
+                    true,
+                )
+                .await;
+            }
             Query::ProofDiscover {
                 source,
                 pin,
@@ -95,6 +111,7 @@ impl Readers {
                     &selections,
                     format,
                     self.workers.clone(),
+                    false,
                 )
                 .await;
             }
@@ -125,7 +142,7 @@ impl Readers {
                     }
                 }
                 json!({"version":2,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},
-                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery"],
+                    "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links"],
                     "unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]})
             }
             Query::ProofSnapshot { source } => {

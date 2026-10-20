@@ -54,6 +54,7 @@ fn describe(bytes: &[u8]) -> Value {
         Err(_) => json!({"kind":"malformed"}),
         Ok(Decoded::Capture(frame)) => {
             let h = frame.header;
+            let session_link = crate::evidence_session::link(&h.event);
             let event = match &h.event {
                 Event::Started { method, route } => {
                     json!({"type":"started","method":method,"route":route})
@@ -72,7 +73,7 @@ fn describe(bytes: &[u8]) -> Value {
             };
             json!({"kind":"capture","attempt":h.attempt,"observer":h.observer,
                 "ordinal":h.ordinal.to_string(),"observed_at_unix_micros":h.observed_at_unix_micros.map(|n|n.to_string()),
-                "unconfirmed_before":h.unconfirmed_before.to_string(),"event":event})
+                "unconfirmed_before":h.unconfirmed_before.to_string(),"event":event,"session_link":session_link})
         }
     }
 }

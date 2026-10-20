@@ -16,7 +16,9 @@ fn binding(f: &Fixture) -> wire::Binding {
     }
 }
 fn reader(f: &Fixture) -> wire::Service {
-    wire::Service::new(f.db(), binding(f), identity(8), vec![grant()], budget()).unwrap()
+    let mut limits = budget();
+    limits.items = limits.items.max((f.requests.len() * 4) as u64);
+    wire::Service::new(f.db(), binding(f), identity(8), vec![grant()], limits).unwrap()
 }
 fn signed(f: &Fixture, command: wire::Command) -> wire::SignedRequest {
     wire::SignedRequest::sign(

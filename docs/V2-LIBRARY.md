@@ -2,7 +2,7 @@
 
 The experimental Library serves real, authorized evidence inventory and exact
 source ranges. It is the first browsing slice of Kan Studio. It is not yet the
-complete frontend: semantic search, normalized sessions, annotations, saved
+complete frontend: persistent search, cross-archive session views, annotations, saved
 views, analysis, administrative jobs and an integrated Operations area remain
 required build items. No example or synthetic success is served by this app.
 
@@ -12,6 +12,64 @@ the storage-service signer, capture writers, the inference gateway, and admin
 principals. Configure an existing scope decryption key explicitly; the Library
 never creates or discovers keys. Location is portable; no production deployment
 default is selected by this implementation.
+
+## Proof archives, attempts and explicit sessions
+
+A proof source config uses `"protocol": "kan-proof-reader/1"`, `"profile":
+"admitted"` or `"copied"`, and an explicit `"archive"` (64 lowercase hex), in
+addition to the scope, issuer and private-key fields below. Its endpoint ends
+in `/v2/read`. The array may mix proof and legacy sources, up to 16 entries;
+archives sharing a scope remain separate. The `serve-proof` service opens
+metadata even when retained payloads are unavailable. Proof inventory displays
+per-record missing/corrupt status; the legacy limitations below do not apply to
+proof inventory.
+
+Use **Discover attempts** for one page or **Scan this window** to continue up to
+1,000 occurrence descriptions. **Stop scan** retains completed batches. At the
+window boundary, another scan continues with older inventory and replaces the
+previous window. Refreshing the snapshot, changing archives or locking clears
+these in-memory descriptions. Finishing the inventory is not proof of complete
+traffic capture; missing/corrupt evidence cannot be assigned to an attempt.
+
+**Read attempt** reads all records of that attempt in the scanned window together,
+including requests spread over more than 40 records. This rechecks current access
+and retained source and refuses mixed writer/observer/attempt identities. Source
+citations still refer to exact decrypted bytes. Long text and parsed bodies use
+paged display; text pages are display positions, not source byte coordinates.
+Incomplete streams and unknown terminal outcomes remain explicit. The existing
+**Read Content** action still supports arbitrary selections up to 40 records.
+
+Explicit session headers in recorded incoming request metadata produce a session
+view with source-cited link claims and per-attempt reading. `x-kan-session` is a
+64-character lowercase hex ID; optional `x-kan-parent-attempt` names a parent
+attempt, and `x-kan-transition` is `continue`, `branch` or `compaction`. A session
+without a parent has a `start` claim. An existing `x-claude-code-session-id` header
+is supported separately as membership only: it makes no parent/order claim.
+The two namespaces are not merged. Ambiguous/invalid or conflicting claims remain
+visible. All grouping includes the configured archive, verified writer and
+observer; matching text or timestamps never constructs session identity.
+
+These headers are opt-in calling conventions, not a claim that every installed
+harness emits them. Large fragmented HTTP metadata currently remains raw evidence
+without session interpretation. Requests with no explicit links remain independent.
+Session views cover the scanned window, not an unseen whole-archive index. Branches
+and compaction preserve earlier source instead of rewriting history.
+
+Proof API additions share the existing authenticated loopback presentation API:
+
+| Action / endpoint | Bound |
+|---|---|
+| `proof-discover` at `/api/library` | 1–20 records; 8 MiB input; 20 seconds |
+| `proof-content` at `/api/library/proof-content` | 40 selected records; 64 KiB request; 8 MiB input; 4 MiB output |
+| `proof-attempt` at `/api/library/proof-attempt` | 1,024 selected records; 2 MiB request; 40 MiB input; 96 MiB output |
+
+Selected Content has a 20-second deadline; attempts have 120 seconds and exclusively hold both
+Content worker permits to bound aggregate memory. Limits fail visibly without
+partial Content or changes to retained evidence. The connection and grant checks
+below still apply. This is bounded in-memory reconstruction, not unlimited
+streaming or a persistent plaintext index.
+
+## Legacy source configuration and behavior
 
 Use an owner-only JSON file containing 1–16 distinct entries:
 
@@ -68,7 +126,7 @@ remains governed by that service's own restart/configuration contract.
 
 Bounds: 40 inventory records per API page, 256 KiB per API source range, 16 KiB
 request body, four executing browser connections plus eight queued connections,
-a 6-second queue deadline, 5-second header deadline, 3-second body deadline and 35-second overall
+a 6-second queue deadline, 5-second header deadline, 3-second body deadline and 150-second overall
 connection deadline including queue time. Additional connections are refused;
 this is bounded burst handling, not immunity to a hostile local process. A range currently decrypts one bounded
 service object in memory. It is not streaming decryption. The current service can fail an entire inventory
@@ -114,7 +172,7 @@ coverage. A failure while retrying leaves coverage unknown and retry available.
 Each upstream signed read has a five-second deadline. Catalog checks run in
 groups of at most four (sixteen configured scopes maximum): up to twenty seconds.
 A source range requires two calls, up to ten seconds. Queue + header + body +
-maximum catalog budget is thirty-four seconds inside the thirty-five-second
+maximum catalog budget is thirty-four seconds inside the 150-second
 connection limit. Scheduling/CPU overhead can still exhaust the whole deadline;
 a slow healthy service is temporarily unavailable, never declared absent.
 Cancellation drops the in-flight checks. Excess connections remain refused.

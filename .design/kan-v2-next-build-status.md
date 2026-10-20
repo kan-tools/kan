@@ -20,8 +20,8 @@ and reviews are foundations, not automatic end-to-end completion.
 
 | Work package | Completion means | Current position |
 |---|---|---|
-| Capture, storage and migration | Supported harness/provider traffic reaches the centralized encrypted ledger; spool/retry and visible recording gaps work; v1 imports reconcile against preserved originals; local and remote use the same server architecture | Substantial implementation; integrated completion still to verify |
-| Library and sessions | Authorized cross-project browsing, readable complete supported conversations/tools/attachments/branches/compaction/gaps, exact source/provenance and working downloads; missing/corrupt evidence stays visible | Proof Library, selected Content and resumable attempt discovery integrated in #313. Browser discovery → Content works; missing evidence remains visible. File delivery remains unverified; full linked sessions and large-attempt assembly remain |
+| Capture, storage and migration | Supported harness/provider traffic reaches the centralized encrypted ledger; spool/retry and visible recording gaps work; v1 imports reconcile against preserved originals; local and remote use the same server architecture | Substantial implementation; integrated completion still to verify. Capacity testing exposed repeated full-archive audits during append; write/read performance remains a concrete follow-up |
+| Library and sessions | Authorized cross-project browsing, readable complete supported conversations/tools/attachments/branches/compaction/gaps, exact source/provenance and working downloads; missing/corrupt evidence stays visible | Proof Library now includes resumable scans, large-attempt Content and explicit session/parent/branch/compaction navigation. Browser workflow passes. An encrypted 11 MiB / 179-record attempt passes end-to-end; debug write/read performance needs improvement. Cross-archive sessions, fragmented metadata and browser file delivery remain |
 | Search and views | Authorized search/facets, stable references, honest index coverage, reproducible saved scope/trust views and relation inspection | Foundations/designs; integrated build remains |
 | Knowledge and annotations | Imported v1 claims and raw/derived evidence remain distinguishable; human/agent tags, annotations, relations and corrections use shared attributed append-only records with citations/history | Foundations/designs; integrated build remains |
 | Analysis and day integration | Explicit and tag-triggered background extraction/summary/assessment jobs, grants/quotas, retries/cancellation, recipe/model/input/output lineage and inspectable results | Integrated build remains |
@@ -319,3 +319,30 @@ tests and strict library Clippy pass. Real synthetic browser verification traver
 attempt and read its request Content without manual selection. Lock cleared the
 view; no browser warnings/errors were observed. Fixture services and tab were
 stopped. Independent review remains deferred until integrated feature completion.
+
+## Attempt and explicit session integration
+
+Large attempts have a dedicated API and bounded worker budget, avoiding the
+40-record split in selected Content. Explicit incoming Kan session headers or
+Claude Code membership headers now drive source-cited session navigation, parent
+reading, branches and compaction claims. Conflicting claims remain visible and
+neither branch nor compaction replaces earlier source. Continuous window scans
+are stoppable; long derived text is paged. The collector carries Kan headers to
+the gateway, which records and strips them before the provider.
+
+Targeted Content/session/connection tests, the collector/gateway workflow and
+strict all-target Clippy pass. The 66 Library UI tests pass. A real browser read
+a parent through a session link, inspected the exact link source and cleared all
+session state on lock; no warnings/errors were observed. The fixture and tab were
+stopped. The encrypted 11 MiB / 179-record capacity regression passes with exact text and
+177 payload-chunk citations, duplicate-selection refusal and current revocation.
+The debug run took 498 seconds to prepare the archive and 107 seconds to read and
+interpret it. The earlier 20-second bound failed; the dedicated attempt deadline
+is 120 seconds. These timings are functional evidence, not performance acceptance.
+Repeated full-archive audits during append and repeated metadata checks on reads
+are concrete optimization work before release. The completed synthetic archive is
+retained locally at `.local-state/large-attempt-fixture.sqlite` for reuse.
+
+Cross-archive session views, fragmented HTTP metadata interpretation, persistent
+authorized search/views, annotations, analysis/day and owner administration remain
+required. No independent review is restarted at this checkpoint.

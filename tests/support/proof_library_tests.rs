@@ -28,11 +28,13 @@ impl Ui {
             .no_proxy()
             .build()
             .unwrap()
-            .post(if value["action"] == "proof-content" {
-                format!("{}/proof-content", self.url)
-            } else {
-                self.url.clone()
-            })
+            .post(
+                if value["action"] == "proof-content" || value["action"] == "proof-attempt" {
+                    format!("{}/{}", self.url, value["action"].as_str().unwrap())
+                } else {
+                    self.url.clone()
+                },
+            )
             .bearer_auth(TOKEN)
             .json(&value)
             .send()
@@ -300,7 +302,47 @@ async fn proof_library_browser_fixture() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
     let mut admitted = fixture_requests(a.path(), Profile::Admitted, encrypted);
-    let copied = fixture_requests(b.path(), Profile::Copied, captured_request);
+    let mut copied = fixture_requests(b.path(), Profile::Copied, captured_request);
+    let mut archive = copied::Archive::open(&copied.root, copied.binding.clone()).unwrap();
+    for n in 3..6 {
+        let attempt = if n == 3 {
+            "a".repeat(64)
+        } else {
+            "b".repeat(64)
+        };
+        let mut headers = vec![json!([
+            "x-kan-session",
+            service::hex("c".repeat(64).as_bytes())
+        ])];
+        if n > 3 {
+            headers.push(json!([
+                "x-kan-parent-attempt",
+                service::hex("a".repeat(64).as_bytes())
+            ]));
+            headers.push(json!([
+                "x-kan-transition",
+                service::hex(if n == 4 { b"branch" } else { b"compaction" })
+            ]));
+        }
+        let frame = frame_bytes(
+            &attempt,
+            if n == 3 { 3 } else { n - 4 },
+            json!({"type":"http-metadata","direction":"request","headers":headers,"omitted":[]}),
+            &[],
+        );
+        let previous = Some(
+            service::append_manifest(copied.requests.last().unwrap())
+                .unwrap()
+                .cid()
+                .to_string(),
+        );
+        let bytes = encrypted_frame(n as u8, 8, previous, &frame);
+        archive
+            .admit(&bytes, &identity(8), &grant(), 200 + n)
+            .unwrap();
+        copied.requests.push(bytes);
+    }
+    drop(archive);
     let mut previous = Some(
         service::append_manifest(admitted.requests.last().unwrap())
             .unwrap()
@@ -371,6 +413,9 @@ fn captured_request(n: u8, audience: u8, previous: Option<String>) -> Vec<u8> {
     if n == 1 {
         frame.extend_from_slice(body);
     }
+    encrypted_frame(n, audience, previous, &frame)
+}
+fn encrypted_frame(n: u8, audience: u8, previous: Option<String>, frame: &[u8]) -> Vec<u8> {
     let mut req = service::SignedRequest::decode(&request(n, audience, previous))
         .unwrap()
         .request;
@@ -381,7 +426,7 @@ fn captured_request(n: u8, audience: u8, previous: Option<String>) -> Vec<u8> {
         &kan::evidence_crypto::seal(
             &kan::evidence_crypto::public_key(&PRIVATE).unwrap(),
             &[1; 32],
-            &frame,
+            frame,
         )
         .unwrap(),
     );
@@ -518,4 +563,155 @@ async fn proof_discovery_continues_verified_inventory_and_keeps_loss_unassigned(
         ui.stop().await;
         server.stop().await;
     }
+}
+
+fn frame_bytes(attempt: &str, ordinal: u64, event: Value, body: &[u8]) -> Vec<u8> {
+    let header=serde_json::to_vec(&json!({"version":2,"attempt":attempt,"observer":"collector","ordinal":ordinal,"observed_at_unix_micros":null,"elapsed_micros":0,"unconfirmed_before":0,"event":event})).unwrap();
+    let mut bytes = b"KANC2".to_vec();
+    bytes.extend_from_slice(&(header.len() as u32).to_be_bytes());
+    bytes.extend(header);
+    bytes.extend_from_slice(body);
+    bytes
+}
+#[tokio::test]
+async fn large_attempt_reads_over_ten_megabytes_with_all_chunk_citations() {
+    let started = std::time::Instant::now();
+    let body = serde_json::to_vec(
+        &json!({"messages":[{"role":"user","content":"x".repeat(11*1024*1024)}]}),
+    )
+    .unwrap();
+    let attempt = "a".repeat(64);
+    let mut frames = vec![frame_bytes(
+        &attempt,
+        0,
+        json!({"type":"started","method":"POST","route":"/v1/messages"}),
+        &[],
+    )];
+    for (i, chunk) in body.chunks(kan::evidence_capture::CHUNK).enumerate() {
+        frames.push(frame_bytes(
+            &attempt,
+            (i + 1) as u64,
+            json!({"type":"request-chunk","offset":i*kan::evidence_capture::CHUNK}),
+            chunk,
+        ));
+    }
+    frames.push(frame_bytes(
+        &attempt,
+        frames.len() as u64,
+        json!({"type":"request-end","bytes":body.len()}),
+        &[],
+    ));
+    let dir = tempfile::tempdir().unwrap();
+    let mut f = fixture_requests(dir.path(), Profile::Admitted, |n, a, p| {
+        encrypted_frame(n, a, p, &frames[n as usize])
+    });
+    let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+    for (n, frame) in frames.iter().enumerate().skip(3) {
+        let previous = Some(
+            service::append_manifest(f.requests.last().unwrap())
+                .unwrap()
+                .cid()
+                .to_string(),
+        );
+        let bytes = encrypted_frame(n as u8, 8, previous, frame);
+        archive
+            .admit(&bytes, &identity(8), &grant(), 200 + n as u64)
+            .unwrap();
+        f.requests.push(bytes);
+    }
+    drop(archive);
+    eprintln!(
+        "synthetic large archive prepared in {:?}",
+        started.elapsed()
+    );
+    let server = Server::start(&f).await;
+    let ui = Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+        .await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let mut cursor = Value::Null;
+    let mut selections = Vec::new();
+    loop {
+        let page=ui.call(json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"cursor":cursor,"limit":40}),200).await;
+        selections.extend(
+            page["records"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["selection"].clone()),
+        );
+        cursor = page["next"].clone();
+        if cursor.is_null() {
+            break;
+        }
+    }
+    let query = json!({"action":"proof-attempt","source":entry["id"],"pin":entry["pin"],"selections":selections,"format":"anthropic-messages-json"});
+    let read_started = std::time::Instant::now();
+    let content = ui.call(query.clone(), 200).await;
+    eprintln!(
+        "synthetic large attempt read in {:?}",
+        read_started.elapsed()
+    );
+    assert_eq!(
+        content["occurrences"].as_array().unwrap().len(),
+        frames.len()
+    );
+    let request = &content["groups"][0]["request"];
+    assert_eq!(request["state"], "interpreted");
+    let text = request["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["kind"] == "text")
+        .unwrap();
+    assert_eq!(text["text"].as_str().unwrap().len(), 11 * 1024 * 1024);
+    let citations = &request["citation_sets"][text["citation_set"]
+        .as_str()
+        .unwrap()
+        .parse::<usize>()
+        .unwrap()];
+    assert_eq!(citations.as_array().unwrap().len(), frames.len() - 2);
+    let mut invalid = query.clone();
+    invalid["selections"] = json!([selections[0], selections[0]]);
+    ui.call(invalid, 400).await;
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(Vec::new())
+        .unwrap();
+    ui.call(query, 403).await;
+    ui.stop().await;
+    server.stop().await;
+}
+#[tokio::test]
+async fn discovery_retains_explicit_session_edges_and_attempt_api_refuses_mixed_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let f = fixture_requests(dir.path(), Profile::Admitted, |n, a, p| {
+        let event = json!({"type":"http-metadata","direction":"request","headers":[["x-kan-session",service::hex("c".repeat(64).as_bytes())],["x-kan-parent-attempt",service::hex("a".repeat(64).as_bytes())],["x-kan-transition",service::hex(if n==0 {b"branch"} else {b"compaction"})]],"omitted":[]});
+        encrypted_frame(n, a, p, &frame_bytes(&format!("{n:064x}"), 0, event, &[]))
+    });
+    let server = Server::start(&f).await;
+    let ui = Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+        .await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let scan=ui.call(json!({"action":"proof-discover","source":entry["id"],"pin":entry["pin"],"cursor":null,"limit":20}),200).await;
+    assert_eq!(
+        scan["records"][0]["description"]["session_link"]["transition"],
+        "compaction"
+    );
+    assert_eq!(
+        scan["records"][2]["description"]["session_link"]["transition"],
+        "branch"
+    );
+    let selections: Vec<_> = scan["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["record"]["selection"].clone())
+        .collect();
+    ui.call(json!({"action":"proof-attempt","source":entry["id"],"pin":entry["pin"],"selections":selections,"format":"anthropic-messages-json"}),400).await;
+    ui.stop().await;
+    server.stop().await;
 }

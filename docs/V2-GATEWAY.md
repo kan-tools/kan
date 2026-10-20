@@ -148,3 +148,14 @@ is not a production archive reader or independent outer-signature verifier.
 The older body-only witness scripts remain scoped to their original fixtures.
 Rust `Header`/`Event` are closed typed views: an unknown variant is an explicit
 decode failure, never permission to discard the original archived bytes.
+
+## Explicit session relationships
+
+The Anthropic collector profile captures optional `x-kan-session`,
+`x-kan-parent-attempt` and `x-kan-transition` headers and forwards them to the
+configured gateway. The gateway records them and strips them before the inference
+provider. They do not change authentication, routing or inference retries. The
+Library interprets these as observer-recorded claims with source citations; see
+[V2-LIBRARY.md](V2-LIBRARY.md). Existing `x-claude-code-session-id` capture can
+provide session membership without inventing parent/branch relationships. Session
+metadata is not proof of the claimed human/assistant identity.

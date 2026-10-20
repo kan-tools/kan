@@ -21,6 +21,12 @@ use tokio::{
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 enum Query {
+    ProofAttempt {
+        source: String,
+        pin: verified::Pin,
+        selections: Vec<verified::Token>,
+        format: crate::evidence_content::Format,
+    },
     ProofDiscover {
         source: String,
         pin: verified::Pin,
@@ -99,7 +105,8 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
 async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
-        Query::ProofDiscover { .. }
+        Query::ProofAttempt { .. }
+        | Query::ProofDiscover { .. }
         | Query::ProofContent { .. }
         | Query::ProofSnapshot { .. }
         | Query::ProofPage { .. }
@@ -244,7 +251,10 @@ async fn handle(
         });
     }
     let proof_content = path == Some("/api/library/proof-content");
-    if r.method() != hyper::Method::POST || (path != Some("/api/library") && !proof_content) {
+    let proof_attempt = path == Some("/api/library/proof-attempt");
+    if r.method() != hyper::Method::POST
+        || (path != Some("/api/library") && !proof_content && !proof_attempt)
+    {
         return Ok(denied(StatusCode::METHOD_NOT_ALLOWED));
     }
     let wanted = format!("Bearer {token}");
@@ -262,7 +272,17 @@ async fn handle(
     }
     let body = match tokio::time::timeout(
         Duration::from_secs(3),
-        Limited::new(r.into_body(), if proof_content { 65536 } else { 16384 }).collect(),
+        Limited::new(
+            r.into_body(),
+            if proof_attempt {
+                2 * 1024 * 1024
+            } else if proof_content {
+                65536
+            } else {
+                16384
+            },
+        )
+        .collect(),
     )
     .await
     {
@@ -274,7 +294,9 @@ async fn handle(
         Ok(request) => request,
         Err(_) => return Ok(denied(StatusCode::BAD_REQUEST)),
     };
-    if matches!(&request, Query::ProofContent { .. }) != proof_content {
+    if matches!(&request, Query::ProofContent { .. }) != proof_content
+        || matches!(&request, Query::ProofAttempt { .. }) != proof_attempt
+    {
         return Ok(denied(StatusCode::BAD_REQUEST));
     }
     Ok(match reader.query(request).await {
@@ -396,7 +418,7 @@ impl ConnectionBudget {
             };
             work.await;
         };
-        let _ = tokio::time::timeout(Duration::from_secs(35), connection).await;
+        let _ = tokio::time::timeout(Duration::from_secs(150), connection).await;
     }
 }
 
@@ -452,7 +474,7 @@ mod budget_tests {
             4,
             "expired queued work must never start"
         );
-        tokio::time::advance(Duration::from_millis(28_998)).await;
+        tokio::time::advance(Duration::from_millis(143_998)).await;
         tokio::task::yield_now().await;
         assert_eq!(
             jobs.iter().filter(|j| j.is_finished()).count(),
@@ -463,7 +485,7 @@ mod budget_tests {
         tokio::task::yield_now().await;
         assert!(
             jobs.iter().all(|j| j.is_finished()),
-            "whole connection expires at thirty-five seconds"
+            "whole connection expires at 150 seconds"
         );
         for job in jobs {
             job.await.unwrap();
@@ -490,17 +512,17 @@ mod budget_tests {
         tokio::time::advance(Duration::from_secs(5)).await;
         drop(held);
         started_rx.await.unwrap();
-        tokio::time::advance(Duration::from_millis(29_999)).await;
+        tokio::time::advance(Duration::from_millis(144_999)).await;
         tokio::task::yield_now().await;
         assert!(
             !job.is_finished(),
-            "whole budget lasts until 35s since admission"
+            "whole budget lasts until 150s since admission"
         );
         tokio::time::advance(Duration::from_millis(2)).await;
         tokio::task::yield_now().await;
         assert!(
             job.is_finished(),
-            "queued time must not extend the 35s whole-connection budget"
+            "queued time must not extend the 150s whole-connection budget"
         );
         job.await.unwrap();
         assert_eq!(budget.sockets.available_permits(), 12);

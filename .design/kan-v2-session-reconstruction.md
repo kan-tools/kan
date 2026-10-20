@@ -295,3 +295,26 @@ Content remains explicit selections of at most 40 occurrences, including selecti
 across inventory pages. This is attempt navigation, not a persistent search index
 or a claim to reconstruct linked sessions or assemble arbitrarily large attempts.
 Those remain required work in the full frontend checklist.
+
+## Larger attempts and explicit session links
+
+The next integration adds a distinct `proof-attempt` action rather than changing
+legacy selection limits. It accepts up to 1,024 verified selections, 40 MiB raw
+input, 96 MiB output and a 512 MiB scan-work allowance, with a 120-second
+attempt deadline and cancellation checks. The Library connection deadline is
+150 seconds; small Content remains at 20 seconds. It exclusively takes the two shared Content
+permits. Available inputs must all be recognized captures for the same verified
+writer/observer/attempt; unavailable inputs remain unplaced evidence. Mapping,
+assembly and citation limits scale together. Browser long text is paged without
+altering source coordinates or truncating the underlying derived result.
+
+Discovery now retains 1,000 descriptions per explicit window and can advance
+batches until the window ends or the user stops it. Session relationships come
+only from strict incoming HTTP metadata: the Kan session/parent/transition headers
+or a separately namespaced Claude Code session-membership header. Duplicate,
+malformed and conflicting claims remain visible. Parent links are not used for
+recursive identity collapse, rewriting source history or asserting causal order.
+The collector forwards Kan headers only to the gateway, which records then strips
+them before the provider. No new capture-wire variant or persistent store is added.
+Cross-archive sessions, fragmented-header relationship extraction and persistent
+indexing remain explicit required follow-ups, not implied by this windowed view.

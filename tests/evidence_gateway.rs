@@ -644,6 +644,9 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
     }
     let r = client
         .post(format!("{origin}v1/messages/count_tokens"))
+        .header("x-kan-session", "a".repeat(64))
+        .header("x-kan-parent-attempt", "b".repeat(64))
+        .header("x-kan-transition", "branch")
         .bearer_auth(TOKEN)
         .body("{}")
         .send()
@@ -682,6 +685,11 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
         401
     );
     assert_eq!(requests.lock().unwrap().len(), 2);
+    assert!(!requests.lock().unwrap()[1]
+        .0
+        .to_ascii_lowercase()
+        .contains("x-kan-session"));
+    let mut session_observers = std::collections::BTreeSet::new();
     let mut saw_omission = false;
     let mut outgoing_provider_omission = false;
     for (dir, did) in [(gd.path(), gdid.clone()), (cd.path(), cdid.clone())] {
@@ -695,6 +703,13 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
                 if h.observer == Observer::Gateway && direction == "request-outgoing" {
                     outgoing_provider_omission |= omitted.iter().any(|s| s == "x-api-key");
                 }
+                if direction == "request"
+                    && headers
+                        .iter()
+                        .any(|(k, v)| k == "x-kan-session" && v == &hex("a".repeat(64).as_bytes()))
+                {
+                    session_observers.insert(format!("{:?}", h.observer));
+                }
                 let text = serde_json::to_string(&headers).unwrap();
                 assert!(!text.contains(&hex(TOKEN.as_bytes())));
                 assert!(!text.contains(&hex(b"synthetic-provider-secret")));
@@ -704,6 +719,11 @@ async fn anthropic_profile_preserves_sse_open_headers_and_separates_credentials(
             }
         }
     }
+    assert_eq!(
+        session_observers.len(),
+        2,
+        "session link reaches both collectors but not the provider"
+    );
     assert!(saw_omission);
     independent_evidence(
         gd.path(),

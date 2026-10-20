@@ -375,3 +375,36 @@ test('discovery revocation clears cached descriptions and refresh resets scan co
  assert.match(u.node('discovery-coverage').textContent,/No capture discovery/);u.node('scan-attempts').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).cursor,null);await u.respond({},403);
  assert.equal(u.node('library').hidden,true);assert.equal(u.node('attempts').children.length,0);
 });
+
+async function openSessions(u){await u.login();await u.respond({...proofCatalog,scopes:[{...proofEntry('archive-A'),pin_wire:exactPin,capabilities:['attempt-discovery','content-inspection','attempt-content','session-links']}]});await u.respond(proofPage);}
+test('large attempt uses one verified selection beyond forty and long text stays readable in pages',async()=>{
+ const u=ui();await openSessions(u);
+ for(let batch=0;batch<3;batch++){
+  u.node('scan-attempts').click();await tick();
+  const records=Array.from({length:batch===2?8:20},(_,i)=>discoveredCapture(String(batch*20+i+1),'writer-A',String(batch*20+i)));
+  await u.respond({version:'kan-discovery/1',records,next:batch===2?null:{signature:'next-'+batch}});
+ }
+ const read=walk(u.node('attempts')).find(n=>n.textContent==='Read attempt · 48 observed records');assert.ok(read);read.click();await tick();await tick();
+ const req=JSON.parse(u.pending[0].opts.body);assert.equal(req.action,'proof-attempt');assert.equal(req.selections.length,48);assert.equal(u.pending[0].url,'/api/library/proof-attempt');
+ const value=clone(contentResult);value.occurrences=Array.from({length:48},(_,i)=>({record:{sequence:String(i+1)}}));value.groups[0].request.items[0].text='x'.repeat(32768)+'THE END';await u.respond(value);
+ assert.ok(walk(u.node('content-panel')).some(n=>n.textContent==='x'.repeat(32768)));
+ const next=walk(u.node('content-panel')).find(n=>n.textContent==='Next text page');next.click();assert.ok(walk(u.node('content-panel')).some(n=>n.textContent==='THE END'));
+});
+test('explicit session view retains branch and compaction claims, cites their source and clears on lock',async()=>{
+ const u=ui();await openSessions(u);u.node('scan-attempts').click();await tick();
+ const a=discoveredCapture('3'),b=discoveredCapture('2');b.description.attempt='b'.repeat(64);
+ a.description.session_link={state:'claimed',scheme:'kan-header',session:'c'.repeat(64),parent_attempt:null,transition:'start'};
+ b.description.session_link={state:'claimed',scheme:'kan-header',session:'c'.repeat(64),parent_attempt:a.description.attempt,transition:'branch'};
+ const c=clone(b);c.record={...proofRow,sequence:'1'};c.description.session_link.transition='compaction';
+ await u.respond({version:'kan-discovery/1',records:[a,b,c],next:null});
+ let texts=walk(u.node('sessions')).map(n=>n.textContent).join(' ');assert.match(texts,/branch/);assert.match(texts,/compaction/);assert.match(texts,/Conflicting session claims retained/);
+ const cite=walk(u.node('sessions')).find(n=>n.textContent==='Session link source 2');cite.click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).selection,b.record.selection);await u.respond(proofSource);
+ u.node('lock').click();assert.equal(u.node('sessions').children.length,0);
+});
+
+test('scan window progresses through batches and stopping ignores late descriptions',async()=>{
+ const u=ui();await openSessions(u);u.node('scan-window').click();await tick();
+ await u.respond({version:'kan-discovery/1',records:[discoveredCapture('3')],next:{signature:'next'}});
+ assert.equal(JSON.parse(u.pending[0].opts.body).cursor.signature,'next');const pending=u.pending[0];u.node('stop-scan').click();assert.equal(pending.opts.signal.aborted,true);
+ await u.respond({version:'kan-discovery/1',records:[discoveredCapture('2')],next:null});assert.match(u.node('discovery-coverage').textContent,/1 occurrences inspected/);assert.equal(u.node('scan-window').disabled,false);
+});

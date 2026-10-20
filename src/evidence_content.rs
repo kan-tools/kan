@@ -25,6 +25,34 @@ const OUTPUT: usize = 4 * 1024 * 1024;
 const ITEMS: usize = 1024;
 const CITATIONS: usize = 4096;
 const DEADLINE: Duration = Duration::from_secs(20);
+#[derive(Clone, Copy)]
+struct Presentation {
+    duration: Duration,
+    occurrences: usize,
+    input: usize,
+    output: usize,
+    scan: u64,
+    items: usize,
+    citations: usize,
+}
+const SELECTED: Presentation = Presentation {
+    duration: DEADLINE,
+    occurrences: PAGE_LIMIT,
+    input: INPUT,
+    output: OUTPUT,
+    scan: SCAN,
+    items: ITEMS,
+    citations: CITATIONS,
+};
+const ATTEMPT: Presentation = Presentation {
+    duration: Duration::from_secs(120),
+    occurrences: 1024,
+    input: 40 * 1024 * 1024,
+    output: 96 * 1024 * 1024,
+    scan: 512 * 1024 * 1024,
+    items: 4096,
+    citations: 32768,
+};
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -184,21 +212,24 @@ pub(crate) async fn proof_content(
     selections: &[crate::evidence_reader::proof::Token],
     format: Format,
     workers: Arc<tokio::sync::Semaphore>,
+    attempt: bool,
 ) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_reader::proof::Source;
-    if selections.is_empty() || selections.len() > PAGE_LIMIT {
+    let presentation = if attempt { ATTEMPT } else { SELECTED };
+    if selections.is_empty() || selections.len() > presentation.occurrences {
         return Err(Failure::Invalid.into());
     }
     let permit = workers
-        .try_acquire_owned()
+        .try_acquire_many_owned(if attempt { 2 } else { 1 })
         .map_err(|_| ContentError::Busy)?;
     let cancelled = Arc::new(AtomicBool::new(false));
     let _cancel = Cancel(cancelled.clone());
-    let deadline = Instant::now() + DEADLINE;
+    let deadline = Instant::now() + presentation.duration;
     let work = async {
         let mut selected = Vec::new();
         let mut bytes = 0usize;
         let mut seen = BTreeSet::new();
+        let mut identity = None;
         let scope = reader.binding().owner_binding()?.scope;
         for selection in selections {
             let (record, writer, payload) = match reader.source(pin, selection).await? {
@@ -217,8 +248,23 @@ pub(crate) async fn proof_content(
             bytes = bytes
                 .checked_add(length.unwrap_or(0))
                 .ok_or(ContentError::Limited)?;
-            if bytes > INPUT {
+            if bytes > presentation.input {
                 return Err(ContentError::Limited);
+            }
+            if attempt {
+                if let Ok(bytes) = &payload {
+                    let crate::evidence_reconstruction::Decoded::Capture(frame) =
+                        crate::evidence_reconstruction::decode(bytes)
+                            .map_err(|_| Failure::Invalid)?
+                    else {
+                        return Err(Failure::Invalid.into());
+                    };
+                    let key = (writer.clone(), frame.header.observer, frame.header.attempt);
+                    if identity.as_ref().is_some_and(|previous| previous != &key) {
+                        return Err(Failure::Invalid.into());
+                    }
+                    identity = Some(key);
+                }
             }
             let metadata = json!({"scope":reader.binding().scope,"archive":reader.binding().archive,
                 "record":record,"writer":writer,"service_issuer":reader.binding().issuer,
@@ -233,7 +279,15 @@ pub(crate) async fn proof_content(
         let wire = serde_json::to_string(pin).map_err(|_| Failure::Invalid)?;
         let result = tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            render_selected(selected, wire, format, cancelled, deadline, || {})
+            render_selected(
+                selected,
+                wire,
+                format,
+                cancelled,
+                deadline,
+                presentation,
+                || {},
+            )
         })
         .await
         .map_err(|_| ContentError::Limited)?
@@ -248,11 +302,12 @@ pub(crate) async fn proof_content(
         reader.page(pin, None, 1).await?;
         Ok(result)
     };
-    tokio::time::timeout(DEADLINE, work)
+    tokio::time::timeout(presentation.duration, work)
         .await
         .map_err(|_| ContentError::Limited)?
 }
 struct Budget {
+    presentation: Presentation,
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
     scan: u64,
@@ -272,7 +327,7 @@ impl Budget {
     }
     fn limits(&self) -> Result<provider::Limits, Failure> {
         Ok(provider::Limits {
-            input_bytes: INPUT,
+            input_bytes: self.presentation.input,
             items: self.items,
             output_bytes: self.output,
             scan_bytes: self.scan,
@@ -339,7 +394,7 @@ fn map_citations(
     budget: &mut Budget,
 ) -> Result<Vec<Value>, Failure> {
     let mut limits = budget.limits()?;
-    limits.items = 2 * PAGE_LIMIT;
+    limits.items = 2 * budget.presentation.occurrences;
     let citations = mapping.map(region, limits).map_err(|e| match e {
         provider::Error::Mapping => Failure::Corrupt,
         _ => Failure::Unavailable,
@@ -416,7 +471,7 @@ fn stream(
         .checked_sub(document.items.len())
         .ok_or(Failure::Unavailable)?;
     let mut mapping_limits = budget.limits()?;
-    mapping_limits.items = 2 * PAGE_LIMIT;
+    mapping_limits.items = 2 * budget.presentation.occurrences;
     let mapping =
         provider::validate_mapping(stream, inputs, mapping_limits).map_err(|e| match e {
             provider::Error::Mapping => Failure::Corrupt,
@@ -466,7 +521,9 @@ fn render(
         let metadata = json!({"scope":service::hex(&a.scope),"record":occurrence(&a.record),"writer":a.writer,"service_issuer":a.service_issuer,"total_bytes":a.plaintext.len().to_string()});
         Selected { scope:a.scope, writer:Some(a.writer), payload:Ok(a.plaintext), metadata }
     }).collect();
-    render_selected(selected, pin_wire, format, cancelled, deadline, after_item)
+    render_selected(
+        selected, pin_wire, format, cancelled, deadline, SELECTED, after_item,
+    )
 }
 fn render_selected(
     selected: Vec<Selected>,
@@ -474,15 +531,17 @@ fn render_selected(
     format: Format,
     cancelled: Arc<AtomicBool>,
     deadline: Instant,
+    presentation: Presentation,
     mut after_item: impl FnMut(),
 ) -> Result<Vec<u8>, Failure> {
     let mut budget = Budget {
+        presentation,
         deadline,
         cancelled,
-        scan: SCAN,
-        output: OUTPUT as u64,
-        items: ITEMS,
-        citations: CITATIONS,
+        scan: presentation.scan,
+        output: presentation.output as u64,
+        items: presentation.items,
+        citations: presentation.citations,
     };
     let inputs: Vec<_> = selected
         .iter()
@@ -498,10 +557,10 @@ fn render_selected(
     let assembled = assembly::assemble(
         &inputs,
         assembly::Limits {
-            occurrences: PAGE_LIMIT,
-            input_bytes: (INPUT + PAGE_LIMIT * 1024) as u64,
+            occurrences: presentation.occurrences,
+            input_bytes: (presentation.input + presentation.occurrences * 1024) as u64,
             scan_bytes: budget.scan,
-            assembled_bytes: INPUT as u64,
+            assembled_bytes: presentation.input as u64,
             duration: budget.check()?,
             cancelled: budget.cancelled.clone(),
         },
@@ -557,8 +616,8 @@ fn render_selected(
     let value = json!({"version":VERSION,"assembly_version":assembly::VERSION,"adapter_version":provider::VERSION,
         "pin_wire":pin_wire,"occurrences":occurrences,"observations":observations,"groups":groups,
         "coverage":"explicit selection only; ordinal gaps mean no recognized capture, not absent inputs; protocol claims do not prove complete capture",
-        "scan_bytes":(SCAN-budget.scan).to_string()});
-    bounded_json(&value, OUTPUT, &budget)
+        "scan_bytes":(presentation.scan-budget.scan).to_string()});
+    bounded_json(&value, presentation.output, &budget)
 }
 struct BoundedWriter<'a> {
     bytes: Vec<u8>,
@@ -596,6 +655,7 @@ mod tests {
     use super::*;
     fn budget() -> Budget {
         Budget {
+            presentation: SELECTED,
             deadline: Instant::now() + Duration::from_secs(5),
             cancelled: Arc::new(AtomicBool::new(false)),
             scan: SCAN,

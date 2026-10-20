@@ -5,16 +5,17 @@
   const selections = new Map();
   let activeSource = null, catalogContent = false;
   const discovered = new Map();
-  let scanCursor = null, scanComplete = false, scanCount = 0;
+  let scanCursor = null, scanComplete = false, scanCount = 0, discoveryRun = 0;
   const sourceId = entry => entry.id || entry.scope;
   const isProof = () => activeSource?.protocol === 'kan-proof-reader/1';
   const buttons = new Map(), exports = new Map(), contentSelection = new Set(), checks = new Map();
+  let attemptMode = false;
   let pinWire = null, contentEnabled = false, contentValue = null, returnItem = null;
   function releaseExport(url) { clearTimeout(exports.get(url)); exports.delete(url); URL.revokeObjectURL(url); }
   function notice(text, error = false) { $('notice').textContent = text; $('notice').className = `notice${error ? ' error' : ''}`; }
   function clearContent(clearSelection = true) {
     contentValue = null; returnItem = null; $('content-panel').replaceChildren(); $('content-tab').disabled = true;
-    if (clearSelection) { contentSelection.clear(); for (const check of checks.values()) check.checked = false; }
+    if (clearSelection) { attemptMode = false; contentSelection.clear(); for (const check of checks.values()) check.checked = false; }
     updateSelection();
   }
   function updateSelection() {
@@ -39,14 +40,14 @@
   async function rpc(body) {
     const current = ++epoch; if (controller) controller.abort(); controller = new AbortController();
     try {
-    const response = await fetch(body.action === 'proof-content' ? '/api/library/proof-content' : '/api/library', {method:'POST', headers:{'Authorization':`Bearer ${token}`, 'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'omit', cache:'no-store', signal:controller.signal});
+    const response = await fetch(['proof-content','proof-attempt'].includes(body.action) ? `/api/library/${body.action}` : '/api/library', {method:'POST', headers:{'Authorization':`Bearer ${token}`, 'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'omit', cache:'no-store', signal:controller.signal});
     if (current !== epoch) return null;
     if (!response.ok) {
       const denied = response.status === 401 || response.status === 403;
-      const message = body.action === 'proof-discover' && [422,429].includes(response.status) ? 'Discovery reached a work limit or its workers are busy. Retry the same batch; existing scan coverage is unchanged.' : ['content','proof-content'].includes(body.action) && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : ['content','proof-content'].includes(body.action) && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
+      const message = body.action === 'proof-discover' && [422,429].includes(response.status) ? 'Discovery reached a work limit or its workers are busy. Retry the same batch; existing scan coverage is unchanged.' : ['content','proof-content','proof-attempt'].includes(body.action) && response.status === 422 ? 'Content interpretation reached a presentation limit or deadline. Inspect Source or select fewer complete captures; retained bytes remain available.' : ['content','proof-content','proof-attempt'].includes(body.action) && response.status === 429 ? 'Content workers are busy. Wait for current interpretation to finish, then retry.' : denied ? 'Access unavailable or revoked. Reconnect with an authorized reader.' : response.status === 404
         ? 'Retained source is unavailable for this request. Choose another occurrence or refresh the snapshot.'
         : 'This response could not be verified. Retry, refresh the snapshot, or choose another scope.';
-      const error = new Error(message); error.accessDenied = denied; error.keepContentSelection = ['content','proof-content'].includes(body.action) && [422,429].includes(response.status); error.readerMessage = message; throw error;
+      const error = new Error(message); error.accessDenied = denied; error.keepContentSelection = ['content','proof-content','proof-attempt'].includes(body.action) && [422,429].includes(response.status); error.readerMessage = message; throw error;
     }
     const value = await response.json(); if (current !== epoch) return null; return value;
     } catch (error) { if (current !== epoch) return null; throw error; }
@@ -113,7 +114,7 @@
       if (contentEnabled && pinWire) {
         const wrap = document.createElement('div'), check = document.createElement('input'); wrap.className = 'selectable-occurrence';
         check.type = 'checkbox'; check.setAttribute('aria-label', `Select occurrence ${row.sequence} for Content`); checks.set(row.sequence,check);
-        check.addEventListener('change', () => { cancelWork(); clearContent(false); clearInspector(); if(check.checked)contentSelection.add(String(row.sequence));else contentSelection.delete(String(row.sequence));updateSelection(); });
+        check.addEventListener('change', () => { cancelWork(); clearContent(false); attemptMode = false; clearInspector(); if(check.checked)contentSelection.add(String(row.sequence));else contentSelection.delete(String(row.sequence));updateSelection(); });
         wrap.append(check); wrap.append(button); $('rows').append(wrap);
       } else $('rows').append(button);
     }
@@ -124,8 +125,8 @@
   }
   function renderCapabilities(value) {
     if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
-    const labels = {'attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
-    const supported = new Set(['snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery']), seen = new Set();
+    const labels = {'attempt-content':'Large attempt Content','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
+    const supported = new Set(['snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links']), seen = new Set();
     $('capability-list').replaceChildren();
     for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
       for (const capability of items) {
@@ -189,9 +190,10 @@
     $('content-support').textContent = contentEnabled ? 'Select captures on this page. Interpretation covers only this selection.' : 'Selected Content is not yet available for this source. Source and provenance remain browsable.';
   }
   function clearDiscovery() {
-    discovered.clear(); scanCursor = null; scanComplete = false; scanCount = 0;
-    $('attempts').replaceChildren(); $('discovery').hidden = true;
+    discoveryRun++; discovered.clear(); scanCursor = null; scanComplete = false; scanCount = 0;
+    $('attempts').replaceChildren(); $('sessions').replaceChildren(); $('discovery').hidden = true;
     $('discovery-coverage').textContent = 'No capture discovery has run for this snapshot.';
+    $('scan-window').disabled = false; $('stop-scan').disabled = true;
     $('scan-attempts').disabled = false; $('scan-attempts').textContent = 'Discover attempts';
   }
   function renderDiscovery() {
@@ -204,9 +206,10 @@
       groups.get(key).push(item);
     }
     const root = $('attempts'); root.replaceChildren();
+    renderSessions(groups);
     $('discovery-coverage').textContent = `${scanCount} occurrences inspected · ${discovered.size} in this window · ${groups.size} attempt groups · ${other.length} unassigned. ${scanComplete ? 'Inventory scan finished; traffic completeness remains unknown.' : 'Partial inventory coverage; continue scanning for older records.'}`;
     $('scan-attempts').disabled = scanComplete;
-    $('scan-attempts').textContent = discovered.size >= 500 ? 'Continue in a new window' : scanCount ? 'Scan next 20 occurrences' : 'Discover attempts';
+    $('scan-attempts').textContent = scanComplete ? 'Scan complete' : discovered.size >= 1000 ? 'Continue in a new window' : scanCount ? 'Scan next 20 occurrences' : 'Discover attempts';
     function sourceButton(parent, item) {
       const b = textNode('button', `Source ${item.record.sequence}`);
       b.addEventListener('click', () => run(() => inspect(item.record.sequence))); parent.append(b);
@@ -218,13 +221,10 @@
       card.append(textNode('summary', `${start ? start.description.event.method + ' ' + start.description.event.route : 'Start not observed'} · ${d.observer} · ${items.length} records`));
       card.append(textNode('p', `Attempt ${d.attempt} · Writer ${items[0].writer}`, 'content-identity'));
       card.append(textNode('p', 'Records from the scanned window only. Read Content for stream gaps, conflicting ordinals and outcome claims.', 'content-coverage'));
-      if (contentEnabled && pinWire) for (let i=0; i<items.length; i+=40) {
-        const chunk = items.slice(i,i+40), b = textNode('button', `Read records ${i+1}–${i+chunk.length}`);
-        b.addEventListener('click', () => {
-          cancelWork(); clearContent(); clearInspector();
-          for (const item of chunk) contentSelection.add(item.record.sequence);
-          updateSelection(); $('interpret').click();
-        }); card.append(b);
+      const step = activeSource.capabilities?.includes('attempt-content') ? 1024 : 40;
+      if (contentEnabled && pinWire) for (let i=0; i<items.length; i+=step) {
+        const chunk = items.slice(i,i+step), b = textNode('button', step === 1024 ? `Read attempt · ${chunk.length} observed records` : `Read records ${i+1}–${i+chunk.length}`);
+        b.addEventListener('click', () => readDiscoveredAttempt(chunk)); card.append(b);
       }
       const lineage = document.createElement('details'); lineage.append(textNode('summary','Observed events and source'));
       for (const item of items) { const row = textNode('p', `Ordinal ${item.description.ordinal} · ${item.description.event.type} `); sourceButton(row,item); lineage.append(row); }
@@ -236,12 +236,14 @@
       root.append(list);
     }
   }
-  $('scan-attempts').addEventListener('click', () => run(async () => {
+  async function discoverWindow(all = false) {
     if (!pin || !isProof() || scanComplete) return;
-    // One explicit bounded batch; no background whole-archive scan.
+    const currentRun = ++discoveryRun; let batches=0;
+    $('scan-window').disabled = true; $('stop-scan').disabled = false;
+    // Explicit user-triggered work, at most one thousand descriptions per window.
     clearContent(); clearInspector(); $('scan-attempts').disabled = true;
     notice('Verifying captured records for attempt discovery…');
-    try {
+    try { do {
       const value = await rpc({action:'proof-discover',source:sourceId(activeSource),pin,cursor:scanCursor,limit:20});
       if (!value) return;
       if (value.version !== 'kan-discovery/1' || !Array.isArray(value.records) || value.records.length > 20) throw new Error('Invalid discovery response.');
@@ -249,12 +251,70 @@
         if (!item?.record?.selection || typeof item.record.sequence !== 'string' || !item.description || !['capture','opaque','unsupported','malformed','missing','corrupt'].includes(item.description.kind)) throw new Error('Invalid discovery record.');
         if (item.description.kind === 'capture' && (typeof item.writer !== 'string' || !/^(0|[1-9][0-9]*)$/.test(item.description.ordinal) || typeof item.description.attempt !== 'string' || !item.description.event)) throw new Error('Invalid capture identity.');
       }
-      if (discovered.size >= 500) discovered.clear();
+      if (discovered.size + value.records.length > 1000) discovered.clear();
       for (const item of value.records) discovered.set(item.record.sequence,item);
       scanCount += value.records.length; scanCursor = value.next; scanComplete = value.next === null;
-      renderDiscovery(); notice('Attempt discovery updated · coverage and unassigned evidence are shown.');
-    } finally { $('scan-attempts').disabled = scanComplete; }
-  }));
+      renderDiscovery(); batches++; notice('Attempt discovery updated · coverage and unassigned evidence are shown.');
+      $('scan-attempts').disabled = true;
+    } while (all && currentRun === discoveryRun && !scanComplete && discovered.size < 1000 && batches < 50);
+    } finally { if (currentRun === discoveryRun) { $('scan-attempts').disabled = scanComplete; $('scan-window').disabled = scanComplete; $('stop-scan').disabled = true; } }
+  }
+  $('scan-attempts').addEventListener('click', () => run(() => discoverWindow()));
+  $('scan-window').addEventListener('click', () => run(() => discoverWindow(true)));
+  $('stop-scan').addEventListener('click', () => { discoveryRun++; cancelWork(); $('scan-attempts').disabled=scanComplete; $('scan-window').disabled=scanComplete; $('stop-scan').disabled=true; notice('Scan stopped. Completed batches remain visible with their coverage.'); });
+  function readDiscoveredAttempt(items) {
+    cancelWork();clearContent();clearInspector();attemptMode=activeSource.capabilities?.includes('attempt-content')===true;
+    if (!attemptMode && items.length>40) {notice('This reader supports only 40-record selections. Open the attempt below.',true);return;}
+    for (const item of items) contentSelection.add(item.record.sequence);updateSelection();$('interpret').click();
+  }
+  function renderSessions(groups) {
+    const root = $('sessions'); root.replaceChildren();
+    const sessions = new Map();
+    for (const [key,items] of groups) for (const item of items) {
+      const link = item.description.session_link; if (!link) continue;
+      if (link.state !== 'claimed') {
+        root.append(textNode('p',`Occurrence ${item.record.sequence}: explicit session headers could not be interpreted. Inspect Source for the original claim.`, 'content-warning'));
+        continue;
+      }
+      const id = JSON.stringify([sourceId(activeSource),item.writer,item.description.observer,link.scheme,link.session]);
+      if (!sessions.has(id)) sessions.set(id,{session:link.session,scheme:link.scheme,claims:[]});
+      sessions.get(id).claims.push({key,item,link});
+    }
+    if (!sessions.size) { root.append(textNode('p','No valid explicit session links in this scanned window. Attempts remain independent.','content-coverage')); return; }
+    root.append(textNode('h3','Explicit session relationships'));
+    root.append(textNode('p','Observer-recorded claims within this archive and scanned window. Parent links, branches and compaction do not merge or replace source history.','content-coverage'));
+    for (const session of sessions.values()) {
+      const card=document.createElement('details'); card.className='attempt'; card.append(textNode('summary',`Session ${session.session} · ${session.scheme} · ${session.claims.length} link claims`));
+      for (const {key,item,link} of session.claims) {
+        const row=textNode('p',`${link.transition} · ${item.description.attempt} ← ${link.parent_attempt || (link.transition === 'membership' ? 'no parent claim' : 'start')} `,'content-identity');
+        const read=textNode('button','Read linked attempt');
+        read.addEventListener('click',()=>readDiscoveredAttempt(groups.get(key)));row.append(read);
+        const citation=textNode('button',`Session link source ${item.record.sequence}`);citation.addEventListener('click',()=>run(()=>inspect(item.record.sequence)));row.append(citation);
+        if (link.parent_attempt) {
+          const parentKey=JSON.stringify([sourceId(activeSource),item.writer,item.description.observer,link.parent_attempt]);
+          const parents=groups.get(parentKey);
+          if(parents){const parent=textNode('button','Read parent attempt');parent.addEventListener('click',()=>readDiscoveredAttempt(parents));row.append(parent);}
+          row.append(textNode('span',parents?' Parent observed in this window; relationship remains a claim.':' Parent not observed in this window.'));
+          if (link.parent_attempt===item.description.attempt) row.append(textNode('span',' Self-reference; no causal ordering inferred.'));
+        }
+        const claims=groups.get(key).map(x=>x.description.session_link).filter(x=>x?.state==='claimed');
+        if(new Set(claims.map(x=>JSON.stringify([x.scheme,x.session,x.parent_attempt,x.transition]))).size>1)row.append(textNode('span',' Conflicting session claims retained.'));
+        card.append(row);
+      }
+      root.append(card);
+    }
+  }
+  function appendPagedText(parent, text, className) {
+    const pageSize=32768, offsets=[0];
+    for(let end=pageSize;end<text.length;end+=pageSize){if(/[\uD800-\uDBFF]/.test(text[end-1])&&/[\uDC00-\uDFFF]/.test(text[end]))end--;offsets.push(end);}
+    const pre=textNode('pre',text.slice(0,offsets[1]||text.length),className);parent.append(pre);
+    if(offsets.length===1)return;
+    const controls=document.createElement('div');controls.className='pagination';
+    const previous=textNode('button','Previous text page'), position=textNode('span',''), next=textNode('button','Next text page');let page=0;
+    function render(){pre.textContent=text.slice(offsets[page],offsets[page+1]||text.length);position.textContent=`Text page ${page+1} of ${offsets.length} · derived display`;previous.disabled=page===0;next.disabled=page+1===offsets.length;}
+    previous.addEventListener('click',()=>{page=Math.max(0,page-1);render();});next.addEventListener('click',()=>{page=Math.min(offsets.length-1,page+1);render();});
+    controls.append(previous);controls.append(position);controls.append(next);parent.append(controls);render();
+  }
   function sourceRequest(sequence, offset = 0) {
     if (isProof()) {
       const selection = discovered.get(String(sequence))?.record.selection || selections.get(String(sequence)); if (!selection) throw new Error('Missing verified selection.');
@@ -268,13 +328,13 @@
     const button=textNode('button',label);button.addEventListener('click',()=>run(async()=>{returnItem=button;await inspect(occurrence.record.sequence,offset);}));parent.append(button);return button;
   }
   function details(parent, title, raw) {
-    const d=document.createElement('details');d.append(textNode('summary',title));d.append(textNode('pre',raw));parent.append(d);
+    const d=document.createElement('details');d.append(textNode('summary',title));appendPagedText(d,raw,'');parent.append(d);
   }
   function citationRenderer(value, stream) {
-    if(!Array.isArray(stream.citation_sets)||stream.citation_sets.length>2048||!Array.isArray(stream.items))throw new Error('Invalid Content citation table.');
+    if(!Array.isArray(stream.citation_sets)||stream.citation_sets.length>(attemptMode?32768:2048)||!Array.isArray(stream.items))throw new Error('Invalid Content citation table.');
     let total=0;
     for(const set of stream.citation_sets){
-      if(!Array.isArray(set)||(total+=set.length)>4096)throw new Error('Invalid Content citation table.');
+      if(!Array.isArray(set)||(total+=set.length)>(attemptMode?32768:4096))throw new Error('Invalid Content citation table.');
       for(const c of set)if(!c||!Array.isArray(c.bytes)||c.bytes.length!==2||!value.occurrences[Number(c.input)])throw new Error('Invalid Content citation.');
     }
     function resolve(ref){
@@ -300,7 +360,7 @@
     };
   }
   function showContent(value) {
-    if(value.version!=='kan-content/2'||value.pin_wire!==pinWire||!Array.isArray(value.occurrences)||value.occurrences.length>40||!Array.isArray(value.observations)||!Array.isArray(value.groups))throw new Error('Unsupported Content response.');
+    if(value.version!=='kan-content/2'||value.pin_wire!==pinWire||!Array.isArray(value.occurrences)||value.occurrences.length>(attemptMode?1024:40)||!Array.isArray(value.observations)||!Array.isArray(value.groups))throw new Error('Unsupported Content response.');
     contentValue=value;$('content-panel').replaceChildren();$('content-tab').disabled=false;
     $('inspection').hidden=false;$('close-inspector').hidden=false;$('selection').textContent='Selected Content';
     $('source-hint').textContent='Observed content · roles and outcomes are claims. Follow citations to verified retained source.';
@@ -326,7 +386,7 @@
         else {
           if(stream.coherent_stop_observed)section.append(textNode('p','Coherent protocol stop observed · capture completeness is unknown.','content-coverage'));
           for(const item of stream.items){const entry=document.createElement('article');entry.className='content-item';entry.append(textNode('h5',`${direction==='request'?'Supplied history · ':''}${item.role?item.role+' · ':''}${item.kind}${item.index!==null?' · block '+item.index:''}`));
-            if(item.text!==null)entry.append(textNode('pre',item.text,'content-text'));
+            if(item.text!==null)appendPagedText(entry,item.text,'content-text');
             if(item.issues.length)entry.append(textNode('p',item.issues.join(' · '),'content-warning'));
             if(item.pointer!==null)entry.append(textNode('p',`Parsed JSON location ${item.pointer||'/'}`,'content-pointer'));
             if(item.event_json!==null)details(entry,'Parsed event · numbers may be rounded; Source preserves exact bytes',item.event_json);
@@ -347,7 +407,7 @@
   $('interpret').addEventListener('click',()=>run(async()=>{
     if(!pinWire||!contentEnabled||!contentSelection.size)return;
     clearContent(false);clearInspector();$('interpret').disabled=true;notice('Verifying selected evidence and interpreting Content…');
-    const value=await rpc(isProof() ? {action:'proof-content',source:sourceId(activeSource),pin,selections:[...contentSelection].map(n=>discovered.get(n)?.record.selection || selections.get(n)),format:$('content-format').value} : {action:'content',pin_wire:pinWire,sequences:[...contentSelection],format:$('content-format').value});if(!value)return;
+    const value=await rpc(isProof() ? {action:attemptMode?'proof-attempt':'proof-content',source:sourceId(activeSource),pin,selections:[...contentSelection].map(n=>discovered.get(n)?.record.selection || selections.get(n)),format:$('content-format').value} : {action:'content',pin_wire:pinWire,sequences:[...contentSelection],format:$('content-format').value});if(!value)return;
     showContent(value);updateSelection();
   }));
   $('clear-content').addEventListener('click',()=>{cancelWork();clearContent();clearInspector();notice('Content selection cleared.');});

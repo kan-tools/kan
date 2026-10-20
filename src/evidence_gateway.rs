@@ -313,10 +313,18 @@ async fn handle(
     };
     let mut outgoing = reqwest::header::HeaderMap::new();
     if config.profile == Profile::Anthropic {
-        let clean = end_to_end(request.headers());
+        let clean = end_to_end(
+            request.headers(),
+            config.observer == capture::Observer::Collector,
+        );
         for (name, value) in &clean {
             if name.as_str().starts_with("anthropic-")
                 || name.as_str().starts_with("x-claude-code-")
+                || (config.observer == capture::Observer::Collector
+                    && matches!(
+                        name.as_str(),
+                        "x-kan-session" | "x-kan-parent-attempt" | "x-kan-transition"
+                    ))
                 || matches!(
                     name.as_str(),
                     "content-type"
@@ -422,7 +430,7 @@ async fn handle(
     );
     *response.status_mut() = StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY);
     if profile == Profile::Anthropic {
-        *response.headers_mut() = end_to_end(&headers);
+        *response.headers_mut() = end_to_end(&headers, false);
     } else {
         response.headers_mut().insert(
             "content-type",
@@ -542,7 +550,10 @@ async fn connection<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     .await;
 }
 
-fn end_to_end(input: &reqwest::header::HeaderMap) -> reqwest::header::HeaderMap {
+fn end_to_end(
+    input: &reqwest::header::HeaderMap,
+    session_headers: bool,
+) -> reqwest::header::HeaderMap {
     let nominated: Vec<String> = input
         .get_all("connection")
         .iter()
@@ -566,7 +577,12 @@ fn end_to_end(input: &reqwest::header::HeaderMap) -> reqwest::header::HeaderMap 
                 | "x-api-key"
                 | "cookie"
                 | "set-cookie"
-        ) || name.as_str().starts_with("x-kan-")
+        ) || (name.as_str().starts_with("x-kan-")
+            && !(session_headers
+                && matches!(
+                    name.as_str(),
+                    "x-kan-session" | "x-kan-parent-attempt" | "x-kan-transition"
+                )))
             || nominated.iter().any(|n| n == name.as_str())
         {
             continue;
