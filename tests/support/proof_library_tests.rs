@@ -6100,3 +6100,161 @@ async fn saved_views_page_beyond_200_after_restart_and_recheck_current_access() 
     ui.stop().await;
     server.stop().await;
 }
+
+#[tokio::test]
+async fn annotation_pages_cross_1000_keep_off_page_history_and_recheck_access() {
+    use kan::evidence_workspace::Workspace;
+    use sha2::{Digest, Sha256};
+    let dir = private_workspace_directory();
+    let local = private_workspace_directory();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let database = local.path().join("workspace.sqlite");
+    let readers = || {
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_workspace(Workspace::open(&database, identity(6), [72; 32]).unwrap())
+    };
+    let ui = Ui::start(readers()).await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let page = ui
+        .call(
+            json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"limit":1}),
+            200,
+        )
+        .await;
+    let draft = json!({"subject":"telos/paged-history","text":"Original note","tags":["selected"],
+        "cites":[{"source":entry["id"],"pin":entry["pin"],"selection":page["records"][0]["selection"]}],"supersedes":null});
+    let preview = ui
+        .call(json!({"action":"annotation-preview","draft":draft}), 200)
+        .await;
+    let template = ui
+        .call(
+            json!({"action":"annotation-save","draft":draft,"preview":preview["id"]}),
+            200,
+        )
+        .await;
+    ui.stop().await;
+    {
+        let workspace = Workspace::open(&database, identity(6), [72; 32]).unwrap();
+        for n in 0..1000 {
+            let mut record = template.clone();
+            record.as_object_mut().unwrap().remove("id");
+            record.as_object_mut().unwrap().remove("recorded_at");
+            record["draft"]["text"] = json!(format!("Retained note {n}"));
+            let id = service::hex(&Sha256::digest(serde_json::to_vec(&record).unwrap()));
+            record["id"] = json!(id);
+            record["recorded_at"] = json!("100");
+            workspace.put("annotation", &id, record).unwrap();
+        }
+    }
+    let ui = Ui::start(readers()).await;
+    let first = ui
+        .call(json!({"action":"annotations","limit":1}), 200)
+        .await;
+    let parent = first["records"][0].clone();
+    let mut correction = parent["draft"].clone();
+    correction["text"] = json!("Later correction on another page");
+    correction["tags"] = json!(["correction-only"]);
+    correction["supersedes"] = parent["id"].clone();
+    let preview = ui
+        .call(
+            json!({"action":"annotation-preview","draft":correction}),
+            200,
+        )
+        .await;
+    let correction = ui
+        .call(
+            json!({"action":"annotation-save","draft":correction,"preview":preview["id"]}),
+            200,
+        )
+        .await;
+    let mut withdrawal = parent["draft"].clone();
+    withdrawal["text"] = json!("Withdraw while retaining provenance");
+    withdrawal["tags"] = json!([]);
+    withdrawal["withdraws"] = parent["id"].clone();
+    let preview = ui
+        .call(
+            json!({"action":"annotation-preview","draft":withdrawal}),
+            200,
+        )
+        .await;
+    let withdrawal = ui
+        .call(
+            json!({"action":"annotation-save","draft":withdrawal,"preview":preview["id"]}),
+            200,
+        )
+        .await;
+    ui.stop().await;
+    let ui = Ui::start(readers()).await;
+    // Two new records may sort before the previously first row. A one-record
+    // page guarantees both incoming links are outside the displayed parent page.
+    let mut cursor = Value::Null;
+    let mut checked = false;
+    for _ in 0..3 {
+        let result = ui
+            .call(
+                json!({"action":"annotations","limit":1,"after":cursor,"tag":"selected"}),
+                200,
+            )
+            .await;
+        if result["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == parent["id"])
+        {
+            let id = parent["id"].as_str().unwrap();
+            assert_eq!(result["corrections"][id], json!([correction["id"]]));
+            assert_eq!(result["withdrawals"][id], json!([withdrawal["id"]]));
+            assert_eq!(result["records"].as_array().unwrap().len(), 1);
+            checked = true;
+            break;
+        }
+        cursor = result["next"].clone();
+        assert!(!cursor.is_null());
+    }
+    assert!(checked);
+    let mut cursor = Value::Null;
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..100 {
+        let page = ui
+            .call(json!({"action":"annotations","after":cursor}), 200)
+            .await;
+        for note in page["records"].as_array().unwrap() {
+            assert!(seen.insert(note["id"].as_str().unwrap().to_string()));
+        }
+        cursor = page["next"].clone();
+        if cursor.is_null() {
+            break;
+        }
+    }
+    assert!(cursor.is_null());
+    assert_eq!(seen.len(), 1003);
+    let graph = ui
+        .call(
+            json!({"action":"knowledge-graph","subject":null,"day":true}),
+            200,
+        )
+        .await;
+    assert_eq!(graph["subjects"][0]["declarations"], 1003);
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    let revoked = ui
+        .call(json!({"action":"annotations","limit":1}), 200)
+        .await;
+    assert!(revoked["records"].as_array().unwrap().is_empty());
+    assert!(revoked["withdrawals"].as_object().unwrap().is_empty());
+    assert!(revoked["corrections"].as_object().unwrap().is_empty());
+    ui.call(json!({"action":"annotations","limit":0}), 400)
+        .await;
+    ui.call(json!({"action":"annotations","after":"invalid"}), 400)
+        .await;
+    ui.stop().await;
+    server.stop().await;
+}

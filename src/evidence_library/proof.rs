@@ -193,7 +193,15 @@ impl Readers {
             Query::AnnotationSave { draft, preview } => {
                 self.annotation_save(draft, preview).await?
             }
-            Query::Annotations { subject, tag } => self.annotations(subject, tag).await?,
+            Query::Annotations {
+                subject,
+                tag,
+                after,
+                limit,
+            } => {
+                self.annotations_page(subject, tag, after, limit.unwrap_or(100))
+                    .await?
+            }
             Query::IndexPage { target, cursor } => {
                 search::index(
                     self.selected(&target.source)?,

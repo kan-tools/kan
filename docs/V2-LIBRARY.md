@@ -311,12 +311,22 @@ a claimed human name inside the text is not another authenticated author.
 or append a correction from any entry. Corrections preserve earlier entries and
 inherit their evidence citations. Notes whose cited scopes are no longer authorized
 are hidden; missing payloads retain explicitly unavailable evidence references.
-The workspace supports 1,000 annotations with no automatic expiry. Include the
-workspace in backups to retain this authored history.
+Annotations have no 1,000-declaration lifetime quota and do not expire
+automatically. **Next annotations** continues the bounded list; **Load annotations**
+starts from the first page. Changing filters resets continuation. Incoming
+correction and withdrawal links include currently authorized records on other
+pages, even when those records do not match the tag filter. Include the workspace
+in backups to retain this authored history.
 
 The shared requests are `annotation-preview` with a `draft`, `annotation-save` with
 the checked `draft` and its `preview` digest, and `annotations` with optional
-`subject` and `tag`. A draft contains `subject`, `text`, `tags`, `cites` and nullable
+`subject`, `tag`, opaque `after` cursor and `limit` (1–100, default 100). A page
+returns `next`, `corrections` and `withdrawals`; a filtered page may be empty with
+a non-null continuation. Restart from the first page to include concurrent inserts
+that sort before an earlier cursor. Link discovery streams encrypted declarations
+and retains only matching attribution/citation metadata, not unrelated note bodies.
+Whole-corpus graph/search evaluations still grow with retained metadata and retain
+their execution budgets. A draft contains `subject`, `text`, `tags`, `cites` and nullable
 `supersedes`. Each citation contains an exact `source`, `pin` and `selection` from
 the proof reader. Saving the same declaration again returns the original entry.
 `recorded_at` is the reader server's observation time, not a source event timestamp.

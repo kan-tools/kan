@@ -918,3 +918,18 @@ test('saved view pagination retains the cursor, restarts explicitly and clears c
  u.node('lock').click();await u.respond({views:[view],coverage:'complete',next:'b'.repeat(64)});
  assert.equal(u.node('saved-views').children.length,0);assert.equal(u.node('next-views').disabled,true);
 });
+
+test('annotation pages show cross-page corrections and withdrawals and invalidate continuation on filter changes',async()=>{
+ const u=ui();await openKnowledge(u);
+ const note={id:'note',author:'owner',recorded_at:'1',draft:{subject:'decision/test',text:'Retained original',tags:['decision'],cites:[],supersedes:null}};
+ u.node('load-annotations').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,null);
+ await u.respond({records:[note],coverage:'complete',next:'c'.repeat(64),corrections:{note:['later-correction']},withdrawals:{note:['later-withdrawal']}});
+ const text=walk(u.node('annotation-list')).map(n=>n.textContent).join(' ');
+ assert.match(text,/later-correction/);assert.match(text,/later-withdrawal/);assert.equal(u.node('next-annotations').disabled,false);
+ u.node('next-annotations').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,'c'.repeat(64));
+ await u.respond({records:[],coverage:'complete',next:'d'.repeat(64)});
+ u.node('annotation-filter-tag').value='changed';u.node('annotation-filter-tag').events.input();assert.equal(u.node('next-annotations').disabled,true);
+ u.node('load-annotations').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).after,null);
+ u.node('lock').click();await u.respond({records:[note],coverage:'complete',next:'e'.repeat(64)});
+ assert.equal(u.node('annotation-list').children.length,0);assert.equal(u.node('next-annotations').disabled,true);
+});

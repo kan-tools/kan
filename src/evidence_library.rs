@@ -106,6 +106,8 @@ pub enum Query {
     Annotations {
         subject: Option<String>,
         tag: Option<String>,
+        after: Option<String>,
+        limit: Option<usize>,
     },
     IndexPage {
         target: SearchTarget,

@@ -16,7 +16,7 @@
   let annotationRecovery=null;
   let searchStates = [], searchRun = 0, searchFilter = null, searchHits = new Map(), searchPages = 0;
   let analysisEnabled=false,analysisDraft=null,analysisPreview=null,analysisRecipes=[];
-  let viewsNext=null;
+  let viewsNext=null, annotationsNext=null;
   let annotationsEnabled=false, annotationCites=[], annotationDerivations=[], annotationRelations=[], annotationSupersedes=null, annotationWithdraws=null, annotationPreview=null;
   let attemptMode = false;
   let pinWire = null, contentEnabled = false, contentValue = null, returnItem = null;
@@ -953,6 +953,7 @@
   $('knowledge-mode').addEventListener('change',()=>{cancelWork();$('knowledge-subjects').replaceChildren();$('knowledge-detail').replaceChildren();$('knowledge-coverage').textContent='View changed; browse subjects to refresh.';});
 
   function clearKnowledge(hide=false) {
+    annotationsNext=null;$('next-annotations').disabled=true;
     annotationCites=[];annotationDerivations=[];annotationRelations=[];$('annotation-relations').replaceChildren();$('relation-target').value='';annotationSupersedes=null;annotationWithdraws=null;annotationPreview=null;
     for(const id of ['annotation-subject','annotation-tags','add-relation'])$(id).disabled=false;
     $('annotation-form').hidden=true;$('annotation-subject').value='';$('annotation-text').value='';$('annotation-tags').value='';$('annotation-target').textContent='';$('annotation-preview').textContent='';$('save-annotation').disabled=true;
@@ -983,15 +984,18 @@
     clearKnowledge();$('annotation-status').textContent=`Annotation ${saved.id} appended. Earlier evidence and notes are preserved.`;await loadAnnotations();
   }));
   $('cancel-annotation').addEventListener('click',()=>{cancelWork();clearKnowledge();});
-  async function loadAnnotations() {
-    $('annotation-list').replaceChildren();
-    const value=await rpc({action:'annotations',subject:$('annotation-filter-subject').value.trim()||null,tag:$('annotation-filter-tag').value.trim()||null});if(!value)return;
+  async function loadAnnotations(after=null) {
+    annotationsNext=null;$('next-annotations').disabled=true;$('annotation-list').replaceChildren();
+    const value=await rpc({action:'annotations',subject:$('annotation-filter-subject').value.trim()||null,tag:$('annotation-filter-tag').value.trim()||null,after});if(!value)return;
     if(!Array.isArray(value.records) || value.records.length>1000)throw new Error('Invalid annotations.');
-    $('annotation-status').textContent=`${value.records.length} authorized annotations · ${value.coverage==='partial'?'some source checks unavailable':'source access checked'}. Earlier revisions remain visible.`;
+    if(value.next!=null && (typeof value.next!=='string'||!/^[0-9a-f]{64}$/.test(value.next)))throw new Error('Invalid annotation continuation.');
+    annotationsNext=value.next||null;$('next-annotations').disabled=!annotationsNext;
+    $('annotation-status').textContent=`${value.records.length} authorized annotations on this page · ${value.coverage==='partial'?'some source checks unavailable':'source access checked'}. ${annotationsNext?'More annotations are available.':'End of annotations.'} Correction and withdrawal links include other pages.`;
     showErasedDerivatives($('annotation-list'),value.erased);
     for(const note of value.records){
       if(!note.draft || !Array.isArray(note.draft.cites) || !Array.isArray(note.draft.tags))throw new Error('Invalid annotation.');
       const row=textNode('article','');row.className='annotation';row.append(textNode('h3',note.draft.subject));row.append(textNode('pre',note.draft.text));row.append(textNode('p',`Author: ${note.author} · recorded at Unix ${note.recorded_at || 'unknown'} · ${note.id}`));if(note.draft.derived_from?.length)row.append(textNode('p',`Derived from analysis jobs: ${note.draft.derived_from.join(', ')}`));row.append(textNode('p',`Tags: ${note.draft.tags.join(', ')}${note.draft.supersedes?` · corrects ${note.draft.supersedes}`:''}${note.draft.withdraws?` · withdraws ${note.draft.withdraws}`:''}`));
+      if(value.corrections?.[note.id]?.length)row.append(textNode('p',`Corrected by author · ${value.corrections[note.id].join(', ')} · original retained in history`));
       if(value.withdrawals?.[note.id]?.length)row.append(textNode('p',`Withdrawn by author · ${value.withdrawals[note.id].join(', ')} · original retained in history`,'content-warning'));
       for(const cite of note.draft.cites){const open=textNode('button','Inspect cited evidence');open.addEventListener('click',()=>run(async()=>{
         const entry=scopes.find(s=>sourceId(s)===cite.source);if(!entry)throw new Error('Source catalog changed.');
@@ -1037,7 +1041,9 @@
       }));parent.append(deliver);
     }
   }
-  $('load-annotations').addEventListener('click',()=>run(loadAnnotations));
+  $('load-annotations').addEventListener('click',()=>run(()=>loadAnnotations()));
+  $('next-annotations').addEventListener('click',()=>{if(annotationsNext)run(()=>loadAnnotations(annotationsNext));});
+  for(const id of ['annotation-filter-subject','annotation-filter-tag'])$(id).addEventListener('input',()=>{annotationsNext=null;$('next-annotations').disabled=true;});
   function clearSearch(hide = false) {
     searchRun++; searchStates=[]; searchFilter=null; searchHits.clear(); searchPages=0;
     $('search-results').replaceChildren();$('search-facets').replaceChildren();$('search-coverage').textContent='';

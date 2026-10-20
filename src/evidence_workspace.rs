@@ -14,6 +14,7 @@ use std::{
     path::Path,
     sync::Mutex,
 };
+pub(crate) mod annotations;
 pub mod erasure;
 pub mod publication;
 
@@ -615,18 +616,6 @@ impl Workspace {
                 return Err(Failure::Invalid);
             }
         } else {
-            if kind == "annotation"
-                && tx
-                    .query_row(
-                        "SELECT count(*) FROM entries WHERE kind='annotation'",
-                        [],
-                        |r| r.get::<_, i64>(0),
-                    )
-                    .map_err(invalid)?
-                    >= 1000
-            {
-                return Err(Failure::Invalid);
-            }
             tx.execute(
                 "INSERT INTO entries VALUES(?,?,?)",
                 params![kind, id, bytes],
@@ -641,10 +630,10 @@ impl Workspace {
     }
     /// Bounded view declarations only; cache pages are addressed explicitly.
     pub fn views(&self) -> Result<Vec<Value>> {
-        self.declarations("view", 200)
+        self.declarations("view", Some(200))
     }
     pub fn annotations(&self) -> Result<Vec<Value>> {
-        self.declarations("annotation", 1000)
+        self.declarations("annotation", None)
     }
     /// Keyset pagination over immutable encrypted journal identities. The cursor
     /// is opaque; concurrent inserts before it appear on a fresh traversal.
@@ -705,9 +694,9 @@ impl Workspace {
         Ok((out, None))
     }
     pub(crate) fn analysis_jobs(&self) -> Result<Vec<Value>> {
-        self.declarations("analysis-job", 1000)
+        self.declarations("analysis-job", Some(1000))
     }
-    fn declarations(&self, kind: &str, limit: usize) -> Result<Vec<Value>> {
+    fn declarations(&self, kind: &str, limit: Option<usize>) -> Result<Vec<Value>> {
         let conn = self.conn.lock().map_err(invalid)?;
         let tx = conn.unchecked_transaction().map_err(invalid)?;
         let _custody = self.check_erasure_histories(&tx)?;
@@ -715,9 +704,10 @@ impl Workspace {
             .prepare("SELECT id,body FROM entries WHERE kind=? ORDER BY id LIMIT ?")
             .map_err(invalid)?;
         let rows = q
-            .query_map(params![kind, (limit + 1) as i64], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))
-            })
+            .query_map(
+                params![kind, limit.map(|n| (n + 1) as i64).unwrap_or(-1)],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?)),
+            )
             .map_err(invalid)?;
         let mut out = Vec::new();
         for row in rows {
@@ -726,7 +716,7 @@ impl Workspace {
                 out.push(self.unseal(kind, &id, &b)?);
             }
         }
-        if out.len() > limit {
+        if limit.is_some_and(|n| out.len() > n) {
             return Err(Failure::Invalid);
         }
         Ok(out)

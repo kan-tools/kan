@@ -1,4 +1,5 @@
 //! Explicit reader-authored annotations. Captured assertions remain separate.
+mod paging;
 use super::Readers;
 use crate::{
     evidence_content::ContentError,
@@ -371,6 +372,27 @@ impl Readers {
             return Err(Failure::Invalid.into());
         }
         let declarations = self.declarations(true).await?;
+        let (mut records, erased, partial) = self.authorize_annotations(declarations).await?;
+        let mut withdrawals = linked_records(&records, "withdraws")?;
+        records.retain(|r| {
+            subject
+                .as_ref()
+                .is_none_or(|s| r["draft"]["subject"].as_str() == Some(s))
+                && tag.as_ref().is_none_or(|t| {
+                    r["draft"]["tags"]
+                        .as_array()
+                        .is_some_and(|tags| tags.iter().any(|v| v.as_str() == Some(t)))
+                })
+        });
+        withdrawals.retain(|id, _| records.iter().any(|r| r["id"].as_str() == Some(id)));
+        Ok(
+            json!({"records":records,"erased":erased,"withdrawals":withdrawals,"coverage":if partial {"partial"} else {"complete"},"authority":"Reader-authored annotations; captured speaker claims and imported v1 claims are separate."}),
+        )
+    }
+    async fn authorize_annotations(
+        &self,
+        declarations: Vec<Value>,
+    ) -> Result<(Vec<Value>, Vec<Value>, bool), ContentError> {
         let (authorized, partial) = self.authorized_sources().await;
         let mut records = Vec::new();
         let mut erased = Vec::new();
@@ -413,21 +435,7 @@ impl Readers {
                 records.push(declaration);
             }
         }
-        let mut withdrawals = linked_records(&records, "withdraws")?;
-        records.retain(|r| {
-            subject
-                .as_ref()
-                .is_none_or(|s| r["draft"]["subject"].as_str() == Some(s))
-                && tag.as_ref().is_none_or(|t| {
-                    r["draft"]["tags"]
-                        .as_array()
-                        .is_some_and(|tags| tags.iter().any(|v| v.as_str() == Some(t)))
-                })
-        });
-        withdrawals.retain(|id, _| records.iter().any(|r| r["id"].as_str() == Some(id)));
-        Ok(
-            json!({"records":records,"erased":erased,"withdrawals":withdrawals,"coverage":if partial {"partial"} else {"complete"},"authority":"Reader-authored annotations; captured speaker claims and imported v1 claims are separate."}),
-        )
+        Ok((records, erased, partial))
     }
     /// Relations are attributed assertions with retained correction history.
     /// This view does not rewrite identity or collapse competing assertions.
