@@ -954,7 +954,19 @@ fn persist_worker(
 /// Independent archive worker. Cancellation may leave a remote commit unknown;
 /// retained request bytes are the only retry. Never invokes an inference route.
 pub async fn drain(spool_path: &Path, journal_path: &Path, endpoint: &str) -> Result<()> {
+    drain_with_erasure_history(spool_path, journal_path, endpoint, None).await
+}
+/// Managed sender: use independent custody even when the queue was restored.
+pub async fn drain_with_erasure_history(
+    spool_path: &Path,
+    journal_path: &Path,
+    endpoint: &str,
+    history: Option<crate::evidence_erasure_history::Access>,
+) -> Result<()> {
     let mut spool = Spool::open(spool_path)?;
+    if let Some(history) = history {
+        spool = spool.with_erasure_history(history)?;
+    }
     let binding = spool.status()?;
     let load_journal = || -> Result<Journal> {
         let j = Journal::open(journal_path)?;

@@ -145,6 +145,9 @@ enum Command {
     #[cfg(feature = "v2-crypto")]
     SpoolWatch {
         spool: PathBuf,
+        /// Independently current owner erasure custody for this sender.
+        #[arg(long)]
+        erasure_history: Option<PathBuf>,
         #[arg(long)]
         journal: PathBuf,
         #[arg(long)]
@@ -336,15 +339,25 @@ enum Command {
     /// Audit and inspect a queue; lookup an operation after uncertain admission.
     SpoolStatus {
         spool: PathBuf,
+        /// Independently current owner erasure custody for this sender.
+        #[arg(long)]
+        erasure_history: Option<PathBuf>,
         #[arg(long)]
         operation: Option<String>,
     },
     /// Emit the exact oldest signed request to stdout; does not dequeue it.
-    SpoolHead { spool: PathBuf },
+    SpoolHead {
+        spool: PathBuf,
+        #[arg(long)]
+        erasure_history: Option<PathBuf>,
+    },
     /// Encrypt bounded raw stdin and durably queue it; performs no network request.
     #[cfg(feature = "v2-crypto")]
     QueueInput {
         spool: PathBuf,
+        /// Independently current owner erasure custody for this sender.
+        #[arg(long)]
+        erasure_history: Option<PathBuf>,
         #[arg(long)]
         key: PathBuf,
         /// Canonical hex X25519 public recipient (32 bytes).
@@ -358,6 +371,9 @@ enum Command {
     #[cfg(feature = "v2-crypto")]
     SpoolDrain {
         spool: PathBuf,
+        /// Independently current owner erasure custody for this sender.
+        #[arg(long)]
+        erasure_history: Option<PathBuf>,
         #[arg(long)]
         endpoint: String,
         #[arg(long, default_value_t = 128, value_parser = clap::value_parser!(u16).range(1..=1024))]
@@ -538,6 +554,8 @@ enum Command {
 struct ImportOptions {
     source: PathBuf,
     #[arg(long)]
+    erasure_history: Option<PathBuf>,
+    #[arg(long)]
     spool: PathBuf,
     /// Explicit lineage token, 32 bytes of lowercase hex; never inferred from names.
     #[arg(long)]
@@ -558,7 +576,7 @@ enum ImportSelection {
 fn import_plan(
     options: ImportOptions,
 ) -> Result<(kan::evidence_import::Plan, kan::evidence_spool::Spool), Box<dyn std::error::Error>> {
-    let mut spool = kan::evidence_spool::Spool::open(&options.spool)?;
+    let mut spool = open_spool(&options.spool, options.erasure_history)?;
     let selection = match options.selection {
         ImportSelection::Workspace => kan::evidence_import::Selection::Workspace,
         ImportSelection::Store => kan::evidence_import::Selection::Store,
@@ -572,6 +590,28 @@ fn import_plan(
         &mut spool,
     )?;
     Ok((plan, spool))
+}
+
+fn read_erasure_history(
+    path: Option<PathBuf>,
+) -> Result<Option<kan::evidence_erasure_history::Access>, Box<dyn std::error::Error>> {
+    path.map(|path| {
+        Ok(serde_json::from_slice(&bounded_read(
+            std::fs::File::open(path)?,
+            65536,
+        )?)?)
+    })
+    .transpose()
+}
+fn open_spool(
+    path: &std::path::Path,
+    history: Option<PathBuf>,
+) -> Result<kan::evidence_spool::Spool, Box<dyn std::error::Error>> {
+    let mut spool = kan::evidence_spool::Spool::open(path)?;
+    if let Some(history) = read_erasure_history(history)? {
+        spool = spool.with_erasure_history(history)?;
+    }
+    Ok(spool)
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -639,12 +679,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(feature = "v2-crypto")]
         Command::SpoolWatch {
             spool,
+            erasure_history,
             journal,
             endpoint,
         } => {
+            let history = read_erasure_history(erasure_history)?;
             tokio::runtime::Runtime::new()?.block_on(async {
                 tokio::select! {
-                    result=kan::evidence_operations::drain(&spool,&journal,&endpoint)=>result.map_err(|_|"archive worker failed; inspect queue and journal"),
+                    result=kan::evidence_operations::drain_with_erasure_history(&spool,&journal,&endpoint,history)=>result.map_err(|_|"archive worker failed; inspect queue and journal"),
                     _=shutdown()=>Ok(())
                 }
             })?;
@@ -839,18 +881,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     spool: PathBuf,
                     endpoint: String,
                     recipient: String,
+                    #[serde(default)]
+                    erasure_history: Option<kan::evidence_erasure_history::Access>,
                 }
                 let config: Outbox =
                     serde_json::from_slice(&kan::evidence_gateway::secret_file(&path)?)?;
                 if !config.spool.is_absolute() {
                     return Err("annotation spool must be absolute".into());
                 }
-                reader =
-                    reader.with_annotation_outbox(kan::evidence_library::AnnotationOutbox::new(
-                        config.spool,
-                        config.endpoint,
-                        fixed_hex(&config.recipient)?,
-                    )?)?;
+                let mut outbox = kan::evidence_library::AnnotationOutbox::new(
+                    config.spool,
+                    config.endpoint,
+                    fixed_hex(&config.recipient)?,
+                )?;
+                if let Some(history) = config.erasure_history {
+                    outbox = outbox.with_erasure_history(history)?;
+                }
+                reader = reader.with_annotation_outbox(outbox)?;
             }
             if let (Some(journal), Some(token_path)) = (operations_journal, operations_token_file) {
                 let token = String::from_utf8(kan::evidence_gateway::secret_file(&token_path)?)?
@@ -1062,8 +1109,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 kan::evidence_spool::Spool::create(&spool, &scope, &writer, &audience, budget)?;
             print_json(&serde_json::json!({"status": queue.status()?, "experimental": true}))?;
         }
-        Command::SpoolStatus { spool, operation } => {
-            let mut queue = kan::evidence_spool::Spool::open(&spool)?;
+        Command::SpoolStatus {
+            spool,
+            operation,
+            erasure_history,
+        } => {
+            let mut queue = open_spool(&spool, erasure_history)?;
             let found = operation
                 .as_deref()
                 .map(|id| queue.operation(id))
@@ -1073,16 +1124,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "operation": found, "experimental": true, "durability": "local-spool"}),
             )?;
         }
-        Command::SpoolHead { spool } => {
-            let bytes = kan::evidence_spool::Spool::open(&spool)?
-                .head()?
-                .ok_or("queue is empty")?;
+        Command::SpoolHead {
+            spool,
+            erasure_history,
+        } => {
+            let queue = open_spool(&spool, erasure_history)?;
+            let bytes = queue.head()?.ok_or("queue is empty")?;
             use std::io::Write;
             std::io::stdout().lock().write_all(&bytes)?;
         }
         #[cfg(feature = "v2-crypto")]
         Command::QueueInput {
             spool,
+            erasure_history,
             key,
             recipient,
             operation,
@@ -1090,7 +1144,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let recipient = fixed_hex::<32>(&recipient)?;
             let operation = fixed_hex::<16>(&operation)?;
             let signer = service_identity(&key)?;
-            let mut queue = kan::evidence_spool::Spool::open(&spool)?;
+            let mut queue = open_spool(&spool, erasure_history)?;
             let plaintext =
                 bounded_read(std::io::stdin().lock(), kan::evidence_crypto::MAX_PLAINTEXT)?;
             let queued = kan::evidence_delivery::queue(
@@ -1103,10 +1157,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(feature = "v2-crypto")]
         Command::SpoolDrain {
             spool,
+            erasure_history,
             endpoint,
             limit,
         } => {
-            let mut queue = kan::evidence_spool::Spool::open(&spool)?;
+            let mut queue = open_spool(&spool, erasure_history)?;
             tokio::runtime::Runtime::new()?.block_on(async {
                 for _ in 0..limit {
                     let Some(delivered) =

@@ -91,6 +91,7 @@ pub enum Boundary {
 }
 pub struct Spool {
     conn: Connection,
+    erasure_history: Option<crate::evidence_erasure_history::Access>,
 }
 #[derive(Clone)]
 struct State {
@@ -203,6 +204,7 @@ impl Spool {
     }
     /// Retained local operation identity, not a proof of source-content equivalence.
     pub fn operation(&self, id: &str) -> Result<Option<Operation>> {
+        let current = self.erasure_lease()?;
         if service::unhex(id, 16)?.len() != 16 {
             return Err(Error::Invalid("operation identifier"));
         }
@@ -211,7 +213,8 @@ impl Spool {
             |r| Ok(Operation { position: unsigned(r, 0)?, manifest: r.get(1)?, pending: r.get(2)?, erased:false }),
         ).optional()?;
         if let Some(op) = &mut operation {
-            op.erased = erasure::contains(&self.conn, op.position)?;
+            op.erased = erasure::contains(&self.conn, op.position)?
+                || erasure::selected(current.as_ref(), &op.manifest);
         }
         Ok(operation)
     }
@@ -271,7 +274,10 @@ impl Spool {
         tx.commit()?;
         std::fs::File::open(parent)?.sync_all()?;
         configure(&conn)?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            erasure_history: None,
+        })
     }
     pub fn open(path: &Path) -> Result<Self> {
         Self::open_with_wait(path, Duration::from_secs(5))
@@ -342,7 +348,10 @@ impl Spool {
         audit(&tx)?;
         tx.commit()?;
         configure(&conn)?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            erasure_history: None,
+        })
     }
     pub fn frontier(&self) -> Result<Frontier> {
         let st = state(&self.conn)?;
@@ -359,6 +368,7 @@ impl Spool {
         )?)
     }
     pub fn head(&self) -> Result<Option<Vec<u8>>> {
+        let current = self.erasure_lease()?;
         let row: Option<(u64, Vec<u8>)> = self
             .conn
             .query_row(
@@ -367,8 +377,11 @@ impl Spool {
                 |r| Ok((unsigned(r, 0)?, r.get(1)?)),
             )
             .optional()?;
-        if let Some((position, _)) = &row {
-            if erasure::contains(&self.conn, *position)? {
+        if let Some((position, raw)) = &row {
+            let cid = service::append_manifest(raw)?.cid().to_string();
+            if erasure::contains(&self.conn, *position)?
+                || erasure::selected(current.as_ref(), &cid)
+            {
                 return Err(Error::Erased);
             }
         }
@@ -386,9 +399,16 @@ impl Spool {
         if bytes.len() > MAX_REQUEST {
             return Err(Error::Invalid("request size"));
         }
+        let current = self.erasure_lease()?;
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if erasure::selected(
+            current.as_ref(),
+            &service::append_manifest(bytes)?.cid().to_string(),
+        ) {
+            return Err(Error::Erased);
+        }
         let result = enqueue_in(&tx, bytes, None)?;
         if result != Enqueue::Queued {
             return Ok(result);
@@ -406,6 +426,7 @@ impl Spool {
         operation: &str,
         prepare: impl FnOnce(Status) -> std::result::Result<(Vec<u8>, T), E>,
     ) -> std::result::Result<T, E> {
+        let current = self.erasure_lease()?;
         service::unhex(operation, 16).map_err(Error::from)?;
         let tx = self
             .conn
@@ -427,7 +448,14 @@ impl Spool {
                     |r| unsigned(r, 0),
                 )
                 .map_err(Error::from)?;
-            if erasure::contains(&tx, position)? {
+            let cid: String = tx
+                .query_row(
+                    "SELECT manifest FROM operations WHERE position=?",
+                    [position as i64],
+                    |r| r.get(0),
+                )
+                .map_err(Error::from)?;
+            if erasure::contains(&tx, position)? || erasure::selected(current.as_ref(), &cid) {
                 return Err(Error::Erased.into());
             }
             return Err(Error::ReusedOperation.into());
@@ -449,6 +477,13 @@ impl Spool {
             pending,
             pending_bytes,
         })?;
+        let cid = service::append_manifest(&bytes)
+            .map_err(Error::from)?
+            .cid()
+            .to_string();
+        if erasure::selected(current.as_ref(), &cid) {
+            return Err(Error::Erased.into());
+        }
         if enqueue_in(&tx, &bytes, Some(operation))? != Enqueue::Queued {
             return Err(Error::ReusedOperation.into());
         }
@@ -467,6 +502,7 @@ impl Spool {
         if reply.len() > 65536 {
             return Err(Error::Invalid("reply size"));
         }
+        let current = self.erasure_lease()?;
         let signed: SignedReply =
             serde_json::from_slice(reply).map_err(|_| Error::Invalid("reply JSON"))?;
         if signed.bytes()? != reply {
@@ -484,8 +520,8 @@ impl Spool {
             )
             .optional()?
             .ok_or(Error::Invalid("empty queue"))?;
-        let (position, _, _, _) = coordinates(&request, &st)?;
-        if erasure::contains(&tx, position)? {
+        let (position, _, _, cid) = coordinates(&request, &st)?;
+        if erasure::contains(&tx, position)? || erasure::selected(current.as_ref(), &cid) {
             return Err(Error::Erased);
         }
         service::admitted_manifest(&request, &signed, &st.audience)?;
@@ -686,7 +722,10 @@ mod tests {
     fn capture_wait_restores_policy_and_thread_state_after_unwind() {
         let conn = Connection::open_in_memory().unwrap();
         conn.busy_timeout(Duration::from_secs(5)).unwrap();
-        let mut spool = Spool { conn };
+        let mut spool = Spool {
+            conn,
+            erasure_history: None,
+        };
         let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _: (Result<()>, Duration) =
                 spool.with_capture_wait(Duration::from_millis(20), |_| panic!("fixture unwind"));

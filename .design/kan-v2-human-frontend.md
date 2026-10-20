@@ -799,3 +799,18 @@ refuses older reopens. Current-code handles opened before cleanup refuse late AC
 and duplicate enqueue of retired operations; legacy binaries are not qualified. SQLite reclamation is separate and reports busy
 readers. This mechanism covers actually admitted evidence only: unpublished
 annotation cancellation and transitive publication cleanup remain distinct work.
+
+Managed senders accept independently configured current custody, including after
+restoring a profile-2 spool. Head export, exact replay, generated enqueue and ACK
+check the current selection. Delivery holds the custody lease through the network
+request and ACK, and first retires any selected admitted head/last-ACK payload.
+An unaffected predecessor remains deliverable when a later operation is selected;
+its successor is retired before sending. Missing custody fails closed. Selection
+checks do not treat metadata or a restored queue as a freshness authority.
+
+The API, `spool-head/status/drain/watch`, `queue-input` and import commands accept
+this enrollment; annotation outbox configuration can carry the same Access object.
+Use `--erasure-history` with an independently maintained pinned configuration file.
+Enabling it is a deployment requirement, not a property inferred from a backup.
+Automatic delivery cleanup concerns admitted requests only; unpublished derived
+cancellation and published derivative selection remain required.

@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 pub struct AnnotationOutbox {
+    erasure_history: Option<crate::evidence_erasure_history::Access>,
     path: PathBuf,
     endpoint: String,
     recipient: [u8; 32],
@@ -49,6 +50,7 @@ impl AnnotationOutbox {
             .map_err(|_| Failure::Invalid)?,
         ));
         Ok(Self {
+            erasure_history: None,
             path,
             endpoint,
             recipient,
@@ -57,11 +59,27 @@ impl AnnotationOutbox {
             digest,
         })
     }
+    pub fn with_erasure_history(
+        mut self,
+        history: crate::evidence_erasure_history::Access,
+    ) -> Result<Self, Failure> {
+        self.digest = evidence_service::hex(&Sha256::digest(
+            serde_json::to_vec(&(&self.digest, &history)).map_err(|_| Failure::Invalid)?,
+        ));
+        self.erasure_history = Some(history);
+        self.open()?;
+        Ok(self)
+    }
     pub fn writer(&self) -> &str {
         &self.writer
     }
     fn open(&self) -> Result<Spool, Failure> {
         let mut spool = Spool::open(&self.path).map_err(|_| Failure::Unavailable)?;
+        if let Some(history) = &self.erasure_history {
+            spool = spool
+                .with_erasure_history(history.clone())
+                .map_err(|_| Failure::AccessLimited)?;
+        }
         let current = spool.status().map_err(|_| Failure::Corrupt)?;
         if self.destination["scope"].as_str() != Some(current.scope.as_str())
             || self.destination["issuer"].as_str() != Some(current.audience.as_str())

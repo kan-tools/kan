@@ -85,6 +85,8 @@ pub fn queue(
 /// Sends only a durably queued request. No key, resealing, skipping or frontier guessing.
 /// Cancellation/transport failure can leave the remote committed; retry the same head.
 pub async fn deliver_one(spool: &mut Spool, endpoint: &str) -> Result<Option<Queued>, Error> {
+    let _custody = spool.erasure_lease()?;
+    spool.reconcile_managed_erasure()?;
     let Some(request) = spool.head()? else {
         return Ok(None);
     };

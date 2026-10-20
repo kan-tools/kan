@@ -176,7 +176,92 @@ pub(super) fn frontier(conn: &Connection, st: &State) -> Result<Option<(u64, Str
     }
     Ok(maximum)
 }
+/// Selection comes from independently current custody, never from a restored queue.
+pub(super) fn selected(
+    current: Option<&crate::evidence_erasure_history::Snapshot>,
+    cid: &str,
+) -> bool {
+    current.is_some_and(|c| {
+        c.history
+            .iter()
+            .filter_map(|r| r.change.erasure.as_ref())
+            .any(|e| e.plan.targets.iter().any(|t| t.manifest == cid))
+    })
+}
 impl Spool {
+    /// Independently configured custody follows a sender across backup restores.
+    /// Enrollment does not itself delete data or assert completed cleanup.
+    pub fn with_erasure_history(mut self, history: Access) -> Result<Self> {
+        self.erasure_history = Some(history);
+        self.erasure_lease()?;
+        Ok(self)
+    }
+    /// Keep this lease through a network send: owner publication cannot complete
+    /// while an old authorized head is in flight. ACK still rechecks the head.
+    pub(crate) fn erasure_lease(
+        &self,
+    ) -> Result<Option<crate::evidence_erasure_history::Snapshot>> {
+        let Some(history) = &self.erasure_history else {
+            return Ok(None);
+        };
+        let current = history.current()?;
+        let st = state(&self.conn)?;
+        if history.binding.profile != Profile::Admitted
+            || history.binding.scope != st.scope
+            || history.binding.issuer != st.audience
+        {
+            return Err(invalid());
+        }
+        if exists(&self.conn)? {
+            let ids = current
+                .history
+                .iter()
+                .map(Record::id)
+                .collect::<std::result::Result<BTreeSet<_>, _>>()?;
+            let mut q = self.conn.prepare("SELECT id FROM erasure_authorizations")?;
+            for id in q.query_map([], |r| r.get::<_, String>(0))? {
+                if !ids.contains(&id?) {
+                    return Err(Error::Proof(service::Failure::AccessLimited));
+                }
+            }
+        }
+        Ok(Some(current))
+    }
+    /// Progress safe admitted prefixes before delivery. A selected later entry
+    /// waits for unaffected predecessors; their own current-custody check applies.
+    #[cfg(feature = "v2-crypto")]
+    pub(crate) fn reconcile_managed_erasure(&mut self) -> Result<()> {
+        if let Some(history) = self.erasure_history.clone() {
+            let current = self.erasure_lease()?;
+            let head: Option<String> = self
+                .conn
+                .query_row(
+                    "SELECT manifest FROM pending ORDER BY position LIMIT 1",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            let st = state(&self.conn)?;
+            let ack = st
+                .request
+                .as_ref()
+                .map(|r| coordinates(r, &st).map(|c| c.3))
+                .transpose()?;
+            if !head
+                .iter()
+                .chain(ack.iter())
+                .any(|cid| selected(current.as_ref(), cid))
+            {
+                return Ok(());
+            }
+            match self.reconcile_erasure(&history) {
+                Ok(_) | Err(Error::Conflict) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+
     /// Reconcile only independently authorized, actually admitted erasures. A
     /// selected head prefix may retire while later selected requests wait behind
     /// an unaffected head. No progress across such a gap is ever fabricated.
