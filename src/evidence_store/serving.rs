@@ -672,15 +672,24 @@ impl attested::Archive {
             binding,
             copy: None,
         };
-        let tx = archive.ledger.conn.unchecked_transaction()?;
-        archive.ledger.check_profile(2)?;
-        archive.ledger.check_write_profile(true)?;
-        attested::check_binding(&tx, &archive.binding)?;
-        let checkpoint = load(&tx, &archive.binding)?;
-        check_current(&tx, &archive.binding, &checkpoint)?;
-        let frontier = checkpoint.validate(&archive.binding)?;
+        archive.indexed_frontier(expected_erasure_tip)?;
+        configure(&archive.ledger.conn)?;
+        Ok(archive)
+    }
+    /// Authenticate current indexed metadata without a lifetime audit.
+    pub fn indexed_frontier(&self, expected_erasure_tip: Option<&str>) -> Result<Frontier> {
+        if self.copy.is_some() {
+            return Err(Error::Invalid("indexed admitted profile required"));
+        }
+        let tx = self.ledger.conn.unchecked_transaction()?;
+        self.ledger.check_profile(2)?;
+        self.ledger.check_write_profile(true)?;
+        attested::check_binding(&tx, &self.binding)?;
+        let checkpoint = load(&tx, &self.binding)?;
+        check_current(&tx, &self.binding, &checkpoint)?;
+        let frontier = checkpoint.validate(&self.binding)?;
         if checkpoint.erasure_tip() != expected_erasure_tip
-            || archive.ledger.snapshot()?
+            || self.ledger.snapshot()?
                 != (Snapshot {
                     through: frontier.through,
                     tip: frontier.manifest.clone(),
@@ -689,10 +698,9 @@ impl attested::Archive {
             return Err(Error::Conflict("serving archive frontier or custody"));
         }
         if frontier.through > 0 {
-            selected_metadata(&tx, &archive.binding, &checkpoint, frontier.through)?;
+            selected_metadata(&tx, &self.binding, &checkpoint, frontier.through)?;
         }
         tx.commit()?;
-        configure(&archive.ledger.conn)?;
-        Ok(archive)
+        Ok(frontier)
     }
 }

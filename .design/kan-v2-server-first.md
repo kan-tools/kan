@@ -442,8 +442,13 @@ fork. Interrupted operations retain both the prior proof/index or both new ones;
 exact retries retain prior receipts/proofs. Unselected historical damage remains
 visible to full audit and selected reads, rather than forcing a lifetime scan on
 append. The original `open` / `admit` methods still perform full audits. Indexed
-storage APIs are not yet the HTTP/owner default, and the external owner-custody
-reader still scans its independent control history.
+storage is available through explicit `rebuild-serving-index` and
+`serve-admitted --indexed`; it is not the default. The HTTP admitting service
+retains grant/policy checks and the independently current owner-custody lease
+through indexed admission. Its existing real encrypted-spool delivery test now
+exercises indexed ingestion. The external owner-custody reader still scans its
+independent control history, and proof-serving/Library reads remain on their old
+path; the option is not a claim that the whole deployment is bounded yet.
 
 ### 11. Compatibility and explicit departures
 

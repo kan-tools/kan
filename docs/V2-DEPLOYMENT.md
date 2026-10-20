@@ -128,3 +128,26 @@ activate a restored output under a new path, delete historical backups, or claim
 cryptographic erasure of old backups plus old keys. Replacing a registered path or
 custody configuration is an explicit owner configuration change followed by a
 restart; backup purge and off-host coordination remain separate work.
+
+### Explicit indexed ingest
+
+An admitted archive can opt into authenticated index-based storage startup and
+append. Initialize it once with an explicit full audit:
+
+```sh
+kan-v2 rebuild-serving-index /srv/kan/archive \
+  --binding /etc/kan/archive-binding.json --signing-key /etc/kan/issuer.key
+```
+
+Then add `--indexed` to `serve-admitted`, keeping the same deployment enrollment,
+policy, and independent erasure-history configuration. No missing/corrupt index
+silently triggers a full-history scan. Repair uses the explicit rebuild command;
+it must verify the source archive before replacing derived index data.
+
+This option currently covers admitted-archive startup and ingestion. Proof Library
+reads and independent custody/policy histories still use their existing paths;
+copied archives and full 10 GiB / 100 GiB qualification remain work in progress.
+After an external erasure changes native custody, an old indexed checkpoint is
+refused until explicit verified rebuild (or a fully audited admission) refreshes
+it. Indexed startup/admission verify touched evidence and cannot stand in for the
+full retained-byte audit exposed by `verify`.

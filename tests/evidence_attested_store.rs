@@ -595,7 +595,8 @@ async fn queued_capture_reaches_profile_two_over_http_and_reads_through_proof_re
     let root = temp.path().join("archive");
     std::fs::create_dir(&root).unwrap();
     let archive = Archive::create(&root, binding()).unwrap();
-    let service = AdmittingService::new(archive, identity(7), vec![grant()]).unwrap();
+    archive.rebuild_serving_index(&identity(7)).unwrap();
+    let service = AdmittingService::new_indexed(archive, identity(7), vec![grant()], None).unwrap();
     let listener = http::bind("127.0.0.1:0".parse().unwrap()).await.unwrap();
     let endpoint = format!("http://{}/v1/rpc", listener.local_addr().unwrap());
     let ingest = tokio::spawn(http::serve_admitted(listener, service));
@@ -1183,6 +1184,16 @@ fn independent_owner_erasure_custody_gates_live_services_and_older_restores() {
     .unwrap()
     .with_erasure_history(history.clone())
     .unwrap();
+    archive.rebuild_serving_index(&identity(7)).unwrap();
+    let mut indexed_ingest = AdmittingService::new_indexed(
+        Archive::open_indexed(root.path(), binding(), None).unwrap(),
+        identity(7),
+        vec![grant()],
+        None,
+    )
+    .unwrap()
+    .with_erasure_history(history.clone())
+    .unwrap();
     let query = wire::SignedRequest::sign(
         wire::Request {
             version: 2,
@@ -1198,6 +1209,12 @@ fn independent_owner_erasure_custody_gates_live_services_and_older_restores() {
     .unwrap();
     assert!(reader.dispatch(&query, 101).unwrap().reply.result.is_ok());
     assert!(ingest.dispatch(&first, 101).unwrap().reply.result.is_ok());
+    assert!(indexed_ingest
+        .dispatch(&first, 101)
+        .unwrap()
+        .reply
+        .result
+        .is_ok());
     let change = history
         .preview(Some(erasure.clone()), hex(&[4; 32]))
         .unwrap();
@@ -1221,6 +1238,7 @@ fn independent_owner_erasure_custody_gates_live_services_and_older_restores() {
         ingest.dispatch(&first, 102),
         Err(Failure::AccessLimited)
     ));
+    assert!(indexed_ingest.dispatch(&first, 102).is_err());
     assert!(make_reader(older.path())
         .with_erasure_history(history.clone())
         .is_err());
@@ -1229,6 +1247,20 @@ fn independent_owner_erasure_custody_gates_live_services_and_older_restores() {
     archive
         .reconcile_erasure(&package, package.tip.as_ref().unwrap())
         .unwrap();
+    assert!(
+        indexed_ingest.dispatch(&first, 103).is_err(),
+        "native erasure invalidates the prior index checkpoint"
+    );
+    archive.rebuild_serving_index(&identity(7)).unwrap();
+    assert_eq!(
+        indexed_ingest
+            .dispatch(&first, 103)
+            .unwrap()
+            .reply
+            .result
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
     assert!(reader.dispatch(&query, 103).unwrap().reply.result.is_ok());
     assert_eq!(
         ingest
@@ -1268,6 +1300,7 @@ fn independent_owner_erasure_custody_gates_live_services_and_older_restores() {
     }
     assert!(history.current().is_err());
     assert!(reader.dispatch(&query, 104).is_err());
+    assert!(indexed_ingest.dispatch(&first, 104).is_err());
 }
 
 #[test]
@@ -1962,4 +1995,43 @@ fn indexed_admission_rejects_poisoned_writer_lookup_and_erased_request_replay() 
         .unwrap();
     assert_eq!(third.record.sequence, 3);
     assert_eq!(archive.verify().unwrap(), *third.attestation.frontier());
+}
+
+#[cfg(feature = "v2-service")]
+#[test]
+fn owner_cli_explicitly_initializes_the_index_without_changing_archive_evidence() {
+    use kan::evidence_proof_service::{Binding as WireBinding, Profile};
+    let temp = tempfile::tempdir().unwrap();
+    let archive = Archive::create(temp.path(), binding()).unwrap();
+    let mut config = tempfile::NamedTempFile::new().unwrap();
+    serde_json::to_writer(
+        &mut config,
+        &WireBinding {
+            profile: Profile::Admitted,
+            archive: hex(&binding().archive),
+            scope: hex(&binding().scope),
+            issuer: binding().issuer,
+        },
+    )
+    .unwrap();
+    let mut signer = tempfile::NamedTempFile::new().unwrap();
+    signer.write_all(&[7; 32]).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_kan-v2"))
+        .arg("rebuild-serving-index")
+        .arg(temp.path())
+        .arg("--binding")
+        .arg(config.path())
+        .arg("--signing-key")
+        .arg(signer.path())
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let checkpoint: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(checkpoint["statement"]["frontier"]["through"], "0");
+    assert_eq!(archive.indexed_frontier(None).unwrap(), Frontier::default());
+    assert_eq!(archive.verify().unwrap(), Frontier::default());
 }

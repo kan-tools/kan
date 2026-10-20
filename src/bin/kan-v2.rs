@@ -453,6 +453,9 @@ enum Command {
     #[cfg(feature = "v2-service")]
     ServeAdmitted {
         archive: PathBuf,
+        /// Require an explicitly initialized authenticated index for archive admission.
+        #[arg(long)]
+        indexed: bool,
         #[arg(long)]
         binding: PathBuf,
         #[arg(long)]
@@ -538,6 +541,15 @@ enum Command {
         resume: bool,
         #[command(flatten)]
         proof: ProofOptions,
+    },
+    /// Fully audit an admitted archive and atomically rebuild its serving index.
+    #[cfg(feature = "v2-service")]
+    RebuildServingIndex {
+        archive: PathBuf,
+        #[arg(long)]
+        binding: PathBuf,
+        #[arg(long)]
+        signing_key: PathBuf,
     },
     /// Verify structural evidence in a quiescent file; does not check writable admission.
     Verify {
@@ -1385,6 +1397,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(feature = "v2-service")]
         Command::ServeAdmitted {
             archive,
+            indexed,
             binding,
             signing_key,
             grants,
@@ -1397,16 +1410,53 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             if binding.profile != kan::evidence_proof_service::Profile::Admitted {
                 return Err("ingest requires an explicitly admitted profile".into());
             }
-            let service = kan::evidence_service::AdmittingService::new(
-                kan::evidence_store::attested::Archive::open(&archive, binding.owner_binding()?)?,
-                service_identity(&signing_key)?,
-                match grants {
-                    Some(path) => {
-                        serde_json::from_slice(&bounded_read(std::fs::File::open(path)?, 65536)?)?
-                    }
-                    None => Vec::new(),
-                },
-            )?;
+            let history: Option<kan::evidence_erasure_history::Access> = erasure_history
+                .map(|path| -> Result<_, Box<dyn std::error::Error>> {
+                    Ok(serde_json::from_slice(&bounded_read(
+                        std::fs::File::open(path)?,
+                        65536,
+                    )?)?)
+                })
+                .transpose()?;
+            let current = if indexed {
+                history.as_ref().map(|h| h.current()).transpose()?
+            } else {
+                None
+            };
+            let tip = current
+                .as_ref()
+                .map(|s| s.storage_tip())
+                .transpose()?
+                .flatten();
+            let signer = service_identity(&signing_key)?;
+            let grants = match grants {
+                Some(path) => {
+                    serde_json::from_slice(&bounded_read(std::fs::File::open(path)?, 65536)?)?
+                }
+                None => Vec::new(),
+            };
+            let service = if indexed {
+                kan::evidence_service::AdmittingService::new_indexed(
+                    kan::evidence_store::attested::Archive::open_indexed(
+                        &archive,
+                        binding.owner_binding()?,
+                        tip.as_deref(),
+                    )?,
+                    signer,
+                    grants,
+                    tip.as_deref(),
+                )?
+            } else {
+                kan::evidence_service::AdmittingService::new(
+                    kan::evidence_store::attested::Archive::open(
+                        &archive,
+                        binding.owner_binding()?,
+                    )?,
+                    signer,
+                    grants,
+                )?
+            };
+            drop(current);
             let service = match access_policy {
                 Some(path) => service.with_policy(serde_json::from_slice(&bounded_read(
                     std::fs::File::open(path)?,
@@ -1414,10 +1464,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 )?)?)?,
                 None => service,
             };
-            let service = match erasure_history {
-                Some(path) => service.with_erasure_history(serde_json::from_slice(
-                    &bounded_read(std::fs::File::open(path)?, 65536)?,
-                )?)?,
+            let service = match history {
+                Some(history) => service.with_erasure_history(history)?,
                 None => service,
             };
             tokio::runtime::Runtime::new()?.block_on(async {
@@ -1645,6 +1693,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 "{}",
                 serde_json::json!({"archive":archive_text,"created":if resume {None} else {Some(archive_text)},"resume_requested":resume,"commits":commits,"profile":profile,"experimental":true})
             );
+        }
+        #[cfg(feature = "v2-service")]
+        Command::RebuildServingIndex {
+            archive,
+            binding,
+            signing_key,
+        } => {
+            let binding: kan::evidence_proof_service::Binding =
+                serde_json::from_slice(&bounded_read(std::fs::File::open(binding)?, 4096)?)?;
+            if binding.profile != kan::evidence_proof_service::Profile::Admitted {
+                return Err("serving index currently requires admitted profile".into());
+            }
+            let signer = service_identity(&signing_key)?;
+            let archive =
+                kan::evidence_store::attested::Archive::open(&archive, binding.owner_binding()?)?;
+            print_json(&archive.rebuild_serving_index(&signer)?)?;
         }
         Command::Verify { database, proof } => {
             let copy_profile = proof.copy_profile;

@@ -516,6 +516,7 @@ fn view(record: &Committed) -> RecordView {
 /// Explicit profile-2 ingest. Read operations use the separate proof endpoint;
 /// the durable delivery request/reply format remains compatible with the spool.
 pub struct AdmittingService {
+    indexed: bool,
     erasure_history: Option<crate::evidence_erasure_history::Access>,
     policy: Option<crate::evidence_policy::Access>,
     archive: crate::evidence_store::attested::Archive,
@@ -532,7 +533,30 @@ impl AdmittingService {
             return Err(Failure::AccessLimited);
         }
         archive.verify()?;
+        Self::configured(archive, signer, grants, false)
+    }
+    /// Use an explicitly initialized index for archive metadata/append work.
+    /// External policy/custody are still checked under their existing leases.
+    pub fn new_indexed(
+        archive: crate::evidence_store::attested::Archive,
+        signer: Identity,
+        grants: Vec<Grant>,
+        current_erasure_tip: Option<&str>,
+    ) -> Result<Self> {
+        if archive.binding().issuer != signer.did().as_str() {
+            return Err(Failure::AccessLimited);
+        }
+        archive.indexed_frontier(current_erasure_tip)?;
+        Self::configured(archive, signer, grants, true)
+    }
+    fn configured(
+        archive: crate::evidence_store::attested::Archive,
+        signer: Identity,
+        grants: Vec<Grant>,
+        indexed: bool,
+    ) -> Result<Self> {
         let mut service = Self {
+            indexed,
             erasure_history: None,
             policy: None,
             archive,
@@ -551,9 +575,14 @@ impl AdmittingService {
         {
             return Err(Failure::Invalid);
         }
-        history
-            .current()?
-            .check_package(&self.archive.erasure_history()?)?;
+        let current = history.current()?;
+        if self.indexed {
+            self.archive
+                .indexed_frontier(current.storage_tip()?.as_deref())?;
+        } else {
+            current.check_package(&self.archive.erasure_history()?)?;
+        }
+        drop(current);
         self.erasure_history = Some(history);
         Ok(self)
     }
@@ -591,8 +620,17 @@ impl AdmittingService {
             .as_ref()
             .map(crate::evidence_erasure_history::Access::current)
             .transpose()?;
+        let storage_tip = custody
+            .as_ref()
+            .map(|current| current.storage_tip())
+            .transpose()?
+            .flatten();
         if let Some(current) = &custody {
-            current.check_package(&self.archive.erasure_history()?)?;
+            if self.indexed {
+                self.archive.indexed_frontier(storage_tip.as_deref())?;
+            } else {
+                current.check_package(&self.archive.erasure_history()?)?;
+            }
         }
         // Keep the shared policy lease through admission, so revocation commits
         // after earlier authorized work and before later work can authorize.
@@ -604,7 +642,7 @@ impl AdmittingService {
         if let Some(snapshot) = &policy {
             self.replace_grants(snapshot.grants()?)?;
         }
-        let result = self.append(bytes, now);
+        let result = self.append(bytes, now, storage_tip.as_deref());
         let reply = Reply {
             version: 1,
             request: hex(&Sha256::digest(bytes)),
@@ -675,7 +713,12 @@ impl AdmittingService {
             .map_err(|_| Failure::Unavailable)?);
         Ok(SignedReply { reply, signature })
     }
-    fn append(&mut self, bytes: &[u8], now: u64) -> Result<Output> {
+    fn append(
+        &mut self,
+        bytes: &[u8],
+        now: u64,
+        current_erasure_tip: Option<&str>,
+    ) -> Result<Output> {
         let signed = SignedRequest::decode(bytes)?;
         let request = &signed.request;
         let grant = self
@@ -689,7 +732,12 @@ impl AdmittingService {
         {
             return Err(Failure::AccessLimited);
         }
-        let admitted = self.archive.admit(bytes, &self.signer, grant, now)?;
+        let admitted = if self.indexed {
+            self.archive
+                .admit_indexed(bytes, &self.signer, grant, now, current_erasure_tip)?
+        } else {
+            self.archive.admit(bytes, &self.signer, grant, now)?
+        };
         Ok(Output::Committed {
             record: view(&admitted.record),
             duplicate: admitted.record.duplicate,

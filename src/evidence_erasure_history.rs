@@ -52,7 +52,7 @@ pub struct Snapshot {
     pub tip: Option<String>,
 }
 impl Snapshot {
-    fn storage_tip(&self) -> Result<Option<String>> {
+    pub fn storage_tip(&self) -> Result<Option<String>> {
         self.history
             .iter()
             .rev()
