@@ -4376,10 +4376,12 @@ async fn cold_host_restores_source_search_annotations_and_references_from_indepe
         String::from_utf8_lossy(&activated.stderr)
     );
     let activated: Value = serde_json::from_slice(&activated.stdout).unwrap();
+    assert_eq!(activated["reference"], reference);
     assert_eq!(
-        activated["record"]["selection"],
-        page["records"][0]["selection"]
+        activated["record"]["manifest"],
+        page["records"][0]["manifest"]
     );
+    assert_eq!(activated["record"]["availability"], "available");
     // Prepare exact custody while the restored archive is still intact. Publish
     // only after the reader has stopped, simulating independent owner activity
     // between a backup and a later activation.
