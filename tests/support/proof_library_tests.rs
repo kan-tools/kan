@@ -1160,6 +1160,98 @@ async fn annotations_preview_append_correction_preserve_cites_and_filter_revoked
     assert_eq!(old["corrected_by"].as_array().unwrap().len(), 1);
     assert_eq!(old["to"], "telos/low-latency");
     assert_eq!(graph["records"].as_array().unwrap().len(), 2);
+    let withdrawal = json!({"subject":"telos/reliable-recording","text":"Withdrawn: this interpretation was mistaken","tags":[],"cites":[cite(0)],"supersedes":null,"withdraws":preview["id"]});
+    for field in ["supersedes", "subject", "derived_from", "tags"] {
+        let mut invalid = withdrawal.clone();
+        invalid[field] = match field {
+            "supersedes" => saved["id"].clone(),
+            "subject" => json!("different/subject"),
+            "derived_from" => json!(["invented-analysis"]),
+            _ => json!(["new-tag"]),
+        };
+        ui.call(
+            json!({"action":"annotation-preview","draft":invalid}),
+            if field == "subject" { 403 } else { 400 },
+        )
+        .await;
+    }
+    let retract_preview = ui
+        .call(
+            json!({"action":"annotation-preview","draft":withdrawal}),
+            200,
+        )
+        .await;
+    assert_eq!(
+        retract_preview["declaration"]["draft"]["cites"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        retract_preview["declaration"]["analysis_trigger_plan"],
+        json!([])
+    );
+    let retract = ui
+        .call(
+            json!({"action":"annotation-save","draft":withdrawal,"preview":retract_preview["id"]}),
+            200,
+        )
+        .await;
+    assert_eq!(
+        retract,
+        ui.call(
+            json!({"action":"annotation-save","draft":withdrawal,"preview":retract_preview["id"]}),
+            200
+        )
+        .await
+    );
+    let history = ui
+        .call(
+            json!({"action":"annotations","subject":null,"tag":"corrected"}),
+            200,
+        )
+        .await;
+    assert_eq!(history["records"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        history["withdrawals"][preview["id"].as_str().unwrap()],
+        json!([retract["id"]])
+    );
+    let graph = ui
+        .call(
+            json!({"action":"knowledge-graph","subject":"telos/reliable-recording","day":false}),
+            200,
+        )
+        .await;
+    assert_eq!(graph["records"].as_array().unwrap().len(), 3);
+    assert_eq!(graph["relations"].as_array().unwrap().len(), 2);
+    let edge = graph["relations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["kind"] == "DependsOn")
+        .unwrap();
+    assert_eq!(edge["withdrawn_by"], json!([retract["id"]]));
+    // A withdrawal labels history; it does not erase old search associations.
+    assert_eq!(
+        ui.call(tagged, 200).await["hits"].as_array().unwrap().len(),
+        2
+    );
+    let mut recursive = withdrawal.clone();
+    recursive["withdraws"] = retract["id"].clone();
+    ui.call(
+        json!({"action":"annotation-preview","draft":recursive}),
+        400,
+    )
+    .await;
+    assert_eq!(
+        ui.call(
+            json!({"action":"annotation-triggers","id":retract["id"],"retry":true}),
+            200
+        )
+        .await["attempts"],
+        json!([])
+    );
     f.remove(2);
     let absent = ui
         .call(json!({"action":"annotation-preview","draft":draft}), 200)
@@ -1182,6 +1274,11 @@ async fn annotations_preview_append_correction_preserve_cites_and_filter_revoked
         .is_empty());
     ui.call(json!({"action":"annotation-preview","draft":draft}), 403)
         .await;
+    ui.call(
+        json!({"action":"annotation-preview","draft":withdrawal}),
+        403,
+    )
+    .await;
     let hidden = ui
         .call(
             json!({"action":"knowledge-graph","subject":null,"day":false}),

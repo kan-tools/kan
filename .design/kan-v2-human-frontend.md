@@ -229,6 +229,20 @@ unavailable evidence. The private workspace has a 1,000 annotation declaration
 budget, with explicit capacity failure and no automatic expiry. Other relation
 kinds, imported-v1 claim rendering and tag-triggered analysis remain separate work.
 
+### Annotation withdrawal
+
+`withdraws` appends a reason against one earlier annotation by the same author
+and subject. It is mutually exclusive with correction, carries no new tags or
+relations, inherits all original citations and analysis lineage, and schedules no
+automatic analysis. A withdrawal cannot target another withdrawal. The original
+record, subject, relation edges and published copies remain evidence; lists and
+relation views label the author's withdrawal rather than erase history. Retraction
+of a correction does not implicitly retract its parent or reinstate another record.
+A new declaration can express a later position. Restored links affect display only
+when the original and linked record are both authorized and their authors and
+subjects match. Missing parents remain unresolved. Search over annotation history
+continues to include withdrawn records and reports that history scope explicitly.
+
 ### Live proof-archive ingress
 
 `serve-admitted` connects the existing durable spool protocol to the profile-2

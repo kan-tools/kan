@@ -36,6 +36,14 @@ impl Readers {
             .get("analysis_trigger_plan")
             .cloned()
             .unwrap_or(json!([]));
+        if draft.withdraws.is_some() {
+            if plan != json!([]) {
+                return Err(Failure::Invalid.into());
+            }
+            return Ok(
+                json!({"annotation":id,"plan":[],"attempts":[],"state":"withdrawal-does-not-trigger-analysis"}),
+            );
+        }
         if retry {
             if attempts.len() >= 32 {
                 return Err(ContentError::Limited);

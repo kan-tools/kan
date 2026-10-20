@@ -800,3 +800,17 @@ test('saved import views retain explicit trust and control selections when reope
  u.node('load-views').click();await tick();await u.respond({views:[saved],coverage:'complete'});walk(u.node('saved-views')).find(n=>n.textContent==='Open pinned import & trust view').click();await tick();let request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'proof-import');assert.deepEqual(request.view,query.view);assert.deepEqual(request.pin,pin);
  await u.respond(importView);walk(u.node('content-panel')).find(n=>n.textContent==='Read repo.car').click();await tick();request=JSON.parse(u.pending[0].opts.body);assert.deepEqual(request.view,query.view);u.node('lock').click();await u.respond({...importView,file:{index:0,path:'repo.car',state:'incomplete'}});assert.equal(u.node('saved-views').children.length,0);
 });
+
+test('withdrawal previews the inherited evidence and reason, labels retained history, and resets on lock',async()=>{
+ const u=ui();await openKnowledge(u);u.node('load-annotations').click();await tick();
+ const note={id:'a'.repeat(64),author:'owner',draft:{subject:'decision/one',text:'Original assertion',tags:['decision'],supersedes:null,cites:[{source:'archive-A',pin,selection:proofRow.selection}],relations:[{kind:'About',target:'subject'}]}};
+ await u.respond({records:[note],withdrawals:{[note.id]:['earlier-withdrawal']},coverage:'complete'});
+ const row=u.node('annotation-list').children[0];assert.ok(row.children.some(n=>n.textContent.includes('Withdrawn by author')));
+ row.children.find(n=>n.textContent==='Withdraw annotation').click();assert.equal(u.node('annotation-subject').disabled,true);assert.equal(u.node('annotation-tags').disabled,true);assert.equal(u.node('add-relation').disabled,true);assert.match(u.node('annotation-target').textContent,/withdrawal of/);
+ u.node('annotation-text').value='The interpretation was mistaken';u.node('annotation-form').events.submit({preventDefault(){}});await tick();
+ const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.draft.withdraws,note.id);assert.equal(request.draft.supersedes,null);assert.deepEqual(request.draft.cites,note.draft.cites);assert.deepEqual(request.draft.tags,[]);assert.equal(request.draft.relations,undefined);
+ const withdrawal={id:'withdrawal',author:'owner',draft:request.draft};await u.respond({id:withdrawal.id,declaration:withdrawal,evidence:[{source:'archive-A',record:proofRow,availability:'available'}],effect:'Append withdrawal; retain original'});
+ u.node('save-annotation').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).draft.withdraws,note.id);await u.respond(withdrawal);await u.respond({records:[note,withdrawal],withdrawals:{[note.id]:[withdrawal.id]},coverage:'complete'});
+ assert.equal(u.node('annotation-list').children.length,2);assert.ok(!u.node('annotation-list').children[1].children.some(n=>n.textContent==='Withdraw annotation'||n.textContent==='Append correction'));
+ u.node('lock').click();assert.equal(u.node('annotation-list').children.length,0);assert.equal(u.node('annotation-subject').disabled,false);assert.equal(u.node('annotation-text').value,'');
+});

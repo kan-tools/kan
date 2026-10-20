@@ -947,3 +947,16 @@ presentation offsets to zero, verifies the selected import, and preserves every
 control citation. It does not add trust in an author who was not selected.
 Only views whose complete source set is currently authorized are listed. This
 shares the encrypted workspace's 200-view and 256-KiB per-declaration bounds.
+
+### Withdraw an annotation without erasing its history
+
+Choose **Withdraw annotation**, enter a reason, preview its exact parent and
+inherited citations, then append. The shared `annotation-preview` / `annotation-save`
+API accepts `withdraws` in place of `supersedes`, with an empty tag/relation list.
+Only the original author's workspace can withdraw that author's assertion on the
+same subject. Earlier text, source evidence, relation edges, published copies and
+analysis lineage remain retained; the UI labels the withdrawal in annotation and
+subject history. Withdrawal does not cancel earlier analysis or enqueue new jobs.
+A withdrawal targets one declaration, not its correction ancestors. Search over
+annotation history still includes withdrawn assertions. This operation is separate
+from owner-controlled erasure of retained payload bytes.

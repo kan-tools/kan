@@ -582,7 +582,7 @@ impl super::Readers {
             });
         // Repeat the current authorization check after resolving annotation visibility.
         reader.page(&target.pin, None, 1).await?;
-        value["annotation_filter"] = json!({"subject":filter.annotation_subject,"tag":filter.annotation_tag,"coverage":visible["coverage"],"basis":"Currently authorized annotation history, including corrections. At least one cited occurrence must match. Corpus facets and attempt reconstruction coverage are independent of this filter; saved views re-evaluate current annotations."});
+        value["annotation_filter"] = json!({"subject":filter.annotation_subject,"tag":filter.annotation_tag,"coverage":visible["coverage"],"basis":"Currently authorized annotation history, including corrections and withdrawn assertions. At least one cited occurrence must match. Corpus facets and attempt reconstruction coverage are independent of this filter; saved views re-evaluate current annotations."});
         Ok(())
     }
 }

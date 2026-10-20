@@ -15,7 +15,7 @@
   let annotationRecovery=null;
   let searchStates = [], searchRun = 0, searchFilter = null, searchHits = new Map(), searchPages = 0;
   let analysisEnabled=false,analysisDraft=null,analysisPreview=null,analysisRecipes=[];
-  let annotationsEnabled=false, annotationCites=[], annotationDerivations=[], annotationRelations=[], annotationSupersedes=null, annotationPreview=null;
+  let annotationsEnabled=false, annotationCites=[], annotationDerivations=[], annotationRelations=[], annotationSupersedes=null, annotationWithdraws=null, annotationPreview=null;
   let attemptMode = false;
   let pinWire = null, contentEnabled = false, contentValue = null, returnItem = null;
   function navigation(visible) {
@@ -860,7 +860,7 @@
     $('knowledge-coverage').textContent=`${value.coverage} source checks · ${value.authority}`;
     if(subject===null)for(const node of value.subjects){const button=textNode('button',`${node.subject} · ${node.kind} · ${node.declarations} declarations`);button.addEventListener('click',()=>run(()=>knowledgeSubjects(node.subject)));$('knowledge-subjects').append(button);}
     const root=$('knowledge-detail');if(subject!==null)root.append(textNode('h3',subject));
-    for(const record of value.records){const note=record.declaration,section=document.createElement('article');section.className='annotation';section.append(textNode('p',`${note.author} · ${note.id}${record.corrected_by.length?' · corrected by '+record.corrected_by.join(', '):''}`,'content-identity'));appendPagedText(section,note.draft.text,'content-text');
+    for(const record of value.records){const note=record.declaration,section=document.createElement('article');section.className='annotation';section.append(textNode('p',`${note.author} · ${note.id}${record.corrected_by.length?' · corrected by '+record.corrected_by.join(', '):''}${record.withdrawn_by?.length?' · withdrawn by '+record.withdrawn_by.join(', '):''}${note.draft.withdraws?' · withdrawal of '+note.draft.withdraws:''}`,'content-identity'));appendPagedText(section,note.draft.text,'content-text');
       for(const match of note.draft.text.matchAll(/```(day-(?:atom|bridge|telos))\s*\n([\s\S]*?)```/g)){
         try{details(section,`Declared ${match[1]} structure`,JSON.stringify(JSON.parse(match[2]),null,2));}catch(_){section.append(textNode('p','Malformed process declaration remains visible in the original text.','content-warning'));}
       }
@@ -868,22 +868,24 @@
       if(analysisEnabled){const assess=textNode('button','Assess cited evidence');assess.addEventListener('click',()=>run(()=>editAnalysis(note.draft.cites)));section.append(assess);}root.append(section);
     }
     if(value.relations.length){const table=document.createElement('table');table.className='relation-table';const head=document.createElement('tr');for(const label of ['From','Relation','To','Assertion'])head.append(textNode('th',label));table.append(head);
-      for(const edge of value.relations){const row=document.createElement('tr');for(const name of [edge.from,edge.kind,edge.to]){const cell=document.createElement('td');if(name===edge.kind)cell.textContent=name;else{const open=textNode('button',name);open.addEventListener('click',()=>run(()=>knowledgeSubjects(name)));cell.append(open);}row.append(cell);}row.append(textNode('td',`${edge.author} · ${edge.annotation}${edge.corrected_by.length?' · corrected assertion retained':''}`));table.append(row);}root.append(table);}
+      for(const edge of value.relations){const row=document.createElement('tr');for(const name of [edge.from,edge.kind,edge.to]){const cell=document.createElement('td');if(name===edge.kind)cell.textContent=name;else{const open=textNode('button',name);open.addEventListener('click',()=>run(()=>knowledgeSubjects(name)));cell.append(open);}row.append(cell);}row.append(textNode('td',`${edge.author} · ${edge.annotation}${edge.corrected_by.length?' · corrected assertion retained':''}${edge.withdrawn_by?.length?' · withdrawn assertion retained':''}`));table.append(row);}root.append(table);}
     if(subject!==null&&!value.records.length)root.append(textNode('p','No currently authorized declaration for this subject. A relation target does not imply that its evidence is available.','content-coverage'));
   }
   $('load-subjects').addEventListener('click',()=>run(()=>knowledgeSubjects()));
   $('knowledge-mode').addEventListener('change',()=>{cancelWork();$('knowledge-subjects').replaceChildren();$('knowledge-detail').replaceChildren();$('knowledge-coverage').textContent='View changed; browse subjects to refresh.';});
 
   function clearKnowledge(hide=false) {
-    annotationCites=[];annotationDerivations=[];annotationRelations=[];$('annotation-relations').replaceChildren();$('relation-target').value='';annotationSupersedes=null;annotationPreview=null;
+    annotationCites=[];annotationDerivations=[];annotationRelations=[];$('annotation-relations').replaceChildren();$('relation-target').value='';annotationSupersedes=null;annotationWithdraws=null;annotationPreview=null;
+    for(const id of ['annotation-subject','annotation-tags','add-relation'])$(id).disabled=false;
     $('annotation-form').hidden=true;$('annotation-subject').value='';$('annotation-text').value='';$('annotation-tags').value='';$('annotation-target').textContent='';$('annotation-preview').textContent='';$('save-annotation').disabled=true;
     if(hide){$('knowledge-subjects').replaceChildren();$('knowledge-detail').replaceChildren();$('knowledge-coverage').textContent='';annotationsEnabled=false;$('knowledge').hidden=true;$('annotation-list').replaceChildren();$('annotation-status').textContent='';$('annotation-filter-subject').value='';$('annotation-filter-tag').value='';}
   }
-  function editAnnotation(cites,subject='',supersedes=null,derived=[],relations=[]) {
-    cancelWork();clearKnowledge();annotationCites=cites;annotationDerivations=derived;annotationRelations=relations.map(r=>({...r}));renderAnnotationRelations();annotationSupersedes=supersedes;
+  function editAnnotation(cites,subject='',supersedes=null,derived=[],relations=[],withdraws=null) {
+    cancelWork();clearKnowledge();annotationCites=cites;annotationDerivations=derived;annotationRelations=relations.map(r=>({...r}));renderAnnotationRelations();annotationSupersedes=supersedes;annotationWithdraws=withdraws;
+    for(const id of ['annotation-subject','annotation-tags','add-relation'])$(id).disabled=Boolean(withdraws);
     $('annotation-form').hidden=false;$('annotation-subject').value=subject;
-    $('annotation-target').textContent=`${cites.length} evidence citation${cites.length===1?'':'s'}${supersedes?` · correction of ${supersedes}`:''}`;
-    $('annotation-subject').focus();
+    $('annotation-target').textContent=`${cites.length} evidence citation${cites.length===1?'':'s'}${supersedes?` · correction of ${supersedes}`:''}${withdraws?` · withdrawal of ${withdraws}. Enter the reason below; the original and its citations stay in history.`:''}`;
+    $(withdraws?'annotation-text':'annotation-subject').focus();
   }
   $('annotate-source').addEventListener('click',()=>{
     if(!isProof() || selected===null)return;
@@ -892,7 +894,7 @@
   for(const id of ['annotation-subject','annotation-text','annotation-tags'])$(id).addEventListener('input',()=>{cancelWork();annotationPreview=null;$('save-annotation').disabled=true;$('annotation-preview').textContent='';});
   $('annotation-form').addEventListener('submit',event=>{event.preventDefault();run(async()=>{
     annotationPreview=null;$('save-annotation').disabled=true;$('annotation-preview').textContent='Verifying citations and authorship…';
-    const draft={subject:$('annotation-subject').value.trim(),text:$('annotation-text').value.trim(),tags:$('annotation-tags').value.split(',').map(t=>t.trim()).filter(Boolean),cites:annotationCites,supersedes:annotationSupersedes,...(annotationDerivations.length?{derived_from:annotationDerivations}:{}),...(annotationRelations.length?{relations:annotationRelations}:{})};
+    const draft={subject:$('annotation-subject').value.trim(),text:$('annotation-text').value.trim(),tags:$('annotation-tags').value.split(',').map(t=>t.trim()).filter(Boolean),cites:annotationCites,supersedes:annotationSupersedes,...(annotationWithdraws?{withdraws:annotationWithdraws}:{}),...(annotationDerivations.length?{derived_from:annotationDerivations}:{}),...(annotationRelations.length?{relations:annotationRelations}:{})};
     const checked=await rpc({action:'annotation-preview',draft});if(!checked)return;
     if(typeof checked.id!=='string' || !checked.declaration?.draft || !Array.isArray(checked.evidence))throw new Error('Invalid annotation preview.');
     annotationPreview=checked;$('annotation-preview').textContent=`Signed by ${checked.declaration.author}\n${checked.effect}\n${checked.evidence.map(e=>`${e.source} · occurrence ${e.record.sequence} · ${e.availability}`).join('\n')}\n\n${checked.declaration.draft.subject}\n${checked.declaration.draft.text}\nTags: ${checked.declaration.draft.tags.join(', ')}\nRelations: ${JSON.stringify(checked.declaration.draft.relations||[])}\n${checked.declaration.analysis_trigger_plan?.length?'Automatic analysis after append:\n'+JSON.stringify(checked.declaration.analysis_trigger_plan,null,2):'No automatic analysis scheduled.'}`;$('save-annotation').disabled=false;
@@ -910,7 +912,8 @@
     $('annotation-status').textContent=`${value.records.length} authorized annotations · ${value.coverage==='partial'?'some source checks unavailable':'source access checked'}. Earlier revisions remain visible.`;
     for(const note of value.records){
       if(!note.draft || !Array.isArray(note.draft.cites) || !Array.isArray(note.draft.tags))throw new Error('Invalid annotation.');
-      const row=textNode('article','');row.className='annotation';row.append(textNode('h3',note.draft.subject));row.append(textNode('pre',note.draft.text));row.append(textNode('p',`Author: ${note.author} · recorded at Unix ${note.recorded_at || 'unknown'} · ${note.id}`));if(note.draft.derived_from?.length)row.append(textNode('p',`Derived from analysis jobs: ${note.draft.derived_from.join(', ')}`));row.append(textNode('p',`Tags: ${note.draft.tags.join(', ')}${note.draft.supersedes?` · corrects ${note.draft.supersedes}`:''}`));
+      const row=textNode('article','');row.className='annotation';row.append(textNode('h3',note.draft.subject));row.append(textNode('pre',note.draft.text));row.append(textNode('p',`Author: ${note.author} · recorded at Unix ${note.recorded_at || 'unknown'} · ${note.id}`));if(note.draft.derived_from?.length)row.append(textNode('p',`Derived from analysis jobs: ${note.draft.derived_from.join(', ')}`));row.append(textNode('p',`Tags: ${note.draft.tags.join(', ')}${note.draft.supersedes?` · corrects ${note.draft.supersedes}`:''}${note.draft.withdraws?` · withdraws ${note.draft.withdraws}`:''}`));
+      if(value.withdrawals?.[note.id]?.length)row.append(textNode('p',`Withdrawn by author · ${value.withdrawals[note.id].join(', ')} · original retained in history`,'content-warning'));
       for(const cite of note.draft.cites){const open=textNode('button','Inspect cited evidence');open.addEventListener('click',()=>run(async()=>{
         const entry=scopes.find(s=>sourceId(s)===cite.source);if(!entry)throw new Error('Source catalog changed.');
         clearContent();clearInspector();checks.clear();buttons.clear();selections.clear();$('rows').replaceChildren();$('previous').disabled=true;$('next').disabled=true;
@@ -925,7 +928,11 @@
         const results=document.createElement('div'),check=textNode('button','Inspect tag-triggered jobs');
         check.addEventListener('click',()=>run(()=>showTriggers(note.id,results)));row.append(check);row.append(results);
       }
-      const correct=textNode('button','Append correction');correct.addEventListener('click',()=>editAnnotation(note.draft.cites,note.draft.subject,note.id,note.draft.derived_from||[],note.draft.relations||[]));row.append(correct);$('annotation-list').append(row);
+      if(!note.draft.withdraws){
+        const withdraw=textNode('button','Withdraw annotation');withdraw.addEventListener('click',()=>editAnnotation(note.draft.cites,note.draft.subject,null,[],[],note.id));row.append(withdraw);
+        const correct=textNode('button','Append correction');correct.addEventListener('click',()=>editAnnotation(note.draft.cites,note.draft.subject,note.id,note.draft.derived_from||[],note.draft.relations||[]));row.append(correct);
+      }
+      $('annotation-list').append(row);
     }
   }
   async function showTriggers(id,parent,retry=false){
