@@ -254,6 +254,8 @@ enum Command {
     /// Recover an explicitly pinned import into a NEW private plaintext directory.
     #[cfg(feature = "v2-crypto")]
     RestoreImport {
+        #[command(flatten)]
+        proof: ProofOptions,
         database: PathBuf,
         destination: PathBuf,
         #[arg(long)]
@@ -840,6 +842,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(feature = "v2-crypto")]
         Command::RestoreImport {
+            proof,
             database,
             destination,
             expected_plan,
@@ -848,17 +851,32 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             recipient_key,
             max_records,
         } => {
-            let report = kan::evidence_restore::restore(
-                &database,
-                &destination,
-                &kan::evidence_restore::Pins {
-                    expected_plan: &expected_plan,
-                    scope: fixed_hex::<32>(&scope)?,
-                    writer: &writer,
-                    recipient_private: recipient_private(&recipient_key)?,
-                    max_records,
-                },
-            )?;
+            let pins = kan::evidence_restore::Pins {
+                expected_plan: &expected_plan,
+                scope: fixed_hex::<32>(&scope)?,
+                writer: &writer,
+                recipient_private: recipient_private(&recipient_key)?,
+                max_records,
+            };
+            let copied = proof.copy_profile;
+            let report = match proof.binding()? {
+                None => kan::evidence_restore::restore(&database, &destination, &pins)?,
+                Some(b) => kan::evidence_restore::restore_proof(
+                    &database,
+                    &destination,
+                    &pins,
+                    &kan::evidence_proof_service::Binding {
+                        profile: if copied {
+                            kan::evidence_proof_service::Profile::Copied
+                        } else {
+                            kan::evidence_proof_service::Profile::Admitted
+                        },
+                        archive: kan::evidence_service::hex(&b.archive),
+                        scope: kan::evidence_service::hex(&b.scope),
+                        issuer: b.issuer,
+                    },
+                )?,
+            };
             print_json(&report)?;
         }
         #[cfg(feature = "v2-crypto")]
@@ -1392,28 +1410,7 @@ fn fixed_hex<const N: usize>(value: &str) -> Result<[u8; N], Box<dyn std::error:
 
 #[cfg(feature = "v2-crypto")]
 fn recipient_private(path: &std::path::Path) -> Result<[u8; 32], Box<dyn std::error::Error>> {
-    let before = std::fs::symlink_metadata(path)?;
-    if !before.is_file() || before.file_type().is_symlink() || before.len() != 32 {
-        return Err("recipient key must be a regular file of exactly 32 raw bytes".into());
-    }
-    #[cfg(not(unix))]
-    return Err("recipient key permission validation is currently Unix-only".into());
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::{MetadataExt, PermissionsExt};
-        let file = std::fs::File::open(path)?;
-        let actual = file.metadata()?;
-        if !actual.is_file()
-            || actual.permissions().mode() & 0o077 != 0
-            || actual.dev() != before.dev()
-            || actual.ino() != before.ino()
-        {
-            return Err("recipient key must be an unchanged owner-only regular file".into());
-        }
-        bounded_read(file, 32)?
-            .try_into()
-            .map_err(|_| "recipient key must be exactly 32 bytes".into())
-    }
+    Ok(kan::evidence_crypto::read_private_key(path)?)
 }
 
 #[cfg(feature = "v2-service")]

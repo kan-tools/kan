@@ -3,7 +3,7 @@ use crate::{
     evidence_delivery, evidence_service as service, evidence_spool::Spool,
     migration_preflight as preflight, sign::Identity,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
@@ -35,7 +35,7 @@ pub enum Error {
     Invalid(&'static str),
 }
 type Result<T> = std::result::Result<T, Error>;
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Selection {
     Workspace,

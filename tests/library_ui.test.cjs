@@ -661,3 +661,11 @@ test('import browser exposes incomplete inventories and rejects a source citatio
  const u=ui();await openImported(u);await u.respond({...importView,state:'inventory-incomplete',files:[],inventory_cites:[]});assert.ok(walk(u.node('content-panel')).some(n=>n.textContent.includes('complete inventory is not selected')));
  walk(u.node('attempts')).find(n=>n.textContent==='Browse imported files and claims').click();await tick();await u.respond({...importView,inventory_cites:[{record:{...proofRow,sequence:'99'},bytes:['1','2']}]});assert.equal(u.node('content-panel').children.length,0);assert.equal(u.node('inspection').hidden,true);
 });
+test('owner migration exposes only configured import action and shows pinned snapshot before queueing',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();await u.respond({owner:'owner-did',targets:[{id:'legacy',kind:'migration'}],jobs:[],limits:{jobs:10}});
+ assert.equal(u.node('owner-operation').value,'import');assert.equal(u.node('owner-operation').children.length,1);u.node('owner-job-form').events.submit({preventDefault(){}});await tick();assert.equal(JSON.parse(u.pending[0].opts.body).operation,'import');
+ await u.respond({digest:'pinned',nonce:'a'.repeat(64),contract:{import:{plan:'commitment',files:2},effect:'Queue encrypted batch; retain originals',cancellation:'Safe boundary'}});assert.match(u.node('owner-preview').textContent,/commitment/);assert.match(u.node('owner-preview').textContent,/retain originals/);
+});
+test('owner import recovery offers its explicit plaintext restoration operation',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();await u.respond({owner:'owner-did',targets:[{id:'snapshot',kind:'import-recovery'}],jobs:[],limits:{jobs:10}});assert.equal(u.node('owner-operation').value,'restore-import');assert.equal(u.node('owner-operation').children.length,1);
+});

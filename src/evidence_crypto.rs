@@ -95,3 +95,38 @@ pub fn public_key(private: &[u8; 32]) -> Result<[u8; 32], Error> {
         .try_into()
         .map_err(|_| Error::Invalid)
 }
+
+/// Load an explicit existing recipient credential without generating a key.
+/// The opened file must match the inspected owner-private, singly linked inode.
+pub fn read_private_key(path: &std::path::Path) -> std::io::Result<[u8; 32]> {
+    use std::io::{Error, Read};
+    let before = std::fs::symlink_metadata(path)?;
+    if !before.is_file() || before.file_type().is_symlink() || before.len() != 32 {
+        return Err(Error::other(
+            "recipient key must be a regular file of exactly 32 bytes",
+        ));
+    }
+    #[cfg(not(unix))]
+    return Err(Error::other("recipient key custody checks require Unix"));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let file = std::fs::File::open(path)?;
+        let actual = file.metadata()?;
+        if !actual.is_file()
+            || actual.permissions().mode() & 0o077 != 0
+            || actual.nlink() != 1
+            || actual.dev() != before.dev()
+            || actual.ino() != before.ino()
+        {
+            return Err(Error::other(
+                "recipient key must be an unchanged private singly linked regular file",
+            ));
+        }
+        let mut bytes = Vec::new();
+        file.take(33).read_to_end(&mut bytes)?;
+        bytes
+            .try_into()
+            .map_err(|_| Error::other("recipient key must be exactly 32 bytes"))
+    }
+}

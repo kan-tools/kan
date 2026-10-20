@@ -169,6 +169,15 @@ impl Workspace {
         Ok(workspace)
     }
     /// Queue the immutable authored declaration, not a mutable browser draft.
+    pub(crate) fn queue_import(
+        &self,
+        plan: &crate::evidence_import::Plan,
+        expected: &str,
+        spool: &mut crate::evidence_spool::Spool,
+        limit: usize,
+    ) -> Result<crate::evidence_import::Progress, crate::evidence_import::Error> {
+        plan.enqueue(expected, spool, &self.signer, limit)
+    }
     pub(crate) fn queue_annotation(
         &self,
         spool: &mut crate::evidence_spool::Spool,

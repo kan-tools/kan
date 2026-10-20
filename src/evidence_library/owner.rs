@@ -17,6 +17,26 @@ use std::{
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Target {
+    ImportRecovery {
+        id: String,
+        database: PathBuf,
+        output: PathBuf,
+        binding: Option<Binding>,
+        plan: String,
+        scope: String,
+        writer: String,
+        recipient_key: PathBuf,
+        max_records: u64,
+    },
+    Migration {
+        id: String,
+        source: PathBuf,
+        selection: crate::evidence_import::Selection,
+        source_id: String,
+        recipient: String,
+        spool: PathBuf,
+        batch: usize,
+    },
     Archive {
         id: String,
         root: PathBuf,
@@ -31,7 +51,10 @@ pub enum Target {
 impl Target {
     fn id(&self) -> &str {
         match self {
-            Self::Archive { id, .. } | Self::Operations { id, .. } => id,
+            Self::Archive { id, .. }
+            | Self::Operations { id, .. }
+            | Self::Migration { id, .. }
+            | Self::ImportRecovery { id, .. } => id,
         }
     }
 }
@@ -41,6 +64,8 @@ pub enum Operation {
     Backup,
     Recover,
     Rotate,
+    Import,
+    RestoreImport,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -77,6 +102,7 @@ pub struct Owner {
     targets: BTreeMap<String, Target>,
     workspace: Arc<Workspace>,
     max_jobs: usize,
+    preparation: Arc<tokio::sync::Semaphore>,
     active: Mutex<BTreeMap<String, tokio::task::JoinHandle<()>>>,
 }
 fn private_directory(path: &Path) -> Result<(), Failure> {
@@ -127,6 +153,57 @@ impl Owner {
                     }
                 }
                 Target::Operations { collection, .. } => private_directory(collection)?,
+                Target::ImportRecovery {
+                    database,
+                    output,
+                    binding,
+                    plan,
+                    scope,
+                    writer,
+                    recipient_key,
+                    max_records,
+                    ..
+                } => {
+                    if !database.is_absolute()
+                        || !recipient_key.is_absolute()
+                        || *max_records == 0
+                        || *max_records > 1_000_000
+                        || writer.is_empty()
+                    {
+                        return Err(Failure::Invalid);
+                    }
+                    private_directory(output)?;
+                    fixed(plan)?;
+                    fixed(scope)?;
+                    crate::evidence_crypto::read_private_key(recipient_key)
+                        .map_err(|_| Failure::Invalid)?;
+                    if let Some(b) = binding {
+                        b.owner_binding()?;
+                        if &b.scope != scope {
+                            return Err(Failure::Invalid);
+                        }
+                    }
+                }
+                Target::Migration {
+                    source,
+                    source_id,
+                    recipient,
+                    spool,
+                    batch,
+                    ..
+                } => {
+                    if !source.is_absolute() || !spool.is_absolute() || !(1..=1024).contains(batch)
+                    {
+                        return Err(Failure::Invalid);
+                    }
+                    fixed(source_id)?;
+                    fixed(recipient)?;
+                    let mut queue = crate::evidence_spool::Spool::open(spool)
+                        .map_err(|_| Failure::Unavailable)?;
+                    if queue.status().map_err(|_| Failure::Corrupt)?.writer != workspace.author() {
+                        return Err(Failure::AccessLimited);
+                    }
+                }
             }
             if targets.insert(target.id().to_string(), target).is_some() {
                 return Err(Failure::Invalid);
@@ -139,6 +216,7 @@ impl Owner {
             targets,
             workspace: Arc::new(workspace),
             max_jobs: config.max_jobs,
+            preparation: Arc::new(tokio::sync::Semaphore::new(1)),
             active: Mutex::new(BTreeMap::new()),
         }))
     }
@@ -168,6 +246,10 @@ impl Owner {
                 Some(output.join(format!("{nonce}.sqlite")))
             }
             Target::Operations { .. } if operation == Operation::Rotate => None,
+            Target::Migration { .. } if operation == Operation::Import => None,
+            Target::ImportRecovery { output, .. } if operation == Operation::RestoreImport => {
+                Some(output.join(nonce))
+            }
             _ => return Err(Failure::Invalid),
         };
         if let Some(id) = retry_of {
@@ -184,14 +266,36 @@ impl Owner {
             }
         }
         Ok(
-            json!({"version":1,"owner":self.workspace.author(),"target":selected,"operation":operation,"destination":destination,"nonce":nonce,"retry_of":retry_of,
+            json!({"version":1,"owner":self.workspace.author(),"target":selected,"operation":operation,"destination":destination,"nonce":nonce,"retry_of":retry_of,"import":migration_preview(selected)?,
             "effect":match operation{
+                Operation::RestoreImport=>"Verify and reconstruct the pinned import into a new owner-private PLAINTEXT directory. Retain source and any failed output. This verifies selected file bytes, not repository semantics, independent backup or cutover.",
+                Operation::Import=>"Queue a bounded batch of this exact selected v1 snapshot into the configured encrypted durable spool. Retain originals. Sending, independent recovery verification and cutover are separate actions; a completed job may leave more batches to queue.",
                 Operation::Backup=>"Copy and verify the current consistent archive snapshot into a new file. Retain the source; do not activate the output. The source may grow after preview.",
                 Operation::Recover=>"Rebuild derived lookups from retained evidence into a new file. Preserve source and any failed output; do not switch active services.",
                 Operation::Rotate=>"Create a fresh operations generation while retaining sealed history. Active writers must stop; contention refuses rotation.",
             },
             "cancellation":"Once started, maintenance runs to its existing safe boundary. Closing this UI does not cancel or roll back writes."}),
         )
+    }
+    async fn prepare(
+        self: &Arc<Self>,
+        target: String,
+        operation: Operation,
+        retry_of: Option<String>,
+        nonce: String,
+    ) -> Result<Value, Failure> {
+        let permit = self
+            .preparation
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Failure::Unavailable)?;
+        let owner = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            owner.contract(&target, operation, retry_of.as_deref(), &nonce)
+        })
+        .await
+        .map_err(|_| Failure::Unavailable)?
     }
     fn hash(contract: &Value) -> Result<String, Failure> {
         Ok(service::hex(&Sha256::digest(
@@ -231,7 +335,9 @@ impl Owner {
                 retry_of,
             } => {
                 let nonce = service::hex(&rand::random::<[u8; 32]>());
-                let contract = self.contract(&target, operation, retry_of.as_deref(), &nonce)?;
+                let contract = self
+                    .prepare(target.clone(), operation, retry_of.clone(), nonce.clone())
+                    .await?;
                 Ok(json!({"digest":Self::hash(&contract)?,"nonce":nonce,"contract":contract}))
             }
             Request::Job { id } => self.status(&id),
@@ -243,7 +349,23 @@ impl Owner {
                 preview,
                 wait,
             } => {
-                let contract = self.contract(&target, operation, retry_of.as_deref(), &nonce)?;
+                let contract = if let Some(job) = self.workspace.get("owner-job", &preview)? {
+                    let c = job.get("contract").ok_or(Failure::Corrupt)?;
+                    let selected = self.targets.get(&target).ok_or(Failure::AccessLimited)?;
+                    if c["target"]
+                        != serde_json::to_value(selected).map_err(|_| Failure::Invalid)?
+                        || c["operation"]
+                            != serde_json::to_value(operation).map_err(|_| Failure::Invalid)?
+                        || c["nonce"] != nonce
+                        || c["retry_of"] != json!(retry_of)
+                    {
+                        return Err(Failure::Invalid);
+                    }
+                    c.clone()
+                } else {
+                    self.prepare(target.clone(), operation, retry_of.clone(), nonce.clone())
+                        .await?
+                };
                 let id = Self::hash(&contract)?;
                 if id != preview {
                     return Err(Failure::Invalid);
@@ -271,7 +393,13 @@ impl Owner {
                         let selected = self.targets[&target].clone();
                         let destination = contract["destination"].as_str().map(PathBuf::from);
                         let task = tokio::task::spawn_blocking(move || {
-                            let outcome = perform(&selected, operation, destination.as_deref());
+                            let outcome = perform(
+                                &selected,
+                                operation,
+                                destination.as_deref(),
+                                &owner.workspace,
+                                &contract,
+                            );
                             let value = match outcome {
                                 Ok(report) => {
                                     json!({"state":"succeeded","report":report,"finished_at":crate::evidence_operations::now().to_string()})
@@ -303,9 +431,56 @@ fn perform(
     target: &Target,
     operation: Operation,
     destination: Option<&Path>,
+    workspace: &Workspace,
+    contract: &Value,
 ) -> Result<Value, String> {
     let work = || -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         match target {
+            Target::ImportRecovery {
+                database,
+                binding,
+                plan,
+                scope,
+                writer,
+                recipient_key,
+                max_records,
+                ..
+            } => {
+                if operation != Operation::RestoreImport {
+                    return Err("invalid import recovery operation".into());
+                }
+                let output = destination.ok_or("missing recovery directory")?;
+                let pins = crate::evidence_restore::Pins {
+                    expected_plan: plan,
+                    scope: fixed(scope)?,
+                    writer,
+                    recipient_private: crate::evidence_crypto::read_private_key(recipient_key)?,
+                    max_records: *max_records,
+                };
+                let report = if let Some(b) = binding {
+                    crate::evidence_restore::restore_proof(database, output, &pins, b)?
+                } else {
+                    crate::evidence_restore::restore(database, output, &pins)?
+                };
+                // Full per-operation provenance is in the retained report.json;
+                // keep the encrypted job receipt small even for large imports.
+                Ok(
+                    json!({"destination":output,"plan":report["plan"],"verified_selected_file_bytes":report["verified_selected_file_bytes"],"signed_requests_verified":report["signed_requests_verified"],"proof_binding":report["proof_binding"],"files":report["files"].as_array().map(Vec::len),"report":"report.json","activation":"not-performed","independent_backup":false}),
+                )
+            }
+            Target::Migration { batch, .. } => {
+                if operation != Operation::Import {
+                    return Err("invalid migration job".into());
+                }
+                let (plan, mut spool) = migration_plan(target)?;
+                let expected = contract["import"]["plan"]
+                    .as_str()
+                    .ok_or("missing pinned import plan")?;
+                let progress = workspace.queue_import(&plan, expected, &mut spool, *batch)?;
+                Ok(
+                    json!({"progress":progress,"delivery":"not-performed","originals":"retained","activation":"not-performed","independent_backup":false}),
+                )
+            }
             Target::Operations { collection, .. } => {
                 if operation != Operation::Rotate {
                     return Err("invalid operations job".into());
@@ -349,4 +524,48 @@ fn perform(
         }
     };
     work().map_err(|e| e.to_string())
+}
+
+fn fixed(value: &str) -> Result<[u8; 32], Failure> {
+    service::unhex(value, 32)?
+        .try_into()
+        .map_err(|_| Failure::Invalid)
+}
+fn migration_plan(
+    target: &Target,
+) -> Result<
+    (crate::evidence_import::Plan, crate::evidence_spool::Spool),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
+    let Target::Migration {
+        source,
+        selection,
+        source_id,
+        recipient,
+        spool,
+        ..
+    } = target
+    else {
+        return Err("not a migration target".into());
+    };
+    let mut queue = crate::evidence_spool::Spool::open(spool)?;
+    let plan = crate::evidence_import::Plan::build(
+        source,
+        *selection,
+        fixed(source_id)?,
+        fixed(recipient)?,
+        &mut queue,
+    )?;
+    Ok((plan, queue))
+}
+fn migration_preview(target: &Target) -> Result<Value, Failure> {
+    if !matches!(target, Target::Migration { .. }) {
+        return Ok(Value::Null);
+    }
+    let (plan, mut queue) = migration_plan(target).map_err(|_| Failure::Unavailable)?;
+    let summary = plan.summary();
+    let route = queue.status().map_err(|_| Failure::Unavailable)?;
+    Ok(
+        json!({"plan":plan.id(),"writer":route.writer,"scope":route.scope,"audience":route.audience,"files":summary["inventory"]["files"].as_array().map(Vec::len),"observed_bytes":summary["inventory"]["observed_bytes"],"selected_inventory_complete":summary["inventory"]["selected_inventory_complete"],"notice_count":summary["inventory"]["notices"].as_array().map(Vec::len),"total_operations":summary["total_operations"],"recovery_verified":false,"ready_for_cutover":false}),
+    )
 }

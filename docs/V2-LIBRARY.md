@@ -562,3 +562,34 @@ Presentation is bounded to 1,024 selected frames / 40 MiB, 100 blocks per page,
 4 MiB of rendered records, and 1 MiB per interpreted claim. These are read-window
 limits, not storage or migration limits. Exact retained Source remains available.
 The last grant check runs after reconstruction, and lock clears the derived view.
+
+### Owner migration and import recovery
+
+The owner configuration also accepts fixed `migration` targets. A target contains
+`id`, absolute `source` and `spool` paths, `selection` (`store`, `workspace` or
+`identity`), a 32-byte hexadecimal `source_id`, hexadecimal public `recipient`,
+and `batch` (1–1024 operations). Its spool writer must match the owner journal's
+signing identity. Existing `import-plan` can inspect a source before configuring
+it. The owner API/CLI/browser uses the `import` operation: preview hashes the
+selected source inventory and shows the route, file/operation counts and notices;
+submit checks that exact plan again before queueing. It never sends the queue or
+changes originals. A new linked attempt queues the next batch; an exact retry
+returns the original job even if the source has since changed. Queue coverage is
+separate from remote delivery and recovery verification. Use the existing shared
+spool worker to deliver queued operations.
+
+An `import-recovery` target contains `id`, absolute `database`, `output`, and
+`recipient_key` paths, `plan`, hexadecimal `scope`, `writer`, `max_records`
+(1–1,000,000), and an optional explicit proof `binding`. The `restore-import`
+operation previews a new directory under `output` and the plaintext side effect.
+It reconstructs and verifies every selected file, preserves originals/failed
+outputs, and writes the complete per-operation provenance to `report.json`.
+The encrypted job receipt links this report and records success or interruption.
+No output is activated and no independent-backup claim is made.
+
+Offline `kan-v2 restore-import` now accepts the same `--proof-archive`,
+`--proof-scope`, `--proof-issuer`, and optional `--copy-profile` pins as other owner
+commands. Without them it continues to require the legacy archive profile. A
+proof restore audits the issuer-bound metadata chain and reads source bytes from
+that same pinned transaction. It verifies imported file bytes; repository graph
+reachability, identity migration and final cutover remain separate checks.

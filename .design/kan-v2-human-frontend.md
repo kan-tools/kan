@@ -316,8 +316,7 @@ The day view selects `telos/`, `atom/`, `bridge/` and `thread/` subjects. Explic
 fenced day JSON is shown as declared data beside the original text, including
 malformed-declaration notices. A human can follow relations, inspect a subject's
 history, and send its cited evidence through the configured day-assessment recipe.
-This currently covers v2 authored annotations; rendering imported native v1 claims
-and applying the richer native trust/fold queries remains a separate requirement.
+Imported native v1 files and individually signed claims now have their own source-cited browser. Applying repository membership and the richer native trust/fold queries remains a separate requirement.
 
 ### Owner maintenance boundary
 
@@ -335,5 +334,10 @@ maintenance operation starts it is allowed to reach its existing safe boundary;
 closing the browser does not pretend to cancel or roll it back. Restart reports
 unfinished journal entries as interrupted. Credentials and source keys never
 appear in the browser. Provisioning this API does not grant authority to reader
-or model-generated actions. Access changes, key lifecycle, import/cutover and
-explicit erasure require their own typed owner contracts and remain build work.
+or model-generated actions. Migration now uses a fixed source/spool/recipient target
+and a preview-pinned source inventory; jobs queue bounded encrypted batches with
+exact retries and linked continuation. Import recovery uses a fixed plan, key,
+archive binding and output root, previews its plaintext effect, and records the
+new output/report location. Proof metadata audit and restoration share a pinned
+transaction. Access changes, key lifecycle, reconciliation/cutover and explicit
+erasure require further owner contracts and remain build work.

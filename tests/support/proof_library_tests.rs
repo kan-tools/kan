@@ -1695,6 +1695,10 @@ async fn owner_maintenance_uses_separate_authority_preview_exact_retry_and_new_o
         403,
     )
     .await;
+    let initial_generations = kan::evidence_operations_collection::generations(&collection, 0, 50)
+        .unwrap()
+        .generations
+        .len();
     let mut retained = Vec::new();
     for (target, operation) in [
         ("evidence", "backup"),
@@ -1728,7 +1732,7 @@ async fn owner_maintenance_uses_separate_authority_preview_exact_retry_and_new_o
             .unwrap()
             .generations
             .len(),
-        2
+        initial_generations + 1
     );
     let denied = reqwest::Client::new()
         .post(ui.url.replace("/api/library", "/api/owner"))
@@ -1910,10 +1914,14 @@ async fn imported_v1_browser_reconstructs_signed_claims_with_exact_ranges_and_cu
         let mut duplicate = query.clone();
         duplicate["selections"] = json!([selections[2], selections[2]]);
         ui.call(duplicate, 400).await;
-        f.remove(2);
+        f.remove(2); // The completion observation is not required to verify file bytes.
+        let without_observation = ui.call(query.clone(), 200).await;
+        assert_eq!(without_observation["file"]["state"], "verified");
+        assert!(without_observation["completion_observation"].is_null());
+        f.remove(1); // The file body itself is now unavailable.
         let missing = ui.call(query.clone(), 200).await;
         assert_eq!(missing["file"]["state"], "incomplete");
-        assert_eq!(missing["unavailable"].as_array().unwrap().len(), 1);
+        assert_eq!(missing["unavailable"].as_array().unwrap().len(), 2);
         server
             .service
             .lock()
@@ -1953,5 +1961,212 @@ async fn imported_v1_browser_refuses_mismatched_operations_or_file_commitments()
             .map(|r| r["selection"].clone())
             .collect();
         ui.call(json!({"action":"proof-import","source":entry["id"],"pin":entry["pin"],"selections":selections,"plan":plan,"file":0}),400).await;
+    }
+}
+
+#[tokio::test]
+async fn owner_import_pins_source_batches_exact_retry_and_preserves_originals() {
+    let local = private_workspace_directory();
+    let source = private_workspace_directory();
+    let dir = tempfile::tempdir().unwrap();
+    let raw = b"synthetic preserved v1 raw bytes";
+    std::fs::write(source.path().join("repo.car"), raw).unwrap();
+    std::fs::write(source.path().join("HEAD"), []).unwrap();
+    let spool = local.path().join("spool.sqlite");
+    drop(
+        kan::evidence_spool::Spool::create(
+            &spool,
+            &service::hex(&[1; 32]),
+            identity(6).did().as_str(),
+            identity(8).did().as_str(),
+            4 * 1024 * 1024,
+        )
+        .unwrap(),
+    );
+    let workspace = kan::evidence_workspace::Workspace::open(
+        &local.path().join("owner.sqlite"),
+        identity(6),
+        [84; 32],
+    )
+    .unwrap();
+    let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":"synthetic-owner-import-only-token","max_jobs":10,"targets":[{"kind":"migration","id":"old-project","source":source.path(),"selection":"store","source_id":service::hex(&[44;32]),"recipient":service::hex(&kan::evidence_crypto::public_key(&PRIVATE).unwrap()),"spool":spool,"batch":1}]})).unwrap(),workspace).unwrap();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let ui = Ui::start(
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_owner(owner),
+    )
+    .await;
+    const OWNER: &str = "synthetic-owner-import-only-token";
+    let preview = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview","target":"old-project","operation":"import"}),
+        200,
+    )
+    .await;
+    assert_eq!(preview["contract"]["import"]["files"], 2);
+    let request = json!({"action":"submit","target":"old-project","operation":"import","nonce":preview["nonce"],"preview":preview["digest"],"wait":true});
+    std::fs::write(source.path().join("repo.car"), b"changed before submit").unwrap();
+    owner_call(&ui, OWNER, request, 400).await;
+    assert!(
+        owner_call(&ui, OWNER, json!({"action":"catalog"}), 200).await["jobs"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    std::fs::write(source.path().join("repo.car"), raw).unwrap();
+    let mut parent = Value::Null;
+    let mut first = None;
+    for n in 0..4 {
+        let preview=owner_call(&ui,OWNER,json!({"action":"preview","target":"old-project","operation":"import","retry_of":parent}),200).await;
+        let request = json!({"action":"submit","target":"old-project","operation":"import","retry_of":parent,"nonce":preview["nonce"],"preview":preview["digest"],"wait":true});
+        let result = owner_call(&ui, OWNER, request.clone(), 200).await;
+        assert_eq!(result["state"], "succeeded", "{result}");
+        assert_eq!(result["result"]["report"]["progress"]["newly_queued"], 1);
+        assert_eq!(
+            result["result"]["report"]["progress"]["queue_coverage_complete"],
+            n == 3
+        );
+        assert_eq!(
+            result["result"]["report"]["progress"]["recovery_verified"],
+            false
+        );
+        parent = result["job"]["id"].clone();
+        if n == 0 {
+            first = Some((request, result));
+        }
+    }
+    let (request, first) = first.unwrap();
+    std::fs::write(source.path().join("repo.car"), b"later source state").unwrap();
+    assert_eq!(
+        owner_call(&ui, OWNER, request, 200).await,
+        first,
+        "exact retry inspects the original job without requeueing changed source"
+    );
+    assert_eq!(
+        std::fs::read(source.path().join("repo.car")).unwrap(),
+        b"later source state"
+    );
+    assert_eq!(
+        kan::evidence_spool::Spool::open(&spool)
+            .unwrap()
+            .status()
+            .unwrap()
+            .pending,
+        4
+    );
+    ui.stop().await;
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn proof_import_restoration_and_owner_job_verify_selected_bytes_without_cutover() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = private_workspace_directory();
+        let output = private_workspace_directory();
+        let local = private_workspace_directory();
+        let (plan, frames, car) =
+            imported_claim_frames(if profile == Profile::Admitted { 8 } else { 7 });
+        let f = fixture_requests(dir.path(), profile, |n, a, p| {
+            import_request(n, a, p, &plan, &frames[n as usize], false)
+        });
+        let binding = super::super::binding(&f);
+        let restored = output.path().join("direct");
+        let writer = identity(6).did().to_string();
+        let pins = kan::evidence_restore::Pins {
+            expected_plan: &plan,
+            scope: [1; 32],
+            writer: &writer,
+            recipient_private: PRIVATE,
+            max_records: 100,
+        };
+        let report =
+            kan::evidence_restore::restore_proof(&f.db(), &restored, &pins, &binding).unwrap();
+        assert_eq!(std::fs::read(restored.join("files/repo.car")).unwrap(), car);
+        assert_eq!(report["server_attestation"], true);
+        assert_eq!(report["ready_for_cutover"], false);
+        let mut wrong = binding.clone();
+        wrong.archive = service::hex(&[99; 32]);
+        let refused = output.path().join("wrong");
+        assert!(kan::evidence_restore::restore_proof(&f.db(), &refused, &pins, &wrong).is_err());
+        assert!(!refused.exists());
+        let key = local.path().join("recipient.key");
+        std::fs::write(&key, PRIVATE).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        let cli_output = output.path().join("cli");
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
+        command
+            .arg("restore-import")
+            .arg(f.db())
+            .arg(&cli_output)
+            .args([
+                "--expected-plan",
+                &plan,
+                "--scope",
+                &service::hex(&[1; 32]),
+                "--writer",
+                &writer,
+                "--recipient-key",
+            ])
+            .arg(&key)
+            .args([
+                "--proof-archive",
+                &binding.archive,
+                "--proof-scope",
+                &binding.scope,
+                "--proof-issuer",
+                &binding.issuer,
+            ]);
+        if profile == Profile::Copied {
+            command.arg("--copy-profile");
+        }
+        let restored_cli = command.output().unwrap();
+        assert!(
+            restored_cli.status.success(),
+            "{}",
+            String::from_utf8_lossy(&restored_cli.stderr)
+        );
+        assert_eq!(
+            std::fs::read(cli_output.join("files/repo.car")).unwrap(),
+            car
+        );
+        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":"synthetic-owner-restore-only-token","max_jobs":10,"targets":[{"kind":"import-recovery","id":"snapshot","database":f.db(),"output":output.path(),"binding":binding,"plan":plan,"scope":service::hex(&[1;32]),"writer":identity(6).did().as_str(),"recipient_key":key,"max_records":100}]})).unwrap(),kan::evidence_workspace::Workspace::open(&local.path().join("owner.sqlite"),identity(9),[84;32]).unwrap()).unwrap();
+        let server = Server::start(&f).await;
+        let ui = Ui::start(
+            kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+                .unwrap()
+                .with_owner(owner),
+        )
+        .await;
+        const OWNER: &str = "synthetic-owner-restore-only-token";
+        let preview = owner_call(
+            &ui,
+            OWNER,
+            json!({"action":"preview","target":"snapshot","operation":"restore-import"}),
+            200,
+        )
+        .await;
+        assert!(preview["contract"]["effect"]
+            .as_str()
+            .unwrap()
+            .contains("PLAINTEXT"));
+        let done=owner_call(&ui,OWNER,json!({"action":"submit","target":"snapshot","operation":"restore-import","nonce":preview["nonce"],"preview":preview["digest"],"wait":true}),200).await;
+        assert_eq!(done["state"], "succeeded", "{done}");
+        let destination = Path::new(done["result"]["report"]["destination"].as_str().unwrap());
+        assert_eq!(
+            std::fs::read(destination.join("files/repo.car")).unwrap(),
+            car
+        );
+        assert!(destination.join("report.json").is_file());
+        assert_eq!(done["result"]["report"]["activation"], "not-performed");
+        assert!(f.db().exists());
+        ui.stop().await;
+        server.stop().await;
     }
 }

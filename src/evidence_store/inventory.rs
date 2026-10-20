@@ -385,6 +385,11 @@ impl Inventory {
     pub fn frontier(&self) -> &Frontier {
         &self.frontier
     }
+    /// Transfer the same pinned, metadata-audited transaction to offline restore.
+    /// This is not payload verification or permission to modify its source.
+    pub(crate) fn into_recovery(self) -> RecoveryReader {
+        self.reader
+    }
     /// Metadata/inventory commitment only; not payload completeness or admission readiness.
     pub fn recipe_metadata_match(&self) -> Option<bool> {
         self.recipe_metadata_match

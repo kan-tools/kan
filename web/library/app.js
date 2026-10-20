@@ -574,8 +574,9 @@
   function ownerOperations(){
     ownerPreview=null;$('owner-submit').disabled=true;$('owner-preview').textContent='';$('owner-operation').replaceChildren();
     const target=ownerTargets.find(t=>t.id===$('owner-target').value);
-    for(const operation of target?.kind==='operations'?['rotate']:['backup','recover']){const option=textNode('option',operation);option.value=operation;$('owner-operation').append(option);}
-    $('owner-operation').value=target?.kind==='operations'?'rotate':'backup';
+    const operations=target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?['import']:target?.kind==='operations'?['rotate']:['backup','recover'];
+    for(const operation of operations){const option=textNode('option',operation);option.value=operation;$('owner-operation').append(option);}
+    $('owner-operation').value=operations[0];
   }
   async function ownerCatalog(){
     const value=await ownerRpc({action:'catalog'});if(!value)return;

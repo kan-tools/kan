@@ -371,13 +371,68 @@ pub fn restore_observed(
     database: &Path,
     destination: &Path,
     pins: &Pins<'_>,
+    observe: impl FnMut(Boundary),
+) -> Result<Value> {
+    require(
+        hex32(pins.expected_plan) && pins.max_records > 0,
+        "operator pins/limit",
+    )?;
+    restore_reader(
+        RecoveryReader::open(database)?,
+        destination,
+        pins,
+        None,
+        observe,
+    )
+}
+/// Offline restoration from an explicitly bound admitted/copied proof archive.
+/// Metadata proof audit and source reads share one pinned transaction.
+pub fn restore_proof(
+    database: &Path,
+    destination: &Path,
+    pins: &Pins<'_>,
+    binding: &crate::evidence_proof_service::Binding,
+) -> Result<Value> {
+    require(
+        hex32(pins.expected_plan)
+            && binding.scope == service::hex(&pins.scope)
+            && pins.max_records > 0
+            && pins.max_records <= 1_000_000,
+        "proof restore pins/limit",
+    )?;
+    let owner = binding
+        .owner_binding()
+        .map_err(|_| Error::Invalid("proof binding"))?;
+    let inventory = crate::evidence_store::inventory::Inventory::open(
+        database,
+        binding.profile.inventory(),
+        owner,
+        crate::evidence_store::inventory::Budget {
+            items: pins.max_records.saturating_mul(4),
+            metadata_bytes: 512 * 1024 * 1024,
+            duration: std::time::Duration::from_secs(300),
+            cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        },
+    )?;
+    restore_reader(
+        inventory.into_recovery(),
+        destination,
+        pins,
+        Some(binding),
+        |_| {},
+    )
+}
+fn restore_reader(
+    archive: RecoveryReader,
+    destination: &Path,
+    pins: &Pins<'_>,
+    binding: Option<&crate::evidence_proof_service::Binding>,
     mut observe: impl FnMut(Boundary),
 ) -> Result<Value> {
     require(
         hex32(pins.expected_plan) && pins.max_records > 0,
         "operator pins/limit",
     )?;
-    let archive = RecoveryReader::open(database)?;
     let snapshot = archive.snapshot()?;
     require(
         snapshot.through > 0 && snapshot.through <= pins.max_records,
@@ -506,8 +561,8 @@ pub fn restore_observed(
     let report = json!({"profile":1,"plan":pins.expected_plan,"source_id":plan.source_id,"selection":plan.selection,
         "recipient":plan.recipient,"route":plan.route,"files":files,"operations":provenance,
         "archive_snapshot":{"through":reader.snapshot.through,"tip":reader.snapshot.tip.map(|c|c.to_string())},
-        "verified_selected_file_bytes":true,"signed_requests_verified":true,"receipt_binding":"structural-only-unsigned",
-        "archive_history":"not-certified","server_attestation":false,"claim_signatures":"not-verified",
+        "verified_selected_file_bytes":true,"signed_requests_verified":true,"receipt_binding":if binding.is_some() {"issuer-attested-metadata"} else {"structural-only-unsigned"},
+        "archive_history":if binding.is_some() {"issuer-attested-metadata-chain"} else {"not-certified"},"server_attestation":binding.is_some(),"proof_binding":binding,"claim_signatures":"not-verified",
         "selected_inventory_complete":plan.inventory["selected_inventory_complete"],"notices":plan.inventory["notices"],
         "independent_backup":false,"ready_for_cutover":false});
     observe(Boundary::BeforeReport);
