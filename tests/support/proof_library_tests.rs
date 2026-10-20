@@ -5903,3 +5903,125 @@ async fn owner_publication_discovery_resumes_retained_pages_before_authorizing_c
     ui.stop().await;
     server.stop().await;
 }
+
+#[test]
+fn erasure_custody_keeps_accepting_new_work_and_fences_restores_after_1024_records() {
+    use kan::{evidence_erasure_history as custody, evidence_store::erasure as storage};
+    let dir = private_workspace_directory();
+    let history_dir = private_workspace_directory();
+    let backup_dir = private_workspace_directory();
+    let restored_dir = private_workspace_directory();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let issuer = identity(8);
+    let owner = identity(9);
+    let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+    let backup = backup_dir.path().join("before-erasure.sqlite");
+    archive.backup(&backup).unwrap();
+    let binding = serde_json::from_value(json!({"profile":"admitted",
+        "archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer})).unwrap();
+    let mut access = custody::Access {
+        directory: history_dir.path().to_owned(),
+        binding,
+        owner: owner.did().to_string(),
+        minimum: None,
+    };
+    access.initialize().unwrap();
+    let genesis =
+        custody::Record::sign(access.preview(None, "a".repeat(64)).unwrap(), &owner).unwrap();
+    let mut custody_tip = genesis.id().unwrap();
+    access.append(genesis).unwrap();
+    access.minimum = Some(custody_tip.clone());
+    let template = archive.preview_erasure(&[1], "b".repeat(64), 100).unwrap();
+    let mut storage_tip = None;
+    // Seed canonical, fully signed prior history directly to avoid doing
+    // quadratic fixture setup through 1,024 successive full-history audits.
+    // Reauthorizing the same exact target is valid and does not invent objects.
+    for n in 1..=1024 {
+        let mut plan = template.clone();
+        plan.previous = storage_tip;
+        plan.nonce = format!("{n:064x}");
+        let erasure = storage::Record::sign(plan, &issuer).unwrap();
+        storage_tip = Some(erasure.id().unwrap());
+        let record = custody::Record::sign(
+            custody::Change {
+                version: 1,
+                binding: access.binding.clone(),
+                owner: access.owner.clone(),
+                sequence: n.to_string(),
+                previous: Some(custody_tip),
+                nonce: format!("{n:064x}"),
+                recorded_at: "100".into(),
+                erasure: Some(erasure),
+            },
+            &owner,
+        )
+        .unwrap();
+        custody_tip = record.id().unwrap();
+        let path = history_dir
+            .path()
+            .join(format!("erasure-{n:020}-{custody_tip}.json"));
+        std::fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+    assert_eq!(access.current().unwrap().history.len(), 1025);
+    access.reconcile_archive(&f.root).unwrap();
+    assert_eq!(archive.erasure_history().unwrap().records.len(), 1024);
+    let fresh = archive.preview_erasure(&[2], "c".repeat(64), 101).unwrap();
+    let fresh = storage::Record::sign(fresh, &issuer).unwrap();
+    let authority = custody::Record::sign(
+        access.preview(Some(fresh.clone()), "d".repeat(64)).unwrap(),
+        &owner,
+    )
+    .unwrap();
+    access.append(authority.clone()).unwrap();
+    archive.apply_erasure(fresh).unwrap();
+    assert_eq!(access.current().unwrap().history.len(), 1026);
+    access
+        .current()
+        .unwrap()
+        .check_archive(&f.db(), &access.binding)
+        .unwrap();
+    assert_eq!(
+        access.append(authority).unwrap()["state"],
+        "already-applied"
+    );
+    let package = archive.erasure_history().unwrap();
+    assert_eq!(package.records.len(), 1025);
+    // Current owner custody also applies to a separately recovered old backup.
+    attested::Recovery::open(&backup, f.binding.clone())
+        .unwrap()
+        .rebuild(&restored_dir.path().join("archive.sqlite"))
+        .unwrap();
+    assert!(access
+        .current()
+        .unwrap()
+        .check_archive(&restored_dir.path().join("archive.sqlite"), &access.binding)
+        .is_err());
+    access.reconcile_archive(restored_dir.path()).unwrap();
+    let mut restored = attested::Archive::open(restored_dir.path(), f.binding.clone()).unwrap();
+    assert_eq!(
+        attested::Archive::verify_file(
+            &restored_dir.path().join("archive.sqlite"),
+            f.binding.clone()
+        )
+        .unwrap()
+        .erased_objects,
+        2
+    );
+    access
+        .current()
+        .unwrap()
+        .check_archive(&restored_dir.path().join("archive.sqlite"), &access.binding)
+        .unwrap();
+    let mut changed = package.clone();
+    changed.records[512].signature = "00".repeat(64);
+    assert!(access.current().unwrap().check_package(&changed).is_err());
+    assert!(restored
+        .reconcile_erasure(&changed, package.tip.as_ref().unwrap())
+        .is_err());
+    assert_eq!(restored.erasure_history().unwrap().tip, package.tip);
+}

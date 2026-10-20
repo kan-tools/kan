@@ -10,7 +10,6 @@ use std::collections::BTreeSet;
 
 pub(crate) const SCHEMA: &str = "CREATE TABLE erasures(ordinal INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, body BLOB NOT NULL CHECK(length(body)>0 AND length(body)<=1048576));";
 const DOMAIN: &[u8] = b"tools.kan.storage.erasure.v1\0";
-const MAX_BYTES: usize = 16 * 1024 * 1024;
 const MAX_RECORD: usize = 1024 * 1024;
 const MAX_TARGETS: usize = 4096;
 pub(super) const MARKER: &[u8] = &[0];
@@ -241,9 +240,6 @@ impl History {
                 }
             }
         }
-        if self.objects.len() > 32768 {
-            return Err(Error::Invalid("erasure history capacity"));
-        }
         self.tip = Some(r.id()?);
         self.records.push(r);
         Ok(())
@@ -287,18 +283,14 @@ fn load_inner(conn: &Connection) -> Result<History> {
         "SELECT ordinal,id,length(body),substr(body,1,1048576) FROM erasures ORDER BY ordinal",
     )?;
     let mut rows = stmt.query([])?;
-    let mut total = 0;
     while let Some(row) = rows.next()? {
         let ordinal: i64 = row.get(0)?;
         let id: String = row.get(1)?;
         let length: i64 = row.get(2)?;
         let body: Vec<u8> = row.get(3)?;
-        total += body.len();
         if ordinal != history.records.len() as i64
             || !(1..=MAX_RECORD as i64).contains(&length)
             || length as usize != body.len()
-            || total > MAX_BYTES
-            || history.records.len() >= 1024
         {
             return Err(corrupt());
         }
@@ -471,11 +463,7 @@ impl attested::Archive {
     /// Apply a CURRENT independently retained history before exposing an older
     /// restore. Caller pins its expected tip; the backup's own tip is insufficient.
     pub fn reconcile_erasure(&mut self, package: &Package, expected_tip: &str) -> Result<Package> {
-        if package.version != 1
-            || package.tip.as_deref() != Some(expected_tip)
-            || bytes(package)?.len() > MAX_BYTES
-            || package.records.len() > 1024
-        {
+        if package.version != 1 || package.tip.as_deref() != Some(expected_tip) {
             return Err(Error::Invalid("current erasure checkpoint required"));
         }
         self.verify()?;
@@ -537,27 +525,9 @@ impl attested::Archive {
     }
 }
 fn install(tx: &rusqlite::Transaction<'_>, old: &History, records: &[Record]) -> Result<()> {
-    let extra: usize = records
-        .iter()
-        .map(|r| bytes(r).map(|b| b.len()))
-        .collect::<Result<Vec<_>>>()?
-        .iter()
-        .sum();
-    let used: usize = old
-        .records
-        .iter()
-        .map(|r| bytes(r).map(|b| b.len()))
-        .collect::<Result<Vec<_>>>()?
-        .iter()
-        .sum();
-    let mut objects = old.objects.keys().cloned().collect::<BTreeSet<_>>();
-    for r in records {
-        objects.extend(r.plan.targets.iter().map(|t| t.object.clone()));
-    }
-    if used + extra > MAX_BYTES || old.records.len() + records.len() > 1024 || objects.len() > 32768
-    {
-        return Err(Error::Invalid("erasure history capacity"));
-    }
+    // Each signed record remains bounded and independently verified by the
+    // caller. A valid lifetime history does not become un-installable after an
+    // arbitrary number of earlier erasures or selected objects.
     if !exists(tx)? {
         // surface-write: evidence-erasure-sqlite:erasures
         crate::persistence::initialize_evidence_erasure(
@@ -570,7 +540,8 @@ fn install(tx: &rusqlite::Transaction<'_>, old: &History, records: &[Record]) ->
         crate::persistence::insert_evidence_erasure(
             crate::persistence::SurfaceWrite::EvidenceErasure,
             tx,
-            (old.records.len() + i) as i64,
+            i64::try_from(old.records.len().checked_add(i).ok_or_else(corrupt)?)
+                .map_err(|_| corrupt())?,
             &r.id()?,
             &bytes(r)?,
         )?;

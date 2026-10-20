@@ -17,8 +17,8 @@ use std::{
 type Result<T> = std::result::Result<T, Failure>;
 const DOMAIN: &[u8] = b"tools.kan.owner.erasure.v1\0";
 const MAX_RECORD: usize = 1024 * 1024 + 4096;
-const MAX_HISTORY: usize = 1025;
-const MAX_TOTAL: usize = 18 * 1024 * 1024;
+// Abandoned staging files are an operational debris budget, not history.
+const MAX_PENDING: usize = 1024;
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Access {
@@ -52,6 +52,14 @@ pub struct Snapshot {
     pub tip: Option<String>,
 }
 impl Snapshot {
+    fn storage_tip(&self) -> Result<Option<String>> {
+        self.history
+            .iter()
+            .rev()
+            .find_map(|r| r.change.erasure.as_ref())
+            .map(|r| r.id().map_err(Failure::from))
+            .transpose()
+    }
     pub fn package(&self) -> Result<crate::evidence_store::erasure::Package> {
         let records: Vec<_> = self
             .history
@@ -78,9 +86,21 @@ impl Snapshot {
         self.check_package(&stored)
     }
     pub fn check_package(&self, stored: &crate::evidence_store::erasure::Package) -> Result<()> {
-        if serde_json::to_vec(stored).map_err(invalid)?
-            != serde_json::to_vec(&self.package()?).map_err(invalid)?
-        {
+        // Compare one record at a time: checking current custody must not
+        // allocate two serialized copies of the complete lifetime history.
+        let mut expected = self
+            .history
+            .iter()
+            .filter_map(|r| r.change.erasure.as_ref());
+        let mut tip = None;
+        for actual in &stored.records {
+            let record = expected.next().ok_or(Failure::AccessLimited)?;
+            if record.plan != actual.plan || record.signature != actual.signature {
+                return Err(Failure::AccessLimited);
+            }
+            tip = Some(record.id()?);
+        }
+        if stored.version != 1 || expected.next().is_some() || stored.tip != tip {
             return Err(Failure::AccessLimited);
         }
         Ok(())
@@ -246,15 +266,12 @@ impl Access {
             }
             if name.starts_with(".pending-") {
                 pending += 1;
-                if pending > MAX_HISTORY {
+                if pending > MAX_PENDING {
                     return Err(Failure::Unavailable);
                 }
                 continue;
             }
-            if !name.starts_with("erasure-")
-                || !name.ends_with(".json")
-                || names.len() >= MAX_HISTORY
-            {
+            if !name.starts_with("erasure-") || !name.ends_with(".json") {
                 return Err(Failure::Corrupt);
             }
             names.push(name);
@@ -263,7 +280,6 @@ impl Access {
         let mut history = Vec::new();
         let mut tip = None;
         let mut seen_minimum = self.minimum.is_none();
-        let mut total = 0usize;
         let mut storage_tip = None;
         for (index, name) in names.into_iter().enumerate() {
             let path = self.directory.join(&name);
@@ -274,8 +290,7 @@ impl Access {
                 .take((MAX_RECORD + 1) as u64)
                 .read_to_end(&mut bytes)
                 .map_err(invalid)?;
-            total += bytes.len();
-            if bytes.len() > MAX_RECORD || total > MAX_TOTAL {
+            if bytes.len() > MAX_RECORD {
                 return Err(Failure::Unavailable);
             }
             let record: Record = serde_json::from_slice(&bytes).map_err(invalid)?;
@@ -347,9 +362,6 @@ impl Access {
     ) -> Result<Change> {
         let snapshot = self.read()?;
         fixed(&nonce)?;
-        if snapshot.history.len() >= MAX_HISTORY {
-            return Err(Failure::Unavailable);
-        }
         let change = Change {
             version: 1,
             binding: self.binding.clone(),
@@ -368,7 +380,7 @@ impl Access {
             &change,
             snapshot.history.len(),
             &snapshot.tip,
-            &snapshot.package()?.tip,
+            &snapshot.storage_tip()?,
         )?;
         Ok(change)
     }
@@ -409,9 +421,6 @@ impl Access {
         {
             return Ok(json!({"state":"already-applied","id":id,"current_tip":snapshot.tip}));
         }
-        if snapshot.history.len() >= MAX_HISTORY {
-            return Err(Failure::Unavailable);
-        }
         if record.change.previous != snapshot.tip
             || record.change.sequence != snapshot.history.len().to_string()
         {
@@ -421,7 +430,7 @@ impl Access {
             &record.change,
             snapshot.history.len(),
             &snapshot.tip,
-            &snapshot.package()?.tip,
+            &snapshot.storage_tip()?,
         )?;
         let sig = service::unhex(&record.signature, 64)?;
         if sig.len() != 64
@@ -429,34 +438,22 @@ impl Access {
         {
             return Err(Failure::AccessLimited);
         }
-        let used: usize = snapshot
+        // Conflicting coordinates for one object are never installable. Retained
+        // authenticated history has no lifetime record/object/byte quota.
+        let mut objects = std::collections::BTreeMap::new();
+        for erasure in snapshot
             .history
             .iter()
-            .map(|r| serde_json::to_vec(r).map(|b| b.len()).unwrap_or(MAX_TOTAL))
-            .sum();
-        if used + bytes.len() > MAX_TOTAL {
-            return Err(Failure::Unavailable);
-        }
-        let mut package = snapshot.package()?;
-        if let Some(erasure) = &record.change.erasure {
-            package.records.push(erasure.clone());
-            package.tip = Some(erasure.id()?);
-        }
-        // Do not publish a custody head which the bounded storage history cannot install.
-        let mut objects = std::collections::BTreeMap::new();
-        for record in &package.records {
-            for target in &record.plan.targets {
+            .filter_map(|r| r.change.erasure.as_ref())
+            .chain(record.change.erasure.iter())
+        {
+            for target in &erasure.plan.targets {
                 if let Some(old) = objects.insert(&target.object, target) {
                     if old != target {
                         return Err(Failure::Conflict);
                     }
                 }
             }
-        }
-        if serde_json::to_vec(&package).map_err(invalid)?.len() > 16 * 1024 * 1024
-            || objects.len() > 32768
-        {
-            return Err(Failure::Unavailable);
         }
         let destination = self
             .directory

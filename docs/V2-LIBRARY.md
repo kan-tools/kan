@@ -1245,6 +1245,15 @@ ceilings; per-operation discovery, journal-size and resource budgets remain and
 must not be read as claims of unlimited capacity.
 
 
+Owner erasure custody and storage erasure history no longer have lifetime quotas
+of 1,024 erasures, 32,768 objects or 16–18 MiB of signed history. Every record remains
+size-bounded, canonical and independently signed; the complete chain and exact
+object coordinates are still checked before acceptance or restore reconciliation.
+Current-custody comparison visits records without serializing two complete history
+packages. These audits still retain signed metadata in memory and their work grows
+with history; this is not a constant-memory or constant-time claim. Abandoned
+staging files retain a separate debris budget and are never accepted as history.
+
 Workspace source cleanup streams each encrypted row, discards cached text and
 model bodies after checking their typed citations, and retains only the metadata
 needed for transitive lineage. Unrelated cached bytes and owner-job history no
