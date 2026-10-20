@@ -69,6 +69,44 @@ partial Content or changes to retained evidence. The connection and grant checks
 below still apply. This is bounded in-memory reconstruction, not unlimited
 streaming or a persistent plaintext index.
 
+## Sessions across archives
+
+Use **Scan authorized archives** to discover explicit session relationships across
+configured proof sources. The scan visits archives in turn using their individual
+pinned snapshots. Each archive reports its inspected count, current window and
+whether its inventory end was reached. Stop preserves completed batches; continue
+resumes their independent cursors. The window holds at most 1,000 records; a new
+window discards previous descriptions while preserving continuation. Clear starts
+again at those snapshots. Refresh snapshot or Retry sources clears session results.
+
+Session groups require the same verified writer, observer, session-header scheme
+and explicit session ID. Matching archive copies remain separate observations.
+Parent links show every matching archive; **Read parent in …** opens the selected
+archive's attempt, and **Link source …** opens the exact claim. Each read rechecks
+current access. Lock clears the entire workspace. An absent parent means it was
+not found in this window; a finished inventory never proves complete traffic.
+These views do not persist an index or merge claims into authoritative identity.
+
+## Batched proof acquisition
+
+Attempt Content and discovery negotiate optional `read-batch` support. A batch
+selects at most eight records and returns an ordered prefix with at most 4 MiB of
+retained signed-request bytes. One current full metadata audit covers the batch;
+records, writer signatures, encryption bindings and fresh payloads are checked
+individually. Every batch authorizes current access, and derived views perform a
+final grant check. No audit result or plaintext is cached across requests.
+
+New readers retain the single-read fallback for older proof services. Upgrade the
+Library/reader before the service: older readers that insist on the original exact
+capability list do not accept the added capability. The existing single-read wire
+operation and snapshot/token formats are unchanged.
+
+The saved synthetic 11 MiB / 179-record debug fixture read in 33.64 seconds with
+batching, compared with 106.91 seconds before, with all 177 payload citations.
+This is a development measurement, not a latency guarantee. Admission performance
+and further read optimization remain necessary; this change does not remove
+admission's repeated full payload audits.
+
 ## Legacy source configuration and behavior
 
 Use an owner-only JSON file containing 1–16 distinct entries:

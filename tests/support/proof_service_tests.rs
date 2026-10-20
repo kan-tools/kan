@@ -111,7 +111,10 @@ fn proof_wire_capabilities_and_exact_descending_pages_cover_both_profiles() {
             panic!("capabilities")
         };
         assert_eq!(protocol, wire::PROTOCOL);
-        assert_eq!(operations, ["capabilities", "snapshot", "page", "read"]);
+        assert_eq!(
+            operations,
+            ["capabilities", "snapshot", "page", "read", "read-batch"]
+        );
         let pin = snapshot(&f, &r);
         let wire::Output::Page { records, next } = call(
             &f,

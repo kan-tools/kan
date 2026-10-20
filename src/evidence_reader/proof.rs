@@ -134,6 +134,57 @@ impl Reader {
             .map_err(|_| Failure::Corrupt)?;
         Ok((bytes, reply))
     }
+    fn compatible_operations(operations: &[String]) -> bool {
+        operations == ["capabilities", "snapshot", "page", "read"]
+            || operations == ["capabilities", "snapshot", "page", "read", "read-batch"]
+    }
+    /// Returns a nonempty ordered prefix (at most READ_BATCH_LIMIT inputs).
+    /// Batch support is negotiated, never assumed from an old pin. Each call
+    /// checks current authorization; older services use the single-read path.
+    pub async fn sources_prefix(&self, pin: &Pin, selections: &[Token]) -> Result<Vec<Source>> {
+        if selections.is_empty() || selections.len() > wire::READ_BATCH_LIMIT {
+            return Err(Failure::Invalid);
+        }
+        let checked = self.check_pin(pin)?;
+        let expected = selections
+            .iter()
+            .map(|selection| self.check_token(&checked, selection, TokenPurpose::Source))
+            .collect::<Result<Vec<_>>>()?;
+        let (_, capabilities) = self.call(wire::Command::Capabilities).await?;
+        let wire::Output::Capabilities {
+            protocol,
+            operations,
+        } = capabilities.reply.result?
+        else {
+            return Err(Failure::Corrupt);
+        };
+        if protocol != wire::PROTOCOL || !Self::compatible_operations(&operations) {
+            return Err(Failure::Corrupt);
+        }
+        if !operations.iter().any(|operation| operation == "read-batch") {
+            return Ok(vec![self.source(pin, &selections[0]).await?]);
+        }
+        let (_, reply) = self
+            .call(wire::Command::ReadBatch {
+                pin: wire::Coordinate::from_frontier(&checked.frontier),
+                selections: expected
+                    .iter()
+                    .map(wire::Coordinate::from_frontier)
+                    .collect(),
+            })
+            .await?;
+        let wire::Output::EvidenceBatch { records } = reply.reply.result? else {
+            return Err(Failure::Corrupt);
+        };
+        if records.is_empty() || records.len() > selections.len() {
+            return Err(Failure::Corrupt);
+        }
+        records
+            .into_iter()
+            .zip(&expected)
+            .map(|(row, expected)| self.decode_source(&checked, expected, row.record, row.source))
+            .collect()
+    }
     pub async fn snapshot(&self) -> Result<Pin> {
         let (_, capability) = self.call(wire::Command::Capabilities).await?;
         let wire::Output::Capabilities {
@@ -143,8 +194,7 @@ impl Reader {
         else {
             return Err(Failure::Corrupt);
         };
-        if protocol != wire::PROTOCOL || operations != ["capabilities", "snapshot", "page", "read"]
-        {
+        if protocol != wire::PROTOCOL || !Self::compatible_operations(&operations) {
             return Err(Failure::Corrupt);
         }
         let (request, reply) = self.call(wire::Command::Snapshot).await?;
@@ -426,8 +476,17 @@ impl Reader {
         else {
             return Err(Failure::Corrupt);
         };
-        let (record, proof) = self.verify_row(&checked, &expected, &row)?;
-        let occurrence = self.occurrence(&checked, &record, &proof, row.availability)?;
+        self.decode_source(&checked, &expected, row, source)
+    }
+    fn decode_source(
+        &self,
+        checked: &CheckedPin,
+        expected: &Frontier,
+        row: wire::RecordView,
+        source: wire::Source,
+    ) -> Result<Source> {
+        let (record, proof) = self.verify_row(checked, expected, &row)?;
+        let occurrence = self.occurrence(checked, &record, &proof, row.availability)?;
         match source {
             wire::Source::Missing if row.availability == wire::Availability::Missing => {
                 Ok(Source::Missing { record: occurrence })

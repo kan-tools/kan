@@ -318,3 +318,30 @@ The collector forwards Kan headers only to the gateway, which records then strip
 them before the provider. No new capture-wire variant or persistent store is added.
 Cross-archive sessions, fragmented-header relationship extraction and persistent
 indexing remain explicit required follow-ups, not implied by this windowed view.
+
+### Bounded proof reads (2026-10-19)
+
+Attempt acquisition uses an additive `read-batch` proof operation: at most eight
+explicit coordinates per request, with a reply containing a nonempty ordered
+prefix bounded to 4 MiB of retained request bytes. One current metadata audit
+covers that batch; each selection and fresh payload is still checked separately.
+There is no audit cache across requests or persistent plaintext cache. The reader
+verifies every returned coordinate, proof, writer signature and encryption binding;
+it resumes only the unreturned suffix. Current grants are checked on every batch
+and again before publishing derived Content. Legacy single reads remain supported.
+Batch capability is optional for older services. This addresses repeated read
+audits; admission's full payload audits require separate integrity-preserving work.
+
+### Cross-archive session workspace (2026-10-19)
+
+An explicit human scan visits authorized proof archives at their separate catalog
+pins, round-robin, retaining at most 1,000 descriptions in tab memory per window.
+It displays per-archive cursors/coverage and unavailable sources. Equal explicit
+session IDs are grouped only within the same verified writer, observer and scheme;
+archives and their occurrences remain separate. Parent lookup uses that same
+identity boundary and reports every observed archive match rather than silently
+choosing or deduplicating a copy. Link evidence and attempt Content reopen through
+the chosen archive's original pin and current access checks. A stopped or bounded
+scan remains partial; a new window retains continuation but discards prior window
+descriptions. Lock and catalog refresh clear the workspace. This is navigation over
+verified observations, not a persistent search index or authoritative session merge.

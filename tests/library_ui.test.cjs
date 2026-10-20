@@ -408,3 +408,60 @@ test('scan window progresses through batches and stopping ignores late descripti
  assert.equal(JSON.parse(u.pending[0].opts.body).cursor.signature,'next');const pending=u.pending[0];u.node('stop-scan').click();assert.equal(pending.opts.signal.aborted,true);
  await u.respond({version:'kan-discovery/1',records:[discoveredCapture('2')],next:null});assert.match(u.node('discovery-coverage').textContent,/1 occurrences inspected/);assert.equal(u.node('scan-window').disabled,false);
 });
+
+async function openWorkspaceUI(u){
+ await u.login();await u.respond({...proofCatalog,scopes:['archive-A','archive-B'].map(id=>({...proofEntry(id),pin:{request:'pin-'+id,reply:{}},pin_wire:exactPin,capabilities:['attempt-discovery','content-inspection','attempt-content','session-links']}))});await u.respond(proofPage);
+}
+function linkedRecord(sequence,attempt,parent=null,writer='verified-writer'){
+ const item=discoveredCapture(sequence);item.writer=writer;item.description.attempt=attempt;
+ item.record.selection={signature:sequence+'-'+attempt};
+ item.description.session_link={state:'claimed',scheme:'kan-header',session:'c'.repeat(64),parent_attempt:parent,transition:parent?'branch':'start'};return item;
+}
+test('cross-archive sessions follow parent and link source with each original pin',async()=>{
+ const u=ui();await openWorkspaceUI(u);u.node('scan-archives').click();await tick();
+ const parent=linkedRecord('1','a'.repeat(64)),child=linkedRecord('1','b'.repeat(64),parent.description.attempt);
+ assert.equal(JSON.parse(u.pending[0].opts.body).source,'archive-A');
+ await u.respond({version:'kan-discovery/1',records:[parent],next:null});
+ assert.equal(JSON.parse(u.pending[0].opts.body).source,'archive-B');
+ await u.respond({version:'kan-discovery/1',records:[child],next:null});
+ const texts=walk(u.node('workspace-sessions')).map(n=>n.textContent).join(' ');assert.match(texts,/2 archives/);assert.match(texts,/branch/);
+ walk(u.node('workspace-sessions')).find(n=>n.textContent==='Read parent in archive-A').click();await tick();
+ let q=JSON.parse(u.pending[0].opts.body);assert.equal(q.action,'proof-attempt');assert.equal(q.source,'archive-A');assert.equal(q.pin.request,'pin-archive-A');assert.deepEqual(q.selections,[parent.record.selection]);
+ await u.respond({...contentResult,occurrences:[{record:{sequence:'1'}}]});
+ const cites=walk(u.node('workspace-sessions')).filter(n=>n.textContent==='Link source 1');cites[1].click();await tick();
+ q=JSON.parse(u.pending[0].opts.body);assert.equal(q.action,'proof-source');assert.equal(q.source,'archive-B');assert.equal(q.pin.request,'pin-archive-B');assert.deepEqual(q.selection,child.record.selection);
+ await u.respond({},403);assert.equal(u.node('workspace-sessions').children.length,0);assert.equal(u.node('session-workspace').hidden,true);
+});
+test('workspace separates writers and archive copies and exposes all parent matches',async()=>{
+ const u=ui();await openWorkspaceUI(u);u.node('scan-archives').click();await tick();
+ const parent=linkedRecord('3','a'.repeat(64)),child=linkedRecord('2','b'.repeat(64),parent.description.attempt),foreign=linkedRecord('1','b'.repeat(64),parent.description.attempt,'other-writer');
+ await u.respond({version:'kan-discovery/1',records:[parent,child],next:null});
+ await u.respond({version:'kan-discovery/1',records:[clone(parent),foreign],next:null});
+ assert.match(u.node('workspace-coverage').textContent,/2 explicit session groups/);
+ const texts=walk(u.node('workspace-sessions')).map(n=>n.textContent).join(' ');assert.match(texts,/2 observed parent archive matches/);assert.match(texts,/Parent not observed/);
+ const parentButtons=walk(u.node('workspace-sessions')).filter(n=>n.textContent.startsWith('Read parent in '));assert.equal(parentButtons.length,2);
+ u.node('resnapshot').click();await tick();assert.match(u.node('workspace-coverage').textContent,/0 records/);
+ await u.respond({pin:{request:'new',reply:{}},pin_wire:exactPin});await u.respond(proofPage);
+ u.node('scan-archives').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).pin.request,'new');assert.equal(JSON.parse(u.pending[0].opts.body).cursor,null);
+ u.node('lock').click();await u.respond({version:'kan-discovery/1',records:[parent],next:null});assert.equal(u.node('workspace-sessions').children.length,0);
+});
+test('workspace scans round-robin, retains failed coverage, and stops without accepting late replies',async()=>{
+ const u=ui();await openWorkspaceUI(u);u.node('scan-archives').click();await tick();
+ await u.respond({version:'kan-discovery/1',records:[linkedRecord('3','a'.repeat(64))],next:{signature:'continue-A'}});
+ assert.equal(JSON.parse(u.pending[0].opts.body).source,'archive-B');await u.respond({},503);
+ assert.equal(JSON.parse(u.pending[0].opts.body).source,'archive-A');assert.deepEqual(JSON.parse(u.pending[0].opts.body).cursor,{signature:'continue-A'});
+ u.node('stop-archives').click();await u.respond({version:'kan-discovery/1',records:[linkedRecord('2','b'.repeat(64))],next:null});
+ assert.match(u.node('workspace-coverage').textContent,/1 records/);assert.match(walk(u.node('workspace-sources')).map(n=>n.textContent).join(' '),/unavailable; retry scan/);
+ u.node('clear-archives').click();assert.match(u.node('workspace-coverage').textContent,/0 records/);
+});
+test('workspace window bound preserves independent continuation without growing tab storage',async()=>{
+ const u=ui();await openWorkspaceUI(u);u.node('scan-archives').click();await tick();
+ for(let batch=0;batch<50;batch++){
+  assert.equal(JSON.parse(u.pending[0].opts.body).source,batch%2?'archive-B':'archive-A');
+  await u.respond({version:'kan-discovery/1',records:Array.from({length:20},(_,i)=>linkedRecord(String(batch*20+i+1),'a'.repeat(64))),next:{signature:'next-'+batch}});
+ }
+ assert.equal(u.pending.length,0);assert.match(u.node('workspace-coverage').textContent,/1000 records/);assert.equal(u.node('scan-archives').textContent,'Continue in a new window');
+ u.node('scan-archives').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).cursor,{signature:'next-48'});
+ await u.respond({version:'kan-discovery/1',records:[],next:null});assert.deepEqual(JSON.parse(u.pending[0].opts.body).cursor,{signature:'next-49'});
+ await u.respond({version:'kan-discovery/1',records:[],next:null});assert.match(u.node('workspace-coverage').textContent,/0 records.*2\/2 archive inventories finished/);
+});

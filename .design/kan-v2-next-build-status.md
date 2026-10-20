@@ -21,7 +21,7 @@ and reviews are foundations, not automatic end-to-end completion.
 | Work package | Completion means | Current position |
 |---|---|---|
 | Capture, storage and migration | Supported harness/provider traffic reaches the centralized encrypted ledger; spool/retry and visible recording gaps work; v1 imports reconcile against preserved originals; local and remote use the same server architecture | Substantial implementation; integrated completion still to verify. Capacity testing exposed repeated full-archive audits during append; write/read performance remains a concrete follow-up |
-| Library and sessions | Authorized cross-project browsing, readable complete supported conversations/tools/attachments/branches/compaction/gaps, exact source/provenance and working downloads; missing/corrupt evidence stays visible | Proof Library now includes resumable scans, large-attempt Content and explicit session/parent/branch/compaction navigation. Browser workflow passes. An encrypted 11 MiB / 179-record attempt passes end-to-end; debug write/read performance needs improvement. Cross-archive sessions, fragmented metadata and browser file delivery remain |
+| Library and sessions | Authorized cross-project browsing, readable complete supported conversations/tools/attachments/branches/compaction/gaps, exact source/provenance and working downloads; missing/corrupt evidence stays visible | Proof Library now includes resumable scans, large-attempt Content and explicit session/parent/branch/compaction navigation. Browser workflow passes. An encrypted 11 MiB / 179-record attempt passes end-to-end; debug write/read performance needs improvement. Cross-archive session workspace implemented; fragmented metadata and browser file delivery remain |
 | Search and views | Authorized search/facets, stable references, honest index coverage, reproducible saved scope/trust views and relation inspection | Foundations/designs; integrated build remains |
 | Knowledge and annotations | Imported v1 claims and raw/derived evidence remain distinguishable; human/agent tags, annotations, relations and corrections use shared attributed append-only records with citations/history | Foundations/designs; integrated build remains |
 | Analysis and day integration | Explicit and tag-triggered background extraction/summary/assessment jobs, grants/quotas, retries/cancellation, recipe/model/input/output lineage and inspectable results | Integrated build remains |
@@ -346,3 +346,31 @@ retained locally at `.local-state/large-attempt-fixture.sqlite` for reuse.
 Cross-archive session views, fragmented HTTP metadata interpretation, persistent
 authorized search/views, annotations, analysis/day and owner administration remain
 required. No independent review is restarted at this checkpoint.
+
+## Batched acquisition and cross-archive sessions
+
+Proof Content and discovery now acquire bounded batches of up to eight records,
+sharing one current metadata audit per batch while retaining individual source
+checks and current authorization. The saved 11 MiB / 179-record encrypted fixture
+passes with all 177 citations in 33.64 seconds, down from 106.91 seconds in the
+previous debug run. Admission's 498-second setup remains unchanged. Neither this
+read improvement nor any metadata audit confers write authority.
+
+A tab-local cross-archive session workspace scans authorized archives round-robin,
+with separate pins/cursors, explicit per-archive coverage, stop/continue and a
+1,000-description window. It follows parent links across archive boundaries and
+opens exact link evidence. Writer/observer boundaries and copied occurrences stay
+distinct. Catalog refresh, snapshot refresh and lock discard derived workspace
+state. This is not persistent search or complete automatic session normalization.
+
+Affected proof service/reader/Library integrations, byte-bounded batch continuation,
+legacy fallback, malformed replies, current loss/revocation and strict all-target
+Clippy pass. The 70 Library UI tests pass. A real synthetic browser scan inspected 31 records
+across two archives, displayed their shared explicit session, followed an admitted
+child's parent into copied-archive Content ("Hello proof archive"), inspected the
+exact 628-byte link source back in the admitted archive, and cleared all workspace
+and source content on lock. No browser warnings/errors appeared; the tab closed
+and the fixture stopped successfully.
+Next work remains fragmented metadata, persistent authorized search/views,
+annotations, analysis/day, owner administration and application integration;
+write/read performance and actual browser file delivery remain release work.

@@ -15,6 +15,8 @@ pub const PROTOCOL: &str = "kan-proof-reader/1";
 pub const MAX_REQUEST: usize = 32 * 1024;
 pub const MAX_REPLY: usize = 12 * 1024 * 1024;
 pub const PAGE_LIMIT: usize = 40;
+pub const READ_BATCH_LIMIT: usize = 8;
+const READ_BATCH_BYTES: usize = 4 * 1024 * 1024;
 const REQUEST_DOMAIN: &[u8] = b"tools.kan.proof-read.request.v2\0";
 const REPLY_DOMAIN: &[u8] = b"tools.kan.proof-read.reply.v2\0";
 type Result<T> = std::result::Result<T, Failure>;
@@ -120,6 +122,10 @@ pub enum Command {
         pin: Coordinate,
         selected: Coordinate,
     },
+    ReadBatch {
+        pin: Coordinate,
+        selections: Vec<Coordinate>,
+    },
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -137,6 +143,19 @@ impl Request {
         }
         self.binding.owner_binding()?;
         service::author(&self.principal)?;
+        if let Command::ReadBatch { pin, selections } = &self.command {
+            if selections.is_empty() || selections.len() > READ_BATCH_LIMIT {
+                return Err(Failure::Invalid);
+            }
+            let pin = pin.frontier(&self.binding)?;
+            for selected in selections {
+                let selected = selected.frontier(&self.binding)?;
+                if selected.through == 0 || selected.through > pin.through {
+                    return Err(Failure::Invalid);
+                }
+            }
+            return Ok(());
+        }
         let (pin, next) = match &self.command {
             Command::Page { pin, next, limit } => {
                 if *limit == 0 || *limit > PAGE_LIMIT {
@@ -284,6 +303,15 @@ pub enum Output {
         record: RecordView,
         source: Source,
     },
+    EvidenceBatch {
+        records: Vec<EvidenceRecord>,
+    },
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EvidenceRecord {
+    pub record: RecordView,
+    pub source: Source,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -445,6 +473,38 @@ impl Service {
             payload_bytes: PAGE_LIMIT * service::MAX_REQUEST,
         }
     }
+    fn read_row(&self, row: &inventory::Occurrence, deadline: Instant) -> Result<EvidenceRecord> {
+        let fresh = inventory::source(
+            &self.path,
+            self.binding.profile.inventory(),
+            self.binding.owner_binding()?,
+            &row.selection,
+            service::MAX_REQUEST,
+            self.remaining(deadline)?,
+        )?;
+        let mut record = view(row);
+        let source = match fresh {
+            inventory::Source::Available { bytes, writer } => {
+                record.availability = Availability::Available;
+                Source::Available {
+                    signed_request: service::hex(&bytes),
+                    writer,
+                }
+            }
+            inventory::Source::Unavailable(inventory::Availability::Missing) => {
+                record.availability = Availability::Missing;
+                Source::Missing
+            }
+            inventory::Source::Unavailable(inventory::Availability::Corrupt) => {
+                record.availability = Availability::Corrupt;
+                Source::Corrupt
+            }
+            inventory::Source::Unavailable(inventory::Availability::Available) => {
+                return Err(Failure::Corrupt)
+            }
+        };
+        Ok(EvidenceRecord { record, source })
+    }
     fn execute(&self, bytes: &[u8], now: u64) -> Result<Output> {
         let signed = SignedRequest::decode(bytes)?;
         let request = signed.request;
@@ -464,7 +524,7 @@ impl Service {
         match request.command {
             Command::Capabilities => Ok(Output::Capabilities {
                 protocol: PROTOCOL.into(),
-                operations: ["capabilities", "snapshot", "page", "read"]
+                operations: ["capabilities", "snapshot", "page", "read", "read-batch"]
                     .map(String::from)
                     .to_vec(),
             }),
@@ -494,6 +554,30 @@ impl Service {
                     next,
                 })
             }
+            Command::ReadBatch { pin, selections } => {
+                let inventory = self.open(Some(&pin), deadline)?;
+                let mut records = Vec::new();
+                let mut payload_bytes = 0;
+                for selected in selections {
+                    let mut page = inventory.page_from(
+                        &selected.frontier(&self.binding)?,
+                        Self::page_budget(1),
+                        self.remaining(deadline)?,
+                    )?;
+                    // Return an ordered prefix that fits both memory and wire bounds.
+                    // Every legal single request fits this byte allowance.
+                    if payload_bytes + page.payload_budget_used > READ_BATCH_BYTES {
+                        break;
+                    }
+                    payload_bytes += page.payload_budget_used;
+                    let row = page.records.pop().ok_or(Failure::Missing)?;
+                    records.push(self.read_row(&row, deadline)?);
+                }
+                if records.is_empty() {
+                    return Err(Failure::Corrupt);
+                }
+                Ok(Output::EvidenceBatch { records })
+            }
             Command::Read { pin, selected } => {
                 let inventory = self.open(Some(&pin), deadline)?;
                 let mut page = inventory.page_from(
@@ -503,35 +587,7 @@ impl Service {
                 )?;
                 let row = page.records.pop().ok_or(Failure::Missing)?;
                 drop(inventory);
-                let fresh = inventory::source(
-                    &self.path,
-                    self.binding.profile.inventory(),
-                    self.binding.owner_binding()?,
-                    &row.selection,
-                    service::MAX_REQUEST,
-                    self.remaining(deadline)?,
-                )?;
-                let mut record = view(&row);
-                let source = match fresh {
-                    inventory::Source::Available { bytes, writer } => {
-                        record.availability = Availability::Available;
-                        Source::Available {
-                            signed_request: service::hex(&bytes),
-                            writer,
-                        }
-                    }
-                    inventory::Source::Unavailable(inventory::Availability::Missing) => {
-                        record.availability = Availability::Missing;
-                        Source::Missing
-                    }
-                    inventory::Source::Unavailable(inventory::Availability::Corrupt) => {
-                        record.availability = Availability::Corrupt;
-                        Source::Corrupt
-                    }
-                    inventory::Source::Unavailable(inventory::Availability::Available) => {
-                        return Err(Failure::Corrupt)
-                    }
-                };
+                let EvidenceRecord { record, source } = self.read_row(&row, deadline)?;
                 Ok(Output::Evidence { record, source })
             }
         }

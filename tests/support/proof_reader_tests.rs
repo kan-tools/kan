@@ -1,5 +1,6 @@
 use super::*;
 use kan::evidence_reader::proof as client;
+use kan::evidence_service::Failure;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Mutex,
@@ -108,6 +109,31 @@ impl Server {
                                 Ok(wire::Output::Snapshot { plan, .. }) if selected == 9 => {
                                     *plan = None
                                 }
+                                Ok(wire::Output::Capabilities { operations, .. })
+                                    if selected == 16 =>
+                                {
+                                    operations.retain(|op| op != "read-batch");
+                                }
+                                Ok(wire::Output::EvidenceBatch { records }) => match selected {
+                                    11 => records.clear(),
+                                    12 => records.swap(0, 1),
+                                    13 => {
+                                        if let wire::Source::Available { writer, .. } =
+                                            &mut records[0].source
+                                        {
+                                            *writer = identity(7).did().to_string();
+                                        }
+                                    }
+                                    14 => {
+                                        if let wire::Source::Available { signed_request, .. } =
+                                            &mut records[0].source
+                                        {
+                                            *signed_request = "00".into();
+                                        }
+                                    }
+                                    15 => records.truncate(1),
+                                    _ => {}
+                                },
                                 _ => {}
                             }
                             resign(&mut reply);
@@ -455,3 +481,134 @@ async fn proof_reader_can_browse_empty_copy_before_original_membership_is_comple
 
 #[path = "proof_library_tests.rs"]
 mod library_tests;
+
+#[tokio::test]
+async fn proof_batch_preserves_order_fresh_loss_and_current_grants() {
+    for profile in [Profile::Admitted, Profile::Copied] {
+        let dir = tempfile::tempdir().unwrap();
+        let f = fixture_requests(dir.path(), profile, encrypted);
+        let server = Server::start(&f).await;
+        let reader = server.client(&f);
+        let pin = reader.snapshot().await.unwrap();
+        let page = reader.page(&pin, None, 3).await.unwrap();
+        // Deliberately non-descending selection: output must follow caller order.
+        let selections = vec![
+            page.records[2].selection.clone(),
+            page.records[0].selection.clone(),
+            page.records[1].selection.clone(),
+        ];
+        let sources = reader.sources_prefix(&pin, &selections).await.unwrap();
+        assert_eq!(sources.len(), 3);
+        for (source, sequence) in sources.iter().zip(["1", "3", "2"]) {
+            let client::Source::Available {
+                record,
+                writer,
+                plaintext,
+            } = source
+            else {
+                panic!("available");
+            };
+            assert_eq!(record.sequence, sequence);
+            assert_eq!(writer, identity(6).did().as_str());
+            assert_eq!(plaintext, RAW);
+        }
+        for mode in [11, 12, 13, 14] {
+            server.mode.store(mode, Ordering::Relaxed);
+            assert!(
+                matches!(
+                    reader.sources_prefix(&pin, &selections).await,
+                    Err(Failure::Corrupt)
+                ),
+                "mode {mode}"
+            );
+        }
+        for mode in [15, 16] {
+            server.mode.store(mode, Ordering::Relaxed);
+            let sources = reader.sources_prefix(&pin, &selections).await.unwrap();
+            assert_eq!(sources.len(), 1);
+            assert!(
+                matches!(&sources[0],client::Source::Available{record,..} if record.sequence == "1")
+            );
+        }
+        server.mode.store(0, Ordering::Relaxed);
+        f.remove(2);
+        f.edit(&format!(
+            "UPDATE objects SET bytes=x'00' WHERE cid='{}'",
+            f.id(1)
+        ));
+        let sources = reader.sources_prefix(&pin, &selections).await.unwrap();
+        assert!(matches!(&sources[0], client::Source::Available { .. }));
+        assert!(matches!(&sources[1], client::Source::Missing { .. }));
+        assert!(matches!(&sources[2], client::Source::Corrupt { .. }));
+        server
+            .service
+            .lock()
+            .unwrap()
+            .replace_grants(Vec::new())
+            .unwrap();
+        assert!(matches!(
+            reader.sources_prefix(&pin, &selections).await,
+            Err(Failure::AccessLimited)
+        ));
+        server.stop().await;
+    }
+}
+
+#[tokio::test]
+async fn proof_batch_byte_limit_returns_a_resumable_prefix() {
+    let dir = tempfile::tempdir().unwrap();
+    let raw = vec![b'x'; 900 * 1024];
+    let f = fixture_requests(dir.path(), Profile::Admitted, |n, audience, previous| {
+        let mut req = service::SignedRequest::decode(&request(n, audience, previous))
+            .unwrap()
+            .request;
+        let service::Command::Append { ciphertext, .. } = &mut req.command else {
+            unreachable!()
+        };
+        *ciphertext = service::hex(
+            &kan::evidence_crypto::seal(
+                &kan::evidence_crypto::public_key(&PRIVATE).unwrap(),
+                &[1; 32],
+                &raw,
+            )
+            .unwrap(),
+        );
+        service::SignedRequest::sign(req, &identity(6))
+            .unwrap()
+            .bytes()
+            .unwrap()
+    });
+    let server = Server::start(&f).await;
+    let reader = server.client(&f);
+    let pin = reader.snapshot().await.unwrap();
+    let page = reader.page(&pin, None, 3).await.unwrap();
+    let selections: Vec<_> = page.records.into_iter().map(|r| r.selection).collect();
+    let first = reader.sources_prefix(&pin, &selections).await.unwrap();
+    assert_eq!(first.len(), 2);
+    let rest = reader
+        .sources_prefix(&pin, &selections[first.len()..])
+        .await
+        .unwrap();
+    assert_eq!(rest.len(), 1);
+    for (source, sequence) in first.into_iter().chain(rest).zip(["3", "2", "1"]) {
+        let client::Source::Available {
+            record, plaintext, ..
+        } = source
+        else {
+            panic!("available");
+        };
+        assert_eq!(record.sequence, sequence);
+        assert_eq!(plaintext, raw);
+    }
+    assert!(matches!(
+        reader.sources_prefix(&pin, &[]).await,
+        Err(Failure::Invalid)
+    ));
+    assert!(matches!(
+        reader
+            .sources_prefix(&pin, &vec![selections[0].clone(); 9])
+            .await,
+        Err(Failure::Invalid)
+    ));
+    server.stop().await;
+}

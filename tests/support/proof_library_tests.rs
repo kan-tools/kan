@@ -350,7 +350,17 @@ async fn proof_library_browser_fixture() {
             .to_string(),
     );
     for n in 3..25 {
-        let bytes = encrypted(n, 8, previous);
+        let bytes = if n == 3 {
+            let frame = frame_bytes(
+                &"d".repeat(64),
+                0,
+                json!({"type":"http-metadata","direction":"request","headers":[["x-kan-session",service::hex("c".repeat(64).as_bytes())],["x-kan-parent-attempt",service::hex("a".repeat(64).as_bytes())],["x-kan-transition",service::hex(b"branch")]],"omitted":[]}),
+                &[],
+            );
+            encrypted_frame(n, 8, previous, &frame)
+        } else {
+            encrypted(n, 8, previous)
+        };
         attested::Archive::open(&admitted.root, admitted.binding.clone())
             .unwrap()
             .admit(&bytes, &identity(8), &grant(), 200)
@@ -602,24 +612,57 @@ async fn large_attempt_reads_over_ten_megabytes_with_all_chunk_citations() {
         &[],
     ));
     let dir = tempfile::tempdir().unwrap();
-    let mut f = fixture_requests(dir.path(), Profile::Admitted, |n, a, p| {
-        encrypted_frame(n, a, p, &frames[n as usize])
-    });
-    let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
-    for (n, frame) in frames.iter().enumerate().skip(3) {
-        let previous = Some(
-            service::append_manifest(f.requests.last().unwrap())
-                .unwrap()
-                .cid()
-                .to_string(),
-        );
-        let bytes = encrypted_frame(n as u8, 8, previous, frame);
-        archive
-            .admit(&bytes, &identity(8), &grant(), 200 + n as u64)
+    // Reuse only an explicitly supplied synthetic fixture. Normal CI still
+    // creates and admits every record. All real reads/proofs run in either case.
+    let f = if let Some(path) = std::env::var_os("KAN_LARGE_ATTEMPT_FIXTURE") {
+        use std::os::unix::fs::PermissionsExt;
+        let root = dir.path().join("archive");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let db = root.join("archive.sqlite");
+        std::fs::copy(path, &db).unwrap();
+        std::fs::set_permissions(&db, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let conn =
+            rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .unwrap();
+        let requests = conn
+            .prepare("SELECT bytes FROM objects")
+            .unwrap()
+            .query_map([], |row| row.get::<_, Vec<u8>>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        f.requests.push(bytes);
-    }
-    drop(archive);
+        Fixture {
+            root,
+            binding: attested::Binding {
+                archive: [2; 32],
+                scope: [1; 32],
+                issuer: identity(8).did().to_string(),
+            },
+            requests,
+            profile: Profile::Admitted,
+        }
+    } else {
+        let mut f = fixture_requests(dir.path(), Profile::Admitted, |n, a, p| {
+            encrypted_frame(n, a, p, &frames[n as usize])
+        });
+        let mut archive = attested::Archive::open(&f.root, f.binding.clone()).unwrap();
+        for (n, frame) in frames.iter().enumerate().skip(3) {
+            let previous = Some(
+                service::append_manifest(f.requests.last().unwrap())
+                    .unwrap()
+                    .cid()
+                    .to_string(),
+            );
+            let bytes = encrypted_frame(n as u8, 8, previous, frame);
+            archive
+                .admit(&bytes, &identity(8), &grant(), 200 + n as u64)
+                .unwrap();
+            f.requests.push(bytes);
+        }
+        drop(archive);
+        f
+    };
     eprintln!(
         "synthetic large archive prepared in {:?}",
         started.elapsed()

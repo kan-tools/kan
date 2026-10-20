@@ -5,6 +5,7 @@
   const selections = new Map();
   let activeSource = null, catalogContent = false;
   const discovered = new Map();
+  let workspaceStates = [], workspaceRun = 0;
   let scanCursor = null, scanComplete = false, scanCount = 0, discoveryRun = 0;
   const sourceId = entry => entry.id || entry.scope;
   const isProof = () => activeSource?.protocol === 'kan-proof-reader/1';
@@ -33,7 +34,7 @@
   function lock(message = 'Locked · connect to browse authorized evidence.') {
     for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
-    pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); selections.clear(); clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
+    pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); clearWorkspace(); selections.clear(); clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
     $('catalog-status').textContent = ''; $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
     $('lock').disabled = true; $('token').value = ''; notice(message); $('token').focus();
   }
@@ -156,7 +157,7 @@
   }
   async function catalog() {
     clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
-    pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); selections.clear();
+    pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); clearWorkspace(); selections.clear();
     scopes = []; pin = null; history = []; after = 0; next = null;
     $('coverage').textContent = ''; $('count').textContent = ''; $('page-position').textContent = '';
     $('empty').hidden = true; $('previous').disabled = true; $('next').disabled = true;
@@ -169,6 +170,9 @@
     catalogContent = value.capabilities.includes('content-inspection');
     if (value.scopes.some(s => (s.capabilities?.includes('content-inspection') || (value.version === 1 && catalogContent)) && typeof s.pin_wire !== 'string')) throw new Error('Missing exact snapshot.');
     scopes = value.scopes;
+    workspaceStates = scopes.filter(s => s.protocol === 'kan-proof-reader/1' && s.capabilities.includes('attempt-discovery')).map(entry => ({entry, cursor:null, complete:false, records:[], inspected:0, error:false}));
+    $('session-workspace').hidden = workspaceStates.length === 0;
+    renderWorkspace();
     for (const scope of scopes) { const option = document.createElement('option'); option.value = sourceId(scope); option.textContent = scope.protocol === 'kan-proof-reader/1' ? `${scope.scope} · ${scope.binding.profile} · ${scope.binding.archive}` : scope.scope; $('scope').append(option); }
     $('login').hidden = true; $('library').hidden = false; $('lock').disabled = false;
     const partial = value.coverage === 'partial';
@@ -236,6 +240,13 @@
       root.append(list);
     }
   }
+  function validateDiscovery(value) {
+      if (value.version !== 'kan-discovery/1' || !Array.isArray(value.records) || value.records.length > 20) throw new Error('Invalid discovery response.');
+      for (const item of value.records) {
+        if (!item?.record?.selection || typeof item.record.sequence !== 'string' || !item.description || !['capture','opaque','unsupported','malformed','missing','corrupt'].includes(item.description.kind)) throw new Error('Invalid discovery record.');
+        if (item.description.kind === 'capture' && (typeof item.writer !== 'string' || !/^(0|[1-9][0-9]*)$/.test(item.description.ordinal) || typeof item.description.attempt !== 'string' || !item.description.event)) throw new Error('Invalid capture identity.');
+      }
+  }
   async function discoverWindow(all = false) {
     if (!pin || !isProof() || scanComplete) return;
     const currentRun = ++discoveryRun; let batches=0;
@@ -246,11 +257,7 @@
     try { do {
       const value = await rpc({action:'proof-discover',source:sourceId(activeSource),pin,cursor:scanCursor,limit:20});
       if (!value) return;
-      if (value.version !== 'kan-discovery/1' || !Array.isArray(value.records) || value.records.length > 20) throw new Error('Invalid discovery response.');
-      for (const item of value.records) {
-        if (!item?.record?.selection || typeof item.record.sequence !== 'string' || !item.description || !['capture','opaque','unsupported','malformed','missing','corrupt'].includes(item.description.kind)) throw new Error('Invalid discovery record.');
-        if (item.description.kind === 'capture' && (typeof item.writer !== 'string' || !/^(0|[1-9][0-9]*)$/.test(item.description.ordinal) || typeof item.description.attempt !== 'string' || !item.description.event)) throw new Error('Invalid capture identity.');
-      }
+      validateDiscovery(value);
       if (discovered.size + value.records.length > 1000) discovered.clear();
       for (const item of value.records) discovered.set(item.record.sequence,item);
       scanCount += value.records.length; scanCursor = value.next; scanComplete = value.next === null;
@@ -304,6 +311,120 @@
       root.append(card);
     }
   }
+  function clearWorkspace() {
+    workspaceRun++; workspaceStates = [];
+    $('workspace-sessions').replaceChildren(); $('workspace-sources').replaceChildren();
+    $('workspace-coverage').textContent = ''; $('session-workspace').hidden = true;
+    $('scan-archives').disabled = false; $('stop-archives').disabled = true;
+  }
+  function resetWorkspace() {
+    workspaceRun++;
+    for(const state of workspaceStates){state.records=[];state.cursor=null;state.complete=false;state.inspected=0;state.error=false;}
+    renderWorkspace();$('stop-archives').disabled=true;
+  }
+  const attemptKey = item => JSON.stringify([item.writer,item.description.observer,item.description.attempt]);
+  function workspaceGroups() {
+    const groups=[];
+    for (const state of workspaceStates) {
+      const local=new Map();
+      for(const item of state.records) if(item.description.kind==='capture') {
+        const key=attemptKey(item);
+        if(!local.has(key))local.set(key,{state,items:[],key});
+        local.get(key).items.push(item);
+      }
+      groups.push(...local.values());
+    }
+    return groups;
+  }
+  function openWorkspace(group, sourceItem=null) {
+    cancelWork(); workspaceRun++; $('stop-archives').disabled=true;
+    $('scan-archives').disabled=workspaceStates.every(s=>s.complete);
+    const entry=group.state.entry;
+    choose(entry); $('scope').value=sourceId(entry);
+    clearContent(); checks.clear(); clearInspector(); buttons.clear(); selections.clear(); $('rows').replaceChildren();
+    after=0;next=null;history=[];$('previous').disabled=true;$('next').disabled=true;
+    $('count').textContent='Session selection';$('page-position').textContent='Choose an archive to browse its inventory';$('empty').hidden=true;$('coverage').textContent='Selected observed attempt; partial inventory coverage.';
+    for(const item of group.items)discovered.set(item.record.sequence,item);
+    scanCount=group.items.length;renderDiscovery();
+    if(sourceItem)run(()=>inspect(sourceItem.record.sequence));else readDiscoveredAttempt(group.items);
+  }
+  function renderWorkspace() {
+    const root=$('workspace-sessions'), status=$('workspace-sources');root.replaceChildren();status.replaceChildren();
+    const count=workspaceStates.reduce((n,s)=>n+s.records.length,0), complete=workspaceStates.filter(s=>s.complete).length;
+    const groups=workspaceGroups(), sessions=new Map();
+    let unassigned=0, invalid=0;
+    for(const state of workspaceStates) {
+      status.append(textNode('p',`${state.entry.binding.archive} · ${state.inspected} inspected · ${state.records.length} in window · ${state.error?'unavailable; retry scan':state.complete?'inventory end reached':'partial inventory'}`,'content-coverage'));
+      unassigned+=state.records.filter(x=>x.description.kind!=='capture').length;
+    }
+    for(const group of groups)for(const item of group.items) {
+      const link=item.description.session_link;if(!link)continue;
+      if(link.state!=='claimed'){invalid++;continue;}
+      const id=JSON.stringify([item.writer,item.description.observer,link.scheme,link.session]);
+      if(!sessions.has(id))sessions.set(id,{id,link,writer:item.writer,observer:item.description.observer,claims:[]});
+      sessions.get(id).claims.push({group,item,link});
+    }
+    $('workspace-coverage').textContent=`${count} records in this window · ${complete}/${workspaceStates.length} archive inventories finished · ${sessions.size} explicit session groups · ${unassigned} unassigned records · ${invalid} invalid link claims. Coverage is limited to authorized sources and this window; traffic completeness is unknown.`;
+    $('scan-archives').textContent=count>=1000?'Continue in a new window':count?'Continue archive scan':'Scan authorized archives';
+    $('scan-archives').disabled=workspaceStates.length===0 || complete===workspaceStates.length;
+    for(const session of sessions.values()) {
+      const card=document.createElement('details');card.className='attempt';
+      const archiveCount=new Set(session.claims.map(c=>sourceId(c.group.state.entry))).size;
+      card.append(textNode('summary',`Session ${session.link.session} · ${archiveCount} archives · ${session.claims.length} link claims`));
+      card.append(textNode('p',`${session.link.scheme} · Writer ${session.writer} · Observer ${session.observer}`,'content-identity'));
+      for(const {group,item,link} of session.claims) {
+        const row=textNode('p',`${link.transition} · Attempt ${item.description.attempt} · Archive ${group.state.entry.binding.archive} `,'content-identity');
+        if(group.state.entry.capabilities.includes('content-inspection')) {
+          const read=textNode('button','Read attempt in this archive');read.addEventListener('click',()=>openWorkspace(group));row.append(read);
+        }
+        const cite=textNode('button',`Link source ${item.record.sequence}`);cite.addEventListener('click',()=>openWorkspace(group,item));row.append(cite);
+        if(link.parent_attempt) {
+          const parents=groups.filter(g=>g.items[0].writer===item.writer && g.items[0].description.observer===item.description.observer && g.items[0].description.attempt===link.parent_attempt);
+          row.append(textNode('span',parents.length?` ${parents.length} observed parent archive matches; relationship remains a claim. `:' Parent not observed in this window. '));
+          for(const parent of parents) {
+            const button=textNode('button',`Read parent in ${parent.state.entry.binding.archive}`);
+            button.addEventListener('click',()=>openWorkspace(parent));row.append(button);
+          }
+          if(link.parent_attempt===item.description.attempt)row.append(textNode('span',' Self-reference; no causal ordering inferred.'));
+        }
+        const claims=groups.filter(g=>g.key===group.key).flatMap(g=>g.items).map(x=>x.description.session_link).filter(x=>x?.state==='claimed');
+        if(new Set(claims.map(x=>JSON.stringify([x.scheme,x.session,x.parent_attempt,x.transition]))).size>1)row.append(textNode('span',' Conflicting session claims retained.'));
+        card.append(row);
+      }
+      root.append(card);
+    }
+    if(!sessions.size)root.append(textNode('p','No explicit session relationships found in this window. Individual attempts remain available in archive discovery.','content-coverage'));
+  }
+  async function scanWorkspace() {
+    if(!workspaceStates.length)return;
+    const current=++workspaceRun;clearContent();clearInspector();
+    if(workspaceStates.reduce((n,s)=>n+s.records.length,0)>=1000)for(const state of workspaceStates)state.records=[];
+    for(const state of workspaceStates)state.error=false;
+    $('scan-archives').disabled=true;$('stop-archives').disabled=false;
+    let batches=0;
+    try {
+      while(current===workspaceRun && batches<50) {
+        let advanced=false;
+        for(const state of workspaceStates) {
+          if(state.complete || state.error)continue;
+          if(batches>=50 || workspaceStates.reduce((n,s)=>n+s.records.length,0)>=1000)return;
+          const remaining=1000-workspaceStates.reduce((n,s)=>n+s.records.length,0);
+          try {
+            const value=await rpc({action:'proof-discover',source:sourceId(state.entry),pin:state.entry.pin,cursor:state.cursor,limit:Math.min(20,remaining)});
+            if(!value || current!==workspaceRun)return;
+            validateDiscovery(value);
+            if(value.records.length>remaining || (value.records.length===0 && value.next!==null))throw new Error('Invalid discovery progress.');
+            state.records.push(...value.records);state.inspected+=value.records.length;state.cursor=value.next;state.complete=value.next===null;
+          } catch(error) {if(current!==workspaceRun)return;if(error.accessDenied)throw error;state.error=true;}
+          batches++;advanced=true;renderWorkspace();$('scan-archives').disabled=true;
+        }
+        if(!advanced)break;
+      }
+    } finally {if(current===workspaceRun){renderWorkspace();$('stop-archives').disabled=true;}}
+  }
+  $('scan-archives').addEventListener('click',()=>run(scanWorkspace));
+  $('stop-archives').addEventListener('click',()=>{workspaceRun++;cancelWork();renderWorkspace();$('stop-archives').disabled=true;notice('Archive scan stopped. Completed batches and partial coverage remain visible.');});
+  $('clear-archives').addEventListener('click',()=>{cancelWork();resetWorkspace();});
   function appendPagedText(parent, text, className) {
     const pageSize=32768, offsets=[0];
     for(let end=pageSize;end<text.length;end+=pageSize){if(/[\uD800-\uDBFF]/.test(text[end-1])&&/[\uDC00-\uDFFF]/.test(text[end]))end--;offsets.push(end);}
@@ -418,7 +539,7 @@
   });
   $('retry-sources').addEventListener('click', () => run(catalog));
   $('scope').addEventListener('change', () => run(async () => { const chosen = scopes.find(s => sourceId(s) === $('scope').value); if (!chosen) return; choose(chosen); await page(0); }));
-  $('resnapshot').addEventListener('click', () => run(async () => { if (!pin) return; clearDiscovery(); clearContent(); clearInspector(); const value = await rpc(isProof() ? {action:'proof-snapshot',source:sourceId(activeSource)} : {action:'snapshot',scope:$('scope').value}); if (!value) return; if(contentEnabled && typeof value.pin_wire !== 'string') throw new Error('Missing exact snapshot.'); pin = value.pin; pinWire = value.pin_wire || null; $('discovery').hidden = !activeSource?.capabilities?.includes('attempt-discovery'); const chosen = scopes.find(s => sourceId(s) === $('scope').value); chosen.pin = pin; chosen.pin_wire = pinWire; history = []; await page(0); }));
+  $('resnapshot').addEventListener('click', () => run(async () => { if (!pin) return; resetWorkspace(); clearDiscovery(); clearContent(); clearInspector(); const value = await rpc(isProof() ? {action:'proof-snapshot',source:sourceId(activeSource)} : {action:'snapshot',scope:$('scope').value}); if (!value) return; if(contentEnabled && typeof value.pin_wire !== 'string') throw new Error('Missing exact snapshot.'); pin = value.pin; pinWire = value.pin_wire || null; $('discovery').hidden = !activeSource?.capabilities?.includes('attempt-discovery'); const chosen = scopes.find(s => sourceId(s) === $('scope').value); chosen.pin = pin; chosen.pin_wire = pinWire; history = []; await page(0); }));
   $('next').addEventListener('click', () => run(async () => { if (next === null) return; history.push(after); await page(next); }));
   $('previous').addEventListener('click', () => run(async () => { if (history.length) await page(history.pop()); }));
   $('more').addEventListener('click', () => run(async () => { if (source && source.next !== null) await inspect(selected,source.next); }));

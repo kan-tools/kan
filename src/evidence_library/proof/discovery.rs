@@ -26,8 +26,14 @@ pub(super) async fn page(
         let page = reader.page(pin, cursor, limit).await?;
         let mut records = Vec::new();
         let mut bytes = 0usize;
-        for row in page.records {
-            let (record, writer, description) = match reader.source(pin, &row.selection).await? {
+        let selections: Vec<_> = page.records.into_iter().map(|r| r.selection).collect();
+        let mut offset = 0;
+        while offset < selections.len() {
+            let end = (offset + crate::evidence_proof_service::READ_BATCH_LIMIT).min(selections.len());
+            let sources = reader.sources_prefix(pin, &selections[offset..end]).await?;
+            offset += sources.len();
+            for source in sources {
+            let (record, writer, description) = match source {
                 Source::Available { record, writer, plaintext } => {
                     bytes = bytes.checked_add(plaintext.len()).ok_or(ContentError::Limited)?;
                     if bytes > 8 * 1024 * 1024 {
@@ -39,6 +45,7 @@ pub(super) async fn page(
                 Source::Corrupt { record } => (record, None, json!({"kind":"corrupt"})),
             };
             records.push(json!({"record":record,"writer":writer,"description":description}));
+        }
         }
         // Neither a discovery result nor its cursor is an enduring grant.
         reader.page(pin, None, 1).await?;

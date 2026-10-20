@@ -231,50 +231,61 @@ pub(crate) async fn proof_content(
         let mut seen = BTreeSet::new();
         let mut identity = None;
         let scope = reader.binding().owner_binding()?.scope;
-        for selection in selections {
-            let (record, writer, payload) = match reader.source(pin, selection).await? {
-                Source::Available {
-                    record,
-                    writer,
-                    plaintext,
-                } => (record, Some(writer), Ok(plaintext)),
-                Source::Missing { record } => (record, None, Err(assembly::Unavailable::Missing)),
-                Source::Corrupt { record } => (record, None, Err(assembly::Unavailable::Corrupt)),
-            };
-            if !seen.insert(record.sequence.clone()) {
-                return Err(Failure::Invalid.into());
-            }
-            let length = payload.as_ref().ok().map(Vec::len);
-            bytes = bytes
-                .checked_add(length.unwrap_or(0))
-                .ok_or(ContentError::Limited)?;
-            if bytes > presentation.input {
-                return Err(ContentError::Limited);
-            }
-            if attempt {
-                if let Ok(bytes) = &payload {
-                    let crate::evidence_reconstruction::Decoded::Capture(frame) =
-                        crate::evidence_reconstruction::decode(bytes)
-                            .map_err(|_| Failure::Invalid)?
-                    else {
-                        return Err(Failure::Invalid.into());
-                    };
-                    let key = (writer.clone(), frame.header.observer, frame.header.attempt);
-                    if identity.as_ref().is_some_and(|previous| previous != &key) {
-                        return Err(Failure::Invalid.into());
+        let mut offset = 0;
+        while offset < selections.len() {
+            let end =
+                (offset + crate::evidence_proof_service::READ_BATCH_LIMIT).min(selections.len());
+            let sources = reader.sources_prefix(pin, &selections[offset..end]).await?;
+            offset += sources.len();
+            for source in sources {
+                let (record, writer, payload) = match source {
+                    Source::Available {
+                        record,
+                        writer,
+                        plaintext,
+                    } => (record, Some(writer), Ok(plaintext)),
+                    Source::Missing { record } => {
+                        (record, None, Err(assembly::Unavailable::Missing))
                     }
-                    identity = Some(key);
+                    Source::Corrupt { record } => {
+                        (record, None, Err(assembly::Unavailable::Corrupt))
+                    }
+                };
+                if !seen.insert(record.sequence.clone()) {
+                    return Err(Failure::Invalid.into());
                 }
-            }
-            let metadata = json!({"scope":reader.binding().scope,"archive":reader.binding().archive,
+                let length = payload.as_ref().ok().map(Vec::len);
+                bytes = bytes
+                    .checked_add(length.unwrap_or(0))
+                    .ok_or(ContentError::Limited)?;
+                if bytes > presentation.input {
+                    return Err(ContentError::Limited);
+                }
+                if attempt {
+                    if let Ok(bytes) = &payload {
+                        let crate::evidence_reconstruction::Decoded::Capture(frame) =
+                            crate::evidence_reconstruction::decode(bytes)
+                                .map_err(|_| Failure::Invalid)?
+                        else {
+                            return Err(Failure::Invalid.into());
+                        };
+                        let key = (writer.clone(), frame.header.observer, frame.header.attempt);
+                        if identity.as_ref().is_some_and(|previous| previous != &key) {
+                            return Err(Failure::Invalid.into());
+                        }
+                        identity = Some(key);
+                    }
+                }
+                let metadata = json!({"scope":reader.binding().scope,"archive":reader.binding().archive,
                 "record":record,"writer":writer,"service_issuer":reader.binding().issuer,
                 "total_bytes":length.map(|n|n.to_string())});
-            selected.push(Selected {
-                scope,
-                writer,
-                payload,
-                metadata,
-            });
+                selected.push(Selected {
+                    scope,
+                    writer,
+                    payload,
+                    metadata,
+                });
+            }
         }
         let wire = serde_json::to_string(pin).map_err(|_| Failure::Invalid)?;
         let result = tokio::task::spawn_blocking(move || {
