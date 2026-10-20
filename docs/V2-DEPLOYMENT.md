@@ -163,3 +163,23 @@ reconciliation, including replicas and dependent publication archives. An extern
 erasure that bypasses those workers leaves the old checkpoint refused until
 explicit maintenance refreshes it. Indexed startup/admission verify touched evidence and cannot stand in for the
 full retained-byte audit exposed by `verify`.
+
+### Independent control checkpoints
+
+After creating the first policy or erasure genesis, initialize its serving index
+using the owner signing key (not the archive issuer key):
+
+```sh
+kan-v2 rebuild-control-index /etc/kan/access-policy.json --signing-key /etc/kan/owner.key
+kan-v2 rebuild-control-index /etc/kan/erasure-history.json --erasure --signing-key /etc/kan/owner.key
+```
+
+The live grant reader and indexed archive services then use bounded current/minimum
+checks. Existing owner actions update these checkpoints under their control lease.
+An interrupted update leaves `INDEX-DIRTY` and refuses indexed serving; rerun the
+corresponding rebuild command against verified, independently current history.
+Do not delete the marker to bypass repair. The raw signed history remains intact.
+Back up `CURRENT` with the independently retained control history. Restoring an
+old index database alone is refused; restoring the entire control directory still
+requires independently current custody. Uninitialized directories retain full
+history audits and do not qualify as bounded deployments.

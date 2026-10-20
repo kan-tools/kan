@@ -105,5 +105,8 @@ pub mod evidence_erasure_history;
 #[cfg(feature = "v2-storage")]
 pub mod evidence_index;
 
+#[cfg(feature = "v2-storage")]
+mod evidence_control_index;
+
 #[cfg(feature = "v2-crypto")]
 pub mod evidence_keys;

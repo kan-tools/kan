@@ -488,6 +488,40 @@ owner-custody and policy readers still scan their independent control histories;
 the option is not a claim that the whole deployment is bounded yet. Scale and
 whole-deployment qualification remain required.
 
+#### Bounded independent control reads
+
+Access policy and erasure custody keep their immutable owner-signed JSON records.
+An explicit owner-key maintenance command audits that history and builds a separate
+signed serving checkpoint over an authenticated record-ID/sequence map. Normal
+service reads can then verify the current selected record and membership of the
+independently configured minimum without loading earlier records. The checkpoint
+binds its control kind, owner, archive binding, exact current tip and record count;
+existing owner and issuer signatures remain independently checked. An unselected
+historical byte defect is an audit/repair finding, not a false claim that current
+selected permissions were unverified. Original history reads remain full audits.
+
+`CURRENT` is retained separately from the disposable `serving.sqlite` map. Reads
+require exact agreement, so restoring just an old derived database or just an old
+pointer fails. The independently current control directory is still the freshness
+source: restoring the entire directory with an old `CURRENT` requires an external
+freshness check and is not made safe by a self-contained signature.
+
+Owner updates hold the same exclusive control lease, durably install `INDEX-DIRTY`
+before changing raw history, and publish a newly signed map and `CURRENT` before
+removing that barrier. Readers hold a shared lease through the operation and
+refuse a dirty, missing, corrupt or mismatched checkpoint. Interrupted publication
+can be repaired only by an explicit owner-key full-history rebuild; exact signed
+append retries perform that repair before acknowledging success. Legacy append
+entry points refuse mutation once indexing is enabled. Owner UI/CLI operations
+use the checkpoint-aware path. Rebuild stages a fresh derived database and never
+rewrites or deletes the raw records. This also repairs a corrupt old index.
+
+Initialization remains explicit. Uninitialized control directories retain their
+legacy full audit; a deployment claiming bounded service I/O must initialize both
+archive and independent control indexes. Owner maintenance writes and full audits
+can scan history. Policy history has no 1,024-record or 16 MiB lifetime limit;
+individual record/grant limits and the abandoned-staging-file limit still apply.
+
 ### 11. Compatibility and explicit departures
 
 | Existing boundary | Retain | Proposed change |

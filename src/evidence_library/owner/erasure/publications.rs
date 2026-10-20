@@ -521,7 +521,10 @@ pub(super) fn cleanup(
             }
             if let Some(record) = selection.authorization {
                 retained.include(&record)?;
-                target.history.append(record)?;
+                target.history.append_with_checkpoint(
+                    record,
+                    &Identity::load_existing(&target.signing_key).map_err(invalid)?,
+                )?;
             }
             target.history.reconcile_archive(&target.root)?;
         }
@@ -567,7 +570,10 @@ pub(super) fn cleanup(
         }
         let result = || -> Result<Value, Failure> {
             if let Some(record) = selection.authorization {
-                target.history.append(record)?;
+                target.history.append_with_checkpoint(
+                    record,
+                    &Identity::load_existing(&target.signing_key).map_err(invalid)?,
+                )?;
             }
             // Queue planning must see the published-copy authorization already
             // reconciled locally; replicas are reconciled after cancellations.

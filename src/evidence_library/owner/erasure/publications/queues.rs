@@ -104,70 +104,75 @@ pub(super) fn cancel(
         let object = store::ciphertext_cid(&raw).to_string();
         // Preparing under exclusive custody excludes managed admission between
         // inspecting archive position and publishing prospective authorization.
-        let authorization = target.history.append_prepared(|snapshot| {
-            let record = if let Some(record) = snapshot.history.iter().find(|record| {
-                record
-                    .change
-                    .erasure
-                    .as_ref()
-                    .is_some_and(|e| e.plan.targets.iter().any(|t| t.object == object))
-            }) {
-                record.clone()
-            } else {
-                snapshot
-                    .check_archive(&target.root.join("archive.sqlite"), &target.history.binding)?;
-                let archive = store::attested::Archive::open(
-                    &target.root,
-                    target.history.binding.owner_binding()?,
+        let authorization = target.history.append_prepared_with_checkpoint(
+            &Identity::load_existing(&target.signing_key).map_err(invalid)?,
+            |snapshot| {
+                let record = if let Some(record) = snapshot.history.iter().find(|record| {
+                    record
+                        .change
+                        .erasure
+                        .as_ref()
+                        .is_some_and(|e| e.plan.targets.iter().any(|t| t.object == object))
+                }) {
+                    record.clone()
+                } else {
+                    snapshot.check_archive(
+                        &target.root.join("archive.sqlite"),
+                        &target.history.binding,
+                    )?;
+                    let archive = store::attested::Archive::open(
+                        &target.root,
+                        target.history.binding.owner_binding()?,
+                    )?;
+                    let plan = archive.preview_request_erasure(
+                        &raw,
+                        service::hex(&rand::random::<[u8; 32]>()),
+                        crate::evidence_operations::now(),
+                    )?;
+                    let erasure = storage::Record::sign(
+                        plan,
+                        &Identity::load_existing(&target.issuer_key).map_err(invalid)?,
+                    )?;
+                    custody::Record::sign(
+                        custody::Change {
+                            version: 1,
+                            binding: target.history.binding.clone(),
+                            owner: target.history.owner.clone(),
+                            sequence: snapshot.history.len().to_string(),
+                            previous: snapshot.tip.clone(),
+                            nonce: service::hex(&rand::random::<[u8; 32]>()),
+                            recorded_at: crate::evidence_operations::now().to_string(),
+                            erasure: Some(erasure),
+                        },
+                        &Identity::load_existing(&target.signing_key).map_err(invalid)?,
+                    )?
+                };
+                if intents.iter().any(|i| {
+                    i.request == object
+                        && i.identity == lineage.identity
+                        && i.authorization.id().ok() == record.id().ok()
+                }) {
+                    return Ok(record);
+                }
+                let n = intents.len();
+                // Only minimal lineage and signed coordinates survive; no body or
+                // signed raw request is copied into the owner journal.
+                let intent = Intent {
+                    version: 1,
+                    job: job.into(),
+                    request: object.clone(),
+                    identity: lineage.identity.clone(),
+                    authorization: record.clone(),
+                };
+                journal.put(
+                    "owner-result",
+                    &key(job, n),
+                    serde_json::to_value(&intent).map_err(invalid)?,
                 )?;
-                let plan = archive.preview_request_erasure(
-                    &raw,
-                    service::hex(&rand::random::<[u8; 32]>()),
-                    crate::evidence_operations::now(),
-                )?;
-                let erasure = storage::Record::sign(
-                    plan,
-                    &Identity::load_existing(&target.issuer_key).map_err(invalid)?,
-                )?;
-                custody::Record::sign(
-                    custody::Change {
-                        version: 1,
-                        binding: target.history.binding.clone(),
-                        owner: target.history.owner.clone(),
-                        sequence: snapshot.history.len().to_string(),
-                        previous: snapshot.tip.clone(),
-                        nonce: service::hex(&rand::random::<[u8; 32]>()),
-                        recorded_at: crate::evidence_operations::now().to_string(),
-                        erasure: Some(erasure),
-                    },
-                    &Identity::load_existing(&target.signing_key).map_err(invalid)?,
-                )?
-            };
-            if intents.iter().any(|i| {
-                i.request == object
-                    && i.identity == lineage.identity
-                    && i.authorization.id().ok() == record.id().ok()
-            }) {
-                return Ok(record);
-            }
-            let n = intents.len();
-            // Only minimal lineage and signed coordinates survive; no body or
-            // signed raw request is copied into the owner journal.
-            let intent = Intent {
-                version: 1,
-                job: job.into(),
-                request: object.clone(),
-                identity: lineage.identity.clone(),
-                authorization: record.clone(),
-            };
-            journal.put(
-                "owner-result",
-                &key(job, n),
-                serde_json::to_value(&intent).map_err(invalid)?,
-            )?;
-            intents.push(intent);
-            Ok(record)
-        })?;
+                intents.push(intent);
+                Ok(record)
+            },
+        )?;
         let erasure = authorization
             .change
             .erasure

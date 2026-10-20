@@ -124,60 +124,67 @@ fn execute(target: &Target, journal: &Workspace, id: &str) -> Result<Value, Fail
         remaining(&manifest, &selected, &current)?.len()
     };
     if needed > 0 {
-        history.append_prepared(|current| {
-            // Rebase only chain coordinates under exclusive custody. Every
-            // payload coordinate still comes from the signed complete consent.
-            reconcile(root, history, current, issuer)?;
-            let selected = remaining(&manifest, &selected, current)?
-                .into_iter()
-                .take(batch)
-                .cloned()
-                .collect::<Vec<_>>();
-            if selected.is_empty() {
-                return Err(Failure::Conflict);
-            }
-            let sequences = selected.iter().map(|t| t.sequence).collect::<Vec<_>>();
-            let actual = inspect(
-                target,
-                Some(&sequences),
-                Some((manifest.through, &manifest.tip)),
-            )?;
-            if actual.targets != selected {
-                return Err(Failure::Conflict);
-            }
-            let nonce = service::hex(&rand::random::<[u8; 32]>());
-            let now = crate::evidence_operations::now();
-            let binding = history.binding.owner_binding()?;
-            let plan = match history.binding.profile {
-                Profile::Admitted => store::attested::Archive::open(root, binding)?
-                    .preview_erasure(&sequences, nonce, now)?,
-                Profile::Copied => store::copied::Archive::open(root, binding)?
-                    .preview_erasure(&sequences, nonce, now)?,
-            };
-            if plan.targets != selected {
-                return Err(Failure::Conflict);
-            }
-            let erasure =
-                storage::Record::sign(plan, &Identity::load_existing(issuer).map_err(invalid)?)?;
-            let change = custody::Change {
-                version: 1,
-                binding: history.binding.clone(),
-                owner: history.owner.clone(),
-                sequence: current.history.len().to_string(),
-                previous: current.tip.clone(),
-                nonce: service::hex(&rand::random::<[u8; 32]>()),
-                recorded_at: now.to_string(),
-                erasure: Some(erasure),
-            };
-            let record =
-                custody::Record::sign(change, &Identity::load_existing(signing).map_err(invalid)?)?;
-            journal.put(
-                "owner-result",
-                &format!("erasure:{id}:root-intent:{}", record.id()?),
-                json!({"consent":id,"record":record}),
-            )?;
-            Ok(record)
-        })?;
+        history.append_prepared_with_checkpoint(
+            &Identity::load_existing(signing).map_err(invalid)?,
+            |current| {
+                // Rebase only chain coordinates under exclusive custody. Every
+                // payload coordinate still comes from the signed complete consent.
+                reconcile(root, history, current, issuer)?;
+                let selected = remaining(&manifest, &selected, current)?
+                    .into_iter()
+                    .take(batch)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if selected.is_empty() {
+                    return Err(Failure::Conflict);
+                }
+                let sequences = selected.iter().map(|t| t.sequence).collect::<Vec<_>>();
+                let actual = inspect(
+                    target,
+                    Some(&sequences),
+                    Some((manifest.through, &manifest.tip)),
+                )?;
+                if actual.targets != selected {
+                    return Err(Failure::Conflict);
+                }
+                let nonce = service::hex(&rand::random::<[u8; 32]>());
+                let now = crate::evidence_operations::now();
+                let binding = history.binding.owner_binding()?;
+                let plan = match history.binding.profile {
+                    Profile::Admitted => store::attested::Archive::open(root, binding)?
+                        .preview_erasure(&sequences, nonce, now)?,
+                    Profile::Copied => store::copied::Archive::open(root, binding)?
+                        .preview_erasure(&sequences, nonce, now)?,
+                };
+                if plan.targets != selected {
+                    return Err(Failure::Conflict);
+                }
+                let erasure = storage::Record::sign(
+                    plan,
+                    &Identity::load_existing(issuer).map_err(invalid)?,
+                )?;
+                let change = custody::Change {
+                    version: 1,
+                    binding: history.binding.clone(),
+                    owner: history.owner.clone(),
+                    sequence: current.history.len().to_string(),
+                    previous: current.tip.clone(),
+                    nonce: service::hex(&rand::random::<[u8; 32]>()),
+                    recorded_at: now.to_string(),
+                    erasure: Some(erasure),
+                };
+                let record = custody::Record::sign(
+                    change,
+                    &Identity::load_existing(signing).map_err(invalid)?,
+                )?;
+                journal.put(
+                    "owner-result",
+                    &format!("erasure:{id}:root-intent:{}", record.id()?),
+                    json!({"consent":id,"record":record}),
+                )?;
+                Ok(record)
+            },
+        )?;
         let current = history.current()?;
         reconcile(root, history, &current, issuer)?;
     }

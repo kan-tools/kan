@@ -14,6 +14,10 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    (
+        "authenticated-control-checkpoint",
+        "src/evidence_control_index.rs",
+    ),
     ("seekable-evidence-payload", "tests/evidence_inventory.rs"),
     (
         "authenticated-serving-index",
@@ -547,6 +551,42 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_control_index.rs",
+        "write_new_owner_only",
+        "EvidenceControlIndex",
+        3,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "rename",
+        "EvidenceControlIndex",
+        2,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "remove_file",
+        "EvidenceControlIndex",
+        2,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "initialize_serving_index",
+        "EvidenceControlIndex",
+        1,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "insert_serving_node",
+        "EvidenceControlIndex",
+        1,
+    ),
+    (
+        "src/evidence_control_index.rs",
+        "publish_serving_checkpoint",
+        "EvidenceControlIndex",
+        1,
+    ),
     (
         "src/evidence_store/serving.rs",
         "initialize_serving_index",
@@ -1586,7 +1626,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "9929586268cbe353872c1f3e08fb5b398a4e46cd8b70e119bb84063942f34fb0",
+                "1e498551d581982e8ab0e4b462ca3989b61c8776e0096ca7f65d92ac6467c57d",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

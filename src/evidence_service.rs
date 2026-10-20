@@ -575,7 +575,7 @@ impl AdmittingService {
         {
             return Err(Failure::Invalid);
         }
-        let current = history.current()?;
+        let current = history.serving(self.indexed)?;
         if self.indexed {
             self.archive
                 .indexed_frontier(current.storage_tip()?.as_deref())?;
@@ -593,7 +593,7 @@ impl AdmittingService {
         {
             return Err(Failure::Invalid);
         }
-        self.replace_grants(policy.read()?.grants()?)?;
+        self.replace_grants(policy.current()?.grants()?)?;
         self.policy = Some(policy);
         Ok(self)
     }
@@ -618,7 +618,7 @@ impl AdmittingService {
         let custody = self
             .erasure_history
             .as_ref()
-            .map(crate::evidence_erasure_history::Access::current)
+            .map(|history| history.serving(self.indexed))
             .transpose()?;
         let storage_tip = custody
             .as_ref()
@@ -637,7 +637,7 @@ impl AdmittingService {
         let policy = self
             .policy
             .as_ref()
-            .map(crate::evidence_policy::Access::read)
+            .map(crate::evidence_policy::Access::current)
             .transpose()?;
         if let Some(snapshot) = &policy {
             self.replace_grants(snapshot.grants()?)?;
@@ -683,7 +683,7 @@ impl AdmittingService {
         let policy = self
             .policy
             .as_ref()
-            .map(crate::evidence_policy::Access::read)
+            .map(crate::evidence_policy::Access::current)
             .transpose()?;
         if let Some(snapshot) = &policy {
             self.replace_grants(snapshot.grants()?)?;

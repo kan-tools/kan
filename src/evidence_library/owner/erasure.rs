@@ -564,7 +564,9 @@ fn cleanup(
     journal: &Workspace,
     job: &str,
 ) -> Result<Value, Failure> {
-    let Configured { history, .. } = configured(target)?;
+    let Configured {
+        history, signing, ..
+    } = configured(target)?;
     let selected = SourceSelection {
         authorization: record.id()?,
         targets: record
@@ -577,7 +579,7 @@ fn cleanup(
             .clone(),
     };
     // Publish once, before deleting. Existing records are exact retry authority.
-    history.append(record)?;
+    history.append_with_checkpoint(record, &Identity::load_existing(signing).map_err(invalid)?)?;
     cleanup_selected(target, &selected, journal, job)
 }
 fn cleanup_selected(

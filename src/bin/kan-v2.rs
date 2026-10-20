@@ -410,6 +410,16 @@ enum Command {
     /// Initialize the lease in a pre-provisioned private access-policy directory.
     #[cfg(feature = "v2-service")]
     InitAccessPolicy { config: PathBuf },
+    /// Fully audit owner control history and rebuild its bounded serving checkpoint.
+    #[cfg(feature = "v2-service")]
+    RebuildControlIndex {
+        config: PathBuf,
+        /// Select erasure custody; otherwise the config is an access policy.
+        #[arg(long)]
+        erasure: bool,
+        #[arg(long)]
+        signing_key: PathBuf,
+    },
     /// Establish independently retained owner-signed erasure genesis. Outputs the
     /// pinned configuration to use with --erasure-history on BOTH services.
     #[cfg(feature = "v2-service")]
@@ -1301,6 +1311,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             print_json(&serde_json::json!({"initialized":true,"epochs":0}))?;
         }
         #[cfg(feature = "v2-service")]
+        Command::RebuildControlIndex {
+            config,
+            erasure,
+            signing_key,
+        } => {
+            let bytes = bounded_read(std::fs::File::open(config)?, 65536)?;
+            let signer = service_identity(&signing_key)?;
+            if erasure {
+                let history: kan::evidence_erasure_history::Access =
+                    serde_json::from_slice(&bytes)?;
+                history.rebuild_serving_index(&signer)?;
+            } else {
+                let policy: kan::evidence_policy::Access = serde_json::from_slice(&bytes)?;
+                policy.rebuild_serving_index(&signer)?;
+            }
+            print_json(
+                &serde_json::json!({"rebuilt":true,"kind":if erasure {"erasure"} else {"policy"}}),
+            )?;
+        }
+        #[cfg(feature = "v2-service")]
         Command::InitAccessPolicy { config } => {
             let policy: kan::evidence_policy::Access =
                 serde_json::from_slice(&bounded_read(std::fs::File::open(config)?, 65536)?)?;
@@ -1336,7 +1366,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 )?;
                 let record = kan::evidence_erasure_history::Record::sign(change, &signer)?;
                 let id = record.id()?;
-                history.append(record)?;
+                history.append_with_checkpoint(record, &signer)?;
                 id
             });
             print_json(
@@ -1422,7 +1452,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .transpose()?;
             let current = if indexed {
-                history.as_ref().map(|h| h.current()).transpose()?
+                history.as_ref().map(|h| h.current_head()).transpose()?
             } else {
                 None
             };
@@ -1513,7 +1543,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .transpose()?;
             let current = if indexed {
-                history.as_ref().map(|h| h.current()).transpose()?
+                history.as_ref().map(|h| h.current_head()).transpose()?
             } else {
                 None
             };

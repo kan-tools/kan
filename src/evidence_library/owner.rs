@@ -584,7 +584,7 @@ impl Owner {
                     if change.digest()?!=preview || change.binding!=policy.binding || change.owner!=policy.owner {return Err(Failure::Invalid);}
                     let signer=crate::sign::Identity::load_existing(&signing_key).map_err(|_|Failure::Unavailable)?;
                     let record=crate::evidence_policy::Record::sign(*change,&signer)?;
-                    let mut result=policy.append(record)?;result["target"]=json!(target);Ok(result)
+                    let mut result=policy.append_with_checkpoint(record,&signer)?;result["target"]=json!(target);Ok(result)
                 }
             }
         }).await.map_err(|_|Failure::Unavailable)?

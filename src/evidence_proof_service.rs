@@ -461,7 +461,7 @@ impl Service {
         if history.binding != self.binding {
             return Err(Failure::Invalid);
         }
-        let current = history.current()?;
+        let current = history.serving(self.indexed)?;
         if self.indexed {
             inventory::Inventory::open_indexed(
                 &self.path,
@@ -482,7 +482,7 @@ impl Service {
         if policy.binding != self.binding {
             return Err(Failure::Invalid);
         }
-        self.replace_grants(policy.read()?.grants()?)?;
+        self.replace_grants(policy.current()?.grants()?)?;
         self.policy = Some(policy);
         Ok(self)
     }
@@ -510,7 +510,7 @@ impl Service {
         let custody = self
             .erasure_history
             .as_ref()
-            .map(crate::evidence_erasure_history::Access::current)
+            .map(|history| history.serving(self.indexed))
             .transpose()?;
         let storage_tip = custody
             .as_ref()
@@ -534,7 +534,7 @@ impl Service {
         let policy = self
             .policy
             .as_ref()
-            .map(crate::evidence_policy::Access::read)
+            .map(crate::evidence_policy::Access::current)
             .transpose()?;
         let current = policy
             .as_ref()

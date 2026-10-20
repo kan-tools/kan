@@ -46,6 +46,42 @@ pub struct Record {
     pub change: Change,
     pub signature: String,
 }
+pub struct Current {
+    _lease: std::fs::File,
+    storage_tip: Option<String>,
+}
+impl Current {
+    pub fn storage_tip(&self) -> Result<Option<String>> {
+        Ok(self.storage_tip.clone())
+    }
+}
+pub(crate) enum ServingSnapshot {
+    Full(Snapshot),
+    Indexed(Current),
+}
+impl ServingSnapshot {
+    pub(crate) fn storage_tip(&self) -> Result<Option<String>> {
+        match self {
+            Self::Full(s) => s.storage_tip(),
+            Self::Indexed(s) => s.storage_tip(),
+        }
+    }
+    pub(crate) fn check_archive(&self, path: &Path, binding: &Binding) -> Result<()> {
+        match self {
+            Self::Full(s) => s.check_archive(path, binding),
+            Self::Indexed(_) => Err(Failure::Invalid),
+        }
+    }
+    pub(crate) fn check_package(
+        &self,
+        package: &crate::evidence_store::erasure::Package,
+    ) -> Result<()> {
+        match self {
+            Self::Full(s) => s.check_package(package),
+            Self::Indexed(_) => Err(Failure::Invalid),
+        }
+    }
+}
 pub struct Snapshot {
     _lease: std::fs::File,
     pub history: Vec<Record>,
@@ -252,6 +288,89 @@ impl Access {
         }
         Ok(snapshot)
     }
+    /// Bounded current native custody after explicit owner index initialization.
+    /// Uninitialized legacy control directories retain their existing full audit.
+    pub(crate) fn serving(&self, indexed: bool) -> Result<ServingSnapshot> {
+        if indexed {
+            self.current_head().map(ServingSnapshot::Indexed)
+        } else {
+            self.current().map(ServingSnapshot::Full)
+        }
+    }
+    pub fn current_head(&self) -> Result<Current> {
+        if self.minimum.is_none() {
+            return Err(Failure::AccessLimited);
+        }
+        let lease = self.lease(false)?;
+        if !crate::evidence_control_index::enabled(&self.directory)? {
+            let snapshot = self.read_locked(lease)?;
+            if snapshot.history.is_empty() {
+                return Err(Failure::AccessLimited);
+            }
+            let storage_tip = snapshot.storage_tip()?;
+            return Ok(Current {
+                _lease: snapshot._lease,
+                storage_tip,
+            });
+        }
+        let head = crate::evidence_control_index::current(
+            &self.directory,
+            "erasure",
+            &self.binding,
+            &self.owner,
+            self.minimum.as_deref(),
+            MAX_RECORD,
+        )?;
+        let record: Record = serde_json::from_slice(&head.record).map_err(invalid)?;
+        if serde_json::to_vec(&record).map_err(invalid)? != head.record || record.id()? != head.tip
+        {
+            return Err(Failure::Corrupt);
+        }
+        let previous_storage = record
+            .change
+            .erasure
+            .as_ref()
+            .and_then(|r| r.plan.previous.clone());
+        self.check(
+            &record.change,
+            usize::try_from(head.count - 1).map_err(invalid)?,
+            &record.change.previous,
+            &previous_storage,
+        )?;
+        if !crate::sign::verify(
+            &self.owner,
+            &record.change.signed_bytes()?,
+            &service::unhex(&record.signature, 64)?,
+        ) {
+            return Err(Failure::Corrupt);
+        }
+        let storage_tip = record
+            .change
+            .erasure
+            .as_ref()
+            .map(|r| r.id().map_err(Failure::from))
+            .transpose()?;
+        Ok(Current {
+            _lease: lease,
+            storage_tip,
+        })
+    }
+    pub fn rebuild_serving_index(&self, signer: &Identity) -> Result<()> {
+        if signer.did().as_str() != self.owner {
+            return Err(Failure::AccessLimited);
+        }
+        let snapshot = self.read_locked(self.lease(true)?)?;
+        if snapshot.history.is_empty() {
+            return Err(Failure::AccessLimited);
+        }
+        crate::evidence_control_index::rebuild(
+            &self.directory,
+            "erasure",
+            &self.binding,
+            signer,
+            snapshot.history.iter().map(Record::id),
+        )
+    }
     pub fn read(&self) -> Result<Snapshot> {
         self.read_locked(self.lease(false)?)
     }
@@ -261,7 +380,7 @@ impl Access {
         for entry in std::fs::read_dir(&self.directory).map_err(invalid)? {
             let entry = entry.map_err(invalid)?;
             let name = entry.file_name().into_string().map_err(invalid)?;
-            if name == "LOCK" {
+            if name == "LOCK" || crate::evidence_control_index::reserved(&name) {
                 continue;
             }
             if name.starts_with(".pending-") {
@@ -388,27 +507,81 @@ impl Access {
     /// record. A lost acknowledgement may retry the same bytes after later edits.
     pub fn append(&self, record: Record) -> Result<Value> {
         let snapshot = self.read_locked(self.lease(true)?)?;
-        self.append_locked(record, snapshot)
+        if crate::evidence_control_index::enabled(&self.directory)? {
+            return Err(Failure::Conflict);
+        }
+        self.append_locked(record, &snapshot)
+    }
+    pub fn append_with_checkpoint(&self, record: Record, signer: &Identity) -> Result<Value> {
+        if signer.did().as_str() != self.owner {
+            return Err(Failure::AccessLimited);
+        }
+        let snapshot = self.read_locked(self.lease(true)?)?;
+        let indexed = crate::evidence_control_index::enabled(&self.directory)?;
+        let result = self.append_locked(record, &snapshot)?;
+        if indexed {
+            let current = self.read_locked(snapshot._lease)?;
+            crate::evidence_control_index::rebuild(
+                &self.directory,
+                "erasure",
+                &self.binding,
+                signer,
+                current.history.iter().map(Record::id),
+            )?;
+        }
+        Ok(result)
     }
     /// Prepare and durably journal an owner action while enrolled readers and
     /// ingest writers are excluded. The callback must not reacquire this history.
     /// This closes the preview/publication race for prospective erased admission.
+    #[cfg(test)]
     pub(crate) fn append_prepared(
         &self,
+        prepare: impl FnOnce(&Snapshot) -> Result<Record>,
+    ) -> Result<Record> {
+        self.append_prepared_inner(None, prepare)
+    }
+    pub(crate) fn append_prepared_with_checkpoint(
+        &self,
+        signer: &Identity,
+        prepare: impl FnOnce(&Snapshot) -> Result<Record>,
+    ) -> Result<Record> {
+        if signer.did().as_str() != self.owner {
+            return Err(Failure::AccessLimited);
+        }
+        self.append_prepared_inner(Some(signer), prepare)
+    }
+    fn append_prepared_inner(
+        &self,
+        signer: Option<&Identity>,
         prepare: impl FnOnce(&Snapshot) -> Result<Record>,
     ) -> Result<Record> {
         if self.minimum.is_none() {
             return Err(Failure::AccessLimited);
         }
         let snapshot = self.read_locked(self.lease(true)?)?;
+        let indexed = crate::evidence_control_index::enabled(&self.directory)?;
+        if indexed && signer.is_none() {
+            return Err(Failure::Conflict);
+        }
         if snapshot.history.is_empty() {
             return Err(Failure::AccessLimited);
         }
         let record = prepare(&snapshot)?;
-        self.append_locked(record.clone(), snapshot)?;
+        self.append_locked(record.clone(), &snapshot)?;
+        if indexed {
+            let current = self.read_locked(snapshot._lease)?;
+            crate::evidence_control_index::rebuild(
+                &self.directory,
+                "erasure",
+                &self.binding,
+                signer.ok_or(Failure::AccessLimited)?,
+                current.history.iter().map(Record::id),
+            )?;
+        }
         Ok(record)
     }
-    fn append_locked(&self, record: Record, snapshot: Snapshot) -> Result<Value> {
+    fn append_locked(&self, record: Record, snapshot: &Snapshot) -> Result<Value> {
         let bytes = serde_json::to_vec(&record).map_err(invalid)?;
         if bytes.len() > MAX_RECORD {
             return Err(Failure::Invalid);
@@ -460,6 +633,9 @@ impl Access {
             .join(format!("erasure-{:020}-{id}.json", snapshot.history.len()));
         if std::fs::symlink_metadata(&destination).is_ok() {
             return Err(Failure::Conflict);
+        }
+        if crate::evidence_control_index::enabled(&self.directory)? {
+            crate::evidence_control_index::invalidate(&self.directory)?;
         }
         let temporary = self.directory.join(format!(
             ".pending-{}",

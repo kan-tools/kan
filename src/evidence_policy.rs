@@ -16,8 +16,7 @@ use std::{
 type Result<T> = std::result::Result<T, Failure>;
 const DOMAIN: &[u8] = b"tools.kan.access.policy.v1\0";
 const MAX_RECORD: usize = 65536;
-const MAX_HISTORY: usize = 1024;
-const MAX_TOTAL: usize = 16 * 1024 * 1024;
+const MAX_PENDING: usize = 1024;
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Access {
@@ -44,6 +43,15 @@ pub struct Change {
 pub struct Record {
     pub change: Change,
     pub signature: String,
+}
+pub struct Current {
+    _lease: std::fs::File,
+    record: Record,
+}
+impl Current {
+    pub fn grants(&self) -> Result<Vec<Grant>> {
+        Ok(self.record.change.grants.clone())
+    }
 }
 pub struct Snapshot {
     _lease: std::fs::File,
@@ -163,20 +171,17 @@ impl Access {
         for entry in std::fs::read_dir(&self.directory).map_err(invalid)? {
             let entry = entry.map_err(invalid)?;
             let name = entry.file_name().into_string().map_err(invalid)?;
-            if name == "LOCK" {
+            if name == "LOCK" || crate::evidence_control_index::reserved(&name) {
                 continue;
             }
             if name.starts_with(".pending-") {
                 pending += 1;
-                if pending > MAX_HISTORY {
+                if pending > MAX_PENDING {
                     return Err(Failure::Unavailable);
                 }
                 continue;
             }
-            if !name.starts_with("policy-")
-                || !name.ends_with(".json")
-                || names.len() >= MAX_HISTORY
-            {
+            if !name.starts_with("policy-") || !name.ends_with(".json") {
                 return Err(Failure::Corrupt);
             }
             names.push(name);
@@ -185,7 +190,6 @@ impl Access {
         let mut history = Vec::new();
         let mut tip = None;
         let mut seen_minimum = self.minimum.is_none();
-        let mut total = 0usize;
         for (index, name) in names.into_iter().enumerate() {
             let path = self.directory.join(&name);
             private(&path, false, MAX_RECORD as u64)?;
@@ -195,8 +199,7 @@ impl Access {
                 .take((MAX_RECORD + 1) as u64)
                 .read_to_end(&mut bytes)
                 .map_err(invalid)?;
-            total += bytes.len();
-            if bytes.len() > MAX_RECORD || total > MAX_TOTAL {
+            if bytes.len() > MAX_RECORD {
                 return Err(Failure::Unavailable);
             }
             let record: Record = serde_json::from_slice(&bytes).map_err(invalid)?;
@@ -252,9 +255,6 @@ impl Access {
     pub fn preview(&self, grants: Vec<Grant>, nonce: String) -> Result<Change> {
         let snapshot = self.read()?;
         fixed(&nonce)?;
-        if snapshot.history.len() >= MAX_HISTORY {
-            return Err(Failure::Unavailable);
-        }
         Ok(Change {
             version: 1,
             binding: self.binding.clone(),
@@ -274,6 +274,90 @@ impl Access {
     /// record. A lost acknowledgement may retry the same bytes after later edits.
     pub fn append(&self, record: Record) -> Result<Value> {
         let snapshot = self.read_locked(self.lease(true)?)?;
+        if crate::evidence_control_index::enabled(&self.directory)? {
+            return Err(Failure::Conflict);
+        }
+        self.append_locked(record, &snapshot)
+    }
+    pub fn append_with_checkpoint(&self, record: Record, signer: &Identity) -> Result<Value> {
+        if signer.did().as_str() != self.owner {
+            return Err(Failure::AccessLimited);
+        }
+        let snapshot = self.read_locked(self.lease(true)?)?;
+        let indexed = crate::evidence_control_index::enabled(&self.directory)?;
+        let result = self.append_locked(record, &snapshot)?;
+        if indexed {
+            let current = self.read_locked(snapshot._lease)?;
+            crate::evidence_control_index::rebuild(
+                &self.directory,
+                "policy",
+                &self.binding,
+                signer,
+                current.history.iter().map(Record::id),
+            )?;
+        }
+        Ok(result)
+    }
+    pub fn rebuild_serving_index(&self, signer: &Identity) -> Result<()> {
+        if signer.did().as_str() != self.owner {
+            return Err(Failure::AccessLimited);
+        }
+        let snapshot = self.read_locked(self.lease(true)?)?;
+        if snapshot.history.is_empty() {
+            return Err(Failure::AccessLimited);
+        }
+        crate::evidence_control_index::rebuild(
+            &self.directory,
+            "policy",
+            &self.binding,
+            signer,
+            snapshot.history.iter().map(Record::id),
+        )
+    }
+    /// Current grants use a bounded signed checkpoint when explicitly initialized.
+    /// Legacy control directories retain their full audit until owner migration.
+    pub fn current(&self) -> Result<Current> {
+        let lease = self.lease(false)?;
+        if !crate::evidence_control_index::enabled(&self.directory)? {
+            let snapshot = self.read_locked(lease)?;
+            let record = snapshot
+                .history
+                .last()
+                .cloned()
+                .ok_or(Failure::AccessLimited)?;
+            return Ok(Current {
+                _lease: snapshot._lease,
+                record,
+            });
+        }
+        let head = crate::evidence_control_index::current(
+            &self.directory,
+            "policy",
+            &self.binding,
+            &self.owner,
+            self.minimum.as_deref(),
+            MAX_RECORD,
+        )?;
+        let record: Record = serde_json::from_slice(&head.record).map_err(invalid)?;
+        if serde_json::to_vec(&record).map_err(invalid)? != head.record || record.id()? != head.tip
+        {
+            return Err(Failure::Corrupt);
+        }
+        self.check(
+            &record.change,
+            usize::try_from(head.count - 1).map_err(invalid)?,
+            &record.change.previous,
+        )?;
+        let sig = service::unhex(&record.signature, 64)?;
+        if !crate::sign::verify(&self.owner, &record.change.signed_bytes()?, &sig) {
+            return Err(Failure::Corrupt);
+        }
+        Ok(Current {
+            _lease: lease,
+            record,
+        })
+    }
+    fn append_locked(&self, record: Record, snapshot: &Snapshot) -> Result<Value> {
         let bytes = serde_json::to_vec(&record).map_err(invalid)?;
         if bytes.len() > MAX_RECORD {
             return Err(Failure::Invalid);
@@ -285,9 +369,6 @@ impl Access {
             .any(|r| r.id().ok().as_ref() == Some(&id))
         {
             return Ok(json!({"state":"already-applied","id":id,"current_tip":snapshot.tip}));
-        }
-        if snapshot.history.len() >= MAX_HISTORY {
-            return Err(Failure::Unavailable);
         }
         if record.change.previous != snapshot.tip
             || record.change.sequence != snapshot.history.len().to_string()
@@ -301,19 +382,14 @@ impl Access {
         {
             return Err(Failure::AccessLimited);
         }
-        let used: usize = snapshot
-            .history
-            .iter()
-            .map(|r| serde_json::to_vec(r).map(|b| b.len()).unwrap_or(MAX_TOTAL))
-            .sum();
-        if used + bytes.len() > MAX_TOTAL {
-            return Err(Failure::Unavailable);
-        }
         let destination = self
             .directory
             .join(format!("policy-{:020}-{id}.json", snapshot.history.len()));
         if std::fs::symlink_metadata(&destination).is_ok() {
             return Err(Failure::Conflict);
+        }
+        if crate::evidence_control_index::enabled(&self.directory)? {
+            crate::evidence_control_index::invalidate(&self.directory)?;
         }
         let temporary = self.directory.join(format!(
             ".pending-{}",
