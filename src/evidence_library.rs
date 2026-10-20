@@ -28,6 +28,11 @@ use tokio::{
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Query {
+    KnowledgeGraph {
+        subject: Option<String>,
+        #[serde(default)]
+        day: bool,
+    },
     AnnotationTriggers {
         id: String,
         #[serde(default)]
@@ -174,7 +179,8 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
 async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
-        Query::AnnotationTriggers { .. }
+        Query::KnowledgeGraph { .. }
+        | Query::AnnotationTriggers { .. }
         | Query::AnalysisPreview { .. }
         | Query::AnalysisSubmit { .. }
         | Query::AnalysisJobs

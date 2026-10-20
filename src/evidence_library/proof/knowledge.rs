@@ -15,6 +15,12 @@ pub struct Citation {
     pub pin: Pin,
     pub selection: Token,
 }
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Relation {
+    pub kind: crate::claim::v1::RelationKind,
+    pub target: String,
+}
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Draft {
@@ -27,6 +33,8 @@ pub struct Draft {
     /// Explicit human promotion keeps the model-job provenance separate.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub derived_from: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub relations: Vec<Relation>,
 }
 impl Readers {
     pub(super) async fn annotation_preview(&self, mut draft: Draft) -> Result<Value, ContentError> {
@@ -44,11 +52,23 @@ impl Readers {
             || draft.cites.is_empty()
             || draft.cites.len() > 8
             || draft.derived_from.len() > 8
+            || draft.relations.len() > 16
+            || draft
+                .relations
+                .iter()
+                .any(|r| r.target.trim().is_empty() || r.target.len() > 256)
         {
             return Err(Failure::Invalid.into());
         }
         draft.tags.sort();
         draft.tags.dedup();
+        let mut relations = Vec::new();
+        for relation in draft.relations {
+            if !relations.contains(&relation) {
+                relations.push(relation);
+            }
+        }
+        draft.relations = relations;
         let workspace = self.workspace()?;
         if let Some(previous) = &draft.supersedes {
             if previous.len() != 64
@@ -196,6 +216,68 @@ impl Readers {
         }
         Ok(
             json!({"records":records,"coverage":if partial {"partial"} else {"complete"},"authority":"Reader-authored annotations; captured speaker claims and imported v1 claims are separate."}),
+        )
+    }
+    /// Relations are attributed assertions with retained correction history.
+    /// This view does not rewrite identity or collapse competing assertions.
+    pub(super) async fn knowledge_graph(
+        &self,
+        subject: Option<String>,
+        day: bool,
+    ) -> Result<Value, ContentError> {
+        if subject.as_ref().is_some_and(|s| s.len() > 256) {
+            return Err(Failure::Invalid.into());
+        }
+        let visible = self.annotations(None, None).await?;
+        let records = visible["records"].as_array().ok_or(Failure::Corrupt)?;
+        let mut subjects = std::collections::BTreeMap::<String, Vec<&Value>>::new();
+        let mut corrected = std::collections::BTreeMap::<String, Vec<String>>::new();
+        for record in records {
+            let name = record["draft"]["subject"]
+                .as_str()
+                .ok_or(Failure::Corrupt)?;
+            subjects.entry(name.into()).or_default().push(record);
+            if let Some(prior) = record["draft"]["supersedes"].as_str() {
+                corrected
+                    .entry(prior.into())
+                    .or_default()
+                    .push(record["id"].as_str().ok_or(Failure::Corrupt)?.into());
+            }
+        }
+        fn process(name: &str) -> Option<&'static str> {
+            ["telos", "atom", "bridge", "thread"]
+                .into_iter()
+                .find(|prefix| name.starts_with(&format!("{prefix}/")))
+        }
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+        let mut selected_records = Vec::new();
+        for (name, items) in &subjects {
+            if subject.as_ref().is_none_or(|s| s == name) && (!day || process(name).is_some()) {
+                nodes.push(json!({"subject":name,"kind":process(name).unwrap_or("subject"),"declarations":items.len(),"tags":items.iter().flat_map(|r|r["draft"]["tags"].as_array().into_iter().flatten().filter_map(Value::as_str)).collect::<std::collections::BTreeSet<_>>()}));
+                if subject.is_some() {
+                    for record in items {
+                        selected_records.push(json!({"declaration":record,"corrected_by":corrected.get(record["id"].as_str().ok_or(Failure::Corrupt)?).cloned().unwrap_or_default()}));
+                    }
+                }
+            }
+            for record in items {
+                let draft: Draft = serde_json::from_value(record["draft"].clone())
+                    .map_err(|_| Failure::Corrupt)?;
+                for relation in draft.relations {
+                    if subject
+                        .as_ref()
+                        .is_none_or(|s| s == name || s == &relation.target)
+                        && (!day || process(name).is_some() || process(&relation.target).is_some())
+                    {
+                        edges.push(json!({"from":name,"to":relation.target,"kind":relation.kind,"annotation":record["id"],"author":record["author"],"corrected_by":corrected.get(record["id"].as_str().ok_or(Failure::Corrupt)?).cloned().unwrap_or_default(),"cites":draft.cites}));
+                    }
+                }
+            }
+        }
+        Ok(
+            json!({"subjects":nodes,"relations":edges,"records":selected_records,"coverage":visible["coverage"],
+            "authority":"Reader-authored declarations only. Relations retain direction and attribution; identity is not merged. Corrections are history, and multiple corrections may coexist. Unseen or unauthorized declarations are not counted."}),
         )
     }
 }

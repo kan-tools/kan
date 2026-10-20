@@ -463,3 +463,21 @@ work cannot send a cached copy after source loss or revocation.
 reference and all its source citations follow it into the preview and any later
 corrections. The full result stays inspectable if a draft is excerpted to the note
 length limit. Merely inspecting a model response does not publish it.
+
+## Subjects, relations and day
+
+**Browse subjects & relations** lists visible authored subjects and their retained
+history. Select **Day** to focus on teloi, atoms, bridges and threads. Following a
+relation shows its target's available history; absent or unauthorized declarations
+are not invented. Relation assertions retain their author and correction links.
+`SameAs` is shown as an assertion and does not silently merge subjects.
+
+Add relations in an annotation draft with the relation selector and target subject.
+They appear in the preview before append. Corrections retain prior declarations
+in the history. Process declarations in fenced `day-atom`, `day-bridge` or
+`day-telos` JSON blocks are inspectable as data; they are never executed by the
+browser. **Assess cited evidence** selects original citations for a recipe preview.
+
+The shared `knowledge-graph` action accepts optional `subject` and `day` fields;
+its result includes authorized subjects, relation assertions, selected declaration
+history and coverage. Imported v1 claims are not counted as authored v2 annotations.

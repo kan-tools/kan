@@ -158,6 +158,7 @@ impl Readers {
     }
     pub(super) async fn query(&self, request: Query) -> Result<Vec<u8>, ContentError> {
         let value = match request {
+            Query::KnowledgeGraph { subject, day } => self.knowledge_graph(subject, day).await?,
             Query::AnnotationTriggers { id, retry } => self.annotation_triggers(&id, retry).await?,
             Query::AnalysisPreview { draft } => self.analysis_preview(draft).await?,
             Query::AnalysisSubmit {

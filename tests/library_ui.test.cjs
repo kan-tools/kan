@@ -616,3 +616,15 @@ test('promoting model output drafts an editable annotation with job provenance a
  walk(u.node('analysis-detail')).find(n=>n.textContent==='Draft annotation from this result').click();assert.equal(u.node('annotation-text').value,'Review this generated assessment');
  u.node('annotation-form').events.submit({preventDefault(){}});await tick();const preview=JSON.parse(u.pending[0].opts.body);assert.equal(preview.action,'annotation-preview');assert.deepEqual(preview.draft.derived_from,['derived-job']);assert.deepEqual(preview.draft.cites,request.draft.cites);
 });
+
+test('subject relations are previewed as attributed assertions and day browsing retains correction history',async()=>{
+ const u=ui();await openKnowledge(u);u.node('relation-kind').value='InTensionWith';u.node('relation-target').value='telos/speed';u.node('add-relation').click();
+ u.node('annotation-form').events.submit({preventDefault(){}});await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body).draft.relations,[{kind:'InTensionWith',target:'telos/speed'}]);
+ u.node('cancel-annotation').click();await u.respond({});u.node('knowledge-mode').value='day';u.node('load-subjects').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'knowledge-graph',subject:null,day:true});
+ await u.respond({coverage:'complete',authority:'Attributed declarations only',subjects:[{subject:'atom/storage',kind:'atom',declarations:2}],relations:[],records:[]});
+ u.node('knowledge-subjects').children[0].click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).subject,'atom/storage');
+ const declaration={id:'old-note',author:'reader',draft:{subject:'atom/storage',text:'```day-atom\n{"inputs":["raw"],"outputs":["durable"]}\n```',cites:[]}};
+ await u.respond({coverage:'complete',authority:'History retained',subjects:[],records:[{declaration,corrected_by:['new-note']}],relations:[{from:'atom/storage',to:'telos/durability',kind:'About',author:'reader',annotation:'old-note',corrected_by:['new-note']}]});
+ const nodes=walk(u.node('knowledge-detail'));assert.ok(nodes.some(n=>n.textContent==='Declared day-atom structure'));assert.ok(nodes.some(n=>String(n.textContent).includes('corrected by new-note')));
+ nodes.find(n=>n.textContent==='telos/durability').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).subject,'telos/durability');u.node('lock').click();await u.respond({});assert.equal(u.node('knowledge-detail').children.length,0);assert.equal(u.node('knowledge-subjects').children.length,0);
+});

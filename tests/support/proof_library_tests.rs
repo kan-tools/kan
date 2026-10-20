@@ -1005,7 +1005,7 @@ async fn annotations_preview_append_correction_preserve_cites_and_filter_revoked
     let entry = &catalog["scopes"][0];
     let page=ui.call(json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"cursor":null,"limit":3}),200).await;
     let cite = |n: usize| json!({"source":entry["id"],"pin":entry["pin"],"selection":page["records"][n]["selection"]});
-    let draft = json!({"subject":"design/recording","text":"A human note <script>untrusted</script>","tags":["decision","decision"],"cites":[cite(0)],"supersedes":null});
+    let draft = json!({"subject":"telos/reliable-recording","text":"A human note <script>untrusted</script>","tags":["decision","decision"],"relations":[{"kind":"InTensionWith","target":"telos/low-latency"}],"cites":[cite(0)],"supersedes":null});
     let preview = ui
         .call(json!({"action":"annotation-preview","draft":draft}), 200)
         .await;
@@ -1039,7 +1039,7 @@ async fn annotations_preview_append_correction_preserve_cites_and_filter_revoked
         )
         .await
     );
-    let correction = json!({"subject":"design/recording","text":"Correction with more evidence","tags":["decision","corrected"],"cites":[cite(1)],"supersedes":saved["id"]});
+    let correction = json!({"subject":"telos/reliable-recording","text":"Correction with more evidence","tags":["decision","corrected"],"relations":[{"kind":"DependsOn","target":"atom/storage"}],"cites":[cite(1)],"supersedes":saved["id"]});
     let preview = ui
         .call(
             json!({"action":"annotation-preview","draft":correction}),
@@ -1056,7 +1056,7 @@ async fn annotations_preview_append_correction_preserve_cites_and_filter_revoked
     ui.call(json!({"action":"annotation-save","draft":preview["declaration"]["draft"],"preview":preview["id"]}),200).await;
     let history = ui
         .call(
-            json!({"action":"annotations","subject":"design/recording","tag":"decision"}),
+            json!({"action":"annotations","subject":"telos/reliable-recording","tag":"decision"}),
             200,
         )
         .await;
@@ -1073,6 +1073,30 @@ async fn annotations_preview_append_correction_preserve_cites_and_filter_revoked
             .len(),
         1
     );
+    let subjects = ui
+        .call(
+            json!({"action":"knowledge-graph","subject":null,"day":true}),
+            200,
+        )
+        .await;
+    assert_eq!(subjects["subjects"][0]["kind"], "telos");
+    assert_eq!(subjects["subjects"][0]["declarations"], 2);
+    let graph = ui
+        .call(
+            json!({"action":"knowledge-graph","subject":"telos/reliable-recording","day":false}),
+            200,
+        )
+        .await;
+    assert_eq!(graph["relations"].as_array().unwrap().len(), 2);
+    let old = graph["relations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["kind"] == "InTensionWith")
+        .unwrap();
+    assert_eq!(old["corrected_by"].as_array().unwrap().len(), 1);
+    assert_eq!(old["to"], "telos/low-latency");
+    assert_eq!(graph["records"].as_array().unwrap().len(), 2);
     f.remove(2);
     let absent = ui
         .call(json!({"action":"annotation-preview","draft":draft}), 200)
@@ -1095,6 +1119,14 @@ async fn annotations_preview_append_correction_preserve_cites_and_filter_revoked
         .is_empty());
     ui.call(json!({"action":"annotation-preview","draft":draft}), 403)
         .await;
+    let hidden = ui
+        .call(
+            json!({"action":"knowledge-graph","subject":null,"day":false}),
+            200,
+        )
+        .await;
+    assert!(hidden["subjects"].as_array().unwrap().is_empty());
+    assert!(hidden["relations"].as_array().unwrap().is_empty());
     ui.stop().await;
     server.stop().await;
 }

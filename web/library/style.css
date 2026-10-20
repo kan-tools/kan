@@ -29,3 +29,5 @@
 .annotation button { margin:.3rem .5rem .3rem 0; }
 
 .conversation-attempt{border-top:1px solid var(--line);padding:1.25rem 0}.conversation-attempt h3{overflow-wrap:anywhere}.conversation-stream{margin:1rem 0}.conversation-stream>summary{cursor:pointer;font-weight:600;padding:.5rem 0}
+
+#knowledge-subjects{display:flex;flex-wrap:wrap;gap:.5rem;margin:1rem 0}.relation-table{width:100%;text-align:left;border-collapse:collapse}.relation-table td,.relation-table th{padding:.6rem;border-bottom:1px solid var(--line);overflow-wrap:anywhere}#knowledge-detail{overflow-x:auto}fieldset{border:1px solid var(--line);margin:1rem 0;padding:1rem}

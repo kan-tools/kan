@@ -301,3 +301,20 @@ it. `derived_from` references the original jobs. The server requires their retai
 results, inherits their evidence citations, and carries both through corrections.
 Promotion is therefore an explicit authored interpretation with inspectable model
 provenance, never an automatic conversion of model text into an original claim.
+
+### Attributed subjects, relations and day declarations
+
+Annotations may declare up to sixteen typed relations using kan's existing
+`RelationKind` vocabulary. The subject graph is a pure authorized view of those
+signed annotations: outgoing direction, author, source citations and correction
+history remain visible. It does not merge identities or discard an earlier
+assertion when a correction appears. Subject counts and edges include only
+currently authorized declarations, and a referenced target never implies access
+to its evidence.
+
+The day view selects `telos/`, `atom/`, `bridge/` and `thread/` subjects. Explicit
+fenced day JSON is shown as declared data beside the original text, including
+malformed-declaration notices. A human can follow relations, inspect a subject's
+history, and send its cited evidence through the configured day-assessment recipe.
+This currently covers v2 authored annotations; rendering imported native v1 claims
+and applying the richer native trust/fold queries remains a separate requirement.
