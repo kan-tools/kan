@@ -491,3 +491,23 @@ test('workspace fragment resolution retains incomplete state without claiming a 
  assert.match(walk(u.node('workspace-sessions')).map(n=>n.textContent).join(' '),/Metadata incomplete/);assert.match(u.node('workspace-coverage').textContent,/0 explicit session groups/);
  walk(u.node('workspace-sessions')).find(n=>n.textContent==='Resolve chunked session links').click();await tick();u.node('lock').click();await u.respond(contentResult);assert.equal(u.node('workspace-sessions').children.length,0);
 });
+
+const searchCatalog={...proofCatalog,scopes:[proofEntry('archive-A'),proofEntry('archive-B')],capabilities:[...proofCatalog.capabilities,'text-search','saved-views'],unavailable:proofCatalog.unavailable.filter(x=>x!=='saved-views')};
+const searchPage={state:'indexed',indexed_occurrences:3,indexed_at:'123',hits:[{record:proofRow,writer:'writer',kind:'opaque',offset:'5',end:'11',snippet:'<script>Needle</script>'}],next:null,unsearchable_bytes:'0',unavailable_matches:0,facets_as_indexed:{kind:{opaque:3},writer:{writer:3}}};
+async function openSearch(u){await u.login();await u.respond(searchCatalog);await u.respond(proofPage);u.node('search-text').value='needle';u.node('search-form').events.submit({preventDefault(){}});await tick();}
+test('persistent search scans distinct archives, keeps text inert and opens the exact pinned citation',async()=>{
+ const u=ui();await openSearch(u);assert.equal(u.node('search-workspace').hidden,false);
+ for(const id of ['archive-A','archive-B']){let q=JSON.parse(u.pending[0].opts.body);assert.equal(q.action,'index-page');assert.equal(q.target.source,id);await u.respond(searchPage);q=JSON.parse(u.pending[0].opts.body);assert.equal(q.action,'search-page');assert.equal(q.filter.text,'needle');await u.respond(searchPage);}
+ assert.equal(u.node('search-results').children.length,2);assert.match(u.node('search-coverage').textContent,/2 matches/);assert.equal(u.node('resume-search').disabled,true);
+ const row=u.node('search-results').children[1];assert.equal(row.children[1].textContent,'<script>Needle</script>');row.children.at(-1).click();await tick();const q=JSON.parse(u.pending[0].opts.body);assert.equal(q.source,'archive-B');assert.equal(q.offset,'5');assert.deepEqual(q.selection,proofRow.selection);assert.equal(u.node('rows').children.length,0);await u.respond({...proofSource,offset:'5'});
+ u.node('lock').click();assert.equal(u.node('search-results').children.length,0);assert.equal(u.node('search-text').value,'');assert.equal(u.node('search-workspace').hidden,true);
+});
+test('search stop and revocation cannot accept late snippets or leave saved views exposed',async()=>{
+ const u=ui();await openSearch(u);await u.respond(searchPage);const request=u.pending[0];u.node('stop-search').click();assert.equal(request.opts.signal.aborted,true);await u.respond(searchPage);assert.equal(u.node('search-results').children.length,0);assert.equal(u.node('resume-search').disabled,false);
+ u.node('resume-search').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).cursor,null);await u.respond(searchPage);await u.respond({},403);assert.equal(u.node('library').hidden,true);assert.equal(u.node('search-results').children.length,0);assert.equal(u.node('saved-views').children.length,0);
+});
+test('saved views preserve exact snapshots and filters and reload through the shared API',async()=>{
+ const u=ui();await openSearch(u);for(let i=0;i<2;i++){await u.respond(searchPage);await u.respond(searchPage);}
+ u.node('view-name').value='My view';u.node('save-view').click();await tick();const saved=JSON.parse(u.pending[0].opts.body);assert.equal(saved.action,'save-view');assert.equal(saved.targets.length,2);assert.deepEqual(saved.targets[0].pin,pin);assert.equal(saved.filter.text,'needle');await u.respond({...saved,id:'view-id'});
+ u.node('load-views').click();await tick();await u.respond({coverage:'complete',views:[{...saved,id:'view-id',author:'owner'}]});const button=u.node('saved-views').children[0].children.at(-1);button.click();await tick();const request=JSON.parse(u.pending[0].opts.body);assert.equal(request.action,'index-page');assert.deepEqual(request.target,saved.targets[0]);u.node('lock').click();await u.respond(searchPage);assert.equal(u.pending.length,0);assert.equal(u.node('saved-views').children.length,0);
+});

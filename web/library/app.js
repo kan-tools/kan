@@ -10,6 +10,7 @@
   const sourceId = entry => entry.id || entry.scope;
   const isProof = () => activeSource?.protocol === 'kan-proof-reader/1';
   const buttons = new Map(), exports = new Map(), contentSelection = new Set(), checks = new Map();
+  let searchStates = [], searchRun = 0, searchFilter = null, searchHits = new Map(), searchPages = 0;
   let attemptMode = false;
   let pinWire = null, contentEnabled = false, contentValue = null, returnItem = null;
   function releaseExport(url) { clearTimeout(exports.get(url)); exports.delete(url); URL.revokeObjectURL(url); }
@@ -34,6 +35,7 @@
   function lock(message = 'Locked · connect to browse authorized evidence.') {
     for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
+    clearSearch(true);
     pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); clearWorkspace(); selections.clear(); clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
     $('catalog-status').textContent = ''; $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
     $('lock').disabled = true; $('token').value = ''; notice(message); $('token').focus();
@@ -126,8 +128,8 @@
   }
   function renderCapabilities(value) {
     if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
-    const labels = {'attempt-content':'Large attempt Content','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
-    const supported = new Set(['snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links']), seen = new Set();
+    const labels = {'text-search':'Persistent text search','attempt-content':'Large attempt Content','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
+    const supported = new Set(['text-search','saved-views','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links']), seen = new Set();
     $('capability-list').replaceChildren();
     for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
       for (const capability of items) {
@@ -156,6 +158,7 @@
     }
   }
   async function catalog() {
+    clearSearch(true);
     clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
     pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); clearWorkspace(); selections.clear();
     scopes = []; pin = null; history = []; after = 0; next = null;
@@ -167,6 +170,7 @@
     if (![1,2].includes(value.version) || !['complete','partial'].includes(value.coverage)) throw new Error('Unsupported reader version or coverage.');
     validateScopes(value.scopes, value.version);
     renderCapabilities(value);
+    $('search-workspace').hidden = !value.capabilities.includes('text-search');
     catalogContent = value.capabilities.includes('content-inspection');
     if (value.scopes.some(s => (s.capabilities?.includes('content-inspection') || (value.version === 1 && catalogContent)) && typeof s.pin_wire !== 'string')) throw new Error('Missing exact snapshot.');
     scopes = value.scopes;
@@ -477,6 +481,91 @@
     previous.addEventListener('click',()=>{page=Math.max(0,page-1);render();});next.addEventListener('click',()=>{page=Math.min(offsets.length-1,page+1);render();});
     controls.append(previous);controls.append(position);controls.append(next);parent.append(controls);render();
   }
+  function clearSearch(hide = false) {
+    searchRun++; searchStates=[]; searchFilter=null; searchHits.clear(); searchPages=0;
+    $('search-results').replaceChildren();$('search-facets').replaceChildren();$('search-coverage').textContent='';
+    $('saved-views').replaceChildren();$('views-status').textContent='';$('save-view').disabled=true;$('resume-search').disabled=true;$('stop-search').disabled=true;
+    if(hide){$('search-workspace').hidden=true;$('search-text').value='';$('search-writer').value='';$('view-name').value='';}
+  }
+  function searchTargets(entries) {
+    return entries.map(entry=>({entry:{...entry},cursor:null,complete:false,count:0,binary:0n,unavailable:0,facets:new Map()}));
+  }
+  function renderSearch() {
+    $('search-results').replaceChildren();$('search-facets').replaceChildren();
+    for(const {state,hit} of searchHits.values()) {
+      const row=textNode('article','');row.className='search-result';
+      row.append(textNode('p',`${state.entry.scope} · ${state.entry.binding.archive} · occurrence ${hit.record.sequence}`));
+      row.append(textNode('pre',hit.snippet));row.append(textNode('p',`${hit.kind} · ${hit.writer} · bytes ${hit.offset}–${hit.end}`));
+      const open=textNode('button','Open exact source');open.addEventListener('click',()=>run(async()=>{
+        searchRun++;cancelWork();choose(state.entry);clearContent();clearInspector();checks.clear();buttons.clear();selections.clear();selections.set(hit.record.sequence,hit.record.selection);
+        $('rows').replaceChildren();after=0;next=null;history=[];$('previous').disabled=true;$('next').disabled=true;$('count').textContent='Search selection';$('page-position').textContent='Choose an archive to browse inventory';$('empty').hidden=true;
+        $('stop-search').disabled=true;
+        $('scope').value=sourceId(state.entry);await inspect(hit.record.sequence,hit.offset);
+      }));row.append(open);$('search-results').append(row);
+    }
+    for(const state of searchStates) {
+      const facets=[...state.facets].map(([k,n])=>`${k}: ${n}`).join(' · ');
+      $('search-facets').append(textNode('p',`${state.entry.binding.archive}: ${state.count} indexed occurrences searched · ${state.complete?'pinned inventory scan complete':'partial scan'} · ${state.binary} unsearchable bytes · ${state.unavailable} unavailable matches${facets?' · '+facets:''}`));
+    }
+    $('search-coverage').textContent=`${searchHits.size} matches shown across ${searchPages} index pages. Facets reflect indexing time. Headers and UTF-8 capture bodies are searched separately; binary spans and phrases crossing chunks are excluded. Complete inventory does not prove complete capture.`;
+    $('resume-search').disabled=searchStates.every(s=>s.complete);$('save-view').disabled=!searchFilter || !searchStates.length;
+  }
+  async function searchWindow() {
+    const current=++searchRun;$('stop-search').disabled=false;$('resume-search').disabled=true;
+    if(searchHits.size>=1000)searchHits.clear();
+    let pages=0;
+    try {
+      // Round-robin bounded windows keep every chosen archive represented.
+      while(pages<25 && searchStates.some(s=>!s.complete)) {
+        for(const state of searchStates.filter(s=>!s.complete)) {
+          if(current!==searchRun || pages>=25 || searchHits.size>=1000)return;
+          const target={source:sourceId(state.entry),pin:state.entry.pin};
+          const indexed=await rpc({action:'index-page',target,cursor:state.cursor});if(!indexed || current!==searchRun)return;
+          const result=await rpc({action:'search-page',target,cursor:state.cursor,filter:searchFilter});if(!result || current!==searchRun)return;
+          if(result.state!=='indexed' || !Array.isArray(result.hits) || result.hits.length>8 || !Number.isSafeInteger(result.indexed_occurrences) || result.indexed_occurrences>8 || !Object.hasOwn(result,'next'))throw new Error('Invalid search page.');
+          for(const hit of result.hits) {
+            if(!hit.record || typeof hit.record.sequence!=='string' || !hit.record.selection || typeof hit.snippet!=='string' || hit.snippet.length>1024 || !/^\d+$/.test(hit.offset) || !/^\d+$/.test(hit.end))throw new Error('Invalid search hit.');
+            searchHits.set(`${target.source}:${hit.record.sequence}`,{state,hit});
+          }
+          state.count+=result.indexed_occurrences;state.binary+=BigInt(result.unsearchable_bytes);state.unavailable+=result.unavailable_matches;
+          for(const [kind,count] of Object.entries(result.facets_as_indexed.kind))state.facets.set(kind,(state.facets.get(kind)||0)+count);
+          state.cursor=result.next;state.complete=result.next===null;searchPages++;pages++;renderSearch();
+        }
+      }
+    } finally {if(current===searchRun){$('stop-search').disabled=true;renderSearch();}}
+  }
+  $('search-form').addEventListener('submit',event=>{event.preventDefault();run(async()=>{
+    cancelWork();clearSearch();
+    searchFilter={text:$('search-text').value.trim(),writer:$('search-writer').value.trim()||null,kind:$('search-kind').value||null};
+    if(!searchFilter.text){notice('Enter text to search.',true);return;}
+    const entries=$('search-scope').value==='selected' ? [activeSource] : scopes;
+    searchStates=searchTargets(entries.filter(s=>s?.protocol==='kan-proof-reader/1'));
+    if(!searchStates.length){notice('No proof archive is available for this search.',true);return;}
+    await searchWindow();
+  });});
+  $('resume-search').addEventListener('click',()=>run(searchWindow));
+  $('stop-search').addEventListener('click',()=>{searchRun++;cancelWork();$('stop-search').disabled=true;renderSearch();notice('Search stopped. Completed pages remain visible; Continue resumes the same pinned view.');});
+  $('save-view').addEventListener('click',()=>run(async()=>{
+    const name=$('view-name').value.trim();if(!name || !searchFilter || !searchStates.length)return;
+    const saved=await rpc({action:'save-view',name,targets:searchStates.map(s=>({source:sourceId(s.entry),pin:s.entry.pin})),filter:searchFilter});if(!saved)return;
+    $('views-status').textContent=`Saved “${saved.name}” · ${saved.id}. This declaration preserves all selected snapshots and filters.`;
+  }));
+  $('load-views').addEventListener('click',()=>run(async()=>{
+    $('saved-views').replaceChildren();$('views-status').textContent='Checking access to saved views…';
+    const value=await rpc({action:'views'});if(!value)return;
+    if(!Array.isArray(value.views) || value.views.length>200)throw new Error('Invalid views.');
+    $('views-status').textContent=value.coverage==='partial'?'Some sources could not be checked. Only fully authorized views are shown.':'Views with current access to every source.';
+    for(const view of value.views){
+      if(typeof view.name!=='string' || !Array.isArray(view.targets) || !view.targets.length || view.targets.length>16 || !view.filter)throw new Error('Invalid view.');
+      const row=textNode('article','');row.append(textNode('h3',view.name));row.append(textNode('p',`${view.filter.text} · ${view.targets.length} pinned archives · ${view.author}`));
+      const open=textNode('button','Run pinned view');open.addEventListener('click',()=>run(async()=>{
+        const entries=view.targets.map(t=>{const entry=scopes.find(s=>sourceId(s)===t.source);if(!entry)throw new Error('Source catalog changed.');return {...entry,pin:t.pin,pin_wire:JSON.stringify(t.pin)};});
+        cancelWork();clearSearch();searchFilter=view.filter;searchStates=searchTargets(entries);
+        $('search-text').value=searchFilter.text;$('search-writer').value=searchFilter.writer||'';$('search-kind').value=searchFilter.kind||'';
+        await searchWindow();
+      }));row.append(open);$('saved-views').append(row);
+    }
+  }));
   function sourceRequest(sequence, offset = 0) {
     if (isProof()) {
       const selection = discovered.get(String(sequence))?.record.selection || selections.get(String(sequence)); if (!selection) throw new Error('Missing verified selection.');

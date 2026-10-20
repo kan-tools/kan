@@ -841,3 +841,131 @@ async fn fragmented_session_metadata_crosses_pages_and_preserves_loss_and_revoca
         server.stop().await;
     }
 }
+
+#[tokio::test]
+async fn encrypted_search_views_restart_exact_citations_loss_and_revocation() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let local = tempfile::tempdir().unwrap();
+    fn text(n: u8, audience: u8, previous: Option<String>) -> Vec<u8> {
+        let mut req = service::SignedRequest::decode(&request(n, audience, previous))
+            .unwrap()
+            .request;
+        let service::Command::Append { ciphertext, .. } = &mut req.command else {
+            unreachable!()
+        };
+        *ciphertext = service::hex(
+            &kan::evidence_crypto::seal(
+                &kan::evidence_crypto::public_key(&PRIVATE).unwrap(),
+                &[1; 32],
+                "αβ Needle <script>untrusted</script> 🦀".as_bytes(),
+            )
+            .unwrap(),
+        );
+        service::SignedRequest::sign(req, &identity(6))
+            .unwrap()
+            .bytes()
+            .unwrap()
+    }
+    let admitted = fixture_requests(a.path(), Profile::Admitted, text);
+    let copied = fixture_requests(b.path(), Profile::Copied, text);
+    let first = Server::start(&admitted).await;
+    let second = Server::start(&copied).await;
+    let workspace = local.path().join("workspace.sqlite");
+    let readers = || {
+        kan::evidence_library::Readers::new(
+            None,
+            vec![first.client(&admitted), second.client(&copied)],
+        )
+        .unwrap()
+        .with_workspace(
+            kan::evidence_workspace::Workspace::open(&workspace, identity(6), [97; 32]).unwrap(),
+        )
+    };
+    let ui = Ui::start(readers()).await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    assert!(catalog["capabilities"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("text-search")));
+    let entries = catalog["scopes"].as_array().unwrap();
+    let targets: Vec<_> = entries
+        .iter()
+        .map(|e| json!({"source":e["id"],"pin":e["pin"]}))
+        .collect();
+    let filter = json!({"text":"needle","writer":null,"kind":"opaque"});
+    let query = json!({"action":"search-page","target":targets[0],"cursor":null,"filter":filter});
+    assert_eq!(ui.call(query.clone(), 200).await["state"], "not-indexed");
+    for target in &targets {
+        let indexed = ui
+            .call(
+                json!({"action":"index-page","target":target,"cursor":null}),
+                200,
+            )
+            .await;
+        assert_eq!(indexed["indexed_occurrences"], 3);
+        assert!(indexed["next"].is_null());
+    }
+    let found = ui.call(query.clone(), 200).await;
+    assert_eq!(found["hits"].as_array().unwrap().len(), 3);
+    assert_eq!(found["hits"][0]["offset"], "5");
+    assert_eq!(found["hits"][0]["end"], "11");
+    let hit = &found["hits"][0];
+    let source=ui.call(json!({"action":"proof-source","source":targets[0]["source"],"pin":targets[0]["pin"],"selection":hit["record"]["selection"],"offset":hit["offset"],"length":"6"}),200).await;
+    assert_eq!(source["utf8"], "Needle");
+    let mut wrong_filter = query.clone();
+    wrong_filter["filter"]["writer"] = json!(identity(9).did().to_string());
+    assert!(ui.call(wrong_filter, 200).await["hits"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let save = json!({"action":"save-view","name":"Private pinned view","targets":targets,"filter":filter});
+    let saved = ui.call(save.clone(), 200).await;
+    assert_eq!(saved, ui.call(save, 200).await);
+    assert_eq!(
+        ui.call(json!({"action":"views"}), 200).await["views"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    ui.stop().await;
+    let bytes = std::fs::read(&workspace).unwrap();
+    assert!(!bytes
+        .windows(b"Private pinned view".len())
+        .any(|b| b == b"Private pinned view"));
+    assert!(!bytes.windows(6).any(|b| b == b"Needle"));
+    let ui = Ui::start(readers()).await;
+    assert_eq!(ui.call(query.clone(), 200).await["hits"], found["hits"]);
+    assert_eq!(
+        ui.call(json!({"action":"views"}), 200).await["views"][0],
+        saved
+    );
+    admitted.remove(2);
+    let missing = ui.call(query.clone(), 200).await;
+    assert_eq!(missing["hits"].as_array().unwrap().len(), 2);
+    assert_eq!(missing["unavailable_matches"], 1);
+    first
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(vec![])
+        .unwrap();
+    ui.call(query, 403).await;
+    assert!(ui.call(json!({"action":"views"}), 200).await["views"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let authorized =
+        json!({"action":"search-page","target":targets[1],"cursor":null,"filter":filter});
+    assert_eq!(
+        ui.call(authorized, 200).await["hits"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    ui.stop().await;
+    first.stop().await;
+    second.stop().await;
+}

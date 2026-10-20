@@ -52,7 +52,7 @@ pub struct Token {
     body: TokenBody,
     signature: String,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Occurrence {
     pub sequence: String,
     pub manifest: String,

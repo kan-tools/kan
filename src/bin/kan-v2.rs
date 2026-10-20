@@ -165,7 +165,16 @@ enum Command {
         #[arg(long)]
         signing_key: PathBuf,
         #[arg(long)]
-        token_file: PathBuf,
+        #[arg(required_unless_present = "request")]
+        token_file: Option<PathBuf>,
+        /// Encrypted persistent search index and saved view declarations.
+        #[arg(long, requires = "workspace_key")]
+        workspace: Option<PathBuf>,
+        #[arg(long, requires = "workspace")]
+        workspace_key: Option<PathBuf>,
+        /// Execute one shared Library API request from a JSON file and exit.
+        #[arg(long)]
+        request: Option<PathBuf>,
         #[arg(long, default_value = "127.0.0.1:7284")]
         listen: std::net::SocketAddr,
     },
@@ -545,6 +554,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             signing_key,
             token_file,
             listen,
+            workspace,
+            workspace_key,
+            request,
         } => {
             #[derive(serde::Deserialize)]
             #[serde(deny_unknown_fields)]
@@ -613,7 +625,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     scopes,
                 )?)
             };
-            let reader = kan::evidence_library::Readers::new(legacy, proofs)?;
+            let mut reader = kan::evidence_library::Readers::new(legacy, proofs)?;
+            if let (Some(path), Some(key)) = (workspace, workspace_key) {
+                reader = reader.with_workspace(kan::evidence_workspace::Workspace::open(
+                    &path,
+                    service_identity(&signing_key)?,
+                    recipient_private(&key)?,
+                )?);
+            }
+            if let Some(path) = request {
+                let bytes = kan::evidence_gateway::secret_file(&path)?;
+                let request: kan::evidence_library::Query = serde_json::from_slice(&bytes)?;
+                let result = tokio::runtime::Runtime::new()?.block_on(reader.execute(request))?;
+                println!("{}", String::from_utf8(result)?);
+                return Ok(());
+            }
+            let token_file = token_file.ok_or("library server requires a token file")?;
             let token = String::from_utf8(kan::evidence_gateway::secret_file(&token_file)?)?
                 .trim_end_matches('\n')
                 .to_string();

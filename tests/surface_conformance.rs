@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    ("encrypted-reader-workspace", "tests/evidence_workspace.rs"),
     (
         "checkpointed-bundle-copy",
         "tests/support/bundle_copy_tests.rs",
@@ -442,6 +443,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", "\"; \"", "not a path"),
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
+    "src/evidence_workspace.rs",
     "src/evidence_operations_collection.rs",
     "src/evidence_operations.rs",
     "src/evidence_restore.rs",
@@ -460,6 +462,12 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_workspace.rs",
+        "write_new_owner_only",
+        "EvidenceWorkspace",
+        1,
+    ),
     (
         "src/evidence_store/copy_upgrade.rs",
         "write_new_owner_only",
@@ -1347,7 +1355,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "1eaf7ae01c4462658f7c5201268f12cffd9da0aa85e6a2da11379c5113821e37",
+                "6f1e66083553714d087d0cc26c35f2d3e3e33e990ec3233b3f631a317db1808c",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

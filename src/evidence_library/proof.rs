@@ -9,8 +9,10 @@ use crate::{
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, time::Duration};
 mod discovery;
+pub mod search;
 
 pub struct Readers {
+    workspace: Option<crate::evidence_workspace::Workspace>,
     legacy: Option<legacy::Reader>,
     proof: BTreeMap<String, proof::Reader>,
     workers: std::sync::Arc<tokio::sync::Semaphore>,
@@ -42,10 +44,18 @@ impl Readers {
             }
         }
         Ok(Self {
+            workspace: None,
             legacy,
             proof: selected,
             workers: std::sync::Arc::new(tokio::sync::Semaphore::new(2)),
         })
+    }
+    pub fn with_workspace(mut self, workspace: crate::evidence_workspace::Workspace) -> Self {
+        self.workspace = Some(workspace);
+        self
+    }
+    fn workspace(&self) -> Result<&crate::evidence_workspace::Workspace, Failure> {
+        self.workspace.as_ref().ok_or(Failure::Invalid)
     }
     fn selected(&self, id: &str) -> Result<&proof::Reader, Failure> {
         self.proof.get(id).ok_or(Failure::AccessLimited)
@@ -66,8 +76,99 @@ impl Readers {
             }
         }).await.unwrap_or(Err(Failure::Unavailable)))
     }
+    /// CLI and other trusted local callers use the same request dispatch as HTTP.
+    pub async fn execute(&self, request: Query) -> Result<Vec<u8>, Failure> {
+        self.query(request).await.map_err(|e| match e {
+            ContentError::Read(f) => f,
+            ContentError::Limited | ContentError::Busy => Failure::Unavailable,
+        })
+    }
     pub(super) async fn query(&self, request: Query) -> Result<Vec<u8>, ContentError> {
         let value = match request {
+            Query::IndexPage { target, cursor } => {
+                search::index(
+                    self.selected(&target.source)?,
+                    self.workspace()?,
+                    &target,
+                    cursor.as_ref(),
+                    self.workers.clone(),
+                )
+                .await?
+            }
+            Query::SearchPage {
+                target,
+                cursor,
+                filter,
+            } => {
+                search::search(
+                    self.selected(&target.source)?,
+                    self.workspace()?,
+                    &target,
+                    cursor.as_ref(),
+                    &filter,
+                    self.workers.clone(),
+                )
+                .await?
+            }
+            Query::SaveView {
+                name,
+                targets,
+                filter,
+            } => {
+                filter.validate()?;
+                if name.trim().is_empty()
+                    || name.len() > 160
+                    || targets.is_empty()
+                    || targets.len() > 16
+                {
+                    return Err(Failure::Invalid.into());
+                }
+                let mut seen = std::collections::BTreeSet::new();
+                for target in &targets {
+                    if !seen.insert(&target.source) {
+                        return Err(Failure::Invalid.into());
+                    }
+                    self.selected(&target.source)?
+                        .page(&target.pin, None, 1)
+                        .await?;
+                }
+                let workspace = self.workspace()?;
+                let mut declaration = json!({"version":1,"name":name,"targets":targets,"filter":filter,"author":workspace.author(),"trust":"verified writer signatures and issuer-attested inventory; captured assertions remain untrusted"});
+                use sha2::{Digest, Sha256};
+                let id = service::hex(&Sha256::digest(
+                    serde_json::to_vec(&declaration).map_err(|_| Failure::Invalid)?,
+                ));
+                declaration["id"] = json!(id);
+                workspace.put("view", &id, declaration.clone())?;
+                declaration
+            }
+            Query::Views => {
+                let declarations = self.workspace()?.views()?;
+                let mut authorized = std::collections::BTreeSet::new();
+                let mut partial = false;
+                for (source, reader) in &self.proof {
+                    match reader.snapshot().await {
+                        Ok(_) => {
+                            authorized.insert(source.as_str());
+                        }
+                        Err(Failure::AccessLimited) => (),
+                        Err(_) => partial = true,
+                    }
+                }
+                let views: Vec<_> = declarations
+                    .into_iter()
+                    .filter(|v| {
+                        v["targets"].as_array().is_some_and(|targets| {
+                            !targets.is_empty()
+                                && targets.iter().all(|t| {
+                                    t["source"].as_str().is_some_and(|s| authorized.contains(s))
+                                })
+                        })
+                    })
+                    .collect();
+                json!({"views":views,"coverage":if partial {"partial"} else {"complete"}})
+            }
+
             Query::ProofAttempt {
                 source,
                 pin,
@@ -141,9 +242,20 @@ impl Readers {
                         }
                     }
                 }
-                json!({"version":2,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},
+                let mut catalog = json!({"version":2,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},
                     "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links"],
-                    "unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]})
+                    "unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]});
+                if self.workspace.is_some() {
+                    catalog["capabilities"]
+                        .as_array_mut()
+                        .unwrap()
+                        .extend([json!("text-search"), json!("saved-views")]);
+                    catalog["unavailable"]
+                        .as_array_mut()
+                        .unwrap()
+                        .retain(|v| v != "saved-views");
+                }
+                catalog
             }
             Query::ProofSnapshot { source } => {
                 let pin = self.selected(&source)?.snapshot().await?;

@@ -232,3 +232,59 @@ a slow healthy service is temporarily unavailable, never declared absent.
 Cancellation drops the in-flight checks. Excess connections remain refused.
 The visible capability matrix is populated from the authenticated API; unknown
 capabilities are labeled client-unsupported, never presented as working controls.
+
+## Persistent text search and saved views
+
+The optional reader workspace stores encrypted, signed index pages and explicit
+saved-view declarations outside code repositories. Provision a **dedicated**
+32-byte recipient private key as an owner-only file, and select a private directory
+(mode 0700) for the database. Supply both options when starting the Library:
+
+```sh
+kan-v2 library --config /absolute/path/reader.json \
+  --signing-key /absolute/path/reader.identity \
+  --token-file /absolute/path/reader.token \
+  --workspace /absolute/path/private/reader-workspace.sqlite \
+  --workspace-key /absolute/path/private/workspace.key
+```
+
+Use **Index & search** to search across current authorized proof archives or just
+the selected archive. Each bounded window indexes and searches at most 25 pages
+of eight occurrences. Stop preserves completed pages; Continue resumes pinned
+coverage. Only 1,000 hits stay in a browser result window; continuing starts a new
+window when full. Search is ASCII case-insensitive; other Unicode matches exactly.
+The current projection searches headers and UTF-8 bodies separately, so binary
+spans and phrases crossing capture chunks are explicitly excluded. Facets describe
+the index at build time; matching source bytes and current access are rechecked
+before returning snippets. Follow **Open exact source** to the original byte range.
+
+Save a named view to retain the source snapshots, query, filters and trust framing.
+The same declaration is idempotent; a changed declaration preserves the old view.
+Load saved views after restart, then **Run pinned view** to reuse those snapshots.
+A view is shown only while every source is authorized. New capture is excluded
+until you explicitly search a newer snapshot. Captured text remains untrusted.
+
+CLI callers can execute the same JSON API request from a private file, without
+starting an HTTP server or supplying a UI token:
+
+```sh
+kan-v2 library --config /absolute/path/reader.json \
+  --signing-key /absolute/path/reader.identity \
+  --workspace /absolute/path/private/reader-workspace.sqlite \
+  --workspace-key /absolute/path/private/workspace.key \
+  --request /absolute/path/private/library-request.json
+```
+
+Requests are `catalog`, `index-page` (`target: {source, pin}`, `cursor`),
+`search-page` (same fields plus `filter: {text, writer, kind}`), `save-view`
+(`name`, `targets`, `filter`) and `views`. Use catalog/source identifiers and pins
+verbatim. Null writer/kind mean no corresponding filter. CLI request files currently
+have the private-file reader's 64 KiB bound; HTTP requests allow 256 KiB.
+
+Back up this database and its recipient key separately. Index pages are disposable,
+but deleting the workspace also removes saved views. Nothing expires automatically.
+The database has a 256 MiB capacity bound and supports 200 view declarations; a
+full workspace reports failure instead of deleting history. Keep old workspaces
+when moving to a new one. Hot journals are refused at startup pending explicit
+owner recovery; do not delete them to force startup. Source erasure must include
+affected derived workspaces in the owner erasure plan.

@@ -10,7 +10,10 @@ use hyper::{
     Request, Response, StatusCode,
 };
 use hyper_util::rt::TokioIo;
-pub use proof::Readers;
+pub use proof::{
+    search::{Filter as SearchFilter, Target as SearchTarget},
+    Readers,
+};
 use serde::Deserialize;
 use std::{convert::Infallible, future::Future, io, sync::Arc, time::Duration};
 use tokio::{
@@ -20,7 +23,22 @@ use tokio::{
 };
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
-enum Query {
+pub enum Query {
+    IndexPage {
+        target: SearchTarget,
+        cursor: Option<verified::Token>,
+    },
+    SearchPage {
+        target: SearchTarget,
+        cursor: Option<verified::Token>,
+        filter: SearchFilter,
+    },
+    SaveView {
+        name: String,
+        targets: Vec<SearchTarget>,
+        filter: SearchFilter,
+    },
+    Views,
     ProofAttempt {
         source: String,
         pin: verified::Pin,
@@ -105,7 +123,11 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
 async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
-        Query::ProofAttempt { .. }
+        Query::IndexPage { .. }
+        | Query::SearchPage { .. }
+        | Query::SaveView { .. }
+        | Query::Views
+        | Query::ProofAttempt { .. }
         | Query::ProofDiscover { .. }
         | Query::ProofContent { .. }
         | Query::ProofSnapshot { .. }
@@ -279,7 +301,7 @@ async fn handle(
             } else if proof_content {
                 65536
             } else {
-                16384
+                262144
             },
         )
         .collect(),

@@ -170,3 +170,36 @@ implemented. These do not close this document's composite acceptance criteria.
 The next operations projection contract is #287. See
 `.design/kan-v2-followup-status.md` for concrete remaining work and preserved
 review gaps; this table must not turn “foundation exists” into “workflow complete”.
+
+### Persistent reader search and pinned views (integration, 2026-10-20)
+
+The Library accepts an optional dedicated encrypted workspace database and recipient
+key, outside repositories. Its signer is the configured reader. Index pages and
+saved view declarations are signed with a separate workspace domain and encrypted
+in bounded HPKE chunks; no plaintext SQLite index or browser cache is created.
+A reader signature, exact source/pin/cursor binding and projection version are
+required on a cached page. Database identifiers expose kind, sizes and opaque
+hashes under the default rich-metadata policy. This is a reader-owned projection
+service, not a new authority for the blind evidence service.
+
+`index-page` builds eight occurrences at a time, `search-page` queries that exact
+page, and `save-view`/`views` preserve explicit source snapshots, text and conjunctive
+writer/kind filters. The shared JSON request also runs through `kan-v2 library
+--request`. Raw text search is ASCII case-insensitive with exact UTF-8 byte citations;
+non-ASCII text matches exactly. Capture headers and complete UTF-8 bodies are
+separate spans. Binary spans and phrases crossing capture chunks are explicitly
+outside this projection's coverage; normalized-session search remains a later layer.
+Every search rechecks present remote authorization and rereads matches before
+returning snippets. Facets are labeled as indexed. Saved views pin membership and
+trust framing, not enduring access or current payload availability. Listing a view
+requires present access to all its sources; unavailable scopes reveal no titles.
+
+The database is owner-only, rollback-journal mode, capped at 256 MiB; a value is
+bounded to 12 MiB and view declarations to 256 KiB, with at most 200 views. Capacity
+exhaustion is an explicit failure without silent expiry or overwrite. View saves
+are content-addressed and idempotent; changed declarations retain prior versions.
+Index pages are disposable immutable projections and can be rebuilt into a new
+workspace. Existing hot journals are refused until explicit recovery (owner recovery
+workflow remains required). Back up the workspace and its key separately: deleting
+it loses view declarations. Source erasure must also clear affected projections in
+the eventual owner erasure plan; normal search does not serve cached deleted bytes.
