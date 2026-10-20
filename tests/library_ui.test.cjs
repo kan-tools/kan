@@ -571,3 +571,29 @@ test('conversation refuses foreign identity and discards replies after close or 
   await u.respond(value);assert.equal(u.node('session-reader-body').children.length,0,action);assert.equal(u.node('session-reader').hidden,true,action);
  }
 });
+
+const analysisConfiguration={recipes:[{id:'day-review',revision:'1',purpose:'day-assessment',instructions:'Assess progress using cited evidence only.'}],model:'synthetic-model',endpoint:'http://127.0.0.1:9999/v1/messages',limits:{jobs:10}};
+async function openAnalysisUI(u){
+ await u.login();await u.respond({...proofCatalog,capabilities:[...proofCatalog.capabilities,'analysis'],unavailable:proofCatalog.unavailable.filter(c=>c!=='analysis'),scopes:[{...proofEntry('archive-A'),pin,pin_wire:exactPin}]});await u.respond(proofPage);
+ u.node('rows').children[0].click();await tick();await u.respond(proofSource);u.node('analyze-source').click();await tick();
+ assert.equal(JSON.parse(u.pending[0].opts.body).action,'analysis-jobs');await u.respond({configuration:analysisConfiguration,jobs:[],coverage:'complete'});
+ u.node('analysis-form').events.submit({preventDefault(){}});await tick();return JSON.parse(u.pending[0].opts.body);
+}
+test('analysis requires a destination and recipe preview, submits asynchronously, and treats results as text',async()=>{
+ const u=ui(),request=await openAnalysisUI(u);assert.equal(request.action,'analysis-preview');assert.equal(request.draft.cites[0].source,'archive-A');
+ const checked={digest:'preview-digest',nonce:'a'.repeat(64),effect:'Send selected evidence',endpoint:analysisConfiguration.endpoint,model:'synthetic-model',recipe:analysisConfiguration.recipes[0],input_bytes:8,max_output_tokens:128};
+ await u.respond(checked);assert.match(u.node('analysis-preview').textContent,/127.0.0.1:9999/);assert.match(u.node('analysis-preview').textContent,/day-assessment/);
+ u.node('submit-analysis').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'analysis-submit',draft:request.draft,preview:checked.digest,nonce:checked.nonce,wait:false});
+ const job={id:'job-id',draft:request.draft};await u.respond({state:'running',job});await u.respond({configuration:analysisConfiguration,jobs:[{state:'running',job}],coverage:'complete'});
+ walk(u.node('analysis-jobs')).find(n=>n.textContent==='Inspect job and lineage').click();await tick();
+ await u.respond({state:'succeeded',job,input:{request_hex:'00'},result:{parsed:{content:[{type:'text',text:'<script>derived, never executed</script>'}]}}});
+ assert.ok(walk(u.node('analysis-detail')).some(n=>n.textContent==='<script>derived, never executed</script>'));
+ u.node('lock').click();assert.equal(u.node('analysis-detail').children.length,0);assert.equal(u.node('analysis-jobs').children.length,0);assert.equal(u.node('analysis').hidden,true);
+});
+test('analysis recipe changes and cancellation invalidate stale previews',async()=>{
+ for(const action of ['recipe','cancel']){
+  const u=ui();await openAnalysisUI(u);const pending=u.pending[0];
+  if(action==='recipe')u.node('analysis-recipe').events.change();else u.node('cancel-analysis-draft').click();
+  assert.equal(pending.opts.signal.aborted,true);await u.respond({digest:'stale',nonce:'stale'});assert.equal(u.node('submit-analysis').disabled,true);assert.equal(u.node('analysis-preview').textContent,'');
+ }
+});

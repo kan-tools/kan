@@ -397,3 +397,47 @@ The same workflow is available through `--request`: `proof-session` accepts an
 `POST /api/library/proof-session` with the reader bearer credential. Current
 revocation denies the entire response; a missing payload remains an unavailable
 observation in its original attempt.
+
+## Background extraction and day assessment
+
+`--analysis-config PRIVATE_JSON` enables analysis alongside the encrypted reader
+workspace. The file selects a fixed loopback inference gateway, model, source
+allowlist, versioned recipes and quotas. Its token is never returned to the
+browser. Example (replace every illustrative value before use):
+
+```json
+{
+  "endpoint": "http://127.0.0.1:7285/v1/messages",
+  "token": "your-private-collector-token-at-least-32-bytes",
+  "model": "your-configured-provider-model",
+  "sources": ["exact-proof-source-id-from-catalog"],
+  "recipes": [{
+    "id": "day-assess", "revision": "1", "purpose": "day-assessment",
+    "instructions": "Assess the selected telos, atom, bridge and execution evidence. Cite input numbers. Separate observed progress, uncertainty, tensions and suggested next work."
+  }],
+  "max_input_bytes": 131072,
+  "max_output_tokens": 2048,
+  "max_jobs": 100
+}
+```
+
+Supported purposes are `segment`, `extract`, `summarize`, and `day-assessment`.
+This uses the configured collector/gateway's Anthropic Messages interface. It
+never chooses a provider, buys credits or obtains production credentials.
+
+Inspect a source and choose **Analyze**. Preview shows the exact recipe revision,
+model, destination and input budget. **Start background job** submits it; **Refresh
+jobs** reconnects to persisted status. Inspect a job to read derived output and
+its exact input/request/response lineage. Results never publish claims or execute
+tools. Cancel records intent before stopping the worker; a request already sent
+to the provider may still be billed. Retry previews a new linked job using fresh
+source checks. The same preview/nonce submission is idempotent and does not resend.
+
+The shared actions are `analysis-preview`, `analysis-submit`, `analysis-jobs` and
+`analysis-job` (with optional `cancel: true`). A submission repeats its draft,
+preview digest and nonce. Use `wait: true` in one-shot `library --request` calls so
+the runtime stays alive until the worker stops; the server UI uses `wait: false`.
+An interrupted process leaves an interrupted job; restart does not silently
+resend it. At most one scheduler owns a workspace, and one job runs at a time.
+The lifetime job quota requires an explicit configuration increase; stored records
+have no automatic expiry. Current source revocation hides jobs and their results.

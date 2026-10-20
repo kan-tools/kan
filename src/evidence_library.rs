@@ -10,6 +10,7 @@ use hyper::{
     Request, Response, StatusCode,
 };
 use hyper_util::rt::TokioIo;
+pub use proof::analysis::{Config as AnalysisConfig, Draft as AnalysisDraft};
 pub use proof::knowledge::{Citation as EvidenceCitation, Draft as AnnotationDraft};
 pub use proof::outbox::AnnotationOutbox;
 pub use proof::sessions::{Identity as SessionIdentity, Selection as SessionSelection};
@@ -27,6 +28,22 @@ use tokio::{
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Query {
+    AnalysisPreview {
+        draft: AnalysisDraft,
+    },
+    AnalysisSubmit {
+        draft: AnalysisDraft,
+        preview: String,
+        nonce: String,
+        #[serde(default)]
+        wait: bool,
+    },
+    AnalysisJobs,
+    AnalysisJob {
+        id: String,
+        #[serde(default)]
+        cancel: bool,
+    },
     ProofSession {
         identity: SessionIdentity,
         attempts: Vec<SessionSelection>,
@@ -152,7 +169,11 @@ fn denied(code: StatusCode) -> Response<Full<Bytes>> {
 async fn query(reader: &Reader, query: Query) -> Result<Vec<u8>, ContentError> {
     use crate::evidence_content as content;
     let value: serde_json::Value = match query {
-        Query::ProofSession { .. }
+        Query::AnalysisPreview { .. }
+        | Query::AnalysisSubmit { .. }
+        | Query::AnalysisJobs
+        | Query::AnalysisJob { .. }
+        | Query::ProofSession { .. }
         | Query::AnnotationDelivery { .. }
         | Query::AnnotationQueue { .. }
         | Query::AnnotationDrain { .. }

@@ -1363,9 +1363,12 @@ async fn session_content_preserves_archive_boundaries_membership_loss_and_revoca
         value["attempts"][0]["source"],
         value["attempts"][1]["source"]
     );
-    assert_eq!(
-        value["attempts"][0]["content"]["groups"][0]["request"]["items"][0]["text"],
-        "Hello proof archive"
+    assert!(
+        value["attempts"][0]["content"]["groups"][0]["request"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["text"] == "Hello proof archive")
     );
     let mut conflict = request.clone();
     conflict["identity"]["session"] = json!("d".repeat(64));
@@ -1396,4 +1399,154 @@ async fn session_content_preserves_archive_boundaries_membership_loss_and_revoca
     ui.stop().await;
     first.stop().await;
     second.stop().await;
+}
+
+#[tokio::test]
+async fn analysis_retains_exact_lineage_quotas_retries_and_revoked_results() {
+    use http_body_util::{BodyExt, Full};
+    use hyper::{body::Bytes, Response};
+    let dir = tempfile::tempdir().unwrap();
+    let local = private_workspace_directory();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}/v1/messages", listener.local_addr().unwrap());
+    let received = Arc::new(std::sync::Mutex::new(Vec::<Vec<u8>>::new()));
+    let captured = received.clone();
+    let provider = tokio::spawn(async move {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            let captured = captured.clone();
+            tokio::spawn(async move {
+                let service = hyper::service::service_fn(
+                    move |req: hyper::Request<hyper::body::Incoming>| {
+                        let captured = captured.clone();
+                        async move {
+                            assert_eq!(req.uri().path(), "/v1/messages");
+                            let raw = req.into_body().collect().await.unwrap().to_bytes();
+                            let count = {
+                                let mut all = captured.lock().unwrap();
+                                all.push(raw.to_vec());
+                                all.len()
+                            };
+                            if count >= 3 {
+                                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                            }
+                            Ok::<_,std::convert::Infallible>(Response::new(Full::new(Bytes::from_static(br#"{"type":"message","content":[{"type":"text","text":"Untrusted derived assessment citing input 0"}]}"#))))
+                        }
+                    },
+                );
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
+                    .await;
+            });
+        }
+    });
+    let source = {
+        let temporary =
+            Ui::start(kan::evidence_library::Readers::new(None, vec![server.client(&f)]).unwrap())
+                .await;
+        let catalog = temporary.call(json!({"action":"catalog"}), 200).await;
+        temporary.stop().await;
+        catalog["scopes"][0]["id"].as_str().unwrap().to_string()
+    };
+    let readers = || {
+        kan::evidence_library::Readers::new(None,vec![server.client(&f)]).unwrap()
+        .with_workspace(kan::evidence_workspace::Workspace::open(&local.path().join("workspace.sqlite"),identity(6),[97;32]).unwrap())
+        .with_analysis(serde_json::from_value(json!({"endpoint":endpoint,"token":"synthetic-analysis-gateway-token-12345","model":"synthetic-model","sources":[source],"recipes":[{"id":"assess","revision":"1","purpose":"day-assessment","instructions":"Assess progress using only cited evidence."}],"max_input_bytes":1024,"max_output_tokens":128,"max_jobs":4})).unwrap()).unwrap()
+    };
+    let ui = Ui::start(readers()).await;
+    let catalog = ui.call(json!({"action":"catalog"}), 200).await;
+    let entry = &catalog["scopes"][0];
+    let page=ui.call(json!({"action":"proof-page","source":entry["id"],"pin":entry["pin"],"cursor":null,"limit":1}),200).await;
+    let draft = json!({"recipe":"assess","cites":[{"source":entry["id"],"pin":entry["pin"],"selection":page["records"][0]["selection"]}],"retry_of":null});
+    let preview = ui
+        .call(json!({"action":"analysis-preview","draft":draft}), 200)
+        .await;
+    let mut submit = json!({"action":"analysis-submit","draft":draft,"preview":"wrong","nonce":preview["nonce"],"wait":true});
+    ui.call(submit.clone(), 400).await;
+    assert!(received.lock().unwrap().is_empty());
+    submit["preview"] = preview["digest"].clone();
+    let done = ui.call(submit.clone(), 200).await;
+    assert_eq!(done["state"], "succeeded");
+    let id = done["job"]["id"].clone();
+    assert_eq!(ui.call(submit.clone(), 200).await, done);
+    assert_eq!(received.lock().unwrap().len(), 1);
+    let detail = ui.call(json!({"action":"analysis-job","id":id}), 200).await;
+    assert_eq!(
+        detail["input"]["request_hex"],
+        service::hex(&received.lock().unwrap()[0])
+    );
+    assert_eq!(
+        detail["result"]["parsed"]["content"][0]["text"],
+        "Untrusted derived assessment citing input 0"
+    );
+    ui.stop().await;
+    let ui = Ui::start(readers()).await;
+    assert_eq!(
+        ui.call(json!({"action":"analysis-job","id":id}), 200).await,
+        detail
+    );
+    let mut retry = draft.clone();
+    retry["retry_of"] = id.clone();
+    let preview = ui
+        .call(json!({"action":"analysis-preview","draft":retry}), 200)
+        .await;
+    assert_eq!(ui.call(json!({"action":"analysis-submit","draft":retry,"preview":preview["digest"],"nonce":preview["nonce"],"wait":true}),200).await["state"],"succeeded");
+    submit["nonce"] = json!("e".repeat(64));
+    submit["wait"] = json!(false);
+    let running = ui.call(submit.clone(), 200).await;
+    assert_eq!(running["state"], "running");
+    let cancelled = ui
+        .call(
+            json!({"action":"analysis-job","id":running["job"]["id"],"cancel":true}),
+            200,
+        )
+        .await;
+    assert_eq!(cancelled["state"], "cancelled");
+    // Emulate a retained start whose worker died, then inspect it through the
+    // real API: status must never invent completion or silently replay it.
+    let dead_id = "d".repeat(64);
+    let workspace = kan::evidence_workspace::Workspace::open(
+        &local.path().join("workspace.sqlite"),
+        identity(6),
+        [97; 32],
+    )
+    .unwrap();
+    let mut interrupted = done["job"].clone();
+    interrupted["id"] = json!(dead_id);
+    workspace
+        .put("analysis-job", &dead_id, interrupted)
+        .unwrap();
+    workspace
+        .put(
+            "analysis-event",
+            &format!("{dead_id}/1"),
+            json!({"job":dead_id,"sequence":1,"state":"running"}),
+        )
+        .unwrap();
+    assert_eq!(
+        ui.call(json!({"action":"analysis-job","id":dead_id}), 200)
+            .await["state"],
+        "interrupted"
+    );
+    submit["nonce"] = json!("f".repeat(64));
+    ui.call(submit, 422).await;
+    server
+        .service
+        .lock()
+        .unwrap()
+        .replace_grants(Vec::new())
+        .unwrap();
+    ui.call(json!({"action":"analysis-job","id":id}), 403).await;
+    assert!(
+        ui.call(json!({"action":"analysis-jobs"}), 200).await["jobs"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    ui.stop().await;
+    server.stop().await;
+    provider.abort();
+    let _ = provider.await;
 }

@@ -11,6 +11,7 @@
   const isProof = () => activeSource?.protocol === 'kan-proof-reader/1';
   const buttons = new Map(), exports = new Map(), contentSelection = new Set(), checks = new Map();
   let searchStates = [], searchRun = 0, searchFilter = null, searchHits = new Map(), searchPages = 0;
+  let analysisEnabled=false,analysisDraft=null,analysisPreview=null,analysisRecipes=[];
   let annotationsEnabled=false, annotationCites=[], annotationSupersedes=null, annotationPreview=null;
   let attemptMode = false;
   let pinWire = null, contentEnabled = false, contentValue = null, returnItem = null;
@@ -28,7 +29,7 @@
   }
   function cancelWork() { epoch++; if (controller) controller.abort(); }
   function clearInspector() {
-    $('annotate-source').hidden=true;
+    $('annotate-source').hidden=true;$('analyze-source').hidden=true;
     source = null; selected = null; $('download').disabled = true; $('more').disabled = true; $('source-tab').disabled = true; $('provenance-tab').disabled = true; $('inspection').hidden = true; $('source').textContent = '';
     $('provenance').replaceChildren(); $('range').textContent = ''; $('selection').textContent = 'Select an occurrence';
     $('source-hint').textContent = 'Read exact retained bytes alongside their provenance.'; $('close-inspector').hidden = true;
@@ -37,7 +38,7 @@
   function lock(message = 'Locked · connect to browse authorized evidence.') {
     for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
-    $('operations-link').hidden=true;clearKnowledge(true);clearSearch(true);
+    $('operations-link').hidden=true;clearAnalysis(true);clearKnowledge(true);clearSearch(true);
     pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); clearWorkspace(); selections.clear(); clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
     $('catalog-status').textContent = ''; $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
     $('lock').disabled = true; $('token').value = ''; notice(message); $('token').focus();
@@ -77,7 +78,7 @@
     $('encoding').disabled = source.utf8 === null;
   }
   function showSource(value) {
-    $('annotate-source').hidden=!annotationsEnabled || !isProof();
+    $('annotate-source').hidden=!annotationsEnabled || !isProof();$('analyze-source').hidden=!analysisEnabled || !isProof() || value.availability==='missing' || value.availability==='corrupt';
     const unavailable = value.availability === 'missing' || value.availability === 'corrupt';
     source = unavailable ? null : value; $('download').disabled = unavailable; $('source-tab').disabled = false; $('provenance-tab').disabled = false; $('inspection').hidden = false; $('close-inspector').hidden = false;
     $('selection').textContent = `Occurrence ${value.record.sequence}`;
@@ -132,7 +133,7 @@
   function renderCapabilities(value) {
     if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
     const labels = {'operations-read':'Operations reader','text-search':'Persistent text search','attempt-content':'Large attempt Content','session-content':'Conversation reader','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
-    const supported = new Set(['operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links','session-content']), seen = new Set();
+    const supported = new Set(['analysis','operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links','session-content']), seen = new Set();
     $('capability-list').replaceChildren();
     for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
       for (const capability of items) {
@@ -161,7 +162,7 @@
     }
   }
   async function catalog() {
-    $('operations-link').hidden=true;clearKnowledge(true);clearSearch(true);
+    $('operations-link').hidden=true;clearAnalysis(true);clearKnowledge(true);clearSearch(true);
     clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
     pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); clearWorkspace(); selections.clear();
     scopes = []; pin = null; history = []; after = 0; next = null;
@@ -175,6 +176,7 @@
     renderCapabilities(value);
     $('search-workspace').hidden = !value.capabilities.includes('text-search');
     $('operations-link').hidden=!value.capabilities.includes('operations-read');
+    clearAnalysis(true);analysisEnabled=value.capabilities.includes('analysis');$('analysis').hidden=!analysisEnabled;
     annotationsEnabled=value.capabilities.includes('annotations');$('knowledge').hidden=!annotationsEnabled;
     catalogContent = value.capabilities.includes('content-inspection');
     if (value.scopes.some(s => (s.capabilities?.includes('content-inspection') || (value.version === 1 && catalogContent)) && typeof s.pin_wire !== 'string')) throw new Error('Missing exact snapshot.');
@@ -495,6 +497,56 @@
     previous.addEventListener('click',()=>{page=Math.max(0,page-1);render();});next.addEventListener('click',()=>{page=Math.min(offsets.length-1,page+1);render();});
     controls.append(previous);controls.append(position);controls.append(next);parent.append(controls);render();
   }
+
+  function clearAnalysis(hide=false) {
+    analysisDraft=null;analysisPreview=null;$('analysis-form').hidden=true;$('analysis-target').textContent='';$('analysis-preview').textContent='';$('submit-analysis').disabled=true;$('analysis-detail').replaceChildren();
+    if(hide){analysisEnabled=false;analysisRecipes=[];$('analysis').hidden=true;$('analysis-jobs').replaceChildren();$('analysis-recipe').replaceChildren();$('analysis-status').textContent='';}
+  }
+  async function loadAnalysis() {
+    const value=await rpc({action:'analysis-jobs'});if(!value)return false;
+    if(!Array.isArray(value.jobs)||!Array.isArray(value.configuration?.recipes))throw new Error('Invalid analysis configuration.');
+    analysisRecipes=value.configuration.recipes;$('analysis-recipe').replaceChildren();
+    for(const recipe of analysisRecipes){const option=textNode('option',`${recipe.id} · ${recipe.revision} · ${recipe.purpose}`);option.value=recipe.id;$('analysis-recipe').append(option);}
+    $('analysis-recipe').value=analysisRecipes[0]?.id||'';
+    $('analysis-status').textContent=`${value.jobs.length} visible jobs · ${value.coverage} source checks · ${value.configuration.model} · ${value.configuration.endpoint} · one active job · lifetime quota ${value.configuration.limits.jobs}`;
+    $('analysis-jobs').replaceChildren();
+    for(const status of value.jobs){
+      const row=document.createElement('article');row.className='content-item';row.append(textNode('h3',`${status.job.draft.recipe} · ${status.state}`));row.append(textNode('p',status.job.id,'content-identity'));
+      const inspect=textNode('button','Inspect job and lineage');inspect.addEventListener('click',()=>run(()=>inspectAnalysis(status.job.id)));row.append(inspect);
+      if(status.state==='running'||status.state==='interrupted'){const cancel=textNode('button','Cancel job');cancel.addEventListener('click',()=>run(async()=>{await inspectAnalysis(status.job.id,true);await loadAnalysis();}));row.append(cancel);}
+      if(status.state!=='running'){const retry=textNode('button','Preview a linked retry');retry.addEventListener('click',()=>run(()=>editAnalysis(status.job.draft.cites,status.job.id,status.job.draft.recipe)));row.append(retry);}
+      $('analysis-jobs').append(row);
+    }
+    return true;
+  }
+  async function inspectAnalysis(id,cancel=false){
+    $('analysis-detail').replaceChildren();const value=await rpc({action:'analysis-job',id,cancel});if(!value)return;
+    const root=$('analysis-detail');root.append(textNode('h3',`Job ${value.state}`));root.append(textNode('p','Derived model output · assertions are untrusted. No claims or actions were published.','content-coverage'));
+    for(const block of value.result?.parsed?.content||[])if(block.type==='text'&&typeof block.text==='string')appendPagedText(root,block.text,'content-text');
+    details(root,'Job declaration and lifecycle',JSON.stringify({job:value.job,terminal:value.terminal},null,2));
+    details(root,'Exact inputs and provider request',JSON.stringify(value.input,null,2));details(root,'Observed provider response and failure details',JSON.stringify(value.result,null,2));
+  }
+  async function editAnalysis(cites,retry=null,recipe=null){
+    cancelWork();clearAnalysis();if(!await loadAnalysis())return;
+    analysisDraft={recipe:recipe||analysisRecipes[0]?.id,cites,retry_of:retry};$('analysis-recipe').value=analysisDraft.recipe;
+    $('analysis-target').textContent=`${cites.length} exact source citations${retry?' · retry of '+retry:''}. Review the recipe and destination before starting.`;$('analysis-form').hidden=false;
+  }
+  $('analyze-source').addEventListener('click',()=>run(async()=>{if(!source||!isProof())return;const q=sourceRequest(selected);await editAnalysis([{source:q.source,pin:q.pin,selection:q.selection}]);}));
+  $('load-analysis').addEventListener('click',()=>run(async()=>{analysisPreview=null;$('submit-analysis').disabled=true;await loadAnalysis();}));
+  $('analysis-recipe').addEventListener('change',()=>{cancelWork();analysisPreview=null;$('analysis-preview').textContent='';$('submit-analysis').disabled=true;});
+  $('analysis-form').addEventListener('submit',event=>{event.preventDefault();run(async()=>{
+    if(!analysisDraft)return;analysisPreview=null;$('submit-analysis').disabled=true;analysisDraft.recipe=$('analysis-recipe').value;
+    const checked=await rpc({action:'analysis-preview',draft:analysisDraft});if(!checked)return;
+    if(typeof checked.digest!=='string'||typeof checked.nonce!=='string')throw new Error('Invalid analysis preview.');
+    analysisPreview=checked;$('analysis-preview').textContent=`${checked.effect}\nDestination: ${checked.endpoint}\nModel: ${checked.model}\nRecipe: ${checked.recipe.id} / ${checked.recipe.revision} / ${checked.recipe.purpose}\nInput: ${checked.input_bytes} bytes · output limit ${checked.max_output_tokens} tokens\n\n${checked.recipe.instructions}`;$('submit-analysis').disabled=false;
+  });});
+  $('submit-analysis').addEventListener('click',()=>run(async()=>{
+    if(!analysisPreview||!analysisDraft)return;const checked=analysisPreview;$('submit-analysis').disabled=true;
+    const value=await rpc({action:'analysis-submit',draft:analysisDraft,preview:checked.digest,nonce:checked.nonce,wait:false});if(!value)return;
+    $('analysis-form').hidden=true;analysisPreview=null;analysisDraft=null;await loadAnalysis();notice(`Analysis job ${value.state}. Refresh jobs to inspect progress and retained results.`);
+  }));
+  $('cancel-analysis-draft').addEventListener('click',()=>{cancelWork();clearAnalysis();});
+
   function clearKnowledge(hide=false) {
     annotationCites=[];annotationSupersedes=null;annotationPreview=null;
     $('annotation-form').hidden=true;$('annotation-subject').value='';$('annotation-text').value='';$('annotation-tags').value='';$('annotation-target').textContent='';$('annotation-preview').textContent='';$('save-annotation').disabled=true;

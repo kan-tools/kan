@@ -180,6 +180,9 @@ enum Command {
         /// Fixed annotation publication destination: spool, endpoint, recipient.
         #[arg(long, requires = "workspace")]
         annotation_outbox: Option<PathBuf>,
+        /// Private fixed recipes, inference gateway, input grants and quotas.
+        #[arg(long, requires = "workspace")]
+        analysis_config: Option<PathBuf>,
         /// Execute one shared Library API request from a JSON file and exit.
         #[arg(long)]
         request: Option<PathBuf>,
@@ -578,6 +581,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             workspace,
             workspace_key,
             annotation_outbox,
+            analysis_config,
             operations_journal,
             operations_token_file,
             request,
@@ -656,6 +660,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     service_identity(&signing_key)?,
                     recipient_private(&key)?,
                 )?);
+            }
+            if let Some(path) = analysis_config {
+                reader = reader.with_analysis(serde_json::from_slice(
+                    &kan::evidence_gateway::secret_file(&path)?,
+                )?)?;
             }
             if let Some(path) = annotation_outbox {
                 #[derive(serde::Deserialize)]

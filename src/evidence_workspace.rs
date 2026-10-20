@@ -17,6 +17,7 @@ CREATE TABLE entries(kind TEXT NOT NULL, id TEXT NOT NULL, body BLOB NOT NULL, P
 const DOMAIN: &[u8] = b"tools.kan.reader.workspace.v1\0";
 pub struct Workspace {
     conn: Mutex<Connection>,
+    path: std::path::PathBuf,
     signer: Identity,
     private: [u8; 32],
     scope: [u8; 32],
@@ -150,6 +151,7 @@ impl Workspace {
         .into();
         let workspace = Self {
             conn: Mutex::new(conn),
+            path: path.to_path_buf(),
             signer,
             private: private_key,
             scope,
@@ -183,6 +185,14 @@ impl Workspace {
             Ok(_) | Err(crate::evidence_delivery::Error::ReusedOperation) => Ok(()),
             Err(_) => Err(Failure::Unavailable),
         }
+    }
+    /// A single analysis scheduler owns this workspace at a time. The advisory
+    /// lifetime lock does not modify the database or replace SQLite transactions.
+    pub(crate) fn analysis_lease(&self) -> Result<std::fs::File> {
+        private(&self.path, false)?;
+        let file = std::fs::File::open(&self.path).map_err(invalid)?;
+        fs4::FileExt::try_lock(&file).map_err(|_| Failure::Unavailable)?;
+        Ok(file)
     }
     pub fn author(&self) -> String {
         self.signer.did().to_string()
@@ -271,11 +281,23 @@ impl Workspace {
     /// Immutable, idempotent installation. A second value under an existing key
     /// is refused. SQLite commits the encrypted value and its identity together.
     pub fn put(&self, kind: &str, key: &str, value: Value) -> Result<()> {
-        if !matches!(kind, "binding" | "search-page" | "view" | "annotation") {
+        if !matches!(
+            kind,
+            "binding"
+                | "search-page"
+                | "view"
+                | "annotation"
+                | "analysis-job"
+                | "analysis-input"
+                | "analysis-result"
+                | "analysis-event"
+        ) {
             return Err(Failure::Invalid);
         }
-        if matches!(kind, "view" | "annotation")
-            && serde_json::to_vec(&value).map_err(invalid)?.len() > 262144
+        if matches!(
+            kind,
+            "view" | "annotation" | "analysis-job" | "analysis-event"
+        ) && serde_json::to_vec(&value).map_err(invalid)?.len() > 262144
         {
             return Err(Failure::Invalid);
         }
@@ -334,6 +356,9 @@ impl Workspace {
     }
     pub fn annotations(&self) -> Result<Vec<Value>> {
         self.declarations("annotation", 1000)
+    }
+    pub(crate) fn analysis_jobs(&self) -> Result<Vec<Value>> {
+        self.declarations("analysis-job", 1000)
     }
     fn declarations(&self, kind: &str, limit: usize) -> Result<Vec<Value>> {
         let conn = self.conn.lock().map_err(invalid)?;

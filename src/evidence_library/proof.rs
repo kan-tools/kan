@@ -8,6 +8,7 @@ use crate::{
 };
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, time::Duration};
+pub mod analysis;
 mod discovery;
 pub mod knowledge;
 pub mod outbox;
@@ -15,6 +16,7 @@ pub mod search;
 pub mod sessions;
 
 pub struct Readers {
+    analysis: Option<std::sync::Arc<analysis::Engine>>,
     outbox: Option<outbox::AnnotationOutbox>,
     pub(super) operations: Option<crate::evidence_dashboard::Embedded>,
     workspace: Option<std::sync::Arc<crate::evidence_workspace::Workspace>>,
@@ -49,6 +51,7 @@ impl Readers {
             }
         }
         Ok(Self {
+            analysis: None,
             outbox: None,
             operations: None,
             workspace: None,
@@ -151,6 +154,15 @@ impl Readers {
     }
     pub(super) async fn query(&self, request: Query) -> Result<Vec<u8>, ContentError> {
         let value = match request {
+            Query::AnalysisPreview { draft } => self.analysis_preview(draft).await?,
+            Query::AnalysisSubmit {
+                draft,
+                preview,
+                nonce,
+                wait,
+            } => self.analysis_submit(draft, preview, nonce, wait).await?,
+            Query::AnalysisJobs => self.analysis_jobs().await?,
+            Query::AnalysisJob { id, cancel } => self.analysis_job(id, cancel).await?,
             Query::ProofSession {
                 identity,
                 attempts,
@@ -316,6 +328,16 @@ impl Readers {
                 let mut catalog = json!({"version":2,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},
                     "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content"],
                     "unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]});
+                if self.analysis.is_some() {
+                    catalog["capabilities"]
+                        .as_array_mut()
+                        .unwrap()
+                        .push(json!("analysis"));
+                    catalog["unavailable"]
+                        .as_array_mut()
+                        .unwrap()
+                        .retain(|v| v != "analysis");
+                }
                 if self.operations.is_some() {
                     catalog["capabilities"]
                         .as_array_mut()
@@ -416,4 +438,12 @@ fn source_value(
             .extend(fields.as_object().ok_or(Failure::Invalid)?.clone());
     }
     Ok(result)
+}
+
+impl Drop for Readers {
+    fn drop(&mut self) {
+        if let Some(engine) = &self.analysis {
+            engine.stop();
+        }
+    }
 }

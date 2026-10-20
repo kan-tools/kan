@@ -265,3 +265,22 @@ compaction claims are never collapsed into a single fabricated conversation.
 The frontend offers consecutive eight-attempt windows and retains exact source
 navigation. Larger selections remain browsable individually. This is shared
 CLI/API/UI presentation over the raw ledger, with no new persistent authority.
+
+### Background analysis execution contract
+
+An optional private instance configuration enables named, versioned recipes
+(including day assessment), a fixed local inference-gateway endpoint/model, an
+explicit source allowlist, byte/output/job quotas and at most one active job.
+The reader preview rereads exact authorized citations and hashes the complete
+provider request plus recipe and destination. Submission must repeat that digest
+and a retry-stable nonce. A changed source or configuration invalidates preview.
+No model output creates an annotation, changes a grant or invokes a tool.
+
+Encrypted signed workspace records retain the job declaration, exact input bytes,
+provider request, observed response and append-only lifecycle events. A running
+job with no live worker after restart is interrupted, never silently resumed.
+Explicit retry is a new linked job with fresh source checks; cancellation records
+intent before aborting the worker. Inspection rechecks every input source grant.
+The server runs asynchronously; the shared request supports waiting for completion
+for one-shot CLI use. Tag scheduling must use this same declaration/runner and
+limits, not an independent privileged execution path.
