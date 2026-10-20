@@ -3988,3 +3988,177 @@ async fn erased_source_is_explicit_and_its_derived_annotation_is_withheld_withou
     ui.stop().await;
     server.stop().await;
 }
+
+#[tokio::test]
+async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_replica_after_restart(
+) {
+    use kan::evidence_erasure_history::{Access, Record};
+    const OWNER: &str = "synthetic-capture-erasure-owner-token";
+    let dir = private_workspace_directory();
+    let local = private_workspace_directory();
+    let custody = private_workspace_directory();
+    let replica = private_workspace_directory();
+    let f = fixture_requests(dir.path(), Profile::Admitted, |n, audience, previous| {
+        if n < 2 {
+            return captured_request(n, audience, previous);
+        }
+        let header=serde_json::to_vec(&json!({"version":2,"attempt":"a".repeat(64),"observer":"collector","ordinal":n,"observed_at_unix_micros":null,"elapsed_micros":0,"unconfirmed_before":0,"event":{"type":"terminal","outcome":"completed"}})).unwrap();
+        let mut frame = b"KANC2".to_vec();
+        frame.extend_from_slice(&(header.len() as u32).to_be_bytes());
+        frame.extend(header);
+        encrypted_frame(n, audience, previous, &frame)
+    });
+    // The independent replica starts offline. Its old encrypted bytes remain in
+    // this owner-selected backup until explicitly brought online for cleanup.
+    let backup = local.path().join("before-erasure.sqlite");
+    attested::Archive::open(&f.root, f.binding.clone())
+        .unwrap()
+        .backup(&backup)
+        .unwrap();
+    let server = Server::start(&f).await;
+    let binding = json!({"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer});
+    let mut history: Access = serde_json::from_value(
+        json!({"directory":custody.path(),"binding":binding,"owner":identity(9).did().as_str()}),
+    )
+    .unwrap();
+    history.initialize().unwrap();
+    let genesis =
+        Record::sign(history.preview(None, "b".repeat(64)).unwrap(), &identity(9)).unwrap();
+    history.minimum = Some(genesis.id().unwrap());
+    history.append(genesis).unwrap();
+    let signing = local.path().join("owner.key");
+    let issuer = local.path().join("issuer.key");
+    let private = local.path().join("capture.key");
+    for (path, key) in [(&signing, [9; 32]), (&issuer, [8; 32]), (&private, PRIVATE)] {
+        std::fs::write(path, key).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+    let state = local.path().join("owner.sqlite");
+    let readers = || {
+        let workspace =
+            kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
+        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"capture-erasure","id":"capture","root":f.root,"history":history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"replicas":[replica.path()]}]})).unwrap(),workspace).unwrap();
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_owner(owner)
+    };
+    let ui = Ui::start(readers()).await;
+    let query = json!({"action":"preview-erasure","target":"capture","capture":{"writer":identity(6).did().as_str(),"observer":"collector","attempt":"a".repeat(64)}});
+    owner_call(&ui, TOKEN, query.clone(), 401).await;
+    let preview = owner_call(&ui, OWNER, query, 200).await;
+    assert_eq!(
+        preview["plan"]["authorization"]["erasure"]["plan"]["targets"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(
+        history.current().unwrap().history.len(),
+        1,
+        "preview publishes no authorization"
+    );
+    let mut forged = preview["plan"].clone();
+    forged["authorization"]["erasure"]["plan"]["targets"]
+        .as_array_mut()
+        .unwrap()
+        .pop();
+    let mut contract = preview["contract"].clone();
+    contract["plan"] = forged.clone();
+    use sha2::{Digest, Sha256};
+    let forged_hash = service::hex(&Sha256::digest(serde_json::to_vec(&contract).unwrap()));
+    owner_call(&ui,OWNER,json!({"action":"apply-erasure","target":"capture","plan":forged,"preview":forged_hash,"wait":true}),409).await;
+    assert_eq!(history.current().unwrap().history.len(), 1);
+    let apply = json!({"action":"apply-erasure","target":"capture","plan":preview["plan"],"preview":preview["digest"],"wait":true});
+    let held = history.current().unwrap();
+    let blocked = owner_call(&ui, OWNER, apply.clone(), 200).await;
+    assert_eq!(blocked["state"], "cleanup-pending");
+    assert!(blocked["result"].get("error").is_some(), "{blocked}");
+    assert_eq!(held.history.len(), 1);
+    assert_eq!(
+        history.current().unwrap().history.len(),
+        1,
+        "exclusive publication refused before deletion"
+    );
+    drop(held);
+    let done = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"resume-erasure","id":preview["digest"],"wait":true}),
+        200,
+    )
+    .await;
+    assert_eq!(done["state"], "cleanup-pending", "{done}");
+    assert_eq!(
+        done["result"]["report"]["archives"][0]["state"], "payloads-erased",
+        "{done}"
+    );
+    assert_eq!(done["result"]["report"]["archives"][1]["state"], "pending");
+    assert_eq!(done["result"]["report"]["backup_purge"], "not-performed");
+    assert_eq!(done["attempts"], 2);
+    assert_eq!(
+        owner_call(&ui, OWNER, apply.clone(), 200).await,
+        done,
+        "lost ACK reuses the retained job"
+    );
+    assert_eq!(history.current().unwrap().history.len(), 2);
+    assert_eq!(
+        attested::Archive::verify_file(&f.db(), f.binding.clone())
+            .unwrap()
+            .erased_objects,
+        3
+    );
+    ui.stop().await;
+    std::fs::copy(&backup, replica.path().join("archive.sqlite")).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            replica.path().join("archive.sqlite"),
+            std::fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+    }
+    let ui = Ui::start(readers()).await;
+    let resumed = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"resume-erasure","id":preview["digest"],"wait":true}),
+        200,
+    )
+    .await;
+    assert_eq!(resumed["attempts"], 3);
+    assert_eq!(
+        resumed["result"]["report"]["archives"][1]["state"], "payloads-erased",
+        "{resumed}"
+    );
+    assert_eq!(
+        resumed["state"], "cleanup-pending",
+        "other managed copies are not silently completed"
+    );
+    assert_eq!(
+        history.current().unwrap().history.len(),
+        2,
+        "resume never mints another authorization"
+    );
+    assert_eq!(
+        attested::Archive::verify_file(&replica.path().join("archive.sqlite"), f.binding.clone())
+            .unwrap()
+            .erased_objects,
+        3
+    );
+    assert_eq!(
+        attested::Archive::verify_file(&backup, f.binding.clone())
+            .unwrap()
+            .erased_objects,
+        0,
+        "independent backup unchanged"
+    );
+    let catalog = owner_call(&ui, OWNER, json!({"action":"catalog"}), 200).await;
+    assert_eq!(catalog["jobs"].as_array().unwrap().len(), 1);
+    assert_eq!(catalog["jobs"][0]["attempts"], 3);
+}

@@ -121,6 +121,11 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
 ];
 const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     (
+        "src/evidence_library/owner/erasure.rs",
+        "\"archive.sqlite\"",
+        "configured-erasure-archive",
+    ),
+    (
         "src/evidence_erasure_history.rs",
         "\"archive.sqlite\"",
         "owner-selected-archive-reconciliation",

@@ -1050,3 +1050,28 @@ This initializes custody, not a complete erase workflow. Coordinated source/spoo
 replica/workspace removal, owner preview/apply/status, backup purge reporting and
 managed deployment enrollment remain under development. No historical offline
 backup or old key is made cryptographically irrecoverable by these operations.
+
+#### Owner capture erasure jobs
+
+The experimental `capture-erasure` owner target accepts `id`, `root`, `history`
+(the pinned independent owner-erasure Access configuration), `signing_key`
+(owner), `issuer_key`, `private_keys` (capture decryption credential paths), and
+optional `replicas` (same-binding archive directories). All paths come from
+owner configuration. A stopped replica may remain offline at startup.
+
+The Library owner panel and shared owner request CLI support:
+
+- `preview-erasure` with `target` and `capture: {writer, observer, attempt}`.
+- `apply-erasure` with that exact `target`, returned `plan`, `preview` digest
+  and optional `wait`. Partial/changed selections and stale snapshots refuse.
+- `resume-erasure` with the retained job `id` and optional `wait`. This reuses
+  the signed authorization, including after restart or a lost acknowledgement.
+
+The journal commits before destructive work; independent custody publication
+precedes archive cleanup. Inspect `job` or the owner catalog for per-archive
+results, page reclamation and interrupted attempts. A result remains
+`cleanup-pending` because queue, complete derived dependency and other
+publication-copy cleanup are not yet wired into this coordinator. Never
+interpret archive payload removal as completed managed erasure. Backup purge
+is reported separately as `not-performed`; no historical backup is deleted,
+and service enrollment/activation remains explicit.

@@ -2,6 +2,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   let policyRows=[],policyPreview=null,keyPreview=null,keyRestore=null,keyTransfer=null,keyEpochs=[],importControls=[];
+  let erasurePreview=null;
   let ownerToken='',ownerEpoch=0,ownerController,ownerTargets=[],ownerPreview=null,ownerRetry=null;
   let token = '', epoch = 0, controller, scopes = [], pin, after = 0, next = null, history = [], selected = null, source = null, hexadecimal = false;
   const selections = new Map();
@@ -646,7 +647,7 @@
   }
 
   function lockOwner(){
-    clearPolicy();clearKeys();
+    clearPolicy();clearKeys();clearErasure();
     ownerEpoch++;if(ownerController)ownerController.abort();ownerToken='';ownerTargets=[];ownerPreview=null;ownerRetry=null;
     $('owner-token').value='';$('owner-controls').hidden=true;$('owner-connect').hidden=false;$('owner-maintenance').hidden=true;$('owner-lock').disabled=true;$('owner-submit').disabled=true;
     for(const id of ['owner-target','owner-operation','owner-jobs','owner-detail','owner-settings'])$(id).replaceChildren();$('owner-preview').textContent='';$('owner-status').textContent='Owner access locked. Running maintenance is not cancelled.';
@@ -654,7 +655,7 @@
   async function ownerRpc(body){
     const current=++ownerEpoch;if(ownerController)ownerController.abort();ownerController=new AbortController();
     try{const response=await fetch('/api/owner',{method:'POST',headers:{Authorization:`Bearer ${ownerToken}`,'Content-Type':'application/json'},body:JSON.stringify(body),credentials:'omit',cache:'no-store',signal:ownerController.signal});
-      if(current!==ownerEpoch)return null;if(!response.ok){if(response.status===409){invalidatePolicy();invalidateKeys();throw new Error('The target changed since preview. Refresh it and review a new preview.');}if(response.status===401||response.status===403){lockOwner();$('owner-maintenance').hidden=false;$('owner-status').textContent='Owner access refused. Reader access has not changed.';return null;}throw new Error('Owner request failed. Refresh jobs before retrying; retained outputs are not removed.');}
+      if(current!==ownerEpoch)return null;if(!response.ok){if(response.status===409){invalidatePolicy();invalidateKeys();invalidateErasure();throw new Error('The target changed since preview. Refresh it and review a new preview.');}if(response.status===401||response.status===403){lockOwner();$('owner-maintenance').hidden=false;$('owner-status').textContent='Owner access refused. Reader access has not changed.';return null;}throw new Error('Owner request failed. Refresh jobs before retrying; retained outputs are not removed.');}
       const value=await response.json();return current===ownerEpoch?value:null;
     }catch(error){if(current!==ownerEpoch||error.name==='AbortError')return null;throw error;}
   }
@@ -669,8 +670,8 @@
         const row=document.createElement('div');row.append(textNode('dt',labels[key]||key));row.append(textNode('dd',value&&typeof value==='object'?JSON.stringify(value,null,2):String(value??'Not configured')));$('owner-settings').append(row);
       }
     }
-    clearPolicy();clearKeys();$('key-controls').hidden=target?.kind!=='key-history';$('access-controls').hidden=target?.kind!=='access-policy';$('owner-maintenance-preview').disabled=['access-policy','key-history'].includes(target?.kind);$('owner-operation').disabled=['access-policy','key-history'].includes(target?.kind);
-    const operations=['access-policy','key-history'].includes(target?.kind)?[]:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
+    clearPolicy();clearKeys();clearErasure();$('erasure-controls').hidden=target?.kind!=='capture-erasure';$('key-controls').hidden=target?.kind!=='key-history';$('access-controls').hidden=target?.kind!=='access-policy';$('owner-maintenance-preview').disabled=['access-policy','key-history','capture-erasure'].includes(target?.kind);$('owner-operation').disabled=['access-policy','key-history','capture-erasure'].includes(target?.kind);
+    const operations=['access-policy','key-history','capture-erasure'].includes(target?.kind)?[]:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
     for(const operation of operations){const option=textNode('option',operation);option.value=operation;$('owner-operation').append(option);}
     $('owner-operation').value=operations[0]||'';
   }
@@ -690,7 +691,8 @@
       if(Array.isArray(report?.remaining_preconditions)){const list=document.createElement('ul');for(const item of report.remaining_preconditions)list.append(textNode('li',item));row.append(textNode('p','Cutover remains unapproved. Remaining checks:','content-coverage'));row.append(list);}
       if(status.state==='failed')row.append(textNode('p',status.result?.error||'Operation failed; inspect retained details.','content-warning'));
       const inspect=textNode('button','Inspect maintenance job');inspect.addEventListener('click',()=>ownerRun(async()=>{const value=await ownerRpc({action:'job',id:status.job.id});if(value){$('owner-detail').replaceChildren();details($('owner-detail'),'Retained job, result and output paths',JSON.stringify(value,null,2));}}));row.append(inspect);
-      if(status.state!=='running'){const retry=textNode('button','Preview new attempt');retry.addEventListener('click',()=>{ownerRetry=status.job.id;$('owner-target').value=status.job.contract.target.id;ownerOperations();$('owner-operation').value=status.job.contract.operation;$('owner-status').textContent='Select Preview maintenance to review a new linked job. Any earlier outputs stay retained.';});row.append(retry);}$('owner-jobs').append(row);
+      if(status.job.contract.operation==='erase-capture'){if(status.state!=='running'&&status.resumable){const resume=textNode('button','Resume erasure cleanup');resume.addEventListener('click',()=>ownerRun(async()=>{await ownerRpc({action:'resume-erasure',id:status.job.id,wait:false});if(ownerToken)await ownerCatalog();}));row.append(resume);}row.append(textNode('p',`Managed cleanup: ${report?.managed_cleanup||'pending'} · Backup purge: ${report?.backup_purge||'not performed'}`));for(const archive of report?.archives||[])row.append(textNode('p',`${archive.root} · ${archive.state} · page reclamation ${archive.page_reclamation||'pending'}`));}
+      else if(status.state!=='running'){const retry=textNode('button','Preview new attempt');retry.addEventListener('click',()=>{ownerRetry=status.job.id;$('owner-target').value=status.job.contract.target.id;ownerOperations();$('owner-operation').value=status.job.contract.operation;$('owner-status').textContent='Select Preview maintenance to review a new linked job. Any earlier outputs stay retained.';});row.append(retry);}$('owner-jobs').append(row);
     }
   }
   $('owner-connect').addEventListener('submit',event=>{event.preventDefault();ownerToken=$('owner-token').value;$('owner-token').value='';ownerRun(ownerCatalog);});
@@ -708,6 +710,22 @@
     ownerPreview=null;await ownerCatalog();$('owner-status').textContent=`Maintenance ${result.state}. Refresh to inspect retained results. Closing this tab does not roll back a running job.`;
   }));
   $('owner-lock').addEventListener('click',()=>{lockOwner();$('owner-maintenance').hidden=false;});
+
+  function invalidateErasure(){erasurePreview=null;$('erasure-apply').disabled=true;$('erasure-plan').textContent='';}
+  function clearErasure(){invalidateErasure();$('erasure-controls').hidden=true;$('erasure-writer').value='';$('erasure-attempt').value='';$('erasure-observer').value='collector';$('erasure-status').textContent='';}
+  for(const id of ['erasure-writer','erasure-attempt','erasure-observer'])$(id).addEventListener('input',()=>{ownerEpoch++;if(ownerController)ownerController.abort();invalidateErasure();});
+  $('erasure-preview').addEventListener('click',()=>ownerRun(async()=>{
+    invalidateErasure();const target=$('owner-target').value,capture={writer:$('erasure-writer').value.trim(),observer:$('erasure-observer').value,attempt:$('erasure-attempt').value.trim()};
+    const value=await ownerRpc({action:'preview-erasure',target,capture});if(!value)return;
+    if(value.target!==target||typeof value.digest!=='string'||!Array.isArray(value.plan?.authorization?.erasure?.plan?.targets)||!value.contract)throw new Error('Invalid erasure preview.');
+    erasurePreview=value;$('erasure-status').textContent=`${value.plan.authorization.erasure.plan.targets.length} capture records selected · ${value.plan.recording_gap?'recording gaps reported':'no recording gap reported'}. Review the exact destinations and remaining cleanup below.`;
+    $('erasure-plan').textContent=JSON.stringify(value.contract,null,2);$('erasure-apply').disabled=false;
+  }));
+  $('erasure-apply').addEventListener('click',()=>ownerRun(async()=>{
+    if(!erasurePreview)return;const p=erasurePreview;$('erasure-apply').disabled=true;
+    const result=await ownerRpc({action:'apply-erasure',target:p.target,plan:p.plan,preview:p.digest,wait:false});if(!result)return;
+    invalidateErasure();await ownerCatalog();$('owner-status').textContent=`Erasure ${result.state}. Refresh to inspect per-destination cleanup; backup purge remains separate.`;
+  }));
 
   function invalidateKeys(){keyPreview=null;keyRestore=null;keyTransfer=null;$('key-transfer-apply').disabled=true;$('key-apply').disabled=true;$('key-restore-apply').disabled=true;$('key-plan').textContent='';}
   function clearKeys(){invalidateKeys();keyEpochs=[];$('key-recipient').value='';$('key-transfer-epochs').replaceChildren();$('key-controls').hidden=true;$('key-status').textContent='';$('key-history').replaceChildren();$('key-package').value='';$('key-download').disabled=true;}

@@ -731,3 +731,24 @@ remain separate. The plan is bounded to 4,096 selected keys and 64 MiB of inspec
 ciphertexts. This is the physical cleanup primitive: the owner coordinator still
 must resolve the complete capture/derivative/outbox/replica dependency set, bind its
 independently signed authorization and reconcile old workspace backups before use.
+
+### Resumable owner capture erasure
+
+The configured capture-erasure target pins the archive, independently retained
+owner custody, issuer and owner signing files, capture decryption files and a
+bounded list of same-binding replica directories. Browser input chooses only the
+writer/observer/attempt; it cannot supply paths or raw occurrence selections.
+Preview resolves the closed capture across the full pinned archive. Apply
+recomputes that selection, refuses stale plans, and stores an encrypted immutable
+job containing the exact signed owner authorization before any destructive work.
+The worker publishes the independent authorization first, then reconciles each
+configured archive against current custody and attempts SQLite page reclamation.
+
+A restart resumes the same signed record and job, with append-only attempt
+observations. Failed/offline destinations remain individually pending. This
+initial coordinator reports `cleanup-pending` after archive cleanup: spool,
+derived workspace and other publication-copy resolution are still required.
+Backup purge and service activation are separate statuses; no generic success
+label may imply managed erasure is complete. Bounds are 16 configured replicas,
+64 decryption keys, 200 KiB preview contract and 32 cleanup attempts per job.
+Exceeding a bound refuses explicitly; no truncated capture is erased.

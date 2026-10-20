@@ -1,5 +1,6 @@
 //! Separately authorized, configured owner maintenance. No browser paths or
 //! shell commands, and no automatic promotion of a recovered/backup artifact.
+mod erasure;
 use crate::{
     evidence_proof_service::{Binding, Profile},
     evidence_service::{self as service, Failure},
@@ -17,6 +18,16 @@ use std::{
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Target {
+    CaptureErasure {
+        id: String,
+        root: PathBuf,
+        history: crate::evidence_erasure_history::Access,
+        signing_key: PathBuf,
+        issuer_key: PathBuf,
+        private_keys: Vec<PathBuf>,
+        #[serde(default)]
+        replicas: Vec<PathBuf>,
+    },
     KeyHistory {
         id: String,
         history: crate::evidence_keys::Access,
@@ -71,7 +82,8 @@ pub enum Target {
 impl Target {
     fn id(&self) -> &str {
         match self {
-            Self::KeyHistory { id, .. }
+            Self::CaptureErasure { id, .. }
+            | Self::KeyHistory { id, .. }
             | Self::AccessPolicy { id, .. }
             | Self::WorkspaceRecovery { id, .. }
             | Self::Archive { id, .. }
@@ -101,6 +113,22 @@ pub struct Config {
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Request {
+    PreviewErasure {
+        target: String,
+        capture: crate::evidence_store::erasure::Capture,
+    },
+    ApplyErasure {
+        target: String,
+        plan: Box<erasure::Preview>,
+        preview: String,
+        #[serde(default)]
+        wait: bool,
+    },
+    ResumeErasure {
+        id: String,
+        #[serde(default)]
+        wait: bool,
+    },
     Keys {
         target: String,
     },
@@ -222,6 +250,7 @@ impl Owner {
                 return Err(Failure::Invalid);
             }
             match &target {
+                Target::CaptureErasure { .. } => erasure::validate_target(&target)?,
                 Target::KeyHistory {
                     history,
                     signing_key,
@@ -463,6 +492,9 @@ impl Owner {
             .workspace
             .get("owner-job", id)?
             .ok_or(Failure::AccessLimited)?;
+        if job["contract"]["operation"] == "erase-capture" {
+            return self.erasure_status(job);
+        }
         let result = self.workspace.get("owner-result", id)?;
         let running = self
             .active
@@ -583,6 +615,16 @@ impl Owner {
     }
     pub async fn execute(self: &Arc<Self>, request: Request) -> Result<Value, Failure> {
         match request {
+            Request::PreviewErasure { target, capture } => {
+                self.preview_erasure(target, capture).await
+            }
+            Request::ApplyErasure {
+                target,
+                plan,
+                preview,
+                wait,
+            } => self.submit_erasure(target, *plan, preview, wait).await,
+            Request::ResumeErasure { id, wait } => self.resume_erasure(id, wait).await,
             Request::Keys { target } => self.key_action(target, KeyAction::Read).await,
             Request::PreviewKeyRotation { target } => {
                 self.key_action(target, KeyAction::Preview).await
@@ -755,7 +797,9 @@ fn perform(
 ) -> Result<Value, String> {
     let work = || -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         match target {
-            Target::KeyHistory { .. } | Target::AccessPolicy { .. } => {
+            Target::CaptureErasure { .. }
+            | Target::KeyHistory { .. }
+            | Target::AccessPolicy { .. } => {
                 Err("access policies use their dedicated preview/apply API".into())
             }
             Target::WorkspaceRecovery {

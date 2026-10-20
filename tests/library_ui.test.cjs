@@ -831,3 +831,25 @@ test('erased-source annotations show minimal status without a body or publicatio
  assert.ok(nodes.some(n=>n.textContent.includes('cleanup pending')));assert.equal(nodes.some(n=>n.textContent==='Check ledger publication'),false);
  u.node('lock').click();assert.equal(u.node('annotation-list').children.length,0);
 });
+
+test('capture erasure requires exact preview, clears on edits and lock, and resumes the retained job',async()=>{
+ const u=ui();await u.login();await u.respond({...proofCatalog,scopes:[proofEntry('archive-A')]});await u.respond(proofPage);
+ u.node('owner-token').value='owner-credential';u.node('owner-connect').events.submit({preventDefault(){}});await tick();
+ const targets=[{kind:'capture-erasure',id:'capture',root:'/synthetic/archive'}];
+ const catalog={owner:'owner',targets,jobs:[],limits:{jobs:10}};await u.respond(catalog);
+ assert.equal(u.node('erasure-controls').hidden,false);assert.equal(u.node('owner-maintenance-preview').disabled,true);assert.equal(u.node('erasure-apply').disabled,true);
+ u.node('erasure-writer').value='did:key:writer';u.node('erasure-attempt').value='a'.repeat(64);u.node('erasure-preview').click();await tick();
+ assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview-erasure',target:'capture',capture:{writer:'did:key:writer',observer:'collector',attempt:'a'.repeat(64)}});
+ const plan={recording_gap:false,authorization:{erasure:{plan:{targets:[{sequence:1},{sequence:2}]}}}},preview={target:'capture',digest:'digest',plan,contract:{effect:'Erase selected capture',target:targets[0]}};
+ await u.respond(preview);assert.equal(u.node('erasure-apply').disabled,false);assert.match(u.node('erasure-status').textContent,/2 capture records/);
+ u.node('erasure-attempt').events.input();assert.equal(u.node('erasure-apply').disabled,true);assert.equal(u.node('erasure-plan').textContent,'');
+ u.node('erasure-preview').click();await tick();await u.respond(preview);u.node('erasure-apply').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'apply-erasure',target:'capture',plan,preview:'digest',wait:false});
+ await u.respond({state:'running'});
+ const job={job:{id:'digest',contract:{operation:'erase-capture',target:targets[0]}},state:'cleanup-pending',resumable:true,result:{report:{managed_cleanup:'pending-coordination',backup_purge:'not-performed',archives:[{root:'/synthetic/archive',state:'payloads-erased',page_reclamation:'completed'},{root:'/synthetic/offline',state:'pending'}]}}};
+ await u.respond({...catalog,jobs:[job]});
+ const buttons=u.node('owner-jobs').children[0].children.filter(n=>n.events.click);assert.ok(!buttons.some(n=>n.textContent==='Preview new attempt'));
+ buttons.find(n=>n.textContent==='Resume erasure cleanup').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'resume-erasure',id:'digest',wait:false});
+ await u.respond({state:'running'});await u.respond({...catalog,jobs:[job]});
+ u.node('erasure-preview').click();await tick();u.node('owner-lock').click();await u.respond(preview);
+ assert.equal(u.node('erasure-apply').disabled,true);assert.equal(u.node('erasure-plan').textContent,'');assert.equal(u.node('erasure-writer').value,'');assert.equal(u.node('erasure-attempt').value,'');assert.equal(u.node('erasure-controls').hidden,true);
+});
