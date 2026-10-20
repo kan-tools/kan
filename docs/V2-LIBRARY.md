@@ -911,3 +911,20 @@ source, portable references, notes, saved views and search after removing the
 synthetic original directories. It also checks subsequent source loss and access
 revocation. Runtime qualification of that new combined drill is pending CI; the
 whole-product drill additionally covers capture, migration, analysis and operations.
+
+### Search by annotation subject and tag
+
+The Search form can narrow results by **Annotation subject** and **Annotation tag**.
+The API/CLI `search-page`, `search-attempt` and `save-view` filters use optional
+`annotation_subject` (up to 256 bytes) and `annotation_tag` (up to 64 bytes).
+When both are supplied they must match the same visible annotation. A project
+association can be an explicit subject such as `project/example`; the reader does
+not infer membership or scope access from the name.
+
+The filter includes retained correction history. It matches exact signed source
+coordinates, and excludes an annotation if access to any cited source or its
+publication origin is unavailable. A reconstructed message needs at least one
+matching contributing occurrence; all chunks remain independently authorized and
+cited. Facet counts and reconstruction coverage describe the authorized corpus
+before annotation filtering. A saved view reruns its annotation filters against
+current visible history; it does not freeze old grants or annotation membership.

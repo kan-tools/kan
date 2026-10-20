@@ -698,7 +698,7 @@
     $('key-status').textContent=`${value.snapshot.epochs} retained epochs · current recipient ${value.snapshot.current_recipient||'none'} · checkpoint ${value.snapshot.tip||'none'} · ${value.custody}`;
     keyEpochs=Array.isArray(value.epoch_ids)&&value.epoch_ids.length===value.snapshot.history.length?value.epoch_ids:[];
     $('key-transfer-epochs').replaceChildren();keyEpochs.forEach((id,index)=>{const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.value=id;input.checked=true;input.addEventListener('change',editKeyTransfer);label.append(input);label.append(textNode('span',` Epoch ${value.snapshot.history[index].change.sequence} · ${id}`));$('key-transfer-epochs').append(label);});
-    $('key-history').replaceChildren();for(const record of value.snapshot.history){const c=record.change,article=document.createElement('article');article.append(textNode('h4',`Epoch ${c.sequence} · Unix ${c.recorded_at}`));article.append(textNode('p',`Recipient ${c.recipient}`));article.append(textNode('p',`Previous ${c.previous||'initial epoch'}`));$('key-history').append(article);}
+    $('key-history').replaceChildren();for(const record of value.snapshot.history){const c=record.change,article=document.createElement('article');article.append(textNode('h4',`Epoch ${c.sequence} · Unix ${c.recorded_at}`));article.append(textNode('p',`Recipient ${c.recipient}`));article.append(textNode('p',`Previous ${c.previous||'initial epoch'}`));if(c.origin)article.append(textNode('p',`Transferred from ${c.origin.record} · checkpoint ${c.origin.tip} · ${c.origin.purpose}`));$('key-history').append(article);}
   }
   $('key-load').addEventListener('click',()=>ownerRun(loadKeys));
   $('key-preview').addEventListener('click',()=>ownerRun(async()=>{
@@ -948,7 +948,7 @@
     searchRun++; searchStates=[]; searchFilter=null; searchHits.clear(); searchPages=0;
     $('search-results').replaceChildren();$('search-facets').replaceChildren();$('search-coverage').textContent='';
     $('saved-views').replaceChildren();$('views-status').textContent='';$('save-view').disabled=true;$('resume-search').disabled=true;$('stop-search').disabled=true;
-    if(hide){for(const id of ['search-observer','search-attempt','search-from','search-to'])$(id).value='';$('search-workspace').hidden=true;$('search-text').value='';$('search-writer').value='';$('view-name').value='';}
+    if(hide){for(const id of ['search-observer','search-attempt','search-from','search-to','search-tag','search-subject'])$(id).value='';$('search-workspace').hidden=true;$('search-text').value='';$('search-writer').value='';$('view-name').value='';}
   }
   function searchTargets(entries) {
     return entries.map(entry=>({entry:{...entry},cursor:null,complete:false,count:0,binary:0n,unavailable:0,facets:new Map(),attempts:new Map(),members:0,omitted:0}));
@@ -975,7 +975,7 @@
       $('search-facets').append(textNode('p',`${state.entry.binding.archive}: ${state.count} indexed occurrences searched · ${state.complete?'pinned inventory scan complete':'partial scan'} · ${state.binary} unsearchable bytes · ${state.unavailable} unavailable matches · ${[...state.attempts.values()].filter(a=>a.done).length}/${state.attempts.size} reconstructed attempts searched${state.omitted?` · ${state.omitted} members beyond the 1,024-member reconstruction window`:''}${facets?' · '+facets:''}`));
       for(const attempt of state.attempts.values())for(const stream of attempt.coverage||[])if(stream.state!=='interpreted'||stream.issues?.length)$('search-facets').append(textNode('p',`${stream.attempt} · ${stream.direction}: ${stream.state}; ${JSON.stringify(stream.issues||[])}`));
     }
-    $('search-coverage').textContent=`${searchHits.size} matches shown across ${searchPages} index pages. Facets reflect indexing time. Raw UTF-8 and bounded decoded strings from complete JSON spans are searched; normalized matches cite their enclosing source. Supported reconstructed messages also span capture chunks; every contributing range is linked. Reconstruction waits for each archive scan to complete, then runs four attempts per window. Binary/unsupported fields and phrases crossing distinct messages or SSE delta items remain excluded. Complete inventory does not prove complete capture.`;
+    $('search-coverage').textContent=`${searchHits.size} matches shown across ${searchPages} index pages. Facets reflect indexing time. Raw UTF-8 and bounded decoded strings from complete JSON spans are searched; normalized matches cite their enclosing source. Supported reconstructed messages also span capture chunks; every contributing range is linked. Reconstruction waits for each archive scan to complete, then runs four attempts per window. Binary/unsupported fields and phrases crossing distinct messages or SSE delta items remain excluded. Complete inventory does not prove complete capture.${searchFilter?.annotation_tag||searchFilter?.annotation_subject?' Annotation filters use currently authorized history, including corrections; at least one cited occurrence must match. Corpus facets and reconstruction coverage are unfiltered.':''}`;
     $('resume-search').disabled=searchStates.every(s=>s.complete&&[...s.attempts.values()].every(a=>a.done));$('save-view').disabled=!searchFilter || !searchStates.length;
   }
   async function searchWindow() {
@@ -1027,6 +1027,8 @@
   $('search-form').addEventListener('submit',event=>{event.preventDefault();run(async()=>{
     cancelWork();clearSearch();
     searchFilter={text:$('search-text').value.trim(),writer:$('search-writer').value.trim()||null,kind:$('search-kind').value||null};
+    if($('search-tag').value.trim())searchFilter.annotation_tag=$('search-tag').value.trim();
+    if($('search-subject').value.trim())searchFilter.annotation_subject=$('search-subject').value.trim();
     if($('search-observer').value)searchFilter.observer=$('search-observer').value;
     if($('search-attempt').value.trim())searchFilter.attempt=$('search-attempt').value.trim();
     for(const [input,key] of [['search-from','attested_from'],['search-to','attested_to']])if($(input).value){const n=new Date($(input).value).getTime();if(!Number.isSafeInteger(n)||n<0)throw new Error('Invalid attestation date.');searchFilter[key]=String(n);}
@@ -1054,7 +1056,7 @@
       const open=textNode('button','Run pinned view');open.addEventListener('click',()=>run(async()=>{
         const entries=view.targets.map(t=>{const entry=scopes.find(s=>sourceId(s)===t.source);if(!entry)throw new Error('Source catalog changed.');return {...entry,pin:t.pin,pin_wire:JSON.stringify(t.pin)};});
         cancelWork();clearSearch();searchFilter=view.filter;searchStates=searchTargets(entries);
-        $('search-text').value=searchFilter.text;$('search-writer').value=searchFilter.writer||'';$('search-kind').value=searchFilter.kind||'';$('search-observer').value=searchFilter.observer||'';$('search-attempt').value=searchFilter.attempt||'';
+        $('search-text').value=searchFilter.text;$('search-writer').value=searchFilter.writer||'';$('search-kind').value=searchFilter.kind||'';$('search-observer').value=searchFilter.observer||'';$('search-attempt').value=searchFilter.attempt||'';$('search-tag').value=searchFilter.annotation_tag||'';$('search-subject').value=searchFilter.annotation_subject||'';
         for(const [input,key] of [['search-from','attested_from'],['search-to','attested_to']]){$(input).value='';if(searchFilter[key]){const d=new Date(Number(searchFilter[key]));if(!Number.isNaN(d.getTime()))$(input).value=new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);}}
         await searchWindow();
       }));row.append(open);$('saved-views').append(row);

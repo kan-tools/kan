@@ -36,3 +36,5 @@
 html{scroll-padding-top:1.5rem}aside nav{display:grid;gap:.2rem}aside a.nav{text-decoration:none}aside a.nav:hover,aside a.nav:focus-visible{background:var(--soft);color:var(--ink)}[tabindex="-1"]:focus-visible{outline:2px solid var(--green);outline-offset:6px}#content-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%}
 @media(max-width:900px){aside nav{display:flex;flex-wrap:wrap;gap:.3rem}aside a.nav{padding:.5rem .7rem;font-size:.8rem}}
 @media(prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+
+#key-transfer-epochs label{display:flex;align-items:flex-start;gap:.6rem;margin:.7rem 0;overflow-wrap:anywhere}#key-transfer-epochs input{flex:none;width:auto}#key-history p,#key-status{overflow-wrap:anywhere}

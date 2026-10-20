@@ -210,21 +210,24 @@ impl Readers {
                 filter,
             } => {
                 self.workspace()?;
-                search::attempt(
+                let mut value = search::attempt(
                     self.selected(&target.source)?,
                     &target,
                     &selections,
                     &filter,
                     self.workers.clone(),
                 )
-                .await?
+                .await?;
+                self.filter_search_annotations(&target, &filter, &mut value)
+                    .await?;
+                value
             }
             Query::SearchPage {
                 target,
                 cursor,
                 filter,
             } => {
-                search::search(
+                let mut value = search::search(
                     self.selected(&target.source)?,
                     self.workspace()?,
                     &target,
@@ -232,7 +235,10 @@ impl Readers {
                     &filter,
                     self.workers.clone(),
                 )
-                .await?
+                .await?;
+                self.filter_search_annotations(&target, &filter, &mut value)
+                    .await?;
+                value
             }
             Query::SaveView {
                 name,

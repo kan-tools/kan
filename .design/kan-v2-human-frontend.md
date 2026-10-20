@@ -525,3 +525,21 @@ replacement protects future epochs only after activation and a fresh rotation.
 Shared packages confer decryption custody of selected epochs, not storage grants,
 owner signing authority or future epoch keys. Keys already distributed cannot be
 recalled. Retain the returned wrapped package independently from its private key.
+
+### Search by attributed annotations
+
+Raw and reconstructed search accept conjunctive `annotation_subject` and
+`annotation_tag` filters. The human Search form and saved filters expose both.
+They select occurrences through the current authorized annotation history,
+including retained corrections; they do not treat captured text as a tag, collapse
+subjects or infer project membership. Every matching annotation must retain access
+to every cited source and publication origin. Its signed citation coordinate is
+matched to an already verified result; normalized messages match when at least
+one contributing occurrence is cited. This coordinate check confers no read grant.
+
+Filtering runs after current source verification and uses a bounded worker for
+citation checks. Full attempt membership remains available for reconstruction;
+tags must not truncate message chunks. Corpus facets, unavailable-source counts
+and reconstruction coverage stay separately labeled as unfiltered. Saved views
+retain the explicit filter and raw snapshot, while annotation membership is
+reevaluated against currently visible history and is not a historical trust pin.

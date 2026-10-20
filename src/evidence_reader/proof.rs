@@ -575,7 +575,9 @@ impl Reader {
     /// An authored citation may carry another reader's signed selection. Its
     /// signature binds intent; current service membership and grants authorize
     /// the new read. Never treat the foreign reader's token as a capability.
-    pub async fn rebind_citation(&self, selection: &Token) -> Result<(Pin, Source)> {
+    /// Verify only the attributed citation coordinate. This is not membership,
+    /// availability or authorization; callers must check a current source record.
+    pub(crate) fn citation_coordinate(&self, selection: &Token) -> Result<wire::Coordinate> {
         if selection.body.binding != self.access.binding
             || selection.body.purpose != TokenPurpose::Source
         {
@@ -595,6 +597,11 @@ impl Reader {
         if expected.through == 0 {
             return Err(Failure::Invalid);
         }
+        Ok(selection.body.coordinate.clone())
+    }
+    pub async fn rebind_citation(&self, selection: &Token) -> Result<(Pin, Source)> {
+        let coordinate = self.citation_coordinate(selection)?;
+        let expected = coordinate.frontier(&self.access.binding)?;
         let pin = self.snapshot().await?;
         let checked = self.check_pin(&pin)?;
         if expected.through > checked.frontier.through {

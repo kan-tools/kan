@@ -962,6 +962,27 @@ async fn encrypted_search_views_restart_exact_citations_loss_and_revocation() {
         ui.call(json!({"action":"views"}), 200).await["views"][0],
         saved
     );
+    let other_page=ui.call(json!({"action":"proof-page","source":targets[1]["source"],"pin":targets[1]["pin"],"limit":3}),200).await;
+    let cross_draft = json!({"subject":"project/cross-host","text":"Cross-archive association","tags":["cross-host"],"relations":[],"cites":[{"source":targets[0]["source"],"pin":targets[0]["pin"],"selection":hit["record"]["selection"]},{"source":targets[1]["source"],"pin":targets[1]["pin"],"selection":other_page["records"][0]["selection"]}],"supersedes":null});
+    let preview = ui
+        .call(
+            json!({"action":"annotation-preview","draft":cross_draft}),
+            200,
+        )
+        .await;
+    ui.call(
+        json!({"action":"annotation-save","draft":cross_draft,"preview":preview["id"]}),
+        200,
+    )
+    .await;
+    let cross_search = json!({"action":"search-page","target":targets[1],"cursor":null,"filter":{"text":"needle","writer":null,"kind":null,"annotation_tag":"cross-host"}});
+    assert_eq!(
+        ui.call(cross_search.clone(), 200).await["hits"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
     admitted.remove(2);
     let missing = ui.call(query.clone(), 200).await;
     assert_eq!(missing["hits"].as_array().unwrap().len(), 2);
@@ -977,6 +998,13 @@ async fn encrypted_search_views_restart_exact_citations_loss_and_revocation() {
         .as_array()
         .unwrap()
         .is_empty());
+    assert!(
+        ui.call(cross_search, 200).await["hits"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "revoked source must hide cross-archive annotation associations"
+    );
     let authorized =
         json!({"action":"search-page","target":targets[1],"cursor":null,"filter":filter});
     assert_eq!(
@@ -1048,6 +1076,25 @@ async fn annotations_preview_append_correction_preserve_cites_and_filter_revoked
         )
         .await
     );
+    let target = json!({"source":entry["id"],"pin":entry["pin"]});
+    ui.call(
+        json!({"action":"index-page","target":target,"cursor":null}),
+        200,
+    )
+    .await;
+    let tagged = json!({"action":"search-page","target":target,"cursor":null,"filter":{"text":"","writer":null,"kind":null,"annotation_tag":"decision","annotation_subject":"telos/reliable-recording"}});
+    let found = ui.call(tagged.clone(), 200).await;
+    assert_eq!(found["hits"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        found["hits"][0]["record"]["sequence"],
+        page["records"][0]["sequence"]
+    );
+    let mut absent = tagged.clone();
+    absent["filter"]["annotation_tag"] = json!("absent");
+    assert!(ui.call(absent, 200).await["hits"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     let correction = json!({"subject":"telos/reliable-recording","text":"Correction with more evidence","tags":["decision","corrected"],"relations":[{"kind":"DependsOn","target":"atom/storage"}],"cites":[cite(1)],"supersedes":saved["id"]});
     let preview = ui
         .call(
@@ -1063,6 +1110,13 @@ async fn annotations_preview_append_correction_preserve_cites_and_filter_revoked
         2
     );
     ui.call(json!({"action":"annotation-save","draft":preview["declaration"]["draft"],"preview":preview["id"]}),200).await;
+    assert_eq!(
+        ui.call(tagged.clone(), 200).await["hits"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     let history = ui
         .call(
             json!({"action":"annotations","subject":"telos/reliable-recording","tag":"decision"}),

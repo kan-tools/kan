@@ -22,6 +22,10 @@ pub struct Filter {
     pub writer: Option<String>,
     pub kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotation_subject: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotation_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub observer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attempt: Option<String>,
@@ -32,7 +36,15 @@ pub struct Filter {
 }
 impl Filter {
     pub fn validate(&self) -> Result<(), Failure> {
-        if self.text.len() > 256
+        if self
+            .annotation_subject
+            .as_ref()
+            .is_some_and(|v| v.is_empty() || v.len() > 256)
+            || self
+                .annotation_tag
+                .as_ref()
+                .is_some_and(|v| v.is_empty() || v.len() > 64)
+            || self.text.len() > 256
             || self.writer.as_ref().is_some_and(|s| s.len() > 256)
             || self.kind.as_ref().is_some_and(|s| s.len() > 64)
         {
@@ -499,4 +511,78 @@ fn normalized(bytes: &[u8], filter: &Filter) -> Result<Value, ContentError> {
         return Err(ContentError::Limited);
     }
     Ok(out)
+}
+
+/// Annotation filters are a current, attributed view over evidence. They never
+/// turn annotation text into raw source or relax the source reader's checks.
+impl super::Readers {
+    pub(super) async fn filter_search_annotations(
+        &self,
+        target: &Target,
+        filter: &Filter,
+        value: &mut Value,
+    ) -> Result<(), ContentError> {
+        if filter.annotation_subject.is_none() && filter.annotation_tag.is_none() {
+            return Ok(());
+        }
+        filter.validate()?;
+        let visible = self
+            .annotations(
+                filter.annotation_subject.clone(),
+                filter.annotation_tag.clone(),
+            )
+            .await?;
+        let records = visible["records"]
+            .as_array()
+            .ok_or(Failure::Corrupt)?
+            .clone();
+        let reader = self
+            .proof
+            .get(&target.source)
+            .ok_or(Failure::AccessLimited)?
+            .clone();
+        let selected = reader.clone();
+        let source = target.source.clone();
+        let permit = self
+            .workers
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ContentError::Busy)?;
+        let coordinates = tokio::task::spawn_blocking(move || -> Result<_, Failure> {
+            let _permit = permit;
+            let mut coordinates = std::collections::BTreeSet::new();
+            for record in records {
+                let draft: super::knowledge::Draft =
+                    serde_json::from_value(record["draft"].clone())
+                        .map_err(|_| Failure::Corrupt)?;
+                for cite in draft.cites.iter().filter(|c| c.source == source) {
+                    let c = selected.citation_coordinate(&cite.selection)?;
+                    coordinates.insert((c.through, c.manifest, c.attestation));
+                }
+            }
+            Ok(coordinates)
+        })
+        .await
+        .map_err(|_| Failure::Unavailable)??;
+        let matches = |record: &Value| {
+            coordinates.contains(&(
+                record["sequence"].as_str().unwrap_or("").to_owned(),
+                record["manifest"].as_str().map(str::to_owned),
+                record["attestation"].as_str().map(str::to_owned),
+            ))
+        };
+        value["hits"]
+            .as_array_mut()
+            .ok_or(Failure::Corrupt)?
+            .retain(|hit| {
+                matches(&hit["record"])
+                    || hit["cites"]
+                        .as_array()
+                        .is_some_and(|cites| cites.iter().any(|c| matches(&c["record"])))
+            });
+        // Repeat the current authorization check after resolving annotation visibility.
+        reader.page(&target.pin, None, 1).await?;
+        value["annotation_filter"] = json!({"subject":filter.annotation_subject,"tag":filter.annotation_tag,"coverage":visible["coverage"],"basis":"Currently authorized annotation history, including corrections. At least one cited occurrence must match. Corpus facets and attempt reconstruction coverage are independent of this filter; saved views re-evaluate current annotations."});
+        Ok(())
+    }
 }
