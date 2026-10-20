@@ -2456,3 +2456,37 @@ async fn overlay_is_recomputed_from_authoritative_git_tree_claims() {
     );
     assert_eq!(before_origins, origins(), "medium provenance changed");
 }
+
+#[cfg(feature = "v2-storage")]
+#[test]
+fn serving_index_catalog_matches_real_initialized_schema_columns() {
+    use kan::evidence_store::attested::{Archive, Binding};
+    let temp = tempfile::tempdir().unwrap();
+    let signer = Identity::generate();
+    let archive = Archive::create(
+        temp.path(),
+        Binding {
+            archive: [1; 32],
+            scope: [2; 32],
+            issuer: signer.did().to_string(),
+        },
+    )
+    .unwrap();
+    archive.rebuild_serving_index(&signer).unwrap();
+    let conn = rusqlite::Connection::open(temp.path().join("archive.sqlite")).unwrap();
+    let mut actual = BTreeSet::new();
+    for table in ["serving_nodes", "serving_checkpoint"] {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap();
+        for column in stmt.query_map([], |r| r.get::<_, String>(1)).unwrap() {
+            actual.insert((format!("evidence-serving-sqlite:{table}"), column.unwrap()));
+        }
+    }
+    let declared: BTreeSet<_> = rows()
+        .into_iter()
+        .filter(|r| r.artifact.starts_with("evidence-serving-sqlite:"))
+        .map(|r| (r.artifact.to_owned(), r.value.to_owned()))
+        .collect();
+    assert_eq!(actual, declared);
+}

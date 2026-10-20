@@ -32,6 +32,7 @@ struct Statement {
     frontier: Coordinate,
     root: Option<String>,
     erasure_tip: Option<String>,
+    erasure_through: u64,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -63,7 +64,11 @@ impl Checkpoint {
     }
     fn validate(&self, binding: &attested::Binding) -> Result<Frontier> {
         binding.validate()?;
-        if self.statement.version != 1 || self.statement.binding != wire(binding) {
+        if self.statement.version != 1
+            || self.statement.binding != wire(binding)
+            || self.statement.erasure_through > evidence::MAX_SAFE_INTEGER as u64
+            || (self.statement.erasure_through == 0) != self.statement.erasure_tip.is_none()
+        {
             return Err(corrupt());
         }
         let frontier = self
@@ -231,7 +236,7 @@ fn publish(
     binding: &attested::Binding,
     frontier: &Frontier,
     root: Option<index::Digest>,
-    erasure_tip: Option<String>,
+    history: &erasure::History,
     signer: &Identity,
 ) -> Result<Checkpoint> {
     if signer.did().as_str() != binding.issuer {
@@ -242,8 +247,25 @@ fn publish(
         binding: wire(binding),
         frontier: Coordinate::from_frontier(frontier),
         root: root.map(|v| service::hex(&v)),
-        erasure_tip,
+        erasure_tip: history.tip.clone(),
+        erasure_through: history
+            .records
+            .iter()
+            .map(|r| r.plan.through)
+            .max()
+            .unwrap_or(0),
     };
+    sign_and_publish(tx, binding, statement, signer)
+}
+fn sign_and_publish(
+    tx: &rusqlite::Transaction<'_>,
+    binding: &attested::Binding,
+    statement: Statement,
+    signer: &Identity,
+) -> Result<Checkpoint> {
+    if signer.did().as_str() != binding.issuer {
+        return Err(Error::Invalid("serving checkpoint signer"));
+    }
     let signature = signer
         .sign(&[DOMAIN, &json(&statement)?].concat())
         .map_err(|_| corrupt())?;
@@ -305,14 +327,8 @@ impl attested::Archive {
             let row = attested::record(&tx, sequence)?;
             insert_record(&mut map, &row, &attested::envelope(&tx, sequence)?)?;
         }
-        let checkpoint = publish(
-            &tx,
-            &self.binding,
-            &frontier,
-            map.root(),
-            history.tip,
-            signer,
-        )?;
+        insert_erasures(&mut map, &history)?;
+        let checkpoint = publish(&tx, &self.binding, &frontier, map.root(), &history, signer)?;
         tx.commit()?;
         Ok(checkpoint)
     }
@@ -326,6 +342,7 @@ pub(super) fn advance(
     row: &Committed,
     proof: &Verified,
     signer: &Identity,
+    indexed: Option<&Checkpoint>,
 ) -> Result<()> {
     if !exists(tx)? {
         return Ok(());
@@ -353,14 +370,17 @@ pub(super) fn advance(
         return Ok(());
     }
     insert_record(&mut map, row, proof.bytes())?;
-    publish(
-        tx,
-        binding,
-        proof.frontier(),
-        map.root(),
-        erasure::load(tx)?.tip,
-        signer,
-    )?;
+    if let Some(indexed) = indexed {
+        check_current(tx, binding, indexed)?;
+        let mut statement = indexed.statement.clone();
+        statement.frontier = Coordinate::from_frontier(proof.frontier());
+        statement.root = map.root().map(|v| service::hex(&v));
+        sign_and_publish(tx, binding, statement, signer)?;
+    } else {
+        let history = erasure::load(tx)?;
+        insert_erasures(&mut map, &history)?;
+        publish(tx, binding, proof.frontier(), map.root(), &history, signer)?;
+    }
     Ok(())
 }
 /// Read selected metadata with bounded work. No assertion about other records,
@@ -393,20 +413,25 @@ pub fn read_metadata(
     ledger.check_write_profile(true)?;
     attested::check_binding(&tx, &binding)?;
     let checkpoint = load(&tx, &binding)?;
+    check_current(&tx, &binding, &checkpoint)?;
     if checkpoint.validate(&binding)? != *expected
         || checkpoint.erasure_tip() != current_erasure_tip
     {
         return Err(Error::Conflict("serving checkpoint freshness"));
     }
-    let mut map = Map::new(
-        SqlBlocks {
-            conn: &tx,
-            tx: None,
-        },
-        checkpoint.root()?,
-    );
-    let row = attested::record(&tx, sequence)?;
-    let envelope = attested::envelope(&tx, sequence)?;
+    let selected = selected_metadata(&tx, &binding, &checkpoint, sequence)?;
+    tx.commit()?;
+    Ok(selected)
+}
+fn selected_metadata(
+    conn: &Connection,
+    binding: &attested::Binding,
+    checkpoint: &Checkpoint,
+    sequence: u64,
+) -> Result<Metadata> {
+    let mut map = Map::new(SqlBlocks { conn, tx: None }, checkpoint.root()?);
+    let row = attested::record(conn, sequence)?;
+    let envelope = attested::envelope(conn, sequence)?;
     if map
         .get(&record_key(sequence)?)
         .map_err(index_error)?
@@ -437,9 +462,237 @@ pub fn read_metadata(
         &row.receipt,
         &frontier,
     )?;
-    tx.commit()?;
     Ok(Metadata {
         record: row,
         proof: verified,
     })
+}
+
+fn insert_erasures(map: &mut Map<SqlBlocks<'_>>, history: &erasure::History) -> Result<()> {
+    for (id, target) in &history.objects {
+        map.insert(
+            index::key(b"erased", id.as_bytes()).map_err(index_error)?,
+            &json(target)?,
+        )
+        .map_err(index_error)?;
+    }
+    Ok(())
+}
+fn native_erasure_tip(conn: &Connection) -> Result<Option<String>> {
+    if !erasure::exists(conn)? {
+        return Ok(None);
+    }
+    let value: Option<(i64, String)> = conn
+        .query_row(
+            "SELECT length(id),substr(id,1,64) FROM erasures ORDER BY ordinal DESC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    value
+        .map(|(len, id)| {
+            if len != 64 || service::unhex(&id, 32).map_err(|_| corrupt())?.len() != 32 {
+                return Err(corrupt());
+            }
+            Ok(id)
+        })
+        .transpose()
+}
+pub(super) fn check_current(
+    conn: &Connection,
+    binding: &attested::Binding,
+    checkpoint: &Checkpoint,
+) -> Result<()> {
+    let current = load(conn, binding)?;
+    if current.statement != checkpoint.statement
+        || native_erasure_tip(conn)? != checkpoint.statement.erasure_tip
+    {
+        return Err(Error::Conflict("serving checkpoint or custody changed"));
+    }
+    if checkpoint.statement.erasure_through > checkpoint.validate(binding)?.through {
+        return Err(Error::Conflict("archive is behind erasure custody"));
+    }
+    Ok(())
+}
+fn operation_key(manifest: &Record) -> Result<index::Digest> {
+    let mut key = writer(manifest).as_bytes().to_vec();
+    key.push(0);
+    key.extend(blob(&manifest.body()["operation"]));
+    index::key(b"operation", &key).map_err(index_error)
+}
+/// Validate an initialized checkpoint under the caller's independent current
+/// custody. Raw database lookup results never establish operation membership.
+pub(super) fn admission_checkpoint(
+    conn: &Connection,
+    binding: &attested::Binding,
+    manifest: &Record,
+    expected_erasure_tip: Option<&str>,
+) -> Result<(Checkpoint, Frontier, Option<Verified>)> {
+    let tx = conn.unchecked_transaction()?;
+    let checkpoint = load(&tx, binding)?;
+    check_current(&tx, binding, &checkpoint)?;
+    if checkpoint.erasure_tip() != expected_erasure_tip {
+        return Err(Error::Conflict("serving custody differs from owner"));
+    }
+    let previous = checkpoint.validate(binding)?;
+    let mut map = Map::new(
+        SqlBlocks {
+            conn: &tx,
+            tx: None,
+        },
+        checkpoint.root()?,
+    );
+    let operation = map.get(&operation_key(manifest)?).map_err(index_error)?;
+    let duplicate = if let Some(sequence) = operation {
+        let sequence = u64::from_be_bytes(sequence.try_into().map_err(|_| corrupt())?);
+        if sequence == 0 || sequence > previous.through {
+            return Err(corrupt());
+        }
+        let selected = selected_metadata(&tx, binding, &checkpoint, sequence)?;
+        if selected.record.manifest.cid() != manifest.cid() {
+            return Err(Error::Conflict("operation reused for different manifest"));
+        }
+        Some(selected.proof)
+    } else {
+        None
+    };
+    tx.commit()?;
+    Ok((checkpoint, previous, duplicate))
+}
+pub(super) fn stage_allowed(
+    conn: &Connection,
+    binding: &attested::Binding,
+    checkpoint: &Checkpoint,
+    id: &Cid,
+) -> Result<()> {
+    check_current(conn, binding, checkpoint)?;
+    let mut map = Map::new(SqlBlocks { conn, tx: None }, checkpoint.root()?);
+    if map
+        .get(&index::key(b"erased", id.to_string().as_bytes()).map_err(index_error)?)
+        .map_err(index_error)?
+        .is_some()
+    {
+        return Err(Error::Erased(id.to_string()));
+    }
+    Ok(())
+}
+/// Authenticate every lookup that can allow an admission. Runs under the writer
+/// transaction; any disagreement rolls back the tentative row and bindings.
+pub(super) fn check_admission(
+    conn: &Connection,
+    binding: &attested::Binding,
+    checkpoint: &Checkpoint,
+    row: &Committed,
+) -> Result<()> {
+    check_current(conn, binding, checkpoint)?;
+    let mut map = Map::new(SqlBlocks { conn, tx: None }, checkpoint.root()?);
+    let operation = map
+        .get(&operation_key(&row.manifest)?)
+        .map_err(index_error)?;
+    if row.duplicate {
+        if operation.as_deref() != Some(row.sequence.to_be_bytes().as_slice()) {
+            return Err(corrupt());
+        }
+        return Ok(());
+    }
+    if operation.is_some() {
+        return Err(Error::Conflict("indexed operation already exists"));
+    }
+    let body = row.manifest.body();
+    let writer = writer(&row.manifest);
+    let head = map
+        .get(&index::key(b"writer", writer.as_bytes()).map_err(index_error)?)
+        .map_err(index_error)?;
+    match head {
+        Some(head) => {
+            if head.len() < 17 {
+                return Err(corrupt());
+            }
+            let sequence = u64::from_be_bytes(head[..8].try_into().map_err(|_| corrupt())?);
+            let position = i64::from_be_bytes(head[8..16].try_into().map_err(|_| corrupt())?);
+            let previous = std::str::from_utf8(&head[16..]).map_err(|_| corrupt())?;
+            if sequence == 0
+                || sequence >= row.sequence
+                || position.checked_add(1) != Some(number(&body["position"]))
+                || optional_cid(&body["previous"]).as_deref() != Some(previous)
+            {
+                return Err(Error::Conflict("indexed writer frontier"));
+            }
+        }
+        None => {
+            if number(&body["position"]) != 0 || optional_cid(&body["previous"]).is_some() {
+                return Err(Error::Conflict("indexed writer genesis"));
+            }
+        }
+    }
+    for entry in entries(&row.manifest) {
+        let mut slot = writer.as_bytes().to_vec();
+        slot.push(0);
+        slot.extend(blob(&entry["slot"]));
+        if let Some(old) = map
+            .get(&index::key(b"slot", &slot).map_err(index_error)?)
+            .map_err(index_error)?
+        {
+            let mut expected = number(&entry["length"]).to_be_bytes().to_vec();
+            expected.extend(cid(&entry["ciphertext"]).as_bytes());
+            if old != expected {
+                return Err(Error::Conflict("indexed slot rebound"));
+            }
+        }
+        stage_allowed(
+            conn,
+            binding,
+            checkpoint,
+            &cid(&entry["ciphertext"]).parse().map_err(|_| corrupt())?,
+        )?;
+    }
+    Ok(())
+}
+impl attested::Archive {
+    /// Bounded metadata open. It authenticates the selected checkpoint and tip;
+    /// use verify() for a full retained-byte/chain audit. External custody must be
+    /// supplied again for every indexed admission, not inferred from this file.
+    pub fn open_indexed(
+        root: &Path,
+        binding: attested::Binding,
+        expected_erasure_tip: Option<&str>,
+    ) -> Result<Self> {
+        binding.validate()?;
+        let path = root.join("archive.sqlite");
+        private_file(&path)?;
+        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        conn.set_limit(
+            rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
+            RECOVERY_SQLITE_LENGTH_LIMIT,
+        )?;
+        conn.busy_timeout(Duration::from_secs(5))?;
+        let archive = Self {
+            audit_cache: Default::default(),
+            ledger: Ledger { conn },
+            binding,
+            copy: None,
+        };
+        let tx = archive.ledger.conn.unchecked_transaction()?;
+        archive.ledger.check_profile(2)?;
+        archive.ledger.check_write_profile(true)?;
+        attested::check_binding(&tx, &archive.binding)?;
+        let checkpoint = load(&tx, &archive.binding)?;
+        check_current(&tx, &archive.binding, &checkpoint)?;
+        let frontier = checkpoint.validate(&archive.binding)?;
+        if checkpoint.erasure_tip() != expected_erasure_tip
+            || archive.ledger.snapshot()?
+                != (Snapshot {
+                    through: frontier.through,
+                    tip: frontier.manifest.clone(),
+                })
+        {
+            return Err(Error::Conflict("serving archive frontier or custody"));
+        }
+        if frontier.through > 0 {
+            selected_metadata(&tx, &archive.binding, &checkpoint, frontier.through)?;
+        }
+        tx.commit()?;
+        configure(&archive.ledger.conn)?;
+        Ok(archive)
+    }
 }

@@ -410,9 +410,9 @@ backup/recovery and independent freshness checks must all use the same contract.
 The first durable integration is `evidence_store::serving`: an explicit full-audit
 initialization/rebuild creates `serving_nodes` and a signed `serving_checkpoint` in
 one immediate transaction. Checkpoints bind version, admitted profile, archive,
-scope, issuer, full frontier, map root and accepted native erasure tip. The map
+scope, issuer, full frontier, map root, accepted native erasure tip and its highest required archive sequence. The map
 commits exact sequence/manifest/receipt/proof metadata plus operation, writer-head
-and slot coordinates. Normal admissions into initialized archives advance the
+and slot coordinates, plus erased-object commitments. Normal admissions into initialized archives advance the
 nodes/checkpoint atomically with evidence and attestation; exact retries preserve
 the existing checkpoint. Rebuild replaces disposable nodes only after verifying
 source data, under the same writer transaction. Failed rebuilds preserve the prior
@@ -427,9 +427,23 @@ payloads elsewhere do not turn that result into a whole-archive health claim.
 Changed custody makes an older checkpoint unusable until refreshed by verified
 rebuild or a fully audited admission. A checkpoint loaded from the archive alone
 cannot establish freshness. This initial integration supports admitted archives;
-copied-profile activation, bounded source availability/custody checks, bounded
-admission, service routing and scale qualification remain implementation work.
-No bounded-serving claim is made for the existing full-audit admission API.
+copied-profile activation, bounded source availability/external custody checks,
+service routing and scale qualification remain implementation work.
+
+The explicit `Archive::open_indexed` / `admit_indexed` storage path checks the
+signed checkpoint, exact database tip, and caller-supplied current erasure custody
+without auditing lifetime data. Staging checks erased-object membership against
+the authenticated map. The existing commit transaction remains the visibility
+boundary: before acceptance, indexed admission validates operation identity,
+writer position/predecessor and slot commitments against the prior root, rechecks
+checkpoint/custody under the writer lease, and advances the root with the receipt
+and native proof. Unauthenticated SQL lookup changes cannot authorize a writer
+fork. Interrupted operations retain both the prior proof/index or both new ones;
+exact retries retain prior receipts/proofs. Unselected historical damage remains
+visible to full audit and selected reads, rather than forcing a lifetime scan on
+append. The original `open` / `admit` methods still perform full audits. Indexed
+storage APIs are not yet the HTTP/owner default, and the external owner-custody
+reader still scans its independent control history.
 
 ### 11. Compatibility and explicit departures
 

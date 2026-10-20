@@ -828,6 +828,16 @@ impl Ledger {
         bytes: &[u8],
         observe: &mut dyn FnMut(Boundary),
     ) -> Result<Cid> {
+        self.stage_guarded(bytes, observe, &mut |tx, id| {
+            erasure::stage_allowed(tx, &id.to_string())
+        })
+    }
+    fn stage_guarded(
+        &mut self,
+        bytes: &[u8],
+        observe: &mut dyn FnMut(Boundary),
+        guard: &mut dyn FnMut(&Connection, &Cid) -> Result<()>,
+    ) -> Result<Cid> {
         if bytes.is_empty() || bytes.len() > MAX_CHUNK {
             return Err(Error::Invalid("chunk length"));
         }
@@ -835,7 +845,7 @@ impl Ledger {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        erasure::stage_allowed(&tx, &id.to_string())?;
+        guard(&tx, &id)?;
         let prior: Option<Vec<u8>> = tx
             .query_row(
                 "SELECT bytes FROM objects WHERE cid=?",

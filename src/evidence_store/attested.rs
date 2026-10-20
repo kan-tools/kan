@@ -94,6 +94,11 @@ impl AuditCache {
         }
     }
 }
+#[derive(Clone, Copy)]
+enum AdmissionMode<'a> {
+    Audited(Option<&'a erasure::Record>),
+    Indexed(Option<&'a str>),
+}
 pub struct Archive {
     pub(super) audit_cache: std::cell::RefCell<AuditCache>,
     pub(super) ledger: Ledger,
@@ -460,7 +465,46 @@ impl Archive {
         now: u64,
         observe: &mut dyn FnMut(Boundary),
     ) -> std::result::Result<Admission, Failure> {
-        self.admit_internal(bytes, signer, grant, now, observe, None)
+        self.admit_internal(
+            bytes,
+            signer,
+            grant,
+            now,
+            observe,
+            AdmissionMode::Audited(None),
+        )
+    }
+    /// Bounded admission against an explicitly initialized serving checkpoint.
+    /// The caller supplies current independently retained erasure custody. This
+    /// verifies the submitted bytes and touched history, not all prior payloads.
+    pub fn admit_indexed(
+        &mut self,
+        bytes: &[u8],
+        signer: &Identity,
+        grant: &Grant,
+        now: u64,
+        current_erasure_tip: Option<&str>,
+    ) -> std::result::Result<Admission, Failure> {
+        self.admit_indexed_observed(bytes, signer, grant, now, current_erasure_tip, &mut |_| {})
+    }
+    /// Fault harness for the same bounded admission path.
+    pub fn admit_indexed_observed(
+        &mut self,
+        bytes: &[u8],
+        signer: &Identity,
+        grant: &Grant,
+        now: u64,
+        current_erasure_tip: Option<&str>,
+        observe: &mut dyn FnMut(Boundary),
+    ) -> std::result::Result<Admission, Failure> {
+        self.admit_internal(
+            bytes,
+            signer,
+            grant,
+            now,
+            observe,
+            AdmissionMode::Indexed(current_erasure_tip),
+        )
     }
     /// Owner-side commitment-only admission. The caller must first publish the
     /// exact independently owner-authorized erasure record. No raw bytes stage.
@@ -491,7 +535,7 @@ impl Archive {
             grant,
             erasure.plan.recorded_at,
             observe,
-            Some(erasure),
+            AdmissionMode::Audited(Some(erasure)),
         )
     }
     fn admit_internal(
@@ -501,8 +545,12 @@ impl Archive {
         grant: &Grant,
         now: u64,
         observe: &mut dyn FnMut(Boundary),
-        initial_erasure: Option<&erasure::Record>,
+        mode: AdmissionMode<'_>,
     ) -> std::result::Result<Admission, Failure> {
+        let initial_erasure = match mode {
+            AdmissionMode::Audited(value) => value,
+            AdmissionMode::Indexed(_) => None,
+        };
         let signed = SignedRequest::decode(bytes)?;
         if !grant.append
             || grant.principal != signed.request.principal
@@ -514,13 +562,35 @@ impl Archive {
         }
         let manifest = service::append_manifest(bytes)?;
         let receipt = service::receipt(&manifest, &self.binding.issuer, now)?;
-        let (previous, duplicate_proof) = self.verify_for(Some(manifest.cid()))?;
+        let (indexed, previous, duplicate_proof) = match mode {
+            AdmissionMode::Audited(_) => {
+                let (previous, duplicate) = self.verify_for(Some(manifest.cid()))?;
+                (None, previous, duplicate)
+            }
+            AdmissionMode::Indexed(tip) => {
+                if self.copy.is_some() {
+                    return Err(Failure::Invalid);
+                }
+                let (checkpoint, previous, duplicate) = serving::admission_checkpoint(
+                    &self.ledger.conn,
+                    &self.binding,
+                    &manifest,
+                    tip,
+                )?;
+                (Some(checkpoint), previous, duplicate)
+            }
+        };
         if let Some(record) = initial_erasure {
             erasure::check_initial_request(&self.ledger.conn, &self.binding, record, bytes)?;
             self.ledger
                 .conn
                 .execute_batch("PRAGMA secure_delete=ON;")
                 .map_err(Error::from)?;
+        } else if let Some(checkpoint) = &indexed {
+            let binding = &self.binding;
+            self.ledger.stage_guarded(bytes, observe, &mut |tx, id| {
+                serving::stage_allowed(tx, binding, checkpoint, id)
+            })?;
         } else {
             self.ledger.stage_observed(bytes, observe)?;
         }
@@ -535,16 +605,21 @@ impl Archive {
                         row: &Committed,
                         observe: &mut dyn FnMut(Boundary)|
          -> Result<()> {
-            // All archive mutations through this API append. Recheck both tips
-            // and proof cardinality under the immediate writer transaction; a
-            // raw append or same-height replacement cannot cross this fence.
+            // Recheck the audited frontier under the writer transaction. The
+            // bounded mode additionally authenticates every admission decision
+            // against the signed index; legacy mode retains its full audit.
             check_binding(tx, binding)?;
             if let Some(plan) = copy {
                 copied::admission_ready(tx, binding, plan, previous.through)?;
             }
-            let count: i64 = tx.query_row("SELECT count(*) FROM attestations", [], |r| r.get(0))?;
-            if u64::try_from(count).ok() != Some(previous.through) {
-                return Err(Error::Conflict("attestation audit frontier"));
+            if let Some(checkpoint) = &indexed {
+                serving::check_admission(tx, binding, checkpoint, row)?;
+            } else {
+                let count: i64 =
+                    tx.query_row("SELECT count(*) FROM attestations", [], |r| r.get(0))?;
+                if u64::try_from(count).ok() != Some(previous.through) {
+                    return Err(Error::Conflict("attestation audit frontier"));
+                }
             }
             if previous.through > 0 {
                 let tip = record(tx, previous.through)?;
@@ -606,7 +681,15 @@ impl Archive {
                 observe(Boundary::AttestationInserted);
                 proof
             };
-            serving::advance(tx, binding, &previous, row, &verified, signer)?;
+            serving::advance(
+                tx,
+                binding,
+                &previous,
+                row,
+                &verified,
+                signer,
+                indexed.as_ref(),
+            )?;
             result = Some(verified);
             Ok(())
         };

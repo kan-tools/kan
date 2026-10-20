@@ -241,90 +241,104 @@ fn proof_crash_worker() {
     };
     let phase = std::env::var("KAN_PROOF_CRASH_PHASE").unwrap();
     let mut archive = Archive::open(Path::new(&root), binding()).unwrap();
-    archive
-        .admit_observed(
-            &request(0, None),
-            &identity(7),
-            &grant(),
-            100,
-            &mut |boundary| {
-                if format!("{boundary:?}") == phase {
-                    std::process::exit(91);
-                }
-            },
-        )
-        .unwrap();
+    let mut observe = |boundary| {
+        if format!("{boundary:?}") == phase {
+            std::process::exit(91);
+        }
+    };
+    if std::env::var_os("KAN_PROOF_INDEXED").is_some() {
+        archive
+            .admit_indexed_observed(
+                &request(0, None),
+                &identity(7),
+                &grant(),
+                100,
+                None,
+                &mut observe,
+            )
+            .unwrap();
+    } else {
+        archive
+            .admit_observed(&request(0, None), &identity(7), &grant(), 100, &mut observe)
+            .unwrap();
+    }
     panic!("fault boundary not reached");
 }
 #[test]
 fn process_death_keeps_both_metadata_and_proof_or_neither() {
-    for phase in [
-        "ObjectInserted",
-        "ObjectDurable",
-        "ManifestInserted",
-        "BindingsInserted",
-        "AttestationSigned",
-        "AttestationInserted",
-        "BeforeCommit",
-        "AfterCommit",
-    ] {
-        let temp = tempfile::tempdir().unwrap();
-        let archive = Archive::create(temp.path(), binding()).unwrap();
-        archive.rebuild_serving_index(&identity(7)).unwrap();
-        drop(archive);
-        let result = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "proof_crash_worker", "--nocapture"])
-            .env("KAN_PROOF_CRASH_ROOT", temp.path())
-            .env("KAN_PROOF_CRASH_PHASE", phase)
-            .output()
-            .unwrap();
-        assert_eq!(
-            result.status.code(),
-            Some(91),
-            "{phase}: {}",
-            String::from_utf8_lossy(&result.stderr)
-        );
-        let mut archive = Archive::open(temp.path(), binding()).unwrap();
-        let count = u64::from(phase == "AfterCommit");
-        assert_eq!(archive.verify().unwrap().through, count, "{phase}");
-        let conn = connection(temp.path());
-        assert_eq!(
-            conn.query_row("SELECT count(*) FROM commits", [], |r| r.get::<_, i64>(0))
-                .unwrap(),
-            count as i64
-        );
-        assert_eq!(
-            conn.query_row("SELECT count(*) FROM attestations", [], |r| r
-                .get::<_, i64>(0))
-                .unwrap(),
-            count as i64
-        );
-        let original: Option<Vec<u8>> = if count == 1 {
-            Some(
-                conn.query_row("SELECT envelope FROM attestations", [], |r| r.get(0))
+    for indexed in [false, true] {
+        for phase in [
+            "ObjectInserted",
+            "ObjectDurable",
+            "ManifestInserted",
+            "BindingsInserted",
+            "AttestationSigned",
+            "AttestationInserted",
+            "BeforeCommit",
+            "AfterCommit",
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let archive = Archive::create(temp.path(), binding()).unwrap();
+            archive.rebuild_serving_index(&identity(7)).unwrap();
+            drop(archive);
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            if indexed {
+                command.env("KAN_PROOF_INDEXED", "1");
+            }
+            let result = command
+                .args(["--exact", "proof_crash_worker", "--nocapture"])
+                .env("KAN_PROOF_CRASH_ROOT", temp.path())
+                .env("KAN_PROOF_CRASH_PHASE", phase)
+                .output()
+                .unwrap();
+            assert_eq!(
+                result.status.code(),
+                Some(91),
+                "{phase}: {}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            let mut archive = Archive::open(temp.path(), binding()).unwrap();
+            let count = u64::from(phase == "AfterCommit");
+            assert_eq!(archive.verify().unwrap().through, count, "{phase}");
+            let conn = connection(temp.path());
+            assert_eq!(
+                conn.query_row("SELECT count(*) FROM commits", [], |r| r.get::<_, i64>(0))
                     .unwrap(),
+                count as i64
+            );
+            assert_eq!(
+                conn.query_row("SELECT count(*) FROM attestations", [], |r| r
+                    .get::<_, i64>(0))
+                    .unwrap(),
+                count as i64
+            );
+            let original: Option<Vec<u8>> = if count == 1 {
+                Some(
+                    conn.query_row("SELECT envelope FROM attestations", [], |r| r.get(0))
+                        .unwrap(),
+                )
+            } else {
+                None
+            };
+            let retry = archive
+                .admit(&request(0, None), &identity(7), &grant(), 101)
+                .unwrap();
+            assert_eq!(retry.record.duplicate, count == 1);
+            if let Some(original) = original {
+                assert_eq!(retry.attestation.bytes(), original);
+            }
+            let pin = archive.verify().unwrap();
+            assert_eq!(pin.through, 1);
+            let indexed = kan::evidence_store::serving::read_metadata(
+                &temp.path().join("archive.sqlite"),
+                binding(),
+                &pin,
+                None,
+                1,
             )
-        } else {
-            None
-        };
-        let retry = archive
-            .admit(&request(0, None), &identity(7), &grant(), 101)
             .unwrap();
-        assert_eq!(retry.record.duplicate, count == 1);
-        if let Some(original) = original {
-            assert_eq!(retry.attestation.bytes(), original);
+            assert_eq!(indexed.proof.bytes(), retry.attestation.bytes());
         }
-        let pin = archive.verify().unwrap();
-        assert_eq!(pin.through, 1);
-        let indexed = kan::evidence_store::serving::read_metadata(
-            &temp.path().join("archive.sqlite"),
-            binding(),
-            &pin,
-            None,
-            1,
-        )
-        .unwrap();
-        assert_eq!(indexed.proof.bytes(), retry.attestation.bytes());
     }
 }
 
@@ -1809,4 +1823,143 @@ fn serving_checkpoint_rejects_tampering_rollback_and_changed_custody() {
     .unwrap();
     assert_eq!(selected.proof.bytes(), first.attestation.bytes());
     assert!(read_metadata(&path, binding(), second.attestation.frontier(), None, 1).is_err());
+}
+
+#[test]
+fn indexed_admission_preserves_retries_and_does_not_scan_unselected_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut archive = Archive::create(temp.path(), binding()).unwrap();
+    assert!(Archive::open_indexed(temp.path(), binding(), None).is_err());
+    archive.rebuild_serving_index(&identity(7)).unwrap();
+    let first_bytes = request(0, None);
+    let first = archive
+        .admit_indexed(&first_bytes, &identity(7), &grant(), 100, None)
+        .unwrap();
+    let second = archive
+        .admit_indexed(
+            &request(1, Some(first.record.manifest.cid().to_string())),
+            &identity(7),
+            &grant(),
+            101,
+            None,
+        )
+        .unwrap();
+    let retry = archive
+        .admit_indexed(&first_bytes, &identity(7), &grant(), 999, None)
+        .unwrap();
+    assert!(retry.record.duplicate);
+    assert_eq!(retry.attestation.bytes(), first.attestation.bytes());
+    let conn = connection(temp.path());
+    let receipt: Vec<u8> = conn
+        .query_row("SELECT receipt FROM commits WHERE sequence=1", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    // This is unselected historical damage, not permission to accept a changed
+    // writer frontier. Full verify still fails; indexed open/append stay bounded.
+    conn.execute("UPDATE commits SET receipt=x'00' WHERE sequence=1", [])
+        .unwrap();
+    drop(archive);
+    assert!(Archive::open(temp.path(), binding()).is_err());
+    let mut indexed = Archive::open_indexed(temp.path(), binding(), None).unwrap();
+    let third = indexed
+        .admit_indexed(
+            &request(2, Some(second.record.manifest.cid().to_string())),
+            &identity(7),
+            &grant(),
+            102,
+            None,
+        )
+        .unwrap();
+    assert_eq!(third.record.sequence, 3);
+    assert!(indexed
+        .admit_indexed(&first_bytes, &identity(7), &grant(), 103, None)
+        .is_err());
+    conn.execute("UPDATE commits SET receipt=? WHERE sequence=1", [receipt])
+        .unwrap();
+    assert_eq!(indexed.verify().unwrap(), *third.attestation.frontier());
+}
+
+#[test]
+fn indexed_admission_rejects_poisoned_writer_lookup_and_erased_request_replay() {
+    use kan::evidence_store::erasure::Record;
+    let temp = tempfile::tempdir().unwrap();
+    let mut archive = Archive::create(temp.path(), binding()).unwrap();
+    archive.rebuild_serving_index(&identity(7)).unwrap();
+    let first_bytes = request(0, None);
+    let first = archive
+        .admit_indexed(&first_bytes, &identity(7), &grant(), 100, None)
+        .unwrap();
+    let second = archive
+        .admit_indexed(
+            &request(1, Some(first.record.manifest.cid().to_string())),
+            &identity(7),
+            &grant(),
+            101,
+            None,
+        )
+        .unwrap();
+    let conn = connection(temp.path());
+    // A forged SQL head would allow a second position=1 append without the
+    // authenticated writer-head check. Give it a fresh operation identifier.
+    conn.execute("UPDATE commits SET position=-1 WHERE sequence=2", [])
+        .unwrap();
+    let mut fork =
+        SignedRequest::decode(&request(1, Some(first.record.manifest.cid().to_string())))
+            .unwrap()
+            .request;
+    if let Operation::Append { id, .. } = &mut fork.command {
+        *id = hex(&[88; 16]);
+    }
+    let fork = SignedRequest::sign(fork, &identity(6))
+        .unwrap()
+        .bytes()
+        .unwrap();
+    assert_eq!(
+        archive
+            .admit_indexed(&fork, &identity(7), &grant(), 102, None)
+            .unwrap_err(),
+        Failure::Conflict
+    );
+    assert_eq!(
+        conn.query_row("SELECT count(*) FROM commits", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        2
+    );
+    conn.execute("UPDATE commits SET position=1 WHERE sequence=2", [])
+        .unwrap();
+    let erased = Record::sign(
+        archive.preview_erasure(&[1], hex(&[44; 32]), 103).unwrap(),
+        &identity(7),
+    )
+    .unwrap();
+    let custody = archive.apply_erasure(erased).unwrap();
+    assert!(Archive::open_indexed(temp.path(), binding(), custody.tip.as_deref()).is_err());
+    archive.rebuild_serving_index(&identity(7)).unwrap();
+    assert!(Archive::open_indexed(temp.path(), binding(), None).is_err());
+    let mut archive =
+        Archive::open_indexed(temp.path(), binding(), custody.tip.as_deref()).unwrap();
+    assert_eq!(
+        archive
+            .admit_indexed(
+                &first_bytes,
+                &identity(7),
+                &grant(),
+                104,
+                custody.tip.as_deref()
+            )
+            .unwrap_err(),
+        Failure::AccessLimited
+    );
+    let third = archive
+        .admit_indexed(
+            &request(2, Some(second.record.manifest.cid().to_string())),
+            &identity(7),
+            &grant(),
+            104,
+            custody.tip.as_deref(),
+        )
+        .unwrap();
+    assert_eq!(third.record.sequence, 3);
+    assert_eq!(archive.verify().unwrap(), *third.attestation.frontier());
 }
