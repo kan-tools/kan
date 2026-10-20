@@ -1007,13 +1007,17 @@ mod audit_tests {
         };
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("archive");
-        let directory = temp.path().join("custody");
-        std::fs::create_dir(&directory).unwrap();
         #[cfg(unix)]
-        {
+        let custody_directory = {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
-        }
+            tempfile::Builder::new()
+                .permissions(std::fs::Permissions::from_mode(0o700))
+                .tempdir_in(temp.path())
+                .unwrap()
+        };
+        #[cfg(not(unix))]
+        let custody_directory = tempfile::tempdir_in(temp.path()).unwrap();
+        let directory = custody_directory.path().to_path_buf();
         let owner = Identity::generate();
         let issuer = Identity::generate();
         let writer = Identity::generate();
