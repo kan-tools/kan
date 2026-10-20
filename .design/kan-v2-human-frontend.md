@@ -814,3 +814,32 @@ Use `--erasure-history` with an independently maintained pinned configuration fi
 Enabling it is a deployment requirement, not a property inferred from a backup.
 Automatic delivery cleanup concerns admitted requests only; unpublished derived
 cancellation and published derivative selection remain required.
+
+### Cancelling an unpublished request without rewriting its writer chain
+
+An owner-selected unpublished request can be admitted **already erased**. The
+archive validates its original signed request in memory, commits the exact append
+manifest, receipt and issuer attestation, and writes only an erasure marker for
+the object. It never stages the request payload through this admission path.
+This is actual commitment-only admission, distinguished by `initial_erasure` in
+the signed erasure plan, rather than a fabricated acknowledgment or a skipped
+writer position. Later requests keep their original previous-manifest links.
+An orphan payload staged by an earlier failed ordinary admission is scrubbed in
+the same transaction; its historical backups still require separate purge.
+
+The plan pins the next archive sequence, exact request commitment, original
+manifest, preceding archive tip, storage-erasure predecessor and receipt time.
+The owner coordinator must establish derivative membership, retain the signed
+job and publish independent owner consent before calling this storage primitive.
+Normal service requests cannot choose this path. A stale archive/writer frontier,
+wrong request or ordinary already-retained admission refuses. A completed exact
+retry reuses the original proof. Current erasure history installed on an older
+restore can precede its missing metadata; only the matching commitment admission
+can fill that missing next position, while ordinary staging remains blocked.
+
+Metadata, object marker, erasure record and attestation commit together. A rollback
+leaves no staged request from this path. Existing spool retirement then uses the
+actual issuer-bound commitment to remove its pending payload. The storage API and
+fault/recovery tests implement this primitive; coordinated selection of queued
+and published derivatives, owner job integration and whole-instance completion
+are still required.

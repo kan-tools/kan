@@ -23,6 +23,11 @@ pub mod inventory;
 type CommitProofHook<'a> =
     dyn FnMut(&rusqlite::Transaction<'_>, &Committed, &mut dyn FnMut(Boundary)) -> Result<()> + 'a;
 
+enum CommitMode<'a> {
+    Unpartitioned,
+    Partitioned,
+    InitiallyErased(&'a erasure::Record),
+}
 pub const MAX_CHUNK: usize = 4 * 1024 * 1024;
 const APPLICATION_ID: i64 = 0x4b563201;
 // Two range probes use the existing scope-leading indexes, including when every
@@ -885,13 +890,27 @@ impl Ledger {
         receipt: &[u8],
         observe: &mut dyn FnMut(Boundary),
     ) -> Result<Committed> {
-        self.commit_inner(manifest, receipt, observe, false, None, None)
+        self.commit_inner(
+            manifest,
+            receipt,
+            observe,
+            CommitMode::Unpartitioned,
+            None,
+            None,
+        )
     }
 
     /// Service partition admission: serialized with all other writers. The first
     /// commit binds an empty partition; later service commits cannot mix scopes.
     pub fn commit_partition(&mut self, manifest: &[u8], receipt: &[u8]) -> Result<Committed> {
-        self.commit_inner(manifest, receipt, &mut |_| {}, true, None, None)
+        self.commit_inner(
+            manifest,
+            receipt,
+            &mut |_| {},
+            CommitMode::Partitioned,
+            None,
+            None,
+        )
     }
 
     /// Admit only if no commit has arrived since the caller audited `expected`.
@@ -903,7 +922,14 @@ impl Ledger {
         receipt: &[u8],
         expected: &Snapshot,
     ) -> Result<Committed> {
-        self.commit_inner(manifest, receipt, &mut |_| {}, true, Some(expected), None)
+        self.commit_inner(
+            manifest,
+            receipt,
+            &mut |_| {},
+            CommitMode::Partitioned,
+            Some(expected),
+            None,
+        )
     }
 
     fn commit_inner(
@@ -911,7 +937,7 @@ impl Ledger {
         manifest: &[u8],
         receipt: &[u8],
         observe: &mut dyn FnMut(Boundary),
-        single_scope: bool,
+        mode: CommitMode<'_>,
         expected_snapshot: Option<&Snapshot>,
         mut proof_hook: Option<&mut CommitProofHook<'_>>,
     ) -> Result<Committed> {
@@ -949,7 +975,9 @@ impl Ledger {
                 return Err(Error::Conflict("service audit frontier"));
             }
         }
-        if single_scope && tx.query_row(FOREIGN_SCOPE, [scope], |row| row.get::<_, bool>(0))? {
+        if !matches!(mode, CommitMode::Unpartitioned)
+            && tx.query_row(FOREIGN_SCOPE, [scope], |row| row.get::<_, bool>(0))?
+        {
             return Err(Error::Conflict("service partition scope"));
         }
         let prior: Option<(i64,String,Vec<u8>,Vec<u8>)> = tx.query_row(
@@ -982,6 +1010,9 @@ impl Ledger {
         if position != expected || previous.as_ref() != head.as_ref().map(|(_, c)| c) {
             return Err(Error::Conflict("writer frontier"));
         }
+        if let CommitMode::InitiallyErased(record) = &mode {
+            erasure::install_initial(&tx, record, &manifest)?;
+        }
         for e in entries(&manifest) {
             let object = cid(&e["ciphertext"]);
             let bytes: Vec<u8> = tx
@@ -990,7 +1021,9 @@ impl Ledger {
                 })
                 .optional()?
                 .ok_or_else(|| Error::Missing(object.clone()))?;
-            if bytes.len() as i64 != number(&e["length"])
+            if matches!(mode, CommitMode::InitiallyErased(_)) {
+                erasure::check_marker(&tx, &object)?;
+            } else if bytes.len() as i64 != number(&e["length"])
                 || ciphertext_cid(&bytes).to_string() != object
             {
                 return Err(Error::Corrupt(object));

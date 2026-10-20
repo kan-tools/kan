@@ -75,7 +75,10 @@ const RULE_EVIDENCE: &[(&str, &str)] = &[
     ("verified-import-restore", "tests/evidence_restore.rs"),
     ("encrypted-import-frame", "tests/evidence_import.rs"),
     ("delivery-configuration", "tests/evidence_delivery.rs"),
-    ("durable-exact-request-spool", "tests/evidence_spool.rs"),
+    (
+        "durable-exact-request-spool-and-signed-erasure-cursor",
+        "tests/evidence_spool.rs",
+    ),
     ("recipient-encrypted-chunk", "tests/evidence_crypto.rs"),
     ("signed-service-request", "tests/evidence_service.rs"),
     ("service-configuration", "tests/evidence_http.rs"),
@@ -534,6 +537,12 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_store/erasure/initial.rs",
+        "insert_erased_evidence_object",
+        "EvidenceErasure",
+        1,
+    ),
     (
         "src/evidence_spool/erasure.rs",
         "initialize_spool_erasure",
@@ -1525,7 +1534,7 @@ fn every_persistence_facade_call_is_independently_inventoried() {
         if module == "src/persistence.rs" {
             assert_eq!(
                 format!("{:x}", Sha256::digest(source.as_bytes())),
-                "5fece912d4ed81fea3c8628659b7b831b75b281c2743a0bce5384c32735b488d",
+                "9c72209aa89b05d67161146b59743725d9f01d51a81559fe0eb8ac2bfcc8848d",
                 "the raw-mutation facade changed; review and update its committed implementation digest together with facade-call negative controls"
             );
             assert!(

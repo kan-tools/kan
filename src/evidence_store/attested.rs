@@ -460,6 +460,49 @@ impl Archive {
         now: u64,
         observe: &mut dyn FnMut(Boundary),
     ) -> std::result::Result<Admission, Failure> {
+        self.admit_internal(bytes, signer, grant, now, observe, None)
+    }
+    /// Owner-side commitment-only admission. The caller must first publish the
+    /// exact independently owner-authorized erasure record. No raw bytes stage.
+    pub fn admit_erased(
+        &mut self,
+        bytes: &[u8],
+        signer: &Identity,
+        grant: &Grant,
+        erasure: &erasure::Record,
+    ) -> std::result::Result<Admission, Failure> {
+        self.admit_erased_observed(bytes, signer, grant, erasure, &mut |_| {})
+    }
+    /// Fault harness for atomic commitment, proof and initial erasure insertion.
+    pub fn admit_erased_observed(
+        &mut self,
+        bytes: &[u8],
+        signer: &Identity,
+        grant: &Grant,
+        erasure: &erasure::Record,
+        observe: &mut dyn FnMut(Boundary),
+    ) -> std::result::Result<Admission, Failure> {
+        if self.copy.is_some() {
+            return Err(Failure::Invalid);
+        }
+        self.admit_internal(
+            bytes,
+            signer,
+            grant,
+            erasure.plan.recorded_at,
+            observe,
+            Some(erasure),
+        )
+    }
+    fn admit_internal(
+        &mut self,
+        bytes: &[u8],
+        signer: &Identity,
+        grant: &Grant,
+        now: u64,
+        observe: &mut dyn FnMut(Boundary),
+        initial_erasure: Option<&erasure::Record>,
+    ) -> std::result::Result<Admission, Failure> {
         let signed = SignedRequest::decode(bytes)?;
         if !grant.append
             || grant.principal != signed.request.principal
@@ -472,7 +515,15 @@ impl Archive {
         let manifest = service::append_manifest(bytes)?;
         let receipt = service::receipt(&manifest, &self.binding.issuer, now)?;
         let (previous, duplicate_proof) = self.verify_for(Some(manifest.cid()))?;
-        self.ledger.stage_observed(bytes, observe)?;
+        if let Some(record) = initial_erasure {
+            erasure::check_initial_request(&self.ledger.conn, &self.binding, record, bytes)?;
+            self.ledger
+                .conn
+                .execute_batch("PRAGMA secure_delete=ON;")
+                .map_err(Error::from)?;
+        } else {
+            self.ledger.stage_observed(bytes, observe)?;
+        }
         let expected = Snapshot {
             through: previous.through,
             tip: previous.manifest.clone(),
@@ -562,10 +613,13 @@ impl Archive {
             manifest.bytes(),
             receipt.bytes(),
             observe,
-            true,
+            initial_erasure.map_or(CommitMode::Partitioned, CommitMode::InitiallyErased),
             Some(&expected),
             Some(&mut hook),
         )?;
+        if initial_erasure.is_some() {
+            self.audit_cache.replace(Default::default());
+        }
         Ok(Admission {
             record,
             attestation: result.ok_or(Failure::Corrupt)?,

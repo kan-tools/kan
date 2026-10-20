@@ -1273,3 +1273,216 @@ fn erasure_custody_cli_initializes_pinned_genesis_and_reconciles_without_activat
     assert_eq!(result["managed_cleanup"], "pending-coordination");
     assert_eq!(archive.verify().unwrap().through, 0);
 }
+
+#[test]
+fn initial_erased_admission_preserves_chain_without_staging_payload_and_retires_sender() {
+    use kan::{
+        evidence_erasure_history as custody, evidence_spool::Spool, evidence_store::erasure,
+    };
+    let root = tempfile::tempdir().unwrap();
+    let history_root = tempfile::tempdir().unwrap();
+    let queue_root = tempfile::tempdir().unwrap();
+    let mut history:custody::Access=serde_json::from_value(serde_json::json!({"directory":history_root.path(),"binding":{"profile":"admitted","archive":hex(&binding().archive),"scope":hex(&binding().scope),"issuer":binding().issuer},"owner":identity(5).did().as_str()})).unwrap();
+    history.initialize().unwrap();
+    let genesis =
+        custody::Record::sign(history.preview(None, hex(&[1; 32])).unwrap(), &identity(5)).unwrap();
+    let pin = genesis.id().unwrap();
+    history.append(genesis).unwrap();
+    history.minimum = Some(pin);
+    let mut archive = Archive::create(root.path(), binding()).unwrap();
+    let raw = request(0, None);
+    let next = request(
+        1,
+        Some(
+            kan::evidence_service::append_manifest(&raw)
+                .unwrap()
+                .cid()
+                .to_string(),
+        ),
+    );
+    let mut spool = Spool::create(
+        &queue_root.path().join("queue.sqlite"),
+        &hex(&binding().scope),
+        identity(6).did().as_str(),
+        &binding().issuer,
+        1024 * 1024,
+    )
+    .unwrap();
+    spool.enqueue(&raw).unwrap();
+    spool.enqueue(&next).unwrap();
+    let plan = archive
+        .preview_erased_admission(&raw, hex(&[2; 32]), 100)
+        .unwrap();
+    assert!(plan.initial_erasure.as_ref().unwrap().previous.is_none());
+    let erasure = erasure::Record::sign(plan, &identity(7)).unwrap();
+    let owner = custody::Record::sign(
+        history
+            .preview(Some(erasure.clone()), hex(&[3; 32]))
+            .unwrap(),
+        &identity(5),
+    )
+    .unwrap();
+    history.append(owner).unwrap();
+    let admitted = archive
+        .admit_erased(&raw, &identity(7), &grant(), &erasure)
+        .unwrap();
+    assert_eq!(admitted.record.sequence, 1);
+    assert_eq!(admitted.attestation.purpose(), Purpose::Admitted);
+    assert_eq!(
+        connection(root.path())
+            .query_row("SELECT bytes FROM objects", [], |r| r.get::<_, Vec<u8>>(0))
+            .unwrap(),
+        vec![0]
+    );
+    assert_eq!(
+        archive.erasure_history().unwrap().records[0].id().unwrap(),
+        erasure.id().unwrap()
+    );
+    let again = archive
+        .admit_erased(&raw, &identity(7), &grant(), &erasure)
+        .unwrap();
+    assert!(again.record.duplicate);
+    assert_eq!(again.attestation.bytes(), admitted.attestation.bytes());
+    assert!(
+        archive.admit(&raw, &identity(7), &grant(), 101).is_err(),
+        "ordinary replay cannot stage erased bytes"
+    );
+    assert_eq!(
+        spool.reconcile_erasure(&history).unwrap()["retired_operations"],
+        1
+    );
+    assert_eq!(spool.head().unwrap(), Some(next.clone()));
+    archive.admit(&next, &identity(7), &grant(), 101).unwrap();
+    assert_eq!(archive.verify().unwrap().through, 2);
+    let backup = root.path().join("backup.sqlite");
+    let report = archive.backup(&backup).unwrap();
+    assert_eq!(report.erased_objects, 1);
+    assert_eq!(report.bytes, next.len() as u64);
+    let disk = std::fs::read(&backup).unwrap();
+    assert!(!disk.windows(raw.len()).any(|b| b == raw));
+    let recovered = tempfile::tempdir().unwrap();
+    kan::evidence_store::attested::Recovery::open(&backup, binding())
+        .unwrap()
+        .rebuild(&recovered.path().join("archive.sqlite"))
+        .unwrap();
+    assert_eq!(
+        Archive::open(recovered.path(), binding())
+            .unwrap()
+            .verify()
+            .unwrap(),
+        archive.verify().unwrap()
+    );
+}
+
+#[test]
+fn initial_erasure_is_atomic_and_resumes_with_ahead_custody() {
+    use kan::evidence_store::erasure;
+    let root = tempfile::tempdir().unwrap();
+    let mut archive = Archive::create(root.path(), binding()).unwrap();
+    let raw = request(0, None);
+    let erasure = erasure::Record::sign(
+        archive
+            .preview_erased_admission(&raw, hex(&[2; 32]), 100)
+            .unwrap(),
+        &identity(7),
+    )
+    .unwrap();
+    let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        archive
+            .admit_erased_observed(&raw, &identity(7), &grant(), &erasure, &mut |b| {
+                if b == Boundary::BeforeCommit {
+                    panic!("synthetic precommit interruption");
+                }
+            })
+            .unwrap();
+    }));
+    assert!(failed.is_err());
+    assert_eq!(archive.verify().unwrap().through, 0);
+    for table in ["objects", "commits", "attestations"] {
+        assert_eq!(
+            connection(root.path())
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+    assert!(archive.erasure_history().unwrap().records.is_empty());
+    let package = erasure::Package {
+        version: 1,
+        tip: Some(erasure.id().unwrap()),
+        records: vec![erasure.clone()],
+    };
+    archive
+        .reconcile_erasure(&package, package.tip.as_ref().unwrap())
+        .unwrap();
+    assert!(
+        archive.admit(&raw, &identity(7), &grant(), 100).is_err(),
+        "current custody blocks ordinary staging before metadata recovery"
+    );
+    archive
+        .admit_erased(&raw, &identity(7), &grant(), &erasure)
+        .unwrap();
+    assert_eq!(archive.verify().unwrap().through, 1);
+    assert_eq!(archive.erasure_history().unwrap().records.len(), 1);
+}
+
+#[test]
+fn initial_erasure_refuses_wrong_request_stale_tip_and_false_initial_disposition() {
+    use kan::evidence_store::erasure;
+    let root = tempfile::tempdir().unwrap();
+    let mut archive = Archive::create(root.path(), binding()).unwrap();
+    let raw = request(0, None);
+    let erasure = erasure::Record::sign(
+        archive
+            .preview_erased_admission(&raw, hex(&[2; 32]), 100)
+            .unwrap(),
+        &identity(7),
+    )
+    .unwrap();
+    assert!(archive
+        .admit_erased(&request(1, None), &identity(7), &grant(), &erasure)
+        .is_err());
+    assert!(archive
+        .admit_erased(&raw, &identity(5), &grant(), &erasure)
+        .is_err());
+    let mut denied = grant();
+    denied.append = false;
+    assert!(archive
+        .admit_erased(&raw, &identity(7), &denied, &erasure)
+        .is_err());
+    assert_eq!(archive.verify().unwrap().through, 0);
+    archive.admit(&raw, &identity(7), &grant(), 100).unwrap();
+    assert!(
+        archive
+            .admit_erased(&raw, &identity(7), &grant(), &erasure)
+            .is_err(),
+        "ordinary retained admission cannot be relabeled initially erased"
+    );
+    assert!(archive.apply_erasure(erasure).is_err());
+    assert_eq!(
+        connection(root.path())
+            .query_row("SELECT bytes FROM objects", [], |r| r.get::<_, Vec<u8>>(0))
+            .unwrap(),
+        raw
+    );
+    let next = request(
+        1,
+        Some(
+            kan::evidence_service::append_manifest(&raw)
+                .unwrap()
+                .cid()
+                .to_string(),
+        ),
+    );
+    let mut plan = archive
+        .preview_erased_admission(&next, hex(&[3; 32]), 101)
+        .unwrap();
+    plan.initial_erasure.as_mut().unwrap().previous =
+        Some(kan::evidence_store::ciphertext_cid(b"wrong parent").to_string());
+    let wrong = erasure::Record::sign(plan, &identity(7)).unwrap();
+    assert!(archive
+        .admit_erased(&next, &identity(7), &grant(), &wrong)
+        .is_err());
+    assert_eq!(archive.verify().unwrap().through, 1);
+}

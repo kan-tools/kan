@@ -1,8 +1,10 @@
 //! Signed storage erasure, separate from semantic retraction. A one-byte marker
 //! preserves object/binding identity; only a verified issuer authorization can
 //! excuse the absent payload. Historical backup/key copies remain recoverable.
+mod initial;
 use super::*;
 use crate::{evidence_service as service, sign::Identity};
+pub(super) use initial::{check_initial_request, install_initial};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -21,6 +23,12 @@ pub struct Target {
     pub object: String,
     pub length: usize,
 }
+/// The archive accepted only this request's commitment, with no payload staged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InitialErasure {
+    pub previous: Option<String>,
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
@@ -34,6 +42,8 @@ pub struct Plan {
     pub nonce: String,
     pub recorded_at: u64,
     pub targets: Vec<Target>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_erasure: Option<InitialErasure>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -115,6 +125,18 @@ impl Record {
             return Err(corrupt());
         }
         link(&p.tip)?;
+        if let Some(initial) = &p.initial_erasure {
+            if p.targets.len() != 1
+                || p.targets[0].sequence != p.through
+                || p.targets[0].manifest != p.tip
+                || initial.previous.is_none() != (p.through == 1)
+            {
+                return Err(corrupt());
+            }
+            if let Some(previous) = &initial.previous {
+                link(previous)?;
+            }
+        }
         let sig = service::unhex(&self.signature, 64).map_err(|_| corrupt())?;
         if sig.len() != 64 || !crate::sign::verify(&p.issuer, &p.preimage()?, &sig) {
             return Err(corrupt());
@@ -197,6 +219,19 @@ impl History {
                 != r.plan.tip
         {
             return Err(corrupt());
+        }
+        if let Some(initial) = &r.plan.initial_erasure {
+            if r.plan.through > 1
+                && r.plan.through - 1 <= through
+                && Some(
+                    attested::record(conn, r.plan.through - 1)?
+                        .manifest
+                        .cid()
+                        .to_string(),
+                ) != initial.previous
+            {
+                return Err(corrupt());
+            }
         }
         for t in &r.plan.targets {
             coordinate(conn, t, through)?;
@@ -378,6 +413,7 @@ impl attested::Archive {
             nonce,
             recorded_at: now,
             targets,
+            initial_erasure: None,
         };
         if bytes(&plan)?.len() > MAX_RECORD - 256 {
             return Err(Error::Invalid("erasure plan capacity"));
@@ -404,6 +440,9 @@ impl attested::Archive {
             .any(|r| r.id().ok() == record.id().ok())
         {
             return Ok(history.package());
+        }
+        if record.plan.initial_erasure.is_some() {
+            return Err(Error::Invalid("initial erasure requires erased admission"));
         }
         let through: i64 =
             tx.query_row("SELECT COALESCE(MAX(sequence),0) FROM commits", [], |r| {

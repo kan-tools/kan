@@ -530,6 +530,18 @@ pub fn insert_evidence_erasure(
     Ok(())
 }
 #[cfg(feature = "v2-storage")]
+pub fn insert_erased_evidence_object(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    id: &str,
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO objects(cid,bytes) VALUES(?,x'00') ON CONFLICT(cid) DO UPDATE SET bytes=x'00'",
+        [id],
+    )?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
 pub fn redact_evidence_object(
     _surface: SurfaceWrite,
     tx: &rusqlite::Transaction<'_>,
