@@ -1095,13 +1095,19 @@ cleanup plan stores opaque subject equality hashes, never subject text or bodies
 If publication planning is unavailable, workspace cleanup waits so this evidence
 is not lost. Text that merely mentions a CID does not select a publication. Missing keys, missing/corrupt source,
 unknown annotation versions or exceeded scan bounds leave cleanup pending.
-All selected child authorizations are stored together in the encrypted owner
-journal before publication deletion. Resume uses those exact records even after
-the publication bytes are gone, including when a replica comes back online.
+Each pass stores all selected child authorizations together in the encrypted owner
+journal before publication deletion. Resume first replays every retained pass,
+then scans current prefixes. It carries forward opaque annotation identities and
+exact erased coordinates, including cancelled queue commitments, so later copies
+and correction/withdrawal descendants remain selectable after the original
+publication and local analysis bytes are gone. Replicas reconcile the cumulative
+history when they return online. Each report identifies its pass and scanned
+frontiers; a running unenrolled publisher can still append after that frontier.
 The report identifies each selected prefix, replica and admitted spool cleanup;
-it does not claim global coverage. Blocked unpublished requests, unavailable or unconfigured lineage, later appends
-and unconfigured copies remain explicit
-coordination work. Bounds are 16 destinations, 4,096 annotation occurrences,
+it does not claim global coverage. Blocked unpublished requests, unavailable or
+unconfigured lineage and unconfigured copies remain explicit coordination work.
+Later appends are discovered by the next explicit resume; this worker is not an
+automatic background publication monitor. Bounds are 16 destinations, 4,096 annotation occurrences,
 512 selected occurrences, 256 MiB of requests and 120 seconds per planning pass.
 Configured workspaces also reconcile the publication histories, so caches that cite
 a removed publication are covered.

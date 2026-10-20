@@ -289,6 +289,13 @@ fn closure(
             .enumerate()
             .filter_map(|(n, node)| identities.contains(&node.identity).then_some(n)),
     );
+    // Parents can already be erased in an earlier pass; their retained opaque
+    // identity must still select new correction/withdrawal descendants.
+    for identity in identities {
+        if let Some(children) = by_parent.get(identity) {
+            pending.extend(children.iter().copied());
+        }
+    }
     for seed in seeds {
         if let Some(children) = by_coordinate.get(seed.as_str()) {
             pending.extend(children.iter().copied());
@@ -325,12 +332,31 @@ struct Plan {
     #[serde(default)]
     identities: BTreeSet<(String, String, String)>,
 }
+#[derive(Default)]
+struct Seeds {
+    coordinates: BTreeSet<String>,
+    identities: BTreeSet<(String, String, String)>,
+}
+impl Seeds {
+    fn include(&mut self, record: &custody::Record) -> Result<(), Failure> {
+        let erasure = record.change.erasure.as_ref().ok_or(Failure::Corrupt)?;
+        for target in &erasure.plan.targets {
+            self.coordinates.insert(coordinate(
+                &record.change.binding,
+                &target.sequence.to_string(),
+                &target.manifest,
+            )?);
+        }
+        Ok(())
+    }
+}
 fn plan(
     targets: &[PublicationTarget],
     workspaces: &[WorkspaceTarget],
     primary: &custody::Access,
     parent: &custody::Record,
     job: &str,
+    retained: &Seeds,
 ) -> Result<Plan, Failure> {
     let deadline = Instant::now() + Duration::from_secs(120);
     let mut spent = 0;
@@ -345,13 +371,7 @@ fn plan(
         scans.push(scan.frontier);
     }
     let erased = parent.change.erasure.as_ref().ok_or(Failure::Invalid)?;
-    let seeds = erased
-        .plan
-        .targets
-        .iter()
-        .map(|t| coordinate(&primary.binding, &t.sequence.to_string(), &t.manifest))
-        .collect::<Result<BTreeSet<_>, _>>()?;
-    let mut identities = BTreeSet::new();
+    let mut identities = retained.identities.clone();
     for workspace in workspaces {
         if Instant::now() >= deadline || !workspace.database.is_file() {
             return Err(Failure::Unavailable);
@@ -387,7 +407,7 @@ fn plan(
             }
         }
     }
-    let selected = closure(&nodes, &seeds, &identities);
+    let selected = closure(&nodes, &retained.coordinates, &identities);
     // A bounded immutable journal record must fit before any child erasure.
     if selected.len() > 512 {
         return Err(Failure::Unavailable);
@@ -455,51 +475,55 @@ pub(super) fn cleanup(
     if targets.is_empty() {
         return Ok(json!({"state":"not-configured"}));
     }
-    let key = format!("erasure:{job}:publication-plan");
-    let plan: Plan = if let Some(value) = journal.get("owner-result", &key)? {
-        serde_json::from_value(value).map_err(invalid)?
-    } else {
-        let plan = plan(targets, workspaces, primary, parent, job)?;
-        let value = serde_json::to_value(&plan).map_err(invalid)?;
-        if serde_json::to_vec(&value).map_err(invalid)?.len() > 250 * 1024 {
+    let mut retained = Seeds::default();
+    retained.include(parent)?;
+    queues::include_retained(journal, job, &mut retained)?;
+    // Replay every immutable child authorization before inspecting new bytes.
+    // A crash after journaling but before deletion therefore cannot abandon a
+    // selected copy or replace its authority with a freshly signed guess.
+    let mut round = 0;
+    let key = loop {
+        if round >= ATTEMPTS {
             return Err(Failure::Unavailable);
         }
-        journal.put("owner-result", &key, value)?;
-        plan
+        let key = if round == 0 {
+            format!("erasure:{job}:publication-plan")
+        } else {
+            format!("erasure:{job}:publication-plan:{round}")
+        };
+        let Some(value) = journal.get("owner-result", &key)? else {
+            break key;
+        };
+        let previous: Plan = serde_json::from_value(value).map_err(invalid)?;
+        if previous.version != 1
+            || previous.job != job
+            || previous.parent != parent.id()?
+            || previous.destinations.len() != targets.len()
+        {
+            return Err(Failure::Corrupt);
+        }
+        retained.identities.extend(previous.identities);
+        for (target, selection) in targets.iter().zip(previous.destinations) {
+            if selection.binding != target.history.binding {
+                return Err(Failure::Corrupt);
+            }
+            if let Some(record) = selection.authorization {
+                retained.include(&record)?;
+                target.history.append(record)?;
+            }
+            target.history.reconcile_archive(&target.root)?;
+        }
+        round += 1;
     };
-    if plan.version != 1
-        || plan.job != job
-        || plan.parent != parent.id()?
-        || plan.destinations.len() != targets.len()
-    {
-        return Err(Failure::Corrupt);
+    let plan = plan(targets, workspaces, primary, parent, job, &retained)?;
+    let value = serde_json::to_value(&plan).map_err(invalid)?;
+    if serde_json::to_vec(&value).map_err(invalid)?.len() > 250 * 1024 {
+        return Err(Failure::Unavailable);
     }
-    let mut seeds = parent
-        .change
-        .erasure
-        .as_ref()
-        .ok_or(Failure::Corrupt)?
-        .plan
-        .targets
-        .iter()
-        .map(|t| coordinate(&primary.binding, &t.sequence.to_string(), &t.manifest))
-        .collect::<Result<BTreeSet<_>, _>>()?;
+    journal.put("owner-result", &key, value)?;
     for selection in &plan.destinations {
         if let Some(record) = &selection.authorization {
-            for t in &record
-                .change
-                .erasure
-                .as_ref()
-                .ok_or(Failure::Corrupt)?
-                .plan
-                .targets
-            {
-                seeds.insert(coordinate(
-                    &selection.binding,
-                    &t.sequence.to_string(),
-                    &t.manifest,
-                )?);
-            }
+            retained.include(record)?;
         }
     }
     let mut reports = Vec::new();
@@ -530,7 +554,7 @@ pub(super) fn cleanup(
                         target,
                         path,
                         &mut spool,
-                        &seeds,
+                        &retained.coordinates,
                         &plan.identities,
                         journal,
                         job,
@@ -579,6 +603,6 @@ pub(super) fn cleanup(
         });
     }
     Ok(
-        json!({"state":"selected-prefix-planned","destinations":reports,"remaining":"Blocked queues, unavailable lineage, later publications and unconfigured copies require coordinated cleanup; this is not global erasure completion."}),
+        json!({"state":"selected-prefix-planned","pass":round,"destinations":reports,"remaining":"Each resume replays retained authorizations and scans current prefixes for later publications. Blocked queues, unavailable lineage and unconfigured copies remain pending; this is not global erasure completion."}),
     )
 }

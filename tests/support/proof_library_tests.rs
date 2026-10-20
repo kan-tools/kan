@@ -4928,6 +4928,92 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
             "a snapshot frontier is not an erased-payload dependency"
         );
     }
+    // Simulate late copies from an unenrolled sender after local annotation/job
+    // bytes were removed. Resume must use retained identities and parent edges,
+    // not merely replay the first frozen prefix or depend on deleted plaintext.
+    let late_request = |position, previous, plaintext: &[u8]| {
+        service::SignedRequest::sign(
+            service::Request {
+                version: 1,
+                scope: service::hex(&queue_binding.scope),
+                audience: queue_binding.issuer.clone(),
+                principal: identity(9).did().to_string(),
+                expires: None,
+                command: service::Command::Append {
+                    id: service::hex(&[100 + position as u8; 16]),
+                    position,
+                    previous,
+                    ciphertext: service::hex(
+                        &kan::evidence_crypto::seal(
+                            &kan::evidence_crypto::public_key(&PRIVATE).unwrap(),
+                            &queue_binding.scope,
+                            plaintext,
+                        )
+                        .unwrap(),
+                    ),
+                },
+            },
+            &identity(9),
+        )
+        .unwrap()
+        .bytes()
+        .unwrap()
+    };
+    let late_summary = late_request(
+        1,
+        Some(service::append_manifest(&raw).unwrap().cid().to_string()),
+        &plain,
+    );
+    let mut declaration = json!({"version":1,"author":identity(9).did().as_str(),"analysis_trigger_plan":[],
+        "draft":{"subject":"workspace-erasure","text":"late descendant","tags":[],"cites":[unrelated],"supersedes":promoted}});
+    declaration["id"] = json!(service::hex(&Sha256::digest(
+        serde_json::to_vec(&declaration).unwrap()
+    )));
+    declaration["recorded_at"] = json!("300");
+    let late_correction = late_request(
+        2,
+        Some(
+            service::append_manifest(&late_summary)
+                .unwrap()
+                .cid()
+                .to_string(),
+        ),
+        &serde_json::to_vec(&json!({"format":"kan-annotation/1","declaration":declaration}))
+            .unwrap(),
+    );
+    let mut declaration = json!({"version":1,"author":identity(6).did().as_str(),"analysis_trigger_plan":[],
+        "draft":{"subject":"queue-erasure","text":"late queued descendant","tags":[],"cites":[unrelated],"supersedes":queued_parent}});
+    declaration["id"] = json!(service::hex(&Sha256::digest(
+        serde_json::to_vec(&declaration).unwrap()
+    )));
+    declaration["recorded_at"] = json!("300");
+    let late_queued = encrypted_frame(
+        3,
+        8,
+        Some(
+            service::append_manifest(&queued_requests[2])
+                .unwrap()
+                .cid()
+                .to_string(),
+        ),
+        &serde_json::to_vec(&json!({"format":"kan-annotation/1","declaration":declaration}))
+            .unwrap(),
+    );
+    for (request, writer) in [(&late_summary, 9), (&late_correction, 9), (&late_queued, 6)] {
+        attested::Archive::open(&queue_root, queue_binding.clone())
+            .unwrap()
+            .admit(
+                request,
+                &identity(8),
+                &Grant {
+                    principal: identity(writer).did().to_string(),
+                    append: true,
+                    inventory: false,
+                },
+                300,
+            )
+            .unwrap();
+    }
     // A managed old workspace restoration is reconciled from independent custody,
     // not trusted just because it predates the tombstone schema.
     std::fs::copy(&old_workspace, &derived_path).unwrap();
@@ -4950,6 +5036,34 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         "{restored}"
     );
     assert_eq!(restored["attempts"], 4);
+    let late_history = attested::Archive::open(&queue_root, queue_binding.clone())
+        .unwrap()
+        .erasure_history()
+        .unwrap();
+    assert_eq!(
+        late_history
+            .records
+            .last()
+            .unwrap()
+            .plan
+            .targets
+            .iter()
+            .map(|t| t.sequence)
+            .collect::<Vec<_>>(),
+        vec![5, 6, 7],
+        "later copies follow retained analysis and cancelled-queue lineage"
+    );
+    assert_eq!(
+        attested::Archive::verify_file(&queue_root.join("archive.sqlite"), queue_binding.clone())
+            .unwrap()
+            .erased_objects,
+        6
+    );
+    assert_eq!(
+        restored["result"]["report"]["publications"]["destinations"][1]["frontier"]["through"],
+        "7"
+    );
+
     assert!(
         kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE)
             .unwrap()

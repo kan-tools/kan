@@ -30,6 +30,17 @@ fn retained(journal: &Workspace, job: &str) -> Result<Vec<Intent>, Failure> {
     }
     Ok(intents)
 }
+pub(super) fn include_retained(
+    journal: &Workspace,
+    job: &str,
+    seeds: &mut Seeds,
+) -> Result<(), Failure> {
+    for intent in retained(journal, job)? {
+        seeds.identities.insert(intent.identity);
+        seeds.include(&intent.authorization)?;
+    }
+    Ok(())
+}
 fn spool_error(error: SpoolError) -> Failure {
     match error {
         SpoolError::Proof(f) => f,
