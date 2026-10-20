@@ -19,6 +19,16 @@ impl SurfaceValue {
 /// Experimental v2 artifacts; schema columns are also inspected from SQLite in feature tests.
 /// Profile-2 backup/rebuild preserves these same proof fields; no lifecycle side store exists.
 pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
+    SurfaceValue::new("evidence-control-index:serving.sqlite", "*"),
+    SurfaceValue::new("evidence-control-index:serving.sqlite-journal", "*"),
+    SurfaceValue::new("evidence-control-index:CURRENT", "*"),
+    SurfaceValue::new("evidence-control-index:INDEX-DIRTY", "*"),
+    SurfaceValue::new("evidence-control-index:.index-head-*", "*"),
+    SurfaceValue::new("evidence-control-index:.index-db-*", "*"),
+    SurfaceValue::new("evidence-control-index:serving_nodes", "id"),
+    SurfaceValue::new("evidence-control-index:serving_nodes", "body"),
+    SurfaceValue::new("evidence-control-index:serving_checkpoint", "singleton"),
+    SurfaceValue::new("evidence-control-index:serving_checkpoint", "body"),
     SurfaceValue::new("evidence-keys:LOCK", "*"),
     SurfaceValue::new("evidence-keys:.pending-*", "*"),
     SurfaceValue::new("evidence-keys:epoch-*.json", "*"),

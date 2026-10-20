@@ -530,6 +530,7 @@ const PERSISTENCE_PATH_EXPRESSIONS: &[(&str, &str, &str)] = &[
     ("src/workspace.rs", "\"; \"", "not a path"),
 ];
 const PERSISTENCE_MODULES: &[&str] = &[
+    "src/evidence_control_index.rs",
     "src/evidence_keys.rs",
     "src/evidence_policy.rs",
     "src/evidence_workspace.rs",

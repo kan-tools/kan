@@ -413,18 +413,22 @@ mod tests {
         Identity::load_existing(f.path()).unwrap()
     }
     fn directory(path: &Path) {
+        // surface-write: container:workspace
         std::fs::create_dir(path).unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
+            // surface-write: container:workspace
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
         }
     }
     fn file(path: &Path, bytes: &[u8]) {
+        // surface-write: evidence-control-index:serving.sqlite,evidence-control-index:CURRENT,evidence-policy:policy-*.json,evidence-erasure-history:erasure-*.json
         std::fs::write(path, bytes).unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
+            // surface-write: evidence-control-index:serving.sqlite,evidence-control-index:CURRENT,evidence-policy:policy-*.json,evidence-erasure-history:erasure-*.json
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
         }
     }
@@ -646,7 +650,7 @@ mod tests {
         );
     }
     #[test]
-    fn initialized_control_schema_matches_the_persistence_catalog() {
+    fn initialized_control_schema_matches_the_surface_catalog() {
         use std::collections::BTreeSet;
         let temp = tempfile::tempdir().unwrap();
         let access = fixture(temp.path());
