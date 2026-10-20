@@ -301,6 +301,38 @@ epoch-key deletion would also sacrifice unrelated captures. Backup purge status
 therefore stays separate from managed erasure status. No production erasure is
 authorized by this architecture decision.
 
+#### Large selections: consent is independent of execution batches
+
+The complete logical selection must not have to fit in one HTTP request, owner
+journal row or native storage-erasure record. Discovery retains authenticated
+coordinate pages and verifies capture closure before offering approval. The
+reviewable preview binds the configured destinations, capture identities, verified
+archive frontier, recording-gap disclosure, object/byte totals and a digest of
+all ordered selection pages. The owner can inspect the pages; the approval submits
+that retained reference and digest rather than echoing a large authority payload.
+No partial discovery or client-supplied coordinate list becomes an authority.
+
+After approval, retain owner-signed consent to that exact selection and durable
+progress. Prepare bounded native issuer/owner erasure records from those selected
+coordinates, journal each exact authorization before publishing custody, and
+resume across crashes or lost acknowledgements. Existing native record-size limits
+are batch limits. Current metadata must still match the approved objects; later
+appends are outside a frozen selection. Legitimate intervening custody changes may
+require fresh chain coordinates, but never expand the approved object set. Already
+erased targets count only when verified current custody names the exact coordinates.
+Missing selection pages or custody fail closed, with an incomplete job remaining
+visible. No payload body is copied into consent or progress records.
+
+Dependent publication/workspace cleanup uses the union of the approved source
+coordinates, including approved targets already erased before resumption. It must
+not lose lineage by treating each batch as an unrelated user decision. Completion
+requires every selected source batch plus the configured copy/derivative scope to
+reconcile. The same manifest mechanism supports explicit multi-capture selection
+and owner-selected archive prefixes; session labels remain evidence associations,
+not implicit deletion authority. Existing inline single-capture jobs remain
+resumable under their original contracts. This paragraph specifies the remaining
+implementation contract, not shipped capacity or completed bulk-selection support.
+
 ### 11. Compatibility and explicit departures
 
 | Existing boundary | Retain | Proposed change |
