@@ -89,12 +89,16 @@ mod tests {
     }
     #[test]
     fn lineage_larger_than_one_owner_record_survives_restart_and_idempotent_extension() {
-        let dir = tempfile::tempdir().unwrap();
         #[cfg(unix)]
-        {
+        let dir = {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-        }
+            tempfile::Builder::new()
+                .permissions(std::fs::Permissions::from_mode(0o700))
+                .tempdir()
+                .unwrap()
+        };
+        #[cfg(not(unix))]
+        let dir = tempfile::tempdir().unwrap();
         let signing = dir.path().join("signer.key");
         Identity::generate().save(&signing).unwrap();
         let database = dir.path().join("owner.sqlite");

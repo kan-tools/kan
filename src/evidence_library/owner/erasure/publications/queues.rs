@@ -209,12 +209,16 @@ mod tests {
 
     #[test]
     fn restart_keeps_queue_lineage_after_the_former_512_intent_limit() {
-        let dir = tempfile::tempdir().unwrap();
         #[cfg(unix)]
-        {
+        let dir = {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-        }
+            tempfile::Builder::new()
+                .permissions(std::fs::Permissions::from_mode(0o700))
+                .tempdir()
+                .unwrap()
+        };
+        #[cfg(not(unix))]
+        let dir = tempfile::tempdir().unwrap();
         let signer = Identity::generate();
         let signing = dir.path().join("signer.key");
         signer.save(&signing).unwrap();
