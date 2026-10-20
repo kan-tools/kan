@@ -232,3 +232,12 @@ counts include small harness reads. This is an admitted-storage baseline, not a
 qualification. The source operation verifies one complete selected signed request.
 The ordinary CI suite exercises a two-chunk smoke fixture; only actual remote
 10/100 GiB reports can establish those measured size points.
+
+The `V2 real-byte capacity` workflow runs the 10 GiB point on a hosted Linux
+runner only after a 38 GiB free-space preflight; the measurement driver rechecks
+its own 32 GiB requirement after compilation. It uses a release executable and
+uploads the exact revision, compiler, report and raw failure logs for 30 days.
+It does not upload the synthetic database, which disappears with the hosted
+runner. This workflow cannot establish the 100 GiB point; that still requires
+the separately selected larger host/disk. Copy the reports into durable release
+evidence before their artifact retention expires.
