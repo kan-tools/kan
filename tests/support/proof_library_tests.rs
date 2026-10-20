@@ -5281,11 +5281,25 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         refused["result"]["report"]["workspaces"][0]["state"], "pending",
         "orphan model output must prevent a clean-destination report"
     );
+    assert_eq!(refused["state"], "cleanup-pending");
     assert_eq!(
-        refused["result"]["report"]["workspaces"][0]["error"],
+        refused["result"]["report"]["publications"]["error"],
         "corrupt"
+    );
+    assert_eq!(
+        refused["result"]["report"]["workspaces"][0]["reason"],
+        "publication-lineage-plan-not-retained"
+    );
+    assert_eq!(
+        kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE)
+            .unwrap()
+            .get("analysis-result", "orphan-output")
+            .unwrap()
+            .unwrap()["text"],
+        "unknown input lineage",
+        "failed planning preserves unresolved evidence for repair"
     );
     let catalog = owner_call(&ui, OWNER, json!({"action":"catalog"}), 200).await;
     assert_eq!(catalog["jobs"].as_array().unwrap().len(), 1);
-    assert_eq!(catalog["jobs"][0]["attempts"], 6);
+    assert_eq!(catalog["jobs"][0]["attempts"], 7);
 }
