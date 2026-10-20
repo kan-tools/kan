@@ -56,12 +56,12 @@ const ROWID_OBJECTS_SCHEMA: &str = "CREATE TABLE objects(cid TEXT NOT NULL PRIMA
 fn rowid_objects(conn: &Connection) -> Result<bool> {
     let (len,sql): (i64,String) = conn.query_row("SELECT length(sql),substr(sql,1,4096) FROM sqlite_schema WHERE type='table' AND name='objects'",[],|r|Ok((r.get(0)?,r.get(1)?)))?;
     if len != sql.len() as i64 {
-        return Err(Error::Invalid("unsupported object table layout"));
+        return Err(Error::Invalid("unsupported writable archive schema"));
     }
     match sql.as_str() {
         ROWID_OBJECTS_SCHEMA => Ok(true),
         LEGACY_OBJECTS_SCHEMA => Ok(false),
-        _ => Err(Error::Invalid("unsupported object table layout")),
+        _ => Err(Error::Invalid("unsupported writable archive schema")),
     }
 }
 fn expected_base_schema(source: &Connection, expected: &Connection) -> Result<()> {

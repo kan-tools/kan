@@ -699,7 +699,11 @@ fn policy_history_refuses_stale_edits_tampering_and_rollback_and_retains_exact_r
     );
     drop(held);
     let mut forged = next.clone();
-    forged.signature.replace_range(0..2, "ff");
+    let first = u8::from_str_radix(&forged.signature[..2], 16).unwrap();
+    forged
+        .signature
+        .replace_range(0..2, &format!("{:02x}", first ^ 1));
+    assert_ne!(forged.signature, next.signature);
     assert!(policy.append(forged).is_err());
     policy.append(next.clone()).unwrap();
     let mut pinned = policy.clone();
