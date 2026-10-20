@@ -4481,6 +4481,28 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
             .erased_objects,
         1
     );
+    {
+        let retained =
+            kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
+        for suffix in ["publication-plan", "queue-intent:0"] {
+            let value = retained
+                .get(
+                    "owner-result",
+                    &format!("erasure:{}:{suffix}", preview["digest"].as_str().unwrap()),
+                )
+                .unwrap()
+                .unwrap();
+            let bytes = serde_json::to_string(&value).unwrap();
+            assert!(
+                !bytes.contains("publication-erasure") && !bytes.contains("queue-erasure"),
+                "cleanup journal must not retain erased subject text"
+            );
+            assert!(
+                !bytes.contains("derived publication") && !bytes.contains("queued publication"),
+                "cleanup journal must not retain erased bodies"
+            );
+        }
+    }
     assert_eq!(done["attempts"], 2);
     assert_eq!(
         owner_call(&ui, OWNER, apply.clone(), 200).await,

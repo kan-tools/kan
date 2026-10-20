@@ -94,7 +94,12 @@ fn coordinate(binding: &Binding, sequence: &str, manifest: &str) -> Result<Strin
     serde_json::to_string(&(binding, sequence, manifest)).map_err(invalid)
 }
 fn identity_key(author: &str, id: &str, subject: &str) -> (String, String, String) {
-    (author.into(), id.into(), subject.into())
+    // Keep subject equality for correction lineage without retaining an erased
+    // annotation's potentially sensitive subject text in the owner journal.
+    let mut hash = Sha256::new();
+    hash.update(b"tools.kan.annotation.subject.v1\0");
+    hash.update(subject.as_bytes());
+    (author.into(), id.into(), service::hex(&hash.finalize()))
 }
 struct Node {
     destination: usize,
