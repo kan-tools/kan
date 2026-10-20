@@ -1,6 +1,7 @@
 //! Owner-side exact workspace cleanup. A coordinator must resolve dependencies
 //! and authorize the selection before calling this API. Tombstones retain no
 //! removed values and fence future writes, including not-yet-produced results.
+mod dependencies;
 use super::*;
 use std::collections::BTreeSet;
 
@@ -109,8 +110,21 @@ impl Workspace {
         keys: &[(String, String)],
         authorization: String,
     ) -> Result<Plan> {
+        if keys
+            .iter()
+            .any(|(kind, key)| !allowed(kind) || key.len() > 4096)
+        {
+            return Err(Failure::Invalid);
+        }
+        let ids = keys
+            .iter()
+            .map(|(kind, key)| (kind.clone(), Self::id(kind, key)))
+            .collect::<Vec<_>>();
+        self.preview_erasure_ids(&ids, authorization)
+    }
+    fn preview_erasure_ids(&self, ids: &[(String, String)], authorization: String) -> Result<Plan> {
         fixed(&authorization)?;
-        if keys.is_empty() || keys.len() > 4096 {
+        if ids.is_empty() || ids.len() > 4096 {
             return Err(Failure::Invalid);
         }
         let conn = self.conn.lock().map_err(invalid)?;
@@ -118,25 +132,25 @@ impl Workspace {
         let mut targets = Vec::new();
         let mut selected = BTreeSet::new();
         let mut total = 0usize;
-        for (kind, key) in keys {
-            if !allowed(kind) || key.len() > 4096 {
+        for (kind, id) in ids {
+            if !allowed(kind) {
                 return Err(Failure::Invalid);
             }
-            let id = Self::id(kind, key);
-            if !selected.insert((kind, id.clone())) || erased(self, &tx, kind, &id)? {
+            fixed(id)?;
+            if !selected.insert((kind, id.clone())) || erased(self, &tx, kind, id)? {
                 return Err(Failure::Conflict);
             }
-            let bytes = body(&tx, kind, &id)?;
+            let bytes = body(&tx, kind, id)?;
             if let Some(bytes) = &bytes {
                 total = total.checked_add(bytes.len()).ok_or(Failure::Invalid)?;
                 if total > 64 * 1024 * 1024 {
                     return Err(Failure::Unavailable);
                 }
-                self.unseal(kind, &id, bytes)?;
+                self.unseal(kind, id, bytes)?;
             }
             targets.push(Target {
                 kind: kind.clone(),
-                id,
+                id: id.clone(),
                 ciphertext_digest: bytes.map(|b| evidence_service::hex(&Sha256::digest(b))),
             });
         }
@@ -149,6 +163,17 @@ impl Workspace {
             authorization,
             targets,
         })
+    }
+    /// Reclaim SQLite pages while all workspace users are stopped. Filesystem
+    /// snapshots and independent backups remain outside this operation.
+    pub fn reclaim_erased_pages(&self) -> Result<()> {
+        if !self.erasure_maintenance {
+            return Err(Failure::Unavailable);
+        }
+        let conn = self.conn.lock().map_err(invalid)?;
+        conn.execute_batch("PRAGMA secure_delete=ON; VACUUM;")
+            .map_err(invalid)?;
+        Ok(())
     }
     /// Atomic ciphertext removal and persistent no-recreation fences. The caller
     /// is a trusted owner coordinator; this is not a browser authority endpoint.

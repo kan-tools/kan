@@ -4024,8 +4024,9 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
     history.initialize().unwrap();
     let genesis =
         Record::sign(history.preview(None, "b".repeat(64)).unwrap(), &identity(9)).unwrap();
-    history.minimum = Some(genesis.id().unwrap());
+    let minimum = genesis.id().unwrap();
     history.append(genesis).unwrap();
+    history.minimum = Some(minimum);
     let signing = local.path().join("owner.key");
     let issuer = local.path().join("issuer.key");
     let private = local.path().join("capture.key");
@@ -4037,11 +4038,104 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
         }
     }
+    // Populate direct and transitive dependencies plus unrelated evidence.
+    let other_dir = private_workspace_directory();
+    let other = fixture_requests(other_dir.path(), Profile::Copied, encrypted);
+    let other_server = Server::start(&other).await;
+    let reader = server.client(&f);
+    let pin = reader.snapshot().await.unwrap();
+    let page = reader.page(&pin, None, 3).await.unwrap();
+    let other_reader = other_server.client(&other);
+    let other_pin = other_reader.snapshot().await.unwrap();
+    let other_page = other_reader.page(&other_pin, None, 1).await.unwrap();
+    let cite = json!({"source":"source","pin":pin,"selection":page.records[0].selection});
+    let unrelated =
+        json!({"source":"other","pin":other_pin,"selection":other_page.records[0].selection});
+    let derived_path = local.path().join("reader.sqlite");
+    let derived =
+        kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE).unwrap();
+    let note = "1".repeat(64);
+    let correction = "2".repeat(64);
+    let promoted = "3".repeat(64);
+    let keep = "4".repeat(64);
+    let job = "5".repeat(64);
+    let retry = "6".repeat(64);
+    derived
+        .put(
+            "annotation",
+            &note,
+            json!({"id":note,"draft":{"cites":[cite],"text":"raw-derived-secret"}}),
+        )
+        .unwrap();
+    derived.put("annotation",&correction,json!({"id":correction,"draft":{"cites":[unrelated],"supersedes":note,"text":"corrected-derived-secret"}})).unwrap();
+    derived
+        .put(
+            "analysis-job",
+            &job,
+            json!({"id":job,"draft":{"cites":[unrelated],"trigger_annotation":correction}}),
+        )
+        .unwrap();
+    derived
+        .put(
+            "analysis-job",
+            &retry,
+            json!({"id":retry,"draft":{"cites":[unrelated],"retry_of":job}}),
+        )
+        .unwrap();
+    derived
+        .put(
+            "analysis-result",
+            &retry,
+            json!({"state":"succeeded","text":"model-derived-secret"}),
+        )
+        .unwrap();
+    derived.put("annotation",&promoted,json!({"id":promoted,"draft":{"cites":[unrelated],"derived_from":[retry],"text":"promoted-secret"}})).unwrap();
+    derived
+        .put(
+            "annotation",
+            &keep,
+            json!({"id":keep,"draft":{"cites":[unrelated],"text":page.records[0].manifest}}),
+        )
+        .unwrap();
+    derived
+        .put(
+            "analysis-input",
+            "orphan-before-job",
+            json!({"draft":{"cites":[cite]},"request":"orphan-input-secret"}),
+        )
+        .unwrap();
+    derived
+        .put(
+            "analysis-trigger",
+            &format!("{note}/0"),
+            json!({"annotation":note,"outcomes":[{"job":job}]}),
+        )
+        .unwrap();
+    derived.put("search-page","selected-cache",json!({"version":3,"documents":[{"record":page.records[0],"spans":[{"text":"indexed-secret"}]}]})).unwrap();
+    derived
+        .put(
+            "search-page",
+            "unrelated-cache",
+            json!({"version":3,"documents":[{"record":other_page.records[0]}]}),
+        )
+        .unwrap();
+    derived
+        .put(
+            "view",
+            "snapshot-scope",
+            json!({"kind":"search","targets":[{"pin":pin}],"name":"keep snapshot scope"}),
+        )
+        .unwrap();
+    drop(derived);
+    let old_workspace = local.path().join("reader-before.sqlite");
+    std::fs::copy(&derived_path, &old_workspace).unwrap();
+    let held_workspace =
+        kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE).unwrap();
     let state = local.path().join("owner.sqlite");
     let readers = || {
         let workspace =
             kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
-        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"capture-erasure","id":"capture","root":f.root,"history":history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"replicas":[replica.path()]}]})).unwrap(),workspace).unwrap();
+        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"capture-erasure","id":"capture","root":f.root,"history":history,"signing_key":signing,"issuer_key":issuer,"private_keys":[private],"replicas":[replica.path()],"workspaces":[{"database":derived_path,"signing_key":signing,"recipient_key":private}]}]})).unwrap(),workspace).unwrap();
         kan::evidence_library::Readers::new(None, vec![server.client(&f)])
             .unwrap()
             .with_owner(owner)
@@ -4112,6 +4206,11 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
             .erased_objects,
         3
     );
+    assert_eq!(
+        done["result"]["report"]["workspaces"][0]["state"], "pending",
+        "active workspace must refuse cleanup"
+    );
+    drop(held_workspace);
     ui.stop().await;
     std::fs::copy(&backup, replica.path().join("archive.sqlite")).unwrap();
     #[cfg(unix)]
@@ -4158,7 +4257,98 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         0,
         "independent backup unchanged"
     );
+    assert_eq!(
+        resumed["result"]["report"]["workspaces"][0]["state"], "reconciled",
+        "{resumed}"
+    );
+    {
+        let cleaned =
+            kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE).unwrap();
+        for id in [&note, &correction, &promoted] {
+            assert!(cleaned.get("annotation", id).unwrap().is_none());
+        }
+        for id in [&job, &retry] {
+            for kind in ["analysis-job", "analysis-input", "analysis-result"] {
+                assert!(cleaned.get(kind, id).unwrap().is_none());
+                assert!(cleaned
+                    .put(kind, id, json!({"late":"must not return"}))
+                    .is_err());
+            }
+        }
+        assert!(cleaned
+            .get("analysis-input", "orphan-before-job")
+            .unwrap()
+            .is_none());
+        assert!(cleaned
+            .get("analysis-trigger", &format!("{note}/0"))
+            .unwrap()
+            .is_none());
+        assert!(cleaned
+            .get("search-page", "selected-cache")
+            .unwrap()
+            .is_none());
+        assert!(
+            cleaned.get("annotation", &keep).unwrap().is_some(),
+            "unrelated assertion mentioning the erased CID is retained"
+        );
+        assert!(cleaned
+            .get("search-page", "unrelated-cache")
+            .unwrap()
+            .is_some());
+        assert!(
+            cleaned.get("view", "snapshot-scope").unwrap().is_some(),
+            "a snapshot frontier is not an erased-payload dependency"
+        );
+    }
+    // A managed old workspace restoration is reconciled from independent custody,
+    // not trusted just because it predates the tombstone schema.
+    std::fs::copy(&old_workspace, &derived_path).unwrap();
+    let restored = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"resume-erasure","id":preview["digest"],"wait":true}),
+        200,
+    )
+    .await;
+    assert_eq!(
+        restored["result"]["report"]["workspaces"][0]["state"], "reconciled",
+        "{restored}"
+    );
+    assert_eq!(restored["attempts"], 4);
+    assert!(
+        kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE)
+            .unwrap()
+            .get("annotation", &note)
+            .unwrap()
+            .is_none()
+    );
+    {
+        let damaged =
+            kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE).unwrap();
+        damaged
+            .put(
+                "analysis-result",
+                "orphan-output",
+                json!({"text":"unknown input lineage"}),
+            )
+            .unwrap();
+    }
+    let refused = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"resume-erasure","id":preview["digest"],"wait":true}),
+        200,
+    )
+    .await;
+    assert_eq!(
+        refused["result"]["report"]["workspaces"][0]["state"], "pending",
+        "orphan model output must prevent a clean-destination report"
+    );
+    assert_eq!(
+        refused["result"]["report"]["workspaces"][0]["error"],
+        "Corrupt"
+    );
     let catalog = owner_call(&ui, OWNER, json!({"action":"catalog"}), 200).await;
     assert_eq!(catalog["jobs"].as_array().unwrap().len(), 1);
-    assert_eq!(catalog["jobs"][0]["attempts"], 3);
+    assert_eq!(catalog["jobs"][0]["attempts"], 5);
 }

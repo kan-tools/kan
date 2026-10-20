@@ -27,6 +27,8 @@ pub enum Target {
         private_keys: Vec<PathBuf>,
         #[serde(default)]
         replicas: Vec<PathBuf>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        workspaces: Vec<erasure::WorkspaceTarget>,
     },
     KeyHistory {
         id: String,

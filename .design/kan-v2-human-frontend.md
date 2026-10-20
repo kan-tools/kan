@@ -752,3 +752,18 @@ Backup purge and service activation are separate statuses; no generic success
 label may imply managed erasure is complete. Bounds are 16 configured replicas,
 64 decryption keys, 200 KiB preview contract and 32 cleanup attempts per job.
 Exceeding a bound refuses explicitly; no truncated capture is erased.
+
+Configured erasure workspaces now use an exclusive maintenance lease, load
+authenticated encrypted entries with a 64 MiB / 16,384-row scan budget, and
+resolve exact signed source selections plus declared correction, promotion,
+retry and trigger edges. A bounded reverse graph (65,536 edges) follows
+transitive dependencies. Search pages containing selected records are removed
+as whole disposable pages; unrelated pages and snapshot-only saved scopes
+remain. Imported views include their selected repository/control evidence.
+Absent analysis results and terminal events receive no-recreation tombstones.
+Orphan model outputs without job lineage refuse cleanup rather than claiming
+that they are unrelated. Workspaces must be stopped; busy/offline/corrupt
+destinations stay pending. Every retry reconciles current independent custody,
+including old restored workspace contents, before physical SQLite reclamation.
+This does not yet fence activation of unenrolled readers or erase queued and
+published copies. Those remain explicit product completion requirements.

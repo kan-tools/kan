@@ -17,6 +17,13 @@ pub struct Preview {
 fn invalid<E>(_: E) -> Failure {
     Failure::Invalid
 }
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceTarget {
+    pub database: PathBuf,
+    pub signing_key: PathBuf,
+    pub recipient_key: PathBuf,
+}
 struct Configured<'a> {
     root: &'a Path,
     history: &'a custody::Access,
@@ -24,6 +31,7 @@ struct Configured<'a> {
     issuer: &'a Path,
     keys: &'a [PathBuf],
     replicas: &'a [PathBuf],
+    workspaces: &'a [WorkspaceTarget],
 }
 fn configured(target: &Target) -> Result<Configured<'_>, Failure> {
     match target {
@@ -34,6 +42,7 @@ fn configured(target: &Target) -> Result<Configured<'_>, Failure> {
             issuer_key,
             private_keys,
             replicas,
+            workspaces,
             ..
         } => Ok(Configured {
             root,
@@ -42,6 +51,7 @@ fn configured(target: &Target) -> Result<Configured<'_>, Failure> {
             issuer: issuer_key,
             keys: private_keys,
             replicas,
+            workspaces,
         }),
         _ => Err(Failure::Invalid),
     }
@@ -54,6 +64,7 @@ pub(super) fn validate_target(target: &Target) -> Result<(), Failure> {
         issuer,
         keys,
         replicas,
+        workspaces,
     } = configured(target)?;
     private_directory(root)?;
     history.validate()?;
@@ -81,6 +92,19 @@ pub(super) fn validate_target(target: &Target) -> Result<(), Failure> {
     let mut roots = std::collections::BTreeSet::from([root.to_path_buf()]);
     for path in replicas {
         if !roots.insert(path.clone()) {
+            return Err(Failure::Invalid);
+        }
+    }
+    if workspaces.len() > 16 {
+        return Err(Failure::Invalid);
+    }
+    let mut databases = std::collections::BTreeSet::new();
+    for workspace in workspaces {
+        if !workspace.database.is_absolute()
+            || !workspace.signing_key.is_absolute()
+            || !workspace.recipient_key.is_absolute()
+            || !databases.insert(workspace.database.clone())
+        {
             return Err(Failure::Invalid);
         }
     }
@@ -118,7 +142,7 @@ fn capture(
 }
 fn contract(target: &Target, plan: &Preview) -> Result<Value, Failure> {
     let value = json!({"version":1,"target":target,"operation":"erase-capture","plan":plan,
-        "effect":"Erase this closed capture from the configured archives after publishing independent owner authorization. Preserve minimal provenance. Queue, derived-data and other copy cleanup remain pending; historical backups and keys are not cryptographically erased.",
+        "effect":"Erase this closed capture from the configured archives after publishing independent owner authorization. Preserve minimal provenance. Configured stopped workspaces reconcile dependent data against current owner erasure history. Queue and other copy cleanup remain pending; historical backups and keys are not cryptographically erased.",
         "cancellation":"Once accepted, authorization and erasure cannot be rolled back. Resume the retained job after interruption."});
     if serde_json::to_vec(&value).map_err(invalid)?.len() > 200 * 1024 {
         return Err(Failure::Unavailable);
@@ -364,6 +388,7 @@ fn cleanup(target: &Target, record: custody::Record) -> Result<Value, Failure> {
         root,
         history,
         replicas,
+        workspaces,
         ..
     } = configured(target)?;
     let authorization = record.id()?;
@@ -392,9 +417,40 @@ fn cleanup(target: &Target, record: custody::Record) -> Result<Value, Failure> {
             Err(error)=>json!({"root":path,"state":"pending","error":error}),
         });
     }
+    let mut derived = Vec::new();
+    for workspace in workspaces {
+        let work = || -> Result<Value, Failure> {
+            let current = history.current()?;
+            let local = Workspace::open_for_erasure(
+                &workspace.database,
+                Identity::load_existing(&workspace.signing_key).map_err(invalid)?,
+                crate::evidence_crypto::read_private_key(&workspace.recipient_key)
+                    .map_err(invalid)?,
+            )?;
+            let mut removed = 0;
+            for record in &current.history {
+                if let Some(erasure) = &record.change.erasure {
+                    if let Some(plan) =
+                        local.preview_source_erasure(&history.binding, erasure, record.id()?)?
+                    {
+                        local.apply_erasure(&plan)?;
+                        removed += plan.targets.len();
+                    }
+                }
+            }
+            local.reclaim_erased_pages()?;
+            Ok(
+                json!({"database":workspace.database,"state":"reconciled","removed_or_fenced":removed,"owner_checkpoint":current.tip,"page_reclamation":"completed"}),
+            )
+        };
+        derived.push(match work() {
+            Ok(value) => value,
+            Err(error) => json!({"database":workspace.database,"state":"pending","error":error}),
+        });
+    }
     Ok(
-        json!({"authorization":authorization,"archives":archives,"managed_cleanup":"pending-coordination",
-        "remaining_preconditions":["Resolve and erase managed spool and publication copies","Resolve and erase derived workspace dependencies","Verify enrollment and restore activation for all managed stores"],
+        json!({"authorization":authorization,"archives":archives,"workspaces":derived,"managed_cleanup":"pending-coordination",
+        "remaining_preconditions":["Resolve and erase managed spool and publication copies","Reconcile every configured workspace and include all other managed workspaces","Verify enrollment and restore activation for all managed stores"],
         "backup_purge":"not-performed","activation":"not-performed"}),
     )
 }

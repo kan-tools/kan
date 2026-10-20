@@ -1056,7 +1056,8 @@ backup or old key is made cryptographically irrecoverable by these operations.
 The experimental `capture-erasure` owner target accepts `id`, `root`, `history`
 (the pinned independent owner-erasure Access configuration), `signing_key`
 (owner), `issuer_key`, `private_keys` (capture decryption credential paths), and
-optional `replicas` (same-binding archive directories). All paths come from
+optional `replicas` (same-binding archive directories) and `workspaces` entries
+`{database, signing_key, recipient_key}`. All paths come from
 owner configuration. A stopped replica may remain offline at startup.
 
 The Library owner panel and shared owner request CLI support:
@@ -1070,8 +1071,11 @@ The Library owner panel and shared owner request CLI support:
 The journal commits before destructive work; independent custody publication
 precedes archive cleanup. Inspect `job` or the owner catalog for per-archive
 results, page reclamation and interrupted attempts. A result remains
-`cleanup-pending` because queue, complete derived dependency and other
-publication-copy cleanup are not yet wired into this coordinator. Never
+`cleanup-pending` because queue and other publication-copy cleanup and deployment-wide
+enrollment are not yet wired into this coordinator. Configured stopped
+workspaces reconcile authenticated source citations and transitive annotation/
+analysis lineage against current owner custody, retaining unrelated entries.
+Active workspaces, unreadable records and orphan model outputs remain pending. Never
 interpret archive payload removal as completed managed erasure. Backup purge
 is reported separately as `not-performed`; no historical backup is deleted,
 and service enrollment/activation remains explicit.

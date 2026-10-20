@@ -131,6 +131,27 @@ fn token_preimage(body: &TokenBody) -> Result<Vec<u8>> {
     bytes.extend_from_slice(&Sha256::digest(json(body)?));
     Ok(bytes)
 }
+impl Token {
+    /// Offline attribution only, for owner-directed dependency cleanup. This
+    /// neither authenticates current membership nor grants access to evidence.
+    pub(crate) fn attributed_source(&self) -> Result<(&wire::Binding, &wire::Coordinate)> {
+        if self.body.purpose != TokenPurpose::Source {
+            return Err(Failure::Invalid);
+        }
+        let signature = service::unhex(&self.signature, 64)?;
+        if signature.len() != 64
+            || !sign::verify(
+                &self.body.principal,
+                &token_preimage(&self.body)?,
+                &signature,
+            )
+            || self.body.coordinate.frontier(&self.body.binding)?.through == 0
+        {
+            return Err(Failure::Invalid);
+        }
+        Ok((&self.body.binding, &self.body.coordinate))
+    }
+}
 impl Reader {
     /// Add explicitly held historical recipient keys; never replaces current grants.
     pub fn with_historical_keys(mut self, keys: Vec<[u8; 32]>) -> Result<Self> {
@@ -582,26 +603,11 @@ impl Reader {
     /// Verify only the attributed citation coordinate. This is not membership,
     /// availability or authorization; callers must check a current source record.
     pub(crate) fn citation_coordinate(&self, selection: &Token) -> Result<wire::Coordinate> {
-        if selection.body.binding != self.access.binding
-            || selection.body.purpose != TokenPurpose::Source
-        {
+        let (binding, coordinate) = selection.attributed_source()?;
+        if binding != &self.access.binding {
             return Err(Failure::Invalid);
         }
-        let signature = service::unhex(&selection.signature, 64)?;
-        if signature.len() != 64
-            || !sign::verify(
-                &selection.body.principal,
-                &token_preimage(&selection.body)?,
-                &signature,
-            )
-        {
-            return Err(Failure::Invalid);
-        }
-        let expected = selection.body.coordinate.frontier(&self.access.binding)?;
-        if expected.through == 0 {
-            return Err(Failure::Invalid);
-        }
-        Ok(selection.body.coordinate.clone())
+        Ok(coordinate.clone())
     }
     pub async fn rebind_citation(&self, selection: &Token) -> Result<(Pin, Source)> {
         let coordinate = self.citation_coordinate(selection)?;
