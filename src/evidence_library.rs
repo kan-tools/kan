@@ -1,4 +1,5 @@
 //! Human evidence Library. Loopback presentation with a separate read capability.
+mod owner;
 mod proof;
 use crate::evidence_content::ContentError;
 use crate::evidence_reader::proof as verified;
@@ -10,6 +11,7 @@ use hyper::{
     Request, Response, StatusCode,
 };
 use hyper_util::rt::TokioIo;
+pub use owner::{Config as OwnerConfig, Owner, Request as OwnerRequest};
 pub use proof::analysis::{Config as AnalysisConfig, Draft as AnalysisDraft};
 pub use proof::knowledge::{Citation as EvidenceCitation, Draft as AnnotationDraft};
 pub use proof::outbox::AnnotationOutbox;
@@ -311,6 +313,47 @@ async fn handle(
         return Ok(denied(StatusCode::FORBIDDEN));
     }
     let path = r.uri().path_and_query().map(|p| p.as_str());
+    if path == Some("/api/owner") {
+        let Some(owner) = &reader.owner else {
+            return Ok(denied(StatusCode::NOT_FOUND));
+        };
+        if r.method() != hyper::Method::POST {
+            return Ok(denied(StatusCode::METHOD_NOT_ALLOWED));
+        }
+        if !owner.authorized(r.headers()) {
+            return Ok(denied(StatusCode::UNAUTHORIZED));
+        }
+        if r.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            != Some("application/json")
+        {
+            return Ok(denied(StatusCode::BAD_REQUEST));
+        }
+        let body = match tokio::time::timeout(
+            Duration::from_secs(3),
+            Limited::new(r.into_body(), 16384).collect(),
+        )
+        .await
+        {
+            Ok(Ok(body)) => body.to_bytes(),
+            Ok(Err(_)) => return Ok(denied(StatusCode::PAYLOAD_TOO_LARGE)),
+            Err(_) => return Ok(denied(StatusCode::REQUEST_TIMEOUT)),
+        };
+        let request = match serde_json::from_slice(&body) {
+            Ok(request) => request,
+            Err(_) => return Ok(denied(StatusCode::BAD_REQUEST)),
+        };
+        return Ok(match owner.execute(request).await {
+            Ok(value) => match serde_json::to_vec(&value) {
+                Ok(bytes) => response(StatusCode::OK, "application/json", bytes),
+                Err(_) => denied(StatusCode::SERVICE_UNAVAILABLE),
+            },
+            Err(Failure::Invalid) => denied(StatusCode::BAD_REQUEST),
+            Err(Failure::AccessLimited) => denied(StatusCode::FORBIDDEN),
+            Err(_) => denied(StatusCode::SERVICE_UNAVAILABLE),
+        });
+    }
     if path.is_some_and(|p| p == "/operations" || p.starts_with("/operations/")) {
         return match &reader.operations {
             Some(operations) => operations.handle(r, host).await,
@@ -432,6 +475,13 @@ pub async fn serve_readers(
     reader: Readers,
 ) -> io::Result<()> {
     let addr = listener.local_addr()?;
+    if reader
+        .owner
+        .as_ref()
+        .is_some_and(|owner| owner.same_token(&token))
+    {
+        return Err(io::Error::other("owner and reader credentials must differ"));
+    }
     if !addr.ip().is_loopback()
         || token.len() < 32
         || token.len() > 4096

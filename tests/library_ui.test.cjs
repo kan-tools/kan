@@ -628,3 +628,21 @@ test('subject relations are previewed as attributed assertions and day browsing 
  const nodes=walk(u.node('knowledge-detail'));assert.ok(nodes.some(n=>n.textContent==='Declared day-atom structure'));assert.ok(nodes.some(n=>String(n.textContent).includes('corrected by new-note')));
  nodes.find(n=>n.textContent==='telos/durability').click();await tick();assert.equal(JSON.parse(u.pending[0].opts.body).subject,'telos/durability');u.node('lock').click();await u.respond({});assert.equal(u.node('knowledge-detail').children.length,0);assert.equal(u.node('knowledge-subjects').children.length,0);
 });
+
+async function ownerUI(u){
+ await u.login();await u.respond({...proofCatalog,capabilities:['snapshot-inventory','source-ranges','provenance','payload-availability','owner-maintenance'],scopes:['archive-A','archive-B'].map(proofEntry)});await u.respond(proofPage);
+ u.node('owner-token').value='owner-only-credential';u.node('owner-connect').events.submit({preventDefault(){}});await tick();assert.equal(u.node('owner-token').value,'');assert.equal(u.pending[0].url,'/api/owner');assert.equal(u.pending[0].opts.headers.Authorization,'Bearer owner-only-credential');
+ await u.respond({owner:'owner-did',targets:[{id:'evidence',kind:'archive'}],jobs:[],limits:{jobs:10}});
+}
+test('owner maintenance uses separate credentials and exact preview-bound requests without browser paths',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-job-form').events.submit({preventDefault(){}});await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview',target:'evidence',operation:'backup',retry_of:null});
+ const contract={target:{id:'evidence',kind:'archive',root:'/configured/archive'},operation:'backup',destination:'/configured/output/nonce.sqlite',effect:'New verified backup; no activation',cancellation:'Runs to a safe boundary'};
+ await u.respond({digest:'owner-preview',nonce:'a'.repeat(64),contract});assert.match(u.node('owner-preview').textContent,/no activation/);assert.match(u.node('owner-preview').textContent,/configured\/output/);
+ u.node('owner-submit').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'submit',target:'evidence',operation:'backup',retry_of:null,nonce:'a'.repeat(64),preview:'owner-preview',wait:false});
+ await u.respond({state:'running'});await u.respond({owner:'owner-did',targets:[{id:'evidence',kind:'archive'}],jobs:[{state:'running',job:{id:'job',contract}}],limits:{jobs:10}});
+ walk(u.node('owner-jobs')).find(n=>n.textContent==='Inspect maintenance job').click();await tick();u.node('owner-lock').click();await u.respond({state:'succeeded',secret:'late-result'});assert.equal(u.node('owner-detail').children.length,0);assert.equal(u.node('owner-jobs').children.length,0);assert.equal(u.node('library').hidden,false);
+});
+test('owner target changes invalidate late previews and reader lock clears owner authority',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-job-form').events.submit({preventDefault(){}});await tick();const pending=u.pending[0];u.node('owner-operation').events.change();assert.equal(pending.opts.signal.aborted,true);await u.respond({digest:'late',nonce:'late',contract:{}});assert.equal(u.node('owner-submit').disabled,true);
+ u.node('owner-refresh').click();await tick();u.node('lock').click();await u.respond({owner:'late',targets:[],jobs:[],limits:{jobs:10}});assert.equal(u.node('owner-controls').hidden,true);assert.equal(u.node('owner-jobs').children.length,0);assert.equal(u.node('owner-preview').textContent,'');
+});

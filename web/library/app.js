@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
+  let ownerToken='',ownerEpoch=0,ownerController,ownerTargets=[],ownerPreview=null,ownerRetry=null;
   let token = '', epoch = 0, controller, scopes = [], pin, after = 0, next = null, history = [], selected = null, source = null, hexadecimal = false;
   const selections = new Map();
   let activeSource = null, catalogContent = false;
@@ -38,7 +39,7 @@
   function lock(message = 'Locked · connect to browse authorized evidence.') {
     for (const url of exports.keys()) releaseExport(url);
     epoch++; if (controller) controller.abort(); controller = null; token = ''; scopes = []; pin = null; history = []; after = 0; next = null;
-    $('operations-link').hidden=true;clearAnalysis(true);clearKnowledge(true);clearSearch(true);
+    lockOwner();$('operations-link').hidden=true;clearAnalysis(true);clearKnowledge(true);clearSearch(true);
     pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); clearWorkspace(); selections.clear(); clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren(); $('capability-list').replaceChildren(); $('coverage').textContent = '';
     $('catalog-status').textContent = ''; $('count').textContent = ''; $('page-position').textContent = ''; $('library').hidden = true; $('login').hidden = false;
     $('lock').disabled = true; $('token').value = ''; notice(message); $('token').focus();
@@ -132,8 +133,8 @@
   }
   function renderCapabilities(value) {
     if (!Array.isArray(value.capabilities) || !Array.isArray(value.unavailable)) throw new Error('Unsupported capability response.');
-    const labels = {'operations-read':'Operations reader','text-search':'Persistent text search','attempt-content':'Large attempt Content','session-content':'Conversation reader','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
-    const supported = new Set(['analysis','operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links','session-content']), seen = new Set();
+    const labels = {'owner-maintenance':'Owner maintenance','operations-read':'Operations reader','text-search':'Persistent text search','attempt-content':'Large attempt Content','session-content':'Conversation reader','session-links':'Explicit session relationships','attempt-discovery':'Captured attempt discovery','snapshot-inventory':'Snapshot inventory','source-ranges':'Source ranges','provenance':'Provenance','content-inspection':'Selected Content','payload-availability':'Payload availability','semantic-search':'Search','normalized-sessions':'Sessions','annotations':'Annotations','saved-views':'Saved views','analysis':'Analysis','administrative-jobs':'Admin jobs'};
+    const supported = new Set(['owner-maintenance','analysis','operations-read','text-search','saved-views','annotations','snapshot-inventory','source-ranges','provenance','content-inspection','payload-availability','attempt-discovery','attempt-content','session-links','session-content']), seen = new Set();
     $('capability-list').replaceChildren();
     for (const [items, available] of [[value.capabilities,true],[value.unavailable,false]]) {
       for (const capability of items) {
@@ -162,7 +163,7 @@
     }
   }
   async function catalog() {
-    $('operations-link').hidden=true;clearAnalysis(true);clearKnowledge(true);clearSearch(true);
+    lockOwner();$('operations-link').hidden=true;clearAnalysis(true);clearKnowledge(true);clearSearch(true);
     clearContent(); checks.clear(); clearInspector(); buttons.clear(); $('rows').replaceChildren(); $('scope').replaceChildren();
     pinWire = null; contentEnabled = false; activeSource = null; clearDiscovery(); clearWorkspace(); selections.clear();
     scopes = []; pin = null; history = []; after = 0; next = null;
@@ -176,6 +177,7 @@
     renderCapabilities(value);
     $('search-workspace').hidden = !value.capabilities.includes('text-search');
     $('operations-link').hidden=!value.capabilities.includes('operations-read');
+    $('owner-maintenance').hidden=!value.capabilities.includes('owner-maintenance');
     clearAnalysis(true);analysisEnabled=value.capabilities.includes('analysis');$('analysis').hidden=!analysisEnabled;
     annotationsEnabled=value.capabilities.includes('annotations');$('knowledge').hidden=!annotationsEnabled;
     catalogContent = value.capabilities.includes('content-inspection');
@@ -497,6 +499,53 @@
     previous.addEventListener('click',()=>{page=Math.max(0,page-1);render();});next.addEventListener('click',()=>{page=Math.min(offsets.length-1,page+1);render();});
     controls.append(previous);controls.append(position);controls.append(next);parent.append(controls);render();
   }
+
+  function lockOwner(){
+    ownerEpoch++;if(ownerController)ownerController.abort();ownerToken='';ownerTargets=[];ownerPreview=null;ownerRetry=null;
+    $('owner-token').value='';$('owner-controls').hidden=true;$('owner-connect').hidden=false;$('owner-maintenance').hidden=true;$('owner-lock').disabled=true;$('owner-submit').disabled=true;
+    for(const id of ['owner-target','owner-operation','owner-jobs','owner-detail'])$(id).replaceChildren();$('owner-preview').textContent='';$('owner-status').textContent='Owner access locked. Running maintenance is not cancelled.';
+  }
+  async function ownerRpc(body){
+    const current=++ownerEpoch;if(ownerController)ownerController.abort();ownerController=new AbortController();
+    try{const response=await fetch('/api/owner',{method:'POST',headers:{Authorization:`Bearer ${ownerToken}`,'Content-Type':'application/json'},body:JSON.stringify(body),credentials:'omit',cache:'no-store',signal:ownerController.signal});
+      if(current!==ownerEpoch)return null;if(!response.ok){if(response.status===401||response.status===403){lockOwner();$('owner-maintenance').hidden=false;$('owner-status').textContent='Owner access refused. Reader access has not changed.';return null;}throw new Error('Owner request failed. Refresh jobs before retrying; retained outputs are not removed.');}
+      const value=await response.json();return current===ownerEpoch?value:null;
+    }catch(error){if(current!==ownerEpoch||error.name==='AbortError')return null;throw error;}
+  }
+  function ownerRun(fn){Promise.resolve().then(fn).catch(error=>{$('owner-status').textContent=error.message;$('owner-submit').disabled=!ownerPreview;});}
+  function ownerOperations(){
+    ownerPreview=null;$('owner-submit').disabled=true;$('owner-preview').textContent='';$('owner-operation').replaceChildren();
+    const target=ownerTargets.find(t=>t.id===$('owner-target').value);
+    for(const operation of target?.kind==='operations'?['rotate']:['backup','recover']){const option=textNode('option',operation);option.value=operation;$('owner-operation').append(option);}
+    $('owner-operation').value=target?.kind==='operations'?'rotate':'backup';
+  }
+  async function ownerCatalog(){
+    const value=await ownerRpc({action:'catalog'});if(!value)return;
+    if(!Array.isArray(value.targets)||!Array.isArray(value.jobs))throw new Error('Invalid owner response.');
+    ownerTargets=value.targets;ownerPreview=null;ownerRetry=null;$('owner-target').replaceChildren();
+    for(const target of ownerTargets){const option=textNode('option',`${target.id} · ${target.kind}`);option.value=target.id;$('owner-target').append(option);}
+    $('owner-target').value=ownerTargets[0]?.id||'';ownerOperations();$('owner-controls').hidden=false;$('owner-connect').hidden=true;$('owner-lock').disabled=false;
+    $('owner-status').textContent=`Owner ${value.owner} · ${value.jobs.length} retained jobs · one active job · lifetime quota ${value.limits.jobs}`;$('owner-jobs').replaceChildren();
+    for(const status of value.jobs){const row=textNode('article','');row.className='content-item';row.append(textNode('h3',`${status.job.contract.operation} · ${status.job.contract.target.id} · ${status.state}`));row.append(textNode('p',status.job.id,'content-identity'));
+      const inspect=textNode('button','Inspect maintenance job');inspect.addEventListener('click',()=>ownerRun(async()=>{const value=await ownerRpc({action:'job',id:status.job.id});if(value){$('owner-detail').replaceChildren();details($('owner-detail'),'Retained job, result and output paths',JSON.stringify(value,null,2));}}));row.append(inspect);
+      if(status.state!=='running'){const retry=textNode('button','Preview new attempt');retry.addEventListener('click',()=>{ownerRetry=status.job.id;$('owner-target').value=status.job.contract.target.id;ownerOperations();$('owner-operation').value=status.job.contract.operation;$('owner-status').textContent='Select Preview maintenance to review a new linked job. Any earlier outputs stay retained.';});row.append(retry);}$('owner-jobs').append(row);
+    }
+  }
+  $('owner-connect').addEventListener('submit',event=>{event.preventDefault();ownerToken=$('owner-token').value;$('owner-token').value='';ownerRun(ownerCatalog);});
+  $('owner-refresh').addEventListener('click',()=>ownerRun(ownerCatalog));
+  $('owner-target').addEventListener('change',()=>{ownerEpoch++;if(ownerController)ownerController.abort();ownerRetry=null;ownerOperations();});
+  $('owner-operation').addEventListener('change',()=>{ownerEpoch++;if(ownerController)ownerController.abort();ownerRetry=null;ownerPreview=null;$('owner-submit').disabled=true;$('owner-preview').textContent='';});
+  $('owner-job-form').addEventListener('submit',event=>{event.preventDefault();ownerRun(async()=>{
+    ownerPreview=null;$('owner-submit').disabled=true;const request={action:'preview',target:$('owner-target').value,operation:$('owner-operation').value,retry_of:ownerRetry};
+    const value=await ownerRpc(request);if(!value)return;if(typeof value.digest!=='string'||typeof value.nonce!=='string'||!value.contract)throw new Error('Invalid owner preview.');
+    ownerPreview={...request,...value};$('owner-preview').textContent=`${value.contract.effect}\n${value.contract.cancellation}\n\n${JSON.stringify(value.contract,null,2)}`;$('owner-submit').disabled=false;
+  });});
+  $('owner-submit').addEventListener('click',()=>ownerRun(async()=>{
+    if(!ownerPreview)return;const p=ownerPreview;$('owner-submit').disabled=true;
+    const result=await ownerRpc({action:'submit',target:p.target,operation:p.operation,retry_of:p.retry_of,nonce:p.nonce,preview:p.digest,wait:false});if(!result)return;
+    ownerPreview=null;await ownerCatalog();$('owner-status').textContent=`Maintenance ${result.state}. Refresh to inspect retained results. Closing this tab does not roll back a running job.`;
+  }));
+  $('owner-lock').addEventListener('click',()=>{lockOwner();$('owner-maintenance').hidden=false;});
 
   function clearAnalysis(hide=false) {
     analysisDraft=null;analysisPreview=null;$('analysis-form').hidden=true;$('analysis-target').textContent='';$('analysis-preview').textContent='';$('submit-analysis').disabled=true;$('analysis-detail').replaceChildren();

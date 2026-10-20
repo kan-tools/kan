@@ -183,6 +183,9 @@ enum Command {
         /// Private fixed recipes, inference gateway, input grants and quotas.
         #[arg(long, requires = "workspace")]
         analysis_config: Option<PathBuf>,
+        /// Mount separately authorized owner maintenance with its own journal/keys.
+        #[arg(long)]
+        owner_config: Option<PathBuf>,
         /// Execute one shared Library API request from a JSON file and exit.
         #[arg(long)]
         request: Option<PathBuf>,
@@ -190,6 +193,14 @@ enum Command {
         listen: std::net::SocketAddr,
     },
 
+    /// Execute a separately authorized owner-maintenance API request.
+    #[cfg(feature = "v2-crypto")]
+    Owner {
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        request: PathBuf,
+    },
     /// TLS 1.3 gateway; explicit client CA authorizes this single-tenant instance.
     #[cfg(feature = "v2-crypto")]
     Gateway {
@@ -573,6 +584,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             })?;
         }
         #[cfg(feature = "v2-crypto")]
+        Command::Owner { config, request } => {
+            let owner = load_owner(&config)?;
+            let request = serde_json::from_slice(&kan::evidence_gateway::secret_file(&request)?)?;
+            let value = tokio::runtime::Runtime::new()?.block_on(owner.execute(request))?;
+            println!("{}", serde_json::to_string(&value)?);
+        }
+        #[cfg(feature = "v2-crypto")]
         Command::Library {
             config,
             signing_key,
@@ -582,6 +600,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             workspace_key,
             annotation_outbox,
             analysis_config,
+            owner_config,
             operations_journal,
             operations_token_file,
             request,
@@ -660,6 +679,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     service_identity(&signing_key)?,
                     recipient_private(&key)?,
                 )?);
+            }
+            if let Some(path) = owner_config {
+                reader = reader.with_owner(load_owner(&path)?);
             }
             if let Some(path) = analysis_config {
                 reader = reader.with_analysis(serde_json::from_slice(
@@ -1516,4 +1538,34 @@ fn main() -> std::process::ExitCode {
             std::process::ExitCode::FAILURE
         }
     }
+}
+
+#[cfg(feature = "v2-crypto")]
+fn load_owner(
+    path: &std::path::Path,
+) -> Result<std::sync::Arc<kan::evidence_library::Owner>, Box<dyn std::error::Error>> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct File {
+        journal: PathBuf,
+        signing_key: PathBuf,
+        recipient_key: PathBuf,
+        authority: kan::evidence_library::OwnerConfig,
+    }
+    let config: File = serde_json::from_slice(&kan::evidence_gateway::secret_file(path)?)?;
+    if !config.journal.is_absolute()
+        || !config.signing_key.is_absolute()
+        || !config.recipient_key.is_absolute()
+    {
+        return Err("owner paths must be absolute".into());
+    }
+    let workspace = kan::evidence_workspace::Workspace::open(
+        &config.journal,
+        service_identity(&config.signing_key)?,
+        recipient_private(&config.recipient_key)?,
+    )?;
+    Ok(kan::evidence_library::Owner::new(
+        config.authority,
+        workspace,
+    )?)
 }

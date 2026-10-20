@@ -30,6 +30,8 @@ pub const EVIDENCE_VALUES: &[SurfaceValue] = &[
     SurfaceValue::new("evidence-analysis:result", "*"),
     SurfaceValue::new("evidence-analysis:event", "*"),
     SurfaceValue::new("evidence-analysis:trigger", "*"),
+    SurfaceValue::new("evidence-owner:job", "*"),
+    SurfaceValue::new("evidence-owner:result", "*"),
     SurfaceValue::new("evidence-workspace:recipient-key", "*"),
     SurfaceValue::new("evidence-copy-plan:artifact", "*"),
     SurfaceValue::new("evidence-copy-sqlite:upgrade_plan", "singleton"),

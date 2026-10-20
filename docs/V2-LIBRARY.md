@@ -481,3 +481,60 @@ browser. **Assess cited evidence** selects original citations for a recipe previ
 The shared `knowledge-graph` action accepts optional `subject` and `day` fields;
 its result includes authorized subjects, relation assertions, selected declaration
 history and coverage. Imported v1 claims are not counted as authored v2 annotations.
+
+## Owner maintenance
+
+`library --owner-config PRIVATE_JSON` mounts `/api/owner` with an independent owner
+credential and encrypted job journal. Reader and owner tokens must differ. Use a
+separate owner signing identity and a separate workspace recipient key. Example:
+
+```json
+{
+  "journal": "/private/kan-owner/jobs.sqlite",
+  "signing_key": "/private/kan-owner/signing.key",
+  "recipient_key": "/private/kan-owner/workspace.x25519",
+  "authority": {
+    "token": "independent-private-owner-token-at-least-32-bytes",
+    "max_jobs": 100,
+    "targets": [{
+      "kind": "archive", "id": "personal-ledger",
+      "root": "/private/kan/archive",
+      "output": "/private/kan/backups",
+      "binding": {
+        "profile": "admitted", "archive": "OWNER_ARCHIVE_HEX",
+        "scope": "OWNER_SCOPE_HEX", "issuer": "OWNER_ISSUER_DID"
+      }
+    }, {
+      "kind": "operations", "id": "capture-health",
+      "collection": "/private/kan/operations"
+    }]
+  }
+}
+```
+
+Replace all illustrative values and provision private directories/keys first.
+`binding: null` explicitly selects a legacy archive; `profile: copied` selects a
+copied proof archive. Profiles are never inferred from a database's contents.
+
+Open owner controls with the separate token, select a configured target and
+preview `backup`, `recover`, or `rotate`. The preview shows paths, profile,
+effects and the new nonce-named destination. Run requires its exact digest.
+Backup/recovery preserves the source and any failed output; no service switches
+to the result. Rotation preserves sealed history and refuses live-writer
+contention. Once a job starts, it reaches its existing safe boundary: closing the
+browser does not cancel or roll back writes. Refresh or reconnect to inspect the
+persisted result. Restart labels a job without a terminal result interrupted.
+
+Repeated submission of the same preview returns the original job without another
+write. **Preview new attempt** links a new job and new destination while retaining
+the prior outcome. One owner job runs at a time. These are local verified copies;
+`independent_backup: false` remains explicit until a separate-host drill proves it.
+
+The same typed API is available through `kan-v2 owner --config PRIVATE_JSON
+--request PRIVATE_REQUEST_JSON`. Actions are `catalog`, `preview`, `submit` and
+`job`. For one-shot execution, submit with `wait: true`. Browser requests select
+configured IDs and operations; they cannot supply filesystem paths or commands.
+
+This maintenance API currently covers backup, derived recovery and operations
+rotation. Import/cutover, live access changes, key lifecycle, erasure and hot
+workspace-journal recovery remain separate implementation work.

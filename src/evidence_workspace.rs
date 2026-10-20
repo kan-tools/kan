@@ -292,12 +292,20 @@ impl Workspace {
                 | "analysis-result"
                 | "analysis-event"
                 | "analysis-trigger"
+                | "owner-job"
+                | "owner-result"
         ) {
             return Err(Failure::Invalid);
         }
         if matches!(
             kind,
-            "view" | "annotation" | "analysis-job" | "analysis-event" | "analysis-trigger"
+            "view"
+                | "annotation"
+                | "analysis-job"
+                | "analysis-event"
+                | "analysis-trigger"
+                | "owner-job"
+                | "owner-result"
         ) && serde_json::to_vec(&value).map_err(invalid)?.len() > 262144
         {
             return Err(Failure::Invalid);
@@ -357,6 +365,9 @@ impl Workspace {
     }
     pub fn annotations(&self) -> Result<Vec<Value>> {
         self.declarations("annotation", 1000)
+    }
+    pub(crate) fn owner_jobs(&self) -> Result<Vec<Value>> {
+        self.declarations("owner-job", 1000)
     }
     pub(crate) fn analysis_jobs(&self) -> Result<Vec<Value>> {
         self.declarations("analysis-job", 1000)

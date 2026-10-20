@@ -17,6 +17,7 @@ pub mod sessions;
 mod triggers;
 
 pub struct Readers {
+    pub(super) owner: Option<std::sync::Arc<super::Owner>>,
     analysis: Option<std::sync::Arc<analysis::Engine>>,
     outbox: Option<outbox::AnnotationOutbox>,
     pub(super) operations: Option<crate::evidence_dashboard::Embedded>,
@@ -52,6 +53,7 @@ impl Readers {
             }
         }
         Ok(Self {
+            owner: None,
             analysis: None,
             outbox: None,
             operations: None,
@@ -70,6 +72,10 @@ impl Readers {
         }
         self.outbox = Some(outbox);
         Ok(self)
+    }
+    pub fn with_owner(mut self, owner: std::sync::Arc<super::Owner>) -> Self {
+        self.owner = Some(owner);
+        self
     }
     pub fn with_operations(mut self, operations: crate::evidence_dashboard::Embedded) -> Self {
         self.operations = Some(operations);
@@ -305,7 +311,9 @@ impl Readers {
                 )
                 .await;
             }
-            Query::Catalog if !self.proof.is_empty() || self.operations.is_some() => {
+            Query::Catalog
+                if !self.proof.is_empty() || self.operations.is_some() || self.owner.is_some() =>
+            {
                 let mut configured = self
                     .legacy
                     .as_ref()
@@ -334,6 +342,12 @@ impl Readers {
                 let mut catalog = json!({"version":2,"scopes":scopes,"coverage":if partial {"partial"} else {"complete"},
                     "capabilities":["snapshot-inventory","source-ranges","provenance","payload-availability","content-inspection","attempt-discovery","attempt-content","session-links","session-content"],
                     "unavailable":["semantic-search","normalized-sessions","annotations","saved-views","analysis","administrative-jobs"]});
+                if self.owner.is_some() {
+                    catalog["capabilities"]
+                        .as_array_mut()
+                        .unwrap()
+                        .push(json!("owner-maintenance"));
+                }
                 if self.analysis.is_some() {
                     catalog["capabilities"]
                         .as_array_mut()

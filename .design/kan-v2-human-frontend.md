@@ -318,3 +318,22 @@ malformed-declaration notices. A human can follow relations, inspect a subject's
 history, and send its cited evidence through the configured day-assessment recipe.
 This currently covers v2 authored annotations; rendering imported native v1 claims
 and applying the richer native trust/fold queries remains a separate requirement.
+
+### Owner maintenance boundary
+
+Owner jobs have a separate bearer credential and encrypted signed journal from
+the evidence reader and operations observer. Private instance configuration names
+allowed archive/collection targets and output directories; browser requests may
+select names and operation enums, never arbitrary paths, commands or key material.
+A preview binds target configuration, operation, retry parent and nonce; submit
+must repeat its digest. Backup/recovery outputs use new nonce-named files and are
+never overwritten or activated. Retried jobs retain earlier results and outputs.
+
+Backup, derived-data recovery and retained-history rotation call their existing
+owner APIs directly. One maintenance job runs at a time. Once a synchronous
+maintenance operation starts it is allowed to reach its existing safe boundary;
+closing the browser does not pretend to cancel or roll it back. Restart reports
+unfinished journal entries as interrupted. Credentials and source keys never
+appear in the browser. Provisioning this API does not grant authority to reader
+or model-generated actions. Access changes, key lifecycle, import/cutover and
+explicit erasure require their own typed owner contracts and remain build work.

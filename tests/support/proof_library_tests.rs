@@ -1635,3 +1635,123 @@ async fn analysis_retains_exact_lineage_quotas_retries_and_revoked_results() {
     provider.abort();
     let _ = provider.await;
 }
+
+async fn owner_call(ui: &Ui, token: &str, query: Value, status: u16) -> Value {
+    let response = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .unwrap()
+        .post(ui.url.replace("/api/library", "/api/owner"))
+        .bearer_auth(token)
+        .json(&query)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status().as_u16(), status);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    response.json().await.unwrap()
+}
+#[tokio::test]
+async fn owner_maintenance_uses_separate_authority_preview_exact_retry_and_new_outputs() {
+    let dir = private_workspace_directory();
+    let local = private_workspace_directory();
+    let output = private_workspace_directory();
+    let f = fixture_requests(dir.path(), Profile::Admitted, encrypted);
+    let server = Server::start(&f).await;
+    let spool = local.path().join("spool.sqlite");
+    drop(
+        kan::evidence_spool::Spool::create(
+            &spool,
+            &service::hex(&[1; 32]),
+            identity(6).did().as_str(),
+            identity(8).did().as_str(),
+            1024 * 1024,
+        )
+        .unwrap(),
+    );
+    let journal = local.path().join("operations.sqlite");
+    drop(kan::evidence_operations::Journal::create(&journal, &spool).unwrap());
+    let collection = local.path().join("collection");
+    kan::evidence_operations_collection::adopt(&journal, &collection).unwrap();
+    const OWNER: &str = "synthetic-separate-owner-token-12345";
+    let state = local.path().join("owner.sqlite");
+    let readers = || {
+        let workspace =
+            kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
+        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"archive","id":"evidence","root":f.root,"output":output.path(),"binding":{"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer}},{"kind":"operations","id":"health","collection":collection}]})).unwrap(),workspace).unwrap();
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_owner(owner)
+    };
+    let ui = Ui::start(readers()).await;
+    owner_call(&ui, TOKEN, json!({"action":"catalog"}), 401).await;
+    let catalog = owner_call(&ui, OWNER, json!({"action":"catalog"}), 200).await;
+    assert!(catalog["jobs"].as_array().unwrap().is_empty());
+    owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview","target":"not-configured","operation":"backup","retry_of":null}),
+        403,
+    )
+    .await;
+    let mut retained = Vec::new();
+    for (target, operation) in [
+        ("evidence", "backup"),
+        ("evidence", "recover"),
+        ("health", "rotate"),
+    ] {
+        let preview = owner_call(
+            &ui,
+            OWNER,
+            json!({"action":"preview","target":target,"operation":operation,"retry_of":null}),
+            200,
+        )
+        .await;
+        let mut request = json!({"action":"submit","target":target,"operation":operation,"retry_of":null,"nonce":preview["nonce"],"preview":"wrong","wait":true});
+        owner_call(&ui, OWNER, request.clone(), 400).await;
+        request["preview"] = preview["digest"].clone();
+        let done = owner_call(&ui, OWNER, request.clone(), 200).await;
+        assert_eq!(done["state"], "succeeded", "{done}");
+        assert_eq!(owner_call(&ui, OWNER, request, 200).await, done);
+        if operation != "rotate" {
+            let destination = done["job"]["contract"]["destination"].as_str().unwrap();
+            let verified =
+                attested::Archive::verify_file(Path::new(destination), f.binding.clone()).unwrap();
+            assert_eq!(verified.commits, 3);
+            assert_eq!(done["result"]["report"]["activation"], "not-performed");
+        }
+        retained.push(done);
+    }
+    assert_eq!(
+        kan::evidence_operations_collection::generations(&collection, 0, 50)
+            .unwrap()
+            .generations
+            .len(),
+        2
+    );
+    let denied = reqwest::Client::new()
+        .post(ui.url.replace("/api/library", "/api/owner"))
+        .bearer_auth(OWNER)
+        .header("Origin", "https://untrusted.invalid")
+        .json(&json!({"action":"catalog"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), 403);
+    ui.stop().await;
+    let ui = Ui::start(readers()).await;
+    for done in retained {
+        assert_eq!(
+            owner_call(
+                &ui,
+                OWNER,
+                json!({"action":"job","id":done["job"]["id"]}),
+                200
+            )
+            .await,
+            done
+        );
+    }
+    ui.stop().await;
+    server.stop().await;
+}
