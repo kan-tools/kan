@@ -5695,7 +5695,11 @@ async fn workspace_source_cleanup_batches_large_cache_and_keeps_job_lineage_unti
     let binding = serde_json::from_value(json!({"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer})).unwrap();
     let plan = attested::Archive::open(&f.root, f.binding.clone())
         .unwrap()
-        .preview_erasure(&[1], "b".repeat(64), 200)
+        .preview_erasure(
+            &[page.records[0].sequence.parse().unwrap()],
+            "b".repeat(64),
+            200,
+        )
         .unwrap();
     let record = kan::evidence_store::erasure::Record::sign(plan, &identity(8)).unwrap();
     let database = local.path().join("workspace.sqlite");
