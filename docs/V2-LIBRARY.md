@@ -1199,3 +1199,26 @@ backup-purge status; deleting one backup does not imply every backup of a captur
 was removed. External backup services, filesystem snapshots, old recovery keys and
 unregistered copies remain outside this operation. No physical or cryptographic
 irrecoverability is claimed.
+
+
+### Owner history and cleanup continuation
+
+`{ "action": "catalog" }` returns one owner-job page and an optional opaque
+`next` cursor. Continue with `{ "action": "catalog", "after": "<next>" }`;
+the UI exposes **Next jobs** and **First jobs**. Jobs remain individually
+addressable and retained. The legacy owner configuration field `max_jobs` now
+bounds a catalog page (clamped to 16), rather than rejecting all future work after
+that many historical jobs. One active maintenance job remains the execution limit.
+The page also has a byte budget. Refresh from the first page to include concurrent
+insertions that sort before an earlier cursor; this is not a snapshot traversal.
+
+Capture cleanup and backup purge retain immutable numbered attempt records without
+a 32-attempt lifetime ceiling. Status reads locate the current attempt with
+logarithmic authenticated lookups. Publication cleanup carries cumulative opaque
+identities and source coordinates in its newest plan; replay reconciles that plan
+before discovering more copies. Existing non-cumulative plans are replayed once
+when upgrading. A new plan can only be created after the preceding plan's primary
+custody and archive reconciliation succeed. Replica/queue work is still checked
+against current custody on each resume. These changes remove retry/history-count
+ceilings; per-operation discovery, journal-size and resource budgets remain and
+must not be read as claims of unlimited capacity.

@@ -877,3 +877,14 @@ test('backup purge requires a separate exact preview, expires on lock and resume
  assert.ok(walk(u.node('owner-jobs')).some(n=>n.textContent.includes('completed purge receipt')));
  assert.ok(walk(u.node('owner-jobs')).some(n=>n.textContent.includes('Source archive: retained')));
 });
+
+
+test('owner history pages retain bounded navigation and discard late pages on lock',async()=>{
+ const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();
+ const catalog={owner:'owner',targets:[{kind:'archive',id:'archive'}],jobs:[],limits:{jobs_per_page:2},next:'a'.repeat(64)};
+ await u.respond(catalog);assert.match(u.node('owner-status').textContent,/2 jobs per page/);assert.doesNotMatch(u.node('owner-status').textContent,/lifetime/);
+ walk(u.node('owner-jobs')).find(n=>n.textContent==='Next jobs').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'catalog',after:catalog.next});
+ await u.respond({...catalog,next:null});assert.equal(walk(u.node('owner-jobs')).some(n=>n.textContent==='Next jobs'),false);
+ walk(u.node('owner-jobs')).find(n=>n.textContent==='First jobs').click();await tick();assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'catalog'});
+ u.node('owner-lock').click();await u.respond(catalog);assert.equal(u.node('owner-jobs').children.length,0);assert.equal(u.node('owner-controls').hidden,true);
+});

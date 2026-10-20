@@ -7,7 +7,6 @@ use crate::{
 };
 pub use publications::PublicationTarget;
 
-const ATTEMPTS: usize = 32;
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preview {
@@ -217,26 +216,19 @@ impl Owner {
     }
     pub(super) fn erasure_status(&self, job: Value) -> Result<Value, Failure> {
         let id = job["id"].as_str().ok_or(Failure::Corrupt)?;
-        let mut result = None;
-        let mut attempts = 0;
-        let mut interrupted = false;
-        for n in 0..ATTEMPTS {
-            if self
+        let attempts = first_unused(|n| {
+            Ok(self
                 .workspace
                 .get("owner-result", &attempt_key(id, n, "started"))?
-                .is_none()
-            {
-                break;
-            }
-            attempts = n + 1;
-            let completed = self
-                .workspace
-                .get("owner-result", &attempt_key(id, n, "finished"))?;
-            interrupted = completed.is_none();
-            if completed.is_some() {
-                result = completed;
-            }
-        }
+                .is_some())
+        })?;
+        let result = if attempts == 0 {
+            None
+        } else {
+            self.workspace
+                .get("owner-result", &attempt_key(id, attempts - 1, "finished"))?
+        };
+        let interrupted = result.is_none();
         let running = self
             .active
             .lock()
@@ -255,9 +247,7 @@ impl Owner {
         } else {
             "cleanup-pending"
         };
-        Ok(
-            json!({"job":job,"state":state,"attempts":attempts,"result":result,"resumable":attempts<ATTEMPTS}),
-        )
+        Ok(json!({"job":job,"state":state,"attempts":attempts,"result":result,"resumable":true}))
     }
     pub(super) async fn submit_erasure(
         self: &Arc<Self>,
@@ -309,7 +299,7 @@ impl Owner {
             let mut active=owner.active.lock().map_err(|_|Failure::Unavailable)?;
             active.retain(|_,h|!h.is_finished());
             if owner.workspace.get("owner-job",&key)?.is_some() {return Ok(());}
-            if !active.is_empty() || owner.workspace.owner_jobs()?.len()>=owner.max_jobs {return Err(Failure::Unavailable);}
+            if !active.is_empty() {return Err(Failure::Unavailable);}
             // Job identity includes the whole exact target configuration. Only the
             // signature is additional; no duplicate capture payload/plan is stored.
             owner.workspace.put("owner-job",&key,json!({"id":key,"contract":c,"owner_signature":record.signature,"started_at":crate::evidence_operations::now().to_string()}))?;
@@ -368,19 +358,12 @@ impl Owner {
         target: Target,
         record: custody::Record,
     ) -> Result<(), Failure> {
-        let n = (0..ATTEMPTS)
-            .find_map(|n| {
-                match self
-                    .workspace
-                    .get("owner-result", &attempt_key(id, n, "started"))
-                {
-                    Ok(None) => Some(Ok(n)),
-                    Ok(Some(_)) => None,
-                    Err(e) => Some(Err(e)),
-                }
-            })
-            .transpose()?
-            .ok_or(Failure::Unavailable)?;
+        let n = first_unused(|n| {
+            Ok(self
+                .workspace
+                .get("owner-result", &attempt_key(id, n, "started"))?
+                .is_some())
+        })?;
         self.workspace.put("owner-result",&attempt_key(id,n,"started"),json!({"job":id,"attempt":n,"started_at":crate::evidence_operations::now().to_string()}))?;
         let owner = self.clone();
         let key = id.to_string();

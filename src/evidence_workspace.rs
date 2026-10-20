@@ -639,8 +639,48 @@ impl Workspace {
     pub fn annotations(&self) -> Result<Vec<Value>> {
         self.declarations("annotation", 1000)
     }
-    pub(crate) fn owner_jobs(&self) -> Result<Vec<Value>> {
-        self.declarations("owner-job", 1000)
+    /// Keyset pagination over immutable encrypted journal identities. The cursor
+    /// is opaque; concurrent inserts before it appear on a fresh traversal.
+    pub(crate) fn owner_jobs_page(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<(Vec<Value>, Option<String>)> {
+        if limit == 0
+            || limit > 1000
+            || after.is_some_and(|id| id.len() != 64 || evidence_service::unhex(id, 32).is_err())
+        {
+            return Err(Failure::Invalid);
+        }
+        let conn = self.conn.lock().map_err(invalid)?;
+        let tx = conn.unchecked_transaction().map_err(invalid)?;
+        let _custody = self.check_erasure_histories(&tx)?;
+        let mut q = tx
+            .prepare(
+                "SELECT id,body FROM entries WHERE kind='owner-job' AND id>? ORDER BY id LIMIT ?",
+            )
+            .map_err(invalid)?;
+        let rows = q
+            .query_map(params![after.unwrap_or(""), (limit + 1) as i64], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))
+            })
+            .map_err(invalid)?;
+        let mut out = Vec::new();
+        let mut last = None;
+        let mut bytes = 0usize;
+        for (n, row) in rows.enumerate() {
+            let (id, body) = row.map_err(invalid)?;
+            // Bound one response independently of the journal's lifetime length.
+            if n == limit || (n > 0 && bytes + body.len() > 1024 * 1024) {
+                return Ok((out, last));
+            }
+            bytes += body.len();
+            if !erasure::erased(self, &tx, "owner-job", &id)? {
+                out.push(self.unseal("owner-job", &id, &body)?);
+            }
+            last = Some(id);
+        }
+        Ok((out, None))
     }
     pub(crate) fn analysis_jobs(&self) -> Result<Vec<Value>> {
         self.declarations("analysis-job", 1000)

@@ -115,6 +115,8 @@ pub enum Operation {
 pub struct Config {
     pub token: String,
     pub targets: Vec<Target>,
+    /// Legacy name retained for configuration compatibility: catalog page size,
+    /// clamped to 16. Retained jobs do not exhaust admission capacity.
     pub max_jobs: usize,
 }
 #[derive(Deserialize)]
@@ -189,7 +191,9 @@ pub enum Request {
         change: Box<crate::evidence_policy::Change>,
         preview: String,
     },
-    Catalog,
+    Catalog {
+        after: Option<String>,
+    },
     Preview {
         target: String,
         operation: Operation,
@@ -409,7 +413,7 @@ impl Owner {
             token: config.token,
             targets,
             workspace: Arc::new(workspace),
-            max_jobs: config.max_jobs,
+            max_jobs: config.max_jobs.min(16),
             preparation: Arc::new(tokio::sync::Semaphore::new(1)),
             active: Mutex::new(BTreeMap::new()),
         }))
@@ -708,13 +712,16 @@ impl Owner {
                 self.policy_action(target, PolicyAction::Apply(change, preview))
                     .await
             }
-            Request::Catalog => {
+            Request::Catalog { after } => {
+                let (page, next) = self
+                    .workspace
+                    .owner_jobs_page(after.as_deref(), self.max_jobs)?;
                 let mut jobs = Vec::new();
-                for job in self.workspace.owner_jobs()? {
+                for job in page {
                     jobs.push(self.status(job["id"].as_str().ok_or(Failure::Corrupt)?)?);
                 }
                 Ok(
-                    json!({"owner":self.workspace.author(),"targets":self.targets.values().collect::<Vec<_>>(),"jobs":jobs,"limits":{"jobs":self.max_jobs,"concurrency":1},"authority":"Separate owner capability. Recovered and backup outputs are not activated."}),
+                    json!({"owner":self.workspace.author(),"targets":self.targets.values().collect::<Vec<_>>(),"jobs":jobs,"next":next,"coverage":"One immutable-ID page; refresh from the start to include concurrent earlier insertions.","limits":{"jobs_per_page":self.max_jobs,"concurrency":1},"authority":"Separate owner capability. Recovered and backup outputs are not activated."}),
                 )
             }
             Request::Preview {
@@ -763,9 +770,6 @@ impl Owner {
                     if self.workspace.get("owner-job", &id)?.is_none() {
                         active.retain(|_, handle| !handle.is_finished());
                         if !active.is_empty() {
-                            return Err(Failure::Unavailable);
-                        }
-                        if self.workspace.owner_jobs()?.len() >= self.max_jobs {
                             return Err(Failure::Unavailable);
                         }
                         if let Some(path) = contract["destination"].as_str() {
@@ -990,4 +994,27 @@ fn migration_preview(target: &Target) -> Result<Value, Failure> {
     Ok(
         json!({"plan":plan.id(),"writer":route.writer,"scope":route.scope,"audience":route.audience,"files":summary["inventory"]["files"].as_array().map(Vec::len),"observed_bytes":summary["inventory"]["observed_bytes"],"selected_inventory_complete":summary["inventory"]["selected_inventory_complete"],"notice_count":summary["inventory"]["notices"].as_array().map(Vec::len),"total_operations":summary["total_operations"],"recovery_verified":false,"ready_for_cutover":false}),
     )
+}
+
+/// Locate the next slot in an append-only contiguous sequence without scanning
+/// every historical attempt. Each probe still authenticates its journal entry.
+fn first_unused(mut present: impl FnMut(usize) -> Result<bool, Failure>) -> Result<usize, Failure> {
+    if !present(0)? {
+        return Ok(0);
+    }
+    let mut low = 0usize;
+    let mut high = 1usize;
+    while present(high)? {
+        low = high;
+        high = high.checked_mul(2).ok_or(Failure::Unavailable)?;
+    }
+    while high - low > 1 {
+        let middle = low + (high - low) / 2;
+        if present(middle)? {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    Ok(high)
 }

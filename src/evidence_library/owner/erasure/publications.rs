@@ -331,6 +331,10 @@ struct Plan {
     destinations: Vec<Selection>,
     #[serde(default)]
     identities: BTreeSet<(String, String, String)>,
+    // Cumulative opaque source coordinates through the preceding pass. Presence
+    // permits bounded replay of the latest plan; old plans are upgraded once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    prior_coordinates: Option<BTreeSet<String>>,
 }
 #[derive(Default)]
 struct Seeds {
@@ -462,6 +466,7 @@ fn plan(
         parent: parent.id()?,
         destinations,
         identities,
+        prior_coordinates: Some(retained.coordinates.clone()),
     })
 }
 pub(super) fn cleanup(
@@ -478,23 +483,41 @@ pub(super) fn cleanup(
     let mut retained = Seeds::default();
     retained.include(parent)?;
     queues::include_retained(journal, job, &mut retained)?;
-    // Replay every immutable child authorization before inspecting new bytes.
-    // A crash after journaling but before deletion therefore cannot abandon a
-    // selected copy or replace its authority with a freshly signed guess.
-    let mut round = 0;
-    let key = loop {
-        if round >= ATTEMPTS {
-            return Err(Failure::Unavailable);
-        }
-        let key = if round == 0 {
+    // Every new plan is written only after its predecessor's primary custody
+    // and archive reconciliation succeed. Its cumulative seeds let a restart
+    // replay just the newest authorization, without a lifetime retry ceiling.
+    let plan_key = |n| {
+        if n == 0 {
             format!("erasure:{job}:publication-plan")
         } else {
-            format!("erasure:{job}:publication-plan:{round}")
-        };
-        let Some(value) = journal.get("owner-result", &key)? else {
-            break key;
-        };
-        let previous: Plan = serde_json::from_value(value).map_err(invalid)?;
+            format!("erasure:{job}:publication-plan:{n}")
+        }
+    };
+    let round = first_unused(|n| Ok(journal.get("owner-result", &plan_key(n))?.is_some()))?;
+    let key = plan_key(round);
+    let mut begin = round.saturating_sub(1);
+    if round > 0 {
+        let latest: Plan = serde_json::from_value(
+            journal
+                .get("owner-result", &plan_key(begin))?
+                .ok_or(Failure::Corrupt)?,
+        )
+        .map_err(invalid)?;
+        if latest.prior_coordinates.is_none() {
+            // Earlier versions could create at most 32 non-cumulative plans.
+            if round > 32 {
+                return Err(Failure::Corrupt);
+            }
+            begin = 0;
+        }
+    }
+    for n in begin..round {
+        let previous: Plan = serde_json::from_value(
+            journal
+                .get("owner-result", &plan_key(n))?
+                .ok_or(Failure::Corrupt)?,
+        )
+        .map_err(invalid)?;
         if previous.version != 1
             || previous.job != job
             || previous.parent != parent.id()?
@@ -503,6 +526,9 @@ pub(super) fn cleanup(
             return Err(Failure::Corrupt);
         }
         retained.identities.extend(previous.identities);
+        if let Some(coordinates) = previous.prior_coordinates {
+            retained.coordinates.extend(coordinates);
+        }
         for (target, selection) in targets.iter().zip(previous.destinations) {
             if selection.binding != target.history.binding {
                 return Err(Failure::Corrupt);
@@ -513,8 +539,7 @@ pub(super) fn cleanup(
             }
             target.history.reconcile_archive(&target.root)?;
         }
-        round += 1;
-    };
+    }
     let plan = plan(targets, workspaces, primary, parent, job, &retained)?;
     let value = serde_json::to_value(&plan).map_err(invalid)?;
     if serde_json::to_vec(&value).map_err(invalid)?.len() > 250 * 1024 {

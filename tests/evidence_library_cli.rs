@@ -510,6 +510,8 @@ fn managed_owner_launch_requires_the_registered_cleanup_inventory() {
     let signer = Identity::generate();
     let key = dir.path().join("owner.key");
     signer.save(&key).unwrap();
+    let reader_key = dir.path().join("reader-signing.key");
+    Identity::generate().save(&reader_key).unwrap();
     let private = write("recipient.key", &[37; 32]);
     let root = dir.path().join("archive");
     let offline = dir.path().join("offline-replica");
@@ -539,8 +541,15 @@ fn managed_owner_launch_requires_the_registered_cleanup_inventory() {
     history.minimum = Some(minimum);
     let history_file = write("custody.json", &serde_json::to_vec(&history).unwrap());
     let database = dir.path().join("reader.sqlite");
-    drop(Workspace::open(&database, Identity::load_existing(&key).unwrap(), [37; 32]).unwrap());
-    let guard = write("workspace.json", &serde_json::to_vec(&json!({"database":database,"signing_key":key,"recipient_key":private,"sources":[history]})).unwrap());
+    drop(
+        Workspace::open(
+            &database,
+            Identity::load_existing(&reader_key).unwrap(),
+            [37; 32],
+        )
+        .unwrap(),
+    );
+    let guard = write("workspace.json", &serde_json::to_vec(&json!({"database":database,"signing_key":reader_key,"recipient_key":private,"sources":[history]})).unwrap());
     let deployment = write(
         "deployment.json",
         &serde_json::to_vec(&json!({"version":1,
@@ -581,7 +590,7 @@ fn managed_owner_launch_requires_the_registered_cleanup_inventory() {
     assert!(String::from_utf8_lossy(&omitted_workspace.stderr)
         .contains("omits a registered dependent workspace"));
     config["authority"]["targets"][0]["workspaces"] =
-        json!([{"database":database,"signing_key":key,"recipient_key":private}]);
+        json!([{"database":database,"signing_key":reader_key,"recipient_key":private}]);
     let complete = run(&config);
     assert!(
         complete.status.success(),
@@ -603,10 +612,10 @@ fn managed_owner_launch_requires_the_registered_cleanup_inventory() {
         use tokio::io::{AsyncWriteExt, BufReader as TokioBufReader};
         let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_kan-v2"));
         command.arg("--deployment").arg(&deployment).arg("library")
-            .arg("--config").arg(&reader_config).arg("--signing-key").arg(&key)
+            .arg("--config").arg(&reader_config).arg("--signing-key").arg(&reader_key)
             .arg("--workspace").arg(&database).arg("--workspace-key").arg(&private)
             .arg("--owner-config").arg(&owner_config).arg("--mcp").arg("--mcp-owner");
-        let mut child = command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true).spawn().unwrap();
+        let mut child = command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).kill_on_drop(true).spawn().unwrap();
         let mut input = child.stdin.take().unwrap();
         let mut output = TokioBufReader::new(child.stdout.take().unwrap());
         mcp_request(&mut input,&mut output,1,"initialize",json!({"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"managed-test","version":"1"}})).await;
@@ -625,7 +634,7 @@ fn managed_owner_launch_requires_the_registered_cleanup_inventory() {
         .arg("--config")
         .arg(&reader_config)
         .arg("--signing-key")
-        .arg(&key)
+        .arg(&reader_key)
         .arg("--workspace")
         .arg(&database)
         .arg("--workspace-key")

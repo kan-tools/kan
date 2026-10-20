@@ -5,7 +5,6 @@ use std::{
     io::Read,
     time::{Duration, Instant},
 };
-const ATTEMPTS: usize = 32;
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Plan {
@@ -39,7 +38,9 @@ fn private_file(path: &Path) -> Result<std::fs::File, Failure> {
         }
     }
     let file = std::fs::File::open(path).map_err(unavailable)?;
-    fs4::FileExt::try_lock(&file).map_err(|_| Failure::Conflict)?;
+    // macOS coordinates flock with SQLite's locks: hold a shared lock while
+    // opening read-only verification, then upgrade after that connection closes.
+    fs4::FileExt::try_lock_shared(&file).map_err(|_| Failure::Conflict)?;
     same_file(path, &file)?;
     Ok(file)
 }
@@ -200,26 +201,19 @@ impl Owner {
     }
     pub(super) fn backup_purge_status(&self, job: Value) -> Result<Value, Failure> {
         let id = job["id"].as_str().ok_or(Failure::Corrupt)?;
-        let mut result = None;
-        let mut attempts = 0;
-        let mut interrupted = false;
-        for n in 0..ATTEMPTS {
-            if self
+        let attempts = first_unused(|n| {
+            Ok(self
                 .workspace
                 .get("owner-result", &phase(id, n, "started"))?
-                .is_none()
-            {
-                break;
-            }
-            attempts = n + 1;
-            let completed = self
-                .workspace
-                .get("owner-result", &phase(id, n, "finished"))?;
-            interrupted = completed.is_none();
-            if completed.is_some() {
-                result = completed;
-            }
-        }
+                .is_some())
+        })?;
+        let result = if attempts == 0 {
+            None
+        } else {
+            self.workspace
+                .get("owner-result", &phase(id, attempts - 1, "finished"))?
+        };
+        let interrupted = result.is_none();
         let running = self
             .active
             .lock()
@@ -237,7 +231,7 @@ impl Owner {
             "purge-pending"
         };
         Ok(
-            json!({"job":job,"state":state,"result":result,"attempts":attempts,"resumable":!succeeded&&attempts<ATTEMPTS}),
+            json!({"job":job,"state":state,"result":result,"attempts":attempts,"resumable":!succeeded}),
         )
     }
     pub(super) async fn apply_backup_purge(
@@ -270,12 +264,9 @@ impl Owner {
             if active.contains_key(&key) {return Ok(());}
             if !active.is_empty() {return Err(Failure::Unavailable);}
             if existing.is_none() {
-                if owner.workspace.owner_jobs()?.len()>=owner.max_jobs {return Err(Failure::Unavailable);}
                 owner.workspace.put("owner-job",&key,json!({"id":key,"contract":contract,"started_at":crate::evidence_operations::now().to_string()}))?;
             }
-            let mut attempt=0;
-            while attempt<ATTEMPTS && owner.workspace.get("owner-result",&phase(&key,attempt,"started"))?.is_some() {attempt+=1;}
-            if attempt==ATTEMPTS {return Err(Failure::Unavailable);}
+            let attempt=first_unused(|n| Ok(owner.workspace.get("owner-result",&phase(&key,n,"started"))?.is_some()))?;
             owner.workspace.put("owner-result",&phase(&key,attempt,"started"),json!({"job":key,"attempt":attempt}))?;
             let worker=owner.clone();let worker_key=key.clone();
             let task=tokio::task::spawn_blocking(move || {
@@ -341,6 +332,7 @@ fn purge(plan: &Plan, id: &str, journal: &Workspace) -> Result<Value, Failure> {
             return Err(Failure::Conflict);
         }
         let held = matches(plan, &plan.database)?;
+        fs4::FileExt::try_lock(&held).map_err(|_| Failure::Conflict)?;
         same_file(&plan.database, &held)?;
         // surface-write: evidence-backup:archive.sqlite,evidence-backup-purge:backup.sqlite
         crate::persistence::rename(
@@ -355,6 +347,7 @@ fn purge(plan: &Plan, id: &str, journal: &Workspace) -> Result<Value, Failure> {
     }
     let removed = if exists(&staged)? {
         let held = matches(plan, &staged)?;
+        fs4::FileExt::try_lock(&held).map_err(|_| Failure::Conflict)?;
         journal.put(
             "owner-result",
             &format!("backup-purge:{id}:verified"),

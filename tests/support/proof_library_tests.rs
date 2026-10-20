@@ -2257,7 +2257,7 @@ async fn owner_backup_purge_is_exact_scoped_and_resumes_staged_copies() {
     let readers = || {
         let workspace =
             kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
-        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[
+        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":2,"targets":[
             {"kind":"archive","id":"archive","root":f.root,"output":output.path(),"binding":{"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer}}
         ]})).unwrap(),workspace).unwrap();
         kan::evidence_library::Readers::new(None, vec![server.client(&f)])
@@ -2381,6 +2381,18 @@ async fn owner_backup_purge_is_exact_scoped_and_resumes_staged_copies() {
                 json!({"id":preview["digest"],"contract":preview["contract"],"started_at":"200"}),
             )
             .unwrap();
+        for n in 0..33 {
+            workspace
+                .put(
+                    "owner-result",
+                    &format!(
+                        "backup-purge:{}:{n}:started",
+                        preview["digest"].as_str().unwrap()
+                    ),
+                    json!({"job":preview["digest"],"attempt":n}),
+                )
+                .unwrap();
+        }
     }
     let staged_dir = output.path().join(format!(
         ".kan-purge-{}",
@@ -2398,8 +2410,38 @@ async fn owner_backup_purge_is_exact_scoped_and_resumes_staged_copies() {
     let resumed=owner_call(&ui,OWNER,json!({"action":"apply-backup-purge","plan":preview["plan"],"preview":preview["digest"],"wait":true}),200).await;
     assert_eq!(resumed["state"], "succeeded", "{resumed}");
     assert!(!staged.exists());
+    assert_eq!(resumed["attempts"], 34);
     let catalog = owner_call(&ui, OWNER, json!({"action":"catalog"}), 200).await;
-    assert_eq!(catalog["jobs"].as_array().unwrap().len(), 4);
+    assert_eq!(catalog["jobs"].as_array().unwrap().len(), 2);
+    assert!(catalog["next"].is_string());
+    let second = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"catalog","after":catalog["next"]}),
+        200,
+    )
+    .await;
+    assert_eq!(second["jobs"].as_array().unwrap().len(), 2);
+    assert!(second["next"].is_null());
+    let ids = catalog["jobs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(second["jobs"].as_array().unwrap())
+        .map(|j| j["job"]["id"].as_str().unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        ids.len(),
+        4,
+        "pagination retains every historical job without duplicates"
+    );
+    owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"catalog","after":"invalid"}),
+        400,
+    )
+    .await;
     assert_eq!(
         attested::Archive::verify_file(&other, f.binding.clone())
             .unwrap()
@@ -5413,6 +5455,31 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         );
     }
     std::fs::copy(&old_workspace, &derived_path).unwrap();
+    {
+        let journal =
+            kan::evidence_workspace::Workspace::open(&state, identity(9), [84; 32]).unwrap();
+        let id = preview["digest"].as_str().unwrap();
+        let key = |n| {
+            if n == 0 {
+                format!("erasure:{id}:publication-plan")
+            } else {
+                format!("erasure:{id}:publication-plan:{n}")
+            }
+        };
+        let mut n = 0;
+        let mut latest = None;
+        while let Some(plan) = journal.get("owner-result", &key(n)).unwrap() {
+            latest = Some(plan);
+            n += 1;
+        }
+        let latest = latest.unwrap();
+        assert!(latest["prior_coordinates"].is_array());
+        for round in n..33 {
+            journal
+                .put("owner-result", &key(round), latest.clone())
+                .unwrap();
+        }
+    }
     let repaired = owner_call(
         &ui,
         OWNER,
@@ -5423,6 +5490,11 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
     assert_eq!(
         repaired["result"]["report"]["workspaces"][0]["state"], "reconciled",
         "{repaired}"
+    );
+    assert_eq!(repaired["result"]["report"]["publications"]["pass"], 33);
+    assert_eq!(
+        repaired["state"], "configured-cleanup-complete",
+        "latest cumulative plan retains earlier source lineage beyond the former pass limit"
     );
     {
         let damaged =

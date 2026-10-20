@@ -686,13 +686,13 @@
       if(result){$('owner-detail').replaceChildren();await ownerCatalog();}
     }));$('owner-detail').append(confirm);
   }
-  async function ownerCatalog(){
-    const value=await ownerRpc({action:'catalog'});if(!value)return;
+  async function ownerCatalog(after=null){
+    const value=await ownerRpc(after?{action:'catalog',after}:{action:'catalog'});if(!value)return;
     if(!Array.isArray(value.targets)||!Array.isArray(value.jobs))throw new Error('Invalid owner response.');
     ownerTargets=value.targets;ownerPreview=null;ownerRetry=null;$('owner-target').replaceChildren();
     for(const target of ownerTargets){const option=textNode('option',`${target.id} · ${target.kind}`);option.value=target.id;$('owner-target').append(option);}
     $('owner-target').value=ownerTargets[0]?.id||'';ownerOperations();$('owner-controls').hidden=false;$('owner-connect').hidden=true;$('owner-lock').disabled=false;
-    $('owner-status').textContent=`Owner ${value.owner} · ${value.jobs.length} retained jobs · one active job · lifetime quota ${value.limits.jobs}`;$('owner-jobs').replaceChildren();
+    $('owner-status').textContent=`Owner ${value.owner} · ${value.jobs.length} jobs on this page · one active job · ${value.limits.jobs_per_page??value.limits.jobs} jobs per page`;$('owner-jobs').replaceChildren();
     for(const status of value.jobs){const row=textNode('article','');row.className='content-item';row.append(textNode('h3',`${status.job.contract.operation} · ${status.job.contract.target.id} · ${status.state}`));row.append(textNode('p',status.job.id,'content-identity'));
       const report=status.result?.report;
       if(report?.progress?.erased_operations)row.append(textNode('p',`${report.progress.erased_operations} import operations were explicitly erased; queue coverage is incomplete.`, 'content-warning'));
@@ -724,6 +724,8 @@
       else if(status.job.contract.operation==='purge-backup'){if(status.state!=='running'&&status.resumable){const resume=textNode('button','Resume backup purge');resume.addEventListener('click',()=>ownerRun(async()=>{const result=await ownerRpc({action:'apply-backup-purge',plan:status.job.contract.plan,preview:status.job.id,wait:false});if(result)await ownerCatalog();}));row.append(resume);}}
       else if(status.state!=='running'){const retry=textNode('button','Preview new attempt');retry.addEventListener('click',()=>{ownerRetry=status.job.id;$('owner-target').value=status.job.contract.target.id;ownerOperations();$('owner-operation').value=status.job.contract.operation;$('owner-status').textContent='Select Preview maintenance to review a new linked job. Any earlier outputs stay retained.';});row.append(retry);}$('owner-jobs').append(row);
     }
+    if(value.next){const next=textNode('button','Next jobs');next.addEventListener('click',()=>ownerRun(()=>ownerCatalog(value.next)));$('owner-jobs').append(next);}
+    if(after){const first=textNode('button','First jobs');first.addEventListener('click',()=>ownerRun(()=>ownerCatalog()));$('owner-jobs').append(first);}
   }
   $('owner-connect').addEventListener('submit',event=>{event.preventDefault();ownerToken=$('owner-token').value;$('owner-token').value='';ownerRun(ownerCatalog);});
   $('owner-refresh').addEventListener('click',()=>ownerRun(ownerCatalog));
