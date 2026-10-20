@@ -1117,8 +1117,19 @@ The report identifies each selected prefix, replica and admitted spool cleanup;
 it does not claim global coverage. Blocked unpublished requests, unavailable or
 unconfigured lineage and unconfigured copies remain explicit coordination work.
 Later appends are discovered by the next explicit resume; this worker is not an
-automatic background publication monitor. Bounds are 16 destinations, 4,096 annotation occurrences,
-512 selected occurrences, 256 MiB of requests and 120 seconds per planning pass.
+automatic background publication monitor. Discovery retains encrypted pages of
+minimal annotation identity/citation metadata and resumes across owner restarts.
+The old 4,096-annotation / 256 MiB full-prefix decode ceilings are removed. Defaults
+are up to four 40-record pages per destination per resume, yielding after 16 MiB or
+five seconds of payload-loop work; full metadata verification remains separate.
+A destination can lower these budgets with `discovery_page_records` (1–40) and
+`discovery_pages` (1–4). An incomplete scan reports `publication-discovery`, retained
+page count, the pinned frontier and its remaining predecessor coordinate. It cannot
+authorize publication deletion or unlock dependent workspace cleanup. A complete
+scan plans up to 512 selected publication occurrences; further selected occurrences
+or an observed newer prefix keep discovery pending for another cleanup pass.
+Structural lineage is still assembled from the authenticated page metadata; this
+is not a constant-memory graph implementation. Per-plan metadata limits remain.
 Configured workspaces also reconcile the publication histories, so caches that cite
 a removed publication are covered.
 

@@ -5632,3 +5632,147 @@ async fn workspace_source_cleanup_batches_large_cache_and_keeps_job_lineage_unti
     assert!(workspace.get("search-page", "unrelated").unwrap().is_some());
     server.stop().await;
 }
+
+#[tokio::test]
+async fn owner_publication_discovery_resumes_retained_pages_before_authorizing_cleanup() {
+    use kan::evidence_erasure_history::{Access, Record};
+    const OWNER: &str = "synthetic-publication-discovery-owner-token";
+    let source_dir = private_workspace_directory();
+    let publication_dir = private_workspace_directory();
+    let local = private_workspace_directory();
+    let custody = private_workspace_directory();
+    let publication_custody = private_workspace_directory();
+    let f = fixture_requests(
+        source_dir.path(),
+        Profile::Admitted,
+        |n, audience, previous| {
+            if n < 2 {
+                return captured_request(n, audience, previous);
+            }
+            let header=serde_json::to_vec(&json!({"version":2,"attempt":"a".repeat(64),"observer":"collector","ordinal":n,"observed_at_unix_micros":null,"elapsed_micros":0,"unconfirmed_before":0,"event":{"type":"terminal","outcome":"completed"}})).unwrap();
+            let mut frame = b"KANC2".to_vec();
+            frame.extend_from_slice(&(header.len() as u32).to_be_bytes());
+            frame.extend(header);
+            encrypted_frame(n, audience, previous, &frame)
+        },
+    );
+    let server = Server::start(&f).await;
+    let reader = server.client(&f);
+    let pin = reader.snapshot().await.unwrap();
+    let page = reader.page(&pin, None, 1).await.unwrap();
+    let cite = json!({"source":"source","pin":pin,"selection":page.records[0].selection});
+    let publication = fixture_requests(
+        publication_dir.path(),
+        Profile::Copied,
+        |n, audience, previous| {
+            use sha2::{Digest, Sha256};
+            let mut declaration = json!({"version":1,"author":identity(6).did().as_str(),"analysis_trigger_plan":[],"draft":{"subject":"discovery-test","text":format!("body-secret-{n}"),"tags":[],"cites":[cite],"supersedes":null}});
+            let id = service::hex(&Sha256::digest(serde_json::to_vec(&declaration).unwrap()));
+            declaration["id"] = json!(id);
+            declaration["recorded_at"] = json!("100");
+            encrypted_frame(
+                n,
+                audience,
+                previous,
+                &serde_json::to_vec(
+                    &json!({"format":"kan-annotation/1","declaration":declaration}),
+                )
+                .unwrap(),
+            )
+        },
+    );
+    let setup = |directory: &std::path::Path, binding: Value| {
+        let mut access: Access = serde_json::from_value(
+            json!({"directory":directory,"binding":binding,"owner":identity(9).did().as_str()}),
+        )
+        .unwrap();
+        access.initialize().unwrap();
+        let genesis =
+            Record::sign(access.preview(None, "a".repeat(64)).unwrap(), &identity(9)).unwrap();
+        let minimum = genesis.id().unwrap();
+        access.append(genesis).unwrap();
+        access.minimum = Some(minimum);
+        access
+    };
+    let history = setup(
+        custody.path(),
+        json!({"profile":"admitted","archive":service::hex(&f.binding.archive),"scope":service::hex(&f.binding.scope),"issuer":f.binding.issuer}),
+    );
+    let publication_history = setup(
+        publication_custody.path(),
+        json!({"profile":"copied","archive":service::hex(&publication.binding.archive),"scope":service::hex(&publication.binding.scope),"issuer":publication.binding.issuer}),
+    );
+    let write = |name: &str, bytes: &[u8]| {
+        let path = local.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        path
+    };
+    let signer = write("owner.key", &[9; 32]);
+    let issuer = write("issuer.key", &[8; 32]);
+    let key = write("capture.key", &PRIVATE);
+    let readers = || {
+        let workspace = kan::evidence_workspace::Workspace::open(
+            &local.path().join("owner.sqlite"),
+            identity(9),
+            [84; 32],
+        )
+        .unwrap();
+        let owner=kan::evidence_library::Owner::new(serde_json::from_value(json!({"token":OWNER,"max_jobs":10,"targets":[{"kind":"capture-erasure","id":"capture","root":f.root,"history":history,"signing_key":signer,"issuer_key":issuer,"private_keys":[key],"publications":[{"root":publication.root,"history":publication_history,"signing_key":signer,"issuer_key":issuer,"private_keys":[key],"discovery_page_records":1,"discovery_pages":1}]}]})).unwrap(),workspace).unwrap();
+        kan::evidence_library::Readers::new(None, vec![server.client(&f)])
+            .unwrap()
+            .with_owner(owner)
+    };
+    let ui = Ui::start(readers()).await;
+    let preview=owner_call(&ui,OWNER,json!({"action":"preview-erasure","target":"capture","capture":{"writer":identity(6).did().as_str(),"observer":"collector","attempt":"a".repeat(64)}}),200).await;
+    let first=owner_call(&ui,OWNER,json!({"action":"apply-erasure","target":"capture","plan":preview["plan"],"preview":preview["digest"],"wait":true}),200).await;
+    assert_eq!(first["state"], "cleanup-pending", "{first}");
+    assert_eq!(
+        first["result"]["report"]["publications"]["reason"],
+        "publication-discovery"
+    );
+    assert_eq!(
+        first["result"]["report"]["publications"]["progress"]["remaining_through"],
+        "2"
+    );
+    assert_eq!(
+        publication_history.current().unwrap().history.len(),
+        1,
+        "incomplete discovery creates no child authority"
+    );
+    assert_eq!(
+        copied::Archive::verify_file(&publication.db(), publication.binding.clone())
+            .unwrap()
+            .contents
+            .erased_objects,
+        0
+    );
+    ui.stop().await;
+    let ui = Ui::start(readers()).await;
+    let request = json!({"action":"resume-erasure","id":preview["digest"],"wait":true});
+    let second = owner_call(&ui, OWNER, request.clone(), 200).await;
+    assert_eq!(
+        second["result"]["report"]["publications"]["progress"]["remaining_through"], "1",
+        "{second}"
+    );
+    assert_eq!(
+        second["result"]["report"]["publications"]["progress"]["retained_pages"],
+        2
+    );
+    let done = owner_call(&ui, OWNER, request, 200).await;
+    assert_eq!(done["state"], "configured-cleanup-complete", "{done}");
+    assert_eq!(publication_history.current().unwrap().history.len(), 2);
+    assert_eq!(
+        copied::Archive::verify_file(&publication.db(), publication.binding.clone())
+            .unwrap()
+            .contents
+            .erased_objects,
+        3
+    );
+    ui.stop().await;
+    server.stop().await;
+}

@@ -1,6 +1,7 @@
 //! Bounded full-prefix publication discovery. Exact child authorizations are
 //! encrypted in the owner journal before any publication payload is removed.
 use super::*;
+mod discovery;
 mod queues;
 use crate::{
     evidence_library::proof::knowledge,
@@ -26,6 +27,10 @@ pub struct PublicationTarget {
     pub replicas: Vec<PathBuf>,
     #[serde(default)]
     pub spools: Vec<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discovery_page_records: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discovery_pages: Option<usize>,
 }
 pub(super) fn validate(
     targets: &[PublicationTarget],
@@ -50,7 +55,9 @@ pub(super) fn validate(
                 return Err(Failure::Invalid);
             }
         }
-        if t.history.minimum.is_none()
+        if t.discovery_page_records.is_some_and(|n| n == 0 || n > 40)
+            || t.discovery_pages.is_some_and(|n| n == 0 || n > 4)
+            || t.history.minimum.is_none()
             || !t.root.is_absolute()
             || !t.signing_key.is_absolute()
             || !t.issuer_key.is_absolute()
@@ -101,6 +108,8 @@ fn identity_key(author: &str, id: &str, subject: &str) -> (String, String, Strin
     hash.update(subject.as_bytes());
     (author.into(), id.into(), service::hex(&hash.finalize()))
 }
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Node {
     destination: usize,
     sequence: u64,
@@ -185,86 +194,11 @@ fn budget(deadline: Instant) -> Result<Budget, Failure> {
         .checked_duration_since(Instant::now())
         .ok_or(Failure::Unavailable)?;
     Ok(Budget {
-        items: 100_000,
-        metadata_bytes: 256 * 1024 * 1024,
+        items: u64::MAX,
+        metadata_bytes: u64::MAX,
         duration,
         cancelled: Arc::new(AtomicBool::new(false)),
     })
-}
-fn scan(
-    target: &PublicationTarget,
-    destination: usize,
-    deadline: Instant,
-    spent: &mut usize,
-) -> Result<Scan, Failure> {
-    let current = target.history.current()?;
-    let binding = &target.history.binding;
-    let path = target.root.join("archive.sqlite");
-    current.check_archive(&path, binding)?;
-    let keys = keyring(target)?;
-    let inventory = Inventory::open(
-        &path,
-        binding.profile.inventory(),
-        binding.owner_binding()?,
-        budget(deadline)?,
-    )?;
-    let frontier = inventory.frontier().clone();
-    let mut cursor = None;
-    let mut nodes = Vec::new();
-    loop {
-        let page = inventory.page(
-            cursor.as_ref(),
-            PageBudget {
-                rows: 40,
-                record_bytes: 8 * 1024 * 1024,
-                payload_bytes: 40 * store::MAX_CHUNK,
-            },
-            budget(deadline)?,
-        )?;
-        for item in page.records {
-            if item.availability == Availability::Erased {
-                continue;
-            }
-            let Source::Available { bytes, .. } = inventory::source(
-                &path,
-                binding.profile.inventory(),
-                binding.owner_binding()?,
-                &item.selection,
-                service::MAX_REQUEST,
-                budget(deadline)?,
-            )?
-            else {
-                return Err(Failure::Missing);
-            };
-            *spent = spent.checked_add(bytes.len()).ok_or(Failure::Unavailable)?;
-            if *spent > 256 * 1024 * 1024 {
-                return Err(Failure::Unavailable);
-            }
-            let Some(lineage) = decode(&bytes, binding, &keys)? else {
-                continue;
-            };
-            nodes.push(Node {
-                destination,
-                sequence: item.record.sequence,
-                coordinate: coordinate(
-                    binding,
-                    &item.record.sequence.to_string(),
-                    &item.record.manifest.cid().to_string(),
-                )?,
-                identity: lineage.identity,
-                cites: lineage.cites,
-                parents: lineage.parents,
-            });
-            if nodes.len() > 4096 {
-                return Err(Failure::Unavailable);
-            }
-        }
-        cursor = page.next;
-        if cursor.is_none() {
-            break;
-        }
-    }
-    Ok(Scan { frontier, nodes })
 }
 fn closure(
     nodes: &[Node],
@@ -335,6 +269,8 @@ struct Plan {
     // permits bounded replay of the latest plan; old plans are upgraded once.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     prior_coordinates: Option<BTreeSet<String>>,
+    #[serde(default)]
+    more: bool,
 }
 #[derive(Default)]
 struct Seeds {
@@ -354,26 +290,32 @@ impl Seeds {
         Ok(())
     }
 }
+enum Planning {
+    Pending(Value),
+    Ready(Box<Plan>),
+}
 fn plan(
     targets: &[PublicationTarget],
     workspaces: &[WorkspaceTarget],
     primary: &custody::Access,
     parent: &custody::Record,
-    job: &str,
     retained: &Seeds,
-) -> Result<Plan, Failure> {
-    let deadline = Instant::now() + Duration::from_secs(120);
-    let mut spent = 0;
+    cache: &discovery::Cache<'_>,
+) -> Result<Planning, Failure> {
+    let job = cache.job;
     let mut scans = Vec::new();
     let mut nodes = Vec::new();
     for (n, target) in targets.iter().enumerate() {
-        let scan = scan(target, n, deadline, &mut spent)?;
-        nodes.extend(scan.nodes);
-        if nodes.len() > 4096 {
-            return Err(Failure::Unavailable);
+        match discovery::scan(target, n, Instant::now() + Duration::from_secs(120), cache)? {
+            discovery::Outcome::Pending(progress) => return Ok(Planning::Pending(progress)),
+            discovery::Outcome::Complete(scan) => {
+                let scan = *scan;
+                nodes.extend(scan.nodes);
+                scans.push(scan.frontier);
+            }
         }
-        scans.push(scan.frontier);
     }
+    let deadline = Instant::now() + Duration::from_secs(120);
     let erased = parent.change.erasure.as_ref().ok_or(Failure::Invalid)?;
     let mut identities = retained.identities.clone();
     for workspace in workspaces {
@@ -412,10 +354,9 @@ fn plan(
         }
     }
     let selected = closure(&nodes, &retained.coordinates, &identities);
-    // A bounded immutable journal record must fit before any child erasure.
-    if selected.len() > 512 {
-        return Err(Failure::Unavailable);
-    }
+    let mut more = selected.len() > 512;
+    // Authorize one bounded batch. Retained identities select the rest on resume.
+    let selected = selected.into_iter().take(512).collect::<BTreeSet<_>>();
     let mut destinations = Vec::new();
     for (n, target) in targets.iter().enumerate() {
         let sequences = selected
@@ -423,6 +364,30 @@ fn plan(
             .filter_map(|i| (nodes[*i].destination == n).then_some(nodes[*i].sequence))
             .collect::<Vec<_>>();
         let authorization = if sequences.is_empty() {
+            let latest = match target.history.binding.profile {
+                Profile::Admitted => {
+                    store::attested::Archive::open(
+                        &target.root,
+                        target.history.binding.owner_binding()?,
+                    )?
+                    .verify()?
+                    .through
+                }
+                Profile::Copied => {
+                    store::copied::Archive::open(
+                        &target.root,
+                        target.history.binding.owner_binding()?,
+                    )?
+                    .verify()?
+                    .contents
+                    .snapshot
+                    .through
+                }
+            };
+            if latest < scans[n].through {
+                return Err(Failure::Conflict);
+            }
+            more |= latest > scans[n].through;
             None
         } else {
             let current = target.history.current()?;
@@ -436,11 +401,14 @@ fn plan(
                 Profile::Copied => store::copied::Archive::open(&target.root, binding)?
                     .preview_erasure(&sequences, nonce, now)?,
             };
-            if erase.through != scans[n].through
-                || Some(erase.tip.clone()) != scans[n].manifest.as_ref().map(ToString::to_string)
+            if erase.through < scans[n].through
+                || (erase.through == scans[n].through
+                    && Some(erase.tip.clone())
+                        != scans[n].manifest.as_ref().map(ToString::to_string))
             {
                 return Err(Failure::Conflict);
             }
+            more |= erase.through > scans[n].through;
             let record = storage::Record::sign(
                 erase,
                 &Identity::load_existing(&target.issuer_key).map_err(invalid)?,
@@ -460,14 +428,15 @@ fn plan(
         });
     }
     identities.extend(selected.iter().map(|i| nodes[*i].identity.clone()));
-    Ok(Plan {
+    Ok(Planning::Ready(Box::new(Plan {
         version: 1,
         job: job.into(),
         parent: parent.id()?,
         destinations,
         identities,
         prior_coordinates: Some(retained.coordinates.clone()),
-    })
+        more,
+    })))
 }
 pub(super) fn cleanup(
     targets: &[PublicationTarget],
@@ -540,7 +509,19 @@ pub(super) fn cleanup(
             target.history.reconcile_archive(&target.root)?;
         }
     }
-    let plan = plan(targets, workspaces, primary, parent, job, &retained)?;
+    let cache = discovery::Cache {
+        journal,
+        job,
+        round,
+    };
+    let plan = match plan(targets, workspaces, primary, parent, &retained, &cache)? {
+        Planning::Pending(progress) => {
+            return Ok(
+                json!({"state":"pending","reason":"publication-discovery","progress":progress,"pass":round}),
+            )
+        }
+        Planning::Ready(plan) => *plan,
+    };
     let value = serde_json::to_value(&plan).map_err(invalid)?;
     if serde_json::to_vec(&value).map_err(invalid)?.len() > 250 * 1024 {
         return Err(Failure::Unavailable);
@@ -628,7 +609,7 @@ pub(super) fn cleanup(
         });
     }
     Ok(
-        json!({"state":"selected-prefix-planned","pass":round,"destinations":reports,"remaining":"Each resume replays retained authorizations and scans current prefixes for later publications. Blocked queues, unavailable lineage and unconfigured copies remain pending; this is not global erasure completion."}),
+        json!({"state":"selected-prefix-planned","pass":round,"discovery":if plan.more {"pending"}else{"complete"},"destinations":reports,"remaining":"Each resume replays retained authorizations and scans current prefixes for later publications. Blocked queues, unavailable lineage and unconfigured copies remain pending; this is not global erasure completion."}),
     )
 }
 
@@ -638,7 +619,7 @@ pub(super) fn reconciled(report: &Value) -> bool {
     if report["state"] == "not-configured" {
         return true;
     }
-    if report["state"] != "selected-prefix-planned" {
+    if report["state"] != "selected-prefix-planned" || report["discovery"] == "pending" {
         return false;
     }
     report["destinations"]
