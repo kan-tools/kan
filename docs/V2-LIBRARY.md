@@ -1128,6 +1128,10 @@ page count, the pinned frontier and its remaining predecessor coordinate. It can
 authorize publication deletion or unlock dependent workspace cleanup. A complete
 scan plans up to 512 selected publication occurrences; further selected occurrences
 or an observed newer prefix keep discovery pending for another cleanup pass.
+After cumulative lineage is paged separately, a conservative 512-occurrence /
+16-destination authority encoding fits in the 250 KiB plan budget (212,936 bytes
+with oversized synthetic identifiers); a codec regression guards that relationship.
+The plan budget is per pass, not a lifetime limit on selected publications.
 Structural lineage is still assembled from the authenticated page metadata; this
 is not a constant-memory graph implementation. Per-plan metadata limits remain.
 Configured workspaces also reconcile the publication histories, so caches that cite

@@ -123,6 +123,8 @@ struct Scan {
     frontier: crate::evidence_attestation::Frontier,
     nodes: Vec<Node>,
 }
+const MAX_SELECTED: usize = 512;
+const MAX_PLAN_BYTES: usize = 250 * 1024;
 type Keys = BTreeMap<Vec<u8>, [u8; 32]>;
 fn keyring(target: &PublicationTarget) -> Result<Keys, Failure> {
     target
@@ -355,9 +357,12 @@ fn plan(
         }
     }
     let selected = closure(&nodes, &retained.coordinates, &identities);
-    let mut more = selected.len() > 512;
+    let mut more = selected.len() > MAX_SELECTED;
     // Authorize one bounded batch. Retained identities select the rest on resume.
-    let selected = selected.into_iter().take(512).collect::<BTreeSet<_>>();
+    let selected = selected
+        .into_iter()
+        .take(MAX_SELECTED)
+        .collect::<BTreeSet<_>>();
     let mut destinations = Vec::new();
     for (n, target) in targets.iter().enumerate() {
         let sequences = selected
@@ -544,7 +549,7 @@ pub(super) fn cleanup(
     plan.seed_pages = Some(retained.persist(journal, job)?);
     plan.prior_coordinates = Some(BTreeSet::new());
     let value = serde_json::to_value(&plan).map_err(invalid)?;
-    if serde_json::to_vec(&value).map_err(invalid)?.len() > 250 * 1024 {
+    if serde_json::to_vec(&value).map_err(invalid)?.len() > MAX_PLAN_BYTES {
         return Err(Failure::Unavailable);
     }
     journal.put("owner-result", &key, value)?;

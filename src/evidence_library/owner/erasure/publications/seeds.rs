@@ -53,6 +53,41 @@ impl Seeds {
 mod tests {
     use super::*;
     #[test]
+    fn maximum_publication_batch_fits_the_owner_journal_with_paged_lineage() {
+        // Exercise the actual Plan codec with all 16 destinations authorized.
+        // 128-byte ASCII identifiers conservatively exceed generated CIDs and
+        // supported signing DIDs; numeric fields use their widest wire values.
+        let binding = json!({"profile":"admitted","archive":"a".repeat(64),
+            "scope":"b".repeat(64),"issuer":"i".repeat(128)});
+        let mut destinations = Vec::new();
+        for _ in 0..16 {
+            let targets = (0..MAX_SELECTED / 16)
+                .map(|n| {
+                    json!({
+                        "sequence":crate::evidence::MAX_SAFE_INTEGER as u64 - n as u64,
+                        "manifest":"m".repeat(128),"object":"o".repeat(128),"length":usize::MAX
+                    })
+                })
+                .collect::<Vec<_>>();
+            destinations.push(json!({"binding":binding,
+                "frontier":{"through":"9007199254740991","manifest":"m".repeat(128),"attestation":"a".repeat(128)},
+                "authorization":{"change":{"version":1,"binding":binding,"owner":"w".repeat(128),
+                    "sequence":"9007199254740991","previous":"p".repeat(64),"nonce":"n".repeat(64),"recorded_at":"9007199254740991",
+                    "erasure":{"plan":{"version":1,"archive":"a".repeat(64),"scope":"b".repeat(64),"issuer":"i".repeat(128),
+                        "through":9007199254740991u64,"tip":"t".repeat(128),"previous":"p".repeat(64),"nonce":"n".repeat(64),
+                        "recorded_at":9007199254740991u64,"targets":targets},"signature":"s".repeat(128)}},"signature":"s".repeat(128)}
+            }));
+        }
+        let plan: Plan = serde_json::from_value(json!({"version":1,"job":"j".repeat(64),"parent":"p".repeat(64),
+            "destinations":destinations,"identities":[],"prior_coordinates":[],"more":true,"seed_pages":usize::MAX})).unwrap();
+        let bytes = serde_json::to_vec(&plan).unwrap();
+        assert!(
+            bytes.len() <= MAX_PLAN_BYTES,
+            "maximum publication batch uses {} bytes",
+            bytes.len()
+        );
+    }
+    #[test]
     fn lineage_larger_than_one_owner_record_survives_restart_and_idempotent_extension() {
         let dir = tempfile::tempdir().unwrap();
         #[cfg(unix)]
