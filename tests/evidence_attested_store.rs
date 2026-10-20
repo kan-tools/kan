@@ -269,7 +269,9 @@ fn process_death_keeps_both_metadata_and_proof_or_neither() {
         "AfterCommit",
     ] {
         let temp = tempfile::tempdir().unwrap();
-        drop(Archive::create(temp.path(), binding()).unwrap());
+        let archive = Archive::create(temp.path(), binding()).unwrap();
+        archive.rebuild_serving_index(&identity(7)).unwrap();
+        drop(archive);
         let result = Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "proof_crash_worker", "--nocapture"])
             .env("KAN_PROOF_CRASH_ROOT", temp.path())
@@ -312,7 +314,17 @@ fn process_death_keeps_both_metadata_and_proof_or_neither() {
         if let Some(original) = original {
             assert_eq!(retry.attestation.bytes(), original);
         }
-        assert_eq!(archive.verify().unwrap().through, 1);
+        let pin = archive.verify().unwrap();
+        assert_eq!(pin.through, 1);
+        let indexed = kan::evidence_store::serving::read_metadata(
+            &temp.path().join("archive.sqlite"),
+            binding(),
+            &pin,
+            None,
+            1,
+        )
+        .unwrap();
+        assert_eq!(indexed.proof.bytes(), retry.attestation.bytes());
     }
 }
 
@@ -1662,4 +1674,139 @@ fn initial_erasure_refuses_wrong_request_stale_tip_and_false_initial_disposition
         .admit_erased(&next, &identity(7), &grant(), &wrong)
         .is_err());
     assert_eq!(archive.verify().unwrap().through, 1);
+}
+
+#[test]
+fn serving_index_authenticates_selected_metadata_and_repairs_only_after_full_audit() {
+    use kan::evidence_store::serving::read_metadata;
+    let temp = tempfile::tempdir().unwrap();
+    let mut archive = Archive::create(temp.path(), binding()).unwrap();
+    let first = archive
+        .admit(&request(0, None), &identity(7), &grant(), 100)
+        .unwrap();
+    let path = temp.path().join("archive.sqlite");
+    assert!(read_metadata(&path, binding(), first.attestation.frontier(), None, 1).is_err());
+    archive.rebuild_serving_index(&identity(7)).unwrap();
+    let second = archive
+        .admit(
+            &request(1, Some(first.record.manifest.cid().to_string())),
+            &identity(7),
+            &grant(),
+            101,
+        )
+        .unwrap();
+    let pin = second.attestation.frontier();
+    drop(archive);
+    let archive = Archive::open(temp.path(), binding()).unwrap();
+    let selected = read_metadata(&path, binding(), pin, None, 1).unwrap();
+    assert_eq!(
+        selected.record.manifest.bytes(),
+        first.record.manifest.bytes()
+    );
+    assert_eq!(selected.proof.bytes(), first.attestation.bytes());
+    assert!(read_metadata(&path, binding(), first.attestation.frontier(), None, 1).is_err());
+    assert!(read_metadata(
+        &path,
+        Binding {
+            archive: [99; 32],
+            ..binding()
+        },
+        pin,
+        None,
+        1
+    )
+    .is_err());
+    let conn = connection(temp.path());
+    conn.execute("UPDATE serving_nodes SET body=zeroblob(length(body))", [])
+        .unwrap();
+    assert!(read_metadata(&path, binding(), pin, None, 1).is_err());
+    archive.rebuild_serving_index(&identity(7)).unwrap();
+    assert!(read_metadata(&path, binding(), pin, None, 1).is_ok());
+    // The bounded path makes no whole-corpus health claim: unrelated metadata
+    // corruption is found by the explicit full audit, not a selected read.
+    let receipt: Vec<u8> = conn
+        .query_row("SELECT receipt FROM commits WHERE sequence=2", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    conn.execute("UPDATE commits SET receipt=x'00' WHERE sequence=2", [])
+        .unwrap();
+    assert!(read_metadata(&path, binding(), pin, None, 1).is_ok());
+    assert!(read_metadata(&path, binding(), pin, None, 2).is_err());
+    let before: Vec<u8> = conn
+        .query_row("SELECT body FROM serving_checkpoint", [], |r| r.get(0))
+        .unwrap();
+    assert!(archive.rebuild_serving_index(&identity(7)).is_err());
+    let after: Vec<u8> = conn
+        .query_row("SELECT body FROM serving_checkpoint", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(before, after);
+    conn.execute("UPDATE commits SET receipt=? WHERE sequence=2", [receipt])
+        .unwrap();
+    // Captured bytes are deliberately outside the metadata-only claim.
+    conn.execute("UPDATE objects SET bytes=x'00'", []).unwrap();
+    assert!(read_metadata(&path, binding(), pin, None, 1).is_ok());
+    assert!(archive.verify().is_err());
+    assert!(archive.rebuild_serving_index(&identity(7)).is_err());
+}
+
+#[test]
+fn serving_checkpoint_rejects_tampering_rollback_and_changed_custody() {
+    use kan::evidence_store::{erasure::Record, serving::read_metadata};
+    let temp = tempfile::tempdir().unwrap();
+    let mut archive = Archive::create(temp.path(), binding()).unwrap();
+    let first = archive
+        .admit(&request(0, None), &identity(7), &grant(), 100)
+        .unwrap();
+    let old = archive
+        .rebuild_serving_index(&identity(7))
+        .unwrap()
+        .bytes()
+        .unwrap();
+    let path = temp.path().join("archive.sqlite");
+    let conn = connection(temp.path());
+    let mut changed: serde_json::Value = serde_json::from_slice(&old).unwrap();
+    changed["statement"]["root"] = serde_json::Value::String(hex(&[0; 32]));
+    conn.execute(
+        "UPDATE serving_checkpoint SET body=?",
+        [serde_json::to_vec(&changed).unwrap()],
+    )
+    .unwrap();
+    assert!(read_metadata(&path, binding(), first.attestation.frontier(), None, 1).is_err());
+    archive.rebuild_serving_index(&identity(7)).unwrap();
+    let second = archive
+        .admit(
+            &request(1, Some(first.record.manifest.cid().to_string())),
+            &identity(7),
+            &grant(),
+            101,
+        )
+        .unwrap();
+    conn.execute("UPDATE serving_checkpoint SET body=?", [&old])
+        .unwrap();
+    assert!(read_metadata(&path, binding(), second.attestation.frontier(), None, 1).is_err());
+    archive.rebuild_serving_index(&identity(7)).unwrap();
+    let plan = archive.preview_erasure(&[1], hex(&[31; 32]), 102).unwrap();
+    let custody = archive
+        .apply_erasure(Record::sign(plan, &identity(7)).unwrap())
+        .unwrap();
+    assert!(read_metadata(
+        &path,
+        binding(),
+        second.attestation.frontier(),
+        custody.tip.as_deref(),
+        1
+    )
+    .is_err());
+    archive.rebuild_serving_index(&identity(7)).unwrap();
+    let selected = read_metadata(
+        &path,
+        binding(),
+        second.attestation.frontier(),
+        custody.tip.as_deref(),
+        1,
+    )
+    .unwrap();
+    assert_eq!(selected.proof.bytes(), first.attestation.bytes());
+    assert!(read_metadata(&path, binding(), second.attestation.frontier(), None, 1).is_err());
 }

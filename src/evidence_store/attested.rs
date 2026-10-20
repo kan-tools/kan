@@ -606,6 +606,7 @@ impl Archive {
                 observe(Boundary::AttestationInserted);
                 proof
             };
+            serving::advance(tx, binding, &previous, row, &verified, signer)?;
             result = Some(verified);
             Ok(())
         };

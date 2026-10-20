@@ -37,6 +37,7 @@ pub enum SurfaceWrite {
     EvidenceOperationsCollection,
     EvidenceArchive,
     EvidenceAttestation,
+    EvidenceServingIndex,
     EvidenceErasure,
     EvidenceCopy,
     EvidenceCopyPlan,
@@ -86,6 +87,7 @@ impl SurfaceWrite {
         Self::EvidenceOperationsCollection,
         Self::EvidenceArchive,
         Self::EvidenceAttestation,
+        Self::EvidenceServingIndex,
         Self::EvidenceErasure,
         Self::EvidenceCopy,
         Self::EvidenceCopyPlan,
@@ -179,6 +181,10 @@ impl SurfaceWrite {
                 "evidence-spool:database-wal",
                 "evidence-spool:database-shm",
                 "evidence-spool:database-journal",
+            ],
+            Self::EvidenceServingIndex => &[
+                "evidence-serving-sqlite:serving_nodes",
+                "evidence-serving-sqlite:serving_checkpoint",
             ],
             Self::EvidenceAttestation => &[
                 "evidence-proof-sqlite:archive_identity",
@@ -589,5 +595,44 @@ pub fn delete_workspace_erased_entry(
         "DELETE FROM entries WHERE kind=? AND id=?",
         rusqlite::params![kind, id],
     )?;
+    Ok(())
+}
+
+/// Derived serving metadata is committed with its signed checkpoint and evidence.
+#[cfg(feature = "v2-storage")]
+pub fn initialize_serving_index(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+) -> rusqlite::Result<()> {
+    tx.execute_batch(crate::evidence_store::serving::SCHEMA)
+}
+#[cfg(feature = "v2-storage")]
+pub fn insert_serving_node(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    id: &[u8; 32],
+    bytes: &[u8],
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO serving_nodes VALUES(?,?)",
+        rusqlite::params![id, bytes],
+    )?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
+pub fn reset_serving_nodes(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM serving_nodes", [])?;
+    Ok(())
+}
+#[cfg(feature = "v2-storage")]
+pub fn publish_serving_checkpoint(
+    _surface: SurfaceWrite,
+    tx: &rusqlite::Transaction<'_>,
+    bytes: &[u8],
+) -> rusqlite::Result<()> {
+    tx.execute("INSERT INTO serving_checkpoint VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET body=excluded.body",[bytes])?;
     Ok(())
 }

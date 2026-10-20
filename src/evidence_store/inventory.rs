@@ -122,6 +122,7 @@ fn schema(conn: &Connection, profile: Profile) -> Result<()> {
         expected.execute_batch(copied::SCHEMA)?;
     }
     erasure::extend_schema(conn, &expected)?;
+    serving::extend_schema(conn, &expected)?;
     // Bound every variable schema field; the SQLite allocation limit is separate.
     let query="SELECT substr(type,1,32),length(type),substr(name,1,256),length(name),substr(tbl_name,1,256),length(tbl_name),substr(sql,1,65536),length(sql) FROM sqlite_schema ORDER BY type,name";
     let mut a = conn.prepare(query)?;

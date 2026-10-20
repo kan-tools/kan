@@ -19,6 +19,7 @@ pub mod copied;
 pub mod copy_upgrade;
 pub mod erasure;
 pub mod inventory;
+pub mod serving;
 
 type CommitProofHook<'a> =
     dyn FnMut(&rusqlite::Transaction<'_>, &Committed, &mut dyn FnMut(Boundary)) -> Result<()> + 'a;
@@ -782,6 +783,7 @@ impl Ledger {
             expected.execute_batch(attested::SCHEMA)?;
         }
         erasure::extend_schema(&self.conn, &expected)?;
+        serving::extend_schema(&self.conn, &expected)?;
         self.check_schema_against(&expected)
     }
     fn check_copy_schema(&self) -> Result<()> {
@@ -790,6 +792,7 @@ impl Ledger {
         expected.execute_batch(attested::SCHEMA)?;
         expected.execute_batch(copied::SCHEMA)?;
         erasure::extend_schema(&self.conn, &expected)?;
+        serving::extend_schema(&self.conn, &expected)?;
         self.check_schema_against(&expected)
     }
     fn check_schema_against(&self, expected: &Connection) -> Result<()> {

@@ -1,0 +1,445 @@
+//! Authenticated metadata index. Explicit initialization audits the archive;
+//! point reads authenticate selected metadata, never certify unselected payloads.
+//! The caller must supply its independently accepted frontier and current custody.
+use super::*;
+use crate::{
+    evidence_attestation::{self as proof, Frontier, Verified},
+    evidence_index::{self as index, Blocks, Map},
+    evidence_proof_service::{Binding as WireBinding, Coordinate, Profile},
+    evidence_service as service,
+    sign::{self, Identity},
+};
+use serde::{Deserialize, Serialize};
+
+pub(crate) const SCHEMA: &str = "CREATE TABLE serving_nodes(id BLOB NOT NULL PRIMARY KEY CHECK(length(id)=32),body BLOB NOT NULL CHECK(length(body)>0 AND length(body)<=4133));
+CREATE TABLE serving_checkpoint(singleton INTEGER PRIMARY KEY CHECK(singleton=1),body BLOB NOT NULL CHECK(length(body)>0 AND length(body)<=8192));";
+const DOMAIN: &[u8] = b"tools.kan.serving-checkpoint.v1\0";
+const MAX_CHECKPOINT: usize = 8192;
+fn corrupt() -> Error {
+    Error::Corrupt("serving index or checkpoint".into())
+}
+fn index_error(_: index::Error) -> Error {
+    corrupt()
+}
+fn json(value: &impl Serialize) -> Result<Vec<u8>> {
+    serde_json::to_vec(value).map_err(|_| corrupt())
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Statement {
+    version: u8,
+    binding: WireBinding,
+    frontier: Coordinate,
+    root: Option<String>,
+    erasure_tip: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Checkpoint {
+    statement: Statement,
+    signature: String,
+}
+impl Checkpoint {
+    pub fn frontier(&self) -> &Coordinate {
+        &self.statement.frontier
+    }
+    pub fn erasure_tip(&self) -> Option<&str> {
+        self.statement.erasure_tip.as_deref()
+    }
+    pub fn bytes(&self) -> Result<Vec<u8>> {
+        json(self)
+    }
+    fn root(&self) -> Result<Option<index::Digest>> {
+        self.statement
+            .root
+            .as_ref()
+            .map(|s| {
+                service::unhex(s, 32)
+                    .map_err(|_| corrupt())?
+                    .try_into()
+                    .map_err(|_| corrupt())
+            })
+            .transpose()
+    }
+    fn validate(&self, binding: &attested::Binding) -> Result<Frontier> {
+        binding.validate()?;
+        if self.statement.version != 1 || self.statement.binding != wire(binding) {
+            return Err(corrupt());
+        }
+        let frontier = self
+            .statement
+            .frontier
+            .frontier(&self.statement.binding)
+            .map_err(|_| corrupt())?;
+        if (frontier.through == 0) != self.root()?.is_none() {
+            return Err(corrupt());
+        }
+        if let Some(tip) = &self.statement.erasure_tip {
+            if service::unhex(tip, 32).map_err(|_| corrupt())?.len() != 32 {
+                return Err(corrupt());
+            }
+        }
+        let signature = service::unhex(&self.signature, 64).map_err(|_| corrupt())?;
+        if !sign::verify(
+            &binding.issuer,
+            &[DOMAIN, &json(&self.statement)?].concat(),
+            &signature,
+        ) {
+            return Err(corrupt());
+        }
+        Ok(frontier)
+    }
+}
+fn wire(binding: &attested::Binding) -> WireBinding {
+    WireBinding {
+        profile: Profile::Admitted,
+        archive: service::hex(&binding.archive),
+        scope: service::hex(&binding.scope),
+        issuer: binding.issuer.clone(),
+    }
+}
+pub(super) fn exists(conn: &Connection) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='serving_checkpoint')",
+        [],
+        |r| r.get(0),
+    )?)
+}
+pub(super) fn extend_schema(source: &Connection, expected: &Connection) -> Result<()> {
+    if exists(source)? {
+        expected.execute_batch(SCHEMA)?;
+    }
+    Ok(())
+}
+fn load(conn: &Connection, binding: &attested::Binding) -> Result<Checkpoint> {
+    if !exists(conn)? {
+        return Err(Error::Invalid(
+            "serving index requires explicit initialization",
+        ));
+    }
+    let row: Option<(i64, Vec<u8>)> = conn
+        .query_row(
+            "SELECT CASE WHEN typeof(body)='blob' THEN length(body) ELSE -1 END,substr(body,1,8192) FROM serving_checkpoint WHERE singleton=1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let (len, bytes) = row.ok_or_else(corrupt)?;
+    if len <= 0 || len as usize > MAX_CHECKPOINT || bytes.len() as i64 != len {
+        return Err(corrupt());
+    }
+    let checkpoint: Checkpoint = serde_json::from_slice(&bytes).map_err(|_| corrupt())?;
+    if checkpoint.bytes()? != bytes {
+        return Err(corrupt());
+    }
+    checkpoint.validate(binding)?;
+    Ok(checkpoint)
+}
+struct SqlBlocks<'a> {
+    conn: &'a Connection,
+    tx: Option<&'a rusqlite::Transaction<'a>>,
+}
+impl Blocks for SqlBlocks<'_> {
+    fn read(&mut self, id: &index::Digest) -> index::Result<Option<Vec<u8>>> {
+        let row: Option<(i64, Vec<u8>)> = self
+            .conn
+            .query_row(
+                "SELECT CASE WHEN typeof(body)='blob' THEN length(body) ELSE -1 END,substr(body,1,4133) FROM serving_nodes WHERE id=?",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(|_| index::Error::Store)?;
+        row.map(|(len, bytes)| {
+            if len <= 0 || len as usize > index::MAX_NODE || len as usize != bytes.len() {
+                return Err(index::Error::Corrupt);
+            }
+            Ok(bytes)
+        })
+        .transpose()
+    }
+    fn write(&mut self, id: index::Digest, bytes: &[u8]) -> index::Result<()> {
+        if index::node_digest(bytes)? != id {
+            return Err(index::Error::Corrupt);
+        }
+        if let Some(old) = self.read(&id)? {
+            return if old == bytes {
+                Ok(())
+            } else {
+                Err(index::Error::Corrupt)
+            };
+        }
+        let tx = self.tx.ok_or(index::Error::Store)?;
+        // surface-write: evidence-serving-sqlite:serving_nodes
+        crate::persistence::insert_serving_node(
+            crate::persistence::SurfaceWrite::EvidenceServingIndex,
+            tx,
+            &id,
+            bytes,
+        )
+        .map_err(|_| index::Error::Store)?;
+        Ok(())
+    }
+}
+fn record_key(sequence: u64) -> Result<index::Digest> {
+    index::key(b"record", &sequence.to_be_bytes()).map_err(index_error)
+}
+fn commitment(record: &Committed, envelope: &[u8]) -> Vec<u8> {
+    let mut hash = Sha256::new();
+    hash.update(b"tools.kan.serving-record.v1\0");
+    hash.update(record.sequence.to_be_bytes());
+    for bytes in [record.manifest.bytes(), record.receipt.bytes(), envelope] {
+        hash.update((bytes.len() as u64).to_be_bytes());
+        hash.update(bytes);
+    }
+    hash.finalize().to_vec()
+}
+fn insert_record(map: &mut Map<SqlBlocks<'_>>, row: &Committed, envelope: &[u8]) -> Result<()> {
+    map.insert(record_key(row.sequence)?, &commitment(row, envelope))
+        .map_err(index_error)?;
+    let b = row.manifest.body();
+    let writer = writer(&row.manifest);
+    let mut operation = writer.as_bytes().to_vec();
+    operation.push(0);
+    operation.extend(blob(&b["operation"]));
+    map.insert(
+        index::key(b"operation", &operation).map_err(index_error)?,
+        &row.sequence.to_be_bytes(),
+    )
+    .map_err(index_error)?;
+    let mut head = row.sequence.to_be_bytes().to_vec();
+    head.extend(number(&b["position"]).to_be_bytes());
+    head.extend(row.manifest.cid().to_string().as_bytes());
+    map.insert(
+        index::key(b"writer", writer.as_bytes()).map_err(index_error)?,
+        &head,
+    )
+    .map_err(index_error)?;
+    for entry in entries(&row.manifest) {
+        let mut slot = writer.as_bytes().to_vec();
+        slot.push(0);
+        slot.extend(blob(&entry["slot"]));
+        let mut value = number(&entry["length"]).to_be_bytes().to_vec();
+        value.extend(cid(&entry["ciphertext"]).as_bytes());
+        map.insert(index::key(b"slot", &slot).map_err(index_error)?, &value)
+            .map_err(index_error)?;
+    }
+    Ok(())
+}
+fn publish(
+    tx: &rusqlite::Transaction<'_>,
+    binding: &attested::Binding,
+    frontier: &Frontier,
+    root: Option<index::Digest>,
+    erasure_tip: Option<String>,
+    signer: &Identity,
+) -> Result<Checkpoint> {
+    if signer.did().as_str() != binding.issuer {
+        return Err(Error::Invalid("serving checkpoint signer"));
+    }
+    let statement = Statement {
+        version: 1,
+        binding: wire(binding),
+        frontier: Coordinate::from_frontier(frontier),
+        root: root.map(|v| service::hex(&v)),
+        erasure_tip,
+    };
+    let signature = signer
+        .sign(&[DOMAIN, &json(&statement)?].concat())
+        .map_err(|_| corrupt())?;
+    let checkpoint = Checkpoint {
+        statement,
+        signature: service::hex(&signature),
+    };
+    checkpoint.validate(binding)?;
+    // surface-write: evidence-serving-sqlite:serving_checkpoint
+    crate::persistence::publish_serving_checkpoint(
+        crate::persistence::SurfaceWrite::EvidenceServingIndex,
+        tx,
+        &checkpoint.bytes()?,
+    )?;
+    Ok(checkpoint)
+}
+impl attested::Archive {
+    /// Explicit full verification and atomic initialization/rebuild. It does not
+    /// change capture bytes, receipt/proof formats, or independently held custody.
+    pub fn rebuild_serving_index(&self, signer: &Identity) -> Result<Checkpoint> {
+        if self.copy.is_some() {
+            return Err(Error::Invalid("copied serving index not initialized"));
+        }
+        if signer.did().as_str() != self.binding.issuer {
+            return Err(Error::Invalid("serving checkpoint signer"));
+        }
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.ledger.conn,
+            TransactionBehavior::Immediate,
+        )?;
+        self.ledger.check_write_profile(true)?;
+        let verified = self.ledger.verify_contents()?;
+        let (frontier, _) =
+            attested::audit_prefix(&tx, &self.binding, verified.snapshot.through, None, None)?;
+        if frontier.manifest != verified.snapshot.tip {
+            return Err(corrupt());
+        }
+        let history = erasure::load(&tx)?;
+        if !exists(&tx)? {
+            // surface-write: evidence-serving-sqlite:serving_nodes,evidence-serving-sqlite:serving_checkpoint
+            crate::persistence::initialize_serving_index(
+                crate::persistence::SurfaceWrite::EvidenceServingIndex,
+                &tx,
+            )?;
+        }
+        // surface-write: evidence-serving-sqlite:serving_nodes
+        crate::persistence::reset_serving_nodes(
+            crate::persistence::SurfaceWrite::EvidenceServingIndex,
+            &tx,
+        )?;
+        let mut map = Map::new(
+            SqlBlocks {
+                conn: &tx,
+                tx: Some(&tx),
+            },
+            None,
+        );
+        for sequence in 1..=frontier.through {
+            let row = attested::record(&tx, sequence)?;
+            insert_record(&mut map, &row, &attested::envelope(&tx, sequence)?)?;
+        }
+        let checkpoint = publish(
+            &tx,
+            &self.binding,
+            &frontier,
+            map.root(),
+            history.tip,
+            signer,
+        )?;
+        tx.commit()?;
+        Ok(checkpoint)
+    }
+}
+/// Advance an already initialized map inside the evidence/proof transaction.
+/// Existing callers still audit the old archive; bounded admission is separate.
+pub(super) fn advance(
+    tx: &rusqlite::Transaction<'_>,
+    binding: &attested::Binding,
+    previous: &Frontier,
+    row: &Committed,
+    proof: &Verified,
+    signer: &Identity,
+) -> Result<()> {
+    if !exists(tx)? {
+        return Ok(());
+    }
+    let checkpoint = load(tx, binding)?;
+    if checkpoint.validate(binding)? != *previous {
+        return Err(Error::Conflict("serving checkpoint frontier"));
+    }
+    let mut map = Map::new(
+        SqlBlocks {
+            conn: tx,
+            tx: Some(tx),
+        },
+        checkpoint.root()?,
+    );
+    if row.duplicate {
+        if map
+            .get(&record_key(row.sequence)?)
+            .map_err(index_error)?
+            .as_deref()
+            != Some(commitment(row, proof.bytes()).as_slice())
+        {
+            return Err(corrupt());
+        }
+        return Ok(());
+    }
+    insert_record(&mut map, row, proof.bytes())?;
+    publish(
+        tx,
+        binding,
+        proof.frontier(),
+        map.root(),
+        erasure::load(tx)?.tip,
+        signer,
+    )?;
+    Ok(())
+}
+/// Read selected metadata with bounded work. No assertion about other records,
+/// current payload availability, or external custody is made by this result.
+pub struct Metadata {
+    pub record: Committed,
+    pub proof: Verified,
+}
+pub fn read_metadata(
+    path: &Path,
+    binding: attested::Binding,
+    expected: &Frontier,
+    current_erasure_tip: Option<&str>,
+    sequence: u64,
+) -> Result<Metadata> {
+    binding.validate()?;
+    if sequence == 0 || sequence > expected.through {
+        return Err(Error::Invalid("serving sequence"));
+    }
+    private_file(path)?;
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    conn.set_limit(
+        rusqlite::limits::Limit::SQLITE_LIMIT_LENGTH,
+        RECOVERY_SQLITE_LENGTH_LIMIT,
+    )?;
+    conn.busy_timeout(Duration::from_secs(5))?;
+    let ledger = Ledger { conn };
+    let tx = ledger.conn.unchecked_transaction()?;
+    ledger.check_profile(2)?;
+    ledger.check_write_profile(true)?;
+    attested::check_binding(&tx, &binding)?;
+    let checkpoint = load(&tx, &binding)?;
+    if checkpoint.validate(&binding)? != *expected
+        || checkpoint.erasure_tip() != current_erasure_tip
+    {
+        return Err(Error::Conflict("serving checkpoint freshness"));
+    }
+    let mut map = Map::new(
+        SqlBlocks {
+            conn: &tx,
+            tx: None,
+        },
+        checkpoint.root()?,
+    );
+    let row = attested::record(&tx, sequence)?;
+    let envelope = attested::envelope(&tx, sequence)?;
+    if map
+        .get(&record_key(sequence)?)
+        .map_err(index_error)?
+        .as_deref()
+        != Some(commitment(&row, &envelope).as_slice())
+    {
+        return Err(corrupt());
+    }
+    let value = evidence::canonical_value(&envelope, proof::MAX_ENVELOPE_BYTES)?;
+    let envelope_fields = evidence::closed(&value, &["statement", "signature"])?;
+    let Ipld::Bytes(statement) = &envelope_fields["statement"] else {
+        return Err(corrupt());
+    };
+    let statement = evidence::canonical_value(statement, proof::MAX_ENVELOPE_BYTES)?;
+    let statement_cid = crate::cid::content_cid(&statement).map_err(|_| corrupt())?;
+    let frontier = Frontier {
+        through: sequence,
+        manifest: Some(row.manifest.cid().clone()),
+        attestation: Some(statement_cid),
+        archive: Some(binding.archive),
+        scope: Some(binding.scope),
+        issuer: Some(binding.issuer.clone()),
+    };
+    let verified = proof::verify_at(
+        &envelope,
+        &binding.context(),
+        &row.manifest,
+        &row.receipt,
+        &frontier,
+    )?;
+    tx.commit()?;
+    Ok(Metadata {
+        record: row,
+        proof: verified,
+    })
+}

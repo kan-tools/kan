@@ -14,6 +14,10 @@ use sha2::{Digest, Sha256};
 
 const CATALOG: &str = include_str!("fixtures/read-write-surface.tsv");
 const RULE_EVIDENCE: &[(&str, &str)] = &[
+    (
+        "authenticated-serving-index",
+        "tests/evidence_attested_store.rs",
+    ),
     ("owner-backup-purge", "tests/support/proof_library_tests.rs"),
     (
         "authenticated-publication-binding",
@@ -542,6 +546,30 @@ const PERSISTENCE_MODULES: &[&str] = &[
     "src/workspace.rs",
 ];
 const PERSISTENCE_MUTATION_SITES: &[(&str, &str, &str, usize)] = &[
+    (
+        "src/evidence_store/serving.rs",
+        "initialize_serving_index",
+        "EvidenceServingIndex",
+        1,
+    ),
+    (
+        "src/evidence_store/serving.rs",
+        "insert_serving_node",
+        "EvidenceServingIndex",
+        1,
+    ),
+    (
+        "src/evidence_store/serving.rs",
+        "reset_serving_nodes",
+        "EvidenceServingIndex",
+        1,
+    ),
+    (
+        "src/evidence_store/serving.rs",
+        "publish_serving_checkpoint",
+        "EvidenceServingIndex",
+        1,
+    ),
     (
         "src/evidence_store/erasure/initial.rs",
         "insert_erased_evidence_object",

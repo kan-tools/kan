@@ -407,8 +407,29 @@ using them for admission. Existing archives need explicit verified initializatio
 or rebuild; missing index state must report that work, never silently scan history
 in a nominally bounded request. Inventory, copied archives, erasure/custody,
 backup/recovery and independent freshness checks must all use the same contract.
-Their schema, mutation ownership and crash boundaries are still implementation
-work; the pure map alone closes none of those integration requirements.
+The first durable integration is `evidence_store::serving`: an explicit full-audit
+initialization/rebuild creates `serving_nodes` and a signed `serving_checkpoint` in
+one immediate transaction. Checkpoints bind version, admitted profile, archive,
+scope, issuer, full frontier, map root and accepted native erasure tip. The map
+commits exact sequence/manifest/receipt/proof metadata plus operation, writer-head
+and slot coordinates. Normal admissions into initialized archives advance the
+nodes/checkpoint atomically with evidence and attestation; exact retries preserve
+the existing checkpoint. Rebuild replaces disposable nodes only after verifying
+source data, under the same writer transaction. Failed rebuilds preserve the prior
+checkpoint. Optional index tables are recognized by strict archive/inventory schema
+checks; legacy archives remain readable and require explicit initialization for
+the new read API.
+
+`read_metadata` requires an independently accepted frontier and current custody tip,
+authenticates the signed checkpoint and selected path, then verifies the selected
+native attestation. Its result certifies selected metadata only. Missing or corrupt
+payloads elsewhere do not turn that result into a whole-archive health claim.
+Changed custody makes an older checkpoint unusable until refreshed by verified
+rebuild or a fully audited admission. A checkpoint loaded from the archive alone
+cannot establish freshness. This initial integration supports admitted archives;
+copied-profile activation, bounded source availability/custody checks, bounded
+admission, service routing and scale qualification remain implementation work.
+No bounded-serving claim is made for the existing full-audit admission API.
 
 ### 11. Compatibility and explicit departures
 
