@@ -5007,7 +5007,7 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         &plain,
     );
     let mut declaration = json!({"version":1,"author":identity(9).did().as_str(),"analysis_trigger_plan":[],
-        "draft":{"subject":"workspace-erasure","text":"late descendant","tags":[],"cites":[unrelated],"supersedes":promoted}});
+        "draft":{"subject":"workspace-erasure","text":"late descendant","tags":[],"cites":[unrelated],"supersedes":correction}});
     declaration["id"] = json!(service::hex(&Sha256::digest(
         serde_json::to_vec(&declaration).unwrap()
     )));
@@ -5056,28 +5056,18 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
             )
             .unwrap();
     }
-    // A managed old workspace restoration is reconciled from independent custody,
-    // not trusted just because it predates the tombstone schema.
-    std::fs::copy(&old_workspace, &derived_path).unwrap();
-    assert!(
-        kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE)
-            .unwrap()
-            .with_erasure_histories(vec![history.clone()])
-            .is_err(),
-        "old managed restore refuses activation before reconciliation"
-    );
-    let restored = owner_call(
+    let late = owner_call(
         &ui,
         OWNER,
         json!({"action":"resume-erasure","id":preview["digest"],"wait":true}),
         200,
     )
     .await;
+    assert_eq!(late["attempts"], 4);
     assert_eq!(
-        restored["result"]["report"]["workspaces"][0]["state"], "reconciled",
-        "{restored}"
+        late["result"]["report"]["workspaces"][0]["state"], "reconciled",
+        "{late}"
     );
-    assert_eq!(restored["attempts"], 4);
     let late_history = attested::Archive::open(&queue_root, queue_binding.clone())
         .unwrap()
         .erasure_history()
@@ -5102,9 +5092,32 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         6
     );
     assert_eq!(
-        restored["result"]["report"]["publications"]["destinations"][1]["frontier"]["through"],
+        late["result"]["report"]["publications"]["destinations"][1]["frontier"]["through"],
         "7"
     );
+
+    // A managed old workspace restoration is reconciled from independent custody,
+    // not trusted just because it predates the tombstone schema.
+    std::fs::copy(&old_workspace, &derived_path).unwrap();
+    assert!(
+        kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE)
+            .unwrap()
+            .with_erasure_histories(vec![history.clone()])
+            .is_err(),
+        "old managed restore refuses activation before reconciliation"
+    );
+    let restored = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"resume-erasure","id":preview["digest"],"wait":true}),
+        200,
+    )
+    .await;
+    assert_eq!(
+        restored["result"]["report"]["workspaces"][0]["state"], "reconciled",
+        "{restored}"
+    );
+    assert_eq!(restored["attempts"], 5);
 
     assert!(
         kan::evidence_workspace::Workspace::open(&derived_path, identity(9), PRIVATE)
