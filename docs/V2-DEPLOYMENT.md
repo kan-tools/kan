@@ -55,15 +55,17 @@ attach an annotation guard. The manifest contains references, not secret key byt
 
 ## Launch
 
-For archive services, retain the usual binding, issuer signing key, access policy
-and listen options. Enrollment supplies `--erasure-history` to both service roles:
+For bounded archive services, first initialize the archive and control indexes as
+described below, then retain `--indexed` in the service manager configuration.
+Keep the usual binding, issuer signing key, access policy and listen options.
+Enrollment supplies `--erasure-history` to both service roles:
 
 ```sh
-kan-v2 --deployment /etc/kan/deployment.json serve-admitted /srv/kan/archive \
+kan-v2 --deployment /etc/kan/deployment.json serve-admitted /srv/kan/archive --indexed \
   --binding /etc/kan/capture-binding.json --signing-key /etc/kan/issuer.key \
   --access-policy /etc/kan/capture-policy.json
 
-kan-v2 --deployment /etc/kan/deployment.json serve-proof /srv/kan/archive \
+kan-v2 --deployment /etc/kan/deployment.json serve-proof /srv/kan/archive --indexed \
   --binding /etc/kan/capture-binding.json --signing-key /etc/kan/issuer.key \
   --access-policy /etc/kan/capture-policy.json
 
@@ -139,6 +141,13 @@ full audit using the corresponding profile binding:
 kan-v2 rebuild-serving-index /srv/kan/archive \
   --binding /etc/kan/archive-binding.json --signing-key /etc/kan/issuer.key
 ```
+
+Alternatively, select “Initialize or repair archive reads” on a configured
+capture-erasure target in the Library owner panel. That preview-bound job uses
+the configured issuer key and checks the root archive against independently
+current owner custody before rebuilding. It supports admitted and copied roots;
+replicas require their own maintenance. It preserves evidence and does not
+restart services, change payload layout, or repair missing/corrupt source bytes.
 
 Then add `--indexed` to `serve-admitted`, keeping the same deployment enrollment,
 policy, and independent erasure-history configuration. No missing/corrupt index

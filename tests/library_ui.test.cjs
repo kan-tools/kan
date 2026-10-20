@@ -957,17 +957,19 @@ test('bulk erasure reviews retained coordinate pages and clears them on edits an
  assert.equal(u.node('erasure-coordinates').textContent,'');assert.equal(u.node('erasure-next').disabled,true);assert.equal(u.node('erasure-kind').value,'capture');assert.equal(u.node('erasure-attempt').value,'');
 });
 
-test('policy and custody checkpoint repair use the shared preview-bound owner job',async()=>{
- for(const kind of ['access-policy','capture-erasure']){
+test('control and archive checkpoint repair use the shared preview-bound owner job',async()=>{
+ for(const [kind,operation] of [['access-policy','rebuild-control-index'],['capture-erasure','rebuild-control-index'],['capture-erasure','rebuild-archive-index']]){
   const u=ui();await ownerUI(u);u.node('owner-refresh').click();await tick();
   await u.respond({owner:'owner',targets:[{id:'control',kind}],jobs:[],limits:{jobs:10}});
   assert.equal(u.node('owner-operation').value,'rebuild-control-index');
+  assert.ok(u.node('owner-operation').children.some(option=>option.value===operation));
+  u.node('owner-operation').value=operation;u.node('owner-operation').events.change();
   assert.equal(u.node('owner-maintenance-preview').disabled,false);
   u.node('owner-job-form').events.submit({preventDefault(){}});await tick();
-  assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview',target:'control',operation:'rebuild-control-index',retry_of:null});
-  await u.respond({digest:'control-preview',nonce:'c'.repeat(64),contract:{target:{id:'control',kind},operation:'rebuild-control-index',effect:'Audit signed owner history; preserve original records.'}});
+  assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'preview',target:'control',operation,retry_of:null});
+  await u.respond({digest:'control-preview',nonce:'c'.repeat(64),contract:{target:{id:'control',kind},operation,effect:'Audit signed owner history; preserve original records.'}});
   u.node('owner-submit').click();await tick();
-  assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'submit',target:'control',operation:'rebuild-control-index',retry_of:null,nonce:'c'.repeat(64),preview:'control-preview',wait:false});
+  assert.deepEqual(JSON.parse(u.pending[0].opts.body),{action:'submit',target:'control',operation,retry_of:null,nonce:'c'.repeat(64),preview:'control-preview',wait:false});
   u.node('owner-lock').click();await u.respond({state:'succeeded'});
   assert.equal(u.node('owner-jobs').children.length,0);
  }

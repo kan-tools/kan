@@ -112,6 +112,7 @@ pub enum Operation {
     RestoreImport,
     ReconcileImport,
     RebuildControlIndex,
+    RebuildArchiveIndex,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -468,6 +469,7 @@ impl Owner {
             {
                 None
             }
+            Target::CaptureErasure { .. } if operation == Operation::RebuildArchiveIndex => None,
             Target::Operations { .. } if operation == Operation::Rotate => None,
             Target::Migration { .. } if operation == Operation::Import => None,
             Target::Migration {
@@ -495,6 +497,7 @@ impl Owner {
             json!({"version":1,"owner":self.workspace.author(),"target":selected,"operation":operation,"destination":destination,"nonce":nonce,"retry_of":retry_of,"import":migration_preview(selected)?,
             "effect":match operation{
                 Operation::RebuildControlIndex=>"Fully audit the configured independent owner history and rebuild its signed serving checkpoint. Preserve every raw record and current grant/erasure decision. Hold the owner lease; repair interrupted index publication before enabling current reads. A failed rebuild leaves a visible refusal until repaired.",
+                Operation::RebuildArchiveIndex=>"Fully audit the configured root archive against independently current erasure custody, then atomically initialize or rebuild its authenticated serving index. Preserve retained capture bytes and signed provenance. This may take time and serialize archive writes; it does not convert legacy payload layout, repair missing evidence, rebuild replicas or restart services.",
                 Operation::ReconcileImport=>"Read and hash the configured recovery files against this exact current source plan, then recheck the source inventory. Record remaining cutover preconditions; do not fence writers or activate stores.",
                 Operation::RestoreImport=>"Verify and reconstruct the pinned import into a new owner-private PLAINTEXT directory. Retain source and any failed output. This verifies selected file bytes, not repository semantics, independent backup or cutover.",
                 Operation::Import=>"Queue a bounded batch of this exact selected v1 snapshot into the configured encrypted durable spool. Retain originals. Sending, independent recovery verification and cutover are separate actions; a completed job may leave more batches to queue.",
@@ -897,6 +900,29 @@ fn perform(
                 history
                     .rebuild_serving_index(&crate::sign::Identity::load_existing(signing_key)?)?;
                 Ok(json!({"kind":"erasure","current_reads":"indexed","raw_history":"retained"}))
+            }
+            Target::CaptureErasure {
+                root,
+                history,
+                issuer_key,
+                ..
+            } if operation == Operation::RebuildArchiveIndex => {
+                // Keep the independent custody lease through the archive writer
+                // transaction. Rebuilding a stale restored archive must not make
+                // it eligible for serving against current owner decisions.
+                let current = history.current()?;
+                current.check_archive(&root.join("archive.sqlite"), &history.binding)?;
+                let signer = crate::sign::Identity::load_existing(issuer_key)?;
+                let binding = history.binding.owner_binding()?;
+                let checkpoint = match history.binding.profile {
+                    Profile::Admitted => store::attested::Archive::open(root, binding)?
+                        .rebuild_serving_index(&signer)?,
+                    Profile::Copied => store::copied::Archive::open(root, binding)?
+                        .rebuild_serving_index(&signer)?,
+                };
+                Ok(
+                    json!({"kind":"archive","checkpoint":checkpoint,"evidence":"retained","activation":"not-performed"}),
+                )
             }
             Target::CaptureErasure { .. }
             | Target::KeyHistory { .. }

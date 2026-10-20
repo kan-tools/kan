@@ -5000,6 +5000,23 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
             .with_owner(owner)
     };
     let ui = Ui::start(readers()).await;
+    let index_preview = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview","target":"capture","operation":"rebuild-archive-index"}),
+        200,
+    )
+    .await;
+    let index_job = owner_call(&ui, OWNER, json!({"action":"submit","target":"capture","operation":"rebuild-archive-index","nonce":index_preview["nonce"],"preview":index_preview["digest"],"wait":true}), 200).await;
+    assert_eq!(index_job["state"], "succeeded", "{index_job}");
+    assert_eq!(
+        attested::Archive::open_indexed(&f.root, f.binding.clone(), None)
+            .unwrap()
+            .indexed_frontier(None)
+            .unwrap()
+            .through,
+        3
+    );
     let query = json!({"action":"preview-erasure","target":"capture","page_records":1,"capture":{"writer":identity(6).did().as_str(),"observer":"collector","attempt":"a".repeat(64)}});
     owner_call(&ui, TOKEN, query.clone(), 401).await;
     let first = owner_call(&ui, OWNER, query.clone(), 200).await;
@@ -5068,6 +5085,20 @@ async fn owner_capture_erasure_revalidates_full_selection_and_resumes_offline_re
         "{done}"
     );
     assert_eq!(done["result"]["report"]["archives"][1]["state"], "pending");
+    // The same human maintenance action preserves erased evidence and follows
+    // current owner custody after cleanup; it cannot resurrect the raw bytes.
+    let repair = owner_call(
+        &ui,
+        OWNER,
+        json!({"action":"preview","target":"capture","operation":"rebuild-archive-index"}),
+        200,
+    )
+    .await;
+    let repaired = owner_call(&ui, OWNER, json!({"action":"submit","target":"capture","operation":"rebuild-archive-index","nonce":repair["nonce"],"preview":repair["digest"],"wait":true}), 200).await;
+    assert_eq!(repaired["state"], "succeeded", "{repaired}");
+    let tip = history.current().unwrap().storage_tip().unwrap();
+    assert!(attested::Archive::open_indexed(&f.root, f.binding.clone(), tip.as_deref()).is_ok());
+    assert!(attested::Archive::open_indexed(&f.root, f.binding.clone(), None).is_err());
     assert_eq!(done["result"]["report"]["backup_purge"], "not-performed");
     assert_eq!(
         done["result"]["report"]["spools"][0]["state"], "admitted-erasure-reconciled",

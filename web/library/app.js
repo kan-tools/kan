@@ -672,8 +672,8 @@
       }
     }
     clearPolicy();clearKeys();clearErasure();$('erasure-controls').hidden=target?.kind!=='capture-erasure';$('key-controls').hidden=target?.kind!=='key-history';$('access-controls').hidden=target?.kind!=='access-policy';$('owner-maintenance-preview').disabled=target?.kind==='key-history';$('owner-operation').disabled=target?.kind==='key-history';
-    const operations=target?.kind==='key-history'?[]:['access-policy','capture-erasure'].includes(target?.kind)?['rebuild-control-index']:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
-    for(const operation of operations){const option=textNode('option',operation==='rebuild-control-index'?'Initialize or repair control reads':operation);option.value=operation;$('owner-operation').append(option);}
+    const operations=target?.kind==='key-history'?[]:target?.kind==='access-policy'?['rebuild-control-index']:target?.kind==='capture-erasure'?['rebuild-control-index','rebuild-archive-index']:target?.kind==='workspace-recovery'?['recover']:target?.kind==='import-recovery'?['restore-import']:target?.kind==='migration'?(target.recovered?['import','reconcile-import']:['import']):target?.kind==='operations'?['rotate']:['backup','recover'];
+    for(const operation of operations){const option=textNode('option',operation==='rebuild-control-index'?'Initialize or repair control reads':operation==='rebuild-archive-index'?'Initialize or repair archive reads':operation);option.value=operation;$('owner-operation').append(option);}
     $('owner-operation').value=operations[0]||'';
   }
   async function previewBackupPurge(backupJob){
