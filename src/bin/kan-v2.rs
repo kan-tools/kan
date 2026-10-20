@@ -1708,7 +1708,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let signer = service_identity(&signing_key)?;
             let archive =
                 kan::evidence_store::attested::Archive::open(&archive, binding.owner_binding()?)?;
-            print_json(&archive.rebuild_serving_index(&signer)?)?;
+            print_json(&serde_json::to_value(
+                archive.rebuild_serving_index(&signer)?,
+            )?)?;
         }
         Command::Verify { database, proof } => {
             let copy_profile = proof.copy_profile;
