@@ -401,7 +401,7 @@ fn workspace_beyond_old_capacity_reopens_writes_and_streams_recovery() {
     // SQLite permits unused trailing pages. Sparse extension crosses the former
     // open/recovery cap without a huge encrypted fixture or a large RAM buffer.
     let bytes = 257 * 1024 * 1024;
-    std::fs::OpenOptions::new()
+    std::fs::File::options()
         .write(true)
         .open(&source)
         .unwrap()
