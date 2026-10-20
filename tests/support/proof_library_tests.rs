@@ -1669,8 +1669,9 @@ async fn annotation_publication_is_explicit_destination_bound_and_exactly_retrie
         kan::evidence_spool::Spool::open(&spool)
             .unwrap()
             .head()
-            .unwrap(),
-        Some(retained)
+            .unwrap()
+            .as_ref(),
+        Some(&retained)
     );
     assert_eq!(
         attested::Archive::open(remote.path(), binding)
